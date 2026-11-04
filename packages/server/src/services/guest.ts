@@ -163,17 +163,40 @@ export async function revokeStaleSessions(): Promise<number> {
 
 /* ---- Guest view ---- */
 
+/**
+ * Bind a session that was started before the table was seated to the table's
+ * order once one exists, so a guest who scanned early can order without
+ * starting another (rate-limited) session. Runs as the register for the write,
+ * then widens the guest's RLS scope to the order for the rest of the request.
+ */
+export async function bindSessionToTableOrder(p: Extract<Principal, { type: "guest" }>): Promise<string | null> {
+  const [session] = await db().select({ orderId: guestSessions.orderId, tableId: guestSessions.tableId }).from(guestSessions).where(eq(guestSessions.id, p.sessionId)).limit(1);
+  if (!session) return null;
+  if (session.orderId) return session.orderId;
+  const orderId = await asSystem(async () => {
+    const id = await openOrderIdForTable(session.tableId);
+    if (id) await db().update(guestSessions).set({ orderId: id }).where(eq(guestSessions.id, p.sessionId));
+    return id;
+  });
+  if (orderId) await tx()`select set_config('app.current_order', ${orderId}, true)`;
+  return orderId;
+}
+
 export async function guestOrderView(p: Extract<Principal, { type: "guest" }>) {
-  const [session] = await db().select().from(guestSessions).where(eq(guestSessions.id, p.sessionId)).limit(1);
-  const orderId = session?.orderId ?? null;
+  const orderId = await bindSessionToTableOrder(p);
+  const [link] = await db().select({ openOnFirstScan: channelLinks.openOnFirstScan, holdOrders: channelLinks.holdOrders, enabled: channelLinks.enabled }).from(channelLinks).where(eq(channelLinks.id, p.channelLinkId)).limit(1);
   const rounds = await db().select().from(guestRounds).where(eq(guestRounds.guestSessionId, p.sessionId)).orderBy(guestRounds.submittedAt);
   const requests = await db().select().from(serviceRequests).where(eq(serviceRequests.guestSessionId, p.sessionId)).orderBy(serviceRequests.createdAt);
-  if (!orderId) return { order: null, lines: [], rounds: rounds.map(toRound), requests: requests.map(toRequest), table_id: p.tableId };
+  const canOrder = !!link?.enabled && (orderId != null || !!link.openOnFirstScan);
+  if (!orderId) return { order: null, order_open: false, can_order: canOrder, hold_orders: link?.holdOrders ?? true, lines: [], rounds: rounds.map(toRound), requests: requests.map(toRequest), table_id: p.tableId };
   const [order] = await db().select().from(orders).where(eq(orders.id, orderId)).limit(1);
   const lines = order ? await db().select().from(orderLines).where(and(eq(orderLines.orderId, orderId), sql`${orderLines.status} <> 'voided'`)).orderBy(orderLines.sort) : [];
   const allRounds = order ? await db().select().from(guestRounds).where(eq(guestRounds.orderId, orderId)).orderBy(guestRounds.submittedAt) : [];
   return {
     table_id: p.tableId,
+    order_open: !!order,
+    can_order: canOrder,
+    hold_orders: link?.holdOrders ?? true,
     order: order ? { id: order.id, order_no: order.orderNo, status: order.status, opened_at: order.openedAt.toISOString(), bill_requested: order.billRequestedAt != null } : null,
     // Prices are menu prices only; fees and discounts are shown on the bill at the POS (scope doc 4.6).
     lines: lines.map((l) => ({ id: l.id, name: l.name, quantity: l.quantity, modifiers: l.modifiers.map((m) => m.name), notes: l.notes, seat_no: l.seatNo, status: l.status, source: l.source, round_id: l.roundId, mine: rounds.some((r) => r.lineIds.includes(l.id)) })),

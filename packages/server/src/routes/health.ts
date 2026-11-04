@@ -9,7 +9,7 @@ export const HealthSchema = z.object({
   ok: z.boolean(),
   db: z.enum(["ok", "error"]),
   version: z.string(),
-  gate: z.object({ in_flight: z.number(), waiting: z.number(), rejected: z.number() }),
+  gate: z.object({ in_flight: z.number(), waiting: z.number(), rejected: z.number(), timed_out: z.number() }),
   sse_subscribers: z.number(),
 });
 
@@ -23,7 +23,7 @@ export function healthRoutes(app: OpenAPIHono<AppEnv>) {
     }
     const gate = admissionGate();
     return c.json(
-      { ok: db === "ok", db, version: process.env.SAIL_VERSION ?? "dev", gate: { in_flight: gate.inFlight, waiting: gate.waiting, rejected: gate.rejected }, sse_subscribers: subscriberCount() },
+      { ok: db === "ok", db, version: process.env.SAIL_VERSION ?? "dev", gate: { in_flight: gate.inFlight, waiting: gate.waiting, rejected: gate.rejected, timed_out: gate.timedOut }, sse_subscribers: subscriberCount() },
       200,
     );
   });

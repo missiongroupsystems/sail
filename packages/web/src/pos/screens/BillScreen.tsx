@@ -85,7 +85,6 @@ export function BillScreen({ orderId }: { orderId: string }) {
   const paidChecks = useMemo(() => (snap?.checks ?? []).filter((c) => c.locked || c.payments.length > 0 || c.status !== "open"), [snap]);
   const lockReason = paidChecks.length ? `${paidChecks[0]!.label} is paid. Refund it to change the split.` : null;
   const lockedLineIds = useMemo(() => new Set(paidChecks.flatMap((c) => c.allocations.map((a) => a.line_id))), [paidChecks]);
-  const sum = (snap?.checks ?? []).reduce((s, c) => s + c.totals.total, 0);
   const inclusive = snap?.totals.tax_mode === "inclusive";
   const canPay = roleAtLeast(staff.role, "cashier");
 
@@ -120,11 +119,13 @@ export function BillScreen({ orderId }: { orderId: string }) {
     if (!ok) setMode(prev);
   };
 
-  /** The register keeps no empty bill, so another bill means an even re-split first; items are then moved by hand. */
+  /** Adds one empty bill; the register keeps it and the current allocation stays as it is. */
   const addBill = async () => {
-    const n = Math.min(20, snap.checks.length + 1);
-    const res = await actions.splitEven(n);
-    if (res) notify({ text: `${n} bills, shared evenly again`, remedy: "Move items between them by tapping.", tone: "info", orderId }, 5000);
+    const res = await actions.allocate([], 1);
+    if (res) {
+      const added = res.checks[res.checks.length - 1];
+      notify({ text: `${added?.label ?? "A new bill"} added`, remedy: "Tap a line, then the new bill, to move it there.", tone: "info", orderId }, 5000);
+    }
   };
 
   const changeEven = (n: number) => {
@@ -236,7 +237,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
                 Share between bills…
               </Button>
               <Button size="lg" variant="quiet" isDisabled={offline || snap.checks.length >= 20 || Boolean(lockReason)} onPress={() => void addBill()}>
-                Split into {Math.min(20, snap.checks.length + 1)} bills
+                Add a bill
               </Button>
             </footer>
           </section>
@@ -300,14 +301,13 @@ export function BillScreen({ orderId }: { orderId: string }) {
           </div>
           <footer className="flex h-[72px] shrink-0 items-center gap-3 px-5 hairline-t bg-surface">
             {inFlight ? (
-              <span className="text-line text-ink-2">Checking…</span>
-            ) : sum === snap.totals.total ? (
-              <span className="inline-flex items-center gap-2 text-line text-ink">
-                <Icon icon={Check} size={20} className="text-status-paid" /> Bills add up to {formatCents(sum)}
+              <span className="text-line text-ink-2" role="status" aria-live="polite">
+                Checking…
               </span>
             ) : (
-              <span className="text-line text-status-alert tabular">
-                Bills add up to {formatCents(sum)} · order total {formatCents(snap.totals.total)}
+              // The register keeps the invariant (bills always add up to the order); the figure shown is its order total, never a client sum.
+              <span className="inline-flex items-center gap-2 text-line text-ink" role="status" aria-live="polite">
+                <Icon icon={Check} size={20} className="text-status-paid" /> Bills add up to {formatCents(snap.totals.total)}
               </span>
             )}
             <div className="flex-1" />

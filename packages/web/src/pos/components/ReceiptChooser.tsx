@@ -39,14 +39,17 @@ export function ReceiptChooser({ order, check, actions, heading, sub, autoReturn
   const [printed, setPrinted] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [counting, setCounting] = useState(autoReturnMs > 0);
+  // The 4 s countdown must not restart when the parent re-renders with a new `onDone` (for example after a stream refetch).
+  const done = useRef(onDone);
+  done.current = onDone;
 
   useEffect(() => {
     if (!counting || autoReturnMs <= 0) return;
-    timer.current = setTimeout(onDone, autoReturnMs);
+    timer.current = setTimeout(() => done.current(), autoReturnMs);
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [counting, autoReturnMs, onDone]);
+  }, [counting, autoReturnMs]);
 
   const stop = () => {
     if (timer.current) clearTimeout(timer.current);

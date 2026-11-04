@@ -1,14 +1,14 @@
 import { and, eq, sql } from "drizzle-orm";
-import { freezeFrom, roundCash } from "@sail/shared";
+import { formatCents, freezeFrom, roundCash } from "@sail/shared";
 import { db } from "../db/client.js";
-import { checks, merchantSettings, orderLines, orders, payments, shifts, tenderTypes } from "../db/schema/index.js";
+import { checks, merchantSettings, orderLines, orders, payments, refunds, shifts, tenderTypes } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { Principal } from "../auth/principal.js";
 import { orderClosed, repriceOrder } from "./orders.js";
 import { activeRules } from "./pricing-rules.js";
 import { syncAllocations } from "./checks.js";
 import { businessDateFor } from "../lib/time.js";
-import { businessDayInputs } from "../routes/org.js";
+import { businessDayInputs } from "./business-day.js";
 
 /**
  * Payments (scope doc 4.3): several tenders per check, part payments until the
@@ -29,15 +29,37 @@ export type RecordPaymentInput = {
 
 export type RecordedPayment = { payment: typeof payments.$inferSelect; check: typeof checks.$inferSelect; changeDue: number; firstPayment: boolean; orderCompleted: boolean };
 
-export async function recordPayment(order: typeof orders.$inferSelect, input: RecordPaymentInput, principal: Principal, opts: { dryRun?: boolean } = {}): Promise<RecordedPayment> {
-  const [check] = await db().select().from(checks).where(and(eq(checks.id, input.checkId), eq(checks.orderId, order.id))).limit(1);
-  if (!check) throw AppError.notFound("bill", input.checkId);
+export async function recordPayment(order: typeof orders.$inferSelect, input: RecordPaymentInput, principal: Principal): Promise<RecordedPayment> {
+  const loadCheck = async () => {
+    const [row] = await db().select().from(checks).where(and(eq(checks.id, input.checkId), eq(checks.orderId, order.id))).limit(1);
+    if (!row) throw AppError.notFound("bill", input.checkId);
+    return row;
+  };
+  let check = await loadCheck();
   const [tender] = await db().select().from(tenderTypes).where(and(eq(tenderTypes.id, input.tenderTypeId), eq(tenderTypes.merchantId, order.merchantId))).limit(1);
   if (!tender || tender.archivedAt) throw AppError.notFound("payment method", input.tenderTypeId);
   const [settings] = await db().select().from(merchantSettings).where(eq(merchantSettings.merchantId, order.merchantId)).limit(1);
+  if (!Number.isInteger(input.amount) || input.amount <= 0) throw AppError.validation("amount must be a positive number of cents");
+  if (input.tipCents != null && (!Number.isInteger(input.tipCents) || input.tipCents < 0)) throw AppError.validation("tip_cents must be zero or a positive number of cents");
+
+  const paymentsSoFar = await db().select({ n: sql<number>`count(*)::int` }).from(payments).where(and(eq(payments.orderId, order.id), eq(payments.status, "recorded")));
+  const firstPayment = (paymentsSoFar[0]?.n ?? 0) === 0;
+  const now = new Date();
+
+  if (firstPayment && !order.pricingFrozenAt) {
+    // Freeze order-level and minimum-spend results (scope doc 4.8). The re-price runs with the rules
+    // active now, so a scheduled rule that switched on since the last edit is reflected on the bill.
+    const result = await repriceOrder(order.id, now);
+    const rules = await activeRules(order.merchantId, now);
+    await db().update(orders).set({ pricingFrozenAt: now, frozenAdjustments: freezeFrom(result, rules) }).where(eq(orders.id, order.id));
+    // Re-price under the frozen context so stored adjustments carry frozen=true (totals are unchanged by construction).
+    await repriceOrder(order.id, now);
+    // The bill may have been rebuilt by the re-price: validate the payment against its current balance, never a stale one.
+    check = await loadCheck();
+  }
+
   const balance = check.total - check.paidTotal;
   if (balance <= 0) throw AppError.state(`${check.label} is already paid`, [], "Nothing is owed on this bill.");
-  if (!Number.isInteger(input.amount) || input.amount <= 0) throw AppError.validation("amount must be a positive number of cents");
 
   let applied = input.amount;
   let tendered: number | null = input.tendered ?? null;
@@ -53,24 +75,11 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
     }
     const due = applied + rounding;
     if (tendered != null) {
-      if (tendered < due) throw AppError.validation(`Cash tendered (${tendered}) is less than the amount due (${due})`, { remedy: `Take at least ${due} cents, or record a part payment of ${tendered}.` });
+      if (tendered < due) throw AppError.validation(`Cash tendered (${formatCents(tendered)}) is less than the amount due (${formatCents(due)})`, { remedy: `Take at least ${formatCents(due)}, or record a part payment of ${formatCents(tendered)}.`, details: { due_cents: due, tendered_cents: tendered, balance } });
       change = tendered - due;
     }
   } else {
-    if (applied > balance) throw AppError.validation(`${tender.name} payments cannot exceed the balance of ${balance}`, { remedy: "Enter the balance or a smaller part payment.", details: { balance } });
-  }
-
-  const paymentsSoFar = await db().select({ n: sql<number>`count(*)::int` }).from(payments).where(and(eq(payments.orderId, order.id), eq(payments.status, "recorded")));
-  const firstPayment = (paymentsSoFar[0]?.n ?? 0) === 0;
-  const now = new Date();
-
-  if (firstPayment && !order.pricingFrozenAt) {
-    // Freeze order-level and minimum-spend results (scope doc 4.8).
-    const result = await repriceOrder(order.id, now);
-    const rules = await activeRules(order.merchantId, now);
-    await db().update(orders).set({ pricingFrozenAt: now, frozenAdjustments: freezeFrom(result, rules) }).where(eq(orders.id, order.id));
-    // Re-price under the frozen context so stored adjustments carry frozen=true (totals are unchanged by construction).
-    await repriceOrder(order.id, now);
+    if (applied > balance) throw AppError.validation(`${tender.name} payments cannot exceed the balance of ${formatCents(balance)}`, { remedy: `The bill's balance is ${formatCents(balance)}. Enter the balance or a smaller part payment.`, details: { balance, check_id: check.id, check_total: check.total } });
   }
 
   const openShift = await db()
@@ -115,7 +124,6 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
     .returning();
 
   const completed = await maybeComplete(order.id, now);
-  void opts;
   return { payment: payment!, check: updatedCheck!, changeDue: change, firstPayment, orderCompleted: completed };
 }
 
@@ -140,6 +148,9 @@ export async function reopenOrder(order: typeof orders.$inferSelect, principal: 
   const bd = await businessDayInputs(order.merchantId, order.outletId);
   const today = businessDateFor(now, bd.cutoff, bd.timeZone);
   if (order.businessDate !== today) throw AppError.invariant("reopen_same_business_day", `The order belongs to business day ${order.businessDate}`, "Orders can only be reopened on the same business day. Use a refund instead.");
+  // A refund has already handed money back against these payments; reversing them as well would double-count.
+  const [refunded] = await db().select({ n: sql<number>`count(*)::int` }).from(refunds).where(eq(refunds.orderId, order.id));
+  if ((refunded?.n ?? 0) > 0) throw AppError.invariant("order_has_refunds", "This order already has a refund", "Reopening would reverse payments that were partly refunded. Correct the order with a further refund instead.");
   const reversed = await db()
     .update(payments)
     .set({ status: "reversed", reversedAt: now, reversedBy: principal.type === "staff" ? principal.id : null, reversedReason: `reopened: ${reason}` })

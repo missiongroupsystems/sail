@@ -1,6 +1,7 @@
 "use client";
 
-import { BrandButton, RoundTimeline } from "@sail/ui";
+import { BrandButton, InlineError, RoundTimeline } from "@sail/ui";
+import type { ApiError } from "@/lib/api";
 import { formatClock } from "@/lib/format";
 import { roundStage } from "@/lib/status";
 import type { GuestStreamStatus } from "@/lib/stream";
@@ -10,6 +11,8 @@ export type StatusViewProps = {
   session: GuestSession;
   orderView: OrderView | null;
   loading: boolean;
+  /** The register's error when the order view could not be read (shown with its remedy, design 7.8). */
+  error: ApiError | null;
   lastRoundId: string | null;
   streamStatus: GuestStreamStatus | null;
   onOrderMore: () => void;
@@ -32,7 +35,7 @@ export function LineText({ line }: { line: GuestLine }) {
 }
 
 /** The order status page (design 4.11): the round's timeline, live, its items, and what happens next. */
-export function StatusView({ session, orderView, loading, lastRoundId, streamStatus, onOrderMore, onCallStaff, onOurTable }: StatusViewProps) {
+export function StatusView({ session, orderView, loading, error, lastRoundId, streamStatus, onOrderMore, onCallStaff, onOurTable }: StatusViewProps) {
   const order = orderView?.order ?? null;
   const mine = (orderView?.rounds ?? []).filter((r) => r.mine).sort((a, b) => b.submitted_at.localeCompare(a.submitted_at));
   const highlighted = mine.find((r) => r.id === lastRoundId) ?? mine[0] ?? null;
@@ -42,7 +45,9 @@ export function StatusView({ session, orderView, loading, lastRoundId, streamSta
   return (
     <>
       <header className="mx-auto w-full max-w-[560px] px-4 pt-[max(16px,env(safe-area-inset-top))]">
-        <h1 className="font-display text-title text-ink">{highlighted ? (highlighted.status === "rejected" ? "Order not accepted" : "Order sent") : "Your order"}</h1>
+        <h1 tabIndex={-1} className="font-display text-title text-ink outline-none">
+          {highlighted ? (highlighted.status === "rejected" ? "Order not accepted" : "Order sent") : "Your order"}
+        </h1>
         <p className="text-body text-ink-2 tabular">
           Table {session.table.name}
           {highlighted ? ` · ${formatClock(highlighted.submitted_at)}` : ""}
@@ -52,6 +57,7 @@ export function StatusView({ session, orderView, loading, lastRoundId, streamSta
 
       <main className="mx-auto flex w-full max-w-[560px] flex-col gap-8 px-4 pb-44 pt-6">
         {!orderView && loading ? <p className="text-body text-ink-2">Checking with the kitchen…</p> : null}
+        {!orderView && error ? <InlineError error={{ message: error.message, remedy: error.remedy ?? "Try again in a moment." }} /> : null}
         {orderView && !highlighted ? (
           <div className="flex flex-col items-start gap-3">
             <p className="text-body text-ink-2">No orders have been sent from this phone yet.</p>

@@ -19,6 +19,8 @@ export type Section = {
   icon: LucideIcon;
   /** Roadmap phase when the section is not built yet (design 11.4). */
   arrives?: string;
+  /** One line on what the section will hold, shown on its placeholder page. */
+  summary?: string;
 };
 
 /** Every section from design 3.2, in order. Unbuilt sections still render, never a gap. */
@@ -31,8 +33,8 @@ export const SECTIONS: Section[] = [
   { href: "/printing", label: "Printing", icon: Printer },
   { href: "/team", label: "Team", icon: Users },
   { href: "/reports", label: "Reports", icon: ChartNoAxesColumn },
-  { href: "/changes", label: "Changes", icon: GitPullRequestArrow, arrives: "v0.3" },
-  { href: "/assistants", label: "Assistants", icon: Bot, arrives: "with the agent work" },
+  { href: "/changes", label: "Changes", icon: GitPullRequestArrow, arrives: "with the agent work", summary: "Every configuration change, from a person or an assistant, will be reviewed here before it applies: summary, checks and impact first, then the row-level diff (design 4.10)." },
+  { href: "/assistants", label: "Assistants", icon: Bot, arrives: "with the agent work", summary: "Assistant identities and roles, playbooks, activity and traces, budgets, and the on/off switch. Until then the register runs with assistants off." },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

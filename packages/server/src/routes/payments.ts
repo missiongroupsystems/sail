@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { PERMISSIONS, registerOperations, type OperationSpec } from "@sail/shared";
-import { db, markDryRun, withTransaction } from "../db/client.js";
+import { db, markDryRun, settleInvariants, withTransaction } from "../db/client.js";
 import { checks, orders, printers, shifts, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
@@ -16,7 +16,7 @@ import { maybeComplete, recordPayment, reopenOrder } from "../services/payments.
 import { createDigitalReceipt, issueInvoice, readDigitalReceipt, renderInvoicePdf, type InvoiceDocument } from "../services/documents.js";
 import { closeBusinessDay, closeShift, openShift, zReport } from "../services/shifts.js";
 import { insertJob } from "../services/printing.js";
-import { businessDayInputs } from "./org.js";
+import { businessDayInputs } from "../services/business-day.js";
 import { businessDateFor } from "../lib/time.js";
 
 const op = (o: Partial<OperationSpec> & { op: string; summary: string; description: string }): OperationSpec => ({ tier: "T2", minRole: "cashier", overrideAllowed: false, reasonRequired: false, dryRun: true, principals: ["staff", "agent"], emits: [], mcp: { expose: true, toolsets: ["pos.payment"] }, ...o });
@@ -91,17 +91,20 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
       if (order.status === "cancelled") throw AppError.state("The order is cancelled", []);
       await requireRoleOrOverride(p, principalRole(p), PERMISSIONS["payments.record"].minRole, { action: "payments.record", targetId: check.orderId, overrideId: b.override_id, overrideAllowed: PERMISSIONS["payments.record"].overrideAllowed });
       const result = await recordPayment(order, { paymentId: b.payment_id, checkId: id, tenderTypeId: b.tender_type_id, amount: b.amount, tendered: b.tendered ?? null, tipCents: b.tip_cents ?? 0, reference: b.reference ?? null, stationId: p.type === "staff" ? (p.stationId ?? null) : null }, p);
+      await recordAudit(p, { action: "payments.record", targetKind: "order", targetId: order.id, outletId: order.outletId, details: { payment_id: result.payment.id, tender: result.payment.tenderName, amount: result.payment.amount, rounding_cents: result.payment.roundingCents } });
+      const version = await bumpVersion(order.id);
+      const snapshot = { ...(await loadSnapshot(order.id)), version };
+      // Invariants first, events last: the first append locks the outlet's sequence counter until commit (see orders.ts `finish`).
+      await settleInvariants();
       const events: AppendedEvent[] = [];
       const bd = await businessDayInputs(order.merchantId, order.outletId);
       const ev = (type: string, payload: unknown) => appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type, aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "payments.record", payload, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p);
       events.push(await ev("payment.recorded", { payment_id: result.payment.id, check_id: id, tender: result.payment.tenderName, amount: result.payment.amount, rounding_cents: result.payment.roundingCents, tip_cents: result.payment.tipCents, change_cents: result.payment.changeCents, reference: result.payment.reference, first_payment: result.firstPayment }));
       if (result.check.status === "paid") events.push(await ev("check.paid", { check_id: id, total: result.check.total, paid_total: result.check.paidTotal }));
       if (result.orderCompleted) events.push(await ev("order.completed", { order_no: order.orderNo }));
-      await recordAudit(p, { action: "payments.record", targetKind: "order", targetId: order.id, outletId: order.outletId, details: { payment_id: result.payment.id, tender: result.payment.tenderName, amount: result.payment.amount, rounding_cents: result.payment.roundingCents } });
-      const version = await bumpVersion(order.id);
-      const snapshot = { ...(await loadSnapshot(order.id)), version };
       const payment = snapshot.checks.flatMap((ch) => (ch as { payments: { id: string }[] }).payments).find((x) => x.id === result.payment.id) ?? {};
-      return c.json({ data: snapshot, payment: { ...payment, change_due: result.changeDue }, events, warnings: [] }, 200);
+      // `due_cents` is what the customer actually hands over for this tender (amount applied plus cash rounding); clients show it, never compute it.
+      return c.json({ data: snapshot, payment: { ...payment, change_due: result.changeDue, due_cents: result.payment.amount + result.payment.roundingCents }, events, warnings: [] }, 200);
     },
   );
 
@@ -121,9 +124,11 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
       const unsent = snap.lines.filter((l) => l.status === "pending" || l.status === "held").length;
       throw AppError.invariant("order_not_complete", unpaid.length ? `${unpaid.join(", ")} still ${unpaid.length === 1 ? "has" : "have"} a balance` : `${unsent} item${unsent === 1 ? "" : "s"} not sent`, unpaid.length ? "Take the remaining payment first." : "Send or remove the remaining items first.");
     }
-    const ev = await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "order.completed", aggregate: { kind: "order", id, version: order.version }, operationId: "orders.complete", payload: { order_no: order.orderNo }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(order.merchantId, order.outletId) }, p);
     const version = await bumpVersion(id);
-    return c.json({ data: { ...(await loadSnapshot(id)), version }, events: [ev], warnings: [] }, 200);
+    const snapshot = await loadSnapshot(id);
+    await settleInvariants();
+    const ev = await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "order.completed", aggregate: { kind: "order", id, version: order.version }, operationId: "orders.complete", payload: { order_no: order.orderNo }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(order.merchantId, order.outletId) }, p);
+    return c.json({ data: { ...snapshot, version }, events: [ev], warnings: [] }, 200);
   });
 
   defineOp(app, { op: "orders.reopen", method: "post", path: "/v1/orders/{id}/reopen", tags: ["payments"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ reason: z.string().min(1).max(200) })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
@@ -134,13 +139,15 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     const order = await lockOrder(id, b.expected_version);
     const approval = await requireRoleOrOverride(p, principalRole(p), PERMISSIONS["orders.reopen"].minRole, { action: "orders.reopen", targetId: id, overrideId: b.override_id, overrideAllowed: PERMISSIONS["orders.reopen"].overrideAllowed });
     const reversed = await reopenOrder(order, p, b.reason);
+    const version = await bumpVersion(id);
+    const snapshot = await loadSnapshot(id);
+    await settleInvariants();
     const bd = await businessDayInputs(order.merchantId, order.outletId);
     const events: AppendedEvent[] = [];
     for (const r of reversed) events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "payment.reversed", aggregate: { kind: "order", id, version: order.version }, operationId: "orders.reopen", payload: { payment_id: r.id, amount: r.amount, tender: r.tender }, reason: { text: b.reason }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
     events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "order.reopened", aggregate: { kind: "order", id, version: order.version }, operationId: "orders.reopen", payload: { reversed_payments: reversed.length }, reason: { text: b.reason }, approval: approval ? { override_id: b.override_id, approver_id: approval.id, approver_name: approval.name ?? undefined } : null, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
     await recordAudit(p, { action: "orders.reopen", targetKind: "order", targetId: id, outletId: order.outletId, reason: b.reason, approver: approval, overrideId: b.override_id ?? null, details: { reversed_payments: reversed.length } });
-    const version = await bumpVersion(id);
-    return c.json({ data: { ...(await loadSnapshot(id)), version }, events, warnings: [] }, 200);
+    return c.json({ data: { ...snapshot, version }, events, warnings: [] }, 200);
   });
 
   const printBill = async (c: Parameters<Parameters<typeof defineOp>[2]>[0], kind: "prebill" | "receipt", checkIds: string[], p: Principal, orderId: string) => {
@@ -162,6 +169,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     await syncAllocations(id);
     const snap = await loadSnapshot(id);
     const checkIds = b.check_id ? [b.check_id] : snap.checks.map((ch) => (ch as { id: string }).id);
+    await settleInvariants();
     const { order, jobs } = await printBill(c, "prebill", checkIds, p, id);
     if (!order.billRequestedAt) await db().update(orders).set({ billRequestedAt: new Date() }).where(eq(orders.id, id));
     const ev = await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "order.bill_requested", aggregate: { kind: "order", id, version: order.version }, operationId: "checks.print_prebill", payload: { check_ids: checkIds, jobs: jobs.map((j) => j.id) }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(order.merchantId, order.outletId) }, p);

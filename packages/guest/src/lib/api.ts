@@ -32,7 +32,9 @@ export class ApiError extends Error {
   static from(status: number, body: unknown): ApiError {
     if (body && typeof body === "object" && typeof (body as ApiErrorBody).message === "string") {
       const b = body as ApiErrorBody;
-      return new ApiError({ code: b.code ?? "internal", message: b.message, remedy: b.remedy, details: b.details }, status);
+      // Modifier validation errors carry their remedy inside `details` (server lines.ts); surface it either way.
+      const detailRemedy = typeof b.details?.remedy === "string" ? b.details.remedy : undefined;
+      return new ApiError({ code: b.code ?? "internal", message: b.message, remedy: b.remedy ?? detailRemedy, details: b.details }, status);
     }
     return new ApiError(
       { code: status === 401 ? "unauthenticated" : status === 404 ? "not_found" : status >= 500 ? "internal" : "validation", message: `The register replied with status ${status}`, remedy: "Try again." },

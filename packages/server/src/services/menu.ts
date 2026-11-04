@@ -3,7 +3,8 @@ import type { ChannelType, OrderType } from "@sail/shared";
 import { db } from "../db/client.js";
 import { availabilityRules, brands, channelLinks, menuItems, menuSections, menus, modifierGroups, modifierOptions, outlets, productModifierGroups, productPrices, products, reportCategories, stockStatus } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
-import { localParts } from "../lib/time.js";
+import { businessDateFor, localParts } from "../lib/time.js";
+import { businessDayInputs } from "./business-day.js";
 
 /**
  * The compiled menu for one channel link (`menu.get`, vision 5.12): sections,
@@ -46,45 +47,56 @@ export type CompiledGroup = { id: string; name: string; min_select: number; max_
 export async function compileMenu(channelLinkId: string, at: Date): Promise<CompiledMenu> {
   const [link] = await db().select().from(channelLinks).where(eq(channelLinks.id, channelLinkId)).limit(1);
   if (!link) throw AppError.notFound("channel link", channelLinkId);
-  const [brand] = await db().select().from(brands).where(eq(brands.id, link.brandId)).limit(1);
-  const [outlet] = await db().select().from(outlets).where(eq(outlets.id, link.outletId)).limit(1);
-  const [menu] = await db().select().from(menus).where(eq(menus.id, link.menuId)).limit(1);
+  // Reads that depend only on the link are issued together (pipelined on the transaction's connection); the
+  // compiled menu is loaded on every lines.add and rounds.submit, so its round trips are on the hot path.
+  const [[brand], [outlet], [menu], sections, items, cats, rules, bd] = await Promise.all([
+    db().select().from(brands).where(eq(brands.id, link.brandId)).limit(1),
+    db().select().from(outlets).where(eq(outlets.id, link.outletId)).limit(1),
+    db().select().from(menus).where(eq(menus.id, link.menuId)).limit(1),
+    db().select().from(menuSections).where(eq(menuSections.menuId, link.menuId)).orderBy(asc(menuSections.sort), asc(menuSections.name)),
+    db().select().from(menuItems).where(eq(menuItems.menuId, link.menuId)).orderBy(asc(menuItems.sort)),
+    db().select().from(reportCategories).where(eq(reportCategories.merchantId, link.merchantId)),
+    db().select().from(availabilityRules).where(eq(availabilityRules.merchantId, link.merchantId)),
+    businessDayInputs(link.merchantId, link.outletId),
+  ]);
   if (!brand || !outlet || !menu) throw AppError.notFound("menu for channel link", channelLinkId);
 
-  const sections = await db().select().from(menuSections).where(eq(menuSections.menuId, menu.id)).orderBy(asc(menuSections.sort), asc(menuSections.name));
-  const items = await db().select().from(menuItems).where(eq(menuItems.menuId, menu.id)).orderBy(asc(menuItems.sort));
   const productIds = [...new Set(items.map((i) => i.productId))];
-  const prods = productIds.length ? await db().select().from(products).where(and(inArray(products.id, productIds), isNull(products.archivedAt))) : [];
+  const [prods, prices, pmg, stock] = productIds.length
+    ? await Promise.all([
+        db().select().from(products).where(and(inArray(products.id, productIds), isNull(products.archivedAt))),
+        db().select().from(productPrices).where(inArray(productPrices.productId, productIds)),
+        db().select().from(productModifierGroups).where(inArray(productModifierGroups.productId, productIds)).orderBy(asc(productModifierGroups.sort)),
+        db().select().from(stockStatus).where(and(eq(stockStatus.outletId, link.outletId), inArray(stockStatus.productId, productIds))),
+      ])
+    : [[], [], [], []];
   const prodIdSet = new Set(prods.map((p) => p.id));
-  const prices = productIds.length ? await db().select().from(productPrices).where(inArray(productPrices.productId, productIds)) : [];
-  const pmg = productIds.length ? await db().select().from(productModifierGroups).where(inArray(productModifierGroups.productId, productIds)).orderBy(asc(productModifierGroups.sort)) : [];
 
   // Modifier groups: those attached to products, plus nested child groups (2 levels).
   const groupIds = new Set(pmg.map((x) => x.groupId));
-  let groups = groupIds.size ? await db().select().from(modifierGroups).where(and(inArray(modifierGroups.id, [...groupIds]), isNull(modifierGroups.archivedAt))) : [];
-  let options = groupIds.size ? await db().select().from(modifierOptions).where(inArray(modifierOptions.groupId, [...groupIds])).orderBy(asc(modifierOptions.sort)) : [];
+  let [groups, options] = groupIds.size ? await Promise.all([db().select().from(modifierGroups).where(and(inArray(modifierGroups.id, [...groupIds]), isNull(modifierGroups.archivedAt))), db().select().from(modifierOptions).where(inArray(modifierOptions.groupId, [...groupIds])).orderBy(asc(modifierOptions.sort))]) : [[], []];
   const childIds = [...new Set(options.map((o) => o.childGroupId).filter((x): x is string => !!x && !groupIds.has(x)))];
   if (childIds.length) {
-    groups = groups.concat(await db().select().from(modifierGroups).where(and(inArray(modifierGroups.id, childIds), isNull(modifierGroups.archivedAt))));
-    options = options.concat(await db().select().from(modifierOptions).where(inArray(modifierOptions.groupId, childIds)).orderBy(asc(modifierOptions.sort)));
+    const [childGroups, childOptions] = await Promise.all([db().select().from(modifierGroups).where(and(inArray(modifierGroups.id, childIds), isNull(modifierGroups.archivedAt))), db().select().from(modifierOptions).where(inArray(modifierOptions.groupId, childIds)).orderBy(asc(modifierOptions.sort))]);
+    groups = groups.concat(childGroups);
+    options = options.concat(childOptions);
   }
   const modifierProductIds = [...new Set(options.map((o) => o.productId).filter((id) => !prodIdSet.has(id)))];
   const modifierProducts = modifierProductIds.length ? await db().select().from(products).where(inArray(products.id, modifierProductIds)) : [];
   const allProducts = [...prods, ...modifierProducts];
   const byProduct = new Map(allProducts.map((p) => [p.id, p]));
 
-  const cats = await db().select().from(reportCategories).where(eq(reportCategories.merchantId, link.merchantId));
   const catParent = new Map(cats.map((c) => [c.id, c.parentId]));
-
-  const stock = productIds.length ? await db().select().from(stockStatus).where(and(eq(stockStatus.outletId, link.outletId), inArray(stockStatus.productId, productIds))) : [];
   const stockBy = new Map(stock.map((s) => [s.productId, s]));
-  const rules = await db().select().from(availabilityRules).where(eq(availabilityRules.merchantId, link.merchantId));
   const rulesBy = new Map<string, (typeof rules)[number][]>();
   for (const r of rules) {
     const k = `${r.targetKind}:${r.targetId}`;
     rulesBy.set(k, [...(rulesBy.get(k) ?? []), r]);
   }
-  const local = localParts(at, "Asia/Singapore");
+  // Availability windows follow the wall clock in the merchant's time zone; daily caps and
+  // "sold out for today" follow the business date (an outlet trading past midnight keeps
+  // yesterday's caps until its cutoff).
+  const local = localParts(at, bd.timeZone);
   const dow = new Date(`${local.date}T00:00:00Z`).getUTCDay();
   const availableNow = (kind: "product" | "section", id: string): { ok: boolean; reason: string | null } => {
     const rs = rulesBy.get(`${kind}:${id}`);
@@ -100,7 +112,7 @@ export async function compileMenu(channelLinkId: string, at: Date): Promise<Comp
     const timed = rs.find((r) => r.startTime || r.endTime || r.daysOfWeek.length);
     return { ok: false, reason: timed ? "Not available at this time" : "Not available at this outlet or channel" };
   };
-  const today = local.date;
+  const today = businessDateFor(at, bd.cutoff, bd.timeZone);
 
   const compiledProducts: Record<string, CompiledProduct> = {};
   for (const p of allProducts) {

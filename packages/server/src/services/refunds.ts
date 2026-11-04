@@ -7,7 +7,7 @@ import type { Principal } from "../auth/principal.js";
 import { billDocumentFor } from "./checks.js";
 import { nextDocumentNo, type InvoiceDocument } from "./documents.js";
 import { businessDateFor } from "../lib/time.js";
-import { businessDayInputs } from "../routes/org.js";
+import { businessDayInputs } from "./business-day.js";
 import { registerRefundTotals } from "./shifts.js";
 
 /**

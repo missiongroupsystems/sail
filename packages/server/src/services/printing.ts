@@ -6,7 +6,7 @@ import { brands, merchantSettings, orderLines, orders, outlets, printJobs, print
 import { AppError } from "../lib/errors.js";
 import { appendEvent } from "../lib/events.js";
 import type { Principal } from "../auth/principal.js";
-import { businessDayInputs } from "../routes/org.js";
+import { businessDayInputs } from "./business-day.js";
 
 /**
  * Printing (scope doc 4.7): routing rules, server-side rendering with the

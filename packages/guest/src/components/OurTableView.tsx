@@ -1,7 +1,8 @@
 "use client";
 
-import { BrandButton, cx } from "@sail/ui";
+import { BrandButton, InlineError, cx } from "@sail/ui";
 import { ArrowLeft } from "lucide-react";
+import type { ApiError } from "@/lib/api";
 import { formatClock } from "@/lib/format";
 import { lineStatusLabel, lineStatusTone, roundStage } from "@/lib/status";
 import type { GuestLine, GuestSession, OrderView } from "@/lib/types";
@@ -11,6 +12,8 @@ export type OurTableViewProps = {
   session: GuestSession;
   orderView: OrderView | null;
   loading: boolean;
+  /** The register's error when the order view could not be read. */
+  error: ApiError | null;
   onBack: () => void;
   onCallStaff: () => void;
   onOrderMore: () => void;
@@ -19,7 +22,7 @@ export type OurTableViewProps = {
 const toneClass = { sent: "text-status-sent", paid: "text-status-paid", seated: "text-status-seated", "ink-2": "text-ink-2" } as const;
 
 /** "Our table" (design 4.11): everything the table has ordered, with statuses, this guest's items marked. */
-export function OurTableView({ session, orderView, loading, onBack, onCallStaff, onOrderMore }: OurTableViewProps) {
+export function OurTableView({ session, orderView, loading, error, onBack, onCallStaff, onOrderMore }: OurTableViewProps) {
   const order = orderView?.order ?? null;
   const rounds = [...(orderView?.rounds ?? [])].sort((a, b) => a.submitted_at.localeCompare(b.submitted_at));
   const lines = orderView?.lines ?? [];
@@ -45,7 +48,9 @@ export function OurTableView({ session, orderView, loading, onBack, onCallStaff,
             <span>Back</span>
           </BrandButton>
           <div className="min-w-0 flex-1 text-right">
-            <h1 className="truncate font-display text-heading text-ink">Our table</h1>
+            <h1 tabIndex={-1} className="truncate font-display text-heading text-ink outline-none">
+              Our table
+            </h1>
             <p className="text-caption text-ink-2">
               Table {session.table.name}
               {order ? ` · Order ${order.order_no}` : ""}
@@ -56,6 +61,7 @@ export function OurTableView({ session, orderView, loading, onBack, onCallStaff,
 
       <main className="mx-auto flex w-full max-w-[560px] flex-col gap-6 px-4 pb-44 pt-4">
         {!orderView && loading ? <p className="text-body text-ink-2">Checking with the kitchen…</p> : null}
+        {!orderView && error ? <InlineError error={{ message: error.message, remedy: error.remedy ?? "Try again in a moment." }} /> : null}
         {orderView && lines.length === 0 ? <p className="py-8 text-body text-ink-2">Nothing has been ordered at this table yet.</p> : null}
         {order?.bill_requested ? (
           <p role="status" className="rounded-tile bg-surface-2 px-4 py-3 text-body text-ink">

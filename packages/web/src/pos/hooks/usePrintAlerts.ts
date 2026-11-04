@@ -41,6 +41,7 @@ export function usePrintAlerts(outletId: string | null, now: number): PrintAlert
   const api = useApi();
   const qc = useQueryClient();
   const notify = useUiStore((s) => s.notify);
+  const showUndo = useUiStore((s) => s.showUndo);
   const late = useLateJobs(outletId);
   const printers = usePrinters(outletId);
   const anyLate = (late.data?.length ?? 0) > 0;
@@ -87,13 +88,27 @@ export function usePrintAlerts(outletId: string | null, now: number): PrintAlert
     void qc.invalidateQueries({ queryKey: ["pos", "print-jobs", outletId] });
   }, [outletId, qc]);
 
+  /** Reroute is T1 (design 4.8): it offers Undo, which sends the new tickets back to the printer they came from. */
   const reroute = useCallback(
     async (jobs: PrintJob[], printerId?: string | null) => {
       if (!jobs.length) return false;
       setBusy(true);
       try {
         const created = await reg.rerouteJobs(api, jobs.map((j) => j.id), printerId);
-        notify({ text: `Sent ${created.length} ${created.length === 1 ? "ticket" : "tickets"} to ${created[0]?.printer_name ?? "the backup printer"}`, tone: "success" }, 5000);
+        const label = `Sent ${created.length} ${created.length === 1 ? "ticket" : "tickets"} to ${created[0]?.printer_name ?? "the backup printer"}`;
+        const sources = new Set(jobs.map((j) => j.printer_id));
+        const [origin] = sources;
+        if (created.length && sources.size === 1 && origin) {
+          showUndo(label, async () => {
+            try {
+              await reg.rerouteJobs(api, created.map((j) => j.id), origin);
+              done();
+            } catch (e) {
+              const err = toApiError(e);
+              notify({ text: err.message, remedy: err.remedy ?? null, tone: "alert" }, 8000);
+            }
+          });
+        } else notify({ text: label, tone: "success" }, 5000);
         done();
         return true;
       } catch (e) {
@@ -104,7 +119,7 @@ export function usePrintAlerts(outletId: string | null, now: number): PrintAlert
         setBusy(false);
       }
     },
-    [api, done, notify],
+    [api, done, notify, showUndo],
   );
 
   const retry = useCallback(

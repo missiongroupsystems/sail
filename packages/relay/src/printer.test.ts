@@ -39,6 +39,16 @@ describe("relay printer transport", () => {
     await expect(sendJob({ ip: "127.0.0.1", port, supports_status: true }, Uint8Array.from([1]))).rejects.toThrow(/Paper out/);
     paperByte = 0x12;
   });
+  it("settles instead of hanging when the printer drops the connection mid-job", async () => {
+    const dropper = net.createServer((socket) => socket.destroy());
+    await new Promise<void>((r) => dropper.listen(0, "127.0.0.1", () => r()));
+    const p = (dropper.address() as net.AddressInfo).port;
+    const started = Date.now();
+    // Raw TCP gives no delivery feedback: a write that lands before the reset is a success; a reset is a PrinterError. Either way it must return promptly.
+    await sendJob({ ip: "127.0.0.1", port: p, supports_status: true }, Uint8Array.from([1, 2, 3])).catch((e) => expect(e).toBeInstanceOf(PrinterError));
+    expect(Date.now() - started).toBeLessThan(4000);
+    await new Promise<void>((r) => dropper.close(() => r()));
+  });
   it("times out cleanly when nothing listens", async () => {
     const closed = net.createServer();
     await new Promise<void>((r) => closed.listen(0, "127.0.0.1", () => r()));

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { formatCents } from "@sail/ui";
+import { formatBpsText, formatCents } from "@sail/ui";
 import { useCallback, useMemo } from "react";
 import { ApiError, idempotencyKey, toApiError } from "@/lib/api";
 import * as reg from "../api/register";
@@ -374,7 +374,7 @@ export function useOrderActions(orderId: string) {
     async (rule: ManualRule, enteredValue: number | null, reason: string | null, lineIds: string[] | null) => {
       const applicationId = idempotencyKey();
       const input: reg.AdjustmentInput = { application_id: applicationId, rule_key: rule.rule_key, entered_value: enteredValue, reason, line_ids: lineIds };
-      const valueText = rule.value.type === "open" && enteredValue != null ? (rule.calc === "percent" ? `${enteredValue / 100}%` : formatCents(enteredValue)) : null;
+      const valueText = rule.value.type === "open" && enteredValue != null ? (rule.calc === "percent" ? formatBpsText(enteredValue) : formatCents(enteredValue)) : null;
       try {
         return await withApproval(
           "adjustments.apply_manual",
@@ -478,18 +478,27 @@ export function useOrderActions(orderId: string) {
 
   /* ---- Payments (design 4.5) ---- */
 
+  /** The bill's balance moved since it was loaded (payments.record replies 400 `validation` with `details.balance`): refresh so the prefilled amount follows the register. */
+  const refreshIfBalanceChanged = useCallback(
+    (e: unknown) => {
+      if (e instanceof ApiError && e.code === "validation" && e.details && typeof e.details.balance === "number") void qc.invalidateQueries({ queryKey: key });
+    },
+    [key, qc],
+  );
+
   /** A dry run: the register's rounding and change for this tender and amount; nothing is recorded. */
   const previewPayment = useCallback(
     async (checkId: string, input: Omit<reg.PaymentInput, "payment_id" | "dry_run">): Promise<PaymentResult | null> => {
       try {
         return await reg.recordPayment(api, checkId, { ...input, payment_id: idempotencyKey(), dry_run: true });
       } catch (e) {
+        refreshIfBalanceChanged(e);
         if (e instanceof ApiError && e.status >= 400 && e.status < 500) throw e;
         fail(e);
         return null;
       }
     },
-    [api, fail],
+    [api, fail, refreshIfBalanceChanged],
   );
 
   /**
@@ -518,13 +527,14 @@ export function useOrderActions(orderId: string) {
           notify({ text: "The order changed on another station", remedy: "Check the bill and try again.", tone: "info", orderId }, 6000);
           return null;
         }
+        refreshIfBalanceChanged(e);
         fail(e);
         return null;
       } finally {
         endMutation(orderId);
       }
     },
-    [api, beginMutation, endMutation, fail, key, notify, orderId, qc, snapshot, withApproval],
+    [api, beginMutation, endMutation, fail, key, notify, orderId, qc, refreshIfBalanceChanged, snapshot, withApproval],
   );
 
   const complete = useCallback(async () => {
@@ -603,9 +613,10 @@ export function useOrderActions(orderId: string) {
     [api],
   );
 
+  /** `refund_id` doubles as the idempotency key; the caller keeps one per attempt so a retry after a timeout never refunds twice. */
   const refund = useCallback(
-    async (check: CheckSnapshot, input: Omit<reg.RefundInput, "refund_id">, total: number): Promise<RefundResult | null> => {
-      const refundId = idempotencyKey();
+    async (check: CheckSnapshot, input: Omit<reg.RefundInput, "refund_id"> & { refund_id?: string }, total: number): Promise<RefundResult | null> => {
+      const refundId = input.refund_id ?? idempotencyKey();
       beginMutation(orderId);
       try {
         const res = await withApproval("refunds.create", { kind: "check", id: check.id }, `Refund ${formatCents(total)}`, `${check.label} · ${input.reason}`, (overrideId) => reg.createRefund(api, check.id, { ...input, refund_id: refundId }, { key: refundId, expectedVersion: snapshot()?.version ?? null, overrideId }));

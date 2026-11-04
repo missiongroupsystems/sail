@@ -24,7 +24,11 @@ relay.start().catch((e) => {
   console.error(JSON.stringify({ level: "error", msg: "relay failed to start", error: (e as Error).message }));
   process.exit(1);
 });
+// Graceful stop: release unsent jobs and let in-flight sends finish (bounded), once, whichever signal arrives first.
+let stopping = false;
 const stop = async () => {
+  if (stopping) return;
+  stopping = true;
   await relay.stop();
   process.exit(0);
 };

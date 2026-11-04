@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, DescriptionList, InlineError, Money, MoneyField, Sheet, Steps, Switch, TextField, cx } from "@sail/ui";
+import { Badge, Button, DescriptionList, InlineError, Money, MoneyField, Sheet, Steps, Switch, TextField, cx, formatCents } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { label } from "@/components/backoffice/labels";
@@ -21,9 +21,9 @@ const ALL_STEPS: { id: StepId; label: string }[] = [
   { id: "review", label: "Review" },
 ];
 
-/** Bills that still have something to give back. */
+/** Bills that still have something to give back, by the register's own status (never by subtracting amounts here). */
 export function refundableChecks(checks: CheckSnapshot[]): CheckSnapshot[] {
-  return checks.filter((c) => c.locked && c.paid_total - c.refunded_total > 0);
+  return checks.filter((c) => c.locked && c.paid_total > 0 && c.status !== "refunded");
 }
 
 /**
@@ -66,7 +66,8 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
   const check = candidates.find((c) => c.id === checkId) ?? null;
   const lineById = useMemo(() => new Map(order.lines.map((l) => [l.id, l])), [order.lines]);
   const billLines = useMemo(() => (check ? check.allocations.map((a) => ({ alloc: a, line: lineById.get(a.line_id) ?? null })).filter((x) => x.line && x.line.status !== "voided") : []), [check, lineById]);
-  const refundableLeft = check ? check.paid_total - check.refunded_total : 0;
+  /** "paid $43.16 · $10.00 already refunded": the register's two figures, never their difference. */
+  const paidSoFar = (c: CheckSnapshot) => `paid ${formatCents(c.paid_total)}${c.refunded_total ? ` · ${formatCents(c.refunded_total)} already refunded` : ""}`;
 
   const reasons = useQuery({
     queryKey: keys.voidReasons,
@@ -125,8 +126,8 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
       onOpenChange={(o) => !o && onClose()}
       isDismissable={!refund.isPending}
       width="lg"
-      title={done ? `Refunded ${formatMoney(done.refund.totals.total)}` : "Refund"}
-      description={done ? `${order.order_no} · ${check?.label ?? "Bill"}` : check ? `${order.order_no} · ${check.label} · paid ${formatMoney(check.paid_total)}${check.refunded_total ? ` · ${formatMoney(check.refunded_total)} already refunded` : ""}` : order.order_no}
+      title={done ? `Refunded ${formatCents(done.refund.totals.total)}` : "Refund"}
+      description={done ? `${order.order_no} · ${check?.label ?? "Bill"}` : check ? `${order.order_no} · ${check.label} · ${paidSoFar(check)}` : order.order_no}
       footer={
         done ? (
           <Button variant="primary" onPress={onClose}>
@@ -144,7 +145,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
             </Button>
             {step === "review" ? (
               <Button variant="primary" isDisabled={!quote.data || refund.isPending} isPending={refund.isPending} onPress={() => refund.mutate()}>
-                {quote.data ? `Refund ${formatMoney(quote.data.totals.total)}` : "Refund"}
+                {quote.data ? `Refund ${formatCents(quote.data.totals.total)}` : "Refund"}
               </Button>
             ) : (
               <Button variant="primary" isDisabled={!canContinue || !next} onPress={() => next && setStep(next)}>
@@ -197,9 +198,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
                       <Badge tone={c.status === "paid" ? "paid" : "bill"}>{label(CHECK_STATUS_LABEL, c.status)}</Badge>
                       {c.invoice_no ? <span className="font-mono text-caption text-ink-2">{c.invoice_no}</span> : null}
                     </span>
-                    <span className="tabular text-ink">
-                      <Money cents={c.paid_total - c.refunded_total} /> <span className="text-caption text-ink-2">refundable</span>
-                    </span>
+                    <span className="tabular text-caption text-ink-2">{paidSoFar(c)}</span>
                   </button>
                 </li>
               ))}
@@ -211,7 +210,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
               <div role="radiogroup" aria-label="What to refund" className="grid gap-2 sm:grid-cols-3">
                 {(
                   [
-                    ["full", "Whole bill", `Everything still refundable: ${formatMoney(refundableLeft)}.`],
+                    ["full", "Whole bill", `Everything still refundable on ${check.label}; the register quotes the amount.`],
                     ["lines", "Some items", "Pick lines and quantities; modifiers follow their item."],
                     ["amount", "An amount", "Goodwill: spread across the bill's items."],
                   ] as const
@@ -259,7 +258,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
                 </ul>
               ) : null}
               {what === "amount" ? (
-                <MoneyField label="Amount to refund" value={amount} onChange={setAmount} description={`Up to ${formatMoney(refundableLeft)}. The register spreads it across the bill's items and tenders.`} isInvalid={amount !== null && amount > refundableLeft} autoFocus className="max-w-[240px]" />
+                <MoneyField label="Amount to refund" value={amount} onChange={setAmount} description={`${check.label} ${paidSoFar(check)}. The register spreads it across the bill's items and tenders, and refuses more than was paid.`} autoFocus className="max-w-[240px]" />
               ) : null}
             </div>
           ) : null}
@@ -341,7 +340,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
                           </span>
                           <span className="tabular">
                             <Money cents={t.amount} />
-                            {t.rounding_cents ? <span className="text-caption text-ink-2"> (rounding {formatMoney(t.rounding_cents, true)})</span> : null}
+                            {t.rounding_cents ? <span className="text-caption text-ink-2"> (rounding {formatCents(t.rounding_cents, { signed: true })})</span> : null}
                           </span>
                         </li>
                       ))}
@@ -367,11 +366,4 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
       )}
     </Sheet>
   );
-}
-
-function formatMoney(cents: number, signed = false): string {
-  const negative = cents < 0;
-  const digits = String(Math.abs(cents)).padStart(3, "0");
-  const text = `$${digits.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${digits.slice(-2)}`;
-  return negative ? `−${text}` : signed && cents > 0 ? `+${text}` : text;
 }

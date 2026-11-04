@@ -76,12 +76,16 @@
                         },
                         "rejected": {
                           "type": "number"
+                        },
+                        "timed_out": {
+                          "type": "number"
                         }
                       },
                       "required": [
                         "in_flight",
                         "waiting",
-                        "rejected"
+                        "rejected",
+                        "timed_out"
                       ]
                     },
                     "sse_subscribers": {
@@ -55426,6 +55430,12 @@
                           "age_seconds": {
                             "type": "integer"
                           },
+                          "round_no": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
                           "text": {
                             "type": "string"
                           },
@@ -55453,6 +55463,7 @@
                           "rerouted_from",
                           "created_at",
                           "age_seconds",
+                          "round_no",
                           "text"
                         ]
                       }
@@ -56218,6 +56229,12 @@
                         "age_seconds": {
                           "type": "integer"
                         },
+                        "round_no": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
                         "text": {
                           "type": "string"
                         },
@@ -56245,6 +56262,7 @@
                         "rerouted_from",
                         "created_at",
                         "age_seconds",
+                        "round_no",
                         "text"
                       ]
                     }
@@ -56697,6 +56715,12 @@
                         "age_seconds": {
                           "type": "integer"
                         },
+                        "round_no": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
                         "text": {
                           "type": "string"
                         },
@@ -56724,6 +56748,7 @@
                         "rerouted_from",
                         "created_at",
                         "age_seconds",
+                        "round_no",
                         "text"
                       ]
                     }
@@ -57195,6 +57220,12 @@
                           "age_seconds": {
                             "type": "integer"
                           },
+                          "round_no": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
                           "text": {
                             "type": "string"
                           },
@@ -57222,6 +57253,7 @@
                           "rerouted_from",
                           "created_at",
                           "age_seconds",
+                          "round_no",
                           "text"
                         ]
                       }
@@ -69130,7 +69162,7 @@
           "guest"
         ],
         "operationId": "guest.order",
-        "description": "The table's lines (menu prices only, no fees or totals), round statuses and the guest's requests.",
+        "description": "The table's lines (menu prices only, no fees or totals), round statuses, the guest's requests, and whether ordering is possible (`can_order`). A session started before the table was seated is bound to the table's order here, so no new session is needed.",
         "summary": "What the table has ordered",
         "x-sail": {
           "op": "guest.order",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { idempotencyKey } from "@/lib/api";
+import { idempotencyKey, toApiError } from "@/lib/api";
 import { openOrder } from "../api/register";
 import { useApplySnapshot, useChannelLink, useFloor, useLayout, useMenu, useOutlet, useStations } from "../hooks/queries";
 import { useApi } from "../hooks/useApi";
@@ -12,7 +12,7 @@ import { useThemeScheduler } from "../lib/theme";
 import { useNavStore } from "../state/nav";
 import { useSessionStore } from "../state/session";
 import { useStationStore } from "../state/station";
-import { useConnectionStore } from "../state/ui";
+import { useConnectionStore, useUiStore } from "../state/ui";
 import { BillScreen } from "../screens/BillScreen";
 import { FloorScreen } from "../screens/FloorScreen";
 import { OrderScreen } from "../screens/OrderScreen";
@@ -57,10 +57,14 @@ export function PosShell() {
     homed.current = true;
     void (async () => {
       try {
-        const res = await openOrder(api, { order_id: idempotencyKey(), order_type: "takeaway" });
+        const orderId = idempotencyKey();
+        const res = await openOrder(api, { order_id: orderId, order_type: "takeaway" }, { key: orderId });
         applySnapshot(res.data);
         useNavStore.getState().openOrder(res.data.id, "orders");
-      } catch {
+      } catch (e) {
+        // The station still opens, on Orders, with the register's reason in one line.
+        const err = toApiError(e);
+        useUiStore.getState().notify({ text: `Could not open a takeaway order: ${err.message}`, remedy: err.remedy ?? "Tap + New order to try again.", tone: "alert" }, 8000);
         useNavStore.getState().go({ kind: "orders" });
       }
     })();

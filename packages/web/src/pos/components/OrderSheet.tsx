@@ -215,7 +215,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
           offline={offline}
           primary={
             sendable > 0
-              ? { id: "send", label: `Send ${sendable} ▸`, ariaLabel: `Send ${sendable} to kitchen`, onPress: () => void actions.send(), isDisabled: pricing && sendable === 0 }
+              ? { id: "send", label: `Send ${sendable} ▸`, ariaLabel: `Send ${sendable} to kitchen`, onPress: () => void actions.send() }
               : { id: "pay", label: `Pay ${formatCents(order.balance)} ▸`, ariaLabel: `Pay ${formatCents(order.balance)}`, onPress: onPay, isDisabled: live.length === 0 || order.balance <= 0, needsApproval: !["cashier", "manager", "finance", "admin"].includes(staff.role) }
           }
           secondaries={[

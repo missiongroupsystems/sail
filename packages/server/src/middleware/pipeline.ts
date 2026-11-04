@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from "hono";
 import { randomUUID } from "node:crypto";
 import { config } from "../config.js";
-import { withTransaction, type RequestTx } from "../db/client.js";
+import { maybeTx, withTransaction, type RequestTx } from "../db/client.js";
 import { AppError } from "../lib/errors.js";
 import { AdmissionGate } from "../lib/gate.js";
 import type { AppEnv } from "../lib/context.js";
@@ -14,7 +14,7 @@ let gate: AdmissionGate | null = null;
 export function admissionGate(): AdmissionGate {
   if (!gate) {
     const cfg = config();
-    gate = new AdmissionGate(cfg.TX_MAX, cfg.QUEUE_MAX);
+    gate = new AdmissionGate(cfg.TX_MAX, cfg.QUEUE_MAX, cfg.QUEUE_WAIT_MS);
   }
   return gate;
 }
@@ -52,7 +52,11 @@ export const requestPipeline: MiddlewareHandler<AppEnv> = async (c, next) => {
     return next();
   }
 
-  const release = await admissionGate().acquire();
+  // A request replayed in-process from inside another request (a proposal approval executing its
+  // frozen request) already holds the outer request's slot: taking a second one could deadlock the
+  // gate once TX_MAX approvals run at once. It still gets its own transaction and RLS context.
+  const nested = maybeTx() != null;
+  const release = nested ? () => {} : await admissionGate().acquire();
   try {
     const started = performance.now();
     await withTransaction(async (t) => {

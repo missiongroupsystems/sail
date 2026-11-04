@@ -58,7 +58,7 @@ price(order, rules, context) → { lines, adjustments, totals, trace, warnings, 
 - Role, override and reason requirements are enforced by the server, not the engine; the engine passes `applied_by`, `approved_by`, `override_id` and `reason` through to the adjustment.
 
 ## 5. Freeze at first payment
-- The **freezable** rules are order-level discounts and any rule with a minimum-spend condition (a fee with a minimum spend is allowed but flagged by validation).
+- The **freezable** rules are order-level discounts, any rule with a minimum-spend condition (a fee with a minimum spend is allowed but flagged by validation), and **fixed-per-order fees** (Beta v1 review: a per-order amount spread across lines would otherwise move onto paid lines when a line is added later; reference case R153).
 - `freezeFrom(result, rules)` extracts the freezable adjustments from a live result; the server stores them at the first payment (v0.6).
 - With `context.frozen` set:
   - a freezable rule that **was** applied at the freeze is re-emitted with its stored per-line amounts (lines that no longer exist are dropped), marked `frozen: true`;
@@ -67,6 +67,9 @@ price(order, rules, context) → { lines, adjustments, totals, trace, warnings, 
   - fees recompute on the current discounted amounts, so a frozen discount keeps a paid check stable.
 - `pricing_status` is `frozen` whenever a frozen context is passed.
 - When every line a frozen rule was stored on has since been removed, the frozen adjustment is still re-emitted, with no lines and a total of 0, so the bill keeps its audit trail of what was applied at the first payment (reference case R151).
+
+### 5.1 Paid bills (server, not the engine)
+The engine prices whatever lines it is given. The server (`repriceOrder`) never gives it a line that sits on a **paid bill**: those lines keep their stored amounts and their stored share of every adjustment, the engine runs on the unpaid lines only, and the two halves are merged (a rule that touches both keeps one adjustment row). A capped rule is passed the cap **left** after the paid lines' share, so the cap still holds for the whole order. This is what makes "a paid bill never changes" true whatever happens to the rest of the order (a line added, a customer attached, a scheduled rule switching on), and it is why an item discount aimed at a paid line, a quantity change on a paid line, or removing a manual rule that has an amount on a paid line are refused with `check_locked_by_payment` instead of failing at commit. Covered by `packages/server/test/review.test.ts`.
 
 ## 6. Output invariants (all property-tested)
 1. Every adjustment's line amounts sum to its total; the same for GST.

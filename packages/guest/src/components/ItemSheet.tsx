@@ -49,35 +49,39 @@ export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupE
     const value = selection[g.id] ?? [];
     const met = value.length >= g.min_select;
     const isTarget = (groupError && !showErrorFor && !met) || showErrorFor === g.id;
+    // The id lets the Add button scroll to and focus an unmet group, nested ones included.
     return (
-      <ChoiceGroup
-        key={g.id}
-        name={g.name}
-        rule={ruleText(g)}
-        required={g.min_select > 0}
-        met={met}
-        mode={g.max_select === 1 && g.min_select >= 1 ? "single" : "multi"}
-        maxSelect={g.max_select}
-        maxPerOption={g.max_per_modifier}
-        options={g.options.map((o) => ({ id: o.product_id, name: o.name, price: o.price }))}
-        value={value}
-        onChange={(v) => setGroup(g, v)}
-        parentLabel={parentLabel}
-        errorMessage={isTarget ? (showErrorFor === g.id ? unmet?.message : groupError) : null}
-        renderUnder={(optionId) => {
-          const child = childGroup(menu, g, optionId);
-          if (!child) return null;
-          const optionName = g.options.find((o) => o.product_id === optionId)?.name ?? "";
-          return renderGroup(child, optionName);
-        }}
-      />
+      <div key={g.id} id={`group-${g.id}`}>
+        <ChoiceGroup
+          name={g.name}
+          rule={ruleText(g)}
+          required={g.min_select > 0}
+          met={met}
+          mode={g.max_select === 1 && g.min_select >= 1 ? "single" : "multi"}
+          maxSelect={g.max_select}
+          maxPerOption={g.max_per_modifier}
+          options={g.options.map((o) => ({ id: o.product_id, name: o.name, price: o.price }))}
+          value={value}
+          onChange={(v) => setGroup(g, v)}
+          parentLabel={parentLabel}
+          errorMessage={isTarget ? (showErrorFor === g.id ? unmet?.message : groupError) : null}
+          renderUnder={(optionId) => {
+            const child = childGroup(menu, g, optionId);
+            if (!child) return null;
+            const optionName = g.options.find((o) => o.product_id === optionId)?.name ?? "";
+            return renderGroup(child, optionName);
+          }}
+        />
+      </div>
     );
   };
 
   const commit = () => {
     if (unmet) {
       setShowErrorFor(unmet.group.id);
-      document.getElementById(`group-${unmet.group.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      const el = document.getElementById(`group-${unmet.group.id}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      el?.querySelector<HTMLElement>("[role=radio], [role=checkbox], input, [tabindex]")?.focus({ preventScroll: true });
       return;
     }
     const item: Omit<BasketItem, "key"> = {
@@ -92,7 +96,10 @@ export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupE
     else onAdd(item);
   };
 
-  const label = editing ? "Update item" : quantity > 1 ? `Add ${quantity} to order · ${formatCents(product.price)} each` : `Add to order · ${formatCents(product.price)}`;
+  // The same rule as the POS picker: while a minimum is unmet the button says what is missing ("Choose 1 more: Protein").
+  // It stays pressable so a VoiceOver user can reach it; pressing takes them to that group.
+  const addLabel = editing ? "Update item" : quantity > 1 ? `Add ${quantity} to order · ${formatCents(product.price)} each` : `Add to order · ${formatCents(product.price)}`;
+  const label = unmet ? unmet.message : addLabel;
 
   return (
     <BottomSheet
@@ -106,24 +113,13 @@ export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupE
         </span>
       }
       footer={
-        <>
-          {unmet ? (
-            <p role="status" className="text-caption text-ink-2">
-              {unmet.message}
-            </p>
-          ) : null}
-          <BrandButton variant="accent" block onPress={commit} isDisabled={Boolean(unmet)} aria-describedby={unmet ? "item-sheet-unmet" : undefined}>
-            {label}
-          </BrandButton>
-        </>
+        <BrandButton variant={unmet ? "secondary" : "accent"} block onPress={commit}>
+          {label}
+        </BrandButton>
       }
     >
       <div className="flex flex-col gap-6">
-        {groups.map((g) => (
-          <div key={g.id} id={`group-${g.id}`}>
-            {renderGroup(g)}
-          </div>
-        ))}
+        {groups.map((g) => renderGroup(g))}
         <TextField label="Note for the kitchen" value={notes} onChange={setNotes} maxLength={200} placeholder="Allergies, less spicy, no ice…" inputClassName="min-h-12" />
         <div className="flex items-center justify-between gap-3">
           <span className="text-line text-ink">Quantity</span>

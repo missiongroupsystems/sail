@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { registerOperations, type OperationSpec } from "@sail/shared";
-import { db, tx, withTransaction, type RequestTx } from "../db/client.js";
+import { db, settleInvariants, tx, withTransaction, type RequestTx } from "../db/client.js";
 import { channelLinks, guestRounds, guestSessions, merchantSettings, orderLines, orders, outlets, printers, serviceRequests, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
@@ -19,15 +19,15 @@ import { bumpVersion, loadSnapshot, lockOrder, nextOrderNo, registerOrderClosedH
 import { createKitchenJobs, insertJob } from "../services/printing.js";
 import { releaseDailyCap } from "./catalogue.js";
 import { registerFloorExtra } from "./orders.js";
-import { businessDayInputs } from "./org.js";
+import { businessDayInputs } from "../services/business-day.js";
 import { businessDateFor } from "../lib/time.js";
-import { asSystem, checkLimit, createGuestSession, enforceLimit, guestOrderView, qrSheetPdf, RATE, recordHit, revokeSessionsForOrder, rotateTableToken, toRequest, toRound } from "../services/guest.js";
+import { asSystem, bindSessionToTableOrder, checkLimit, createGuestSession, enforceLimit, guestOrderView, openOrderIdForTable, qrSheetPdf, RATE, recordHit, revokeSessionsForOrder, rotateTableToken, toRequest, toRound } from "../services/guest.js";
 
 const op = (o: Partial<OperationSpec> & { op: string; summary: string; description: string }): OperationSpec => ({ tier: "T1", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["guest"], emits: [], mcp: { expose: true, toolsets: ["guest"] }, ...o });
 
 registerOperations({
   "guest_sessions.create": op({ op: "guest_sessions.create", summary: "Start a guest session from a table QR code", description: "Exchanges the table token for a short-lived guest token scoped to the table and its open order. Rate-limited per device and per table. Ordering is possible only while the table has an open order, unless the channel allows opening on first scan.", tier: "T0", principals: [], mcp: { expose: false, toolsets: [] } }),
-  "guest.order": op({ op: "guest.order", summary: "What the table has ordered", description: "The table's lines (menu prices only, no fees or totals), round statuses and the guest's requests.", tier: "T0" }),
+  "guest.order": op({ op: "guest.order", summary: "What the table has ordered", description: "The table's lines (menu prices only, no fees or totals), round statuses, the guest's requests, and whether ordering is possible (`can_order`). A session started before the table was seated is bound to the table's order here, so no new session is needed.", tier: "T0" }),
   "rounds.submit": op({ op: "rounds.submit", summary: "Send a round to the table's order", description: "Lines in the same shape as lines.add, validated against the channel menu, availability and caps. With hold orders on, the round waits for staff acceptance; otherwise it fires and prints straight away. Never takes payment.", emits: ["round.submitted", "line.added", "order.repriced", "order.fired"] }),
   "service_requests.create": op({ op: "service_requests.create", summary: "Call staff", description: "One of the channel's configured requests or `call_for_bill`, which also marks the table as bill requested. Rate-limited.", emits: ["service_request.created", "order.bill_requested"] }),
   "guest.stream": op({ op: "guest.stream", summary: "Guest live-update stream (SSE)", description: "Signals changes to the table's order (round accepted, order ready). Poll guest.order when there is no order yet.", tier: "T0", mcp: { expose: false, toolsets: [] } }),
@@ -96,7 +96,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     const today = businessDateFor(new Date(), bd.cutoff, bd.timeZone);
 
     const result = await asSystem(async () => {
-      let orderId = session!.orderId ?? (await (await import("../services/guest.js")).openOrderIdForTable(p.tableId));
+      let orderId = session!.orderId ?? (await openOrderIdForTable(p.tableId));
       let openedNow = false;
       if (!orderId) {
         if (!link.openOnFirstScan) throw new AppError("state_conflict", "Your table isn't ready for ordering yet", { remedy: "Ask a member of staff to seat you.", details: { table_not_open: true } });
@@ -115,12 +115,14 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
       const hold = link.holdOrders;
       await db().insert(orderLines).values(built.map((l) => ({ ...l, orderId, merchantId: p.merchantId, outletId: p.outletId, roundId: b.round_id, status: (hold ? "held" : "pending") as "held" | "pending" })));
       await db().insert(guestRounds).values({ id: b.round_id, merchantId: p.merchantId, outletId: p.outletId, orderId, guestSessionId: p.sessionId, tableId: p.tableId, status: hold ? "pending" : "accepted", lineIds: built.map((l) => l.id!), guestName: b.guest_name ?? session!.guestName ?? null, notes: b.notes ?? null });
+      // Price first, append events last (the first append locks the outlet's sequence counter until commit).
+      await repriceOrder(orderId);
+      const version = await bumpVersion(orderId);
+      await settleInvariants();
       const events: AppendedEvent[] = [];
       events.push(await appendEvent({ merchantId: p.merchantId, outletId: p.outletId, type: "round.submitted", aggregate: { kind: "order", id: orderId, version: order.version }, operationId: "rounds.submit", payload: { round_id: b.round_id, line_ids: built.map((l) => l.id), held: hold, guest_name: b.guest_name ?? null }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
       let warnings: string[] = [];
       if (!hold) warnings = await fireRound(c.get("correlationId"), p, order, b.round_id, bd);
-      await repriceOrder(orderId);
-      const version = await bumpVersion(orderId);
       events.push(await appendEvent({ merchantId: p.merchantId, outletId: p.outletId, type: "order.repriced", aggregate: { kind: "order", id: orderId, version }, operationId: "rounds.submit", payload: { source: "guest" }, correlationId: c.get("correlationId"), businessDay: bd }, p));
       return { orderId, openedNow, hold, warnings };
     });
@@ -163,8 +165,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     const p = guestOnly(c.get("principal"));
     const orderId = await withTransaction(async (t) => {
       await applyRls(t, p);
-      const [s] = await t.db.select({ orderId: guestSessions.orderId }).from(guestSessions).where(eq(guestSessions.id, p.sessionId)).limit(1);
-      return s?.orderId ?? null;
+      return bindSessionToTableOrder(p);
     });
     if (!orderId) throw AppError.state("No order yet for this table", [], "Ask staff to seat you, then try again.");
     return serveStream(c, [`order:${orderId}`], { order_id: orderId }, (n) => n.kind === "resync" || (n.kind === "event" && n.aggregate_id === orderId));
@@ -196,8 +197,6 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     let warnings: string[] = [];
     if (action === "accept") {
       await db().update(guestRounds).set({ status: "accepted", decidedAt: now, decidedBy: p.type === "staff" ? p.id : null, decidedByName: "name" in p ? p.name : null }).where(eq(guestRounds.id, roundId));
-      events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "round.accepted", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "rounds.accept", payload: { round_id: roundId }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
-      warnings = await fireRound(c.get("correlationId"), p, order, roundId, bd);
     } else {
       const lines = await db().select().from(orderLines).where(and(inArray(orderLines.id, round.lineIds), sql`${orderLines.status} <> 'voided'`));
       const today = businessDateFor(now, bd.cutoff, bd.timeZone);
@@ -206,11 +205,18 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
         await db().update(orderLines).set({ status: "voided", voidedAt: now, voidReason: `QR order rejected: ${reason}`, voidedBy: p.type === "staff" ? p.id : null, baseAmount: 0, discountAmount: 0, netAmount: 0, feeAmount: 0, gstAmount: 0, total: 0 }).where(eq(orderLines.id, l.id));
       }
       await db().update(guestRounds).set({ status: "rejected", decidedAt: now, decidedBy: p.type === "staff" ? p.id : null, decidedByName: "name" in p ? p.name : null, rejectReason: reason ?? null }).where(eq(guestRounds.id, roundId));
-      events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "round.rejected", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "rounds.reject", payload: { round_id: roundId, line_ids: round.lineIds }, reason: { text: reason }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
     }
     await recordAudit(p, { action: `rounds.${action}`, targetKind: "order", targetId: order.id, outletId: order.outletId, reason: reason ?? null, details: { round_id: roundId } });
+    // Price and check first; events (and the kitchen tickets of an accepted round) last, so the outlet's sequence lock is held briefly.
     await repriceOrder(order.id);
     const version = await bumpVersion(order.id);
+    await settleInvariants();
+    if (action === "accept") {
+      events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "round.accepted", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "rounds.accept", payload: { round_id: roundId }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
+      warnings = await fireRound(c.get("correlationId"), p, order, roundId, bd); // statuses only, no amounts
+    } else {
+      events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "round.rejected", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "rounds.reject", payload: { round_id: roundId, line_ids: round.lineIds }, reason: { text: reason }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
+    }
     return c.json({ data: { ...(await loadSnapshot(order.id)), version }, events, warnings }, 200);
   };
   defineOp(app, { op: "rounds.accept", method: "post", path: "/v1/rounds/{id}/accept", tags: ["guest"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 200: jsonResponse(mutationResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, (c) => decide(c, c.req.valid("param").id, "accept"));

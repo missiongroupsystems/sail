@@ -14,10 +14,11 @@ export type CallStaffSheetProps = {
   guestName: string;
 };
 
-type Outcome = { kind: "sending" } | { kind: "sent" } | { kind: "too_soon" } | { kind: "error"; message: string; remedy: string | null };
+type Outcome = { kind: "sending" } | { kind: "sent" } | { kind: "too_soon"; remedy: string | null } | { kind: "error"; message: string; remedy: string | null };
 
 const SENT = "Sent. Someone will be with you shortly.";
-const TOO_SOON = "Already sent. Please give us a moment.";
+/** Pressed again too soon (design 4.11): say so, with the register's remedy ("Try again in 42 seconds."). */
+const tooSoon = (remedy: string | null) => `Already sent. ${remedy ?? "Please give us a moment."}`;
 
 /** Call staff (design 4.11): the channel's requests as big buttons, plus "Ask for the bill". Each confirms; repeats say so. */
 export function CallStaffSheet({ isOpen, onOpenChange, api, requests, guestName }: CallStaffSheetProps) {
@@ -33,7 +34,7 @@ export function CallStaffSheet({ isOpen, onOpenChange, api, requests, guestName 
       setOutcomes((o) => ({ ...o, [type]: { kind: "sent" } }));
     } catch (e) {
       const err = toApiError(e);
-      setOutcomes((o) => ({ ...o, [type]: err.isRateLimited ? { kind: "too_soon" } : { kind: "error", message: err.message, remedy: err.remedy ?? null } }));
+      setOutcomes((o) => ({ ...o, [type]: err.isRateLimited ? { kind: "too_soon", remedy: err.remedy ?? null } : { kind: "error", message: err.message, remedy: err.remedy ?? null } }));
     }
   };
 
@@ -51,7 +52,7 @@ export function CallStaffSheet({ isOpen, onOpenChange, api, requests, guestName 
                 {requestLabel(type)}
               </BrandButton>
               <p role="status" aria-live="polite" className={o ? "min-h-6 px-1 text-caption " + (o.kind === "error" ? "text-status-alert" : o.kind === "sent" ? "text-status-paid" : "text-ink-2") : "min-h-6"}>
-                {o?.kind === "sent" ? SENT : o?.kind === "too_soon" ? TOO_SOON : o?.kind === "error" ? `${o.message}${o.remedy ? ` ${o.remedy}` : ""}` : ""}
+                {o?.kind === "sent" ? SENT : o?.kind === "too_soon" ? tooSoon(o.remedy) : o?.kind === "error" ? `${o.message}${o.remedy ? ` ${o.remedy}` : ""}` : ""}
               </p>
             </li>
           );

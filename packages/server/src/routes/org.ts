@@ -135,16 +135,20 @@ const toSettings = (s: typeof merchantSettings.$inferSelect) => ({
   busy_mode_threshold: s.busyModeThreshold,
 });
 
-/** Load the merchant's business-day inputs for event stamping. */
-export async function businessDayInputs(merchantId: string, outletId?: string | null) {
-  const [s] = await db().select().from(merchantSettings).where(eq(merchantSettings.merchantId, merchantId)).limit(1);
-  let cutoff = s?.businessDayCutoff ?? "04:00";
-  if (outletId) {
-    const [o] = await db().select({ cutoff: outlets.businessDayCutoff }).from(outlets).where(eq(outlets.id, outletId)).limit(1);
-    if (o?.cutoff) cutoff = o.cutoff;
+/** Business-day inputs live in the service layer; re-exported here for the routes that import them from this module. */
+import { businessDayInputs } from "../services/business-day.js";
+export { businessDayInputs };
+
+/** A valid IANA time zone: `Intl` throws on unknown zones, which would otherwise break every request's business-date stamp. */
+function isValidTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
   }
-  return { cutoff, timeZone: s?.timezone ?? "Asia/Singapore" };
 }
+const CASH_ROUNDING_INCREMENTS = [1, 5, 10, 50, 100];
 
 /* ---- Routes -------------------------------------------------------------- */
 
@@ -163,7 +167,12 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
     async (c) => {
       const p = c.get("principal");
       const patch = c.req.valid("json");
-      if (patch.cash_rounding_increment != null && patch.cash_rounding_increment <= 0) throw AppError.validation("cash_rounding_increment must be a positive number of cents, or null to turn rounding off");
+      if (patch.cash_rounding_increment != null && !CASH_ROUNDING_INCREMENTS.includes(patch.cash_rounding_increment)) throw AppError.validation("cash_rounding_increment must be 1, 5, 10, 50 or 100 cents, or null to turn rounding off", { remedy: "Choose 5 for rounding to the nearest 5 cents.", details: { allowed: CASH_ROUNDING_INCREMENTS } });
+      if (patch.gst_bps != null && (patch.gst_bps < 0 || patch.gst_bps > 10_000)) throw AppError.validation("gst_bps must be between 0 and 10000 basis points", { remedy: "900 means 9%." });
+      if (patch.business_day_cutoff != null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(patch.business_day_cutoff)) throw AppError.validation("business_day_cutoff must be HH:MM (24-hour)", { remedy: "For example 04:00." });
+      if (patch.timezone != null && !isValidTimeZone(patch.timezone)) throw AppError.validation(`Unknown time zone ${patch.timezone}`, { remedy: "Use an IANA zone such as Asia/Singapore." });
+      if (patch.busy_mode_threshold != null && (patch.busy_mode_threshold < 1 || patch.busy_mode_threshold > 999)) throw AppError.validation("busy_mode_threshold must be between 1 and 999 open orders");
+      if (patch.currency != null && !/^[A-Z]{3}$/.test(patch.currency)) throw AppError.validation("currency must be a 3-letter ISO code such as SGD");
       const { name, ...settings } = patch;
       if (name) await db().update(merchants).set({ name }).where(eq(merchants.id, p.merchantId));
       const [s] = await db()

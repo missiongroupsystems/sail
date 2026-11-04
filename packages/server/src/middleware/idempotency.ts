@@ -40,19 +40,24 @@ export const idempotency: MiddlewareHandler<AppEnv> = async (c, next) => {
     .limit(1);
   if (existing) return replay(c, existing, hash);
 
-  try {
-    await tx()`insert into idempotency_keys (merchant_id, principal_id, key, request_hash) values (${principal.merchantId}, ${principal.id}, ${key}, ${hash})`;
-  } catch (e) {
-    // Lost a race: another transaction inserted the same key and committed. Replay it.
-    if ((e as { code?: string }).code === "23505") {
-      const [row] = await db()
-        .select()
-        .from(idempotencyKeys)
-        .where(and(eq(idempotencyKeys.principalId, principal.id), eq(idempotencyKeys.key, key)))
-        .limit(1);
-      if (row) return replay(c, row, hash);
-    }
-    throw e;
+  // The insert runs in a savepoint: a unique-key failure would otherwise abort the whole request
+  // transaction and the replay lookup below could not run.
+  const raced = await tx()
+    .savepoint((s) => s`insert into idempotency_keys (merchant_id, principal_id, key, request_hash) values (${principal.merchantId}, ${principal.id}, ${key}, ${hash})`)
+    .then(() => false)
+    .catch((e: { code?: string }) => {
+      if (e.code === "23505") return true;
+      throw e;
+    });
+  if (raced) {
+    // Lost a race: another transaction inserted the same key and has committed (the insert waited on its lock). Replay it.
+    const [row] = await db()
+      .select()
+      .from(idempotencyKeys)
+      .where(and(eq(idempotencyKeys.principalId, principal.id), eq(idempotencyKeys.key, key)))
+      .limit(1);
+    if (row) return replay(c, row, hash);
+    throw new AppError("state_conflict", "A request with this Idempotency-Key is still being processed", { remedy: "Retry in a moment with the same key." });
   }
 
   await next();

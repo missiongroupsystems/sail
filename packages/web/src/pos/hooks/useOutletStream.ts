@@ -84,6 +84,7 @@ export function useOutletStream(outletId: string | null, enabled: boolean, stati
       if (floor) {
         void qc.invalidateQueries({ queryKey: posKeys.floor(outletId) });
         void qc.invalidateQueries({ queryKey: posKeys.orders(outletId) });
+        void qc.invalidateQueries({ queryKey: ["pos", "orders-today", outletId] });
       }
       if (menu) void qc.invalidateQueries({ queryKey: ["pos", "menu"] });
       if (layout) void qc.invalidateQueries({ queryKey: ["pos", "layout"] });
@@ -110,6 +111,7 @@ export function useOutletStream(outletId: string | null, enabled: boolean, stati
         if (!first) {
           void qc.invalidateQueries({ queryKey: posKeys.floor(outletId) });
           void qc.invalidateQueries({ queryKey: posKeys.orders(outletId) });
+          void qc.invalidateQueries({ queryKey: ["pos", "orders-today", outletId] });
           void qc.invalidateQueries({ queryKey: ["pos", "order"] });
           void qc.invalidateQueries({ queryKey: ["pos", "print-jobs", outletId] });
           void qc.invalidateQueries({ queryKey: posKeys.rounds(outletId) });

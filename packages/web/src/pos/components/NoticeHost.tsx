@@ -4,7 +4,12 @@ import { Button, UndoToast } from "@sail/ui";
 import { useState } from "react";
 import { useUiStore } from "../state/ui";
 
-/** Bottom-left stack (design 2.5): the Undo toast and one-line notices, the opposite corner from the primary action. */
+/**
+ * Bottom-left stack (design 2.5): the Undo toast and one-line notices, the opposite
+ * corner from the primary action. Sits above sheets (z-50) so a register error from
+ * an action started inside a sheet is seen where the action was (design 7.8), and
+ * below the idle overlay (z-60).
+ */
 export function NoticeHost() {
   const undo = useUiStore((s) => s.undo);
   const clearUndo = useUiStore((s) => s.clearUndo);
@@ -13,7 +18,7 @@ export function NoticeHost() {
   const [undoing, setUndoing] = useState(false);
 
   return (
-    <div className="pointer-events-none fixed bottom-4 left-4 z-40 flex max-w-[480px] flex-col gap-2">
+    <div className="pointer-events-none fixed bottom-4 left-4 z-[55] flex max-w-[480px] flex-col gap-2">
       {notices.map((n) => (
         <div
           key={n.id}

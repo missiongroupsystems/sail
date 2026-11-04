@@ -66,24 +66,52 @@ export async function checkStatus(socket: net.Socket, timeoutMs = 1500): Promise
   return null;
 }
 
-/** Send one job. Resolves when the bytes have been flushed to the socket. */
+/**
+ * Send one job. Resolves when the bytes have been flushed to the socket. A
+ * socket error or close at any step rejects instead of hanging, and the
+ * closing handshake is time-bound, so a job can never stay in flight forever.
+ */
 export async function sendJob(target: PrinterTarget, bytes: Uint8Array, opts: { connectTimeoutMs?: number; writeTimeoutMs?: number; checkStatus?: boolean } = {}): Promise<void> {
   const socket = await connect(target, opts.connectTimeoutMs ?? 4000);
+  // One failure signal for every step below: the printer dropping the connection mid-job.
+  let fail: ((e: PrinterError) => void) | null = null;
+  const failed = new Promise<never>((_, reject) => {
+    fail = reject;
+  });
+  failed.catch(() => {});
+  const onError = (e: Error) => fail?.(new PrinterError(`Connection to the printer failed: ${e.message}`, false));
+  const onClose = () => fail?.(new PrinterError("The printer closed the connection before taking the data", false));
+  socket.on("error", onError);
+  socket.on("close", onClose);
   try {
     if (opts.checkStatus ?? target.supports_status) {
-      const problem = await checkStatus(socket);
+      const problem = await Promise.race([checkStatus(socket), failed]);
       if (problem) throw new PrinterError(problem, false);
     }
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new PrinterError("Printer accepted the connection but did not take the data", false)), opts.writeTimeoutMs ?? 8000);
-      socket.write(bytes, (err) => {
+    await Promise.race([
+      new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new PrinterError("Printer accepted the connection but did not take the data", false)), opts.writeTimeoutMs ?? 8000);
+        socket.write(bytes, (err) => {
+          clearTimeout(timer);
+          if (err) reject(new PrinterError(`Write failed: ${err.message}`, false));
+          else resolve();
+        });
+      }),
+      failed,
+    ]);
+    // The data is flushed; a printer that never answers the FIN is not a failure.
+    socket.off("close", onClose);
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 2000);
+      socket.end(() => {
         clearTimeout(timer);
-        if (err) reject(new PrinterError(`Write failed: ${err.message}`, false));
-        else resolve();
+        resolve();
       });
     });
-    await new Promise<void>((resolve) => socket.end(resolve));
   } finally {
+    socket.off("error", onError);
+    socket.off("close", onClose);
+    socket.on("error", () => {}); // a late error after destroy must not crash the relay
     socket.destroy();
   }
 }

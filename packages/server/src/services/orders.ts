@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { price, PricingContextSchema, type ManualApplication, type OrderType, type PricingLineInput, type PricingResult, ORDER_NUMBER_PREFIX, type ChannelType } from "@sail/shared";
-import { db, tx } from "../db/client.js";
-import { customerGroupMembers, merchantSettings, orderAdjustmentLines, orderAdjustments, orderLines, orderManualApplications, orders, tables } from "../db/schema/index.js";
+import { price, PricingContextSchema, sumCents, type Adjustment, type ManualApplication, type OrderType, type PricedLine, type PricingLineInput, type PricingResult, type PricingRule, ORDER_NUMBER_PREFIX, type ChannelType } from "@sail/shared";
+import { assertNotSettled, db, tx } from "../db/client.js";
+import { checkAllocations, checks, customerGroupMembers, orderAdjustmentLines, orderAdjustments, orderLines, orderManualApplications, orders, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { activeRules } from "./pricing-rules.js";
 
@@ -48,6 +48,8 @@ export type OrderSnapshot = {
   /** Filled by v0.6: checks, payments and balances. */
   checks: unknown[];
   paid_total: number;
+  /** Sum of the bills' refunded totals (v0.7), so clients never add bills up. */
+  refunded_total: number;
   balance: number;
 };
 export type SnapshotLine = {
@@ -144,16 +146,55 @@ export function resolveUnitPrice(line: { openPrice: number | null; basePrice: nu
   return line.openPrice ?? line.pricesByOrderType[orderType] ?? line.basePrice;
 }
 
-/** Run the pricing pipeline on the order's current lines and persist the result. */
-export async function repriceOrder(orderId: string, at = new Date()): Promise<PricingResult> {
-  const order = await getOrderRow(orderId);
-  const lines = await db().select().from(orderLines).where(and(eq(orderLines.orderId, orderId), sql`${orderLines.status} <> 'voided'`)).orderBy(asc(orderLines.sort), asc(orderLines.createdAt));
-  const apps = await db().select().from(orderManualApplications).where(and(eq(orderManualApplications.orderId, orderId), isNull(orderManualApplications.removedAt)));
-  const groupIds = order.customerId ? (await db().select({ g: customerGroupMembers.groupId }).from(customerGroupMembers).where(eq(customerGroupMembers.customerId, order.customerId))).map((x) => x.g) : [];
-  const rules = await activeRules(order.merchantId, at);
-  const [settings] = await db().select().from(merchantSettings).where(eq(merchantSettings.merchantId, order.merchantId)).limit(1);
+/** Lines allocated to a paid (locked) bill: their amounts are fixed until the bill is refunded or the order reopened. */
+export async function lockedLineIds(orderId: string): Promise<Set<string>> {
+  const rows = await db()
+    .selectDistinct({ id: checkAllocations.orderLineId })
+    .from(checkAllocations)
+    .innerJoin(checks, eq(checks.id, checkAllocations.checkId))
+    .where(and(eq(checks.orderId, orderId), sql`${checks.lockedAt} is not null`));
+  return new Set(rows.map((r) => r.id));
+}
 
-  const pricingLines: PricingLineInput[] = lines.map((l) => ({
+const adjKey = (ruleKey: string, version: number, appId: string | null) => `${ruleKey}@${version}|${appId ?? ""}`;
+
+/**
+ * Run the pricing pipeline on the order's current lines and persist the result.
+ *
+ * Lines on a paid bill are never re-priced: their stored amounts and adjustment
+ * shares are carried over unchanged, the pipeline runs on the unpaid lines only
+ * (with each capped rule's remaining cap), and the two halves are merged. That
+ * keeps "a paid bill never changes" true whatever happens to the rest of the
+ * order (lines added, a customer attached, a scheduled rule switching on), while
+ * the engine itself stays a pure function of its inputs.
+ */
+export async function repriceOrder(orderId: string, at = new Date()): Promise<PricingResult> {
+  assertNotSettled("repriceOrder");
+  const order = await getOrderRow(orderId);
+  // Independent reads are issued together so postgres.js pipelines them on the transaction's connection.
+  const [lines, apps, groupRows, rules, locked, storedAdjs] = await Promise.all([
+    db().select().from(orderLines).where(and(eq(orderLines.orderId, orderId), sql`${orderLines.status} <> 'voided'`)).orderBy(asc(orderLines.sort), asc(orderLines.createdAt)),
+    db().select().from(orderManualApplications).where(and(eq(orderManualApplications.orderId, orderId), isNull(orderManualApplications.removedAt))),
+    order.customerId ? db().select({ g: customerGroupMembers.groupId }).from(customerGroupMembers).where(eq(customerGroupMembers.customerId, order.customerId)) : Promise.resolve([] as { g: string }[]),
+    activeRules(order.merchantId, at),
+    lockedLineIds(orderId),
+    db().select().from(orderAdjustments).where(eq(orderAdjustments.orderId, orderId)).orderBy(asc(orderAdjustments.sort)),
+  ]);
+  const groupIds = groupRows.map((x) => x.g);
+  const lockedLines = lines.filter((l) => locked.has(l.id));
+  const liveLines = locked.size ? lines.filter((l) => !locked.has(l.id)) : lines;
+  const storedAdjLines = locked.size && storedAdjs.length ? await db().select().from(orderAdjustmentLines).where(and(inArray(orderAdjustmentLines.adjustmentId, storedAdjs.map((a) => a.id)), inArray(orderAdjustmentLines.orderLineId, [...locked]))) : [];
+
+  // A capped rule's cap is for the whole order: what paid lines already took is no longer available to the unpaid ones.
+  const originalRules = new Map(rules.map((r) => [r.id, r]));
+  const lockedUseByRule = new Map<string, number>();
+  for (const al of storedAdjLines) {
+    const adj = storedAdjs.find((a) => a.id === al.adjustmentId)!;
+    lockedUseByRule.set(adj.ruleKey, (lockedUseByRule.get(adj.ruleKey) ?? 0) + Math.abs(al.amount));
+  }
+  const effectiveRules: PricingRule[] = rules.map((r) => (r.cap != null && lockedUseByRule.has(r.id) ? { ...r, cap: Math.max(0, r.cap - lockedUseByRule.get(r.id)!) } : r));
+
+  const pricingLines: PricingLineInput[] = liveLines.map((l) => ({
     line_id: l.id,
     product_id: l.productId,
     category_id: l.categoryId,
@@ -168,9 +209,9 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
   }));
   const manual: ManualApplication[] = apps.map((a) => ({ application_id: a.id, rule_id: a.ruleKey, entered_value: a.enteredValue, line_ids: a.lineIds, applied_by: a.appliedBy, approved_by: a.approvedBy, override_id: a.overrideId, reason: a.reason }));
 
-  const result = price(
+  const engine = price(
     { order_type: order.orderType as OrderType, channel: order.channel as ChannelType, outlet_id: order.outletId, brand_id: order.brandId, customer_group_ids: groupIds, lines: pricingLines, manual_applications: manual },
-    rules,
+    effectiveRules,
     PricingContextSchema.parse({
       tax_mode: order.taxMode,
       gst_bps: order.gstBps,
@@ -178,50 +219,120 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
       frozen: order.pricingFrozenAt ? { frozen_at: order.pricingFrozenAt.toISOString(), adjustments: order.frozenAdjustments ?? [] } : null,
     }),
   );
-  void settings;
 
-  // Persist: line amounts, adjustments and their lines, order totals.
-  for (const pl of result.lines) {
-    await db()
-      .update(orderLines)
-      .set({ unitPrice: pl.unit_price, baseAmount: pl.base_amount, discountAmount: pl.discount_amount, netAmount: pl.net_amount, feeAmount: pl.fee_amount, gstAmount: pl.gst_on_net + pl.gst_on_fees, total: pl.total, updatedAt: at })
-      .where(eq(orderLines.id, pl.line_id));
+  // Merge the paid lines back in: their stored amounts and their stored share of every adjustment.
+  const adjustments: Adjustment[] = engine.adjustments.map((a) => ({ ...a, lines: [...a.lines], rule_snapshot: originalRules.get(a.rule_id) ?? a.rule_snapshot }));
+  const lockedPriced: PricedLine[] = [];
+  if (locked.size) {
+    const byKey = new Map(adjustments.map((a) => [adjKey(a.rule_id, a.rule_version, a.manual_application_id), a]));
+    for (const s of storedAdjs) {
+      const mine = storedAdjLines.filter((al) => al.adjustmentId === s.id);
+      if (mine.length === 0) continue;
+      const k = adjKey(s.ruleKey, s.ruleVersion, s.manualApplicationId);
+      const extra = mine.map((al) => ({ line_id: al.orderLineId, amount: al.amount, gst_amount: al.gstAmount }));
+      const target = byKey.get(k);
+      if (target) {
+        target.lines.push(...extra);
+        target.total += sumCents(extra.map((x) => x.amount));
+        target.gst_total += sumCents(extra.map((x) => x.gst_amount));
+      } else {
+        const carried: Adjustment = {
+          rule_id: s.ruleKey,
+          rule_version: s.ruleVersion,
+          rule_name: s.name,
+          kind: s.kind as Adjustment["kind"],
+          level: s.level as Adjustment["level"],
+          report_class: s.reportClass as Adjustment["report_class"],
+          gst_applicable: s.gstApplicable,
+          total: sumCents(extra.map((x) => x.amount)),
+          gst_total: sumCents(extra.map((x) => x.gst_amount)),
+          lines: extra,
+          capped: s.capped,
+          frozen: s.frozen,
+          manual_application_id: s.manualApplicationId,
+          entered_value: s.enteredValue,
+          applied_by: s.appliedBy,
+          approved_by: s.approvedBy,
+          override_id: s.overrideId,
+          reason: s.reason,
+          rule_snapshot: s.ruleSnapshot,
+        };
+        byKey.set(k, carried);
+        adjustments.push(carried);
+      }
+    }
+    for (const l of lockedLines) {
+      const gstOnFees = sumCents(storedAdjLines.filter((al) => al.orderLineId === l.id).map((al) => al.gstAmount));
+      lockedPriced.push({ line_id: l.id, quantity: l.quantity, unit_price: l.unitPrice, modifiers_per_unit: sumCents(l.modifiers.map((m) => m.price * m.quantity)), base_amount: l.baseAmount, discount_amount: l.discountAmount, net_amount: l.netAmount, fee_amount: l.feeAmount, gst_on_net: l.gstAmount - gstOnFees, gst_on_fees: gstOnFees, total: l.total });
+    }
+  }
+  const allLines = [...engine.lines, ...lockedPriced];
+  const totals: PricingResult["totals"] = {
+    tax_mode: engine.totals.tax_mode,
+    subtotal: sumCents(allLines.map((l) => l.base_amount)),
+    discount_total: sumCents(allLines.map((l) => l.discount_amount)),
+    net_subtotal: sumCents(allLines.map((l) => l.net_amount)),
+    fee_total: sumCents(allLines.map((l) => l.fee_amount)),
+    gst_total: sumCents(allLines.map((l) => l.gst_on_net + l.gst_on_fees)),
+    total: sumCents(allLines.map((l) => l.total)),
+  };
+  const result: PricingResult = {
+    lines: allLines,
+    adjustments,
+    totals,
+    trace: locked.size ? [...engine.trace, { step: 7, title: "Paid bills", entries: [{ outcome: "info", detail: `${locked.size} line${locked.size === 1 ? "" : "s"} on paid bills kept their stored amounts; capped rules priced the unpaid lines with their remaining cap` }] }] : engine.trace,
+    warnings: engine.warnings,
+    pricing_status: engine.pricing_status,
+  };
+
+  // Persist in a handful of statements: line amounts (one UPDATE over a VALUES list), adjustments, their lines, the order totals.
+  if (engine.lines.length) {
+    const ls = engine.lines;
+    await tx()`
+      update order_lines as l
+      set unit_price = v.unit_price, base_amount = v.base_amount, discount_amount = v.discount_amount, net_amount = v.net_amount, fee_amount = v.fee_amount, gst_amount = v.gst_amount, total = v.total, updated_at = ${at.toISOString()}::timestamptz
+      from unnest(${ls.map((l) => l.line_id)}::uuid[], ${ls.map((l) => l.unit_price)}::int[], ${ls.map((l) => l.base_amount)}::int[], ${ls.map((l) => l.discount_amount)}::int[], ${ls.map((l) => l.net_amount)}::int[], ${ls.map((l) => l.fee_amount)}::int[], ${ls.map((l) => l.gst_on_net + l.gst_on_fees)}::int[], ${ls.map((l) => l.total)}::int[])
+        as v(id, unit_price, base_amount, discount_amount, net_amount, fee_amount, gst_amount, total)
+      where l.id = v.id`;
   }
   await db().delete(orderAdjustments).where(eq(orderAdjustments.orderId, orderId));
-  let sort = 0;
-  for (const a of result.adjustments) {
-    const [row] = await db()
+  if (adjustments.length) {
+    const inserted = await db()
       .insert(orderAdjustments)
-      .values({
-        merchantId: order.merchantId,
-        outletId: order.outletId,
-        orderId,
-        ruleKey: a.rule_id,
-        ruleVersion: a.rule_version,
-        ruleSnapshot: a.rule_snapshot,
-        kind: a.kind,
-        level: a.level,
-        name: a.rule_name,
-        reportClass: a.report_class,
-        gstApplicable: a.gst_applicable,
-        total: a.total,
-        gstTotal: a.gst_total,
-        capped: a.capped,
-        frozen: a.frozen,
-        manualApplicationId: a.manual_application_id,
-        enteredValue: a.entered_value,
-        appliedBy: a.applied_by,
-        approvedBy: a.approved_by,
-        overrideId: a.override_id,
-        reason: a.reason,
-        sort: sort++,
-      })
-      .returning({ id: orderAdjustments.id });
-    if (a.lines.length) await db().insert(orderAdjustmentLines).values(a.lines.map((l) => ({ merchantId: order.merchantId, adjustmentId: row!.id, orderLineId: l.line_id, amount: l.amount, gstAmount: l.gst_amount })));
+      .values(
+        adjustments.map((a, sort) => ({
+          merchantId: order.merchantId,
+          outletId: order.outletId,
+          orderId,
+          ruleKey: a.rule_id,
+          ruleVersion: a.rule_version,
+          ruleSnapshot: a.rule_snapshot,
+          kind: a.kind,
+          level: a.level,
+          name: a.rule_name,
+          reportClass: a.report_class,
+          gstApplicable: a.gst_applicable,
+          total: a.total,
+          gstTotal: a.gst_total,
+          capped: a.capped,
+          frozen: a.frozen,
+          manualApplicationId: a.manual_application_id,
+          enteredValue: a.entered_value,
+          appliedBy: a.applied_by,
+          approvedBy: a.approved_by,
+          overrideId: a.override_id,
+          reason: a.reason,
+          sort,
+        })),
+      )
+      .returning({ id: orderAdjustments.id, sort: orderAdjustments.sort });
+    const idBySort = new Map(inserted.map((r) => [r.sort, r.id]));
+    const lineRows = adjustments.flatMap((a, sort) => a.lines.map((l) => ({ merchantId: order.merchantId, adjustmentId: idBySort.get(sort)!, orderLineId: l.line_id, amount: l.amount, gstAmount: l.gst_amount })));
+    if (lineRows.length) await db().insert(orderAdjustmentLines).values(lineRows);
   }
   await db()
     .update(orders)
-    .set({ subtotal: result.totals.subtotal, discountTotal: result.totals.discount_total, feeTotal: result.totals.fee_total, gstTotal: result.totals.gst_total, total: result.totals.total, updatedAt: at })
+    .set({ subtotal: totals.subtotal, discountTotal: totals.discount_total, feeTotal: totals.fee_total, gstTotal: totals.gst_total, total: totals.total, updatedAt: at })
     .where(eq(orders.id, orderId));
   for (const hook of repriceHooks) await hook(orderId, result);
   return result;
@@ -235,11 +346,13 @@ export function registerRepriceHook(fn: (orderId: string, result: PricingResult)
 
 export async function loadSnapshot(orderId: string): Promise<OrderSnapshot> {
   const o = await getOrderRow(orderId);
-  const lines = await db().select().from(orderLines).where(eq(orderLines.orderId, orderId)).orderBy(asc(orderLines.sort), asc(orderLines.createdAt));
-  const adjs = await db().select().from(orderAdjustments).where(eq(orderAdjustments.orderId, orderId)).orderBy(asc(orderAdjustments.sort));
-  const adjLines = adjs.length ? await db().select().from(orderAdjustmentLines).where(inArray(orderAdjustmentLines.adjustmentId, adjs.map((a) => a.id))) : [];
-  const apps = await db().select().from(orderManualApplications).where(and(eq(orderManualApplications.orderId, orderId), isNull(orderManualApplications.removedAt)));
-  const extra = await snapshotExtras(o);
+  const [lines, adjs, adjLines, apps, extra] = await Promise.all([
+    db().select().from(orderLines).where(eq(orderLines.orderId, orderId)).orderBy(asc(orderLines.sort), asc(orderLines.createdAt)),
+    db().select().from(orderAdjustments).where(eq(orderAdjustments.orderId, orderId)).orderBy(asc(orderAdjustments.sort)),
+    db().select({ adjustmentId: orderAdjustmentLines.adjustmentId, orderLineId: orderAdjustmentLines.orderLineId, amount: orderAdjustmentLines.amount, gstAmount: orderAdjustmentLines.gstAmount }).from(orderAdjustmentLines).innerJoin(orderAdjustments, eq(orderAdjustments.id, orderAdjustmentLines.adjustmentId)).where(eq(orderAdjustments.orderId, orderId)),
+    db().select().from(orderManualApplications).where(and(eq(orderManualApplications.orderId, orderId), isNull(orderManualApplications.removedAt))),
+    snapshotExtras(o),
+  ]);
   return {
     id: o.id,
     order_no: o.orderNo,
@@ -321,8 +434,8 @@ export async function loadSnapshot(orderId: string): Promise<OrderSnapshot> {
 }
 
 /** Later phases (checks, payments) register a provider for the payment part of the snapshot. */
-type Extras = Pick<OrderSnapshot, "checks" | "paid_total" | "balance">;
-let extrasProvider: (o: typeof orders.$inferSelect) => Promise<Extras> = async (o) => ({ checks: [], paid_total: 0, balance: o.total });
+type Extras = Pick<OrderSnapshot, "checks" | "paid_total" | "refunded_total" | "balance">;
+let extrasProvider: (o: typeof orders.$inferSelect) => Promise<Extras> = async (o) => ({ checks: [], paid_total: 0, refunded_total: 0, balance: o.total });
 export function registerSnapshotExtras(fn: typeof extrasProvider) {
   extrasProvider = fn;
 }

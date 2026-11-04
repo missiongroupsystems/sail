@@ -15,6 +15,8 @@ export type ZReport = {
   sales: { gross: number; discounts: number; fees: number; gst: number; net: number };
   adjustments: { rule_key: string; name: string; kind: string; report_class: string; total: number; count: number }[];
   tenders: { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number }[];
+  /** Register-computed totals across tenders, so clients never add rows up: `non_cash` is the figure to compare with the terminal's end-of-day total. */
+  tenders_summary: { cash: number; non_cash: number; tips: number; count: number };
   cash: { float: number; cash_payments: number; rounding: number; refunds: number; expected: number; counted: number | null; variance: number | null };
   voids: { count: number; quantity: number; value: number };
   refunds: { count: number; amount: number };
@@ -51,7 +53,8 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
     .where(payWhere)
     .groupBy(payments.tenderTypeId, payments.tenderName, payments.isCash);
   const voidRows = await db()
-    .select({ count: sql<number>`count(*)::int`, quantity: sql<number>`coalesce(sum(quantity),0)::int`, value: sql<number>`coalesce(sum(quantity * unit_price),0)::int` })
+    // A voided line is worth quantity × (unit price + modifiers per unit); the same formula as the report_voids view.
+    .select({ count: sql<number>`count(*)::int`, quantity: sql<number>`coalesce(sum(${orderLines.quantity}),0)::int`, value: sql<number>`coalesce(sum(${orderLines.quantity} * (${orderLines.unitPrice} + coalesce((select sum((m->>'price')::int * (m->>'quantity')::int) from jsonb_array_elements(${orderLines.modifiers}) m), 0))),0)::int` })
     .from(orderLines)
     .innerJoin(orders, eq(orders.id, orderLines.orderId))
     .where(and(orderWhere, eq(orderLines.status, "voided")));
@@ -65,6 +68,7 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
     sales: { gross: o?.gross ?? 0, discounts: o?.discounts ?? 0, fees: o?.fees ?? 0, gst: o?.gst ?? 0, net: o?.net ?? 0 },
     adjustments: adj,
     tenders,
+    tenders_summary: { cash: cashPayments, non_cash: tenders.filter((t) => !t.is_cash).reduce((s, t) => s + t.amount, 0), tips: tenders.reduce((s, t) => s + t.tips, 0), count: tenders.reduce((s, t) => s + t.count, 0) },
     cash: { float: cashCounts.float, cash_payments: cashPayments, rounding, refunds: refunds.cash_amount, expected, counted: cashCounts.counted, variance: cashCounts.counted == null ? null : cashCounts.counted - expected },
     voids: voidRows[0] ?? { count: 0, quantity: 0, value: 0 },
     refunds: { count: refunds.count, amount: refunds.amount },
@@ -72,7 +76,24 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
   };
 }
 
+/**
+ * A denomination count (keys are the piece value in cents, values are pieces) must add up to the
+ * total the client sends, so the stored count and the stored total can never disagree.
+ */
+export function assertCountsMatch(counts: Record<string, number> | null | undefined, totalCents: number, what: string) {
+  if (!counts || Object.keys(counts).length === 0) return;
+  let sum = 0;
+  for (const [key, pieces] of Object.entries(counts)) {
+    const cents = Number(key);
+    if (!Number.isInteger(cents) || cents <= 0) throw AppError.validation(`${what}: denomination keys must be the piece value in cents`, { details: { key } });
+    if (!Number.isInteger(pieces) || pieces < 0) throw AppError.validation(`${what}: piece counts must be whole numbers`, { details: { key, pieces } });
+    sum += cents * pieces;
+  }
+  if (sum !== totalCents) throw AppError.validation(`${what}: the denominations add up to ${sum} cents, not ${totalCents}`, { remedy: "Count again, or clear the denominations and enter the total.", details: { counted_from_denominations: sum, total: totalCents } });
+}
+
 export async function openShift(principal: Principal, input: { outletId: string; stationId: string | null; name: string | null; floatCents: number; floatCounts: Record<string, number> | null; businessDate: string }) {
+  assertCountsMatch(input.floatCounts, input.floatCents, "float");
   const [existing] = await db()
     .select({ id: shifts.id })
     .from(shifts)
@@ -90,6 +111,7 @@ export async function closeShift(principal: Principal, shiftId: string, input: {
   const [shift] = await db().select().from(shifts).where(eq(shifts.id, shiftId)).limit(1);
   if (!shift) throw AppError.notFound("shift", shiftId);
   if (shift.status === "closed") throw AppError.state("The shift is already closed", []);
+  assertCountsMatch(input.countedCounts, input.countedCashCents, "counted cash");
   const report = await zReport({ outletId: shift.outletId, businessDate: shift.businessDate, stationId: shift.stationId, shiftId: shift.id }, { float: shift.floatCents, counted: input.countedCashCents });
   const now = new Date();
   const [row] = await db()

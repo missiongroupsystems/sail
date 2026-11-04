@@ -42,8 +42,8 @@ export function ZReportView() {
     }
   };
 
+  // Terminal tenders are shown one by one at 34pt; the register does not return a combined figure and the iPad never adds one up.
   const nonCash = r ? r.tenders.filter((t) => !t.is_cash) : [];
-  const cardTotal = nonCash.reduce((s, t) => s + t.amount, 0);
 
   return (
     <div className="mx-auto flex w-full max-w-[880px] flex-col gap-6 px-8 py-8">
@@ -79,10 +79,17 @@ export function ZReportView() {
 
           <section className="rounded-tile bg-surface px-5 py-3 hairline">
             <h2 className="text-caption text-ink-2 uppercase tracking-[0.04em]">Tenders</h2>
-            <div className="py-2">
-              <Money cents={cardTotal} size="amount-xl" className="text-ink" />
-              <p className="text-body text-ink-2">Card and other terminal tenders · compare with the terminal's end-of-day total</p>
-            </div>
+            {nonCash.length ? (
+              <div className="flex flex-col gap-1 py-2">
+                {nonCash.map((t) => (
+                  <div key={t.tender_type_id} className="flex items-baseline gap-3">
+                    <Money cents={t.amount} size="amount-xl" className="text-ink" />
+                    <span className="text-body text-ink-2">{t.tender}</span>
+                  </div>
+                ))}
+                <p className="text-body text-ink-2">Compare each with the terminal's end-of-day total</p>
+              </div>
+            ) : null}
             <dl>
               {r.tenders.map((t) => (
                 <Row key={t.tender_type_id} label={`${t.tender} · ${t.count}${t.tips ? ` · tips ${formatCents(t.tips)}` : ""}`} cents={t.amount} />

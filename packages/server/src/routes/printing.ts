@@ -111,6 +111,8 @@ const JobSchema = z.object({
   rerouted_from: z.string().nullable(),
   created_at: z.string(),
   age_seconds: z.number().int(),
+  /** The fire round the ticket belongs to (kitchen, void and reprint tickets), so clients match tickets to rounds without guessing from timestamps. */
+  round_no: z.number().int().nullable(),
   text: z.string(),
   /** Base64 ESC/POS bytes; only returned to relays. */
   payload: z.string().optional(),
@@ -135,6 +137,7 @@ const toJob = (j: typeof printJobs.$inferSelect, withPayload = false) => ({
   rerouted_from: j.reroutedFrom,
   created_at: j.createdAt.toISOString(),
   age_seconds: Math.max(0, Math.floor((Date.now() - j.createdAt.getTime()) / 1000)),
+  round_no: (j.document as { data?: { header?: { round_no?: number } } } | null)?.data?.header?.round_no ?? null,
   text: j.text,
   ...(withPayload ? { payload: j.payload } : {}),
 });

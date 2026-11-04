@@ -113,7 +113,9 @@ export function MenuView({ session, menu, canOrder, basketItems, orderView, onOp
               {menu.brand.logo_url ? <img src={menu.brand.logo_url} alt="" className="size-11 shrink-0 rounded-tile object-contain" /> : null}
               <div className="min-w-0">
                 <p className="text-caption text-ink-2">Table {session.table.name}</p>
-                <h1 className="truncate font-display text-heading text-ink">{menu.brand.name}</h1>
+                <h1 tabIndex={-1} className="truncate font-display text-heading text-ink outline-none">
+                  {menu.brand.name}
+                </h1>
               </div>
             </div>
             <BrandButton variant="quiet" onPress={onCallStaff} className="-mr-2 shrink-0">

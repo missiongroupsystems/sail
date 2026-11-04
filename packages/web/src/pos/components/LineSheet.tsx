@@ -84,7 +84,7 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
       title={line.name}
       description={
         <span className="inline-flex items-center gap-2">
-          <Money cents={line.amounts.total} /> · {sent ? `Sent${line.fired_at ? "" : ""} · round ${line.fire_round}` : line.status === "held" ? "Held" : "Not sent yet"}
+          <Money cents={line.amounts.total} /> · {sent ? `Sent · round ${line.fire_round}` : line.status === "held" ? "Held" : "Not sent yet"}
         </span>
       }
       isDismissable={!busy}

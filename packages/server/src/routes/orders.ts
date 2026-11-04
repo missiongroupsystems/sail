@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { ORDER_STATUSES, OrderTypeSchema, PERMISSIONS, PricingRuleSchema, isFreezable, price, PricingContextSchema, registerOperations, roleAtLeast, validateManualApplication, type OrderType, type OperationSpec, type Role } from "@sail/shared";
-import { db, markDryRun, tx } from "../db/client.js";
+import { db, markDryRun, settleInvariants, tx } from "../db/client.js";
 import { areas, channelLinks, customerGroupMembers, customers, merchantSettings, orderLines, orderManualApplications, orders, stations, tables, voidReasons } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppContext, AppEnv } from "../lib/context.js";
@@ -11,7 +11,8 @@ import { recordAudit } from "../lib/audit.js";
 import { principalCanSeeOutlet, principalRole, type Principal } from "../auth/principal.js";
 import { compileMenu } from "../services/menu.js";
 import { buildLines, resolveModifiers, type LineInput } from "../services/lines.js";
-import { bumpVersion, loadSnapshot, lockOrder, nextOrderNo, OPEN_STATUSES, openOrderForTable, orderClosed, paidTotal, repriceOrder, resolveUnitPrice, tableExists, type OrderSnapshot } from "../services/orders.js";
+import { bumpVersion, getOrderRow, loadSnapshot, lockOrder, nextOrderNo, OPEN_STATUSES, openOrderForTable, orderClosed, paidTotal, repriceOrder, resolveUnitPrice, tableExists, type OrderSnapshot } from "../services/orders.js";
+import { assertAdjustmentUnlocked, assertLineUnlocked } from "../services/checks.js";
 import { requireRoleOrOverride } from "../services/overrides.js";
 import { activeRules } from "../services/pricing-rules.js";
 import { releaseDailyCap } from "./catalogue.js";
@@ -104,11 +105,26 @@ async function emit(c: Ctx, p: Principal, order: { merchantId: string; outletId:
   return appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type, aggregate: { kind: "order", id: order.id, version: order.version }, operationId: c.get("operationId"), payload, approval: extra.approval ?? null, reason: extra.reason ?? null, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(order.merchantId, order.outletId) }, p);
 }
 
-/** Reprice, bump the version, emit `order.repriced`, and return the snapshot plus events. */
-async function finish(c: Ctx, p: Principal, orderId: string, events: AppendedEvent[], warnings: string[] = []): Promise<Response> {
+/** An event to append once the heavy work is done (see `finish`); a thunk may also run side work (print jobs) and return null. */
+type PendingEvent = () => Promise<AppendedEvent | null>;
+
+/**
+ * Reprice, bump the version, load the snapshot, then append the mutation's
+ * events and `order.repriced`. Events go last on purpose: the first event of a
+ * transaction locks the outlet's sequence counter until commit, and every other
+ * writer at the outlet waits on it, so the critical section is kept to the
+ * appends themselves rather than the whole re-price and snapshot.
+ */
+async function finish(c: Ctx, p: Principal, orderId: string, pending: PendingEvent[], warnings: string[] = []): Promise<Response> {
   const result = await repriceOrder(orderId);
   const version = await bumpVersion(orderId);
   const o = { ...(await loadSnapshot(orderId)), version };
+  await settleInvariants();
+  const events: AppendedEvent[] = [];
+  for (const fn of pending) {
+    const ev = await fn();
+    if (ev) events.push(ev);
+  }
   events.push(await emit(c, p, { merchantId: p.merchantId, outletId: o.outlet_id, id: orderId, version }, "order.repriced", { totals: result.totals, adjustments: result.adjustments.map((a) => ({ rule_key: a.rule_id, total: a.total })) }));
   const payload = { data: o, events, warnings: [...warnings, ...result.warnings] };
   return c.json(payload, 200);
@@ -187,9 +203,8 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
         openedAt: now,
       })
       .returning();
-    const ev = await emit(c, p, row!, "order.opened", { order_no: orderNo, order_type: b.order_type, table_id: b.table_id ?? null, pax: b.pax ?? null, customer_ref: customerRef });
     await recordAudit(p, { action: "orders.open", targetKind: "order", targetId: row!.id, outletId: ctx.outletId, details: { order_no: orderNo, order_type: b.order_type } });
-    const res = await finish(c, p, row!.id, [ev]);
+    const res = await finish(c, p, row!.id, [() => emit(c, p, row!, "order.opened", { order_no: orderNo, order_type: b.order_type, table_id: b.table_id ?? null, pax: b.pax ?? null, customer_ref: customerRef })]);
     return new Response(res.body, { status: 201, headers: res.headers });
   });
 
@@ -237,8 +252,9 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "orders.quote", method: "post", path: "/v1/orders/{id}/quote", tags: ["orders"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({ extra_lines: z.array(LineInputSchema).optional() })) }, responses: { 200: jsonResponse(dataResponse(z.object({ snapshot: SnapshotSchema, pricing: z.record(z.string(), z.unknown()) }))), ...errorResponses } }, async (c) => {
     const { id } = c.req.valid("param");
     const b = c.req.valid("json");
+    // A quote is a read: it must not take the order's row lock and hold up the stations editing it.
     const snap = await loadSnapshot(id);
-    const o = await lockOrder(id);
+    const o = await getOrderRow(id);
     const lines = await db().select().from(orderLines).where(and(eq(orderLines.orderId, id), sql`${orderLines.status} <> 'voided'`));
     const extra = b.extra_lines?.length ? await buildLines(await compileMenu(o.channelLinkId, new Date()), b.extra_lines as LineInput[], { orderType: o.orderType, outletId: o.outletId, today: await todayFor(o.merchantId, o.outletId), source: "pos", addedBy: null, addedByName: null, allowOpenPrice: true, startSort: 0 }) : [];
     const apps = await db().select().from(orderManualApplications).where(and(eq(orderManualApplications.orderId, id), isNull(orderManualApplications.removedAt)));
@@ -277,8 +293,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       .update(orders)
       .set({ pax: next.pax, customerRef: next.customerRef, deliveryAddress: next.deliveryAddress, deliveryNotes: b.delivery_notes === undefined ? o.deliveryNotes : b.delivery_notes, readyBy: next.readyBy, notes: b.notes === undefined ? o.notes : b.notes })
       .where(eq(orders.id, id));
-    const ev = await emit(c, p, o, "order.details_updated", b);
-    return finish(c, p, id, [ev]);
+    return finish(c, p, id, [() => emit(c, p, o, "order.details_updated", b)]);
   });
 
   defineOp(app, { op: "orders.change_type", method: "post", path: "/v1/orders/{id}/change-type", tags: ["orders"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ order_type: OrderTypeSchema, table_id: z.uuid().nullable().optional(), pax: z.number().int().min(1).nullable().optional(), customer_ref: CustomerRef.nullable().optional(), delivery_address: z.string().nullable().optional(), ready_by: z.iso.datetime().nullable().optional() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
@@ -299,9 +314,8 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     // Unit prices follow the order type (open prices stay).
     const lines = await db().select().from(orderLines).where(and(eq(orderLines.orderId, id), sql`${orderLines.status} <> 'voided'`));
     for (const l of lines) await db().update(orderLines).set({ unitPrice: resolveUnitPrice(l, b.order_type) }).where(eq(orderLines.id, l.id));
-    const ev = await emit(c, p, o, "order.type_changed", { from: o.orderType, to: b.order_type });
     await recordAudit(p, { action: "orders.change_type", targetKind: "order", targetId: id, outletId: o.outletId, details: { from: o.orderType, to: b.order_type } });
-    return finish(c, p, id, [ev]);
+    return finish(c, p, id, [() => emit(c, p, o, "order.type_changed", { from: o.orderType, to: b.order_type })]);
   });
 
   defineOp(app, { op: "orders.attach_customer", method: "post", path: "/v1/orders/{id}/customer", tags: ["orders"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ customer_id: z.uuid() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
@@ -314,8 +328,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     const [cust] = await db().select({ id: customers.id, name: customers.name }).from(customers).where(and(eq(customers.id, b.customer_id), isNull(customers.archivedAt))).limit(1);
     if (!cust) throw AppError.notFound("customer", b.customer_id);
     await db().update(orders).set({ customerId: cust.id }).where(eq(orders.id, id));
-    const ev = await emit(c, p, o, "order.customer_attached", { customer_id: cust.id });
-    return finish(c, p, id, [ev]);
+    return finish(c, p, id, [() => emit(c, p, o, "order.customer_attached", { customer_id: cust.id })]);
   });
 
   defineOp(app, { op: "orders.detach_customer", method: "delete", path: "/v1/orders/{id}/customer", tags: ["orders"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
@@ -326,8 +339,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     const o = await lockOrder(id, b.expected_version);
     assertOpen(o);
     await db().update(orders).set({ customerId: null }).where(eq(orders.id, id));
-    const ev = await emit(c, p, o, "order.customer_detached", { customer_id: o.customerId });
-    return finish(c, p, id, [ev]);
+    return finish(c, p, id, [() => emit(c, p, o, "order.customer_detached", { customer_id: o.customerId })]);
   });
 
   defineOp(app, { op: "orders.move_table", method: "post", path: "/v1/orders/{id}/move-table", tags: ["orders"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ table_id: z.uuid() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
@@ -341,9 +353,8 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     if (!(await tableExists(b.table_id, o.outletId))) throw AppError.notFound("table", b.table_id);
     if (await openOrderForTable(b.table_id)) throw AppError.state("That table already has an open order", ["choose a free table"], "Choose a table without an open order.");
     await db().update(orders).set({ tableId: b.table_id }).where(eq(orders.id, id));
-    const ev = await emit(c, p, o, "order.moved", { from_table_id: o.tableId, to_table_id: b.table_id });
     await recordAudit(p, { action: "orders.move_table", targetKind: "order", targetId: id, outletId: o.outletId, details: { from: o.tableId, to: b.table_id } });
-    return finish(c, p, id, [ev]);
+    return finish(c, p, id, [() => emit(c, p, o, "order.moved", { from_table_id: o.tableId, to_table_id: b.table_id })]);
   });
 
   defineOp(app, { op: "lines.add", method: "post", path: "/v1/orders/{id}/lines", tags: ["orders"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ lines: z.array(LineInputSchema).min(1).max(100) })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
@@ -365,10 +376,9 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     const max = Number(maxRow?.max ?? -1);
     const built = await buildLines(menu, b.lines as LineInput[], { orderType: o.orderType, outletId: o.outletId, today: await todayFor(o.merchantId, o.outletId), source: "pos", addedBy: p.type === "staff" ? p.id : null, addedByName: "name" in p ? p.name : null, allowOpenPrice: true, startSort: Number(max) + 1 });
     await db().insert(orderLines).values(built.map((l) => ({ ...l, orderId: id, merchantId: o.merchantId, outletId: o.outletId })));
-    const events: AppendedEvent[] = [];
-    for (const l of built) events.push(await emit(c, p, o, "line.added", { line_id: l.id, product_id: l.productId, name: l.name, quantity: l.quantity, seat_no: l.seatNo, held: l.status === "held", open_price: l.openPrice }, approval ? { approval: { override_id: b.override_id, approver_id: approval.id, approver_name: approval.name ?? undefined } } : {}));
     if (approval) await recordAudit(p, { action: "lines.add_open_price", targetKind: "order", targetId: id, outletId: o.outletId, approver: approval, overrideId: b.override_id ?? null, details: { lines: built.filter((l) => l.openPrice != null).map((l) => ({ id: l.id, open_price: l.openPrice })) } });
-    return finish(c, p, id, events);
+    const pending: PendingEvent[] = built.map((l) => () => emit(c, p, o, "line.added", { line_id: l.id, product_id: l.productId, name: l.name, quantity: l.quantity, seat_no: l.seatNo, held: l.status === "held", open_price: l.openPrice }, approval ? { approval: { override_id: b.override_id, approver_id: approval.id, approver_name: approval.name ?? undefined } } : {}));
+    return finish(c, p, id, pending);
   });
 
   defineOp(app, { op: "lines.update", method: "patch", path: "/v1/orders/{id}/lines/{line_id}", tags: ["orders"], request: { params: z.object({ id: z.uuid(), line_id: z.uuid() }), body: jsonBody(Mutation.extend({ quantity: z.number().int().min(1).max(999).optional(), notes: z.string().max(200).nullable().optional(), seat_no: z.number().int().min(1).max(99).nullable().optional(), hold: z.boolean().optional(), modifiers: z.array(z.object({ group_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1).optional() })).optional() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
@@ -381,6 +391,8 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     const [line] = await db().select().from(orderLines).where(and(eq(orderLines.id, line_id), eq(orderLines.orderId, id))).limit(1);
     if (!line) throw AppError.notFound("line", line_id);
     if (line.status === "fired" || line.status === "voided") throw AppError.state(`A ${line.status === "fired" ? "sent" : "removed"} line cannot be changed`, line.status === "fired" ? ["lines.void (Manager approval)"] : [], line.status === "fired" ? "Void the line with manager approval and add it again." : undefined);
+    // Quantity and modifiers change the amount of a line; on a paid bill that is a refund, not an edit (a pay-before-sending station pays pending lines).
+    if ((b.quantity != null && b.quantity !== line.quantity) || b.modifiers) await assertLineUnlocked(line_id);
     const today = await todayFor(o.merchantId, o.outletId);
     if (b.quantity != null && b.quantity !== line.quantity) {
       const { consumeDailyCap } = await import("./catalogue.js");
@@ -400,8 +412,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       .update(orderLines)
       .set({ quantity: b.quantity ?? line.quantity, notes: b.notes === undefined ? line.notes : b.notes, seatNo: b.seat_no === undefined ? line.seatNo : b.seat_no, status: b.hold === undefined ? line.status : b.hold ? "held" : "pending", modifiers, updatedAt: new Date() })
       .where(eq(orderLines.id, line_id));
-    const ev = await emit(c, p, o, "line.updated", { line_id, ...b });
-    return finish(c, p, id, [ev]);
+    return finish(c, p, id, [() => emit(c, p, o, "line.updated", { line_id, ...b })]);
   });
 
   defineOp(app, { op: "lines.void", method: "post", path: "/v1/orders/{id}/lines/{line_id}/void", tags: ["orders"], request: { params: z.object({ id: z.uuid(), line_id: z.uuid() }), body: jsonBody(Mutation.extend({ quantity: z.number().int().min(1).optional(), reason_id: z.uuid().optional(), reason_text: z.string().max(200).optional() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
@@ -427,7 +438,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       const perm = PERMISSIONS["lines.void_fired"];
       approval = await requireRoleOrOverride(p, principalRole(p), perm.minRole, { action: "lines.void_fired", targetId: line_id, overrideId: b.override_id, overrideAllowed: perm.overrideAllowed });
     }
-    await assertLineNotPaid(line_id);
+    await assertLineUnlocked(line_id);
     const qty = Math.min(b.quantity ?? line.quantity, line.quantity);
     const now = new Date();
     if (qty < line.quantity) {
@@ -438,10 +449,14 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       await db().update(orderLines).set({ status: "voided", voidedAt: now, voidReasonId: b.reason_id ?? null, voidReason: reasonText, voidedBy: p.type === "staff" ? p.id : null, voidApprovedBy: approval?.id ?? null, voidOverrideId: b.override_id ?? null, baseAmount: 0, discountAmount: 0, netAmount: 0, feeAmount: 0, gstAmount: 0, total: 0, updatedAt: now }).where(eq(orderLines.id, line_id));
     }
     if (!fired) await releaseDailyCap(o.outletId, line.productId, qty, await todayFor(o.merchantId, o.outletId));
-    const ev = await emit(c, p, o, "line.voided", { line_id, quantity: qty, after_firing: fired, name: line.name }, { reason: { id: b.reason_id, text: reasonText }, approval: approval ? { override_id: b.override_id, approver_id: approval.id, approver_name: approval.name ?? undefined } : null });
     await recordAudit(p, { action: fired ? "lines.void_fired" : "lines.void", targetKind: "order_line", targetId: line_id, outletId: o.outletId, reason: reasonText, approver: approval, overrideId: b.override_id ?? null, details: { order_id: id, quantity: qty, name: line.name } });
-    for (const hook of voidHooks) await hook({ order: o, line, quantity: qty, fired, principal: p, correlationId: c.get("correlationId") });
-    return finish(c, p, id, [ev]);
+    const pending: PendingEvent[] = [() => emit(c, p, o, "line.voided", { line_id, quantity: qty, after_firing: fired, name: line.name }, { reason: { id: b.reason_id, text: reasonText }, approval: approval ? { override_id: b.override_id, approver_id: approval.id, approver_name: approval.name ?? undefined } : null })];
+    // Void tickets (v0.5) are print jobs: created after the event so the ticket follows the void in the log.
+    pending.push(async () => {
+      for (const hook of voidHooks) await hook({ order: o, line, quantity: qty, fired, principal: p, correlationId: c.get("correlationId") });
+      return null;
+    });
+    return finish(c, p, id, pending);
   });
 
   defineOp(app, { op: "orders.fire", method: "post", path: "/v1/orders/{id}/fire", tags: ["orders"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ line_ids: z.array(z.uuid()).optional(), include_held: z.boolean().optional() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
@@ -471,10 +486,16 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       .set({ status: "fired", firedAt: now, fireRound: round, firedBy: p.type === "staff" ? p.id : null, firedFromStationId: station?.id ?? null, updatedAt: now })
       .where(inArray(orderLines.id, toFire.map((l) => l.id)));
     await db().update(orders).set({ roundCount: round, status: o.status === "open" ? "fired" : o.status, firstFiredAt: o.firstFiredAt ?? now }).where(eq(orders.id, id));
-    const ev = await emit(c, p, o, "order.fired", { round, line_ids: toFire.map((l) => l.id), station_id: station?.id ?? null });
     const warnings: string[] = [];
-    for (const hook of fireHooks) warnings.push(...(await hook({ order: { ...o, roundCount: round }, lines: toFire, round, station, principal: p, correlationId: c.get("correlationId") })));
-    return finish(c, p, id, [ev], warnings);
+    const pending: PendingEvent[] = [
+      () => emit(c, p, o, "order.fired", { round, line_ids: toFire.map((l) => l.id), station_id: station?.id ?? null }),
+      // Kitchen tickets are created in the same transaction as the fire (scope doc 4.7); each job appends its own event.
+      async () => {
+        for (const hook of fireHooks) warnings.push(...(await hook({ order: { ...o, roundCount: round }, lines: toFire, round, station, principal: p, correlationId: c.get("correlationId") })));
+        return null;
+      },
+    ];
+    return finish(c, p, id, pending, warnings);
   });
 
   const transition = (opId: string, path: string, from: string[], to: "ready" | "out_for_delivery", onlyType?: OrderType) =>
@@ -487,8 +508,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       if (onlyType && o.orderType !== onlyType) throw AppError.state(`Only ${onlyType} orders can be ${to.replace(/_/g, " ")}`, []);
       if (!from.includes(o.status)) throw AppError.state(`The order is ${o.status}`, from.map((f) => `${f} → ${to}`));
       await db().update(orders).set({ status: to, readyAt: to === "ready" ? new Date() : o.readyAt }).where(eq(orders.id, id));
-      const ev = await emit(c, p, o, "order.status_changed", { from: o.status, to, note: b.note ?? null });
-      return finish(c, p, id, [ev]);
+      return finish(c, p, id, [() => emit(c, p, o, "order.status_changed", { from: o.status, to, note: b.note ?? null })]);
     });
   transition("orders.mark_ready", "/v1/orders/{id}/ready", ["fired", "open"], "ready");
   transition("orders.mark_out_for_delivery", "/v1/orders/{id}/out-for-delivery", ["ready"], "out_for_delivery", "delivery");
@@ -511,9 +531,8 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     }
     await db().update(orders).set({ status: "cancelled", cancelledAt: now, cancelReason: b.reason }).where(eq(orders.id, id));
     await orderClosed(id);
-    const ev = await emit(c, p, o, "order.cancelled", { reason: b.reason }, { reason: { text: b.reason } });
     await recordAudit(p, { action: "orders.cancel", targetKind: "order", targetId: id, outletId: o.outletId, reason: b.reason });
-    return finish(c, p, id, [ev]);
+    return finish(c, p, id, [() => emit(c, p, o, "order.cancelled", { reason: b.reason }, { reason: { text: b.reason } })]);
   });
 
   defineOp(app, { op: "adjustments.apply_manual", method: "post", path: "/v1/orders/{id}/adjustments", tags: ["orders"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ application_id: z.uuid(), rule_key: z.string().min(1), entered_value: z.number().int().min(0).nullable().optional(), line_ids: z.array(z.uuid()).min(1).nullable().optional(), reason: z.string().max(200).nullable().optional() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
@@ -534,11 +553,12 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     if (b.line_ids) {
       const found = await db().select({ id: orderLines.id }).from(orderLines).where(and(eq(orderLines.orderId, id), inArray(orderLines.id, b.line_ids), sql`${orderLines.status} <> 'voided'`));
       if (found.length !== b.line_ids.length) throw AppError.notFound("line on this order");
+      // A discount aimed at an item on a paid bill cannot land: the bill is settled (without line_ids the rule simply prices the unpaid items).
+      for (const lineId of b.line_ids) await assertLineUnlocked(lineId);
     }
     await db().insert(orderManualApplications).values({ id: b.application_id, merchantId: o.merchantId, outletId: o.outletId, orderId: id, ruleKey: rule.id, enteredValue: b.entered_value ?? null, lineIds: b.line_ids ?? null, appliedBy: p.type === "staff" ? p.id : null, appliedByName: "name" in p ? p.name : null, approvedBy: approval?.id ?? null, approvedByName: approval?.name ?? null, overrideId: b.override_id ?? null, reason: b.reason ?? null });
-    const ev = await emit(c, p, o, "adjustment.applied", { application_id: b.application_id, rule_key: rule.id, rule_name: rule.name, entered_value: b.entered_value ?? null, line_ids: b.line_ids ?? null }, { reason: b.reason ? { text: b.reason } : null, approval: approval ? { override_id: b.override_id, approver_id: approval.id, approver_name: approval.name ?? undefined } : null });
     await recordAudit(p, { action: "adjustments.apply_manual", targetKind: "order", targetId: id, outletId: o.outletId, reason: b.reason ?? null, approver: approval, overrideId: b.override_id ?? null, details: { rule_key: rule.id, rule_name: rule.name, entered_value: b.entered_value ?? null } });
-    return finish(c, p, id, [ev]);
+    return finish(c, p, id, [() => emit(c, p, o, "adjustment.applied", { application_id: b.application_id, rule_key: rule.id, rule_name: rule.name, entered_value: b.entered_value ?? null, line_ids: b.line_ids ?? null }, { reason: b.reason ? { text: b.reason } : null, approval: approval ? { override_id: b.override_id, approver_id: approval.id, approver_name: approval.name ?? undefined } : null })]);
   });
 
   defineOp(app, { op: "adjustments.remove", method: "delete", path: "/v1/orders/{id}/adjustments/{application_id}", tags: ["orders"], request: { params: z.object({ id: z.uuid(), application_id: z.uuid() }), body: jsonBody(Mutation.extend({ reason: z.string().max(200).optional() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
@@ -551,13 +571,13 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     const [appRow] = await db().select().from(orderManualApplications).where(and(eq(orderManualApplications.id, application_id), eq(orderManualApplications.orderId, id), isNull(orderManualApplications.removedAt))).limit(1);
     if (!appRow) throw AppError.notFound("adjustment", application_id);
     if (o.pricingFrozenAt && (o.frozenAdjustments ?? []).some((f) => (f as { manual_application_id?: string }).manual_application_id === application_id)) throw AppError.invariant("adjustment_frozen", "This discount is frozen by a payment", "Refund the payment to change it.");
+    await assertAdjustmentUnlocked(id, application_id);
     const rules = await activeRules(o.merchantId, new Date());
     const rule = rules.find((r) => r.id === appRow.ruleKey);
     if (rule) await requireRoleOrOverride(p, principalRole(p), (rule.min_role ?? "server") as Role, { action: "adjustments.remove", targetId: id, overrideId: b.override_id, overrideAllowed: rule.override_allowed });
     await db().update(orderManualApplications).set({ removedAt: new Date(), removedBy: p.id }).where(eq(orderManualApplications.id, application_id));
-    const ev = await emit(c, p, o, "adjustment.removed", { application_id, rule_key: appRow.ruleKey }, { reason: b.reason ? { text: b.reason } : null });
     await recordAudit(p, { action: "adjustments.remove", targetKind: "order", targetId: id, outletId: o.outletId, reason: b.reason ?? null, details: { rule_key: appRow.ruleKey } });
-    return finish(c, p, id, [ev]);
+    return finish(c, p, id, [() => emit(c, p, o, "adjustment.removed", { application_id, rule_key: appRow.ruleKey }, { reason: b.reason ? { text: b.reason } : null })]);
   });
 
   defineOp(app, { op: "floor.snapshot", method: "get", path: "/v1/outlets/{id}/floor", tags: ["orders"], request: { params: z.object({ id: z.uuid() }) }, responses: { 200: jsonResponse(dataResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {
@@ -626,14 +646,6 @@ type FloorExtra = (outletId: string) => Promise<{ pending_rounds_by_order?: Reco
 const floorExtras: FloorExtra[] = [];
 export function registerFloorExtra(fn: FloorExtra) {
   floorExtras.push(fn);
-}
-/** v0.6 registers the "is this line on a paid check" guard. */
-let paidLineGuard: (lineId: string) => Promise<void> = async () => {};
-export function registerPaidLineGuard(fn: typeof paidLineGuard) {
-  paidLineGuard = fn;
-}
-function assertLineNotPaid(lineId: string) {
-  return paidLineGuard(lineId);
 }
 
 export { roleAtLeast, localParts, tx, PricingRuleSchema };

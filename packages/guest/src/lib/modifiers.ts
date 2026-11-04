@@ -18,16 +18,24 @@ export function childGroup(menu: CompiledMenu, group: CompiledGroup, optionId: s
   return opt?.child_group_id ? (menu.modifier_groups[opt.child_group_id] ?? null) : null;
 }
 
-/** Every group in play: the product's groups plus the child groups of chosen options (two levels, as the register allows). */
+/**
+ * Every group in play: the product's groups plus the child groups of chosen
+ * options, followed as deep as the sheet renders them (the register allows a
+ * child group whenever its parent option is chosen, so the rules must match).
+ */
 export function activeGroups(menu: CompiledMenu, product: CompiledProduct, selection: Selection): CompiledGroup[] {
   const out: CompiledGroup[] = [];
-  for (const g of topGroups(menu, product)) {
+  const seen = new Set<string>();
+  const visit = (g: CompiledGroup) => {
+    if (seen.has(g.id)) return;
+    seen.add(g.id);
     out.push(g);
     for (const v of selection[g.id] ?? []) {
       const child = childGroup(menu, g, v.id);
-      if (child) out.push(child);
+      if (child) visit(child);
     }
-  }
+  };
+  for (const g of topGroups(menu, product)) visit(g);
   return out;
 }
 

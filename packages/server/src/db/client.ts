@@ -13,6 +13,8 @@ export type RequestTx = {
   principal: { type: string; id: string; merchantId: string | null } | null;
   /** Dry run: the transaction will be rolled back; events skip sequence allocation and emit nothing. */
   dryRun: boolean;
+  /** Set once `settleInvariants` has run: the money tables must not be written again in this transaction. */
+  settled: boolean;
 };
 
 const als = new AsyncLocalStorage<RequestTx>();
@@ -63,9 +65,29 @@ export async function withTransaction<T>(fn: (ctx: RequestTx) => Promise<T>, pri
     // Drizzle's postgres-js driver reads `client.options` (parsers/serializers); a
     // TransactionSql has none, so borrow the pool's options for the handle.
     const client = Object.assign(t, { options: (sql as unknown as { options: unknown }).options }) as unknown as Sql;
-    const ctx: RequestTx = { sql: t, db: drizzle(client, { schema }), principal, dryRun: false };
+    const ctx: RequestTx = { sql: t, db: drizzle(client, { schema }), principal, dryRun: false, settled: false };
     return als.run(ctx, () => fn(ctx));
   }) as Promise<T>;
+}
+
+/**
+ * Fire the deferred invariant triggers (adjustment, order-total, allocation and
+ * refund sums) now instead of at commit. Mutations call this after their last
+ * money write and before they append events: the first event takes the outlet's
+ * sequence lock until commit, so anything that runs at commit runs under that
+ * lock and serialises every other writer at the outlet. Checking first keeps
+ * the critical section to the appends and the commit itself.
+ */
+export async function settleInvariants(): Promise<void> {
+  const t = currentTx();
+  if (t.settled) return;
+  t.settled = true;
+  await t.sql`set constraints all immediate`;
+}
+
+/** Guard for code that writes the money tables: after `settleInvariants` those writes would bypass the deferred checks' batching and signal a sequencing bug. */
+export function assertNotSettled(what: string) {
+  if (als.getStore()?.settled) throw new Error(`${what} after settleInvariants(): write the money tables before appending events`);
 }
 
 export function currentTx(): RequestTx {

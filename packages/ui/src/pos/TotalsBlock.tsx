@@ -58,7 +58,8 @@ export function TotalsBlock({ rows, pricing, className }: TotalsBlockProps) {
       <div aria-hidden className={cx("absolute inset-x-3 top-0 h-px overflow-hidden", pricing ? "bg-line" : "bg-transparent")}>
         {pricing ? <div className="pos-progress keep-motion h-full w-1/2 bg-ink" /> : null}
       </div>
-      <dl className={cx("transition-opacity duration-150", pricing && "opacity-60")}>
+      {/* Polite live region (design 10): a changed row is announced; the whole block is not re-read. */}
+      <dl className={cx("transition-opacity duration-150", pricing && "opacity-60")} aria-live="polite" aria-atomic="false">
         {rows.map((r) => (
           <div
             key={r.key}

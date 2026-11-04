@@ -11,19 +11,14 @@ export function needsChoices(menu: CompiledMenu, product: CompiledProduct): bool
   return product.modifier_groups.some((gid) => (menu.modifier_groups[gid]?.min_select ?? 0) > 0);
 }
 
-/** Does the product have any modifier groups at all (so a tap could still open the sheet for optional choices)? */
-export function hasGroups(product: CompiledProduct): boolean {
-  return product.modifier_groups.length > 0;
-}
-
-/** Tile colour for a product from the layout, for search results (falls back to stone). */
-export function tileColourIndex(layout: Layout | undefined): Map<string, string> {
-  const m = new Map<string, string>();
+/** The layout's tile for each product (colour and access level), so search results keep the same look and the same role gate as the grid. */
+export function tileIndex(layout: Layout | undefined): Map<string, Pick<ProductTile, "color" | "access_level">> {
+  const m = new Map<string, Pick<ProductTile, "color" | "access_level">>();
   if (!layout) return m;
   const walk = (tiles: LayoutTile[]) => {
     for (const t of tiles) {
       if (t.kind === "product") {
-        if (!m.has(t.product_id)) m.set(t.product_id, t.color);
+        if (!m.has(t.product_id)) m.set(t.product_id, { color: t.color, access_level: t.access_level });
       } else walk(t.tiles);
     }
   };

@@ -8,9 +8,12 @@ export function LaterPhase({ href }: { href: string }) {
   return (
     <>
       <PageHeader title={label} />
-      <p className="text-ink-2">
-        {label} arrives in a later phase{section?.arrives ? ` (${section.arrives})` : ""}.
-      </p>
+      <div className="flex max-w-[640px] flex-col gap-2">
+        <p className="text-ink-2">
+          {label} arrives in a later phase{section?.arrives ? ` (${section.arrives})` : ""}. Nothing is missing from today's data: this section does not exist yet.
+        </p>
+        {section?.summary ? <p className="text-ink-2">{section.summary}</p> : null}
+      </div>
     </>
   );
 }

@@ -4,7 +4,7 @@ import { AmountPad, Button, FolderTile, PanelSheet, QuantityStepper, SearchField
 import { useMemo, useState } from "react";
 import type { CompiledProduct, FolderTile as FolderTileData, OrderSnapshot, ProductTile } from "../api/types";
 import type { useOrderActions } from "../hooks/useOrderActions";
-import { needsChoices, priceFor, searchMenu, tileColourIndex, tileRestriction } from "../lib/menu";
+import { needsChoices, priceFor, searchMenu, tileIndex, tileRestriction } from "../lib/menu";
 import { useUiStore } from "../state/ui";
 import { defaultSelection, ModifierPicker, QUICK_NOTES, toModifiers, unmetRequirement, type Selection } from "./ModifierPicker";
 import { usePos } from "./PosContext";
@@ -30,10 +30,11 @@ export function Catalogue({ order, actions, activeSeat }: CatalogueProps) {
   const [panel, setPanel] = useState<Panel>(null);
 
   const page = layout?.pages.find((p) => p.id === pageId) ?? layout?.pages[0] ?? null;
-  const colours = useMemo(() => tileColourIndex(layout), [layout]);
+  const layoutTiles = useMemo(() => tileIndex(layout), [layout]);
   const results = useMemo(() => (menu && query.trim() ? searchMenu(menu, query) : null), [menu, query]);
 
-  const tiles: ProductTile[] | null = results ? results.map((p) => ({ id: `s:${p.id}`, kind: "product", label: p.name, color: colours.get(p.id) ?? "stone", access_level: "everyone", product_id: p.id })) : null;
+  // Search results keep the layout's colour and access level, so search is never a way around a restricted tile.
+  const tiles: ProductTile[] | null = results ? results.map((p) => ({ id: `s:${p.id}`, kind: "product", label: p.name, color: layoutTiles.get(p.id)?.color ?? "stone", access_level: layoutTiles.get(p.id)?.access_level ?? "everyone", product_id: p.id })) : null;
   const shown = tiles ?? folder?.tiles ?? page?.tiles ?? [];
 
   const press = (tile: ProductTile) => {

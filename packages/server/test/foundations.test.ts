@@ -174,8 +174,11 @@ describe("idempotency", () => {
   it("concurrent requests with the same key record once", async () => {
     const key = randomUUID();
     const results = await Promise.all(Array.from({ length: 5 }, () => call<{ data: { id: string } }>("POST", "/v1/brands", { token: A.admin.token, body: { name: "Race" }, idempotencyKey: key })));
-    const ids = new Set(results.filter((r) => r.status === 201).map((r) => r.body.data.id));
+    // Every racer gets the one stored result: the losers wait for the winner's commit and replay it, never a 500.
+    expect(results.map((r) => r.status)).toEqual([201, 201, 201, 201, 201]);
+    const ids = new Set(results.map((r) => r.body.data.id));
     expect(ids.size).toBe(1);
+    expect(results.filter((r) => r.headers.get("idempotent-replayed") === "true")).toHaveLength(4);
     const [n] = await db.sql`select count(*)::int as n from brands where name = 'Race'`;
     expect(n!.n).toBe(1);
   });

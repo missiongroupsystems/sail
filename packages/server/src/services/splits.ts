@@ -66,7 +66,8 @@ export type AllocationMove = { line_id: string; check_ids: string[] };
 /**
  * By item: put each listed line wholly on one bill, or share it equally between
  * the listed bills (a bottle three ways). Unlisted lines keep their allocation.
- * `add_checks` appends empty bills first. Lines on a paid bill cannot move.
+ * `add_checks` appends empty bills first; they stay (empty) until items are
+ * moved onto them or the order is re-split. Lines on a paid bill cannot move.
  */
 export async function allocateLines(order: { id: string; merchantId: string; outletId: string }, moves: AllocationMove[], addChecks = 0): Promise<CheckRow[]> {
   let chks = await checksFor(order.id);

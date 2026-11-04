@@ -27,13 +27,11 @@ export type BasketState = {
   add: (item: Omit<BasketItem, "key">) => void;
   update: (key: string, item: Omit<BasketItem, "key">) => void;
   remove: (key: string) => void;
-  clear: () => void;
   setGuestName: (name: string) => void;
   /** Start (or resume) a send: a fresh round_id and key the first time, the same ones on a retry of the same basket. */
   beginSend: () => { round_id: string; idempotency_key: string };
   /** The register took the round: empty the basket and remember the round. */
   finishSend: (roundId: string) => void;
-  setLastRound: (roundId: string | null) => void;
 };
 
 /** One basket per QR token, kept in sessionStorage so a reload keeps it and a closed tab does not. */
@@ -48,7 +46,6 @@ export function createBasketStore(token: string) {
         add: (item) => set((s) => ({ items: [...s.items, { ...item, key: uuid() }], pending: null })),
         update: (key, item) => set((s) => ({ items: s.items.map((i) => (i.key === key ? { ...item, key } : i)), pending: null })),
         remove: (key) => set((s) => ({ items: s.items.filter((i) => i.key !== key), pending: null })),
-        clear: () => set({ items: [], pending: null }),
         setGuestName: (guestName) => set({ guestName, pending: null }),
         beginSend: () => {
           const cur = get().pending;
@@ -58,7 +55,6 @@ export function createBasketStore(token: string) {
           return next;
         },
         finishSend: (roundId) => set({ items: [], pending: null, lastRoundId: roundId }),
-        setLastRound: (lastRoundId) => set({ lastRoundId }),
       }),
       { name: `sail.guest.basket.${token}`, storage: createJSONStorage(() => sessionStorageLike), version: 1, partialize: (s) => ({ items: s.items, guestName: s.guestName, pending: s.pending, lastRoundId: s.lastRoundId }) as BasketState },
     ),

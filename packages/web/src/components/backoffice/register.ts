@@ -18,7 +18,6 @@ export type Printer = Res<"get", "/v1/printers">["data"][number];
 export type PrinterCreate = paths["/v1/printers"]["post"]["requestBody"]["content"]["application/json"];
 export type PrinterPatch = paths["/v1/printers/{id}"]["patch"]["requestBody"]["content"]["application/json"];
 export type Relay = Res<"get", "/v1/relays">["data"][number];
-export type RelayPrinterStatus = Relay["printer_status"][string];
 export type PrintJob = Res<"get", "/v1/outlets/{id}/print-jobs">["data"][number];
 export type CreatedJob = Res<"post", "/v1/print-jobs/{id}/reprint">["data"][number];
 export type RelayPairingCode = Res<"post", "/v1/relays/{id}/pairing-code">["data"];
@@ -146,7 +145,7 @@ export type ServiceRequest = {
   acknowledged_at: string | null;
   acknowledged_by: string | null;
 };
-export const REQUEST_TYPE_LABEL: Record<string, string> = { call_staff: "Call staff", bill: "Bill please", water: "Water", help: "Help", other: "Request" };
+export const REQUEST_TYPE_LABEL: Record<string, string> = { call_staff: "Call staff", call_for_bill: "Bill, please", bill: "Bill, please", water: "Water", cutlery: "Cutlery", napkins: "Napkins", help: "Help", other: "Request" };
 
 /** GET /v1/outlets/{id}/z-report (services/shifts.ts ZReport). */
 export type ZReport = {

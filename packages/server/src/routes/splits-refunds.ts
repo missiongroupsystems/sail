@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { PERMISSIONS, registerOperations, type OperationSpec } from "@sail/shared";
-import { db, markDryRun } from "../db/client.js";
+import { db, markDryRun, settleInvariants } from "../db/client.js";
 import { checks, printers, refunds, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
@@ -15,7 +15,7 @@ import { allocateLines, splitBySeat, splitEven, unsplit } from "../services/spli
 import { createRefund, quote, refundableFor } from "../services/refunds.js";
 import { createDigitalReceipt, renderInvoicePdf, type InvoiceDocument } from "../services/documents.js";
 import { insertJob } from "../services/printing.js";
-import { businessDayInputs } from "./org.js";
+import { businessDayInputs } from "../services/business-day.js";
 
 const op = (o: Partial<OperationSpec> & { op: string; summary: string; description: string }): OperationSpec => ({ tier: "T1", minRole: "server", overrideAllowed: false, reasonRequired: false, dryRun: true, principals: ["staff", "agent"], emits: [], mcp: { expose: true, toolsets: ["pos.order"] }, ...o });
 
@@ -57,9 +57,11 @@ export function splitRefundRoutes(app: OpenAPIHono<AppEnv>) {
       const order = await lockOrder(id, b.expected_version);
       if (order.status === "completed" || order.status === "cancelled") throw AppError.state(`The order is ${order.status}`, []);
       const payload = await run(order, b);
-      const ev = await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: eventType, aggregate: { kind: "order", id, version: order.version }, operationId: opId, payload, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(order.merchantId, order.outletId) }, p);
       const version = await bumpVersion(id);
-      return c.json({ data: { ...(await loadSnapshot(id)), version }, events: [ev], warnings: [] }, 200);
+      const snapshot = await loadSnapshot(id);
+      await settleInvariants();
+      const ev = await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: eventType, aggregate: { kind: "order", id, version: order.version }, operationId: opId, payload, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(order.merchantId, order.outletId) }, p);
+      return c.json({ data: { ...snapshot, version }, events: [ev], warnings: [] }, 200);
     });
 
   splitRoute("checks.split_even", "/v1/orders/{id}/checks/split-even", z.object({ n: z.number().int().min(1).max(20) }), async (o, b) => ({ mode: "even", n: b.n, checks: (await splitEven(o, b.n as number)).length }), "checks.split");
@@ -88,6 +90,9 @@ export function splitRefundRoutes(app: OpenAPIHono<AppEnv>) {
       const order = await lockOrder(check.orderId, b.expected_version);
       const approval = await requireRoleOrOverride(p, principalRole(p), PERMISSIONS["refunds.create"].minRole, { action: "refunds.create", targetId: id, overrideId: b.override_id, overrideAllowed: PERMISSIONS["refunds.create"].overrideAllowed });
       const created = await createRefund({ refundId: b.refund_id, checkId: id, request: b.request, tenderSplit: b.tender_split, reason: b.reason, reference: b.reference ?? null, principal: p, approver: approval, overrideId: b.override_id ?? null, stationId: p.type === "staff" ? (p.stationId ?? null) : null });
+      const version = await bumpVersion(order.id);
+      const snapshot = await loadSnapshot(order.id);
+      await settleInvariants();
       const bd = await businessDayInputs(order.merchantId, order.outletId);
       const events = [
         await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "refund.created", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "refunds.create", payload: { refund_id: created.refund.id, check_id: id, kind: b.request.kind, total: created.quote.totals.total, tenders: created.quote.tenders, refund_receipt_no: created.refund.refundReceiptNo, credit_note_no: created.refund.creditNoteNo }, reason: { text: b.reason }, approval: approval ? { override_id: b.override_id, approver_id: approval.id, approver_name: approval.name ?? undefined } : null, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p),
@@ -103,8 +108,7 @@ export function splitRefundRoutes(app: OpenAPIHono<AppEnv>) {
           warnings.push(`Refund recorded; the receipt did not print: ${(e as AppError).message}`);
         }
       }
-      const version = await bumpVersion(order.id);
-      return c.json({ data: { ...(await loadSnapshot(order.id)), version }, refund: { ...toRefund(created.refund), quote: created.quote }, events, warnings }, 201);
+      return c.json({ data: { ...snapshot, version }, refund: { ...toRefund(created.refund), quote: created.quote }, events, warnings }, 201);
     },
   );
 

@@ -68,7 +68,9 @@ export function ReviewView({ session, menu, items, guestName, onGuestName, canOr
             <span>Menu</span>
           </BrandButton>
           <div className="min-w-0 flex-1 text-right">
-            <h1 className="truncate font-display text-heading text-ink">Review your order</h1>
+            <h1 tabIndex={-1} className="truncate font-display text-heading text-ink outline-none">
+              Review your order
+            </h1>
             <p className="text-caption text-ink-2">Table {session.table.name}</p>
           </div>
         </div>
@@ -139,7 +141,7 @@ export function ReviewView({ session, menu, items, guestName, onGuestName, canOr
           <div className="mx-auto flex w-full max-w-[560px] flex-col gap-2 px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-3">
             {error?.kind === "rate_limited" && retryIn > 0 ? (
               <p role="status" className="text-caption text-ink-2">
-                Sent too recently, try again in {retryIn} s
+                {error.error.message} · Try again in {retryIn} s
               </p>
             ) : null}
             <BrandButton variant="accent" block className="min-h-14" onPress={onSend} isPending={sending} isDisabled={!canOrder || retryIn > 0}>

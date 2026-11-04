@@ -66,6 +66,10 @@ const r086Live = order([line("wine1", 12_000, { tags: ["alcohol"] })], { order_t
 const r087Rules = [PCT_BILL];
 const r087Live = order([line("a", 3000), line("b", 1000)], { order_type: "takeaway", manual_applications: [PB] });
 
+/* R153: a fixed-per-order delivery fee is frozen at the first payment; a line added afterwards takes no share of it. */
+const r153Rules: PricingRuleInput[] = [{ id: "delivery", kind: "fee", name: "Delivery fee", calc: "fixed_per_order", value: { type: "fixed", amount: 500 }, scope: { type: "all" }, priority: 100, application: "auto", report_class: "delivery_fee", gst_applicable: true }];
+const r153Live = order([line("a", 3000), line("b", 1000)], { order_type: "delivery" });
+
 export const FREEZE_CASES: RefCase[] = [
   {
     id: "R081",
@@ -191,6 +195,28 @@ export const FREEZE_CASES: RefCase[] = [
       line_nets: { a: 2700, b: 900 },
       gst_total: 243 + 81,
       total: 2700 + 900 + 243 + 81,
+      pricing_status: "frozen",
+    },
+  },
+  {
+    id: "R153",
+    title: "Freeze: a fixed-per-order fee keeps its per-line spread; a line added after the first payment takes no share of it",
+    covers: ["freeze", "fee_fixed_per_order", "fee_gst_applicable", "rounding", "tax_exclusive"],
+    working:
+      "Live delivery order: $5 delivery fee spread by the nets 3000/1000 → 375/125. Frozen set: {delivery: a 375, b 125}. Re-price with c 2000 added: the fee is re-emitted as frozen " +
+      "(a 375, b 125, nothing on c), so the paid lines never move and the customer is not charged a second delivery fee. GST on nets 270 + 90 + 180 = 540; on the fee 33.75 → 34 and 11.25 → 11. " +
+      "Total = 6000 + 500 + 540 + 45 = 7085. Status frozen.",
+    order: order([line("a", 3000), line("b", 1000), line("c", 2000)], { order_type: "delivery" }),
+    rules: r153Rules,
+    context: frozenAfter(r153Live, r153Rules),
+    expect: {
+      adjustments: { delivery: 500 },
+      adjustment_lines: { delivery: { a: 375, b: 125 } },
+      line_nets: { a: 3000, b: 1000, c: 2000 },
+      line_fees: { a: 375, b: 125, c: 0 },
+      fee_total: 500,
+      gst_total: 270 + 90 + 180 + 34 + 11,
+      total: 6000 + 500 + 540 + 45,
       pricing_status: "frozen",
     },
   },

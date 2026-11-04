@@ -265,9 +265,14 @@ function frozenKey(ruleId: string, version: number, appId: string | null): strin
   return `${ruleId}@${version}|${appId ?? ""}`;
 }
 
-/** Order-level rules and any rule with a minimum-spend condition freeze at the first payment. */
+/**
+ * Rules whose result depends on the whole order freeze at the first payment:
+ * order-level discounts, any rule with a minimum-spend condition, and
+ * fixed-per-order fees (a per-order amount spread across lines would otherwise
+ * move onto paid lines when a line is added later).
+ */
 export function isFreezable(rule: PricingRule): boolean {
-  return ruleLevel(rule) === "order" || rule.conditions.min_spend != null;
+  return ruleLevel(rule) === "order" || rule.conditions.min_spend != null || (rule.kind === "fee" && rule.calc === "fixed_per_order");
 }
 
 export function inScope(rule: PricingRule, line: PricingLine): boolean {

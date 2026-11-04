@@ -3,7 +3,7 @@
 import { AmountPad, Badge, Button, formatCents, Money, QuantityStepper, ReasonPicker, Sheet, TextField, type PickedReason } from "@sail/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
-import { toApiError } from "@/lib/api";
+import { idempotencyKey, toApiError } from "@/lib/api";
 import type { CheckSnapshot, OrderSnapshot, RefundQuote, RefundRequest, RefundResult } from "../api/types";
 import { useVoidReasons } from "../hooks/queries";
 import { roleAtLeast, type OrderActions } from "../hooks/useOrderActions";
@@ -56,9 +56,12 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<RefundResult | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // One refund id per opening of the sheet: a retry after a timeout replays, never refunds twice (design 4.2 envelope).
+  const refundId = useRef(idempotencyKey());
 
   useEffect(() => {
     if (!isOpen) return;
+    refundId.current = idempotencyKey();
     const first = initialCheckId ?? (refundable.length === 1 ? refundable[0]!.id : null);
     setCheckId(first);
     setStep(first ? "what" : "bill");
@@ -151,7 +154,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
   const submit = async () => {
     if (!check || !request || !quote || !reason) return;
     setBusy(true);
-    const res = await actions.refund(check, { request, ...(tenderSplit ? { tender_split: tenderSplit } : {}), reason: reasonText, ...(reference.trim() ? { reference: reference.trim() } : {}), print: true }, total);
+    const res = await actions.refund(check, { refund_id: refundId.current, request, ...(tenderSplit ? { tender_split: tenderSplit } : {}), reason: reasonText, ...(reference.trim() ? { reference: reference.trim() } : {}), print: true }, total);
     setBusy(false);
     if (res) {
       setResult(res);
@@ -270,7 +273,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                 ) : null}
                 {what === "amount" ? (
                   <div className="flex justify-center">
-                    <AmountPad digits={digits} onChange={setDigits} mode="cents" hint={`Up to ${formatCents(check.paid_total - check.refunded_total)} · goodwill, spread across the bill`} />
+                    <AmountPad digits={digits} onChange={setDigits} mode="cents" hint={`Paid ${formatCents(check.paid_total)}${check.refunded_total > 0 ? ` · ${formatCents(check.refunded_total)} already refunded` : ""} · goodwill, spread across the bill`} />
                   </div>
                 ) : null}
                 {what === "full" ? <p className="text-body text-ink-2">Everything paid on {check.label} goes back, including service charge, GST and cash rounding, as the register works them out.</p> : null}

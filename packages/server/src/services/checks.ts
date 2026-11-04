@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
 import { allocateLine, type BillDocument, type Share } from "@sail/shared";
-import { db } from "../db/client.js";
+import { assertNotSettled, db } from "../db/client.js";
 import { brands, checkAllocations, checks, merchantSettings, orderAdjustmentLines, orderAdjustments, orderLines, orders, outlets, payments, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 
@@ -29,9 +29,10 @@ export async function ensureFirstCheck(order: { id: string; merchantId: string; 
 type LineComp = { id: string; base: number; discount: number; fee: number; gst: number; total: number; adjustments: Record<string, { amount: number; gst: number }> };
 
 async function lineComponents(orderId: string): Promise<LineComp[]> {
-  const lines = await db().select().from(orderLines).where(and(eq(orderLines.orderId, orderId), sql`${orderLines.status} <> 'voided'`)).orderBy(asc(orderLines.sort), asc(orderLines.createdAt));
-  const adjs = await db().select({ id: orderAdjustments.id }).from(orderAdjustments).where(eq(orderAdjustments.orderId, orderId));
-  const adjLines = adjs.length ? await db().select().from(orderAdjustmentLines).where(inArray(orderAdjustmentLines.adjustmentId, adjs.map((a) => a.id))) : [];
+  const [lines, adjLines] = await Promise.all([
+    db().select().from(orderLines).where(and(eq(orderLines.orderId, orderId), sql`${orderLines.status} <> 'voided'`)).orderBy(asc(orderLines.sort), asc(orderLines.createdAt)),
+    db().select({ adjustmentId: orderAdjustmentLines.adjustmentId, orderLineId: orderAdjustmentLines.orderLineId, amount: orderAdjustmentLines.amount, gstAmount: orderAdjustmentLines.gstAmount }).from(orderAdjustmentLines).innerJoin(orderAdjustments, eq(orderAdjustments.id, orderAdjustmentLines.adjustmentId)).where(eq(orderAdjustments.orderId, orderId)),
+  ]);
   return lines.map((l) => ({
     id: l.id,
     base: l.baseAmount,
@@ -46,14 +47,16 @@ async function lineComponents(orderId: string): Promise<LineComp[]> {
 /**
  * Rebuild allocations for unlocked checks from the current pricing. Lines with
  * no allocation yet go to the first unlocked check (a new one when every check
- * is locked). Returns the checks after the sync.
+ * is locked). Empty bills are kept (staff add an empty bill, then move items
+ * onto it); re-splitting or unsplitting replaces the set. Returns the checks
+ * after the sync.
  */
 export async function syncAllocations(orderId: string, opts: { sharesByLine?: Map<string, Share[]> } = {}): Promise<CheckRow[]> {
+  assertNotSettled("syncAllocations");
   const [order] = await db().select().from(orders).where(eq(orders.id, orderId)).limit(1);
   if (!order) throw AppError.notFound("order", orderId);
   let chks = await ensureFirstCheck(order);
-  const comps = await lineComponents(orderId);
-  const existing = await db().select().from(checkAllocations).where(inArray(checkAllocations.checkId, chks.map((c) => c.id)));
+  const [comps, existing] = await Promise.all([lineComponents(orderId), db().select().from(checkAllocations).where(inArray(checkAllocations.checkId, chks.map((c) => c.id)))]);
   const lockedIds = new Set(chks.filter((c) => c.lockedAt).map((c) => c.id));
   const gstAdds = order.taxMode === "exclusive";
 
@@ -83,43 +86,63 @@ export async function syncAllocations(orderId: string, opts: { sharesByLine?: Ma
   };
 
   const unlockedCheckIds = chks.filter((c) => !c.lockedAt).map((c) => c.id);
-  // Drop allocations on unlocked checks for lines that are gone (voided), then rebuild.
-  const liveLineIds = new Set(comps.map((l) => l.id));
-  const stale = existing.filter((a) => !lockedIds.has(a.checkId) && !liveLineIds.has(a.orderLineId));
-  if (stale.length) await db().delete(checkAllocations).where(and(inArray(checkAllocations.checkId, unlockedCheckIds), inArray(checkAllocations.orderLineId, stale.map((s) => s.orderLineId))));
-
-  for (const line of comps) {
-    if (fixedLines.has(line.id)) continue;
-    const shares = sharesFor(line);
-    const parts = allocateLine({ base: line.base, discount: line.discount, fee: line.fee, gst: line.gst, adjustments: line.adjustments }, shares, { gstAddsToTotal: gstAdds });
-    await db().delete(checkAllocations).where(and(eq(checkAllocations.orderLineId, line.id), inArray(checkAllocations.checkId, unlockedCheckIds)));
-    const values = chks
-      .map((c, i) => ({ c, p: parts[i]!, s: shares[i]! }))
-      .filter(({ s }) => s.num > 0)
-      .map(({ c, p, s }) => ({ merchantId: order.merchantId, checkId: c.id, orderLineId: line.id, shareNum: s.num, shareDen: s.den, base: p.base, discount: p.discount, fee: p.fee, gst: p.gst, total: p.total, adjustments: p.adjustments }));
+  if (unlockedCheckIds.length) {
+    // Every allocation on an unlocked check that is not pinned by a paid bill is rebuilt from scratch (this also drops voided lines).
+    const rebuilt = comps.filter((l) => !fixedLines.has(l.id));
+    const fixed = [...fixedLines];
+    await db().delete(checkAllocations).where(and(inArray(checkAllocations.checkId, unlockedCheckIds), fixed.length ? notInArray(checkAllocations.orderLineId, fixed) : sql`true`));
+    const values = rebuilt.flatMap((line) => {
+      const shares = sharesFor(line);
+      const parts = allocateLine({ base: line.base, discount: line.discount, fee: line.fee, gst: line.gst, adjustments: line.adjustments }, shares, { gstAddsToTotal: gstAdds });
+      return chks
+        .map((c, i) => ({ c, p: parts[i]!, s: shares[i]! }))
+        .filter(({ s }) => s.num > 0)
+        .map(({ c, p, s }) => ({ merchantId: order.merchantId, checkId: c.id, orderLineId: line.id, shareNum: s.num, shareDen: s.den, base: p.base, discount: p.discount, fee: p.fee, gst: p.gst, total: p.total, adjustments: p.adjustments }));
+    });
     if (values.length) await db().insert(checkAllocations).values(values);
   }
 
-  // Recompute totals for unlocked checks; remove empty extra unlocked checks (never Bill 1).
+  // Recompute totals for unlocked checks in one grouped query.
+  const sums = unlockedCheckIds.length
+    ? await db()
+        .select({ checkId: checkAllocations.checkId, base: sql<number>`coalesce(sum(base),0)::int`, discount: sql<number>`coalesce(sum(discount),0)::int`, fee: sql<number>`coalesce(sum(fee),0)::int`, gst: sql<number>`coalesce(sum(gst),0)::int`, total: sql<number>`coalesce(sum(total),0)::int` })
+        .from(checkAllocations)
+        .where(inArray(checkAllocations.checkId, unlockedCheckIds))
+        .groupBy(checkAllocations.checkId)
+    : [];
+  const now = new Date();
   const refreshed: CheckRow[] = [];
   for (const c of chks) {
     if (c.lockedAt) {
       refreshed.push(c);
       continue;
     }
-    const [sums] = await db().select({ base: sql<number>`coalesce(sum(base),0)::int`, discount: sql<number>`coalesce(sum(discount),0)::int`, fee: sql<number>`coalesce(sum(fee),0)::int`, gst: sql<number>`coalesce(sum(gst),0)::int`, total: sql<number>`coalesce(sum(total),0)::int`, n: sql<number>`count(*)::int` }).from(checkAllocations).where(eq(checkAllocations.checkId, c.id));
-    if (sums!.n === 0 && c.index > 1 && chks.length > 1) {
-      await db().delete(checks).where(eq(checks.id, c.id));
+    const s = sums.find((x) => x.checkId === c.id) ?? { base: 0, discount: 0, fee: 0, gst: 0, total: 0 };
+    if (s.base === c.subtotal && s.discount === c.discountTotal && s.fee === c.feeTotal && s.gst === c.gstTotal && s.total === c.total) {
+      refreshed.push(c);
       continue;
     }
     const [row] = await db()
       .update(checks)
-      .set({ subtotal: sums!.base, discountTotal: sums!.discount, feeTotal: sums!.fee, gstTotal: sums!.gst, total: sums!.total, status: sums!.total === 0 && c.paidTotal === 0 ? "open" : c.status, updatedAt: new Date() })
+      .set({ subtotal: s.base, discountTotal: s.discount, feeTotal: s.fee, gstTotal: s.gst, total: s.total, status: s.total === 0 && c.paidTotal === 0 ? "open" : c.status, updatedAt: now })
       .where(eq(checks.id, c.id))
       .returning();
     refreshed.push(row!);
   }
   return refreshed;
+}
+
+/** Manual adjustments with a stored amount on a paid bill's line cannot be removed: refund the bill instead. */
+export async function assertAdjustmentUnlocked(orderId: string, applicationId: string) {
+  const [row] = await db()
+    .select({ label: checks.label })
+    .from(orderAdjustments)
+    .innerJoin(orderAdjustmentLines, eq(orderAdjustmentLines.adjustmentId, orderAdjustments.id))
+    .innerJoin(checkAllocations, eq(checkAllocations.orderLineId, orderAdjustmentLines.orderLineId))
+    .innerJoin(checks, eq(checks.id, checkAllocations.checkId))
+    .where(and(eq(orderAdjustments.orderId, orderId), eq(orderAdjustments.manualApplicationId, applicationId), isNotNull(checks.lockedAt)))
+    .limit(1);
+  if (row) throw AppError.invariant("check_locked_by_payment", `${row.label} is paid and includes this discount`, `Refund ${row.label} to change it.`);
 }
 
 /** Sum of recorded payments on the order (for pay-before-firing and change-type guards). */
@@ -159,8 +182,8 @@ export type CheckSnapshot = {
 export async function checkSnapshots(orderId: string): Promise<CheckSnapshot[]> {
   const chks = await checksFor(orderId);
   if (chks.length === 0) return [];
-  const allocs = await db().select().from(checkAllocations).where(inArray(checkAllocations.checkId, chks.map((c) => c.id)));
-  const pays = await db().select().from(payments).where(inArray(payments.checkId, chks.map((c) => c.id))).orderBy(asc(payments.createdAt));
+  const ids = chks.map((c) => c.id);
+  const [allocs, pays] = await Promise.all([db().select().from(checkAllocations).where(inArray(checkAllocations.checkId, ids)), db().select().from(payments).where(inArray(payments.checkId, ids)).orderBy(asc(payments.createdAt))]);
   return chks.map((c) => ({
     id: c.id,
     index: c.index,

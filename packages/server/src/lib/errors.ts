@@ -37,8 +37,15 @@ export class AppError extends Error {
       details: { required_role: requiredRole, override_allowed: overrideAllowed, action },
     });
   }
-  static validation(message: string, details?: Record<string, unknown>) {
-    return new AppError("validation", message, { details });
+  /**
+   * `extra` may carry a `remedy` (shown to the user) and `details`, or be the details themselves;
+   * either way the remedy ends up on the error, not buried inside details.
+   */
+  static validation(message: string, extra?: Record<string, unknown>) {
+    if (!extra) return new AppError("validation", message);
+    const { remedy, details, ...rest } = extra;
+    const merged = { ...((details && typeof details === "object" ? details : {}) as Record<string, unknown>), ...rest };
+    return new AppError("validation", message, { remedy: typeof remedy === "string" ? remedy : undefined, details: Object.keys(merged).length ? merged : undefined });
   }
   static state(message: string, allowed: string[], remedy?: string) {
     return new AppError("state_conflict", message, { remedy, details: { allowed_transitions: allowed } });

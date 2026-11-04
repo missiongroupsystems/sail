@@ -38,7 +38,14 @@ function viewFromHash(hash: string): View {
   }
 }
 
+/**
+ * While the table is not ready, the only way to learn it was seated is a new
+ * session (the register has no cheaper check), and sessions are limited per
+ * device. Re-check at 15 s, backing off to a minute, and at once when the
+ * phone comes back to the page.
+ */
 const RECHECK_MS = 15_000;
+const RECHECK_MAX_MS = 60_000;
 
 export function GuestApp({ token }: { token: string }) {
   return (
@@ -54,7 +61,10 @@ function GuestAppInner({ token }: { token: string }) {
   const [session, setSession] = useState<GuestSession | null>(null);
   const sessionRef = useRef<GuestSession | null>(null);
   sessionRef.current = session;
-  const recovered = useRef(false);
+  /** The session came from sessionStorage and has not yet been confirmed by the register. */
+  const restored = useRef(false);
+  /** The session id whose 401 has already been handled; concurrent requests all fail together. */
+  const endedSession = useRef<string | null>(null);
   const streamRef = useRef<GuestStream | null>(null);
   const [streamStatus, setStreamStatus] = useState<GuestStreamStatus | null>(null);
 
@@ -89,11 +99,14 @@ function GuestAppInner({ token }: { token: string }) {
     async (force: boolean) => {
       const stored = force ? null : loadSession(token);
       if (stored) {
+        restored.current = true;
         applySession(stored);
         return;
       }
+      setPhase({ kind: "loading" });
       try {
         const s = await createSession(api, { token, device_id: deviceId() });
+        restored.current = false;
         applySession(s);
       } catch (e) {
         const err = toApiError(e);
@@ -104,11 +117,19 @@ function GuestAppInner({ token }: { token: string }) {
     [token, api, applySession],
   );
 
+  /**
+   * The register rejected the guest token: the order closed or the 4-hour
+   * session ran out. A session restored from storage may simply be stale (the
+   * table was paid while the tab was away), so that one is exchanged again
+   * quietly; a session that was live on this page ends with a clear notice.
+   */
   const onUnauthenticated = useCallback(() => {
+    const current = sessionRef.current?.session_id ?? "";
+    if (endedSession.current === current) return;
+    endedSession.current = current;
     clearSession(token);
-    if (!recovered.current) {
-      // A stale stored session (the order closed while the tab was away): start a fresh one, once.
-      recovered.current = true;
+    if (restored.current) {
+      restored.current = false;
       void startSession(true);
       return;
     }
@@ -142,6 +163,15 @@ function GuestAppInner({ token }: { token: string }) {
     setView(v);
     window.scrollTo({ top: 0 });
   }, []);
+  // The screens swap inside one page, so move focus to the new screen's heading for VoiceOver (design 10).
+  const firstView = useRef(true);
+  useEffect(() => {
+    if (firstView.current) {
+      firstView.current = false;
+      return;
+    }
+    document.querySelector<HTMLElement>("h1[tabindex]")?.focus({ preventScroll: true });
+  }, [view]);
 
   /* ---- Menu and order views ---- */
   const menuQuery = useQuery({
@@ -158,6 +188,12 @@ function GuestAppInner({ token }: { token: string }) {
   });
   const menu = menuQuery.data;
   const orderView = orderQuery.data ?? null;
+  const orderError = orderQuery.isError ? toApiError(orderQuery.error) : null;
+  // The register answered with this token: a later 401 means the order closed, not a stale store.
+  const orderConfirmed = orderQuery.isSuccess;
+  useEffect(() => {
+    if (orderConfirmed) restored.current = false;
+  }, [orderConfirmed]);
 
   useEffect(() => {
     if (session && menu) document.title = `Table ${session.table.name} · ${menu.brand.name}`;
@@ -199,25 +235,33 @@ function GuestAppInner({ token }: { token: string }) {
     };
   }, [sessionId, queryClient, onUnauthenticated]);
 
-  /* ---- Not ready to order: re-check every 15 s so the menu opens up when staff seat the table. ---- */
+  /* ---- Not ready to order: re-check so the menu opens up when staff seat the table. ---- */
   const canOrder = session?.can_order ?? false;
   useEffect(() => {
     if (!session || canOrder) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let delay = RECHECK_MS;
     const schedule = (ms: number) => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => void check(), ms);
     };
     const check = async () => {
+      // A phone in a pocket spends no sessions; the visibility handler checks as soon as it is back.
+      if (document.visibilityState === "hidden") {
+        schedule(delay);
+        return;
+      }
       try {
         const s = await createSession(api, { token, device_id: deviceId() });
         if (cancelled) return;
         if (s.can_order) {
+          restored.current = false;
           applySession(s);
           return;
         }
-        schedule(RECHECK_MS);
+        delay = Math.min(delay * 2, RECHECK_MAX_MS);
+        schedule(delay);
       } catch (e) {
         if (cancelled) return;
         const err = toApiError(e);
@@ -226,11 +270,13 @@ function GuestAppInner({ token }: { token: string }) {
           return;
         }
         // The register limits sessions per device; wait as long as it says, then try again.
-        schedule((err.retryAfterSeconds ?? RECHECK_MS / 1000) * 1000);
+        schedule((err.retryAfterSeconds ?? delay / 1000) * 1000);
       }
     };
     const onVisible = () => {
-      if (document.visibilityState === "visible") schedule(500);
+      if (document.visibilityState !== "visible") return;
+      delay = RECHECK_MS;
+      schedule(500);
     };
     schedule(RECHECK_MS);
     document.addEventListener("visibilitychange", onVisible);
@@ -261,6 +307,7 @@ function GuestAppInner({ token }: { token: string }) {
       basketStore.getState().finishSend(round_id);
       const { round_id: _r, status: _s, order_opened: _o, ...viewData } = result;
       queryClient.setQueryData<OrderView>(keys.order(session.session_id), viewData as OrderView);
+      restored.current = false; // the register has accepted this session
       if (!session.order_open) applySession({ ...session, order_open: true, can_order: true });
       streamRef.current?.kick();
       navigate("status");
@@ -286,7 +333,15 @@ function GuestAppInner({ token }: { token: string }) {
 
   /* ---- Screens ---- */
   if (phase.kind === "invalid") return <Notice title="This code isn't valid." body="Ask a member of staff." />;
-  if (phase.kind === "ended") return <Notice title="This table session has ended." body="Scan the QR code again." />;
+  if (phase.kind === "ended") {
+    return (
+      <Notice title="This table session has ended." body="Scan the QR code on the table again, or start again here.">
+        <BrandButton variant="accent" onPress={() => startSession(true)}>
+          Start again
+        </BrandButton>
+      </Notice>
+    );
+  }
   if (phase.kind === "unavailable") {
     return (
       <Notice title={phase.error.message} body={phase.error.remedy ?? "Please order with a member of staff."}>
@@ -351,6 +406,7 @@ function GuestAppInner({ token }: { token: string }) {
           session={session}
           orderView={orderView}
           loading={orderQuery.isPending}
+          error={orderError}
           lastRoundId={basket.lastRoundId}
           streamStatus={streamStatus}
           onOrderMore={() => navigate("menu")}
@@ -358,7 +414,7 @@ function GuestAppInner({ token }: { token: string }) {
           onOurTable={() => navigate("table")}
         />
       ) : null}
-      {view === "table" ? <OurTableView session={session} orderView={orderView} loading={orderQuery.isPending} onBack={() => navigate(basket.lastRoundId ? "status" : "menu")} onCallStaff={() => setStaffSheet(true)} onOrderMore={() => navigate("menu")} /> : null}
+      {view === "table" ? <OurTableView session={session} orderView={orderView} loading={orderQuery.isPending} error={orderError} onBack={() => navigate(basket.lastRoundId ? "status" : "menu")} onCallStaff={() => setStaffSheet(true)} onOrderMore={() => navigate("menu")} /> : null}
 
       {product && itemSheet ? (
         <ItemSheet

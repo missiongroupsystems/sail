@@ -4,7 +4,7 @@ import { staff, staffSessions, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { config } from "../config.js";
 import type { Principal } from "./principal.js";
-import { peekTokenType, verifyBackOfficeToken, verifySailToken } from "./tokens.js";
+import { peekTokenType, sha256, verifyBackOfficeToken, verifySailToken } from "./tokens.js";
 
 /**
  * Turn a bearer token into a Principal. Runs inside the request transaction
@@ -25,7 +25,8 @@ export async function resolvePrincipal(token: string, t: RequestTx): Promise<Pri
   if (typ === "station") {
     const claims = await verifySailToken(token, "station");
     const [st] = await t.db.select().from(stations).where(eq(stations.id, claims.station_id!)).limit(1);
-    if (!st || st.archivedAt || !st.tokenHash) throw new AppError("unauthenticated", "This station is no longer paired", { remedy: "Pair the iPad again from the back office." });
+    // Pairing again replaces the stored hash, so an older token (lost or stolen iPad) stops working.
+    if (!st || st.archivedAt || !st.tokenHash || st.tokenHash !== sha256(token)) throw new AppError("unauthenticated", "This station is no longer paired", { remedy: "Pair the iPad again from the back office." });
     return { type: "station", id: st.id, merchantId: st.merchantId, outletId: st.outletId, stationId: st.id };
   }
 

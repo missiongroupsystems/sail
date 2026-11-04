@@ -11,8 +11,8 @@ import { recordAudit } from "../lib/audit.js";
 import { compact, defineCrud } from "../lib/crud.js";
 import { principalCanSeeOutlet } from "../auth/principal.js";
 import { compileMenu } from "../services/menu.js";
-import { businessDayInputs } from "./org.js";
-import { localParts, nextCutoff } from "../lib/time.js";
+import { businessToday } from "../services/business-day.js";
+import { nextCutoff } from "../lib/time.js";
 
 const ops = (specs: Record<string, Partial<OperationSpec> & { op: string; summary: string }>) => {
   const out: Record<string, OperationSpec> = {};
@@ -467,10 +467,8 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
 
   /* Stock primitives (vision 5.10) */
   const stockBody = z.object({ outlet_id: z.uuid(), product_id: z.uuid() });
-  const todayFor = async (merchantId: string, outletId: string) => {
-    const bd = await businessDayInputs(merchantId, outletId);
-    return { bd, today: localParts(new Date(), bd.timeZone).date };
-  };
+  // Caps and "sold out for today" are per business day (the outlet's cutoff), the same date lines.add and rounds.submit use.
+  const todayFor = (merchantId: string, outletId: string) => businessToday(merchantId, outletId);
 
   defineOp(app, { op: "stock.list", method: "get", path: "/v1/outlets/{id}/stock", tags: ["stock"], request: { params: z.object({ id: z.uuid() }) }, responses: { 200: jsonResponse(listResponse(StockSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");

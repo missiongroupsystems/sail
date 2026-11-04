@@ -70,6 +70,8 @@ export function FloorScreen() {
   const [seating, setSeating] = useState<FloorTable | null>(null);
   const [opening, setOpening] = useState(false);
   const [rejecting, setRejecting] = useState<GuestRound | null>(null);
+  // One order id per pax sheet: a second tap after a timeout replays the same open instead of a duplicate (design 4.2 envelope).
+  const seatingOrderId = useRef(idempotencyKey());
 
   // A new QR order or table request plays the soft tone when sound is on (design 7.9).
   const waitingIds = useRef<Set<string> | null>(null);
@@ -82,7 +84,9 @@ export function FloorScreen() {
   const seat = async (table: FloorTable, pax: number) => {
     setOpening(true);
     try {
-      const res = await openOrder(api, { order_id: idempotencyKey(), order_type: "dine_in", table_id: table.id, pax });
+      const orderId = seatingOrderId.current;
+      const res = await openOrder(api, { order_id: orderId, order_type: "dine_in", table_id: table.id, pax }, { key: orderId });
+      seatingOrderId.current = idempotencyKey();
       applySnapshot(res.data);
       setSeating(null);
       openOrderScreen(res.data.id, "floor");
@@ -217,7 +221,17 @@ export function FloorScreen() {
         />
       </div>
 
-      <Sheet isOpen={Boolean(seating)} onOpenChange={(o) => (!o ? setSeating(null) : undefined)} title={seating ? `Table ${seating.name}` : ""} description="How many guests?" isDismissable={!opening}>
+      <Sheet
+        isOpen={Boolean(seating)}
+        onOpenChange={(o) => {
+          if (o) return;
+          setSeating(null);
+          seatingOrderId.current = idempotencyKey();
+        }}
+        title={seating ? `Table ${seating.name}` : ""}
+        description="How many guests?"
+        isDismissable={!opening}
+      >
         {seating ? <PaxPicker suggested={seating.seats} isPending={opening} onPick={(pax) => void seat(seating, pax)} /> : null}
       </Sheet>
       <RejectRoundSheet isOpen={Boolean(rejecting)} roundLabel={rejecting ? `Table ${rejecting.table_name ?? ""} · ${rejecting.lines.length} ${rejecting.lines.length === 1 ? "item" : "items"}` : null} onClose={() => setRejecting(null)} onReject={(reason) => (rejecting ? nowActions.rejectRound(rejecting.id, reason) : Promise.resolve(null))} />

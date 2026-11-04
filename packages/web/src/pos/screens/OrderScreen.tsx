@@ -90,7 +90,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
                 <Money cents={snap.paid_total} size="display" className="text-ink" />
                 <p className="text-body text-ink-2">
                   {snap.checks.length} {snap.checks.length === 1 ? "bill" : "bills"} · paid {snap.completed_at ? formatClock(snap.completed_at) : ""}
-                  {snap.checks.some((c) => c.refunded_total > 0) ? ` · refunded ${formatCents(snap.checks.reduce((s, c) => s + c.refunded_total, 0))}` : ""}
+                  {snap.checks.some((c) => c.refunded_total > 0) ? " · partly refunded" : ""}
                 </p>
               </div>
               <ul className="flex flex-col gap-2">
@@ -98,7 +98,12 @@ export function OrderScreen({ orderId }: { orderId: string }) {
                   <li key={c.id} className="flex min-h-14 items-center gap-3 rounded-tile bg-surface px-4 hairline">
                     <span className="min-w-0 flex-1 text-line text-ink">
                       {c.label}
-                      <span className="text-caption text-ink-2"> · {c.payments.map((p) => `${p.tender} ${formatCents(p.amount)}`).join(", ")}{c.invoice_no ? ` · Invoice ${c.invoice_no}` : ""}</span>
+                      <span className="text-caption text-ink-2">
+                        {" · "}
+                        {c.payments.map((p) => `${p.tender} ${formatCents(p.amount)}`).join(", ")}
+                        {c.refunded_total > 0 ? ` · refunded ${formatCents(c.refunded_total)}` : ""}
+                        {c.invoice_no ? ` · Invoice ${c.invoice_no}` : ""}
+                      </span>
                     </span>
                     <Button size="md" variant="quiet" isDisabled={offline} onPress={() => void actions.printReceipt(c.id)}>
                       Receipt

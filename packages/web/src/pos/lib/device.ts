@@ -42,21 +42,19 @@ export function useIdleLock(active: boolean, timeoutSeconds: number, onTimeout: 
   const cb = useRef(onTimeout);
   cb.current = onTimeout;
 
+  // The effect must not depend on `warning`: re-running it would reset `last` and the countdown would never reach zero.
   useEffect(() => {
     if (!active) return;
     last.current = Date.now();
     fired.current = false;
     setWarning(false);
-    const bump = () => {
-      last.current = Date.now();
-      if (warning) setWarning(false);
-    };
     let throttle = 0;
     const onActivity = () => {
       const now = Date.now();
       if (now - throttle < 500) return;
       throttle = now;
-      bump();
+      last.current = now;
+      setWarning(false);
     };
     const events: (keyof DocumentEventMap)[] = ["pointerdown", "keydown", "touchstart", "wheel"];
     for (const e of events) document.addEventListener(e, onActivity, { passive: true, capture: true });
@@ -64,8 +62,7 @@ export function useIdleLock(active: boolean, timeoutSeconds: number, onTimeout: 
       const idle = (Date.now() - last.current) / 1000;
       const left = Math.max(0, Math.ceil(timeoutSeconds - idle));
       setSecondsLeft(left);
-      if (left <= 10 && left > 0) setWarning(true);
-      else if (left > 10 && warning) setWarning(false);
+      setWarning(left <= 10 && left > 0);
       if (left <= 0 && !fired.current) {
         fired.current = true;
         cb.current();
@@ -75,7 +72,7 @@ export function useIdleLock(active: boolean, timeoutSeconds: number, onTimeout: 
       clearInterval(tick);
       for (const e of events) document.removeEventListener(e, onActivity, { capture: true } as EventListenerOptions);
     };
-  }, [active, timeoutSeconds, warning]);
+  }, [active, timeoutSeconds]);
 
   return { warning, secondsLeft, touch: () => (last.current = Date.now()) };
 }
@@ -88,17 +85,4 @@ export function useNow(intervalMs = 1000): number {
     return () => clearInterval(t);
   }, [intervalMs]);
   return now;
-}
-
-/** `prefers-reduced-motion` as a hook, for the few places motion is replaced rather than shortened. */
-export function useReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReduced(mq.matches);
-    const on = () => setReduced(mq.matches);
-    mq.addEventListener("change", on);
-    return () => mq.removeEventListener("change", on);
-  }, []);
-  return reduced;
 }

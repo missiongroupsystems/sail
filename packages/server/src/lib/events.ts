@@ -40,30 +40,26 @@ export async function appendEvent(input: AppendEventInput, principal?: Principal
     return { id: "dry-run", seq: -1, occurredAt: at.toISOString(), type: input.type, businessDate };
   }
 
-  let seq: number;
-  if (input.outletId) {
-    const [row] = await sql<{ seq: string }[]>`
-      insert into outlet_sequences (outlet_id, merchant_id, next_seq) values (${input.outletId}, ${input.merchantId}, 2)
-      on conflict (outlet_id) do update set next_seq = outlet_sequences.next_seq + 1
-      returning next_seq - 1 as seq`;
-    seq = Number(row!.seq);
-  } else {
-    const [row] = await sql<{ seq: string }[]>`
-      insert into merchant_sequences (merchant_id, next_seq) values (${input.merchantId}, 2)
-      on conflict (merchant_id) do update set next_seq = merchant_sequences.next_seq + 1
-      returning next_seq - 1 as seq`;
-    seq = Number(row!.seq);
-  }
-
-  const [ev] = await sql<{ id: string; occurred_at: string }[]>`
+  // One statement: take the next number from the counter row (locking it until commit) and insert the event.
+  // The counter lock is what orders commits per outlet, so callers append events as late as they can.
+  const counter = input.outletId
+    ? sql`insert into outlet_sequences (outlet_id, merchant_id, next_seq) values (${input.outletId}, ${input.merchantId}, 2)
+        on conflict (outlet_id) do update set next_seq = outlet_sequences.next_seq + 1
+        returning next_seq - 1 as seq`
+    : sql`insert into merchant_sequences (merchant_id, next_seq) values (${input.merchantId}, 2)
+        on conflict (merchant_id) do update set next_seq = merchant_sequences.next_seq + 1
+        returning next_seq - 1 as seq`;
+  const [ev] = await sql<{ id: string; seq: string; occurred_at: string }[]>`
+    with s as (${counter})
     insert into events (merchant_id, outlet_id, seq, business_date, occurred_at, type, aggregate_kind, aggregate_id, aggregate_version,
       operation_id, idempotency_key, actor, approval, reason, causation_id, correlation_id, payload)
-    values (${input.merchantId}, ${input.outletId}, ${seq}, ${businessDate}, ${at.toISOString()}::timestamptz, ${input.type}, ${input.aggregate.kind}, ${input.aggregate.id},
+    select ${input.merchantId}, ${input.outletId}, s.seq, ${businessDate}, ${at.toISOString()}::timestamptz, ${input.type}, ${input.aggregate.kind}, ${input.aggregate.id},
       ${input.aggregate.version ?? 0}, ${input.operationId}, ${input.idempotencyKey ?? null}, ${JSON.stringify(actor)}::jsonb,
       ${input.approval ? JSON.stringify(input.approval) : null}::jsonb, ${input.reason ? JSON.stringify(input.reason) : null}::jsonb,
-      ${input.causationId ?? null}, ${input.correlationId}, ${JSON.stringify(input.payload ?? {})}::jsonb)
-    returning id, occurred_at`;
-  return { id: ev!.id, seq, occurredAt: new Date(ev!.occurred_at).toISOString(), type: input.type, businessDate };
+      ${input.causationId ?? null}, ${input.correlationId}, ${JSON.stringify(input.payload ?? {})}::jsonb
+    from s
+    returning id, seq, occurred_at`;
+  return { id: ev!.id, seq: Number(ev!.seq), occurredAt: new Date(ev!.occurred_at).toISOString(), type: input.type, businessDate };
 }
 
 /** Convenience: the current transaction's principal context, if any. */

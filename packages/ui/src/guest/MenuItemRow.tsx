@@ -4,7 +4,7 @@ import { Plus } from "lucide-react";
 import { Button as AriaButton } from "react-aria-components";
 import { cx } from "../lib/cx";
 import { Icon } from "../components/Icon";
-import { Money } from "../components/Money";
+import { Money, formatCents } from "../components/Money";
 
 export type MenuItemState =
   /** Tapping opens the item sheet. */
@@ -61,10 +61,12 @@ export function MenuItemRow({ name, description, price, state, reason, note, inB
   );
 
   if (state === "orderable" && onPress) {
+    // The name replaces the row's content for screen readers, so it carries the price (the badge is a bare number).
     return (
       <AriaButton
         onPress={onPress}
-        aria-label={`${name}${inBasket ? `, ${inBasket} in your order` : ""}`}
+        aria-label={`${name}, ${formatCents(price)}${inBasket ? `, ${inBasket} in your order` : ""}`}
+        aria-description={description ?? undefined}
         className={cx("group press cursor-default rounded-none outline-none touch-manipulation data-[pressed]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:-outline-offset-2 data-[focus-visible]:outline-status-seated", shell, className)}
       >
         {body}

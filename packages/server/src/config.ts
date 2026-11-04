@@ -23,6 +23,8 @@ const EnvSchema = z.object({
   /** Admission gate: concurrent request transactions, then a queue, then 503. */
   TX_MAX: z.coerce.number().int().min(1).default(6),
   QUEUE_MAX: z.coerce.number().int().min(0).default(64),
+  /** How long a queued request waits for a slot before a 503. */
+  QUEUE_WAIT_MS: z.coerce.number().int().min(100).default(10_000),
 
   CORS_ORIGIN: z.string().default("*"),
 

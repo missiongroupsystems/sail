@@ -91,7 +91,7 @@ export function OrdersScreen() {
                     <span className="block truncate text-caption text-ink-2">
                       {o.status === "completed" && o.completed_at ? `Paid ${formatClock(o.completed_at)}` : o.status === "cancelled" && o.cancelled_at ? `Cancelled ${formatClock(o.cancelled_at)}` : o.ready_by ? `Ready by ${formatClock(o.ready_by)}` : `Opened ${formatClock(o.opened_at)}`}
                       {o.delivery_address ? ` · ${o.delivery_address}` : ""}
-                      {` · ${o.lines.filter((l) => l.status !== "voided").length} items`}
+                      {` · ${o.lines.filter((l) => l.status !== "voided").reduce((n, l) => n + l.quantity, 0)} items`}
                       {o.status === "completed" ? ` · ${o.checks.length} ${o.checks.length === 1 ? "bill" : "bills"} · ${[...new Set(o.checks.flatMap((c) => c.payments.map((p) => p.tender)))].join(", ")}` : ""}
                       {o.checks.some((c) => c.refunded_total > 0) ? " · refunded" : ""}
                     </span>
@@ -113,7 +113,7 @@ export function OrdersScreen() {
         type={creating}
         onClose={() => setCreating(null)}
         onCreate={async (input) => {
-          const res = await openOrder(api, input);
+          const res = await openOrder(api, input, { key: input.order_id });
           applySnapshot(res.data);
           setCreating(null);
           openOrderScreen(res.data.id, "orders");
@@ -132,6 +132,8 @@ export function NewOrderSheet({ type, onClose, onCreate }: { type: OrderType | n
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // One order id per attempt: a retry after a timeout replays the same order instead of opening a second one (design 4.2 envelope).
+  const [orderId, setOrderId] = useState(idempotencyKey);
 
   const reset = () => {
     setName("");
@@ -140,6 +142,7 @@ export function NewOrderSheet({ type, onClose, onCreate }: { type: OrderType | n
     setAddress("");
     setNotes("");
     setError(null);
+    setOrderId(idempotencyKey());
   };
   const close = () => {
     reset();
@@ -154,7 +157,7 @@ export function NewOrderSheet({ type, onClose, onCreate }: { type: OrderType | n
     if (!type || !valid) return;
     setPending(true);
     setError(null);
-    const input: OpenOrderInput = { order_id: idempotencyKey(), order_type: type };
+    const input: OpenOrderInput = { order_id: orderId, order_type: type };
     if (type === "takeaway" && name.trim()) input.takeaway_ref = name.trim();
     if (needsCustomer) {
       input.customer_ref = { ...(name.trim() ? { name: name.trim() } : {}), ...(mobile.trim() ? { mobile: mobile.trim() } : {}) };

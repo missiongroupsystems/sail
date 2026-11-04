@@ -92,6 +92,27 @@ describe("Scan to Order", () => {
     expect((await guestCall("GET", `/v1/channel-links/${ids.posLink}/menu`, g)).status).toBe(200); // same outlet's POS menu is still just a menu
   });
 
+  it("a guest who scanned before the table was seated is bound to the table's order on the next read, without a new session", async () => {
+    const s = await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl12), device_id: "device-aaaa-0001-early" }, idempotencyKey: null });
+    const g = s.body.data.guest_token;
+    const before = await guestCall<{ data: { can_order: boolean; order_open: boolean; order: null } }>("GET", "/v1/guest/order", g);
+    expect(before.body.data).toMatchObject({ can_order: false, order_open: false, order: null });
+    expect((await guestCall("GET", "/v1/guest/stream", g)).status).toBe(409);
+    const seated = await call<{ data: Snap }>("POST", "/v1/orders", { token: serverPin, body: { order_id: randomUUID(), order_type: "dine_in", table_id: ids.table12, pax: 2 } });
+    expect(seated.status).toBe(201);
+    const after = await guestCall<{ data: { can_order: boolean; order_open: boolean; order: { id: string } } }>("GET", "/v1/guest/order", g);
+    expect(after.body.data).toMatchObject({ can_order: true, order_open: true });
+    expect(after.body.data.order.id).toBe(seated.body.data.id);
+    const round = await guestCall<{ data: { status: string } }>("POST", "/v1/guest/rounds", g, { round_id: randomUUID(), lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] });
+    expect(round.status, JSON.stringify(round.body)).toBe(201);
+    const stream = await app.request("/v1/guest/stream", { headers: { authorization: `Bearer ${g}` } });
+    expect(stream.status).toBe(200);
+    expect((await readSse(stream, 1, 2000))[0]!.event).toBe("hello");
+    // Leave table 12 free for the next scenario.
+    for (const r of (await call<{ data: { id: string }[] }>("GET", `/v1/outlets/${A.outletId}/rounds?status=pending`, { token: serverPin })).body.data) await call("POST", `/v1/rounds/${r.id}/reject`, { token: serverPin, body: { reason: "test" } });
+    expect((await call("POST", `/v1/orders/${seated.body.data.id}/cancel`, { token: serverPin, body: { reason: "test" } })).status).toBe(200);
+  });
+
   it("with the table seated, a guest round waits for acceptance, staff accept it, it fires and prints, and the guest sees statuses; a QR order reaches the POS stream", async () => {
     const seated = await call<{ data: Snap }>("POST", "/v1/orders", { token: serverPin, body: { order_id: randomUUID(), order_type: "dine_in", table_id: ids.table12, pax: 2 } });
     expect(seated.status).toBe(201);

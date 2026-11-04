@@ -171,14 +171,15 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
     );
   }
 
+  // Every figure here is the register's dry run (rounding, change, balance left) or the person's own entry (amount, cash given). Nothing is added up on the iPad.
   const figures = preview?.figures ?? null;
   const rounding = tender.is_cash && figures?.rounding_cents ? figures.rounding_cents : 0;
-  const payCents = figures && tender.is_cash ? (figures.amount ?? amount) + rounding : amount;
   const change = tender.is_cash && figures && tendered != null ? figures.change_due : null;
   const left = preview?.left ?? null;
-  const verb = tender.is_cash ? `Take ${formatCents(tendered ?? payCents)} cash` : tender.is_terminal ? (part ? `Take ${formatCents(amount)} by ${tender.name}` : `Paid by ${tender.name}`) : `Take ${formatCents(amount)} by ${tender.name}`;
+  const verb = tender.is_cash ? `Take ${formatCents(tendered ?? amount)} cash` : tender.is_terminal ? (part ? `Take ${formatCents(amount)} by ${tender.name}` : `Paid by ${tender.name}`) : `Take ${formatCents(amount)} by ${tender.name}`;
   const label = `${verb}${part && left != null ? ` · ${formatCents(left)} left` : ""} ▸`;
-  const blocked = offline || busy || amount <= 0 || Boolean(previewError) || (tender.is_cash && tendered != null && tendered < payCents);
+  // Too little cash for the rounded amount comes back from the dry run as a validation error, which blocks the button with its remedy.
+  const blocked = offline || busy || amount <= 0 || Boolean(previewError);
 
   return (
     <Frame left={<BackButton label={screen.kind === "pay" && screen.returnTo === "bill" ? "Bill" : where} onPress={back} />} title={`${billLabel(check)} · ${where}`}>
@@ -259,10 +260,10 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
                   </Button>
                 ))}
               </div>
-              <p className="text-body text-ink-2 tabular" aria-live="polite">
+              <p className="text-body text-ink-2 tabular" role="status" aria-live="polite">
                 {figures ? (
                   <>
-                    {rounding !== 0 ? `Cash rounding ${formatCents(rounding)} → pay ${formatCents(payCents)}` : part ? `Part payment of ${formatCents(amount)}` : `No cash rounding · pay ${formatCents(payCents)}`}
+                    {rounding !== 0 ? `Cash rounding ${formatCents(rounding)}` : part ? `Part payment of ${formatCents(amount)}` : "No cash rounding"}
                     {change != null && tendered != null ? ` · change ${formatCents(change)}` : ""}
                   </>
                 ) : previewError ? (
@@ -283,7 +284,11 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
                 <p className="text-line text-ink">Record {formatCents(amount)} to {tender.name}.</p>
               )}
               <TextField label="Reference (optional)" value={reference} onChange={setReference} inputClassName="min-h-14 text-line" className="max-w-[360px]" maxLength={80} mono />
-              {previewError ? <p className="text-body text-status-alert">{previewError}</p> : null}
+              {previewError ? (
+                <p className="text-body text-status-alert" role="alert">
+                  {previewError}
+                </p>
+              ) : null}
             </div>
           )}
 
