@@ -1,0 +1,48 @@
+{
+  "name": "@sail/server",
+  "version": "0.9.0-beta.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts --role=app",
+    "build": "tsup",
+    "start": "node dist/index.js --role=app",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "drizzle-kit generate",
+    "db:generate:custom": "drizzle-kit generate --custom",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:check": "drizzle-kit check",
+    "openapi:generate": "tsx scripts/openapi.ts write",
+    "openapi:check": "tsx scripts/openapi.ts check",
+    "manifest:generate": "tsx scripts/mcp-manifest.ts write",
+    "manifest:check": "tsx scripts/mcp-manifest.ts check",
+    "dev:local": "tsx scripts/dev-local.ts",
+    "bootstrap": "tsx scripts/bootstrap.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.0",
+    "@hono/zod-openapi": "^1.1.0",
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "@sail/shared": "workspace:*",
+    "drizzle-orm": "^0.44.0",
+    "hono": "^4.9.0",
+    "jose": "^6.0.0",
+    "pdf-lib": "^1.17.1",
+    "pino": "^9.7.0",
+    "postgres": "^3.4.7",
+    "qrcode": "^1.5.4",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/qrcode": "^1.5.5",
+    "drizzle-kit": "^0.31.0",
+    "embedded-postgres": "17.6.0-beta.15",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}

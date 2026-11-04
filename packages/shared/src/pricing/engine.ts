@@ -372,7 +372,7 @@ function gstOn(amount: Cents, context: PricingContext): Cents {
 function buildAdjustment(rule: PricingRule, app: ManualApplication | null, eligible: readonly LineState[], magnitudes: readonly Cents[], capped: boolean, context: PricingContext, frozen: boolean): Adjustment {
   const sign = rule.kind === "discount" ? -1 : 1;
   const lines = eligible.map((s, i) => {
-    const amount = sign * magnitudes[i]!;
+    const amount = sign * magnitudes[i]! || 0; // `|| 0` normalises -0 to 0
     const gst = rule.kind === "fee" && rule.gst_applicable ? gstOn(amount, context) : 0;
     return { line_id: s.line.line_id, amount, gst_amount: gst };
   });

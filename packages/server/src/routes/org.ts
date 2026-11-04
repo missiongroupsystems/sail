@@ -1,0 +1,327 @@
+import type { OpenAPIHono } from "@hono/zod-openapi";
+import { and, asc, eq, isNull } from "drizzle-orm";
+import { TaxModeSchema } from "@sail/shared";
+import { db } from "../db/client.js";
+import { brands, merchantSettings, merchants, outlets, stations } from "../db/schema/index.js";
+import { AppError } from "../lib/errors.js";
+import type { AppEnv } from "../lib/context.js";
+import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
+import { appendEvent } from "../lib/events.js";
+import { recordAudit } from "../lib/audit.js";
+import { principalCanSeeOutlet } from "../auth/principal.js";
+
+/* ---- Schemas ----------------------------------------------------------- */
+
+export const MerchantSettingsSchema = z.object({
+  tax_mode: TaxModeSchema,
+  gst_bps: z.number().int(),
+  cash_rounding_increment: z.number().int().nullable(),
+  business_day_cutoff: z.string(),
+  timezone: z.string(),
+  currency: z.string(),
+  receipt_footer: z.string().nullable(),
+  receipt_show_outlet_phone: z.boolean(),
+  busy_mode_threshold: z.number().int(),
+});
+export const MerchantSchema = z.object({ id: z.string(), name: z.string(), settings: MerchantSettingsSchema });
+const SettingsPatch = MerchantSettingsSchema.partial().extend({ name: z.string().min(1).optional() });
+
+export const BrandSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  accent_color: z.string().nullable(),
+  display_font: z.string().nullable(),
+  logo_url: z.string().nullable(),
+  legacy_id: z.string().nullable(),
+  archived: z.boolean(),
+});
+const BrandInput = z.object({ id: z.uuid().optional(), name: z.string().min(1), accent_color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(), display_font: z.string().nullable().optional(), logo_url: z.string().nullable().optional(), legacy_id: z.string().nullable().optional() });
+const BrandPatch = BrandInput.omit({ id: true }).partial().extend({ archived: z.boolean().optional() });
+
+const HoursSchema = z.record(z.string(), z.array(z.tuple([z.string(), z.string()])));
+export const OutletSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  address: z.string().nullable(),
+  phone: z.string().nullable(),
+  uen: z.string().nullable(),
+  business_day_cutoff: z.string().nullable(),
+  hours: HoursSchema,
+  service_theme_from: z.string().nullable(),
+  legacy_id: z.string().nullable(),
+  archived: z.boolean(),
+});
+const OutletInput = z.object({
+  id: z.uuid().optional(),
+  name: z.string().min(1),
+  address: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  uen: z.string().nullable().optional(),
+  business_day_cutoff: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
+  hours: HoursSchema.optional(),
+  service_theme_from: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
+  legacy_id: z.string().nullable().optional(),
+});
+const OutletPatch = OutletInput.omit({ id: true }).partial().extend({ archived: z.boolean().optional() });
+
+export const StationSchema = z.object({
+  id: z.string(),
+  outlet_id: z.string(),
+  name: z.string(),
+  brand_id: z.string().nullable(),
+  layout_id: z.string().nullable(),
+  pay_before_firing: z.boolean(),
+  seats_enabled: z.boolean(),
+  home: z.enum(["floor", "takeaway"]),
+  receipt_printer_id: z.string().nullable(),
+  text_size: z.string(),
+  paired: z.boolean(),
+  device_label: z.string().nullable(),
+  archived: z.boolean(),
+});
+const StationInput = z.object({
+  id: z.uuid().optional(),
+  outlet_id: z.uuid(),
+  name: z.string().min(1),
+  brand_id: z.uuid().nullable().optional(),
+  layout_id: z.uuid().nullable().optional(),
+  pay_before_firing: z.boolean().optional(),
+  seats_enabled: z.boolean().optional(),
+  home: z.enum(["floor", "takeaway"]).optional(),
+  receipt_printer_id: z.uuid().nullable().optional(),
+  text_size: z.enum(["standard", "large"]).optional(),
+});
+const StationPatch = StationInput.omit({ id: true, outlet_id: true }).partial().extend({ archived: z.boolean().optional() });
+
+/* ---- Mappers ------------------------------------------------------------ */
+
+export const toBrand = (b: typeof brands.$inferSelect) => ({ id: b.id, name: b.name, accent_color: b.accentColor, display_font: b.displayFont, logo_url: b.logoUrl, legacy_id: b.legacyId, archived: b.archivedAt != null });
+export const toOutlet = (o: typeof outlets.$inferSelect) => ({
+  id: o.id,
+  name: o.name,
+  address: o.address,
+  phone: o.phone,
+  uen: o.uen,
+  business_day_cutoff: o.businessDayCutoff,
+  hours: o.hours,
+  service_theme_from: o.serviceThemeFrom,
+  legacy_id: o.legacyId,
+  archived: o.archivedAt != null,
+});
+export const toStation = (s: typeof stations.$inferSelect) => ({
+  id: s.id,
+  outlet_id: s.outletId,
+  name: s.name,
+  brand_id: s.brandId,
+  layout_id: s.layoutId,
+  pay_before_firing: s.payBeforeFiring,
+  seats_enabled: s.seatsEnabled,
+  home: s.home,
+  receipt_printer_id: s.receiptPrinterId,
+  text_size: s.textSize,
+  paired: s.tokenHash != null,
+  device_label: s.deviceLabel,
+  archived: s.archivedAt != null,
+});
+const toSettings = (s: typeof merchantSettings.$inferSelect) => ({
+  tax_mode: s.taxMode,
+  gst_bps: s.gstBps,
+  cash_rounding_increment: s.cashRoundingIncrement,
+  business_day_cutoff: s.businessDayCutoff,
+  timezone: s.timezone,
+  currency: s.currency,
+  receipt_footer: s.receiptFooter,
+  receipt_show_outlet_phone: s.receiptShowOutletPhone,
+  busy_mode_threshold: s.busyModeThreshold,
+});
+
+/** Load the merchant's business-day inputs for event stamping. */
+export async function businessDayInputs(merchantId: string, outletId?: string | null) {
+  const [s] = await db().select().from(merchantSettings).where(eq(merchantSettings.merchantId, merchantId)).limit(1);
+  let cutoff = s?.businessDayCutoff ?? "04:00";
+  if (outletId) {
+    const [o] = await db().select({ cutoff: outlets.businessDayCutoff }).from(outlets).where(eq(outlets.id, outletId)).limit(1);
+    if (o?.cutoff) cutoff = o.cutoff;
+  }
+  return { cutoff, timeZone: s?.timezone ?? "Asia/Singapore" };
+}
+
+/* ---- Routes -------------------------------------------------------------- */
+
+export function orgRoutes(app: OpenAPIHono<AppEnv>) {
+  defineOp(app, { op: "merchants.get", method: "get", path: "/v1/merchant", tags: ["organisation"], responses: { 200: jsonResponse(dataResponse(MerchantSchema)), ...errorResponses } }, async (c) => {
+    const p = c.get("principal");
+    const [m] = await db().select().from(merchants).where(eq(merchants.id, p.merchantId)).limit(1);
+    const [s] = await db().select().from(merchantSettings).where(eq(merchantSettings.merchantId, p.merchantId)).limit(1);
+    if (!m || !s) throw AppError.notFound("merchant");
+    return c.json({ data: { id: m.id, name: m.name, settings: toSettings(s) } }, 200);
+  });
+
+  defineOp(
+    app,
+    { op: "merchants.update_settings", method: "patch", path: "/v1/merchant/settings", tags: ["organisation"], request: { body: jsonBody(SettingsPatch) }, responses: { 200: jsonResponse(mutationResponse(MerchantSchema)), ...errorResponses } },
+    async (c) => {
+      const p = c.get("principal");
+      const patch = c.req.valid("json");
+      if (patch.cash_rounding_increment != null && patch.cash_rounding_increment <= 0) throw AppError.validation("cash_rounding_increment must be a positive number of cents, or null to turn rounding off");
+      const { name, ...settings } = patch;
+      if (name) await db().update(merchants).set({ name }).where(eq(merchants.id, p.merchantId));
+      const [s] = await db()
+        .update(merchantSettings)
+        .set({
+          ...(settings.tax_mode !== undefined && { taxMode: settings.tax_mode }),
+          ...(settings.gst_bps !== undefined && { gstBps: settings.gst_bps }),
+          ...(settings.cash_rounding_increment !== undefined && { cashRoundingIncrement: settings.cash_rounding_increment }),
+          ...(settings.business_day_cutoff !== undefined && { businessDayCutoff: settings.business_day_cutoff }),
+          ...(settings.timezone !== undefined && { timezone: settings.timezone }),
+          ...(settings.currency !== undefined && { currency: settings.currency }),
+          ...(settings.receipt_footer !== undefined && { receiptFooter: settings.receipt_footer }),
+          ...(settings.receipt_show_outlet_phone !== undefined && { receiptShowOutletPhone: settings.receipt_show_outlet_phone }),
+          ...(settings.busy_mode_threshold !== undefined && { busyModeThreshold: settings.busy_mode_threshold }),
+          updatedAt: new Date(),
+        })
+        .where(eq(merchantSettings.merchantId, p.merchantId))
+        .returning();
+      const [m] = await db().select().from(merchants).where(eq(merchants.id, p.merchantId)).limit(1);
+      if (!s || !m) throw AppError.notFound("merchant");
+      const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "merchant.settings_updated", aggregate: { kind: "merchant", id: p.merchantId }, operationId: "merchants.update_settings", payload: patch, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
+      await recordAudit(p, { action: "merchants.update_settings", targetKind: "merchant", targetId: p.merchantId, details: patch });
+      return c.json({ data: { id: m.id, name: m.name, settings: toSettings(s) }, events: [ev], warnings: [] }, 200);
+    },
+  );
+
+  /* Brands */
+  defineOp(app, { op: "brands.list", method: "get", path: "/v1/brands", tags: ["organisation"], request: { query: z.object({ include_archived: z.enum(["true", "false"]).optional() }) }, responses: { 200: jsonResponse(listResponse(BrandSchema)), ...errorResponses } }, async (c) => {
+    const p = c.get("principal");
+    const q = c.req.valid("query");
+    const where = q.include_archived === "true" ? eq(brands.merchantId, p.merchantId) : and(eq(brands.merchantId, p.merchantId), isNull(brands.archivedAt));
+    const rows = await db().select().from(brands).where(where).orderBy(asc(brands.name));
+    return c.json({ data: rows.map(toBrand), next_cursor: null }, 200);
+  });
+
+  defineOp(app, { op: "brands.create", method: "post", path: "/v1/brands", tags: ["organisation"], request: { body: jsonBody(BrandInput) }, responses: { 201: jsonResponse(mutationResponse(BrandSchema)), ...errorResponses } }, async (c) => {
+    const p = c.get("principal");
+    const body = c.req.valid("json");
+    const [row] = await db().insert(brands).values({ id: body.id, merchantId: p.merchantId, name: body.name, accentColor: body.accent_color ?? null, displayFont: body.display_font ?? null, logoUrl: body.logo_url ?? null, legacyId: body.legacy_id ?? null }).returning();
+    const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "brand.created", aggregate: { kind: "brand", id: row!.id }, operationId: "brands.create", payload: toBrand(row!), correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
+    await recordAudit(p, { action: "brands.create", targetKind: "brand", targetId: row!.id, details: { name: row!.name } });
+    return c.json({ data: toBrand(row!), events: [ev], warnings: [] }, 201);
+  });
+
+  defineOp(app, { op: "brands.update", method: "patch", path: "/v1/brands/{id}", tags: ["organisation"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(BrandPatch) }, responses: { 200: jsonResponse(mutationResponse(BrandSchema)), ...errorResponses } }, async (c) => {
+    const p = c.get("principal");
+    const { id } = c.req.valid("param");
+    const body = c.req.valid("json");
+    const [row] = await db()
+      .update(brands)
+      .set({
+        ...(body.name !== undefined && { name: body.name }),
+        ...(body.accent_color !== undefined && { accentColor: body.accent_color }),
+        ...(body.display_font !== undefined && { displayFont: body.display_font }),
+        ...(body.logo_url !== undefined && { logoUrl: body.logo_url }),
+        ...(body.legacy_id !== undefined && { legacyId: body.legacy_id }),
+        ...(body.archived !== undefined && { archivedAt: body.archived ? new Date() : null }),
+      })
+      .where(and(eq(brands.id, id), eq(brands.merchantId, p.merchantId)))
+      .returning();
+    if (!row) throw AppError.notFound("brand", id);
+    const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "brand.updated", aggregate: { kind: "brand", id }, operationId: "brands.update", payload: body, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
+    await recordAudit(p, { action: "brands.update", targetKind: "brand", targetId: id, details: body });
+    return c.json({ data: toBrand(row), events: [ev], warnings: [] }, 200);
+  });
+
+  /* Outlets */
+  defineOp(app, { op: "outlets.list", method: "get", path: "/v1/outlets", tags: ["organisation"], request: { query: z.object({ include_archived: z.enum(["true", "false"]).optional() }) }, responses: { 200: jsonResponse(listResponse(OutletSchema)), ...errorResponses } }, async (c) => {
+    const p = c.get("principal");
+    const q = c.req.valid("query");
+    const where = q.include_archived === "true" ? eq(outlets.merchantId, p.merchantId) : and(eq(outlets.merchantId, p.merchantId), isNull(outlets.archivedAt));
+    // RLS already limits the rows to the caller's outlet scope.
+    const rows = await db().select().from(outlets).where(where).orderBy(asc(outlets.name));
+    return c.json({ data: rows.map(toOutlet), next_cursor: null }, 200);
+  });
+
+  defineOp(app, { op: "outlets.create", method: "post", path: "/v1/outlets", tags: ["organisation"], request: { body: jsonBody(OutletInput) }, responses: { 201: jsonResponse(mutationResponse(OutletSchema)), ...errorResponses } }, async (c) => {
+    const p = c.get("principal");
+    const body = c.req.valid("json");
+    const [row] = await db()
+      .insert(outlets)
+      .values({ id: body.id, merchantId: p.merchantId, name: body.name, address: body.address ?? null, phone: body.phone ?? null, uen: body.uen ?? null, businessDayCutoff: body.business_day_cutoff ?? null, hours: body.hours ?? {}, serviceThemeFrom: body.service_theme_from ?? "18:00", legacyId: body.legacy_id ?? null })
+      .returning();
+    const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "outlet.created", aggregate: { kind: "outlet", id: row!.id }, operationId: "outlets.create", payload: toOutlet(row!), correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
+    await recordAudit(p, { action: "outlets.create", targetKind: "outlet", targetId: row!.id, details: { name: row!.name } });
+    return c.json({ data: toOutlet(row!), events: [ev], warnings: [] }, 201);
+  });
+
+  defineOp(app, { op: "outlets.update", method: "patch", path: "/v1/outlets/{id}", tags: ["organisation"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(OutletPatch) }, responses: { 200: jsonResponse(mutationResponse(OutletSchema)), ...errorResponses } }, async (c) => {
+    const p = c.get("principal");
+    const { id } = c.req.valid("param");
+    const body = c.req.valid("json");
+    const [row] = await db()
+      .update(outlets)
+      .set({
+        ...(body.name !== undefined && { name: body.name }),
+        ...(body.address !== undefined && { address: body.address }),
+        ...(body.phone !== undefined && { phone: body.phone }),
+        ...(body.uen !== undefined && { uen: body.uen }),
+        ...(body.business_day_cutoff !== undefined && { businessDayCutoff: body.business_day_cutoff }),
+        ...(body.hours !== undefined && { hours: body.hours }),
+        ...(body.service_theme_from !== undefined && { serviceThemeFrom: body.service_theme_from }),
+        ...(body.legacy_id !== undefined && { legacyId: body.legacy_id }),
+        ...(body.archived !== undefined && { archivedAt: body.archived ? new Date() : null }),
+      })
+      .where(and(eq(outlets.id, id), eq(outlets.merchantId, p.merchantId)))
+      .returning();
+    if (!row) throw AppError.notFound("outlet", id);
+    const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "outlet.updated", aggregate: { kind: "outlet", id }, operationId: "outlets.update", payload: body, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
+    await recordAudit(p, { action: "outlets.update", targetKind: "outlet", targetId: id, details: body });
+    return c.json({ data: toOutlet(row), events: [ev], warnings: [] }, 200);
+  });
+
+  /* Stations */
+  defineOp(app, { op: "stations.list", method: "get", path: "/v1/outlets/{id}/stations", tags: ["organisation"], request: { params: z.object({ id: z.uuid() }) }, responses: { 200: jsonResponse(listResponse(StationSchema)), ...errorResponses } }, async (c) => {
+    const p = c.get("principal");
+    const { id } = c.req.valid("param");
+    if (!principalCanSeeOutlet(p, id)) throw AppError.notFound("outlet", id);
+    const rows = await db().select().from(stations).where(and(eq(stations.outletId, id), isNull(stations.archivedAt))).orderBy(asc(stations.name));
+    return c.json({ data: rows.map(toStation), next_cursor: null }, 200);
+  });
+
+  defineOp(app, { op: "stations.create", method: "post", path: "/v1/stations", tags: ["organisation"], request: { body: jsonBody(StationInput) }, responses: { 201: jsonResponse(mutationResponse(StationSchema)), ...errorResponses } }, async (c) => {
+    const p = c.get("principal");
+    const body = c.req.valid("json");
+    const [outlet] = await db().select({ id: outlets.id }).from(outlets).where(eq(outlets.id, body.outlet_id)).limit(1);
+    if (!outlet) throw AppError.notFound("outlet", body.outlet_id);
+    const [row] = await db()
+      .insert(stations)
+      .values({ id: body.id, merchantId: p.merchantId, outletId: body.outlet_id, name: body.name, brandId: body.brand_id ?? null, layoutId: body.layout_id ?? null, payBeforeFiring: body.pay_before_firing ?? false, seatsEnabled: body.seats_enabled ?? false, home: body.home ?? "floor", receiptPrinterId: body.receipt_printer_id ?? null, textSize: body.text_size ?? "standard" })
+      .returning();
+    const ev = await appendEvent({ merchantId: p.merchantId, outletId: body.outlet_id, type: "station.created", aggregate: { kind: "station", id: row!.id }, operationId: "stations.create", payload: toStation(row!), correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(p.merchantId, body.outlet_id) }, p);
+    await recordAudit(p, { action: "stations.create", targetKind: "station", targetId: row!.id, outletId: body.outlet_id, details: { name: row!.name } });
+    return c.json({ data: toStation(row!), events: [ev], warnings: [] }, 201);
+  });
+
+  defineOp(app, { op: "stations.update", method: "patch", path: "/v1/stations/{id}", tags: ["organisation"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(StationPatch) }, responses: { 200: jsonResponse(mutationResponse(StationSchema)), ...errorResponses } }, async (c) => {
+    const p = c.get("principal");
+    const { id } = c.req.valid("param");
+    const body = c.req.valid("json");
+    const [row] = await db()
+      .update(stations)
+      .set({
+        ...(body.name !== undefined && { name: body.name }),
+        ...(body.brand_id !== undefined && { brandId: body.brand_id }),
+        ...(body.layout_id !== undefined && { layoutId: body.layout_id }),
+        ...(body.pay_before_firing !== undefined && { payBeforeFiring: body.pay_before_firing }),
+        ...(body.seats_enabled !== undefined && { seatsEnabled: body.seats_enabled }),
+        ...(body.home !== undefined && { home: body.home }),
+        ...(body.receipt_printer_id !== undefined && { receiptPrinterId: body.receipt_printer_id }),
+        ...(body.text_size !== undefined && { textSize: body.text_size }),
+        ...(body.archived !== undefined && { archivedAt: body.archived ? new Date() : null }),
+      })
+      .where(and(eq(stations.id, id), eq(stations.merchantId, p.merchantId)))
+      .returning();
+    if (!row) throw AppError.notFound("station", id);
+    const ev = await appendEvent({ merchantId: p.merchantId, outletId: row.outletId, type: "station.updated", aggregate: { kind: "station", id }, operationId: "stations.update", payload: body, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(p.merchantId, row.outletId) }, p);
+    await recordAudit(p, { action: "stations.update", targetKind: "station", targetId: id, outletId: row.outletId, details: body });
+    return c.json({ data: toStation(row), events: [ev], warnings: [] }, 200);
+  });
+}

@@ -1,0 +1,11 @@
+{
+  "api": "http://localhost:8080",
+  "database_url": "postgres://postgres@127.0.0.1:35091/sail_dev",
+  "admin_email": "admin@sail.local",
+  "admin_pin": "123456",
+  "merchantId": "1417ef0a-dff6-49d7-af02-22a234388b4d",
+  "brandId": "b316a153-c649-4c3b-9a94-2a2ef3a1b2ff",
+  "outletId": "be924944-dda8-4625-aec1-fe5c9601c77a",
+  "stationId": "6402f936-e964-49f2-a097-4c2fdfcae596",
+  "adminStaffId": "b97216bb-c329-4d03-9f3a-927c70eee9f2"
+}

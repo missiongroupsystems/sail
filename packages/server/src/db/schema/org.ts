@@ -1,0 +1,106 @@
+import { boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+
+/** Merchant > Brand > Outlet > Station (scope doc 4.1). Every row carries merchant_id. */
+
+export const taxModeEnum = pgEnum("tax_mode", ["inclusive", "exclusive"]);
+
+export const merchants = pgTable("merchants", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const merchantSettings = pgTable("merchant_settings", {
+  merchantId: uuid("merchant_id")
+    .primaryKey()
+    .references(() => merchants.id, { onDelete: "cascade" }),
+  taxMode: taxModeEnum("tax_mode").notNull().default("exclusive"),
+  gstBps: integer("gst_bps").notNull().default(900),
+  /** Null = cash rounding off. Otherwise the increment in cents, for example 5. */
+  cashRoundingIncrement: integer("cash_rounding_increment"),
+  /** HH:MM local time at which the business day rolls over. */
+  businessDayCutoff: text("business_day_cutoff").notNull().default("04:00"),
+  timezone: text("timezone").notNull().default("Asia/Singapore"),
+  currency: text("currency").notNull().default("SGD"),
+  receiptFooter: text("receipt_footer"),
+  receiptShowOutletPhone: boolean("receipt_show_outlet_phone").notNull().default(true),
+  /** Outlets with more open orders than this show the POS in busy mode (design 2.2). */
+  busyModeThreshold: integer("busy_mode_threshold").notNull().default(12),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const brands = pgTable(
+  "brands",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    merchantId: uuid("merchant_id")
+      .notNull()
+      .references(() => merchants.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    /** Brand accent colour (hex) for the order header stripe and the guest app (design 9). */
+    accentColor: text("accent_color"),
+    displayFont: text("display_font"),
+    logoUrl: text("logo_url"),
+    legacyId: text("legacy_id"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("brands_merchant_idx").on(t.merchantId)],
+);
+
+export const outlets = pgTable(
+  "outlets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    merchantId: uuid("merchant_id")
+      .notNull()
+      .references(() => merchants.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    address: text("address"),
+    phone: text("phone"),
+    /** Unique Entity Number printed on tax invoices. */
+    uen: text("uen"),
+    /** Overrides the merchant cutoff when set. */
+    businessDayCutoff: text("business_day_cutoff"),
+    /** Opening hours by weekday: { mon: [["11:00","22:00"]], ... } */
+    hours: jsonb("hours").$type<Record<string, [string, string][]>>().notNull().default({}),
+    /** Service (dark) theme starts at this local time (design 7.3). */
+    serviceThemeFrom: text("service_theme_from").default("18:00"),
+    legacyId: text("legacy_id"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("outlets_merchant_idx").on(t.merchantId)],
+);
+
+export const stationHomeEnum = pgEnum("station_home", ["floor", "takeaway"]);
+
+export const stations = pgTable(
+  "stations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    merchantId: uuid("merchant_id")
+      .notNull()
+      .references(() => merchants.id, { onDelete: "cascade" }),
+    outletId: uuid("outlet_id")
+      .notNull()
+      .references(() => outlets.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    /** POS layout (per brand); set in v0.4 when layouts exist. */
+    layoutId: uuid("layout_id"),
+    brandId: uuid("brand_id").references(() => brands.id),
+    payBeforeFiring: boolean("pay_before_firing").notNull().default(false),
+    seatsEnabled: boolean("seats_enabled").notNull().default(false),
+    home: stationHomeEnum("home").notNull().default("floor"),
+    receiptPrinterId: uuid("receipt_printer_id"),
+    textSize: text("text_size").notNull().default("standard"),
+    /** Set when an iPad is paired (v0.4). */
+    pairedAt: timestamp("paired_at", { withTimezone: true }),
+    deviceLabel: text("device_label"),
+    /** Hash of the current station token; rotating it un-pairs the old iPad. */
+    tokenHash: text("token_hash"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("stations_outlet_idx").on(t.merchantId, t.outletId)],
+);
