@@ -84,6 +84,9 @@ importers:
       embedded-postgres:
         specifier: 17.6.0-beta.15
         version: 17.6.0-beta.15
+      fast-check:
+        specifier: ^4.10.2
+        version: 4.10.2
       tsup:
         specifier: ^8.5.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.32)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
@@ -219,6 +222,9 @@ importers:
       tailwindcss:
         specifier: ^4.1.0
         version: 4.3.4
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
       typescript:
         specifier: ^5.9.0
         version: 5.9.3

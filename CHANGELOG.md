@@ -4,6 +4,13 @@ All notable changes to Sail. Phases follow `docs/roadmap.md`; each has a complet
 
 ## Unreleased (feat/beta-v1)
 
+### v0.7 Bill splitting and refunds
+- Split evenly by N, by seat (shared lines even or on a Shared bill) and by item with equal shares; free until the first payment, locked per paid bill; per-bill receipts, invoices and cash rounding.
+- Refunds: full, by lines and quantities, by amount; adjustments and GST reversed in proportion; tenders assigned to original payments within caps; cash rounding on cash refunds; Manager+ or override; reason required.
+- Numbered refund receipts (print or link) and credit notes (PDF) for invoiced bills; refunds dated by business day and included in shift close and the Z-report; daily caps not restored.
+- Database invariants: refund sums, per-line and per-payment caps, immutable refund rows.
+- `@sail/shared` `quoteRefund` pure reversal with property tests.
+
 ### v0.6 Payments, shifts and tax documents
 - Checks (bills) with allocations rebuilt after every re-price; database-enforced bill and line sums; bills lock at the first payment and new lines open a new bill.
 - Payments: several tenders and part payments per bill, card/PayNow/house tenders by hand with references, cash rounding only on the settling cash tender, tips, idempotent recording, pricing freeze at first payment, auto-completion, same-day reopen with reversed payments.

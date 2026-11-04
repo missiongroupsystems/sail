@@ -117,7 +117,14 @@ function enforce(c: { get(k: "principal"): AppEnv["Variables"]["principal"] | un
   }
 }
 
+/** An override grant may arrive as the `X-Override-Id` header or as `override_id` in the JSON body; the handler verifies it. */
 function hasOverrideHeader(c: unknown): boolean {
-  const ctx = c as { req?: { header(name: string): string | undefined } };
-  return Boolean(ctx.req?.header("x-override-id"));
+  const ctx = c as { req?: { header(name: string): string | undefined; valid?(target: "json"): unknown } };
+  if (ctx.req?.header("x-override-id")) return true;
+  try {
+    const body = ctx.req?.valid?.("json") as { override_id?: unknown } | undefined;
+    return typeof body?.override_id === "string" && body.override_id.length > 0;
+  } catch {
+    return false;
+  }
 }

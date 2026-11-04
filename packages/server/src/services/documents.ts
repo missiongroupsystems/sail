@@ -61,8 +61,13 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
   const ink = rgb(0.11, 0.11, 0.12);
   const grey = rgb(0.37, 0.35, 0.33);
   let y = 790;
-  const text = (s: string, x: number, size = 10, f = font, color = ink) => page.drawText(s, { x, y, size, font: f, color });
-  const right = (s: string, xRight: number, size = 10, f = font) => page.drawText(s, { x: xRight - f.widthOfTextAtSize(s, size), y, size, font: f, color: ink });
+  // The standard fonts encode WinAnsi only: use a hyphen for the minus sign and a placeholder for other scripts (CJK fonts are a follow-up).
+  const safe = (s: string) => s.replace(/\u2212/g, "-").replace(/[^\u0020-\u007e\u00a0-\u00ff\u2013\u2014\u2018\u2019\u201c\u201d\u2022\u2026]/g, "?");
+  const text = (raw: string, x: number, size = 10, f = font, color = ink) => page.drawText(safe(raw), { x, y, size, font: f, color });
+  const right = (raw: string, xRight: number, size = 10, f = font) => {
+    const s = safe(raw);
+    page.drawText(s, { x: xRight - f.widthOfTextAtSize(s, size), y, size, font: f, color: ink });
+  };
   const rule = () => {
     page.drawLine({ start: { x: 48, y: y + 4 }, end: { x: 547, y: y + 4 }, thickness: 0.5, color: rgb(0.85, 0.83, 0.8) });
   };
