@@ -294,7 +294,7 @@ describe("templates (golden text at both widths)", () => {
         expect(out.text).toMatchSnapshot();
         expectFrame(out.bytes, true);
         fitsColumns(out.text);
-        for (const needle of ["Refund receipt", "Refund of bill P-0041/1 dated 3 Nov 2026", "Credit note CN-000045", "Reason: Late dish", "−$19.18", "Refund total", "Card R-77"]) {
+        for (const needle of ["Refund receipt", "Refund of bill P-0041/1", "Bill date 3 Nov 2026", "Credit note CN-000045", "Reason: Late dish", "−$19.18", "Refund total", "Card R-77"]) {
           expect(out.text).toContain(needle);
         }
       });
@@ -468,22 +468,27 @@ describe("layout", () => {
   it("justifies a label and a value on one line, wrapping long labels", () => {
     expect(justify("Subtotal", "$34.80", 48)).toEqual(["Subtotal" + " ".repeat(34) + "$34.80"]);
     expect(justify("Subtotal", "$34.80", 32)).toEqual(["Subtotal" + " ".repeat(18) + "$34.80"]);
-    const long = justify("12 Hainanese chicken rice set with extra steamed chicken", "$192.00", 32);
-    expect(long).toHaveLength(3);
-    expect(long[2]!.endsWith("$192.00")).toBe(true);
+    const long = justify("Hainanese chicken rice set with extra steamed chicken", "$192.00", 32);
+    expect(long).toEqual(["Hainanese chicken rice", "   set with extra", "   steamed chicken       $192.00"]);
     for (const l of long) expect(displayWidth(l)).toBeLessThanOrEqual(32);
-    expect(long[1]!.startsWith("   ")).toBe(true);
+    // A value wider than the line goes on its own line.
+    expect(justify("Total", "$" + "9".repeat(24), 32)).toEqual(["Total", " ".repeat(7) + "$" + "9".repeat(24)]);
   });
 
   it("puts two short texts on one line and falls back to two when they collide", () => {
     expect(columns("P-0042", "Dine-in", 48)).toEqual(["P-0042" + " ".repeat(35) + "Dine-in"]);
-    expect(columns("4 Nov 2026, 7:42 pm", "Job 8f3a2c1d-very-long-identifier", 32)).toEqual(["4 Nov 2026, 7:42 pm", "Job 8f3a2c1d-very-long-identifier".padStart(32)]);
+    expect(columns("4 Nov 2026, 7:42 pm", "Job 8f3a2c1d-very-long-identifier", 32)).toEqual([
+      "4 Nov 2026, 7:42 pm",
+      "Job".padStart(32),
+      "8f3a2c1d-very-long-identifier".padStart(32),
+    ]);
+    expect(columns("4 Nov 2026, 7:42 pm", "Job 8f3a2c1d", 32)).toEqual(["4 Nov 2026, 7:42 pm Job 8f3a2c1d"]);
     expect(columns("only left", "", 48)).toEqual(["only left"]);
   });
 
   it("money rows use en-SG formatting and the true minus sign", () => {
     expect(moneyRow("Member 10% off", -488, 48)).toEqual(["Member 10% off" + " ".repeat(28) + "−$4.88"]);
-    expect(moneyRow("Total", 123456789, 32)).toEqual(["Total" + " ".repeat(13) + "$1,234,567.89"]);
+    expect(moneyRow("Total", 123456789, 32)).toEqual(["Total" + " ".repeat(14) + "$1,234,567.89"]);
   });
 
   it("item, modifier and note lines", () => {
@@ -491,6 +496,11 @@ describe("layout", () => {
     expect(qtyColumn(12)).toBe("12 ");
     expect(itemLine(2, "Laksa", 48, "$32.00")).toEqual(["2  Laksa" + " ".repeat(34) + "$32.00"]);
     expect(itemLine(1, "Kopi C", 32)).toEqual(["1  Kopi C"]);
+    expect(itemLine(12, "Hainanese chicken rice set with extra steamed chicken and achar", 32, "S1")).toEqual([
+      "12 Hainanese chicken rice set",
+      "   with extra steamed chicken",
+      "   and achar                  S1",
+    ]);
     expect(modifierLine("Extra chilli", 48)).toEqual(["   + Extra chilli"]);
     expect(modifierLine("Extra chilli", 48, 100)).toEqual(["   + Extra chilli" + " ".repeat(26) + "$1.00"]);
     expect(noteLine("less spicy please", 48)).toEqual(["   * LESS SPICY PLEASE"]);

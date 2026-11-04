@@ -16,6 +16,8 @@ export const DOTS_PER_LINE: Record<PaperWidth, number> = { "80mm": 576, "58mm": 
 
 /** Indent for modifiers, notes and seat chips under an item line. */
 export const ITEM_INDENT = 3;
+/** Narrowest label a value may share a line with before the value drops to its own line. */
+const MIN_LABEL_WIDTH = 8;
 
 // ---------------------------------------------------------------------------
 // Width-aware string primitives
@@ -96,49 +98,47 @@ export function right(text: string, cols: number, charWidth: SizeMultiplier = 1)
 }
 
 /**
- * Word-wrap `text` into lines no wider than `width`. Continuation lines are
- * indented by `indent` columns; words longer than a line are broken hard,
- * which is also how unspaced CJK runs wrap.
+ * Word-wrap `text` into unprefixed lines: the first no wider than
+ * `firstWidth`, the rest no wider than `restWidth`. Whitespace is normalised
+ * (callers add prefixes and indents afterwards). Words longer than a line are
+ * broken hard, which is also how unspaced CJK runs wrap. Newlines in the text
+ * force a break.
  */
-export function wrap(text: string, width: number, opts: { indent?: number } = {}): string[] {
-  const indent = opts.indent ?? 0;
-  if (width <= 0) return [text];
+export function wrapWidths(text: string, firstWidth: number, restWidth: number): string[] {
   const lines: string[] = [];
-  const paragraphs = text.split(/\r?\n/);
-  for (const paragraph of paragraphs) {
+  const widthFor = () => Math.max(1, lines.length === 0 ? firstWidth : restWidth);
+  for (const paragraph of text.split(/\r?\n/)) {
     const words = paragraph.split(/\s+/).filter((w) => w.length > 0);
     let current = "";
     let currentWidth = 0;
-    let avail = width;
     const flush = () => {
-      lines.push((lines.length === 0 ? "" : " ".repeat(indent)) + current);
+      lines.push(current);
       current = "";
       currentWidth = 0;
-      avail = Math.max(1, width - indent);
     };
-    if (lines.length > 0) avail = Math.max(1, width - indent);
     for (let word of words) {
-      // Hard-break words that cannot fit on a line of their own.
-      while (displayWidth(word) > avail) {
-        if (current.length > 0) flush();
-        let head = fit(word, avail);
-        if (head.length === 0) head = String.fromCodePoint(word.codePointAt(0)!); // a wide char in a 1-column gap
-        current = head;
-        currentWidth = displayWidth(head);
-        word = word.slice(head.length);
-        flush();
-      }
-      const ww = displayWidth(word);
-      if (current.length === 0) {
-        current = word;
-        currentWidth = ww;
-      } else if (currentWidth + 1 + ww <= avail) {
-        current += " " + word;
-        currentWidth += 1 + ww;
-      } else {
-        flush();
-        current = word;
-        currentWidth = ww;
+      while (word.length > 0) {
+        const avail = widthFor();
+        const ww = displayWidth(word);
+        if (current.length === 0) {
+          if (ww <= avail) {
+            current = word;
+            currentWidth = ww;
+            word = "";
+          } else {
+            // Hard-break a word that cannot fit on a line of its own.
+            let head = fit(word, avail);
+            if (head.length === 0) head = String.fromCodePoint(word.codePointAt(0)!); // a wide char in a 1-column gap
+            lines.push(head);
+            word = word.slice(head.length);
+          }
+        } else if (currentWidth + 1 + ww <= avail) {
+          current += " " + word;
+          currentWidth += 1 + ww;
+          word = "";
+        } else {
+          flush(); // the word starts the next line
+        }
       }
     }
     if (current.length > 0 || words.length === 0) flush();
@@ -147,37 +147,58 @@ export function wrap(text: string, width: number, opts: { indent?: number } = {}
 }
 
 /**
- * A left-justified label with a right-justified value on the same line,
- * `Laksa                    $16.00`. Long labels wrap (indented on
- * continuation lines) and the value sits on the last line. If even the last
- * line cannot hold the value, it goes on its own right-aligned line.
+ * Word-wrap `text` into lines no wider than `width`, indenting continuation
+ * lines by `indent` columns.
  */
-export function justify(left: string, rightText: string, cols: number, opts: { indent?: number } = {}): string[] {
-  const indent = opts.indent ?? ITEM_INDENT;
+export function wrap(text: string, width: number, opts: { indent?: number } = {}): string[] {
+  const indent = opts.indent ?? 0;
+  return wrapWidths(text, width, width - indent).map((l, i) => (i === 0 ? l : " ".repeat(indent) + l));
+}
+
+/**
+ * The general receipt block: a `body` wrapped under a first-line prefix (the
+ * quantity column, `+ `, `* `) with continuation lines under `contPrefix`,
+ * and an optional right-hand value (`$16.00`, a seat chip) on the last line.
+ * The value column is kept clear on every line so amounts line up.
+ */
+export function block(firstPrefix: string, contPrefix: string, body: string, cols: number, rightText = ""): string[] {
+  const fw = displayWidth(firstPrefix);
+  const cw = displayWidth(contPrefix);
   const rw = displayWidth(rightText);
-  if (rw >= cols) return [...wrap(left, cols, { indent }), right(rightText, cols)];
-  const labelWidth = cols - rw - 1;
-  const lines = wrap(left, Math.max(1, labelWidth), { indent });
-  const last = lines.pop() ?? "";
-  if (displayWidth(last) + 1 + rw <= cols) {
-    lines.push(padRight(last, cols - rw) + rightText);
-  } else {
-    lines.push(last, right(rightText, cols));
+  const reserve = rightText.length > 0 ? rw + 1 : 0;
+  const firstAvail = cols - fw - reserve;
+  const restAvail = cols - cw - reserve;
+  if (rightText.length > 0 && (firstAvail < MIN_LABEL_WIDTH || restAvail < MIN_LABEL_WIDTH)) {
+    // The value is too wide to share a line with a readable label: give it its own.
+    return [...block(firstPrefix, contPrefix, body, cols), right(rightText, cols)];
   }
+  const lines = wrapWidths(body, firstAvail, restAvail).map((l, i) => (i === 0 ? firstPrefix : contPrefix) + l);
+  if (rightText.length === 0) return lines;
+  const last = lines.pop() ?? "";
+  lines.push(padRight(last, cols - rw) + rightText);
   return lines;
 }
 
 /**
+ * A left-justified label with a right-justified value on the same line,
+ * `Laksa                    $16.00`. Long labels wrap (indented on
+ * continuation lines) and the value sits on the last line.
+ */
+export function justify(left: string, rightText: string, cols: number, opts: { indent?: number } = {}): string[] {
+  return block("", " ".repeat(opts.indent ?? ITEM_INDENT), left, cols, rightText);
+}
+
+/**
  * Two short texts on one line, left and right (`P-0042             Dine-in`).
- * Falls back to two lines when they would collide.
+ * Falls back to separate lines when they would collide.
  */
 export function columns(left: string, rightText: string, cols: number): string[] {
   if (rightText.length === 0) return wrap(left, cols);
-  if (left.length === 0) return [right(rightText, cols)];
+  if (left.length === 0) return wrap(rightText, cols).map((l) => right(l, cols));
   if (displayWidth(left) + 1 + displayWidth(rightText) <= cols) {
     return [padRight(left, cols - displayWidth(rightText)) + rightText];
   }
-  return [...wrap(left, cols), right(rightText, cols)];
+  return [...wrap(left, cols), ...wrap(rightText, cols).map((l) => right(l, cols))];
 }
 
 /** Money text for receipts: en-SG, true minus sign for negatives. */
@@ -211,26 +232,25 @@ export function qtyColumn(quantity: number): string {
  * optional right-hand value (an amount on bills, a seat chip on kitchen tickets).
  */
 export function itemLine(quantity: number, name: string, cols: number, rightText = ""): string[] {
-  const label = qtyColumn(quantity) + name;
-  if (rightText.length === 0) return wrap(label, cols, { indent: ITEM_INDENT });
-  return justify(label, rightText, cols, { indent: ITEM_INDENT });
+  return block(qtyColumn(quantity), " ".repeat(ITEM_INDENT), name, cols, rightText);
 }
+
+const INDENT = " ".repeat(ITEM_INDENT);
+const INDENT_UNDER_MARKER = " ".repeat(ITEM_INDENT + 2);
 
 /** Modifier under an item: `   + Extra chilli`, with a price on the right when non-zero. */
 export function modifierLine(name: string, cols: number, price?: Cents): string[] {
-  const label = " ".repeat(ITEM_INDENT) + "+ " + name;
-  if (price === undefined || price === 0) return wrap(label, cols, { indent: ITEM_INDENT + 2 });
-  return justify(label, money(price), cols, { indent: ITEM_INDENT + 2 });
+  return block(INDENT + "+ ", INDENT_UNDER_MARKER, name, cols, price === undefined || price === 0 ? "" : money(price));
 }
 
 /** Note under an item, upper-cased after a star: `   * LESS SPICY`. */
 export function noteLine(note: string, cols: number): string[] {
-  return wrap(" ".repeat(ITEM_INDENT) + "* " + note.toUpperCase(), cols, { indent: ITEM_INDENT + 2 });
+  return block(INDENT + "* ", INDENT_UNDER_MARKER, note.toUpperCase(), cols);
 }
 
 /** Any detail under an item, indented one level. */
 export function detailLine(text: string, cols: number): string[] {
-  return wrap(" ".repeat(ITEM_INDENT) + text, cols, { indent: ITEM_INDENT });
+  return block(INDENT, INDENT, text, cols);
 }
 
 // ---------------------------------------------------------------------------

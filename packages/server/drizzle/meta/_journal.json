@@ -50,6 +50,20 @@
       "when": 1793801666726,
       "tag": "0006_staff_pin_lookup",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793802517346,
+      "tag": "0007_printing",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793802517858,
+      "tag": "0008_rls_printing",
+      "breakpoints": true
     }
   ]
 }

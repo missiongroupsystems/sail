@@ -4,6 +4,21 @@ All notable changes to Sail. Phases follow `docs/roadmap.md`; each has a complet
 
 ## Unreleased (feat/beta-v1)
 
+### v0.4 Orders and the POS (register)
+- Station pairing codes and tokens, PIN sessions with lockout and inactivity expiry, HMAC PIN lookup unique per merchant.
+- Single-use manager override grants (`POST /v1/overrides`) bound to one action and target, approver recorded on events and audit.
+- One order model for dine-in, takeaway, pickup and delivery with per-type validation, one open order per table, per-outlet order numbers, optimistic concurrency and dry runs.
+- Lines with modifier validation, availability, sold-out and atomic daily caps; fire/hold, partial voids, cancel, change type, move table, attach customer, manual adjustments.
+- Pricing pipeline run on every change; adjustments and per-line amounts persisted under deferred sum invariants.
+- Floor snapshot, order lists, quote with trace, outlet stream in production use.
+
+### v0.3 Catalogue, pricing configuration and legacy import (register)
+- Products with per-order-type prices, tags and BCRS; modifier groups nested to two levels; two-level categories; brand menus with sections and items; availability rules; per-outlet 86 and daily caps.
+- Channel links with Scan to Order settings; areas and tables; tender types; void reasons; POS layouts with 12 curated colours.
+- Customers and customer groups; versioned pricing rules with scheduled activation, simulator on persisted rules, validation warnings.
+- CSV legacy importer with dry-run reports, apply and idempotent re-runs; `docs/csv-mapping.md`; products CSV export.
+- Compiled menu per channel link for the POS and the guest app.
+
 ### v0.2 Pricing engine
 - Pure pricing pipeline `price(order, rules, context)` in `@sail/shared` with fixed rule schema, explicit discount levels, exclusive/stackable stacking, caps, both tax modes, freeze-at-first-payment semantics and a step-by-step trace.
 - Largest-remainder allocator, cash rounding and percent helpers shared by pricing, splits and refunds.

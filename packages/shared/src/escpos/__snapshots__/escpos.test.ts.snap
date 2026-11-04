@@ -10,19 +10,19 @@ Server: Amy
           Station: Front counter
 4 Nov 2026, 7:42 pm Job 8f3a2c1d
 --------------------------------
-2 Laksa                       S1
-+ Extra chilli
-+ No cockles
-* LESS SPICY PLEASE
-1 Kopi C kosong               S2
+2  Laksa                      S1
+   + Extra chilli
+   + No cockles
+   * LESS SPICY PLEASE
+1  Kopi C kosong              S2
 12 Hainanese chicken rice set
    with extra steamed chicken
    and achar
-+ Large
-+ Chicken thigh instead of
+   + Large
+   + Chicken thigh instead of
      breast
-* ALLERGY: PEANUTS. SERVE WITH
-     THE MAINS
+   * ALLERGY: PEANUTS. SERVE
+     WITH THE MAINS
 --------------------------------
           Copy 1 of 2
 "
@@ -38,11 +38,11 @@ P-0042                   Dine-in
 Table 12, 4 pax
 4 Nov 2026, 7:42 pm  Server: Amy
 --------------------------------
-2 Laksa                   $33.00
-2 @ $16.00
-+ Extra chilli             $1.00
-1 Kopi C kosong            $1.80
-1 Tiger beer tower 3L     $14.00
+2  Laksa                  $33.00
+   2 @ $16.00
+   + Extra chilli          $1.00
+1  Kopi C kosong           $1.80
+1  Tiger beer tower 3L    $14.00
 --------------------------------
 Subtotal                  $48.80
 Service charge 10%         $4.88
@@ -68,15 +68,15 @@ Table 12, 4 pax
 4 Nov 2026, 7:42 pm  Server: Amy
 Invoice INV-000123
 --------------------------------
-2 Laksa                   $33.00
-2 @ $16.00
-+ Extra chilli             $1.00
-S1
-1 Kopi C kosong            $1.80
-+ Less sweet
-S2
-1 Tiger beer tower 3L     $14.00
-share 1/3
+2  Laksa                  $33.00
+   2 @ $16.00
+   + Extra chilli          $1.00
+   S1
+1  Kopi C kosong           $1.80
+   + Less sweet
+   S2
+1  Tiger beer tower 3L    $14.00
+   share 1/3
 --------------------------------
 Subtotal                  $48.80
 Member 10% off            −$4.88
@@ -104,11 +104,11 @@ P-0042                   Dine-in
 Table 12, 4 pax
 4 Nov 2026, 7:42 pm  Server: Amy
 --------------------------------
-2 Laksa                   $33.00
-2 @ $16.00
-+ Extra chilli             $1.00
-1 Kopi C kosong            $1.80
-1 Tiger beer tower 3L     $14.00
+2  Laksa                  $33.00
+   2 @ $16.00
+   + Extra chilli          $1.00
+1  Kopi C kosong           $1.80
+1  Tiger beer tower 3L    $14.00
 --------------------------------
 Subtotal                  $48.80
 Service charge 10%         $4.88
@@ -135,12 +135,12 @@ P-0042                   Dine-in
 Table 12, 4 pax
 4 Nov 2026, 7:42 pm  Server: Amy
 Invoice INV-000120
-Refund of bill P-0041/1 dated 3
-  Nov 2026
+Refund of bill P-0041/1
+            Bill date 3 Nov 2026
 Credit note CN-000045
 Reason: Late dish
 --------------------------------
-1 Laksa                  −$16.00
+1  Laksa                 −$16.00
 --------------------------------
 Subtotal                 −$16.00
 Service charge 10%        −$1.60
@@ -168,11 +168,11 @@ Notes: Leave at the door, call
 Server: Amy
 4 Nov 2026, 7:45 pm Job d3110e01
 --------------------------------
-1 Nasi lemak
-+ Add fried egg
-* NO PEANUTS
+1  Nasi lemak
+   + Add fried egg
+   * NO PEANUTS
 --------------------------------
-      Copy 1 of 1  REPRINT
+          Copy 1 of 1
 "
 `;
 
@@ -199,9 +199,8 @@ Server: Amy
           Station: Front counter
 4 Nov 2026, 7:42 pm Job v01d0001
 --------------------------------
-1 Kopi C kosong               S2
+1  Kopi C kosong              S2
 --------------------------------
-              VOID
 "
 `;
 
@@ -214,16 +213,16 @@ Table 12, 4 pax                          Round 2
 Server: Amy               Station: Front counter
 4 Nov 2026, 7:42 pm                 Job 8f3a2c1d
 ------------------------------------------------
-2 Laksa                                       S1
-+ Extra chilli
-+ No cockles
-* LESS SPICY PLEASE
-1 Kopi C kosong                               S2
+2  Laksa                                      S1
+   + Extra chilli
+   + No cockles
+   * LESS SPICY PLEASE
+1  Kopi C kosong                              S2
 12 Hainanese chicken rice set with extra steamed
    chicken and achar
-+ Large
-+ Chicken thigh instead of breast
-* ALLERGY: PEANUTS. SERVE WITH THE MAINS
+   + Large
+   + Chicken thigh instead of breast
+   * ALLERGY: PEANUTS. SERVE WITH THE MAINS
 ------------------------------------------------
                   Copy 1 of 2
 "
@@ -239,11 +238,11 @@ P-0042                                   Dine-in
 Table 12, 4 pax
 4 Nov 2026, 7:42 pm                  Server: Amy
 ------------------------------------------------
-2 Laksa                                   $33.00
-2 @ $16.00
-+ Extra chilli                             $1.00
-1 Kopi C kosong                            $1.80
-1 Tiger beer tower 3L                     $14.00
+2  Laksa                                  $33.00
+   2 @ $16.00
+   + Extra chilli                          $1.00
+1  Kopi C kosong                           $1.80
+1  Tiger beer tower 3L                    $14.00
 ------------------------------------------------
 Subtotal                                  $48.80
 Service charge 10%                         $4.88
@@ -269,15 +268,15 @@ Table 12, 4 pax
 4 Nov 2026, 7:42 pm                  Server: Amy
 Invoice INV-000123
 ------------------------------------------------
-2 Laksa                                   $33.00
-2 @ $16.00
-+ Extra chilli                             $1.00
-S1
-1 Kopi C kosong                            $1.80
-+ Less sweet
-S2
-1 Tiger beer tower 3L                     $14.00
-share 1/3
+2  Laksa                                  $33.00
+   2 @ $16.00
+   + Extra chilli                          $1.00
+   S1
+1  Kopi C kosong                           $1.80
+   + Less sweet
+   S2
+1  Tiger beer tower 3L                    $14.00
+   share 1/3
 ------------------------------------------------
 Subtotal                                  $48.80
 Member 10% off                            −$4.88
@@ -304,11 +303,11 @@ P-0042                                   Dine-in
 Table 12, 4 pax
 4 Nov 2026, 7:42 pm                  Server: Amy
 ------------------------------------------------
-2 Laksa                                   $33.00
-2 @ $16.00
-+ Extra chilli                             $1.00
-1 Kopi C kosong                            $1.80
-1 Tiger beer tower 3L                     $14.00
+2  Laksa                                  $33.00
+   2 @ $16.00
+   + Extra chilli                          $1.00
+1  Kopi C kosong                           $1.80
+1  Tiger beer tower 3L                    $14.00
 ------------------------------------------------
 Subtotal                                  $48.80
 Service charge 10%                         $4.88
@@ -335,11 +334,11 @@ P-0042                                   Dine-in
 Table 12, 4 pax
 4 Nov 2026, 7:42 pm                  Server: Amy
 Invoice INV-000120
-Refund of bill P-0041/1 dated 3 Nov 2026
+Refund of bill P-0041/1     Bill date 3 Nov 2026
 Credit note CN-000045
 Reason: Late dish
 ------------------------------------------------
-1 Laksa                                  −$16.00
+1  Laksa                                 −$16.00
 ------------------------------------------------
 Subtotal                                 −$16.00
 Service charge 10%                        −$1.60
@@ -365,11 +364,11 @@ Notes: Leave at the door, call on arrival
 Server: Amy
 4 Nov 2026, 7:45 pm                 Job d3110e01
 ------------------------------------------------
-1 Nasi lemak
-+ Add fried egg
-* NO PEANUTS
+1  Nasi lemak
+   + Add fried egg
+   * NO PEANUTS
 ------------------------------------------------
-              Copy 1 of 1  REPRINT
+                  Copy 1 of 1
 "
 `;
 
@@ -395,8 +394,7 @@ Table 12, 4 pax
 Server: Amy               Station: Front counter
 4 Nov 2026, 7:42 pm                 Job v01d0001
 ------------------------------------------------
-1 Kopi C kosong                               S2
+1  Kopi C kosong                              S2
 ------------------------------------------------
-                      VOID
 "
 `;

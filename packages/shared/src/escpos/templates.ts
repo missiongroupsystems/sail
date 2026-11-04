@@ -126,10 +126,9 @@ export function buildKitchenTicketDocument(data: KitchenTicket, cols: number): D
   doc.push(text(rule(cols)));
 
   // Footer.
-  const footer: string[] = [];
-  if (data.copy_no !== undefined) footer.push(data.copies !== undefined ? `Copy ${data.copy_no} of ${data.copies}` : `Copy ${data.copy_no}`);
-  if (banner) footer.push(banner);
-  if (footer.length > 0) doc.push(text(footer.join("  "), { align: "center", bold: !!banner }));
+  if (data.copy_no !== undefined) {
+    doc.push(text(data.copies !== undefined ? `Copy ${data.copy_no} of ${data.copies}` : `Copy ${data.copy_no}`, { align: "center" }));
+  }
   doc.push(feed(1));
   return doc;
 }
@@ -158,8 +157,8 @@ export function buildBillDocument(data: BillDocument, cols: number): DocLine[] {
   if (data.invoice_no) doc.push(text(`Invoice ${data.invoice_no}`, { bold: true }));
   if (data.kind === "refund_receipt") {
     if (data.original_check_no) {
-      const dated = data.original_date ? ` dated ${formatDate(data.original_date, tz)}` : "";
-      for (const t of wrap(`Refund of bill ${data.original_check_no}${dated}`, cols, { indent: 2 })) doc.push(text(t));
+      const dated = data.original_date ? `Bill date ${formatDate(data.original_date, tz)}` : "";
+      for (const t of columns(`Refund of bill ${data.original_check_no}`, dated, cols)) doc.push(text(t));
     }
     if (data.credit_note_no) doc.push(text(`Credit note ${data.credit_note_no}`, { bold: true }));
     if (data.refund_reason) for (const t of wrap(`Reason: ${data.refund_reason}`, cols, { indent: 2 })) doc.push(text(t));
@@ -174,7 +173,7 @@ export function buildBillDocument(data: BillDocument, cols: number): DocLine[] {
     const chips: string[] = [];
     if (line.seat_no !== undefined) chips.push(seatChip(line.seat_no));
     if (line.share) chips.push(`share ${line.share}`);
-    if (chips.length > 0) for (const t of detailLine(chips.join("  "), cols)) doc.push(text(t));
+    if (chips.length > 0) for (const t of detailLine(chips.join(", "), cols)) doc.push(text(t));
   }
   doc.push(text(rule(cols)));
 
