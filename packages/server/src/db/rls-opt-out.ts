@@ -3,7 +3,7 @@
  * `/health` only, plus the spec itself and the development token endpoint,
  * which is disabled in production). Covered by a test.
  */
-export const RLS_OPT_OUT: RegExp[] = [/^\/health$/, /^\/openapi\.json$/, /^\/v1\/auth\/dev-token$/, /^\/v1\/guest\/sessions$/, /^\/v1\/stations\/pair$/, /^\/v1\/relays\/pair$/];
+export const RLS_OPT_OUT: RegExp[] = [/^\/health$/, /^\/openapi\.json$/, /^\/v1\/auth\/dev-token$/, /^\/v1\/guest\/sessions$/, /^\/v1\/stations\/pair$/, /^\/v1\/relays\/pair$/, /^\/v1\/receipts\/[^/]+$/];
 
 /**
  * Long-lived stream routes. They still authenticate and check access under RLS,

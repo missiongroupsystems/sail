@@ -1,0 +1,234 @@
+import { randomUUID } from "node:crypto";
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { allocateLine, type BillDocument, type Share } from "@sail/shared";
+import { db } from "../db/client.js";
+import { brands, checkAllocations, checks, merchantSettings, orderAdjustmentLines, orderAdjustments, orderLines, orders, outlets, payments, tables } from "../db/schema/index.js";
+import { AppError } from "../lib/errors.js";
+
+/**
+ * Checks (bills) and allocations (scope doc 4.4). In v0.6 every order has one
+ * check; the model already supports N checks and shares, which v0.7 uses for
+ * splits. `syncAllocations` runs after every re-price: unlocked checks are
+ * rebuilt from the current line components; a check with a payment is locked
+ * and its allocations never change.
+ */
+
+export type CheckRow = typeof checks.$inferSelect;
+
+export async function checksFor(orderId: string): Promise<CheckRow[]> {
+  return db().select().from(checks).where(eq(checks.orderId, orderId)).orderBy(asc(checks.index));
+}
+
+export async function ensureFirstCheck(order: { id: string; merchantId: string; outletId: string }): Promise<CheckRow[]> {
+  const existing = await checksFor(order.id);
+  if (existing.length) return existing;
+  const [row] = await db().insert(checks).values({ id: randomUUID(), merchantId: order.merchantId, outletId: order.outletId, orderId: order.id, index: 1, label: "Bill 1" }).returning();
+  return [row!];
+}
+
+type LineComp = { id: string; base: number; discount: number; fee: number; gst: number; total: number; adjustments: Record<string, { amount: number; gst: number }> };
+
+async function lineComponents(orderId: string): Promise<LineComp[]> {
+  const lines = await db().select().from(orderLines).where(and(eq(orderLines.orderId, orderId), sql`${orderLines.status} <> 'voided'`)).orderBy(asc(orderLines.sort), asc(orderLines.createdAt));
+  const adjs = await db().select({ id: orderAdjustments.id }).from(orderAdjustments).where(eq(orderAdjustments.orderId, orderId));
+  const adjLines = adjs.length ? await db().select().from(orderAdjustmentLines).where(inArray(orderAdjustmentLines.adjustmentId, adjs.map((a) => a.id))) : [];
+  return lines.map((l) => ({
+    id: l.id,
+    base: l.baseAmount,
+    discount: l.discountAmount,
+    fee: l.feeAmount,
+    gst: l.gstAmount,
+    total: l.total,
+    adjustments: Object.fromEntries(adjLines.filter((a) => a.orderLineId === l.id).map((a) => [a.adjustmentId, { amount: a.amount, gst: a.gstAmount }])),
+  }));
+}
+
+/**
+ * Rebuild allocations for unlocked checks from the current pricing. Lines with
+ * no allocation yet go to the first unlocked check (a new one when every check
+ * is locked). Returns the checks after the sync.
+ */
+export async function syncAllocations(orderId: string, opts: { sharesByLine?: Map<string, Share[]> } = {}): Promise<CheckRow[]> {
+  const [order] = await db().select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order) throw AppError.notFound("order", orderId);
+  let chks = await ensureFirstCheck(order);
+  const comps = await lineComponents(orderId);
+  const existing = await db().select().from(checkAllocations).where(inArray(checkAllocations.checkId, chks.map((c) => c.id)));
+  const lockedIds = new Set(chks.filter((c) => c.lockedAt).map((c) => c.id));
+  const gstAdds = order.taxMode === "exclusive";
+
+  // Lines whose allocations include a locked check are fixed.
+  const fixedLines = new Set(existing.filter((a) => lockedIds.has(a.checkId)).map((a) => a.orderLineId));
+
+  // Target for lines with no allocations: the first unlocked check, else a new one.
+  let target = chks.find((c) => !c.lockedAt);
+  const unallocated = comps.filter((l) => !existing.some((a) => a.orderLineId === l.id) && !opts.sharesByLine?.has(l.id));
+  if (unallocated.length && !target) {
+    const index = chks.length + 1;
+    const [row] = await db().insert(checks).values({ id: randomUUID(), merchantId: order.merchantId, outletId: order.outletId, orderId, index, label: `Bill ${index}` }).returning();
+    chks = [...chks, row!];
+    target = row!;
+  }
+
+  // Shares per line across the ordered checks.
+  const sharesFor = (line: LineComp): Share[] => {
+    const given = opts.sharesByLine?.get(line.id);
+    if (given) return given;
+    const mine = existing.filter((a) => a.orderLineId === line.id);
+    if (mine.length === 0) return chks.map((c) => (c.id === target!.id ? { num: 1, den: 1 } : { num: 0, den: 1 }));
+    return chks.map((c) => {
+      const a = mine.find((x) => x.checkId === c.id);
+      return a ? { num: a.shareNum, den: a.shareDen } : { num: 0, den: 1 };
+    });
+  };
+
+  const unlockedCheckIds = chks.filter((c) => !c.lockedAt).map((c) => c.id);
+  // Drop allocations on unlocked checks for lines that are gone (voided), then rebuild.
+  const liveLineIds = new Set(comps.map((l) => l.id));
+  const stale = existing.filter((a) => !lockedIds.has(a.checkId) && !liveLineIds.has(a.orderLineId));
+  if (stale.length) await db().delete(checkAllocations).where(and(inArray(checkAllocations.checkId, unlockedCheckIds), inArray(checkAllocations.orderLineId, stale.map((s) => s.orderLineId))));
+
+  for (const line of comps) {
+    if (fixedLines.has(line.id)) continue;
+    const shares = sharesFor(line);
+    const parts = allocateLine({ base: line.base, discount: line.discount, fee: line.fee, gst: line.gst, adjustments: line.adjustments }, shares, { gstAddsToTotal: gstAdds });
+    await db().delete(checkAllocations).where(and(eq(checkAllocations.orderLineId, line.id), inArray(checkAllocations.checkId, unlockedCheckIds)));
+    const values = chks
+      .map((c, i) => ({ c, p: parts[i]!, s: shares[i]! }))
+      .filter(({ s }) => s.num > 0)
+      .map(({ c, p, s }) => ({ merchantId: order.merchantId, checkId: c.id, orderLineId: line.id, shareNum: s.num, shareDen: s.den, base: p.base, discount: p.discount, fee: p.fee, gst: p.gst, total: p.total, adjustments: p.adjustments }));
+    if (values.length) await db().insert(checkAllocations).values(values);
+  }
+
+  // Recompute totals for unlocked checks; remove empty extra unlocked checks (never Bill 1).
+  const refreshed: CheckRow[] = [];
+  for (const c of chks) {
+    if (c.lockedAt) {
+      refreshed.push(c);
+      continue;
+    }
+    const [sums] = await db().select({ base: sql<number>`coalesce(sum(base),0)::int`, discount: sql<number>`coalesce(sum(discount),0)::int`, fee: sql<number>`coalesce(sum(fee),0)::int`, gst: sql<number>`coalesce(sum(gst),0)::int`, total: sql<number>`coalesce(sum(total),0)::int`, n: sql<number>`count(*)::int` }).from(checkAllocations).where(eq(checkAllocations.checkId, c.id));
+    if (sums!.n === 0 && c.index > 1 && chks.length > 1) {
+      await db().delete(checks).where(eq(checks.id, c.id));
+      continue;
+    }
+    const [row] = await db()
+      .update(checks)
+      .set({ subtotal: sums!.base, discountTotal: sums!.discount, feeTotal: sums!.fee, gstTotal: sums!.gst, total: sums!.total, status: sums!.total === 0 && c.paidTotal === 0 ? "open" : c.status, updatedAt: new Date() })
+      .where(eq(checks.id, c.id))
+      .returning();
+    refreshed.push(row!);
+  }
+  return refreshed;
+}
+
+/** Sum of recorded payments on the order (for pay-before-firing and change-type guards). */
+export async function paidTotalFor(orderId: string): Promise<number> {
+  const [row] = await db().select({ s: sql<number>`coalesce(sum(amount),0)::int` }).from(payments).where(and(eq(payments.orderId, orderId), eq(payments.status, "recorded")));
+  return row?.s ?? 0;
+}
+
+/** A line on a locked (paid) check cannot be changed or voided; refund it instead. */
+export async function assertLineUnlocked(lineId: string) {
+  const [row] = await db()
+    .select({ label: checks.label })
+    .from(checkAllocations)
+    .innerJoin(checks, eq(checks.id, checkAllocations.checkId))
+    .where(and(eq(checkAllocations.orderLineId, lineId), isNotNull(checks.lockedAt)))
+    .limit(1);
+  if (row) throw AppError.invariant("check_locked_by_payment", `${row.label} is paid`, `Refund ${row.label} to change this item.`);
+}
+
+export type CheckSnapshot = {
+  id: string;
+  index: number;
+  label: string;
+  status: string;
+  seat_no: number | null;
+  totals: { subtotal: number; discount_total: number; fee_total: number; gst_total: number; total: number };
+  paid_total: number;
+  rounding_total: number;
+  refunded_total: number;
+  balance: number;
+  locked: boolean;
+  invoice_no: string | null;
+  allocations: { line_id: string; share: string; base: number; discount: number; fee: number; gst: number; total: number }[];
+  payments: { id: string; tender_type_id: string; tender: string; is_cash: boolean; amount: number; rounding_cents: number; tendered: number | null; change_cents: number; tip_cents: number; reference: string | null; status: string; recorded_by: string | null; created_at: string }[];
+};
+
+export async function checkSnapshots(orderId: string): Promise<CheckSnapshot[]> {
+  const chks = await checksFor(orderId);
+  if (chks.length === 0) return [];
+  const allocs = await db().select().from(checkAllocations).where(inArray(checkAllocations.checkId, chks.map((c) => c.id)));
+  const pays = await db().select().from(payments).where(inArray(payments.checkId, chks.map((c) => c.id))).orderBy(asc(payments.createdAt));
+  return chks.map((c) => ({
+    id: c.id,
+    index: c.index,
+    label: c.label,
+    status: c.status,
+    seat_no: c.seatNo,
+    totals: { subtotal: c.subtotal, discount_total: c.discountTotal, fee_total: c.feeTotal, gst_total: c.gstTotal, total: c.total },
+    paid_total: c.paidTotal,
+    rounding_total: c.roundingTotal,
+    refunded_total: c.refundedTotal,
+    balance: c.total - c.paidTotal,
+    locked: c.lockedAt != null,
+    invoice_no: c.invoiceNo,
+    allocations: allocs.filter((a) => a.checkId === c.id).map((a) => ({ line_id: a.orderLineId, share: a.shareNum === a.shareDen ? "1" : `${a.shareNum}/${a.shareDen}`, base: a.base, discount: a.discount, fee: a.fee, gst: a.gst, total: a.total })),
+    payments: pays.filter((p) => p.checkId === c.id).map((p) => ({ id: p.id, tender_type_id: p.tenderTypeId, tender: p.tenderName, is_cash: p.isCash, amount: p.amount, rounding_cents: p.roundingCents, tendered: p.tendered, change_cents: p.changeCents, tip_cents: p.tipCents, reference: p.reference, status: p.status, recorded_by: p.recordedByName, created_at: p.createdAt.toISOString() })),
+  }));
+}
+
+/** Build the bill document (pre-bill, receipt) for one check from stored data. */
+export async function billDocumentFor(checkId: string, kind: "prebill" | "receipt", extra: { jobId?: string; stationName?: string | null; serverName?: string | null; digitalReceiptUrl?: string } = {}): Promise<BillDocument> {
+  const [c] = await db().select().from(checks).where(eq(checks.id, checkId)).limit(1);
+  if (!c) throw AppError.notFound("check", checkId);
+  const [o] = await db().select().from(orders).where(eq(orders.id, c.orderId)).limit(1);
+  if (!o) throw AppError.notFound("order", c.orderId);
+  const [outlet] = await db().select().from(outlets).where(eq(outlets.id, o.outletId)).limit(1);
+  const [brand] = await db().select().from(brands).where(eq(brands.id, o.brandId)).limit(1);
+  const [settings] = await db().select().from(merchantSettings).where(eq(merchantSettings.merchantId, o.merchantId)).limit(1);
+  const table = o.tableId ? (await db().select({ name: tables.name }).from(tables).where(eq(tables.id, o.tableId)).limit(1))[0] : null;
+  const allocs = await db().select().from(checkAllocations).where(eq(checkAllocations.checkId, checkId));
+  const lines = allocs.length ? await db().select().from(orderLines).where(inArray(orderLines.id, allocs.map((a) => a.orderLineId))).orderBy(asc(orderLines.sort)) : [];
+  const adjs = await db().select().from(orderAdjustments).where(eq(orderAdjustments.orderId, o.id)).orderBy(asc(orderAdjustments.sort));
+  const pays = await db().select().from(payments).where(and(eq(payments.checkId, checkId), eq(payments.status, "recorded"))).orderBy(asc(payments.createdAt));
+  const allChecks = await checksFor(o.id);
+
+  const adjustmentTotals = new Map<string, number>();
+  for (const a of allocs) for (const [adjId, v] of Object.entries(a.adjustments)) adjustmentTotals.set(adjId, (adjustmentTotals.get(adjId) ?? 0) + v.amount);
+
+  return {
+    header: {
+      outlet_name: outlet?.name ?? "Outlet",
+      brand_name: brand?.name ?? "Brand",
+      order_no: o.orderNo,
+      order_type: o.orderType as BillDocument["header"]["order_type"],
+      table_name: table?.name,
+      pax: o.pax ?? undefined,
+      customer_ref: o.customerRef ?? undefined,
+      server_name: extra.serverName ?? o.openedByName ?? undefined,
+      station_name: extra.stationName ?? undefined,
+      printed_at: new Date().toISOString(),
+      job_id: extra.jobId ?? "pending",
+      time_zone: settings?.timezone ?? "Asia/Singapore",
+    },
+    kind,
+    check_label: allChecks.length > 1 ? `${c.label} of ${allChecks.length}` : c.label,
+    lines: lines.map((l) => {
+      const a = allocs.find((x) => x.orderLineId === l.id)!;
+      return { quantity: l.quantity, name: l.name, unit_price: l.unitPrice, amount: a.base, modifiers: l.modifiers.map((m) => ({ name: m.quantity > 1 ? `${m.quantity}× ${m.name}` : m.name, price: m.price * m.quantity * l.quantity })), seat_no: l.seatNo ?? undefined, share: a.shareNum === a.shareDen ? undefined : `${a.shareNum}/${a.shareDen}` };
+    }),
+    adjustments: adjs.filter((a) => (adjustmentTotals.get(a.id) ?? 0) !== 0).map((a) => ({ name: a.name, amount: adjustmentTotals.get(a.id)!, kind: a.kind as "fee" | "discount" })),
+    totals: { subtotal: c.subtotal, discount_total: c.discountTotal, fee_total: c.feeTotal, gst_total: c.gstTotal, total: c.total, tax_mode: o.taxMode as "inclusive" | "exclusive", gst_bps: o.gstBps },
+    payments: kind === "receipt" ? pays.map((p) => ({ tender: p.tenderName, amount: p.amount, rounding_cents: p.roundingCents || undefined, reference: p.reference ?? undefined, change: p.changeCents || undefined })) : undefined,
+    balance: c.total - c.paidTotal > 0 ? c.total - c.paidTotal : undefined,
+    invoice_no: c.invoiceNo ?? undefined,
+    footer_lines: settings?.receiptFooter ? settings.receiptFooter.split("\n") : undefined,
+    outlet_phone: settings?.receiptShowOutletPhone && outlet?.phone ? outlet.phone : undefined,
+    uen: outlet?.uen ?? undefined,
+    digital_receipt_url: extra.digitalReceiptUrl,
+  };
+}
+
+export { isNull };

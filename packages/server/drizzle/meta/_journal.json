@@ -64,6 +64,20 @@
       "when": 1793802517858,
       "tag": "0008_rls_printing",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793803474415,
+      "tag": "0009_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793803474940,
+      "tag": "0010_rls_payments",
+      "breakpoints": true
     }
   ]
 }

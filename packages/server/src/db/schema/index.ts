@@ -7,3 +7,4 @@ export * from "./pricing.js";
 export * from "./imports.js";
 export * from "./orders.js";
 export * from "./printing.js";
+export * from "./payments.js";

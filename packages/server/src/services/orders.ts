@@ -223,7 +223,14 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
     .update(orders)
     .set({ subtotal: result.totals.subtotal, discountTotal: result.totals.discount_total, feeTotal: result.totals.fee_total, gstTotal: result.totals.gst_total, total: result.totals.total, updatedAt: at })
     .where(eq(orders.id, orderId));
+  for (const hook of repriceHooks) await hook(orderId, result);
   return result;
+}
+
+/** Later phases (checks/allocations) run after every re-price. */
+const repriceHooks: ((orderId: string, result: PricingResult) => Promise<void>)[] = [];
+export function registerRepriceHook(fn: (orderId: string, result: PricingResult) => Promise<void>) {
+  repriceHooks.push(fn);
 }
 
 export async function loadSnapshot(orderId: string): Promise<OrderSnapshot> {

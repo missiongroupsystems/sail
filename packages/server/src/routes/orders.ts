@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
-import { ORDER_STATUSES, OrderTypeSchema, PERMISSIONS, PricingRuleSchema, price, PricingContextSchema, registerOperations, roleAtLeast, validateManualApplication, type OrderType, type OperationSpec, type Role } from "@sail/shared";
+import { ORDER_STATUSES, OrderTypeSchema, PERMISSIONS, PricingRuleSchema, isFreezable, price, PricingContextSchema, registerOperations, roleAtLeast, validateManualApplication, type OrderType, type OperationSpec, type Role } from "@sail/shared";
 import { db, markDryRun, tx } from "../db/client.js";
 import { areas, channelLinks, customerGroupMembers, customers, merchantSettings, orderLines, orderManualApplications, orders, stations, tables, voidReasons } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -528,6 +528,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     const check = validateManualApplication(rule, { entered_value: b.entered_value ?? null, line_ids: b.line_ids ?? null });
     if (!check.ok) throw new AppError("validation", check.message, { remedy: check.remedy });
     if (rule.reason_required && !b.reason) throw AppError.validation(`${rule.name} needs a reason`, { remedy: "Pick a reason." });
+    if (o.pricingFrozenAt && isFreezable(rule)) throw AppError.invariant("pricing_frozen", `${rule.name} is an order-level rule and the order already has a payment`, "Order-level discounts are frozen once a bill is paid. Refund the payment first, or apply an item-level discount to the unpaid items.");
     const approval = await requireRoleOrOverride(p, principalRole(p), (rule.min_role ?? "server") as Role, { action: "adjustments.apply_manual", targetId: id, overrideId: b.override_id, overrideAllowed: rule.override_allowed });
     if (b.line_ids) {
       const found = await db().select({ id: orderLines.id }).from(orderLines).where(and(eq(orderLines.orderId, id), inArray(orderLines.id, b.line_ids), sql`${orderLines.status} <> 'voided'`));

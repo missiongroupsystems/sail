@@ -36,11 +36,14 @@ CREATE CONSTRAINT TRIGGER order_adjustment_lines_sum AFTER INSERT OR UPDATE OR D
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION sail.check_adjustment_sum_from_adjustment() RETURNS trigger
 LANGUAGE plpgsql AS $$
-DECLARE total_lines integer;
+DECLARE total_lines integer; total_adj integer;
 BEGIN
+  -- Deferred: the row may have been replaced by a later re-price in the same transaction.
+  SELECT total INTO total_adj FROM order_adjustments WHERE id = NEW.id;
+  IF NOT FOUND THEN RETURN NULL; END IF;
   SELECT COALESCE(SUM(amount), 0) INTO total_lines FROM order_adjustment_lines WHERE adjustment_id = NEW.id;
-  IF total_lines <> NEW.total THEN
-    RAISE EXCEPTION 'adjustment_lines_sum: lines % do not add up to adjustment total %', total_lines, NEW.total USING ERRCODE = 'P0001';
+  IF total_lines <> total_adj THEN
+    RAISE EXCEPTION 'adjustment_lines_sum: lines % do not add up to adjustment total %', total_lines, total_adj USING ERRCODE = 'P0001';
   END IF;
   RETURN NULL;
 END $$;

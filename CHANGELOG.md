@@ -4,6 +4,14 @@ All notable changes to Sail. Phases follow `docs/roadmap.md`; each has a complet
 
 ## Unreleased (feat/beta-v1)
 
+### v0.6 Payments, shifts and tax documents
+- Checks (bills) with allocations rebuilt after every re-price; database-enforced bill and line sums; bills lock at the first payment and new lines open a new bill.
+- Payments: several tenders and part payments per bill, card/PayNow/house tenders by hand with references, cash rounding only on the settling cash tender, tips, idempotent recording, pricing freeze at first payment, auto-completion, same-day reopen with reversed payments.
+- Pre-bills and receipts printed through the relay; digital receipts by public token (email/SMS pending a provider).
+- Gap-free tax invoice numbering, PDF invoices with UEN (pdf-lib), stored invoice snapshots.
+- Shifts with float and counted cash, expected vs counted including rounding, business-day close, basic Z-report.
+- `@sail/shared` bill allocation helper (`allocateLine`, even/shared/whole shares) with property tests.
+
 ### v0.5 Kitchen printing
 - Printers, relays and one-time relay pairing; `app_relay` principal and narrow Postgres role.
 - ESC/POS renderer in `@sail/shared`: kitchen, void, reprint, pre-bill, receipt, refund receipt and service-slip templates at 80 mm and 58 mm, CJK raster fallback, golden-file tests.

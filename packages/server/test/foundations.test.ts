@@ -243,7 +243,7 @@ describe("configuration guards", () => {
     expect(() => loadConfig({ DATABASE_URL: "postgres://u:p@h:6543/db", LISTEN_DATABASE_URL: "postgres://u:p@h:5432/db", ...TEST_SECRETS })).not.toThrow();
   });
   it("the RLS opt-out list is only /health, the spec and the public pairing/dev endpoints", () => {
-    expect(RLS_OPT_OUT.map(String)).toEqual(["/^\\/health$/", "/^\\/openapi\\.json$/", "/^\\/v1\\/auth\\/dev-token$/", "/^\\/v1\\/guest\\/sessions$/", "/^\\/v1\\/stations\\/pair$/", "/^\\/v1\\/relays\\/pair$/"]);
+    expect(RLS_OPT_OUT.map(String)).toEqual(["/^\\/health$/", "/^\\/openapi\\.json$/", "/^\\/v1\\/auth\\/dev-token$/", "/^\\/v1\\/guest\\/sessions$/", "/^\\/v1\\/stations\\/pair$/", "/^\\/v1\\/relays\\/pair$/", "/^\\/v1\\/receipts\\/[^/]+$/"]);
   });
   it("the admission gate queues then rejects with 503", async () => {
     const gate = new AdmissionGate(1, 1);
