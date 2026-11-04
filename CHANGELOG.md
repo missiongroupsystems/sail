@@ -4,6 +4,13 @@ All notable changes to Sail. Phases follow `docs/roadmap.md`; each has a complet
 
 ## Unreleased (feat/beta-v1)
 
+### v0.5 Kitchen printing
+- Printers, relays and one-time relay pairing; `app_relay` principal and narrow Postgres role.
+- ESC/POS renderer in `@sail/shared`: kitchen, void, reprint, pre-bill, receipt, refund receipt and service-slip templates at 80 mm and 58 mm, CJK raster fallback, golden-file tests.
+- Routing by tags, filters, station printers, copies and the default fallback printer; one job per printer per copy in the fire/void transaction.
+- Durable print queue with claim/ack, stale-claim re-queue, late-job query, reroute to backup, reprint, test print, relay heartbeats and offline alerts.
+- `@sail/relay`: Node relay service (SSE + catch-up, TCP 9100 with DLE EOT status, retries, heartbeat), multi-arch Dockerfile; `docs/runbooks/relay.md`.
+
 ### v0.4 Orders and the POS (register)
 - Station pairing codes and tokens, PIN sessions with lockout and inactivity expiry, HMAC PIN lookup unique per merchant.
 - Single-use manager override grants (`POST /v1/overrides`) bound to one action and target, approver recorded on events and audit.
