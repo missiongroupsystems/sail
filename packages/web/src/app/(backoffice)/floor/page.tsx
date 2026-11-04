@@ -15,7 +15,7 @@ export default async function FloorPage() {
     : [null, null];
   return (
     <>
-      <PageHeader title="Floor & QR" description="Areas and tables per outlet. Drag a table to move it; tap it to edit. QR sheets arrive in a later phase." />
+      <PageHeader title="Floor & QR" description="Areas and tables per outlet. Drag a table to move it; tap it to edit. Download the QR sheet for the tables, or rotate one table's code." />
       <FloorView outlets={outlets.data} scope={scope} initialOutletId={outletId} initialAreas={areas?.data ?? []} initialTables={tables?.data ?? []} />
     </>
   );

@@ -2,14 +2,16 @@
 
 import type { ReactNode } from "react";
 import { cx } from "../lib/cx";
-import { Button } from "../components/Button";
+import { Button, type ButtonVariant } from "../components/Button";
 
 export type NowItem = {
   id: string;
   /** "T7 · QR order · 3", "P-031 · Ready · Lim". */
   title: string;
   detail?: string | null;
-  actions?: { id: string; label: string; onPress: () => void; variant?: "primary" | "secondary" }[];
+  /** Lines of a QR order, shown under the detail (design 4.2). */
+  lines?: string[];
+  actions?: { id: string; label: string; onPress: () => void; variant?: ButtonVariant; isDisabled?: boolean; isPending?: boolean }[];
 };
 
 export type NowRailProps = {
@@ -33,10 +35,19 @@ export function NowRail({ items, footer, className }: NowRailProps) {
               <li key={it.id} className="rounded-tile bg-surface-2 px-3 py-3">
                 <p className="text-line text-ink">{it.title}</p>
                 {it.detail ? <p className="text-caption text-ink-2">{it.detail}</p> : null}
+                {it.lines?.length ? (
+                  <ul className="mt-1 text-caption text-ink-2">
+                    {it.lines.map((l, i) => (
+                      <li key={i} className="truncate">
+                        {l}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
                 {it.actions?.length ? (
                   <div className="mt-2 flex flex-wrap gap-2">
                     {it.actions.map((a) => (
-                      <Button key={a.id} size="md" variant={a.variant ?? "secondary"} onPress={a.onPress}>
+                      <Button key={a.id} size="md" variant={a.variant ?? "secondary"} onPress={a.onPress} isDisabled={a.isDisabled} isPending={a.isPending}>
                         {a.label}
                       </Button>
                     ))}

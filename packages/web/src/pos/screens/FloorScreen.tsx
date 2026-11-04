@@ -4,28 +4,61 @@ import { Button, NowRail, QuantityStepper, Sheet, Skeleton, StatusLegend, TableS
 import { useEffect, useMemo, useRef, useState } from "react";
 import { idempotencyKey, toApiError } from "@/lib/api";
 import { openOrder } from "../api/register";
-import type { FloorTable } from "../api/types";
+import type { FloorTable, GuestRound } from "../api/types";
 import { Frame } from "../components/Frame";
 import { usePos } from "../components/PosContext";
-import { useApplySnapshot, useFloor } from "../hooks/queries";
+import { RejectRoundSheet } from "../components/ReasonSheets";
+import { useApplySnapshot, useFloor, useOpenServiceRequests, usePendingRounds } from "../hooks/queries";
 import { useApi } from "../hooks/useApi";
+import { useNowActions } from "../hooks/useNowActions";
 import { useNow } from "../lib/device";
 import { formatClock, formatElapsed } from "../lib/format";
 import { useNavStore } from "../state/nav";
-import { useUiStore } from "../state/ui";
+import { useSoundStore, useUiStore } from "../state/ui";
+
+const REQUEST_LABEL: Record<string, string> = { water: "Water", call_staff: "Call staff", call_for_bill: "Bill, please", cutlery: "Cutlery", napkins: "Napkins", help: "Help" };
+const requestLabel = (type: string) => REQUEST_LABEL[type] ?? type.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+
+/** Two short soft tones (design 7.9), only when the station has turned sound on. The context is created on the toggle tap, which is the user gesture browsers need. */
+let audio: AudioContext | null = null;
+function tone(kind: "new" | "alert") {
+  try {
+    audio ??= new AudioContext();
+    const ctx = audio;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.value = kind === "new" ? 880 : 660;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.08, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+    o.connect(g).connect(ctx.destination);
+    o.start(t);
+    o.stop(t + 0.4);
+  } catch {
+    // No audio: the Now rail still shows the item.
+  }
+}
 
 /**
  * The floor plan (design 4.2): area tabs, tables drawn at their positions with
- * status as colour + icon, pax and elapsed time, the legend, and the Now rail.
- * Tap a free table → pax → order (2 taps). Tap a seated table → order (1 tap).
+ * status as colour + icon, pax and elapsed time, the legend, and the Now rail
+ * with QR orders, table requests and ready pickups, each with its action inline.
  */
 export function FloorScreen() {
   const api = useApi();
   const { outlet, station, offline } = usePos();
   const floor = useFloor(station.outlet_id);
+  const rounds = usePendingRounds(station.outlet_id);
+  const requests = useOpenServiceRequests(station.outlet_id);
+  const nowActions = useNowActions(station.outlet_id);
   const applySnapshot = useApplySnapshot();
   const openOrderScreen = useNavStore((s) => s.openOrder);
+  const openPay = useNavStore((s) => s.openPay);
   const notify = useUiStore((s) => s.notify);
+  const sound = useSoundStore((s) => s.enabled);
+  const setSound = useSoundStore((s) => s.setEnabled);
   const now = useNow(1000);
 
   const snapshot = floor.data?.snapshot;
@@ -36,6 +69,15 @@ export function FloorScreen() {
 
   const [seating, setSeating] = useState<FloorTable | null>(null);
   const [opening, setOpening] = useState(false);
+  const [rejecting, setRejecting] = useState<GuestRound | null>(null);
+
+  // A new QR order or table request plays the soft tone when sound is on (design 7.9).
+  const waitingIds = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const ids = new Set([...(rounds.data ?? []).map((r) => `r:${r.id}`), ...(requests.data ?? []).map((r) => `q:${r.id}`)]);
+    if (waitingIds.current && sound && [...ids].some((id) => !waitingIds.current!.has(id))) tone("new");
+    waitingIds.current = ids;
+  }, [rounds.data, requests.data, sound]);
 
   const seat = async (table: FloorTable, pax: number) => {
     setOpening(true);
@@ -67,18 +109,72 @@ export function FloorScreen() {
     }
   };
 
+  const collect = async (o: NonNullable<typeof snapshot>["other_orders"][number]) => {
+    const res = await nowActions.collect(o);
+    if (res && !res.paid) {
+      const open = res.order.checks.find((c) => c.status === "open");
+      notify({ text: `${o.order_no} still has ${res.order.balance > 0 ? "a balance" : "an open bill"}`, remedy: "Take the payment, then it is collected.", tone: "info" }, 5000);
+      if (open) openPay(o.id, open.id, "order");
+      else openOrderScreen(o.id, "orders");
+    }
+  };
+
   const nowItems: NowItem[] = useMemo(() => {
     if (!snapshot) return [];
-    const items: NowItem[] = [];
-    for (const t of snapshot.tables) {
-      if (t.order && t.order.pending_rounds > 0) items.push({ id: `qr:${t.id}`, title: `Table ${t.name} · QR order`, detail: `${t.order.pending_rounds} waiting to be accepted`, actions: [{ id: "view", label: "View", onPress: () => openOrderScreen(t.order!.id, "floor") }] });
-      if (t.requests_waiting > 0) items.push({ id: `req:${t.id}`, title: `Table ${t.name} · ${t.requests_waiting} ${t.requests_waiting === 1 ? "request" : "requests"}`, detail: "Table request", actions: t.order ? [{ id: "view", label: "View", onPress: () => openOrderScreen(t.order!.id, "floor") }] : [] });
+    const items: (NowItem & { at: number })[] = [];
+    const busy = nowActions.busy;
+    const seenRoundOrders = new Set<string>();
+    for (const r of rounds.data ?? []) {
+      seenRoundOrders.add(r.order_id);
+      items.push({
+        id: `round:${r.id}`,
+        at: new Date(r.submitted_at).getTime(),
+        title: `Table ${r.table_name ?? "?"} · QR order`,
+        detail: `${r.lines.length} ${r.lines.length === 1 ? "item" : "items"} · ${formatClock(r.submitted_at)}${r.guest_name ? ` · ${r.guest_name}` : ""}`,
+        lines: r.lines.slice(0, 4).map((l) => `${l.quantity} ${l.name}${l.modifiers.length ? ` · ${l.modifiers.join(", ")}` : ""}`).concat(r.lines.length > 4 ? [`+${r.lines.length - 4} more`] : []),
+        actions: [
+          { id: "accept", label: "Accept", variant: "primary", onPress: () => void nowActions.acceptRound(r.id), isDisabled: offline || busy !== null, isPending: busy === r.id },
+          { id: "view", label: "View", onPress: () => openOrderScreen(r.order_id, "floor") },
+          { id: "reject", label: "Reject", variant: "quiet", onPress: () => setRejecting(r), isDisabled: offline || busy !== null },
+        ],
+      });
+    }
+    // Before the rounds list has loaded, the floor snapshot's counts stand in.
+    if (!rounds.data) {
+      for (const t of snapshot.tables) if (t.order && t.order.pending_rounds > 0 && !seenRoundOrders.has(t.order.id)) items.push({ id: `qr:${t.id}`, at: 0, title: `Table ${t.name} · QR order`, detail: `${t.order.pending_rounds} waiting to be accepted`, actions: [{ id: "view", label: "View", onPress: () => openOrderScreen(t.order!.id, "floor") }] });
+    }
+    for (const q of requests.data ?? []) {
+      items.push({
+        id: `req:${q.id}`,
+        at: new Date(q.created_at).getTime(),
+        title: `Table ${q.table_name ?? "?"} · ${requestLabel(q.type)}`,
+        detail: `${formatClock(q.created_at)}${q.guest_name ? ` · ${q.guest_name}` : ""} · table request`,
+        actions: [
+          { id: "done", label: "Done", variant: "primary", onPress: () => void nowActions.acknowledge(q.id), isDisabled: offline || busy !== null, isPending: busy === q.id },
+          ...(q.order_id ? [{ id: "view", label: "View", onPress: () => openOrderScreen(q.order_id!, "floor") }] : []),
+        ],
+      });
+    }
+    if (!requests.data) {
+      for (const t of snapshot.tables) if (t.requests_waiting > 0) items.push({ id: `reqs:${t.id}`, at: 0, title: `Table ${t.name} · ${t.requests_waiting} ${t.requests_waiting === 1 ? "request" : "requests"}`, detail: "Table request", actions: t.order ? [{ id: "view", label: "View", onPress: () => openOrderScreen(t.order!.id, "floor") }] : [] });
     }
     for (const o of snapshot.other_orders) {
-      if (o.status === "ready") items.push({ id: `ready:${o.id}`, title: `${o.order_no} · Ready${o.customer_ref?.name ? ` · ${o.customer_ref.name}` : ""}`, detail: o.ready_by ? `Ready by ${formatClock(o.ready_by)}` : null, actions: [{ id: "view", label: "View", onPress: () => openOrderScreen(o.id, "orders") }] });
+      if (o.status === "ready") {
+        items.push({
+          id: `ready:${o.id}`,
+          at: o.ready_by ? new Date(o.ready_by).getTime() : 1,
+          title: `${o.order_no} · Ready${o.customer_ref?.name ? ` · ${o.customer_ref.name}` : ""}`,
+          detail: o.ready_by ? `Ready by ${formatClock(o.ready_by)}` : "Pickup ready",
+          actions: [
+            { id: "collected", label: "Collected", variant: "primary", onPress: () => void collect(o), isDisabled: offline || busy !== null, isPending: busy === o.id },
+            { id: "view", label: "View", onPress: () => openOrderScreen(o.id, "orders") },
+          ],
+        });
+      }
     }
-    return items;
-  }, [snapshot, openOrderScreen]);
+    return items.sort((a, b) => a.at - b.at).map(({ at: _at, ...it }) => it);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshot, rounds.data, requests.data, nowActions, offline, openOrderScreen]);
 
   return (
     <Frame title={`${outlet?.name ?? ""}${area ? ` · ${area.name}` : ""}`}>
@@ -99,9 +195,24 @@ export function FloorScreen() {
         <NowRail
           items={nowItems}
           footer={
-            <Button size="lg" variant="secondary" onPress={newTakeaway} isDisabled={offline || opening} isPending={opening}>
-              {offline ? "Offline" : "+ Takeaway order"}
-            </Button>
+            <>
+              <Button size="lg" variant="secondary" onPress={newTakeaway} isDisabled={offline || opening} isPending={opening}>
+                {offline ? "Offline" : "+ Takeaway order"}
+              </Button>
+              <Button
+                size="md"
+                variant="quiet"
+                onPress={() => {
+                  const next = !sound;
+                  setSound(next);
+                  if (next) tone("new");
+                }}
+                aria-pressed={sound}
+                className="text-ink-2"
+              >
+                {sound ? "Sound on · tap to turn off" : "Sound off · tap to turn on"}
+              </Button>
+            </>
           }
         />
       </div>
@@ -109,6 +220,7 @@ export function FloorScreen() {
       <Sheet isOpen={Boolean(seating)} onOpenChange={(o) => (!o ? setSeating(null) : undefined)} title={seating ? `Table ${seating.name}` : ""} description="How many guests?" isDismissable={!opening}>
         {seating ? <PaxPicker suggested={seating.seats} isPending={opening} onPick={(pax) => void seat(seating, pax)} /> : null}
       </Sheet>
+      <RejectRoundSheet isOpen={Boolean(rejecting)} roundLabel={rejecting ? `Table ${rejecting.table_name ?? ""} · ${rejecting.lines.length} ${rejecting.lines.length === 1 ? "item" : "items"}` : null} onClose={() => setRejecting(null)} onReject={(reason) => (rejecting ? nowActions.rejectRound(rejecting.id, reason) : Promise.resolve(null))} />
     </Frame>
   );
 }

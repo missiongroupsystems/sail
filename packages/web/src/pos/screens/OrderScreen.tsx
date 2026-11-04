@@ -1,30 +1,34 @@
 "use client";
 
-import { BackButton, Skeleton } from "@sail/ui";
-import { useEffect, useState } from "react";
-import type { SnapshotLine } from "../api/types";
+import { BackButton, Button, formatCents, Money, Skeleton } from "@sail/ui";
+import { useEffect, useMemo, useState } from "react";
+import type { GuestRound, SnapshotLine } from "../api/types";
 import { Catalogue } from "../components/Catalogue";
 import { DiscountSheet } from "../components/DiscountSheet";
 import { Frame } from "../components/Frame";
-import { LaterPhaseSheet } from "../components/LaterPhaseSheet";
 import { LineSheet } from "../components/LineSheet";
 import { OrderMenu } from "../components/OrderMenu";
 import { OrderSheet } from "../components/OrderSheet";
 import { usePos } from "../components/PosContext";
-import { useManualRules, useOrder } from "../hooks/queries";
+import { RefundSheet } from "../components/RefundSheet";
+import { RejectRoundSheet, ReopenSheet } from "../components/ReasonSheets";
+import { ReprintSheet } from "../components/ReprintSheet";
+import { useLateJobs, useManualRules, useOrder, useOrderPrintJobs, usePendingRounds } from "../hooks/queries";
 import { useOrderActions } from "../hooks/useOrderActions";
 import { useNow } from "../lib/device";
 import { formatClock, formatElapsed, ORDER_TYPE_LABEL } from "../lib/format";
 import { useNavStore } from "../state/nav";
 import { useUiStore } from "../state/ui";
 
-type SheetState = { kind: "line"; lineId: string } | { kind: "discount" } | { kind: "bill" } | { kind: "pay" } | null;
+type SheetState = { kind: "line"; lineId: string } | { kind: "discount" } | { kind: "refund"; checkId?: string | null } | { kind: "reprint"; round: { number: number; firedAt: string | null } | null } | { kind: "reopen" } | { kind: "reject"; round: GuestRound } | null;
 
-/** Order entry (design 4.3): rail + catalogue, the order sheet, and the sheets that hang off them. */
+/** Order entry (design 4.3): rail + catalogue, the order sheet, and the sheets that hang off them. Closed orders stay readable for Reopen, Refund and receipts. */
 export function OrderScreen({ orderId }: { orderId: string }) {
-  const { tablesById } = usePos();
+  const { tablesById, station, offline } = usePos();
   const screen = useNavStore((s) => s.screen);
   const back = useNavStore((s) => s.back);
+  const openBill = useNavStore((s) => s.openBill);
+  const openPay = useNavStore((s) => s.openPay);
   const order = useOrder(orderId);
   const rules = useManualRules();
   const actions = useOrderActions(orderId);
@@ -34,9 +38,16 @@ export function OrderScreen({ orderId }: { orderId: string }) {
   const now = useNow(1000);
 
   const snap = order.data;
-  // Closed orders leave the screen: cancelled from here, or completed on another station.
+  const closed = snap?.status === "completed";
+  const rounds = usePendingRounds(station.outlet_id);
+  const pendingRounds = useMemo(() => (rounds.data ?? []).filter((r) => r.order_id === orderId), [rounds.data, orderId]);
+  const jobs = useOrderPrintJobs(station.outlet_id, orderId, Boolean(snap && snap.round_count > 0));
+  const late = useLateJobs(station.outlet_id);
+  const lateJobIds = useMemo(() => new Set((late.data ?? []).map((j) => j.id)), [late.data]);
+
+  // A cancelled order leaves the screen; a completed one stays readable (design 4.12: Reopen, Refund).
   useEffect(() => {
-    if (snap && (snap.status === "cancelled" || snap.status === "completed")) back();
+    if (snap && snap.status === "cancelled") back();
   }, [snap, back]);
 
   const from = screen.kind === "order" ? screen.from : "floor";
@@ -47,7 +58,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
         snap.pax ? `${snap.pax} ${snap.pax === 1 ? "guest" : "guests"}` : null,
         ORDER_TYPE_LABEL[snap.order_type],
         snap.customer_ref?.name ?? null,
-        snap.ready_by ? `ready by ${formatClock(snap.ready_by)}` : formatElapsed((now - new Date(snap.opened_at).getTime()) / 1000),
+        closed ? `Done ${snap.completed_at ? formatClock(snap.completed_at) : ""}` : snap.ready_by ? `ready by ${formatClock(snap.ready_by)}` : formatElapsed((now - new Date(snap.opened_at).getTime()) / 1000),
       ]
         .filter(Boolean)
         .join(" · ")
@@ -55,8 +66,15 @@ export function OrderScreen({ orderId }: { orderId: string }) {
 
   const line: SnapshotLine | null = sheet?.kind === "line" ? (snap?.lines.find((l) => l.id === sheet.lineId) ?? null) : null;
 
+  const pay = () => {
+    if (!snap) return;
+    const open = snap.checks.filter((c) => c.status === "open");
+    if (snap.checks.length === 1 && open[0]) openPay(orderId, open[0].id, "order");
+    else openBill(orderId);
+  };
+
   return (
-    <Frame left={<BackButton label={from === "orders" ? "Orders" : "Floor"} onPress={back} />} title={title} right={snap ? <OrderMenu order={snap} actions={actions} /> : null}>
+    <Frame left={<BackButton label={from === "orders" ? "Orders" : "Floor"} onPress={back} />} title={title} right={snap ? <OrderMenu order={snap} actions={actions} onOpen={(k) => setSheet(k === "refund" ? { kind: "refund" } : k === "reopen" ? { kind: "reopen" } : { kind: "reprint", round: null })} /> : null}>
       {!snap ? (
         <div className="flex flex-1 gap-4 p-4">
           <Skeleton className="h-full w-[140px]" />
@@ -65,7 +83,40 @@ export function OrderScreen({ orderId }: { orderId: string }) {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
-          <Catalogue order={snap} actions={actions} activeSeat={activeSeat} />
+          {closed ? (
+            <section className="flex min-w-0 flex-1 flex-col items-center justify-center gap-6 px-8" aria-label="Order done">
+              <div className="flex flex-col items-center gap-1">
+                <p className="text-caption text-ink-2 uppercase tracking-[0.04em]">Done</p>
+                <Money cents={snap.paid_total} size="display" className="text-ink" />
+                <p className="text-body text-ink-2">
+                  {snap.checks.length} {snap.checks.length === 1 ? "bill" : "bills"} · paid {snap.completed_at ? formatClock(snap.completed_at) : ""}
+                  {snap.checks.some((c) => c.refunded_total > 0) ? ` · refunded ${formatCents(snap.checks.reduce((s, c) => s + c.refunded_total, 0))}` : ""}
+                </p>
+              </div>
+              <ul className="flex flex-col gap-2">
+                {snap.checks.map((c) => (
+                  <li key={c.id} className="flex min-h-14 items-center gap-3 rounded-tile bg-surface px-4 hairline">
+                    <span className="min-w-0 flex-1 text-line text-ink">
+                      {c.label}
+                      <span className="text-caption text-ink-2"> · {c.payments.map((p) => `${p.tender} ${formatCents(p.amount)}`).join(", ")}{c.invoice_no ? ` · Invoice ${c.invoice_no}` : ""}</span>
+                    </span>
+                    <Button size="md" variant="quiet" isDisabled={offline} onPress={() => void actions.printReceipt(c.id)}>
+                      Receipt
+                    </Button>
+                    <Button size="md" variant="quiet" isDisabled={offline} onPress={() => void actions.issueInvoice(c.id)}>
+                      {c.invoice_no ? "Invoice issued" : "Get invoice"}
+                    </Button>
+                    <Button size="md" variant="secondary" isDisabled={offline || c.status === "refunded" || c.paid_total === 0} onPress={() => setSheet({ kind: "refund", checkId: c.id })}>
+                      Refund
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-body text-ink-2">Reopen the order to change it. Same business day, Manager approval.</p>
+            </section>
+          ) : (
+            <Catalogue order={snap} actions={actions} activeSeat={activeSeat} />
+          )}
           <OrderSheet
             order={snap}
             actions={actions}
@@ -74,14 +125,28 @@ export function OrderScreen({ orderId }: { orderId: string }) {
             onSeat={(seat) => setActiveSeat(orderId, seat)}
             onLine={(l) => setSheet({ kind: "line", lineId: l.id })}
             onDiscount={() => setSheet({ kind: "discount" })}
-            onBill={() => setSheet({ kind: "bill" })}
-            onPay={() => setSheet({ kind: "pay" })}
+            onBill={() => openBill(orderId)}
+            onPay={pay}
+            onReprintRound={(round) => setSheet({ kind: "reprint", round })}
+            pendingRounds={pendingRounds}
+            onAcceptRound={(r) => void actions.acceptRound(r.id)}
+            onRejectRound={(r) => setSheet({ kind: "reject", round: r })}
+            jobs={jobs.data ?? []}
+            lateJobIds={lateJobIds}
+            onReopen={() => setSheet({ kind: "reopen" })}
+            onRefund={() => setSheet({ kind: "refund" })}
+            onReceipt={() => {
+              for (const c of snap.checks) if (c.paid_total > 0) void actions.printReceipt(c.id);
+            }}
           />
         </div>
       )}
       {snap ? <LineSheet order={snap} line={line && !line.optimistic ? line : null} onClose={() => setSheet(null)} actions={actions} /> : null}
       {snap ? <DiscountSheet isOpen={sheet?.kind === "discount"} onClose={() => setSheet(null)} order={snap} rules={rules.data} actions={actions} /> : null}
-      <LaterPhaseSheet isOpen={sheet?.kind === "bill" || sheet?.kind === "pay"} onClose={() => setSheet(null)} title={sheet?.kind === "pay" ? "Pay" : "Bill"} />
+      {snap ? <RefundSheet isOpen={sheet?.kind === "refund"} onClose={() => setSheet(null)} order={snap} actions={actions} initialCheckId={sheet?.kind === "refund" ? (sheet.checkId ?? null) : null} /> : null}
+      {snap ? <ReprintSheet isOpen={sheet?.kind === "reprint"} onClose={() => setSheet(null)} order={snap} actions={actions} round={sheet?.kind === "reprint" ? sheet.round : null} /> : null}
+      <ReopenSheet isOpen={sheet?.kind === "reopen"} onClose={() => setSheet(null)} onReopen={(reason) => actions.reopen(reason)} />
+      <RejectRoundSheet isOpen={sheet?.kind === "reject"} roundLabel={sheet?.kind === "reject" ? `${sheet.round.lines.length} ${sheet.round.lines.length === 1 ? "item" : "items"}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null} onClose={() => setSheet(null)} onReject={(reason) => (sheet?.kind === "reject" ? actions.rejectRound(sheet.round.id, reason) : Promise.resolve(null))} />
     </Frame>
   );
 }

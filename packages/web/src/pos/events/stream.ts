@@ -12,6 +12,8 @@ export type OutletStreamOptions = {
   onStatus: (status: StreamStatus, asOf: number | null) => void;
   /** Called on every `hello`, so the first connection can refresh the views it missed before connecting. */
   onConnected?: (firstTime: boolean) => void;
+  /** A print job changed (design 4.8): the POS refreshes the late-job list. */
+  onJob?: (job: { job_id: string; status: string; printer_id: string | null }) => void;
 };
 
 /** Heartbeats arrive every 20 s; three missed means the connection is gone. */
@@ -166,9 +168,9 @@ export class OutletStream {
       else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
     }
     if (!dataLines.length) return;
-    let data: { seq?: number } = {};
+    let data: { seq?: number; job_id?: string; status?: string; printer_id?: string | null } = {};
     try {
-      data = JSON.parse(dataLines.join("\n")) as { seq?: number };
+      data = JSON.parse(dataLines.join("\n")) as typeof data;
     } catch {
       return;
     }
@@ -186,6 +188,8 @@ export class OutletStream {
       void this.catchUp();
     } else if (event === "resync") {
       void this.catchUp();
+    } else if (event === "job") {
+      if (typeof data.job_id === "string") this.opts.onJob?.({ job_id: data.job_id, status: String(data.status ?? ""), printer_id: data.printer_id ?? null });
     }
   }
 

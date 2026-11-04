@@ -1,7 +1,29 @@
 "use client";
 
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { findPosChannelLink, getFloor, getLayout, getMenu, getOrder, listManualRules, listOpenOrders, listOutlets, listStations, listVoidReasons } from "../api/register";
+import {
+  findPosChannelLink,
+  getFloor,
+  getLayout,
+  getMenu,
+  getOrder,
+  getZReport,
+  listManualRules,
+  listOpenOrders,
+  listOpenServiceRequests,
+  listOutlets,
+  listPendingRounds,
+  listPrinters,
+  listPrintJobs,
+  listRefunds,
+  listRelays,
+  listShifts,
+  listStations,
+  listStock,
+  listTenderTypes,
+  listTodaysOrders,
+  listVoidReasons,
+} from "../api/register";
 import type { FloorSnapshot, OrderSnapshot } from "../api/types";
 import { useApi } from "./useApi";
 
@@ -18,6 +40,19 @@ export const posKeys = {
   order: (orderId: string) => ["pos", "order", orderId] as const,
   rules: ["pos", "pricing-rules"] as const,
   voidReasons: ["pos", "void-reasons"] as const,
+  tenderTypes: (outletId: string) => ["pos", "tender-types", outletId] as const,
+  todaysOrders: (outletId: string, businessDate: string) => ["pos", "orders-today", outletId, businessDate] as const,
+  refunds: (orderId: string) => ["pos", "refunds", orderId] as const,
+  shifts: (outletId: string, status: "open" | "closed") => ["pos", "shifts", outletId, status] as const,
+  zReport: (outletId: string, stationId: string | null, businessDate: string | null) => ["pos", "z-report", outletId, stationId, businessDate] as const,
+  lateJobs: (outletId: string) => ["pos", "print-jobs", outletId, "late"] as const,
+  orderJobs: (outletId: string, orderId: string) => ["pos", "print-jobs", outletId, "order", orderId] as const,
+  recentJobs: (outletId: string) => ["pos", "print-jobs", outletId, "recent"] as const,
+  printers: (outletId: string) => ["pos", "printers", outletId] as const,
+  relays: (outletId: string) => ["pos", "relays", outletId] as const,
+  rounds: (outletId: string) => ["pos", "rounds", outletId] as const,
+  requests: (outletId: string) => ["pos", "service-requests", outletId] as const,
+  stock: (outletId: string) => ["pos", "stock", outletId] as const,
 };
 
 export function useOutlet(outletId: string | null) {
@@ -95,4 +130,89 @@ export function applySnapshot(qc: QueryClient, snapshot: OrderSnapshot) {
 export function useApplySnapshot() {
   const qc = useQueryClient();
   return (snapshot: OrderSnapshot) => applySnapshot(qc, snapshot);
+}
+
+/* ---- v0.6/v0.7/v0.8 reads: bills, shifts, printing, Scan to Order ------------------ */
+
+export function useTenderTypes(outletId: string | null) {
+  const api = useApi();
+  return useQuery({ queryKey: posKeys.tenderTypes(outletId ?? ""), queryFn: () => listTenderTypes(api, outletId), enabled: Boolean(outletId), staleTime: 10 * 60_000 });
+}
+
+/** Today's business date for the Orders screen's closed list, in the outlet's zone. The register decides the real cutoff; this only names the day. */
+export function todayBusinessDate(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Singapore", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
+
+export function useTodaysOrders(outletId: string | null, enabled = true) {
+  const api = useApi();
+  const date = todayBusinessDate();
+  return useQuery({ queryKey: posKeys.todaysOrders(outletId ?? "", date), queryFn: () => listTodaysOrders(api, outletId!, date), enabled: Boolean(outletId) && enabled, staleTime: 10_000 });
+}
+
+export function useOrderRefunds(orderId: string | null, enabled = true) {
+  const api = useApi();
+  return useQuery({ queryKey: posKeys.refunds(orderId ?? ""), queryFn: () => listRefunds(api, orderId!), enabled: Boolean(orderId) && enabled, staleTime: 10_000 });
+}
+
+export function useShifts(outletId: string | null, status: "open" | "closed") {
+  const api = useApi();
+  return useQuery({ queryKey: posKeys.shifts(outletId ?? "", status), queryFn: () => listShifts(api, outletId!, { status }), enabled: Boolean(outletId), staleTime: 10_000 });
+}
+
+export function useZReport(outletId: string | null, stationId: string | null, businessDate: string | null, enabled = true) {
+  const api = useApi();
+  return useQuery({
+    queryKey: posKeys.zReport(outletId ?? "", stationId, businessDate),
+    queryFn: () => getZReport(api, outletId!, { ...(stationId ? { station_id: stationId } : {}), ...(businessDate ? { business_date: businessDate } : {}) }),
+    enabled: Boolean(outletId) && enabled,
+    staleTime: 5_000,
+  });
+}
+
+/** Jobs not printed within 10 s. Polls every 10 s while any are late; otherwise waits for `job` stream events. */
+export function useLateJobs(outletId: string | null) {
+  const api = useApi();
+  return useQuery({
+    queryKey: posKeys.lateJobs(outletId ?? ""),
+    queryFn: () => listPrintJobs(api, outletId!, { late: true }),
+    enabled: Boolean(outletId),
+    staleTime: 3_000,
+    refetchInterval: (q) => ((q.state.data?.length ?? 0) > 0 ? 10_000 : 30_000),
+  });
+}
+
+export function useOrderPrintJobs(outletId: string | null, orderId: string | null, enabled = true) {
+  const api = useApi();
+  return useQuery({ queryKey: posKeys.orderJobs(outletId ?? "", orderId ?? ""), queryFn: () => listPrintJobs(api, outletId!, { order_id: orderId! }), enabled: Boolean(outletId && orderId) && enabled, staleTime: 5_000 });
+}
+
+export function useRecentPrintJobs(outletId: string | null, enabled = true) {
+  const api = useApi();
+  return useQuery({ queryKey: posKeys.recentJobs(outletId ?? ""), queryFn: () => listPrintJobs(api, outletId!, { limit: 40 }), enabled: Boolean(outletId) && enabled, staleTime: 5_000 });
+}
+
+export function usePrinters(outletId: string | null) {
+  const api = useApi();
+  return useQuery({ queryKey: posKeys.printers(outletId ?? ""), queryFn: () => listPrinters(api, outletId!), enabled: Boolean(outletId), staleTime: 5 * 60_000 });
+}
+
+export function useRelays(outletId: string | null, enabled = true) {
+  const api = useApi();
+  return useQuery({ queryKey: posKeys.relays(outletId ?? ""), queryFn: () => listRelays(api, outletId!), enabled: Boolean(outletId) && enabled, staleTime: 15_000, refetchInterval: 60_000 });
+}
+
+export function usePendingRounds(outletId: string | null) {
+  const api = useApi();
+  return useQuery({ queryKey: posKeys.rounds(outletId ?? ""), queryFn: () => listPendingRounds(api, outletId!), enabled: Boolean(outletId), staleTime: 5_000, refetchInterval: 60_000 });
+}
+
+export function useOpenServiceRequests(outletId: string | null) {
+  const api = useApi();
+  return useQuery({ queryKey: posKeys.requests(outletId ?? ""), queryFn: () => listOpenServiceRequests(api, outletId!), enabled: Boolean(outletId), staleTime: 5_000, refetchInterval: 60_000 });
+}
+
+export function useStock(outletId: string | null, enabled = true) {
+  const api = useApi();
+  return useQuery({ queryKey: posKeys.stock(outletId ?? ""), queryFn: () => listStock(api, outletId!), enabled: Boolean(outletId) && enabled, staleTime: 10_000 });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Clock } from "lucide-react";
+import { AlertTriangle, Check, Clock } from "lucide-react";
 import { Button as AriaButton } from "react-aria-components";
 import { cx } from "../lib/cx";
 import { Icon } from "../components/Icon";
@@ -25,13 +25,24 @@ export type LineRowProps = {
   flash?: boolean;
   /** Slide in on first render (new line). */
   entering?: boolean;
+  /** Print status of a sent line (design 4.3): ✓ printed, ◷ waiting, ⚠ not printed. Omit for the plain "sent" mark. */
+  printStatus?: "printed" | "waiting" | "late" | null;
+  /** A small source chip after the name, for example "QR" on guest lines (design 4.11). */
+  chip?: string | null;
   onPress?: () => void;
   className?: string;
 };
 
+const PRINT_STATUS = {
+  printed: { icon: Check, text: "printed", cls: "text-ink-2" },
+  waiting: { icon: Clock, text: "waiting", cls: "text-ink-2" },
+  late: { icon: AlertTriangle, text: "not printed", cls: "text-status-alert" },
+} as const;
+
 /** An order line (design 4.3): quantity, name, modifiers, notes, seat chip, amount in tabular figures. */
-export function LineRow({ quantity, name, modifiers = [], notes, seat, amountCents, status, voidReason, flash, entering, onPress, className }: LineRowProps) {
+export function LineRow({ quantity, name, modifiers = [], notes, seat, amountCents, status, voidReason, flash, entering, printStatus, chip, onPress, className }: LineRowProps) {
   const voided = status === "voided";
+  const print = status === "sent" && printStatus ? PRINT_STATUS[printStatus] : null;
   const body = (
     <>
       <span className={cx("w-7 shrink-0 pt-px text-line tabular", voided ? "text-ink-2 line-through" : "text-ink")}>{quantity}</span>
@@ -39,6 +50,7 @@ export function LineRow({ quantity, name, modifiers = [], notes, seat, amountCen
         <span className={cx("flex items-center gap-2 text-line", voided && "text-ink-2 line-through")}>
           <span className="truncate">{name}</span>
           {seat != null ? <span className="shrink-0 rounded-chip bg-surface-2 px-2 text-caption text-ink-2 tabular">S{seat}</span> : null}
+          {chip ? <span className="shrink-0 rounded-chip bg-[color-mix(in_srgb,var(--status-seated)_12%,transparent)] px-2 text-caption text-status-seated">{chip}</span> : null}
           {status === "held" ? (
             <span className="inline-flex shrink-0 items-center gap-1 text-caption text-status-sent">
               <Icon icon={Clock} size={14} /> Held
@@ -61,7 +73,11 @@ export function LineRow({ quantity, name, modifiers = [], notes, seat, amountCen
         ) : (
           <Money cents={amountCents} size="line" className={voided ? "text-ink-2 line-through" : "text-ink"} />
         )}
-        {status === "sent" ? (
+        {print ? (
+          <span className={cx("mt-0.5 flex items-center justify-end gap-1 text-caption", print.cls)}>
+            <Icon icon={print.icon} size={14} /> {print.text}
+          </span>
+        ) : status === "sent" ? (
           <span className="mt-0.5 flex items-center justify-end gap-1 text-caption text-ink-2">
             <Icon icon={Check} size={14} /> sent
           </span>
@@ -78,7 +94,7 @@ export function LineRow({ quantity, name, modifiers = [], notes, seat, amountCen
   );
   if (!onPress) return <div className={classes}>{body}</div>;
   return (
-    <AriaButton onPress={onPress} className={classes} aria-label={`${quantity} ${name}${status === "sent" ? ", sent" : status === "held" ? ", held" : ""}`}>
+    <AriaButton onPress={onPress} className={classes} aria-label={`${quantity} ${name}${chip ? `, ${chip}` : ""}${status === "sent" ? (print ? `, ${print.text}` : ", sent") : status === "held" ? ", held" : ""}`}>
       {body}
     </AriaButton>
   );

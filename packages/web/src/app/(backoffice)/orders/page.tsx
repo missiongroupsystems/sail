@@ -12,7 +12,7 @@ export default async function OrdersPage() {
   const outletId = outlets.data.find((o) => o.id === scope.outletId)?.id ?? outlets.data[0]?.id ?? null;
   return (
     <>
-      <PageHeader title="Orders" description="Today's orders and every order, read-only. Open one to see its lines, adjustments, events and audit trail." />
+      <PageHeader title="Orders" description="Today's orders and every order. Open one for its lines, bills, refunds, tickets, events and audit trail. Servers read; Managers refund and reopen." />
       <OrdersView outlets={outlets.data} scope={scope} initialOutletId={outletId} />
     </>
   );

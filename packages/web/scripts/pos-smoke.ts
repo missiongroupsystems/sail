@@ -8,7 +8,17 @@
  *   override, Server is below Cashier) → stale-version add is retried without
  *   a version → catch up on events and read the SSE hello → cancel → sign out.
  *
- * Run (API from `pnpm --filter @sail/server dev:local` on :8080):
+ * Then, as Cal Cashier (v0.6 to v0.8): printers → a dine-in order sent to the
+ * kitchen → even split → by-item move and a three-way share → pre-bills → card
+ * part payment → split refused once paid → cash dry run, then cash with rounding
+ * and change → the other bills by card → auto-complete → receipt QR link →
+ * invoice → refund by line with a manager override → reopen (override) and
+ * complete → shift open and close with expected cash → Z-report → late print
+ * jobs and reroute to the backup → a guest session, QR round accept and a table
+ * request acknowledged.
+ *
+ * Run (API from `pnpm --filter @sail/server dev:local` on :8080, or set
+ * NEXT_PUBLIC_API_URL and SAIL_DEV_LOCAL for another port):
  *   pnpm --filter @sail/web pos:smoke
  */
 import { readFileSync } from "node:fs";
@@ -236,7 +246,316 @@ if (ta) {
   void ready;
 }
 
-await step("staff_sessions.end", () => reg.endSession(api));
+
+/* ======================================================================== *
+ * v0.6 to v0.8: bills, payments, refunds, shifts, printing, Scan to Order.  *
+ * ======================================================================== */
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const check = (label: string, cond: boolean, detail?: string) => (cond ? ok(label, detail) : fail(label, detail ?? "condition false"));
+
+// 14. Printers (back-office step, Admin): a kitchen printer with a backup, and a receipt printer. The demo has no relay, so jobs queue and become late.
+// The Pass printer only takes tickets tagged "pass" (none are), so it receives rerouted tickets only; the Kitchen printer is the default.
+// Reruns against the same register reuse the printers by name.
+const existingPrinters = (await reg.listPrinters(api, station.outlet_id).catch(() => [])) as Awaited<ReturnType<typeof reg.listPrinters>>;
+const printerNamed = async (name: string, body: Record<string, unknown>) => {
+  const found = existingPrinters.find((p) => p.name === name);
+  if (found) return { data: { id: found.id, name: found.name } };
+  return adminJson<{ data: { id: string; name: string } }>("/v1/printers", { outlet_id: station.outlet_id, name, ...body }, admin.token);
+};
+const pass = await printerNamed("Pass printer", { ip: "10.0.0.12", role: "kitchen", include_tags: ["pass"] }).catch((e) => (fail("printers.create Pass", e), null));
+const kitchen = pass ? await printerNamed("Kitchen printer", { ip: "10.0.0.11", role: "kitchen", is_default_kitchen: true, backup_printer_id: pass.data.id }).catch((e) => (fail("printers.create Kitchen", e), null)) : null;
+const receiptPrinter = await printerNamed("Receipt printer", { ip: "10.0.0.13", role: "receipt" }).catch((e) => (fail("printers.create Receipt", e), null));
+if (kitchen && receiptPrinter) ok("printers.create", `Kitchen printer → backup ${pass!.data.name}, receipt printer`);
+const printersNow = await step("printers.list", () => reg.listPrinters(api, station.outlet_id), (ps) => ps.map((p) => `${p.name} (${p.role}${p.backup_printer_id ? ", backup set" : ""})`).join(", "));
+await step("relays.list", () => reg.listRelays(api, station.outlet_id), (rs) => `${rs.length} relays, ${rs.filter((r) => r.online).length} online`);
+
+// 15. Switch to Cal Cashier (333333): payments and shifts are Cashier+.
+await step("staff_sessions.end (Server)", () => reg.endSession(api));
+token = paired.station_token;
+const cashier = await step("staff_sessions.start (Cashier)", () => reg.startSession(api, "333333"), (s) => `${s.staff.name} (${s.staff.role})`);
+if (!cashier) process.exit(1);
+token = cashier.session_token;
+
+const tenders = await step("tender_types.list", () => reg.listTenderTypes(api, station.outlet_id), (ts) => ts.map((t) => `${t.name}${t.is_cash ? " (cash)" : t.is_terminal ? " (terminal)" : ""}`).join(", "));
+const cashTender = tenders?.find((t) => t.is_cash);
+const cardTender = tenders?.find((t) => !t.is_cash && t.is_terminal);
+if (!cashTender || !cardTender) process.exit(1);
+
+// 16. A dine-in order for three, everything sent (kitchen tickets queue on the printers above).
+const floor2 = await reg.getFloor(api, station.outlet_id);
+const table2 = floor2.tables.find((t) => t.status === "free")!;
+const billOrderId = idempotencyKey();
+const billOpened = await step("orders.open dine-in (bills)", () => reg.openOrder(api, { order_id: billOrderId, order_type: "dine_in", table_id: table2.id, pax: 3 }), (r) => `${r.data.order_no}, ${r.data.checks.length} bill`);
+if (!billOpened) process.exit(1);
+const satay = Object.values(menu.products).find((p) => p.name.startsWith("Satay")) ?? kopi;
+const l1 = idempotencyKey();
+const l2 = idempotencyKey();
+const l3 = idempotencyKey();
+const billLines = await step(
+  "lines.add ×3 (seats 1, 2, shared)",
+  () =>
+    reg.addLines(api, billOrderId, [
+      { line_id: l1, product_id: laksa.id, quantity: 1, seat_no: 1, modifiers: [{ group_id: protein.id, product_id: prawn.product_id }] },
+      { line_id: l2, product_id: kopi.id, quantity: 2, seat_no: 2 },
+      { line_id: l3, product_id: satay.id, quantity: 1 },
+    ]),
+  (r) => `total ${r.data.totals.total}, balance ${r.data.balance}, pricing ${r.data.pricing_status}`,
+);
+if (!billLines) process.exit(1);
+const sentAll = await step("orders.fire all", () => reg.fireOrder(api, billOrderId, {}, { expectedVersion: billLines.data.version }), (r) => `status ${r.data.status}, round ${r.data.round_count}`);
+if (!sentAll) process.exit(1);
+let bill = sentAll.data;
+const firedAt = Date.now();
+
+// 17. Even split into 3, then by item: move the Kopi to bill 2, share the Laksa three ways.
+const even = await step("checks.split_even n=3", () => reg.splitEven(api, billOrderId, 3, { expectedVersion: bill.version }), (r) => `${r.data.checks.length} bills: ${r.data.checks.map((c) => `${c.label}=${c.totals.total}`).join(" ")}`);
+if (even) {
+  bill = even.data;
+  check("bills add up to the order total", bill.checks.reduce((s, c) => s + c.totals.total, 0) === bill.totals.total, `${bill.checks.reduce((s, c) => s + c.totals.total, 0)} = ${bill.totals.total}`);
+  check("each line shared 1/3 on every bill", bill.checks.every((c) => c.allocations.every((a) => a.share === "1/3")), bill.checks[0]!.allocations.map((a) => a.share).join(","));
+}
+const checksList = await step("checks.list", () => reg.listChecks(api, billOrderId), (cs) => `${cs.length} bills`);
+void checksList;
+const c2 = bill.checks[1]!;
+const moved = await step("checks.allocate move Kopi → Bill 2", () => reg.allocateLines(api, billOrderId, [{ line_id: l2, check_ids: [c2.id] }], undefined, { expectedVersion: bill.version }), (r) => r.data.checks.map((c) => `${c.label}=${c.totals.total}`).join(" "));
+if (moved) {
+  bill = moved.data;
+  const onlyOn2 = bill.checks.filter((c) => c.allocations.some((a) => a.line_id === l2));
+  check("Kopi now only on Bill 2 with share 1", onlyOn2.length === 1 && onlyOn2[0]!.id === c2.id && onlyOn2[0]!.allocations.find((a) => a.line_id === l2)!.share === "1");
+  check("bills still add up", bill.checks.reduce((s, c) => s + c.totals.total, 0) === bill.totals.total);
+}
+const shared = await step("checks.allocate share Laksa between 3 bills", () => reg.allocateLines(api, billOrderId, [{ line_id: l1, check_ids: bill.checks.map((c) => c.id) }], undefined, { expectedVersion: bill.version }), (r) => r.data.checks.map((c) => `${c.label}=${c.totals.total}`).join(" "));
+if (shared) bill = shared.data;
+// An empty bill cannot stand on its own: the register prunes empty unlocked bills, so add_checks without a move is a no-op (see the report's API gaps).
+const added = await step("checks.allocate add_checks=1 without moves", () => reg.allocateLines(api, billOrderId, [], 1, { expectedVersion: bill.version }), (r) => `${r.data.checks.length} bills (empty bill pruned by the register)`);
+if (added) bill = added.data;
+const bySeat = await step("checks.split_by_seat shared=even", () => reg.splitBySeat(api, billOrderId, "even", { expectedVersion: bill.version }), (r) => r.data.checks.map((c) => `${c.label} seat ${c.seat_no}=${c.totals.total}`).join(" "));
+if (bySeat) bill = bySeat.data;
+const backToEven = await step("checks.split_even n=3 again", () => reg.splitEven(api, billOrderId, 3, { expectedVersion: bill.version }), (r) => `${r.data.checks.length} bills`);
+if (backToEven) bill = backToEven.data;
+
+// 18. Pre-bills for every bill: the table turns "bill requested".
+const prebilled = await step("checks.print_prebill (all)", () => reg.printPrebill(api, billOrderId, null, { expectedVersion: bill.version }), (r) => `${r.jobs.length} jobs, bill_requested_at ${r.data.bill_requested_at ? "set" : "null"}`);
+if (prebilled) {
+  bill = prebilled.data;
+  const f = await reg.getFloor(api, station.outlet_id);
+  check("table status bill_requested", f.tables.find((t) => t.id === table2.id)?.status === "bill_requested", f.tables.find((t) => t.id === table2.id)?.status);
+}
+
+// 19. Card part payment on bill 1, then the split is locked.
+const b1 = bill.checks[0]!;
+const half = Math.floor(b1.balance / 2);
+const partPay = await step("payments.record card part payment", () => reg.recordPayment(api, b1.id, { payment_id: idempotencyKey(), tender_type_id: cardTender.id, amount: half, reference: "T#1234" }, { expectedVersion: bill.version }), (r) => {
+  const c = r.data.checks.find((x) => x.id === b1.id)!;
+  return `paid ${c.paid_total}, balance ${c.balance}, locked ${c.locked}, pricing ${r.data.pricing_status}`;
+});
+if (partPay) {
+  bill = partPay.data;
+  const c = bill.checks.find((x) => x.id === b1.id)!;
+  check("part payment applied and bill locked", c.paid_total === half && c.balance === b1.balance - half && c.locked && bill.pricing_status === "frozen");
+}
+// A double tap: the POS sends the same payment_id AND the same Idempotency-Key, so the register replays its first answer.
+const dupId = idempotencyKey();
+const first = await step("payments.record (idempotent id) first", () => reg.recordPayment(api, b1.id, { payment_id: dupId, tender_type_id: cardTender.id, amount: 100 }, { key: dupId }), (r) => `paid ${r.data.checks.find((x) => x.id === b1.id)!.paid_total}`);
+if (first) bill = first.data;
+const again = await step("payments.record (same id + same key) replay", () => reg.recordPayment(api, b1.id, { payment_id: dupId, tender_type_id: cardTender.id, amount: 100 }, { key: dupId }), (r) => `paid ${r.data.checks.find((x) => x.id === b1.id)!.paid_total}`);
+if (first && again) check("double tap recorded once", again.data.checks.find((x) => x.id === b1.id)!.paid_total === first.data.checks.find((x) => x.id === b1.id)!.paid_total);
+// With a new Idempotency-Key the same payment_id is refused outright (unique id), never recorded twice.
+await expectError("payments.record (same id, new key)", () => reg.recordPayment(api, b1.id, { payment_id: dupId, tender_type_id: cardTender.id, amount: 100 }), "state_conflict");
+bill = await reg.getOrder(api, billOrderId);
+const lockedErr = await expectError("checks.split_even after a payment", () => reg.splitEven(api, billOrderId, 2, { expectedVersion: bill.version }), "invariant_violation");
+if (lockedErr) check("split refusal names the paid bill", /Bill 1 is paid/.test(lockedErr.message), `${lockedErr.message} · ${lockedErr.remedy ?? ""} · details ${JSON.stringify(lockedErr.details ?? {})}`);
+await expectError("payments.record card above the balance", () => reg.recordPayment(api, b1.id, { payment_id: idempotencyKey(), tender_type_id: cardTender.id, amount: bill.checks.find((x) => x.id === b1.id)!.balance + 1000 }), "validation");
+
+// 20. Cash: dry run first (rounding and change from the register), then the real payment with the same figures.
+const b1now = bill.checks.find((x) => x.id === b1.id)!;
+const tendered = Math.ceil((b1now.balance + 1) / 1000) * 1000;
+const dry = await step("payments.record dry_run cash", () => reg.recordPayment(api, b1.id, { payment_id: idempotencyKey(), tender_type_id: cashTender.id, amount: b1now.balance, tendered, dry_run: true }), (r) => `amount ${r.payment.amount}, rounding ${r.payment.rounding_cents}, tendered ${tendered}, change_due ${r.payment.change_due}`);
+if (dry) {
+  const after = await reg.getOrder(api, billOrderId);
+  check("dry run recorded nothing", after.checks.find((x) => x.id === b1.id)!.paid_total === b1now.paid_total && after.version === bill.version, `paid ${after.checks.find((x) => x.id === b1.id)!.paid_total}`);
+  check("rounding is a 5¢ step", Math.abs(dry.payment.rounding_cents ?? 0) <= 2, String(dry.payment.rounding_cents));
+}
+const cashPaid = await step("payments.record cash", () => reg.recordPayment(api, b1.id, { payment_id: idempotencyKey(), tender_type_id: cashTender.id, amount: b1now.balance, tendered }, { expectedVersion: bill.version }), (r) => {
+  const c = r.data.checks.find((x) => x.id === b1.id)!;
+  return `status ${c.status}, rounding ${c.rounding_total}, change_due ${r.payment.change_due}, order ${r.data.status}`;
+});
+if (cashPaid && dry) {
+  bill = cashPaid.data;
+  check("cash figures match the dry run", cashPaid.payment.change_due === dry.payment.change_due && cashPaid.payment.rounding_cents === dry.payment.rounding_cents);
+  check("bill 1 paid", bill.checks.find((x) => x.id === b1.id)!.status === "paid");
+}
+
+// 21. The other bills by card; the order completes on its own (everything sent, every bill paid).
+for (const c of bill.checks.filter((x) => x.status === "open")) {
+  const paid = await step(`payments.record card ${c.label}`, () => reg.recordPayment(api, c.id, { payment_id: idempotencyKey(), tender_type_id: cardTender.id, amount: c.balance }, { expectedVersion: bill.version }), (r) => `${r.data.checks.find((x) => x.id === c.id)!.status}, order ${r.data.status}`);
+  if (paid) bill = paid.data;
+}
+check("order auto-completed", bill.status === "completed", bill.status);
+{
+  const f = await reg.getFloor(api, station.outlet_id);
+  const t = f.tables.find((x) => x.id === table2.id)!;
+  check("table free (or paid) after completion", t.status === "free" || t.status === "paid", t.status);
+}
+
+// 22. Receipts and documents.
+const qr = await step("receipts.send qr", () => reg.sendReceipt(api, b1.id, "qr"), (r) => `${r.data.url} (${r.data.delivery_status})`);
+if (qr) check("receipt url is absolute", /^https?:\/\//.test(qr.data.url), qr.data.url);
+await step("receipts.send email (not configured → warning)", () => reg.sendReceipt(api, b1.id, "email", "guest@example.com"), (r) => `${r.data.delivery_status}; warnings: ${r.warnings.join("; ") || "none"}`);
+await step("receipts.print", () => reg.printReceipt(api, b1.id), (jobs) => `${jobs.length} job(s) on ${jobs[0]?.printer_name ?? "—"}`);
+const b2 = bill.checks[1]!;
+const invoice = await step("documents.issue_invoice bill 2", () => reg.issueInvoice(api, b2.id), (i) => `${i.invoice_no} reused ${i.reused} ${i.pdf_url}`);
+const invoiceAgain = await step("documents.issue_invoice bill 2 again", () => reg.issueInvoice(api, b2.id), (i) => `${i.invoice_no} reused ${i.reused}`);
+if (invoice && invoiceAgain) check("same invoice number on reissue", invoice.invoice_no === invoiceAgain.invoice_no);
+
+// 23. Refund by line on bill 2 (invoiced → credit note): Cashier is below Manager, so a manager override.
+const b2Line = bill.checks.find((x) => x.id === b2.id)!.allocations[0]!;
+const quote = await step("refunds.quote lines", () => reg.quoteRefund(api, b2.id, { kind: "lines", lines: [{ line_id: b2Line.line_id, quantity: 1 }] }), (q) => `total ${q.totals.total} (gst ${q.totals.gst}), tenders ${q.tenders.map((t) => `${t.tender}=${t.amount}${t.rounding_cents ? `±${t.rounding_cents}` : ""}`).join(" ")}, cash_out ${q.cash_out}`);
+if (quote) {
+  await expectError("refunds.create as Cashier", () => reg.createRefund(api, b2.id, { refund_id: idempotencyKey(), request: { kind: "lines", lines: [{ line_id: b2Line.line_id, quantity: 1 }] }, reason: "Guest complaint" }), "permission_denied");
+  const rGrant = await step("overrides.grant refunds.create (check)", () => reg.grantOverride(api, { action: "refunds.create", target_kind: "check", target_id: b2.id, approver_pin: "222222" }), (g) => `by ${g.approver.name}`);
+  if (rGrant) {
+    const refunded = await step("refunds.create with override", () => reg.createRefund(api, b2.id, { refund_id: idempotencyKey(), request: { kind: "lines", lines: [{ line_id: b2Line.line_id, quantity: 1 }] }, reason: "Guest complaint", print: true }, { overrideId: rGrant.override_id }), (r) => `${r.refund.refund_receipt_no} credit note ${r.refund.credit_note_no ?? "—"} total ${r.refund.totals.total}; bill ${r.data.checks.find((x) => x.id === b2.id)!.status}`);
+    if (refunded) {
+      bill = refunded.data;
+      check("refund total matches the quote", refunded.refund.totals.total === quote.totals.total);
+      check("credit note issued for the invoiced bill", Boolean(refunded.refund.credit_note_no), refunded.refund.credit_note_no ?? "none");
+      await step("refunds.list", () => reg.listRefunds(api, billOrderId), (rs) => `${rs.length} refund(s)`);
+      await step("refunds.print_receipt", () => reg.printRefundReceipt(api, refunded.refund.id), (jobs) => `${jobs.length} job(s)`);
+    }
+  }
+}
+
+// 24. Reopen (Manager+, same day) with an override, then complete again.
+await expectError("orders.reopen as Cashier", () => reg.reopenOrder(api, billOrderId, "Closed by mistake"), "permission_denied");
+const reopenGrant = await step("overrides.grant orders.reopen", () => reg.grantOverride(api, { action: "orders.reopen", target_kind: "order", target_id: billOrderId, approver_pin: "222222" }));
+if (reopenGrant) {
+  const reopened = await step("orders.reopen with override", () => reg.reopenOrder(api, billOrderId, "Closed by mistake", { overrideId: reopenGrant.override_id }), (r) => `status ${r.data.status}, balance ${r.data.balance}, bills ${r.data.checks.map((c) => `${c.label}=${c.status}`).join(" ")}`);
+  if (reopened) {
+    bill = reopened.data;
+    // Reopening reverses the payments: every bill is open again and must be paid once more (the register's rule; see the report).
+    check("reopen reversed the payments", bill.balance === bill.totals.total && bill.checks.every((c) => c.status === "open"), `balance ${bill.balance} of ${bill.totals.total}`);
+    await expectError("orders.complete with a balance", () => reg.completeOrder(api, billOrderId, { expectedVersion: bill.version }), "invariant_violation");
+    for (const c of bill.checks.filter((x) => x.status === "open")) {
+      const paid = await step(`payments.record card ${c.label} (after reopen)`, () => reg.recordPayment(api, c.id, { payment_id: idempotencyKey(), tender_type_id: cardTender.id, amount: c.balance }, { expectedVersion: bill.version }), (r) => `order ${r.data.status}`);
+      if (paid) bill = paid.data;
+    }
+    check("order completed again", bill.status === "completed", bill.status);
+  }
+}
+
+// 25. Shift: open with a float, close with a blind count. Expected cash = float + cash payments + rounding − cash refunds, from the register.
+const openShifts = await step("shifts.list open (before)", () => reg.listShifts(api, station.outlet_id, { status: "open" }), (ss) => `${ss.length} open`);
+for (const s of openShifts ?? []) if (s.station_id === station.id) await step("shifts.close (stale open shift)", () => reg.closeShift(api, s.id, { counted_cash_cents: s.float_cents }));
+const shift = await step("shifts.open float $200 by denomination", () => reg.openShift(api, { float_cents: 20000, float_counts: { "5000": 2, "1000": 10 } }), (s) => `${s.id.slice(0, 8)} station ${s.station_id?.slice(0, 8)} float ${s.float_cents} ${s.business_date}`);
+if (shift) {
+  check("shift station inferred from the PIN session", shift.station_id === station.id);
+  // A cash sale on this shift, so expected cash moves: a takeaway Kopi paid in cash.
+  const ta2 = await reg.openOrder(api, { order_id: idempotencyKey(), order_type: "takeaway" });
+  const ta2Lines = await reg.addLines(api, ta2.data.id, [{ line_id: idempotencyKey(), product_id: kopi.id, quantity: 1 }], { expectedVersion: ta2.data.version });
+  const ta2Fired = await reg.fireOrder(api, ta2.data.id, {}, { expectedVersion: ta2Lines.data.version });
+  const ta2Check = ta2Fired.data.checks[0]!;
+  const ta2Paid = await step("payments.record cash (shift sale)", () => reg.recordPayment(api, ta2Check.id, { payment_id: idempotencyKey(), tender_type_id: cashTender.id, amount: ta2Check.balance, tendered: 1000 }, { expectedVersion: ta2Fired.data.version }), (r) => `amount ${r.payment.amount}, rounding ${r.payment.rounding_cents}, change ${r.payment.change_due}, order ${r.data.status}`);
+  const dryClose = await step("shifts.close dry_run (count before expected)", () => reg.closeShift(api, shift.id, { counted_cash_cents: 20000, dry_run: true }), (r) => `expected ${r.data.report.cash.expected} = float ${r.data.report.cash.float} + cash ${r.data.report.cash.cash_payments} + rounding ${r.data.report.cash.rounding} − refunds ${r.data.report.cash.refunds}; variance ${r.data.report.cash.variance}`);
+  if (dryClose && ta2Paid) {
+    const c = dryClose.data.report.cash;
+    check("expected cash includes the sale and its rounding", c.expected === c.float + c.cash_payments + c.rounding - c.refunds && c.cash_payments >= (ta2Paid.payment.amount ?? 0));
+    const still = await reg.listShifts(api, station.outlet_id, { status: "open" });
+    check("dry run left the shift open", still.some((s) => s.id === shift.id));
+    const closed = await step("shifts.close counted = expected", () => reg.closeShift(api, shift.id, { counted_cash_cents: c.expected, counted_counts: null }), (r) => `status ${r.data.status}, expected ${r.data.expected_cash_cents}, counted ${r.data.counted_cash_cents}, variance ${r.data.variance_cents}; tenders ${r.data.report.tenders.map((t) => `${t.tender}=${t.amount}`).join(" ")}`);
+    if (closed) check("variance zero", closed.data.variance_cents === 0 && closed.data.report.cash.variance === 0);
+  }
+}
+await step("business_days.z_report (station)", () => reg.getZReport(api, station.outlet_id, { station_id: station.id }), (z) => `${z.scope.business_date}: net ${z.sales.net}, ${z.orders.count} orders / ${z.orders.covers} covers, tenders ${z.tenders.map((t) => `${t.tender}=${t.amount}`).join(" ")}, cash expected ${z.cash.expected} counted ${z.cash.counted}, voids ${z.voids.count}, refunds ${z.refunds.count}=${z.refunds.amount}`);
+await step("business_days.z_report (outlet)", () => reg.getZReport(api, station.outlet_id), (z) => `net ${z.sales.net}, open ${z.orders.open_count}`);
+await expectError("business_days.close as Cashier", () => reg.closeBusinessDay(api, station.outlet_id), "permission_denied");
+
+// 26. Late print jobs: no relay, so the kitchen tickets from step 16 pass 10 s unprinted. Reroute them to the backup.
+if (kitchen) {
+  const wait = Math.max(0, 11_000 - (Date.now() - firedAt));
+  if (wait) {
+    console.log(`  …     waiting ${Math.ceil(wait / 1000)} s for the tickets to count as late`);
+    await sleep(wait);
+  }
+  const late = await step("print_jobs.list late=true", () => reg.listPrintJobs(api, station.outlet_id, { late: true }), (js) => `${js.length} late: ${[...new Set(js.map((j) => `${j.kind} ${j.status}`))].join(", ")}; oldest ${Math.max(0, ...js.map((j) => j.age_seconds))}s`);
+  const withBackup = new Set((printersNow ?? []).filter((p) => p.role === "kitchen" && p.backup_printer_id).map((p) => p.id));
+  const kitchenLate = (late ?? []).filter((j) => j.kind === "kitchen" && withBackup.has(j.printer_id));
+  check("kitchen tickets are late on a printer with a backup", kitchenLate.length > 0, `${kitchenLate.length} of ${(late ?? []).filter((j) => j.kind === "kitchen").length} kitchen tickets`);
+  const forOrder = await step("print_jobs.list order_id", () => reg.listPrintJobs(api, station.outlet_id, { order_id: billOrderId }), (js) => `${js.length} jobs for the order: ${[...new Set(js.map((j) => j.kind))].join(", ")}`);
+  void forOrder;
+  if (kitchenLate.length) {
+    const rerouted = await step("print_jobs.reroute → backup", () => reg.rerouteJobs(api, kitchenLate.map((j) => j.id)), (cs) => cs.map((c) => `${c.kind} → ${c.printer_name}`).join(", "));
+    if (rerouted) check("rerouted to the Pass printer", rerouted.every((c) => c.printer_name === "Pass printer"));
+    const lateAfter = await reg.listPrintJobs(api, station.outlet_id, { late: true });
+    check("rerouted tickets no longer late on the kitchen printer", kitchenLate.every((j) => !lateAfter.some((l) => l.id === j.id)), `${kitchenLate.filter((j) => lateAfter.some((l) => l.id === j.id)).length} still waiting`);
+    await step("print_jobs.reprint", () => reg.reprintJob(api, kitchenLate[0]!.id), (cs) => cs.map((c) => `${c.kind} on ${c.printer_name}`).join(", "));
+  }
+}
+
+// 27. Scan to Order: seat a table, a guest session from its rotated QR token, a round (the demo holds QR orders), accept it; a table request, acknowledged.
+const floor3 = await reg.getFloor(api, station.outlet_id);
+const qrTable = floor3.tables.find((t) => t.status === "free")!;
+const seated = await step("orders.open dine-in (QR table)", () => reg.openOrder(api, { order_id: idempotencyKey(), order_type: "dine_in", table_id: qrTable.id, pax: 2 }), (r) => `${r.data.order_no} on table ${qrTable.name}`);
+const rotated = await adminJson<{ data: { url: string } }>(`/v1/tables/${qrTable.id}/qr/rotate`, {}, admin.token).catch((e) => (fail("tables.rotate_qr_token", e), null));
+if (rotated) {
+  ok("tables.rotate_qr_token", rotated.data.url);
+  const qrToken = rotated.data.url.split("/").pop()!;
+  const guest = await adminJson<{ data: { guest_token: string; table: { name: string }; hold_orders: boolean; can_order: boolean; service_requests: string[] } }>("/v1/guest/sessions", { token: qrToken, device_id: `smoke-${idempotencyKey().slice(0, 8)}`, guest_name: "Wei" }).catch((e) => (fail("guest_sessions.create", e), null));
+  if (guest) {
+    ok("guest_sessions.create", `table ${guest.data.table.name}, hold_orders ${guest.data.hold_orders}, can_order ${guest.data.can_order}`);
+    const roundId = idempotencyKey();
+    const round = await adminJson<{ data: { round_id: string; status: string } }>("/v1/guest/rounds", { round_id: roundId, lines: [{ line_id: idempotencyKey(), product_id: kopi.id, quantity: 2, notes: "Less sugar" }] }, guest.data.guest_token).catch((e) => (fail("rounds.submit (guest)", e), null));
+    if (round) {
+      ok("rounds.submit (guest)", `status ${round.data.status}`);
+      const pending = await step("rounds.list pending", () => reg.listPendingRounds(api, station.outlet_id), (rs) => rs.map((r) => `${r.table_name}: ${r.lines.map((l) => `${l.quantity} ${l.name}`).join(", ")}`).join(" | "));
+      const mine = pending?.find((r) => r.id === roundId);
+      check("the round is pending with its table and lines", Boolean(mine && mine.table_name === qrTable.name && mine.lines.length === 1 && mine.lines[0]!.quantity === 2), mine ? `${mine.status} ${mine.table_name}` : "not listed");
+      if (mine) {
+        const before = await reg.getOrder(api, mine.order_id);
+        check("guest lines carry source=guest and the round id", before.lines.filter((l) => l.round_id === roundId).every((l) => l.source === "guest"), before.lines.map((l) => `${l.source}/${l.status}`).join(","));
+        const floorPending = (await reg.getFloor(api, station.outlet_id)).tables.find((t) => t.id === qrTable.id);
+        check("floor shows pending_rounds on the table", (floorPending?.order?.pending_rounds ?? 0) > 0, String(floorPending?.order?.pending_rounds));
+        const accepted = await step("rounds.accept", () => reg.acceptRound(api, roundId), (r) => `order ${r.data.status}, lines ${r.data.lines.filter((l) => l.round_id === roundId).map((l) => l.status).join(",")}${r.warnings.length ? `; warnings: ${r.warnings.join("; ")}` : ""}`);
+        if (accepted) {
+          check("accepted round lines are sent", accepted.data.lines.filter((l) => l.round_id === roundId).every((l) => l.status === "fired"));
+          const stillPending = await reg.listPendingRounds(api, station.outlet_id);
+          check("round no longer pending", !stillPending.some((r) => r.id === roundId));
+        }
+        // A second round from another phone at the table (one phone is rate-limited to a round every 10 s), rejected with a reason: its lines are voided.
+        const guest2 = await adminJson<{ data: { guest_token: string } }>("/v1/guest/sessions", { token: qrToken, device_id: `smoke-${idempotencyKey().slice(0, 8)}` }).catch((e) => (fail("guest_sessions.create #2", e), null));
+        const round2 = idempotencyKey();
+        const r2 = guest2 ? await adminJson<{ data: { status: string } }>("/v1/guest/rounds", { round_id: round2, lines: [{ line_id: idempotencyKey(), product_id: satay.id, quantity: 1 }] }, guest2.data.guest_token).catch((e) => (fail("rounds.submit #2 (guest)", e), null)) : null;
+        if (r2) {
+          const rejected = await step("rounds.reject", () => reg.rejectRound(api, round2, "Sold out"), (r) => `lines ${r.data.lines.filter((l) => l.round_id === round2).map((l) => `${l.status} (${l.void_reason})`).join(",")}`);
+          if (rejected) check("rejected lines voided with the reason", rejected.data.lines.filter((l) => l.round_id === round2).every((l) => l.status === "voided" && (l.void_reason ?? "").includes("Sold out")));
+        }
+        // Table request → Now rail → Done.
+        const requestType = guest.data.service_requests[0] ?? "call_for_bill";
+        const req = await adminJson<{ data: { id: string; type: string } }>("/v1/guest/requests", { type: requestType }, guest.data.guest_token).catch((e) => (fail("service_requests.create (guest)", e), null));
+        if (req) {
+          ok("service_requests.create (guest)", req.data.type);
+          const openReqs = await step("service_requests.list open", () => reg.listOpenServiceRequests(api, station.outlet_id), (rs) => rs.map((r) => `${r.table_name}: ${r.type}`).join(", "));
+          check("request listed with its table", Boolean(openReqs?.some((r) => r.id === req.data.id && r.table_name === qrTable.name)));
+          const fl = (await reg.getFloor(api, station.outlet_id)).tables.find((t) => t.id === qrTable.id);
+          check("floor shows requests_waiting", (fl?.requests_waiting ?? 0) > 0, String(fl?.requests_waiting));
+          const acked = await step("service_requests.acknowledge", () => reg.acknowledgeServiceRequest(api, req.data.id), (r) => `${r.status} by ${r.acknowledged_by}`);
+          if (acked) {
+            const after = await reg.listOpenServiceRequests(api, station.outlet_id);
+            check("request no longer open", !after.some((r) => r.id === req.data.id));
+          }
+        }
+        check("round landed on the seated order", Boolean(seated && mine.order_id === seated.data.id));
+        // Settle the QR order so the table is free again: pay the one bill by card.
+        const qrOrder = await reg.getOrder(api, mine.order_id);
+        const qrCheck = qrOrder.checks[0];
+        if (qrCheck && qrCheck.balance > 0) await step("payments.record card (QR order)", () => reg.recordPayment(api, qrCheck.id, { payment_id: idempotencyKey(), tender_type_id: cardTender.id, amount: qrCheck.balance }, { expectedVersion: qrOrder.version }), (r) => `order ${r.data.status}`);
+      }
+    }
+  }
+}
+
+await step("staff_sessions.end (Cashier)", () => reg.endSession(api));
 
 console.log(failures ? `\n${failures} step(s) failed` : "\nAll steps passed");
 process.exit(failures ? 1 : 0);

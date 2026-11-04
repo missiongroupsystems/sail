@@ -1,0 +1,294 @@
+"use client";
+
+import { Button, CashCounter, cashCounterTotal, Checklist, formatCents, Money, ReasonPicker, Skeleton, type CashCounterMode, type ChecklistItem } from "@sail/ui";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { toApiError } from "@/lib/api";
+import { closeShift, openShift } from "../../api/register";
+import type { Shift, ZReport } from "../../api/types";
+import { usePos } from "../../components/PosContext";
+import { posKeys, useLateJobs, useOpenOrders, useOpenServiceRequests, usePendingRounds, useShifts } from "../../hooks/queries";
+import { useApi } from "../../hooks/useApi";
+import { roleAtLeast } from "../../hooks/useOrderActions";
+import { formatClock } from "../../lib/format";
+import { useNavStore } from "../../state/nav";
+import { useUiStore } from "../../state/ui";
+
+const VARIANCE_REASONS = ["Change given wrongly", "Cash paid out for a purchase", "Float was not counted at open", "Cash left in the drawer from the last shift"];
+/** Above this the close asks for a reason (design 4.9: the outlet's threshold; $5 until it is configurable). */
+const VARIANCE_THRESHOLD_CENTS = 500;
+
+type Phase = { kind: "idle" } | { kind: "checklist" } | { kind: "count" } | { kind: "reason"; report: ZReport } | { kind: "result"; shift: Shift; report: ZReport };
+
+/** Open shift → float; Close shift → checklist, blind count, result with the register's expected, counted and variance (design 4.9). */
+export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
+  const api = useApi();
+  const qc = useQueryClient();
+  const { station, staff, offline } = usePos();
+  const notify = useUiStore((s) => s.notify);
+  const go = useNavStore((s) => s.go);
+  const open = useShifts(station.outlet_id, "open");
+  const closed = useShifts(station.outlet_id, "closed");
+
+  const mine = useMemo(() => (open.data ?? []).find((s) => s.station_id === station.id) ?? (open.data ?? []).find((s) => s.station_id === null) ?? null, [open.data, station.id]);
+  const lastClosed = useMemo(() => [...(closed.data ?? [])].filter((s) => s.station_id === station.id || s.station_id === null).sort((a, b) => (b.closed_at ?? "").localeCompare(a.closed_at ?? ""))[0] ?? null, [closed.data, station.id]);
+  const canOpen = roleAtLeast(staff.role, "cashier");
+
+  const [mode, setMode] = useState<CashCounterMode>("total");
+  const [digits, setDigits] = useState("");
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [seeded, setSeeded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<Phase>({ kind: "idle" });
+  const [left, setLeft] = useState<Set<string>>(new Set());
+
+  // The float defaults to the last close's figure (design 4.9).
+  useEffect(() => {
+    if (seeded || !closed.data || mine) return;
+    setSeeded(true);
+    if (lastClosed?.float_counts && Object.keys(lastClosed.float_counts).length) {
+      setMode("counts");
+      setCounts(lastClosed.float_counts);
+    } else if (lastClosed) setDigits(String(lastClosed.float_cents));
+  }, [closed.data, lastClosed, mine, seeded]);
+
+  const total = cashCounterTotal(mode, digits, counts);
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ["pos", "shifts", station.outlet_id] });
+    void qc.invalidateQueries({ queryKey: ["pos", "z-report", station.outlet_id] });
+  };
+
+  const doOpen = async () => {
+    setBusy(true);
+    try {
+      await openShift(api, { float_cents: total, float_counts: mode === "counts" ? counts : null });
+      notify({ text: `Shift open with ${formatCents(total)}`, tone: "success" }, 4000);
+      refresh();
+      setDigits("");
+      setCounts({});
+    } catch (e) {
+      const err = toApiError(e);
+      notify({ text: err.message, remedy: err.remedy ?? null, tone: "alert" }, 8000);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /* ---- Close: checklist from register reads ---- */
+  const orders = useOpenOrders(station.outlet_id);
+  const rounds = usePendingRounds(station.outlet_id);
+  const late = useLateJobs(station.outlet_id);
+  const requests = useOpenServiceRequests(station.outlet_id);
+  const checklist: ChecklistItem[] = useMemo(() => {
+    const mk = (id: string, n: number, one: string, many: string, detail: string, onView: () => void): ChecklistItem => ({
+      id,
+      title: n === 0 ? `No ${many}` : `${n} ${n === 1 ? one : many}`,
+      detail: n === 0 ? null : detail,
+      status: n === 0 ? "resolved" : left.has(id) ? "left" : "open",
+      onView,
+      onLeave: () => setLeft(new Set(left).add(id)),
+      leaveLabel: "Leave open",
+    });
+    return [
+      mk("orders", (orders.data ?? []).length, "open order", "open orders", "Pay or cancel them, or carry them to the next shift.", () => go({ kind: "orders" })),
+      mk("rounds", (rounds.data ?? []).length, "QR order waiting", "QR orders waiting", "Accept or reject them from the Now rail.", () => go({ kind: "floor" })),
+      mk("late", (late.data ?? []).length, "ticket not printed", "tickets not printed", "Send them to the backup printer or retry from the banner.", () => go({ kind: "floor" })),
+      mk("requests", (requests.data ?? []).length, "table request open", "table requests open", "Mark them done from the Now rail.", () => go({ kind: "floor" })),
+    ];
+  }, [orders.data, rounds.data, late.data, requests.data, left, go]);
+  const checklistDone = checklist.every((c) => c.status !== "open");
+
+  const startClose = () => {
+    setLeft(new Set());
+    setMode("total");
+    setDigits("");
+    setCounts({});
+    setPhase({ kind: "checklist" });
+  };
+
+  const close = async (varianceReason: string | null) => {
+    if (!mine) return;
+    setBusy(true);
+    try {
+      const counted = { counted_cash_cents: total, counted_counts: mode === "counts" ? counts : null };
+      if (!varianceReason) {
+        // Count first, then the register's expected figure (a blind count). A dry run tells us the variance before anything closes.
+        const preview = await closeShift(api, mine.id, { ...counted, dry_run: true });
+        const variance = preview.data.report.cash.variance ?? 0;
+        if (Math.abs(variance) > VARIANCE_THRESHOLD_CENTS) {
+          setPhase({ kind: "reason", report: preview.data.report });
+          return;
+        }
+      }
+      const res = await closeShift(api, mine.id, { ...counted, variance_reason: varianceReason });
+      setPhase({ kind: "result", shift: res.data, report: res.data.report });
+      refresh();
+      void qc.invalidateQueries({ queryKey: posKeys.orders(station.outlet_id) });
+    } catch (e) {
+      const err = toApiError(e);
+      notify({ text: err.message, remedy: err.remedy ?? null, tone: "alert" }, 8000);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (open.isLoading && !open.data) {
+    return (
+      <div className="px-8 py-8">
+        <Skeleton lines={4} />
+      </div>
+    );
+  }
+
+  /* ---- Result ---- */
+  if (phase.kind === "result") {
+    const c = phase.report.cash;
+    return (
+      <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-8 py-8">
+        <div>
+          <h1 className="text-title text-ink">Shift closed</h1>
+          <p className="text-body text-ink-2">
+            {phase.shift.opened_at ? `Opened ${formatClock(phase.shift.opened_at)}` : ""}
+            {phase.shift.closed_at ? ` · closed ${formatClock(phase.shift.closed_at)}` : ""} · {phase.shift.closed_by ?? staff.name}
+          </p>
+        </div>
+        <dl className="rounded-tile bg-surface px-5 py-3 hairline">
+          <Row label="Float" cents={c.float} />
+          <Row label="Cash payments" cents={c.cash_payments} />
+          <Row label="Cash rounding" cents={c.rounding} />
+          <Row label="Cash refunds" cents={-c.refunds} />
+          <Row label="Expected" cents={c.expected} strong />
+          <Row label="Counted" cents={c.counted ?? 0} strong />
+          <Row label="Variance" cents={c.variance ?? 0} strong tone={(c.variance ?? 0) === 0 ? "paid" : Math.abs(c.variance ?? 0) > VARIANCE_THRESHOLD_CENTS ? "alert" : undefined} />
+          {phase.shift.variance_reason ? <p className="pt-2 text-caption text-ink-2">Reason: {phase.shift.variance_reason}</p> : null}
+        </dl>
+        <div className="flex gap-2">
+          <Button size="lg" variant="secondary" onPress={onShowReport}>
+            View Z-report
+          </Button>
+          <Button size="lg" variant="primary" onPress={() => setPhase({ kind: "idle" })}>
+            Done
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  /* ---- Variance reason ---- */
+  if (phase.kind === "reason") {
+    const c = phase.report.cash;
+    return (
+      <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-8 py-8">
+        <div>
+          <h1 className="text-title text-ink">Variance {formatCents(c.variance ?? 0)}</h1>
+          <p className="text-body text-ink-2">
+            The register expected {formatCents(c.expected)} and you counted {formatCents(c.counted ?? total)}. Above {formatCents(VARIANCE_THRESHOLD_CENTS)} a reason is recorded with the close.
+          </p>
+        </div>
+        <ReasonPicker reasons={VARIANCE_REASONS.map((r) => ({ id: r, name: r }))} isDisabled={busy} onPick={(r) => void close(r.text)} />
+        <Button size="lg" variant="quiet" isDisabled={busy} onPress={() => setPhase({ kind: "count" })} className="self-start">
+          Count again
+        </Button>
+      </div>
+    );
+  }
+
+  /* ---- Count (before expected is shown) ---- */
+  if (phase.kind === "count" && mine) {
+    return (
+      <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-8 py-8">
+        <div>
+          <h1 className="text-title text-ink">Count the cash</h1>
+          <p className="text-body text-ink-2">Everything in the drawer, float included. The register shows what it expected after you count.</p>
+        </div>
+        <CashCounter mode={mode} onModeChange={setMode} totalDigits={digits} onTotalDigitsChange={setDigits} counts={counts} onCountsChange={setCounts} isDisabled={busy} />
+        <div className="flex items-center justify-between gap-3">
+          <Button size="lg" variant="quiet" isDisabled={busy} onPress={() => setPhase({ kind: "checklist" })}>
+            Back to the checklist
+          </Button>
+          <Button size="lg" variant="primary" isDisabled={offline || busy || (mode === "total" && digits === "")} isPending={busy} onPress={() => void close(null)} className="min-w-[280px]">
+            {offline ? "Offline" : `Close shift · counted ${formatCents(total)} ▸`}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  /* ---- Checklist ---- */
+  if (phase.kind === "checklist" && mine) {
+    return (
+      <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-8 py-8">
+        <div>
+          <h1 className="text-title text-ink">Before closing</h1>
+          <p className="text-body text-ink-2">From the register, right now. Resolve each item or leave it for the next shift.</p>
+        </div>
+        <Checklist items={checklist} />
+        <div className="flex items-center justify-between gap-3">
+          <Button size="lg" variant="quiet" onPress={() => setPhase({ kind: "idle" })}>
+            Not now
+          </Button>
+          <Button size="lg" variant="primary" isDisabled={!checklistDone} onPress={() => setPhase({ kind: "count" })} className="min-w-[240px]">
+            {checklistDone ? "Next: count the cash ▸" : "Resolve or leave each item"}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  /* ---- Idle: open shift, or the open shift's summary ---- */
+  if (!mine) {
+    return (
+      <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-8 py-8">
+        <div>
+          <h1 className="text-title text-ink">Open shift</h1>
+          <p className="text-body text-ink-2">
+            Count the float into the drawer.
+            {lastClosed ? ` Last close: ${formatCents(lastClosed.float_cents)} float${lastClosed.closed_at ? `, ${formatClock(lastClosed.closed_at)}` : ""}.` : ""}
+          </p>
+        </div>
+        <CashCounter mode={mode} onModeChange={setMode} totalDigits={digits} onTotalDigitsChange={setDigits} counts={counts} onCountsChange={setCounts} isDisabled={busy || !canOpen} />
+        {!canOpen ? <p className="text-body text-ink-2">Opening a shift needs a Cashier or above. Switch user to open it.</p> : null}
+        <Button size="lg" variant="primary" isDisabled={offline || busy || !canOpen} isPending={busy} onPress={doOpen} className="min-w-[280px] self-end">
+          {offline ? "Offline" : `Open shift with ${formatCents(total)}`}
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-8 py-8">
+      <div>
+        <h1 className="text-title text-ink">Shift open</h1>
+        <p className="text-body text-ink-2">
+          Since {formatClock(mine.opened_at)} · opened by {mine.opened_by ?? "—"}
+          {mine.name ? ` · ${mine.name}` : ""}
+          {mine.station_id === null ? " · whole outlet" : ""}
+        </p>
+      </div>
+      <dl className="rounded-tile bg-surface px-5 py-3 hairline">
+        <Row label="Float" cents={mine.float_cents} strong />
+        {mine.float_counts ? <p className="pt-1 text-caption text-ink-2">Counted by denomination at open.</p> : null}
+      </dl>
+      <div className="flex flex-wrap gap-2">
+        <Button size="lg" variant="secondary" onPress={onShowReport}>
+          Z-report so far
+        </Button>
+        <Button size="lg" variant="primary" isDisabled={offline || !canOpen} onPress={startClose} className="min-w-[200px]">
+          {offline ? "Offline" : "Close shift ▸"}
+        </Button>
+      </div>
+      {!canOpen ? <p className="text-body text-ink-2">Closing a shift needs a Cashier or above.</p> : null}
+    </div>
+  );
+}
+
+export function Row({ label, cents, strong, tone }: { label: string; cents: number; strong?: boolean; tone?: "paid" | "alert" }) {
+  return (
+    <div className={strong ? "flex min-h-10 items-center justify-between gap-3 pt-1 hairline-t" : "flex min-h-8 items-center justify-between gap-3"}>
+      <dt className={strong ? "text-line text-ink" : "text-body text-ink-2"}>{label}</dt>
+      <dd>
+        <Money cents={cents} size={strong ? "heading" : "body"} className={tone === "paid" ? "text-status-paid" : tone === "alert" ? "text-status-alert" : "text-ink"} />
+      </dd>
+    </div>
+  );
+}

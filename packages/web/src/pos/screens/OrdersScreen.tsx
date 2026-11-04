@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, EmptyState, Menu, MenuItem, MenuTrigger, Money, Sheet, Skeleton, TextField, type BadgeTone } from "@sail/ui";
+import { Badge, Button, EmptyState, Menu, MenuItem, MenuTrigger, Money, SegmentedControl, Sheet, Skeleton, TextField, type BadgeTone } from "@sail/ui";
 import { useMemo, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import { idempotencyKey, toApiError } from "@/lib/api";
@@ -8,26 +8,31 @@ import { markReady, openOrder, type OpenOrderInput } from "../api/register";
 import type { OrderSnapshot, OrderType } from "../api/types";
 import { Frame } from "../components/Frame";
 import { usePos } from "../components/PosContext";
-import { useApplySnapshot, useOpenOrders } from "../hooks/queries";
+import { useApplySnapshot, useOpenOrders, useTodaysOrders } from "../hooks/queries";
 import { useApi } from "../hooks/useApi";
 import { formatClock, ORDER_STATUS_LABEL, ORDER_TYPE_LABEL, todayAt } from "../lib/format";
 import { useNavStore } from "../state/nav";
 import { useUiStore } from "../state/ui";
 
-const STATUS_TONE: Record<string, BadgeTone> = { open: "seated", fired: "sent", ready: "paid", out_for_delivery: "bill" };
+const STATUS_TONE: Record<string, BadgeTone> = { open: "seated", fired: "sent", ready: "paid", out_for_delivery: "bill", completed: "paid", cancelled: "neutral" };
 
-/** Orders (design 3.1): takeaway, pickup and delivery, sorted by ready-by, with + New order and Ready. */
+/** Orders (design 3.1): takeaway, pickup and delivery, sorted by ready-by, with + New order and Ready; and today's closed orders for Refund and Reopen. */
 export function OrdersScreen() {
   const api = useApi();
-  const { outlet, station, offline } = usePos();
+  const { outlet, station, offline, tablesById } = usePos();
+  const [view, setView] = useState<"open" | "today">("open");
   const orders = useOpenOrders(station.outlet_id);
+  const today = useTodaysOrders(station.outlet_id, view === "today");
   const applySnapshot = useApplySnapshot();
   const openOrderScreen = useNavStore((s) => s.openOrder);
   const notify = useUiStore((s) => s.notify);
   const [creating, setCreating] = useState<OrderType | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const list = useMemo(() => (orders.data ?? []).filter((o) => o.order_type !== "dine_in"), [orders.data]);
+  const openList = useMemo(() => (orders.data ?? []).filter((o) => o.order_type !== "dine_in"), [orders.data]);
+  const closedList = useMemo(() => (today.data ?? []).filter((o) => o.status === "completed" || o.status === "cancelled").sort((a, b) => (b.completed_at ?? b.cancelled_at ?? b.opened_at).localeCompare(a.completed_at ?? a.cancelled_at ?? a.opened_at)), [today.data]);
+  const list = view === "open" ? openList : closedList;
+  const query = view === "open" ? orders : today;
 
   const ready = async (o: OrderSnapshot) => {
     setBusy(o.id);
@@ -60,8 +65,12 @@ export function OrdersScreen() {
       }
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        {orders.isLoading && !orders.data ? <Skeleton lines={4} /> : null}
-        {orders.data && list.length === 0 ? <EmptyState title="No open orders" hint="Tap + New order to start a takeaway, pickup or delivery." /> : null}
+        <div className="mb-4 flex items-center gap-3">
+          <SegmentedControl aria-label="Which orders" options={[{ id: "open", label: `Open${openList.length ? ` · ${openList.length}` : ""}` }, { id: "today", label: "Today's closed" }]} selectedId={view} onSelect={(id) => setView(id as "open" | "today")} />
+          {view === "today" ? <span className="text-body text-ink-2">Tap a done order for Refund, Reopen and receipts.</span> : null}
+        </div>
+        {query.isLoading && !query.data ? <Skeleton lines={4} /> : null}
+        {query.data && list.length === 0 ? (view === "open" ? <EmptyState title="No open orders" hint="Tap + New order to start a takeaway, pickup or delivery." /> : <EmptyState title="Nothing closed yet today" hint="Paid and cancelled orders from this business day appear here." />) : null}
         <ul className="flex flex-col gap-2">
           {list.map((o) => (
             <li key={o.id}>
@@ -74,18 +83,21 @@ export function OrdersScreen() {
                   <span className="w-24 shrink-0 font-mono text-body text-ink-2">{o.order_no}</span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-line text-ink">
+                      {o.order_type === "dine_in" && o.table_id ? `Table ${tablesById.get(o.table_id)?.name ?? ""} · ` : ""}
                       {ORDER_TYPE_LABEL[o.order_type]}
                       {o.customer_ref?.name ? ` · ${o.customer_ref.name}` : ""}
                       {o.customer_ref?.mobile ? <span className="text-ink-2"> · {o.customer_ref.mobile}</span> : null}
                     </span>
                     <span className="block truncate text-caption text-ink-2">
-                      {o.ready_by ? `Ready by ${formatClock(o.ready_by)}` : `Opened ${formatClock(o.opened_at)}`}
+                      {o.status === "completed" && o.completed_at ? `Paid ${formatClock(o.completed_at)}` : o.status === "cancelled" && o.cancelled_at ? `Cancelled ${formatClock(o.cancelled_at)}` : o.ready_by ? `Ready by ${formatClock(o.ready_by)}` : `Opened ${formatClock(o.opened_at)}`}
                       {o.delivery_address ? ` · ${o.delivery_address}` : ""}
                       {` · ${o.lines.filter((l) => l.status !== "voided").length} items`}
+                      {o.status === "completed" ? ` · ${o.checks.length} ${o.checks.length === 1 ? "bill" : "bills"} · ${[...new Set(o.checks.flatMap((c) => c.payments.map((p) => p.tender)))].join(", ")}` : ""}
+                      {o.checks.some((c) => c.refunded_total > 0) ? " · refunded" : ""}
                     </span>
                   </span>
                   <Badge tone={STATUS_TONE[o.status] ?? "neutral"}>{ORDER_STATUS_LABEL[o.status]}</Badge>
-                  <Money cents={o.totals.total} size="line" className="w-24 text-right" />
+                  <Money cents={o.status === "completed" ? o.paid_total : o.totals.total} size="line" className="w-24 text-right" />
                 </AriaButton>
                 {o.status === "fired" ? (
                   <Button size="lg" variant="secondary" isDisabled={offline || busy === o.id} isPending={busy === o.id} onPress={() => void ready(o)} className="min-h-16">

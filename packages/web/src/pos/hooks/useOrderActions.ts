@@ -5,14 +5,14 @@ import { formatCents } from "@sail/ui";
 import { useCallback, useMemo } from "react";
 import { ApiError, idempotencyKey, toApiError } from "@/lib/api";
 import * as reg from "../api/register";
-import type { CompiledProduct, ManualRule, MutationResult, OrderSnapshot, OrderType, OverrideAction, Role, SnapshotLine } from "../api/types";
+import type { CheckSnapshot, CompiledProduct, ManualRule, MutationResult, OrderSnapshot, OrderType, OverrideAction, OverrideTargetKind, PaymentResult, ReceiptChannel, RefundRequest, RefundResult, Role, SnapshotLine } from "../api/types";
 import { useSessionStore } from "../state/session";
 import { useUiStore } from "../state/ui";
 import { applySnapshot, posKeys } from "./queries";
 import { useApi } from "./useApi";
 
 const RANK: Record<Role, number> = { server: 10, cashier: 20, manager: 30, finance: 40, admin: 50 };
-const MIN_ROLE: Record<OverrideAction, Role> = { "lines.void_fired": "manager", "lines.add_open_price": "manager", "adjustments.apply_manual": "server", "adjustments.remove": "server" };
+const MIN_ROLE: Record<OverrideAction, Role> = { "lines.void_fired": "manager", "lines.add_open_price": "manager", "adjustments.apply_manual": "server", "adjustments.remove": "server", "payments.record": "cashier", "refunds.create": "manager", "orders.reopen": "manager" };
 
 export function roleAtLeast(role: Role | null | undefined, min: Role): boolean {
   return role ? RANK[role] >= RANK[min] : false;
@@ -95,7 +95,7 @@ export function useOrderActions(orderId: string) {
    * override_allowed, ask then. Returns null when the approval was declined.
    */
   const withApproval = useCallback(
-    async <T,>(action: OverrideAction, target: { kind: "order" | "order_line"; id: string }, title: string, quote: string | null, exec: (overrideId: string | null) => Promise<T>, minRole: Role = MIN_ROLE[action]): Promise<T | null> => {
+    async <T,>(action: OverrideAction, target: { kind: OverrideTargetKind; id: string }, title: string, quote: string | null, exec: (overrideId: string | null) => Promise<T>, minRole: Role = MIN_ROLE[action]): Promise<T | null> => {
       const ask = async () => {
         const grant = await requestOverride({ action, targetKind: target.kind, targetId: target.id, title, quote });
         return grant;
@@ -411,8 +411,319 @@ export function useOrderActions(orderId: string) {
     [api, fail, orderId, run, withApproval],
   );
 
+  /* ---- Bills (design 4.4): the register recomputes every split; the response is the only source of amounts. ---- */
+
+  const splitEven = useCallback(
+    async (n: number) => {
+      try {
+        return await run((expected) => reg.splitEven(api, orderId, n, { expectedVersion: expected }));
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, orderId, run],
+  );
+
+  const splitBySeat = useCallback(
+    async (shared: "even" | "manual") => {
+      try {
+        return await run((expected) => reg.splitBySeat(api, orderId, shared, { expectedVersion: expected }));
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, orderId, run],
+  );
+
+  const allocate = useCallback(
+    async (moves: reg.AllocationMove[], addChecks?: number) => {
+      try {
+        return await run((expected) => reg.allocateLines(api, orderId, moves, addChecks, { expectedVersion: expected }));
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, orderId, run],
+  );
+
+  const unsplit = useCallback(async () => {
+    try {
+      return await run((expected) => reg.unsplit(api, orderId, { expectedVersion: expected }));
+    } catch (e) {
+      fail(e);
+      return null;
+    }
+  }, [api, fail, orderId, run]);
+
+  /** Pre-bill for one bill, or every unpaid bill when `checkId` is omitted; marks the table "bill requested". */
+  const prebill = useCallback(
+    async (checkId?: string | null) => {
+      try {
+        const res = await reg.printPrebill(api, orderId, checkId, { expectedVersion: snapshot()?.version ?? null });
+        applySnapshot(qc, res.data);
+        const n = res.jobs?.length ?? 0;
+        notify({ text: n ? `Printing ${n === 1 ? "the pre-bill" : `${n} pre-bills`}` : "Pre-bill requested", remedy: n ? null : "No receipt printer is set up for this station.", tone: n ? "success" : "info", orderId }, 4000);
+        for (const w of res.warnings) notify({ text: w, tone: "info", orderId }, 6000);
+        return res.data;
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, notify, orderId, qc, snapshot],
+  );
+
+  /* ---- Payments (design 4.5) ---- */
+
+  /** A dry run: the register's rounding and change for this tender and amount; nothing is recorded. */
+  const previewPayment = useCallback(
+    async (checkId: string, input: Omit<reg.PaymentInput, "payment_id" | "dry_run">): Promise<PaymentResult | null> => {
+      try {
+        return await reg.recordPayment(api, checkId, { ...input, payment_id: idempotencyKey(), dry_run: true });
+      } catch (e) {
+        if (e instanceof ApiError && e.status >= 400 && e.status < 500) throw e;
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail],
+  );
+
+  /**
+   * Record a payment. The caller keeps `payment_id` for the whole attempt, so a
+   * double tap or a retry after a timeout records once (design 4.5). Cashier+;
+   * a Server gets the Manager approval sheet.
+   */
+  const pay = useCallback(
+    async (check: CheckSnapshot, input: Omit<reg.PaymentInput, "dry_run">, tenderName: string): Promise<PaymentResult | null> => {
+      beginMutation(orderId);
+      try {
+        const res = await withApproval(
+          "payments.record",
+          { kind: "order", id: orderId },
+          `Take ${formatCents(input.amount)} by ${tenderName}`,
+          `${check.label} · balance ${formatCents(check.balance)}`,
+          (overrideId) => reg.recordPayment(api, check.id, input, { key: input.payment_id, expectedVersion: snapshot()?.version ?? null, overrideId }),
+        );
+        if (!res) return null;
+        applySnapshot(qc, res.data);
+        for (const w of res.warnings) notify({ text: w, tone: "info", orderId }, 6000);
+        return res;
+      } catch (e) {
+        if (e instanceof ApiError && e.code === "version_conflict") {
+          await qc.invalidateQueries({ queryKey: key });
+          notify({ text: "The order changed on another station", remedy: "Check the bill and try again.", tone: "info", orderId }, 6000);
+          return null;
+        }
+        fail(e);
+        return null;
+      } finally {
+        endMutation(orderId);
+      }
+    },
+    [api, beginMutation, endMutation, fail, key, notify, orderId, qc, snapshot, withApproval],
+  );
+
+  const complete = useCallback(async () => {
+    try {
+      return await run((expected) => reg.completeOrder(api, orderId, { expectedVersion: expected }));
+    } catch (e) {
+      fail(e);
+      return null;
+    }
+  }, [api, fail, orderId, run]);
+
+  /** Reopen a completed order (Manager+, same business day): the approval sheet for anyone below Manager. */
+  const reopen = useCallback(
+    async (reason: string) => {
+      try {
+        return await withApproval("orders.reopen", { kind: "order", id: orderId }, "Reopen this order", `Reason: ${reason}`, (overrideId) => run((expected) => reg.reopenOrder(api, orderId, reason, { expectedVersion: expected, overrideId })));
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, orderId, run, withApproval],
+  );
+
+  /* ---- Receipts and documents ---- */
+
+  const printReceipt = useCallback(
+    async (checkId: string) => {
+      try {
+        const jobs = await reg.printReceipt(api, checkId);
+        notify({ text: jobs.length ? `Printing the receipt on ${jobs[0]!.printer_name}` : "Receipt queued", tone: "success", orderId }, 4000);
+        return jobs;
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, notify, orderId],
+  );
+
+  const sendReceipt = useCallback(
+    async (checkId: string, channel: ReceiptChannel, destination?: string) => {
+      try {
+        const res = await reg.sendReceipt(api, checkId, channel, destination);
+        for (const w of res.warnings) notify({ text: w, tone: "info", orderId }, 6000);
+        return res.data;
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, notify, orderId],
+  );
+
+  const issueInvoice = useCallback(
+    async (checkId: string) => {
+      try {
+        const inv = await reg.issueInvoice(api, checkId);
+        void qc.invalidateQueries({ queryKey: key });
+        notify({ text: `${inv.reused ? "Invoice" : "Invoice issued"} ${inv.invoice_no}`, remedy: "The PDF is in the back office under the order.", tone: "success", orderId }, 6000);
+        return inv;
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, key, notify, orderId, qc],
+  );
+
+  /* ---- Refunds (design 4.6): the quote is the register's; Manager+ or an approval for the signed-in role. ---- */
+
+  const quoteRefund = useCallback(
+    async (checkId: string, request: RefundRequest, tenderSplit?: reg.TenderSplit) => {
+      return reg.quoteRefund(api, checkId, request, tenderSplit);
+    },
+    [api],
+  );
+
+  const refund = useCallback(
+    async (check: CheckSnapshot, input: Omit<reg.RefundInput, "refund_id">, total: number): Promise<RefundResult | null> => {
+      const refundId = idempotencyKey();
+      beginMutation(orderId);
+      try {
+        const res = await withApproval("refunds.create", { kind: "check", id: check.id }, `Refund ${formatCents(total)}`, `${check.label} · ${input.reason}`, (overrideId) => reg.createRefund(api, check.id, { ...input, refund_id: refundId }, { key: refundId, expectedVersion: snapshot()?.version ?? null, overrideId }));
+        if (!res) return null;
+        applySnapshot(qc, res.data);
+        void qc.invalidateQueries({ queryKey: posKeys.refunds(orderId) });
+        for (const w of res.warnings) notify({ text: w, tone: "info", orderId }, 6000);
+        return res;
+      } catch (e) {
+        fail(e);
+        return null;
+      } finally {
+        endMutation(orderId);
+      }
+    },
+    [api, beginMutation, endMutation, fail, notify, orderId, qc, snapshot, withApproval],
+  );
+
+  const printRefundReceipt = useCallback(
+    async (refundId: string) => {
+      try {
+        const jobs = await reg.printRefundReceipt(api, refundId);
+        notify({ text: jobs.length ? `Printing the refund receipt on ${jobs[0]!.printer_name}` : "Refund receipt queued", tone: "success", orderId }, 4000);
+        return jobs;
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, notify, orderId],
+  );
+
+  /* ---- Scan to Order (design 4.11): a held round is accepted (sent) or rejected with a reason. ---- */
+
+  const acceptRound = useCallback(
+    async (roundId: string) => {
+      try {
+        const snap = await run((expected) => reg.acceptRound(api, roundId, { expectedVersion: expected }), { versioned: false });
+        void qc.invalidateQueries({ queryKey: ["pos", "rounds"] });
+        return snap;
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, qc, run],
+  );
+
+  const rejectRound = useCallback(
+    async (roundId: string, reason: string) => {
+      try {
+        const snap = await run((expected) => reg.rejectRound(api, roundId, reason, { expectedVersion: expected }), { versioned: false });
+        void qc.invalidateQueries({ queryKey: ["pos", "rounds"] });
+        return snap;
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, qc, run],
+  );
+
+  /* ---- Printing (design 4.12 reprint) ---- */
+
+  const reprint = useCallback(
+    async (jobId: string) => {
+      try {
+        const jobs = await reg.reprintJob(api, jobId);
+        void qc.invalidateQueries({ queryKey: ["pos", "print-jobs"] });
+        notify({ text: jobs.length ? `Reprinting on ${jobs[0]!.printer_name}` : "Reprint queued", tone: "success", orderId }, 4000);
+        return jobs;
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, notify, orderId, qc],
+  );
+
   return useMemo(
-    () => ({ addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, role }),
-    [addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, role],
+    () => ({
+      addLine,
+      patchLine,
+      removeLine,
+      send,
+      holdAllNew,
+      releaseHeld,
+      changeType,
+      moveTable,
+      attachCustomer,
+      detachCustomer,
+      updateDetails,
+      cancel,
+      markReady,
+      applyDiscount,
+      removeDiscount,
+      splitEven,
+      splitBySeat,
+      allocate,
+      unsplit,
+      prebill,
+      previewPayment,
+      pay,
+      complete,
+      reopen,
+      printReceipt,
+      sendReceipt,
+      issueInvoice,
+      quoteRefund,
+      refund,
+      printRefundReceipt,
+      acceptRound,
+      rejectRound,
+      reprint,
+      role,
+    }),
+    [addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, splitEven, splitBySeat, allocate, unsplit, prebill, previewPayment, pay, complete, reopen, printReceipt, sendReceipt, issueInvoice, quoteRefund, refund, printRefundReceipt, acceptRound, rejectRound, reprint, role],
   );
 }
+
+export type OrderActions = ReturnType<typeof useOrderActions>;

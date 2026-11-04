@@ -1,0 +1,2 @@
+/* Tokens, themes and the Tailwind layer come from the ui package; the guest app adds nothing to the system. */
+@import "@sail/ui/styles.css";

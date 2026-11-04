@@ -189,7 +189,7 @@ export type OrderSnapshot = {
   lines: SnapshotLine[];
   adjustments: SnapshotAdjustment[];
   manual_applications: { id: string; rule_key: string; entered_value: number | null; line_ids: string[] | null; applied_by: string | null; reason: string | null }[];
-  checks: unknown[];
+  checks: CheckSnapshot[];
   paid_total: number;
   balance: number;
 };
@@ -234,4 +234,176 @@ export type Customer = { id: string; name: string; mobile: string | null; email:
 export type OverrideGrant = { override_id: string; action: string; target_id: string; approver: { id: string; name: string | null; role: string }; expires_at: string };
 
 /** Permission keys the POS asks managers to approve (shared PERMISSIONS). */
-export type OverrideAction = "lines.void_fired" | "lines.add_open_price" | "adjustments.apply_manual" | "adjustments.remove";
+export type OverrideAction = "lines.void_fired" | "lines.add_open_price" | "adjustments.apply_manual" | "adjustments.remove" | "payments.record" | "refunds.create" | "orders.reopen";
+export type OverrideTargetKind = "order" | "order_line" | "check";
+
+/* ---- v0.7 bills, payments, refunds (design 4.4 to 4.6) --------------------- */
+
+export type CheckStatus = "open" | "paid" | "partially_refunded" | "refunded";
+export type CheckPayment = {
+  id: string;
+  tender_type_id: string;
+  tender: string;
+  is_cash: boolean;
+  amount: number;
+  rounding_cents: number;
+  tendered: number | null;
+  change_cents: number;
+  tip_cents: number;
+  reference: string | null;
+  status: string;
+  recorded_by: string | null;
+  created_at: string;
+};
+/** One line's part of a bill: `share` is "1" or a fraction such as "1/3". */
+export type CheckAllocation = { line_id: string; share: string; base: number; discount: number; fee: number; gst: number; total: number };
+export type CheckSnapshot = {
+  id: string;
+  index: number;
+  label: string;
+  status: CheckStatus;
+  seat_no: number | null;
+  totals: { subtotal: number; discount_total: number; fee_total: number; gst_total: number; total: number };
+  paid_total: number;
+  rounding_total: number;
+  refunded_total: number;
+  balance: number;
+  locked: boolean;
+  invoice_no: string | null;
+  allocations: CheckAllocation[];
+  payments: CheckPayment[];
+};
+
+export type TenderType = { id: string; name: string; is_cash: boolean; opens_drawer: boolean; is_terminal: boolean; sort: number; archived: boolean };
+
+/** The register's figures for one payment (or a dry run): rounding and change are never computed on the iPad. */
+export type PaymentFigures = Partial<CheckPayment> & { change_due: number };
+export type PaymentResult = MutationResult & { payment: PaymentFigures };
+
+export type RefundRequest = { kind: "full" } | { kind: "lines"; lines: { line_id: string; quantity: number }[] } | { kind: "amount"; amount: number };
+export type RefundLineResult = { line_id: string; quantity: number; base: number; discount: number; fee: number; gst: number; total: number; adjustments: Record<string, { amount: number; gst: number }> };
+export type RefundTenderResult = { payment_id: string; tender: string; is_cash: boolean; amount: number; rounding_cents: number };
+export type RefundablePayment = { payment_id: string; tender: string; is_cash: boolean; amount: number; refunded: number };
+export type RefundQuote = {
+  lines: RefundLineResult[];
+  totals: { base: number; discount: number; fee: number; gst: number; total: number };
+  tenders: RefundTenderResult[];
+  cash_out: number;
+  check_id: string;
+  remaining_after: { total: number };
+  payments: RefundablePayment[];
+};
+export type Refund = {
+  id: string;
+  order_id: string;
+  check_id: string;
+  kind: string;
+  reason: string;
+  refunded_by: string | null;
+  approved_by: string | null;
+  business_date: string;
+  totals: { base: number; discount: number; fee: number; gst: number; total: number };
+  refund_receipt_no: string | null;
+  credit_note_no: string | null;
+  created_at: string;
+};
+export type RefundResult = MutationResult & { refund: Refund & { quote: RefundQuote } };
+
+export type ReceiptChannel = "qr" | "link" | "email" | "sms";
+export type ReceiptSend = { token: string; url: string; delivery_status: string };
+export type Invoice = { invoice_no: string; issued_at: string; reused: boolean; pdf_url: string };
+export type CreatedJob = { id: string; printer_id: string; printer_name: string; kind: string; copy_no: number; copies: number };
+
+/* ---- v0.6 shifts and reports (design 4.9) --------------------------------- */
+
+export type Shift = {
+  id: string;
+  outlet_id: string;
+  station_id: string | null;
+  name: string | null;
+  status: "open" | "closed";
+  business_date: string;
+  opened_by: string | null;
+  opened_at: string;
+  float_cents: number;
+  float_counts: Record<string, number> | null;
+  closed_by: string | null;
+  closed_at: string | null;
+  counted_cash_cents: number | null;
+  expected_cash_cents: number | null;
+  variance_cents: number | null;
+  variance_reason: string | null;
+  summary: unknown;
+};
+export type ZReport = {
+  scope: { outlet_id: string; station_id: string | null; business_date: string; shift_id: string | null };
+  orders: { count: number; by_type: Record<string, number>; covers: number; open_count: number };
+  sales: { gross: number; discounts: number; fees: number; gst: number; net: number };
+  adjustments: { rule_key: string; name: string; kind: string; report_class: string; total: number; count: number }[];
+  tenders: { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number }[];
+  cash: { float: number; cash_payments: number; rounding: number; refunds: number; expected: number; counted: number | null; variance: number | null };
+  voids: { count: number; quantity: number; value: number };
+  refunds: { count: number; amount: number };
+  generated_at: string;
+};
+export type ShiftCloseResult = { data: Shift & { report: ZReport }; events: MutationEvent[]; warnings: string[] };
+
+/* ---- Printing (design 4.8) ------------------------------------------------- */
+
+export type PrintJobStatus = "queued" | "claimed" | "printed" | "failed" | "rerouted" | string;
+export type PrintJob = {
+  id: string;
+  outlet_id: string;
+  printer_id: string;
+  kind: string;
+  order_id: string | null;
+  check_id: string | null;
+  status: PrintJobStatus;
+  attempts: number;
+  copy_no: number;
+  copies: number;
+  claimed_by: string | null;
+  claimed_at: string | null;
+  printed_at: string | null;
+  last_error: string | null;
+  reprint_of: string | null;
+  rerouted_to: string | null;
+  rerouted_from: string | null;
+  created_at: string;
+  age_seconds: number;
+  text: string;
+};
+export type Printer = { id: string; outlet_id: string; name: string; role: "kitchen" | "receipt"; station_id: string | null; backup_printer_id: string | null; is_default_kitchen: boolean; supports_status: boolean; archived: boolean };
+export type Relay = { id: string; outlet_id: string; name: string; paired: boolean; last_seen_at: string | null; online: boolean; version: string | null; printer_status: Record<string, { ok: boolean; checked_at: string; error?: string }>; archived: boolean };
+
+/* ---- Scan to Order on the POS (design 4.2 Now rail, 4.11) ------------------ */
+
+export type GuestRound = {
+  id: string;
+  order_id: string;
+  table_id: string;
+  status: "pending" | "accepted" | "rejected" | "fired";
+  line_ids: string[];
+  guest_name: string | null;
+  notes: string | null;
+  submitted_at: string;
+  decided_at: string | null;
+  decided_by: string | null;
+  reject_reason: string | null;
+  table_name: string | null;
+  lines: { id: string; name: string; quantity: number; modifiers: string[]; notes: string | null; status: string }[];
+};
+export type ServiceRequest = {
+  id: string;
+  table_id: string;
+  order_id: string | null;
+  type: string;
+  status: "open" | "acknowledged";
+  guest_name: string | null;
+  created_at: string;
+  acknowledged_at: string | null;
+  acknowledged_by: string | null;
+  table_name: string | null;
+};
+
+export type StockEntry = { outlet_id: string; product_id: string; sold_out: boolean; sold_out_until: string | null; daily_cap: number | null; cap_remaining: number | null; cap_date: string | null };

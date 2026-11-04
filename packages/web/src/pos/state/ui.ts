@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { ConnectionStatus } from "@sail/ui";
+import type { OverrideAction, OverrideTargetKind } from "../api/types";
 
 /* ---- Theme (design 7.3): schedule from the outlet, or a manual choice -------- */
 
@@ -13,6 +14,12 @@ type ThemeState = { mode: ThemeMode; setMode: (mode: ThemeMode) => void };
 export const useThemeStore = create<ThemeState>()(
   persist((set) => ({ mode: "auto", setMode: (mode) => set({ mode }) }), { name: "sail.pos.theme", storage: createJSONStorage(() => localStorage) }),
 );
+
+/* ---- Sound (design 7.9): off by default; a short tone for a new QR order or table request ---- */
+
+type SoundState = { enabled: boolean; setEnabled: (on: boolean) => void };
+
+export const useSoundStore = create<SoundState>()(persist((set) => ({ enabled: false, setEnabled: (enabled) => set({ enabled }) }), { name: "sail.pos.sound", storage: createJSONStorage(() => localStorage) }));
 
 /* ---- Connection (design 7.8) --------------------------------------------- */
 
@@ -41,8 +48,8 @@ export type UndoEntry = { id: number; label: string; undo: () => Promise<void> |
 export type Notice = { id: number; text: string; remedy?: string | null; tone: "info" | "alert" | "success"; orderId?: string | null };
 
 export type OverrideRequest = {
-  action: "lines.void_fired" | "lines.add_open_price" | "adjustments.apply_manual" | "adjustments.remove";
-  targetKind: "order" | "order_line";
+  action: OverrideAction;
+  targetKind: OverrideTargetKind;
   targetId: string;
   /** "Void Satay ×10", the verb and object. */
   title: string;

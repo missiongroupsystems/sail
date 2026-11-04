@@ -496,3 +496,84 @@
 [data-theme="service"] {
   --table-fill: 24%;
 }
+
+/* ---- Guest app (v0.8) ----------------------------------------------------
+ * Phones, portrait, one column (design 3.3, 4.11, 7.2, 9). The guest surface
+ * uses 16px body text so iOS does not zoom inputs, the brand's accent on its
+ * controls and the brand's display font for headings. Brand tokens are set at
+ * runtime on the element carrying data-brand (inline custom properties from the
+ * channel link's menu); these are the defaults when a brand sets none.
+ */
+@source "./guest";
+
+[data-surface="guest"] {
+  --fs-body: 16px;
+  --lh-body: 24px;
+  --fs-line: 17px;
+  --lh-line: 24px;
+  --fs-heading: 20px;
+  --lh-heading: 26px;
+  --fs-title: 26px;
+  --lh-title: 32px;
+  --fs-caption: 13px;
+  --lh-caption: 18px;
+  --brand-accent: #1c1d1f;
+  --on-brand-accent: #f6f3ee;
+  --brand-display-font: var(--font-sans);
+}
+
+@theme inline {
+  --color-on-brand-accent: var(--on-brand-accent);
+  --font-display: var(--brand-display-font);
+  --animate-sheet-up: sheet-up var(--dur-sheet-open) var(--ease-enter);
+  --animate-sheet-down: sheet-down var(--dur-sheet-close) var(--ease-leave) forwards;
+
+  @keyframes sheet-up {
+    from {
+      transform: translateY(32px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes sheet-down {
+    from {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateY(32px);
+      opacity: 0;
+    }
+  }
+}
+
+/* Section tabs scroll sideways without a visible bar. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ---- POS (v0.6 to v0.8): payment done screen and print alerts -------------
+ * The auto-return bar on the receipt chooser (design 4.5: back to the floor
+ * after 4 s) and the on-screen QR, which must stay crisp when scaled.
+ */
+@keyframes pos-countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+.pos-countdown {
+  transform-origin: left;
+  animation: pos-countdown var(--pos-countdown-ms, 4000ms) linear forwards;
+}
+.pos-qr {
+  image-rendering: pixelated;
+}

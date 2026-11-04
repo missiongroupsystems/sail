@@ -1,30 +1,44 @@
 "use client";
 
-import { Badge, DescriptionList, InlineError, Money, SectionHeading, Sheet, Skeleton } from "@sail/ui";
-import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
-import { label, LINE_STATUS_LABEL, ORDER_STATUS_LABEL, ORDER_TYPE_LABEL, CHANNEL_LABEL } from "@/components/backoffice/labels";
-import { req } from "@/lib/api";
+import { Badge, Button, DescriptionList, Dialog, InlineError, Money, SectionHeading, Sheet, Skeleton, TextField } from "@sail/ui";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { label, LINE_STATUS_LABEL, ORDER_STATUS_LABEL, ORDER_TYPE_LABEL, CHANNEL_LABEL, todayBusinessDate } from "@/components/backoffice/labels";
+import { isWaiting, JobRowActions, JobStatus } from "@/components/backoffice/PrintJobActions";
+import { boKeys, can, CHECK_STATUS_LABEL, formatElapsed, openPdf, PRINT_JOB_KIND_LABEL, rolesFor, type CheckSnapshot, type InvoiceIssued, type Refund } from "@/components/backoffice/register";
+import { Warnings } from "@/components/backoffice/Warnings";
+import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
-import type { OrderSnapshot, OutletEvent } from "@/lib/api/types";
+import type { OrderSnapshot } from "@/lib/api/types";
 import { formatDayClock, formatFullStamp, shortId } from "@/lib/format";
 import { keys } from "@/lib/query";
+import { useSession } from "@/lib/session-context";
 import { statusTone, whoFor } from "./OrdersView";
+import { RefundSheet, refundableChecks } from "./RefundSheet";
 
-/** Fetch the outlet's event log in pages and keep the ones about this aggregate. The API has no per-aggregate filter yet. */
-async function eventsFor(outletId: string, aggregateId: string): Promise<OutletEvent[]> {
-  const out: OutletEvent[] = [];
-  let after = 0;
-  for (let i = 0; i < 20; i++) {
-    const page = await req(api.GET("/v1/outlets/{id}/events", { params: { path: { id: outletId }, query: { after, limit: 1000 } } }));
-    out.push(...page.data.filter((e) => e.aggregate.id === aggregateId));
-    if (!page.has_more || page.data.length === 0) break;
-    after = page.data[page.data.length - 1]!.seq;
-  }
-  return out;
-}
+const REFUND_KIND_LABEL: Record<string, string> = { full: "Whole bill", lines: "Some items", amount: "An amount" };
 
+/**
+ * The order drawer (design 3.2 Orders): lines, adjustments, bills, refunds,
+ * tickets, events and audit, read-only for Servers. Other roles get the actions
+ * their role allows; the register enforces every one of them again.
+ */
 export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId: string | null; outletId: string | null; tableName: (id: string | null) => string; onClose: () => void }) {
+  const { me } = useSession();
+  const qc = useQueryClient();
+  const readOnly = me.role === "server" || !me.role;
+  const canRefund = !readOnly && can(me, "refunds.create");
+  const canReopen = !readOnly && can(me, "orders.reopen");
+  const canInvoice = !readOnly && can(me, "documents.issue_invoice");
+  const canPrint = !readOnly && can(me, "receipts.print");
+  const canReprint = !readOnly && can(me, "print_jobs.reprint");
+
+  const [refund, setRefund] = useState<{ checkId: string | null } | null>(null);
+  const [reopen, setReopen] = useState(false);
+  const [reopenReason, setReopenReason] = useState("");
+  const [note, setNote] = useState<{ text: string; warnings: string[] } | null>(null);
+  useEffect(() => setNote(null), [orderId]);
+
   const order = useQuery({
     queryKey: keys.order(orderId ?? ""),
     queryFn: () => req(api.GET("/v1/orders/{id}", { params: { path: { id: orderId! } } })).then((r) => r.data as unknown as OrderSnapshot),
@@ -32,7 +46,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
   });
   const events = useQuery({
     queryKey: [...keys.outletEvents(outletId ?? ""), orderId],
-    queryFn: () => eventsFor(outletId!, orderId!),
+    queryFn: () => req(api.GET("/v1/outlets/{id}/events", { params: { path: { id: outletId! }, query: { aggregate_id: orderId!, limit: 1000 } } })).then((r) => r.data),
     enabled: orderId !== null && outletId !== null,
   });
   const audit = useQuery({
@@ -40,12 +54,87 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
     queryFn: () => req(api.GET("/v1/audit", { params: { query: { target_id: orderId!, limit: 100 } } })).then((r) => r.data),
     enabled: orderId !== null,
   });
+  const refunds = useQuery({
+    queryKey: boKeys.orderRefunds(orderId ?? ""),
+    queryFn: () => req(api.GET("/v1/orders/{id}/refunds", { params: { path: { id: orderId! } } })).then((r) => r.data as unknown as Refund[]),
+    enabled: orderId !== null,
+  });
+  const jobs = useQuery({
+    queryKey: boKeys.orderJobs(orderId ?? ""),
+    queryFn: () => req(api.GET("/v1/outlets/{id}/print-jobs", { params: { path: { id: outletId! }, query: { order_id: orderId!, limit: 100 } } })).then((r) => r.data),
+    enabled: orderId !== null && outletId !== null,
+    refetchInterval: 15_000,
+  });
+  const printers = useQuery({
+    queryKey: boKeys.printers(outletId ?? ""),
+    queryFn: () => req(api.GET("/v1/printers", { params: { query: { outlet_id: outletId!, include_archived: "true" } } })).then((r) => r.data),
+    enabled: orderId !== null && outletId !== null,
+    staleTime: 60_000,
+  });
 
   const o = order.data;
   const lines = useMemo(() => (o?.lines ?? []).slice().sort((a, b) => (a.seat_no ?? 0) - (b.seat_no ?? 0) || a.sort - b.sort), [o]);
+  const checks = useMemo(() => ((o?.checks ?? []) as CheckSnapshot[]).slice().sort((a, b) => a.index - b.index), [o]);
+  const refundable = useMemo(() => refundableChecks(checks), [checks]);
+  const sameDay = o ? o.business_date === todayBusinessDate() : false;
+
+  const settle = async (text: string, warnings: string[] = []) => {
+    setNote({ text, warnings });
+    await Promise.all([qc.invalidateQueries({ queryKey: keys.order(orderId ?? "") }), qc.invalidateQueries({ queryKey: ["orders"] }), qc.invalidateQueries({ queryKey: ["print-jobs"] }), qc.invalidateQueries({ queryKey: ["audit"] }), qc.invalidateQueries({ queryKey: keys.outletEvents(outletId ?? "") })]);
+  };
+
+  const doReopen = useMutation<{ warnings: string[] }, ApiError, string>({
+    mutationFn: (reason) => req(api.POST("/v1/orders/{id}/reopen", { params: { path: { id: orderId! } }, body: { reason } })),
+    onSuccess: async (r) => {
+      setReopen(false);
+      await settle("Order reopened. Its payments are reversed and the bills are open again.", r.warnings);
+    },
+  });
+  const printReceipt = useMutation<{ warnings: string[] }, ApiError, CheckSnapshot>({
+    mutationFn: (c) => req(api.POST("/v1/checks/{id}/receipt/print", { params: { path: { id: c.id } }, body: {} })),
+    onSuccess: (r, c) => settle(`Receipt for ${c.label} queued on the receipt printer.`, r.warnings),
+  });
+  const issueInvoice = useMutation<{ data: InvoiceIssued; warnings: string[] }, ApiError, CheckSnapshot>({
+    mutationFn: (c) => req(api.POST("/v1/checks/{id}/invoice", { params: { path: { id: c.id } }, body: {} })),
+    onSuccess: (r, c) => settle(r.data.reused ? `${c.label} already has invoice ${r.data.invoice_no}.` : `Invoice ${r.data.invoice_no} issued for ${c.label}.`, r.warnings),
+  });
+  const invoicePdf = useMutation<void, ApiError, CheckSnapshot>({ mutationFn: (c) => openPdf(`/v1/checks/${c.id}/invoice.pdf`, `${c.invoice_no ?? "invoice"}.pdf`) });
+  const creditNotePdf = useMutation<void, ApiError, Refund>({ mutationFn: (r) => openPdf(`/v1/refunds/${r.id}/credit-note.pdf`, `${r.credit_note_no ?? "credit-note"}.pdf`) });
+  const printRefund = useMutation<{ warnings: string[] }, ApiError, Refund>({
+    mutationFn: (r) => req(api.POST("/v1/refunds/{id}/receipt/print", { params: { path: { id: r.id } }, body: {} })),
+    onSuccess: (res, r) => settle(`Refund receipt ${r.refund_receipt_no} queued on the receipt printer.`, res.warnings),
+  });
+
+  const actionError = doReopen.error ?? printReceipt.error ?? issueInvoice.error ?? invoicePdf.error ?? creditNotePdf.error ?? printRefund.error;
 
   return (
-    <Sheet isOpen={orderId !== null} onOpenChange={(open) => !open && onClose()} width="lg" title={o ? <span className="font-mono">{o.order_no}</span> : "Order"} description={o ? `${label(ORDER_TYPE_LABEL, o.order_type)} · ${label(CHANNEL_LABEL, o.channel)} · opened ${formatDayClock(o.opened_at)}${o.opened_by.name ? ` by ${o.opened_by.name}` : ""}` : undefined}>
+    <Sheet
+      isOpen={orderId !== null}
+      onOpenChange={(open) => !open && onClose()}
+      width="lg"
+      title={o ? <span className="font-mono">{o.order_no}</span> : "Order"}
+      description={o ? `${label(ORDER_TYPE_LABEL, o.order_type)} · ${label(CHANNEL_LABEL, o.channel)} · opened ${formatDayClock(o.opened_at)}${o.opened_by.name ? ` by ${o.opened_by.name}` : ""}` : undefined}
+      footer={
+        o && !readOnly ? (
+          <>
+            {o.status === "completed" ? (
+              <span className="mr-auto inline-flex flex-wrap items-center gap-2">
+                <Button onPress={() => { setReopenReason(""); setReopen(true); }} isDisabled={!canReopen || !sameDay}>
+                  Reopen order
+                </Button>
+                <span className="text-caption text-ink-2">{!canReopen ? rolesFor("orders.reopen") : !sameDay ? "Same business day only" : "Reverses the payments and unlocks the bills"}</span>
+              </span>
+            ) : null}
+            <span className="inline-flex flex-wrap items-center gap-2">
+              {!canRefund ? <span className="text-caption text-ink-2">{rolesFor("refunds.create")}</span> : null}
+              <Button variant="primary" onPress={() => setRefund({ checkId: null })} isDisabled={!canRefund || refundable.length === 0}>
+                Refund…
+              </Button>
+            </span>
+          </>
+        ) : undefined
+      }
+    >
       {order.isPending ? <Skeleton lines={8} /> : null}
       <InlineError error={order.error} />
       {o ? (
@@ -63,6 +152,15 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
               { term: "Version", detail: `v${o.version} · ${o.round_count} ${o.round_count === 1 ? "round" : "rounds"}`, numeric: true },
             ]}
           />
+
+          {note ? (
+            <div className="flex flex-col gap-2" role="status">
+              <p className="text-body text-ink">{note.text}</p>
+              <Warnings warnings={note.warnings} />
+            </div>
+          ) : null}
+          <InlineError error={actionError} />
+          {readOnly ? <p className="text-caption text-ink-2">Read-only for Servers. Refunds, reopening, receipts and invoices need a Cashier or higher.</p> : null}
 
           <section>
             <SectionHeading title="Lines" aside={`${lines.length}`} />
@@ -137,6 +235,146 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
           </section>
 
           <section>
+            <SectionHeading title="Bills" aside={`${checks.length}`} />
+            {checks.length === 0 ? <p className="mt-2 text-ink-2">No bills yet.</p> : null}
+            <ul className="flex flex-col">
+              {checks.map((c) => {
+                const paid = c.locked && c.paid_total > 0;
+                return (
+                  <li key={c.id} className="flex flex-col gap-2 py-3 hairline-b">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                      <span className="inline-flex flex-wrap items-baseline gap-2">
+                        <span className="text-line text-ink">{c.label}</span>
+                        <Badge tone={c.status === "paid" ? "paid" : c.status === "open" ? "seated" : "bill"}>{label(CHECK_STATUS_LABEL, c.status)}</Badge>
+                        {c.seat_no ? <span className="text-caption text-ink-2">Seat {c.seat_no}</span> : null}
+                        {c.invoice_no ? <span className="font-mono text-caption text-ink-2">Invoice {c.invoice_no}</span> : null}
+                      </span>
+                      <span className="tabular text-ink">
+                        <Money cents={c.totals.total} />
+                        <span className="text-caption text-ink-2"> · paid </span>
+                        <Money cents={c.paid_total} size="caption" />
+                        {c.refunded_total ? (
+                          <>
+                            <span className="text-caption text-ink-2"> · refunded </span>
+                            <Money cents={c.refunded_total} size="caption" />
+                          </>
+                        ) : null}
+                        {c.balance ? (
+                          <>
+                            <span className="text-caption text-ink-2"> · balance </span>
+                            <Money cents={c.balance} size="caption" />
+                          </>
+                        ) : null}
+                      </span>
+                    </div>
+                    {c.payments.length ? (
+                      <ul className="flex flex-col gap-0.5 pl-3">
+                        {c.payments.map((p) => (
+                          <li key={p.id} className={`flex flex-wrap items-baseline justify-between gap-x-4 text-caption ${p.status === "reversed" ? "text-ink-2 line-through" : "text-ink-2"}`}>
+                            <span>
+                              {p.tender}
+                              {p.reference ? ` · ${p.reference}` : ""}
+                              {p.recorded_by ? ` · ${p.recorded_by}` : ""} · {formatDayClock(p.created_at)}
+                              {p.status === "reversed" ? " · reversed" : ""}
+                            </span>
+                            <span className="tabular">
+                              <Money cents={p.amount} size="caption" />
+                              {p.rounding_cents ? ` (rounding ${p.rounding_cents > 0 ? "+" : "−"}${Math.abs(p.rounding_cents)}¢)` : ""}
+                              {p.tip_cents ? ` · tip ` : ""}
+                              {p.tip_cents ? <Money cents={p.tip_cents} size="caption" /> : null}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {!readOnly && paid ? (
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Button variant="quiet" className="min-h-9 px-2.5 text-caption" isDisabled={!canPrint} onPress={() => printReceipt.mutate(c)} isPending={printReceipt.isPending && printReceipt.variables?.id === c.id}>
+                          Print receipt
+                        </Button>
+                        {c.invoice_no ? (
+                          <Button variant="quiet" className="min-h-9 px-2.5 text-caption" onPress={() => invoicePdf.mutate(c)} isPending={invoicePdf.isPending && invoicePdf.variables?.id === c.id}>
+                            Download invoice PDF
+                          </Button>
+                        ) : (
+                          <Button variant="quiet" className="min-h-9 px-2.5 text-caption" isDisabled={!canInvoice} onPress={() => issueInvoice.mutate(c)} isPending={issueInvoice.isPending && issueInvoice.variables?.id === c.id}>
+                            Get invoice
+                          </Button>
+                        )}
+                        {refundable.some((r) => r.id === c.id) ? (
+                          <Button variant="quiet" className="min-h-9 px-2.5 text-caption" isDisabled={!canRefund} onPress={() => setRefund({ checkId: c.id })}>
+                            Refund…
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+
+          <section>
+            <SectionHeading title="Refunds" aside={refunds.data ? `${refunds.data.length}` : "loading"} />
+            <InlineError error={refunds.error} className="mt-2" />
+            {refunds.data && refunds.data.length === 0 ? <p className="mt-2 text-ink-2">No refunds on this order.</p> : null}
+            <ul className="flex flex-col">
+              {(refunds.data ?? []).map((r) => (
+                <li key={r.id} className="flex flex-col gap-1 py-3 hairline-b">
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                    <span className="inline-flex flex-wrap items-baseline gap-2">
+                      <span className="font-mono text-ink">{r.refund_receipt_no}</span>
+                      {r.credit_note_no ? <span className="font-mono text-caption text-ink-2">Credit note {r.credit_note_no}</span> : null}
+                      <Badge>{label(REFUND_KIND_LABEL, r.kind)}</Badge>
+                    </span>
+                    <Money cents={-r.totals.total} />
+                  </div>
+                  <p className="text-caption text-ink-2">
+                    {formatDayClock(r.created_at)}
+                    {r.refunded_by ? ` · ${r.refunded_by}` : ""}
+                    {r.approved_by ? ` · approved by ${r.approved_by}` : ""} · {r.reason}
+                  </p>
+                  {!readOnly ? (
+                    <div className="flex flex-wrap items-center gap-1">
+                      {r.credit_note_no ? (
+                        <Button variant="quiet" className="min-h-9 px-2.5 text-caption" onPress={() => creditNotePdf.mutate(r)} isPending={creditNotePdf.isPending && creditNotePdf.variables?.id === r.id}>
+                          Download credit note PDF
+                        </Button>
+                      ) : null}
+                      <Button variant="quiet" className="min-h-9 px-2.5 text-caption" isDisabled={!canPrint} onPress={() => printRefund.mutate(r)} isPending={printRefund.isPending && printRefund.variables?.id === r.id}>
+                        Reprint refund receipt
+                      </Button>
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section>
+            <SectionHeading title="Tickets" aside={jobs.data ? `${jobs.data.length}` : "loading"} />
+            <InlineError error={jobs.error} className="mt-2" />
+            {jobs.data && jobs.data.length === 0 ? <p className="mt-2 text-ink-2">Nothing printed for this order yet.</p> : null}
+            <ul className="flex flex-col">
+              {(jobs.data ?? []).map((j) => (
+                <li key={j.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2 hairline-b">
+                  <span className="inline-flex min-w-0 flex-wrap items-baseline gap-2">
+                    <span className="text-ink">{label(PRINT_JOB_KIND_LABEL, j.kind)}</span>
+                    <span className="text-caption text-ink-2">
+                      {(printers.data ?? []).find((p) => p.id === j.printer_id)?.name ?? shortId(j.printer_id)} · {formatDayClock(j.created_at)}
+                      {j.copies > 1 ? ` · copy ${j.copy_no}/${j.copies}` : ""}
+                      {isWaiting(j) ? ` · waiting ${formatElapsed(j.age_seconds)}` : ""}
+                      {j.last_error ? ` · ${j.last_error}` : ""}
+                    </span>
+                    <JobStatus job={j} />
+                  </span>
+                  {canReprint ? <JobRowActions job={j} printers={printers.data ?? []} onDone={(text, warnings) => settle(text, warnings)} compact /> : null}
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section>
             <SectionHeading title="Events" aside={events.data ? `${events.data.length}` : "loading"} />
             {events.isPending ? <Skeleton lines={3} className="mt-2" /> : null}
             <InlineError error={events.error} className="mt-2" />
@@ -151,6 +389,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                   <span className="text-caption text-ink-2">
                     seq {e.seq} · v{e.aggregate.version}
                     {typeof e.actor === "object" && e.actor && "name" in e.actor && e.actor.name ? ` · ${String(e.actor.name)}` : ""}
+                    {e.reason && typeof e.reason === "object" && "text" in e.reason && e.reason.text ? ` · ${String(e.reason.text)}` : ""}
                   </span>
                 </li>
               ))}
@@ -182,6 +421,30 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
           </section>
         </div>
       ) : null}
+
+      {o ? <RefundSheet order={o} checks={checks} initialCheckId={refund?.checkId ?? null} isOpen={refund !== null} onClose={() => setRefund(null)} /> : null}
+
+      <Dialog
+        isOpen={reopen}
+        onOpenChange={(open) => !open && setReopen(false)}
+        title={o ? `Reopen ${o.order_no}` : "Reopen order"}
+        footer={
+          <>
+            <Button variant="quiet" onPress={() => setReopen(false)} isDisabled={doReopen.isPending}>
+              Cancel
+            </Button>
+            <Button variant="primary" isDisabled={!reopenReason.trim()} isPending={doReopen.isPending} onPress={() => doReopen.mutate(reopenReason.trim())}>
+              Reopen order
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-3 pt-2">
+          <p>Reverses every payment on this order as events and unlocks its bills; the order is then recharged. Same business day only.</p>
+          <TextField label="Reason" value={reopenReason} onChange={setReopenReason} placeholder="Wrong items were paid for" autoFocus />
+          <InlineError error={doReopen.error} />
+        </div>
+      </Dialog>
     </Sheet>
   );
 }

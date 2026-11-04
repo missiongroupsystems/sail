@@ -1,5 +1,5 @@
-import { LaterPhase } from "@/components/LaterPhase";
+import { redirect } from "next/navigation";
 
-export default function Page() {
-  return <LaterPhase href="/printing" />;
+export default function PrintingIndex() {
+  redirect("/printing/printers");
 }

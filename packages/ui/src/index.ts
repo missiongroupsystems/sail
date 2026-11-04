@@ -51,3 +51,24 @@ export { ReasonPicker, type ReasonPickerProps, type Reason, type PickedReason } 
 export { AmountPad, formatBpsText, type AmountPadProps } from "./pos/AmountPad";
 export { NowRail, type NowRailProps, type NowItem } from "./pos/NowRail";
 export { PanelSheet, type PanelSheetProps } from "./pos/PanelSheet";
+
+// Back-office additions (v0.9): the refund stepper's progress row and plain-text ticket previews (design 4.6, 4.8).
+export { Steps, type StepsProps, type Step } from "./backoffice/Steps";
+export { TicketPreview, type TicketPreviewProps } from "./backoffice/TicketPreview";
+
+// Guest app components (v0.8): Scan to Order on phones (design 3.3, 4.11, 9, 10).
+export { BottomSheet, type BottomSheetProps } from "./guest/BottomSheet";
+export { BrandButton, type BrandButtonProps, type BrandButtonVariant } from "./guest/BrandButton";
+export { GuestStepper, type GuestStepperProps } from "./guest/GuestStepper";
+export { ChoiceGroup, type ChoiceGroupProps, type ChoiceOption, type ChoiceValue } from "./guest/ChoiceGroup";
+export { RoundTimeline, type RoundTimelineProps, type RoundStage } from "./guest/RoundTimeline";
+export { MenuItemRow, type MenuItemRowProps, type MenuItemState } from "./guest/MenuItemRow";
+export { ScrollTabs, type ScrollTabsProps, type ScrollTab } from "./guest/ScrollTabs";
+export { BillDocumentView, type BillDocumentViewProps, type BillDocumentLike } from "./guest/BillDocumentView";
+
+// POS components (v0.6 to v0.8): bills, payment, cash count and the close-shift checklist (design 4.4, 4.5, 4.9).
+export { SegmentedControl, type SegmentedControlProps, type SegmentOption } from "./pos/SegmentedControl";
+export { BillCard, type BillCardProps, type BillCardLine, type BillCardRow, type BillCardStatus } from "./pos/BillCard";
+export { TenderGrid, type TenderGridProps, type Tender } from "./pos/TenderGrid";
+export { CashCounter, cashCounterTotal, SGD_DENOMINATIONS, type CashCounterProps, type CashCounterMode, type Denomination } from "./pos/CashCounter";
+export { Checklist, type ChecklistProps, type ChecklistItem, type ChecklistItemStatus } from "./pos/Checklist";

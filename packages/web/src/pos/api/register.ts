@@ -2,10 +2,14 @@ import { idempotencyKey, req } from "@/lib/api";
 import type { PosApi } from "./client";
 import type {
   ChannelLink,
+  CheckSnapshot,
   CompiledMenu,
+  CreatedJob,
   Customer,
   EventsPage,
   FloorSnapshot,
+  GuestRound,
+  Invoice,
   Layout,
   ManualRule,
   MutationResult,
@@ -14,9 +18,26 @@ import type {
   Outlet,
   OverrideAction,
   OverrideGrant,
+  OverrideTargetKind,
+  PaymentResult,
+  Printer,
+  PrintJob,
+  ReceiptChannel,
+  ReceiptSend,
+  Refund,
+  RefundQuote,
+  RefundRequest,
+  RefundResult,
+  Relay,
+  ServiceRequest,
   SessionStart,
+  Shift,
+  ShiftCloseResult,
   Station,
+  StockEntry,
+  TenderType,
   VoidReason,
+  ZReport,
 } from "./types";
 
 /**
@@ -242,7 +263,209 @@ export async function removeAdjustment(api: PosApi, orderId: string, application
 
 /* ---- Manager approval ------------------------------------------------------ */
 
-export async function grantOverride(api: PosApi, input: { action: OverrideAction; target_kind: "order" | "order_line"; target_id: string; approver_pin: string }): Promise<OverrideGrant> {
+export async function grantOverride(api: PosApi, input: { action: OverrideAction; target_kind: OverrideTargetKind; target_id: string; approver_pin: string }): Promise<OverrideGrant> {
   const res = await req(api.POST("/v1/overrides", { body: input, headers: headers() }));
   return res.data as unknown as OverrideGrant;
+}
+
+/* ---- Bills (design 4.4) ----------------------------------------------------- */
+
+export async function listChecks(api: PosApi, orderId: string): Promise<CheckSnapshot[]> {
+  return (await req(api.GET("/v1/orders/{id}/checks", { params: { path: { id: orderId } } }))).data as unknown as CheckSnapshot[];
+}
+
+export async function splitEven(api: PosApi, orderId: string, n: number, opts?: MutationOpts): Promise<MutationResult> {
+  return asResult(await req(api.POST("/v1/orders/{id}/checks/split-even", { params: { path: { id: orderId } }, body: { ...mutation(opts), n }, headers: headers(opts) })));
+}
+
+export async function splitBySeat(api: PosApi, orderId: string, shared: "even" | "manual", opts?: MutationOpts): Promise<MutationResult> {
+  return asResult(await req(api.POST("/v1/orders/{id}/checks/split-by-seat", { params: { path: { id: orderId } }, body: { ...mutation(opts), shared }, headers: headers(opts) })));
+}
+
+export type AllocationMove = { line_id: string; check_ids: string[] };
+
+/** Move a line to one bill, or share it equally between several; `add_checks` opens new empty bills first. */
+export async function allocateLines(api: PosApi, orderId: string, moves: AllocationMove[], addChecks?: number, opts?: MutationOpts): Promise<MutationResult> {
+  return asResult(await req(api.POST("/v1/orders/{id}/checks/allocate", { params: { path: { id: orderId } }, body: { ...mutation(opts), moves, ...(addChecks ? { add_checks: addChecks } : {}) }, headers: headers(opts) })));
+}
+
+export async function unsplit(api: PosApi, orderId: string, opts?: MutationOpts): Promise<MutationResult> {
+  return asResult(await req(api.POST("/v1/orders/{id}/checks/unsplit", { params: { path: { id: orderId } }, body: mutation(opts) as never, headers: headers(opts) })));
+}
+
+export async function printPrebill(api: PosApi, orderId: string, checkId?: string | null, opts?: MutationOpts): Promise<MutationResult & { jobs: CreatedJob[] }> {
+  const res = await req(api.POST("/v1/orders/{id}/prebill", { params: { path: { id: orderId } }, body: { ...mutation(opts), ...(checkId ? { check_id: checkId } : {}) }, headers: headers(opts) }));
+  return res as unknown as MutationResult & { jobs: CreatedJob[] };
+}
+
+/* ---- Payments (design 4.5) -------------------------------------------------- */
+
+export async function listTenderTypes(api: PosApi, outletId?: string | null): Promise<TenderType[]> {
+  const res = await req(api.GET("/v1/tender-types", { params: { query: outletId ? { outlet_id: outletId } : {} } }));
+  return (res.data as unknown as TenderType[]).filter((t) => !t.archived).sort((a, b) => a.sort - b.sort);
+}
+
+export type PaymentInput = {
+  /** Generated once per attempt on the iPad; the register ignores a replay with the same id (design 4.5). */
+  payment_id: string;
+  tender_type_id: string;
+  /** Cents applied to the bill. */
+  amount: number;
+  /** Cash handed over; the register returns rounding and change. */
+  tendered?: number | null;
+  tip_cents?: number;
+  reference?: string | null;
+  /** Preview only: the register computes rounding and change and records nothing. */
+  dry_run?: boolean;
+};
+
+export async function recordPayment(api: PosApi, checkId: string, input: PaymentInput, opts?: MutationOpts): Promise<PaymentResult> {
+  const res = await req(api.POST("/v1/checks/{id}/payments", { params: { path: { id: checkId } }, body: { ...mutation(opts), ...input }, headers: headers(opts) }));
+  return res as unknown as PaymentResult;
+}
+
+export async function completeOrder(api: PosApi, orderId: string, opts?: MutationOpts): Promise<MutationResult> {
+  return asResult(await req(api.POST("/v1/orders/{id}/complete", { params: { path: { id: orderId } }, body: mutation(opts), headers: headers(opts) })));
+}
+
+export async function reopenOrder(api: PosApi, orderId: string, reason: string, opts?: MutationOpts): Promise<MutationResult> {
+  return asResult(await req(api.POST("/v1/orders/{id}/reopen", { params: { path: { id: orderId } }, body: { ...mutation(opts), reason }, headers: headers(opts) })));
+}
+
+/* ---- Receipts and documents ---------------------------------------------------- */
+
+export async function printReceipt(api: PosApi, checkId: string, opts?: MutationOpts): Promise<CreatedJob[]> {
+  return (await req(api.POST("/v1/checks/{id}/receipt/print", { params: { path: { id: checkId } }, body: mutation(opts), headers: headers(opts) }))).data as unknown as CreatedJob[];
+}
+
+export async function sendReceipt(api: PosApi, checkId: string, channel: ReceiptChannel, destination?: string, opts?: MutationOpts): Promise<{ data: ReceiptSend; warnings: string[] }> {
+  const res = await req(api.POST("/v1/checks/{id}/receipt/send", { params: { path: { id: checkId } }, body: { ...mutation(opts), channel, ...(destination ? { destination } : {}) }, headers: headers(opts) }));
+  return res as unknown as { data: ReceiptSend; warnings: string[] };
+}
+
+export async function issueInvoice(api: PosApi, checkId: string, opts?: MutationOpts): Promise<Invoice> {
+  return (await req(api.POST("/v1/checks/{id}/invoice", { params: { path: { id: checkId } }, body: mutation(opts), headers: headers(opts) }))).data as unknown as Invoice;
+}
+
+/* ---- Refunds (design 4.6) -------------------------------------------------------- */
+
+export type TenderSplit = { payment_id: string; amount: number }[];
+
+export async function quoteRefund(api: PosApi, checkId: string, request: RefundRequest, tenderSplit?: TenderSplit): Promise<RefundQuote> {
+  const res = await req(api.POST("/v1/checks/{id}/refunds/quote", { params: { path: { id: checkId } }, body: { request, ...(tenderSplit ? { tender_split: tenderSplit } : {}) }, headers: headers() }));
+  return res.data as unknown as RefundQuote;
+}
+
+export type RefundInput = { refund_id: string; request: RefundRequest; tender_split?: TenderSplit; reason: string; reference?: string | null; print?: boolean };
+
+export async function createRefund(api: PosApi, checkId: string, input: RefundInput, opts?: MutationOpts): Promise<RefundResult> {
+  const res = await req(api.POST("/v1/checks/{id}/refunds", { params: { path: { id: checkId } }, body: { ...mutation(opts), ...input }, headers: headers(opts) }));
+  return res as unknown as RefundResult;
+}
+
+export async function listRefunds(api: PosApi, orderId: string): Promise<Refund[]> {
+  return (await req(api.GET("/v1/orders/{id}/refunds", { params: { path: { id: orderId } } }))).data as unknown as Refund[];
+}
+
+export async function printRefundReceipt(api: PosApi, refundId: string, opts?: MutationOpts): Promise<CreatedJob[]> {
+  return (await req(api.POST("/v1/refunds/{id}/receipt/print", { params: { path: { id: refundId } }, body: mutation(opts), headers: headers(opts) }))).data as unknown as CreatedJob[];
+}
+
+export async function sendRefundReceipt(api: PosApi, refundId: string, channel: ReceiptChannel, destination?: string, opts?: MutationOpts): Promise<{ data: ReceiptSend; warnings: string[] }> {
+  const res = await req(api.POST("/v1/refunds/{id}/receipt/send", { params: { path: { id: refundId } }, body: { ...mutation(opts), channel, ...(destination ? { destination } : {}) }, headers: headers(opts) }));
+  return res as unknown as { data: ReceiptSend; warnings: string[] };
+}
+
+/* ---- Shifts and reports (design 4.9) ------------------------------------------- */
+
+export async function listShifts(api: PosApi, outletId: string, query: { status?: "open" | "closed"; station_id?: string; business_date?: string } = {}): Promise<Shift[]> {
+  return (await req(api.GET("/v1/outlets/{id}/shifts", { params: { path: { id: outletId }, query } }))).data as unknown as Shift[];
+}
+
+/** The station comes from the PIN session; `float_counts` keeps the denomination count for the next open. */
+export async function openShift(api: PosApi, input: { float_cents: number; float_counts?: Record<string, number> | null; name?: string | null }, opts?: MutationOpts): Promise<Shift> {
+  return (await req(api.POST("/v1/shifts", { body: { ...mutation(opts), ...input }, headers: headers(opts) }))).data as unknown as Shift;
+}
+
+export async function closeShift(api: PosApi, shiftId: string, input: { counted_cash_cents: number; counted_counts?: Record<string, number> | null; variance_reason?: string | null; dry_run?: boolean }, opts?: MutationOpts): Promise<ShiftCloseResult> {
+  const res = await req(api.POST("/v1/shifts/{id}/close", { params: { path: { id: shiftId } }, body: { ...mutation(opts), ...input }, headers: headers(opts) }));
+  return res as unknown as ShiftCloseResult;
+}
+
+export async function getZReport(api: PosApi, outletId: string, query: { business_date?: string; station_id?: string } = {}): Promise<ZReport> {
+  return (await req(api.GET("/v1/outlets/{id}/z-report", { params: { path: { id: outletId }, query } }))).data as unknown as ZReport;
+}
+
+export async function closeBusinessDay(api: PosApi, outletId: string, businessDate?: string, opts?: MutationOpts): Promise<{ id: string; business_date: string; closed_at: string; report: ZReport }> {
+  return (await req(api.POST("/v1/outlets/{id}/business-days/close", { params: { path: { id: outletId } }, body: { ...mutation(opts), ...(businessDate ? { business_date: businessDate } : {}) }, headers: headers(opts) }))).data as unknown as { id: string; business_date: string; closed_at: string; report: ZReport };
+}
+
+/* ---- Printing (design 4.8) ------------------------------------------------------- */
+
+export async function listPrintJobs(api: PosApi, outletId: string, query: { late?: boolean; order_id?: string; status?: string; printer_id?: string; limit?: number } = {}): Promise<PrintJob[]> {
+  const q: { late?: "true" | "false"; order_id?: string; status?: string; printer_id?: string; limit?: number } = {};
+  if (query.late !== undefined) q.late = query.late ? "true" : "false";
+  if (query.order_id) q.order_id = query.order_id;
+  if (query.status) q.status = query.status;
+  if (query.printer_id) q.printer_id = query.printer_id;
+  if (query.limit) q.limit = query.limit;
+  return (await req(api.GET("/v1/outlets/{id}/print-jobs", { params: { path: { id: outletId }, query: q } }))).data as unknown as PrintJob[];
+}
+
+/** Reroute waiting tickets; without `printer_id` each goes to its printer's configured backup. */
+export async function rerouteJobs(api: PosApi, jobIds: string[], printerId?: string | null, opts?: MutationOpts): Promise<CreatedJob[]> {
+  return (await req(api.POST("/v1/print-jobs/reroute", { body: { job_ids: jobIds, ...(printerId ? { printer_id: printerId } : {}) }, headers: headers(opts) }))).data as unknown as CreatedJob[];
+}
+
+export async function reprintJob(api: PosApi, jobId: string, opts?: MutationOpts): Promise<CreatedJob[]> {
+  return (await req(api.POST("/v1/print-jobs/{id}/reprint", { params: { path: { id: jobId } }, body: {}, headers: headers(opts) }))).data as unknown as CreatedJob[];
+}
+
+export async function listPrinters(api: PosApi, outletId: string): Promise<Printer[]> {
+  return ((await req(api.GET("/v1/printers", { params: { query: { outlet_id: outletId } } }))).data as unknown as Printer[]).filter((p) => !p.archived);
+}
+
+export async function listRelays(api: PosApi, outletId: string): Promise<Relay[]> {
+  return ((await req(api.GET("/v1/relays", { params: { query: { outlet_id: outletId } } }))).data as unknown as Relay[]).filter((r) => !r.archived);
+}
+
+/* ---- Scan to Order on the POS (design 4.2, 4.11) --------------------------------- */
+
+export async function listPendingRounds(api: PosApi, outletId: string): Promise<GuestRound[]> {
+  return (await req(api.GET("/v1/outlets/{id}/rounds", { params: { path: { id: outletId }, query: { status: "pending" } } }))).data as unknown as GuestRound[];
+}
+
+export async function acceptRound(api: PosApi, roundId: string, opts?: MutationOpts): Promise<MutationResult> {
+  return asResult(await req(api.POST("/v1/rounds/{id}/accept", { params: { path: { id: roundId } }, body: {}, headers: headers(opts) })));
+}
+
+export async function rejectRound(api: PosApi, roundId: string, reason: string, opts?: MutationOpts): Promise<MutationResult> {
+  return asResult(await req(api.POST("/v1/rounds/{id}/reject", { params: { path: { id: roundId } }, body: { reason }, headers: headers(opts) })));
+}
+
+export async function listOpenServiceRequests(api: PosApi, outletId: string): Promise<ServiceRequest[]> {
+  return (await req(api.GET("/v1/outlets/{id}/service-requests", { params: { path: { id: outletId }, query: { status: "open" } } }))).data as unknown as ServiceRequest[];
+}
+
+export async function acknowledgeServiceRequest(api: PosApi, requestId: string, opts?: MutationOpts): Promise<ServiceRequest> {
+  return (await req(api.POST("/v1/service-requests/{id}/acknowledge", { params: { path: { id: requestId } }, body: {}, headers: headers(opts) }))).data as unknown as ServiceRequest;
+}
+
+/* ---- Sold out (design 4.12) -------------------------------------------------------- */
+
+export async function listStock(api: PosApi, outletId: string): Promise<StockEntry[]> {
+  return (await req(api.GET("/v1/outlets/{id}/stock", { params: { path: { id: outletId } } }))).data as unknown as StockEntry[];
+}
+
+/** `until`: "today", "indefinite", or an ISO time. */
+export async function markSoldOut(api: PosApi, outletId: string, productId: string, until: "today" | "indefinite" | string, opts?: MutationOpts): Promise<StockEntry> {
+  return (await req(api.POST("/v1/stock/sold-out", { body: { outlet_id: outletId, product_id: productId, until }, headers: headers(opts) }))).data as unknown as StockEntry;
+}
+
+export async function restoreStock(api: PosApi, outletId: string, productId: string, opts?: MutationOpts): Promise<StockEntry> {
+  return (await req(api.POST("/v1/stock/restore", { body: { outlet_id: outletId, product_id: productId }, headers: headers(opts) }))).data as unknown as StockEntry;
+}
+
+export async function setDailyCap(api: PosApi, outletId: string, productId: string, quantity: number | null, opts?: MutationOpts): Promise<StockEntry> {
+  return (await req(api.POST("/v1/stock/daily-cap", { body: { outlet_id: outletId, product_id: productId, quantity }, headers: headers(opts) }))).data as unknown as StockEntry;
 }

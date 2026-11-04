@@ -18,6 +18,11 @@ All notable changes to Sail. Phases follow `docs/roadmap.md`; each has a complet
 - Guest rounds held for acceptance or fired immediately per channel link; accept/reject at the POS; table requests with printed slips; call for bill marks the table; guest order view without prices or payments; per-order guest stream; sessions revoked when the order closes.
 - Invariant triggers made SECURITY DEFINER and re-read rows at commit; events filter by aggregate; availability rule delete; dev:local runs the worker.
 
+### Web: guest app (v0.8), POS bills, payments, refunds, shift and print alerts (v0.6 to v0.9), back-office printing, orders actions, Today and reports (v0.9)
+- Guest app `packages/guest`: table landing with brand theming, menu, item sheet, basket and review, send to kitchen with idempotent retry, round status with live updates, call staff and ask for the bill, digital receipt page; never a payment screen.
+- POS: bill screen with every split mode, payment panel with cash dry run, refund stepper with manager approval, shift open and close with blind count and Z-report, sold out and printers, print failure banner, Now rail with QR rounds, requests and pickups.
+- Back office: Printing (printers, relays with pairing, print jobs with preview, reprint and reroute), orders drawer actions (refund stepper, reopen, receipts, invoices, credit notes, reprints), Floor QR sheets and rotation, Today as the service list, Z-report and shifts pages.
+
 ### Web: iPad POS (v0.4) and back-office catalogue, pricing, floor, orders screens (v0.3)
 - POS at /pos: pairing, lock and PIN, floor with live tables, orders list, order entry with layouts, modifier sheet, order sheet and action dock, manager approval sheet, undo, discounts, event store over SSE with catch-up, Day/Service themes.
 - Back office: products, bulk price, modifier groups, menus with drag-and-drop, categories, availability, sold out, legacy CSV import review; pricing rules with versions and simulator; customers; floor editor; orders drawer; stations pairing; channels, tenders, void reasons.

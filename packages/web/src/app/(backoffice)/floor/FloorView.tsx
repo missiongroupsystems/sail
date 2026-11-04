@@ -4,11 +4,14 @@ import { Button, Dialog, EmptyState, InlineError, SectionHeading, Select, Status
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
+import { QrSheetButton, RotateQrButton } from "@/components/backoffice/QrTools";
+import { roleIs } from "@/components/backoffice/register";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Area, Outlet, Table, TablePatch } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
 import { keys } from "@/lib/query";
+import { useSession } from "@/lib/session-context";
 
 const COLS = 24;
 const ROWS = 14;
@@ -29,7 +32,10 @@ function clampTable(t: { x: number; y: number; w: number; h: number }) {
 /** Floor plan editor (design 8: FloorCanvas / TableShape, editor variant). Grid units are what the API stores. */
 export function FloorView({ outlets, scope, initialOutletId, initialAreas, initialTables }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; initialAreas: Area[]; initialTables: Table[] }) {
   const qc = useQueryClient();
+  const { me } = useSession();
+  const admin = roleIs(me, "admin");
   const { outletId, setOutletId } = useOutletChoice(outlets, scope, initialOutletId);
+  const outlet = outlets.find((o) => o.id === outletId) ?? null;
   const [areaId, setAreaId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -123,7 +129,8 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
             Show archived tables
           </Switch>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-start gap-2">
+          {outlet ? <QrSheetButton outletId={outlet.id} outletName={outlet.name} canRotate={admin} /> : null}
           <Button onPress={() => { setAreaName(""); setAreaDialog({ mode: "create" }); }} isDisabled={!outletId}>
             Add area
           </Button>
@@ -223,9 +230,9 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
           <aside className="flex flex-col gap-4">
             <SectionHeading title={selectedTable ? selectedTable.name : "Table"} aside={selectedTable ? (selectedTable.archived ? <StatusDot status="neutral" label="Archived" muted /> : `${selectedTable.seats} seats`) : null} />
             {selectedTable ? (
-              <TablePanel key={selectedTable.id} table={selectedTable} areas={sortedAreas} onSave={(body) => patchTable.mutate({ id: selectedTable.id, body })} saving={patchTable.isPending} />
+              <TablePanel key={selectedTable.id} table={selectedTable} areas={sortedAreas} onSave={(body) => patchTable.mutate({ id: selectedTable.id, body })} saving={patchTable.isPending} canRotateQr={admin} />
             ) : (
-              <p className="text-ink-2">Tap a table to edit its name, seats, shape and size. Drag it to move it; drag the corner to resize. Arrow keys nudge a focused table.</p>
+              <p className="text-ink-2">Tap a table to edit its name, seats, shape and size, or to rotate its QR code. Drag it to move it; drag the corner to resize. Arrow keys nudge a focused table.</p>
             )}
           </aside>
         </div>
@@ -255,7 +262,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
   );
 }
 
-function TablePanel({ table, areas, onSave, saving }: { table: Table; areas: Area[]; onSave: (body: TablePatch) => void; saving: boolean }) {
+function TablePanel({ table, areas, onSave, saving, canRotateQr }: { table: Table; areas: Area[]; onSave: (body: TablePatch) => void; saving: boolean; canRotateQr: boolean }) {
   const [name, setName] = useState(table.name);
   const [seats, setSeats] = useState(String(table.seats));
   const [shape, setShape] = useState(table.shape);
@@ -302,6 +309,10 @@ function TablePanel({ table, areas, onSave, saving }: { table: Table; areas: Are
           {table.archived ? "Restore" : "Archive"}
         </Button>
       </div>
+      <section className="flex flex-col gap-2 pt-2 hairline-t">
+        <h3 className="pt-2 text-line text-ink">QR code</h3>
+        <RotateQrButton table={table} canRotate={canRotateQr} />
+      </section>
     </form>
   );
 }

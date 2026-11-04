@@ -14,14 +14,27 @@ import { ORDER_TYPE_LABEL, todayAt } from "../lib/format";
 import { useNavStore } from "../state/nav";
 import { usePos } from "./PosContext";
 
-type Open = "type" | "move" | "customer" | "cancel" | null;
+type Open = "type" | "move" | "customer" | "cancel" | "invoice" | null;
+/** Sheets the order screen owns (they need its sheet state): Refund, Reopen, Reprint. */
+export type OrderMenuAction = "refund" | "reopen" | "reprint";
 
 const CANCEL_REASONS = ["Customer changed mind", "Opened by mistake", "Duplicate order", "Walked out"];
 
-/** The order menu (design 3.1): Change type · Move table · Customer · Cancel. Refund, Reopen and History come later. */
-export function OrderMenu({ order, actions }: { order: OrderSnapshot; actions: ReturnType<typeof useOrderActions> }) {
+/** The order menu (design 3.1): Change type · Move table · Customer · Refund · Reopen · Get invoice · Reprint ticket · Cancel. */
+export function OrderMenu({ order, actions, onOpen }: { order: OrderSnapshot; actions: ReturnType<typeof useOrderActions>; onOpen: (action: OrderMenuAction) => void }) {
   const { offline } = usePos();
   const [open, setOpen] = useState<Open>(null);
+  const closed = order.status === "completed";
+  const paidChecks = order.checks.filter((c) => c.paid_total > 0);
+  const frozen = order.pricing_status === "frozen";
+  const onAction = (k: React.Key) => {
+    if (k === "refund" || k === "reopen" || k === "reprint") return onOpen(k);
+    if (k === "invoice") {
+      if (paidChecks.length === 1) return void actions.issueInvoice(paidChecks[0]!.id);
+      return setOpen("invoice");
+    }
+    setOpen(k as Open);
+  };
   return (
     <>
       <MenuTrigger>
@@ -29,14 +42,31 @@ export function OrderMenu({ order, actions }: { order: OrderSnapshot; actions: R
           Order
           <Icon icon={ChevronDown} size={16} className="text-ink-2" />
         </Button>
-        <Menu minWidth={240} onAction={(k) => setOpen(k as Open)}>
-          <MenuItem id="type">Change type</MenuItem>
-          <MenuItem id="move" isDisabled={order.order_type !== "dine_in"}>
+        <Menu minWidth={260} onAction={onAction}>
+          <MenuItem id="type" isDisabled={closed || frozen} detail={frozen && !closed ? "Paid" : undefined}>
+            Change type
+          </MenuItem>
+          <MenuItem id="move" isDisabled={order.order_type !== "dine_in" || closed}>
             Move table
           </MenuItem>
-          <MenuItem id="customer">Customer</MenuItem>
+          <MenuItem id="customer" isDisabled={closed}>
+            Customer
+          </MenuItem>
           <MenuSeparator />
-          <MenuItem id="cancel" tone="destructive">
+          <MenuItem id="refund" isDisabled={paidChecks.length === 0} detail={paidChecks.length === 0 ? "Nothing paid" : "Manager"}>
+            Refund
+          </MenuItem>
+          <MenuItem id="reopen" isDisabled={!closed} detail={closed ? "Manager" : undefined}>
+            Reopen
+          </MenuItem>
+          <MenuItem id="invoice" isDisabled={paidChecks.length === 0} detail={paidChecks.length === 1 && paidChecks[0]!.invoice_no ? paidChecks[0]!.invoice_no : undefined}>
+            Get invoice
+          </MenuItem>
+          <MenuItem id="reprint" isDisabled={order.round_count === 0}>
+            Reprint ticket
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem id="cancel" tone="destructive" isDisabled={closed}>
             Cancel order
           </MenuItem>
         </Menu>
@@ -45,6 +75,26 @@ export function OrderMenu({ order, actions }: { order: OrderSnapshot; actions: R
       <MoveTableSheet isOpen={open === "move"} onClose={() => setOpen(null)} order={order} actions={actions} />
       <CustomerSheet isOpen={open === "customer"} onClose={() => setOpen(null)} order={order} actions={actions} />
       <CancelSheet isOpen={open === "cancel"} onClose={() => setOpen(null)} actions={actions} />
+      <Sheet isOpen={open === "invoice"} onOpenChange={(o) => (!o ? setOpen(null) : undefined)} title="Get invoice" description="Which bill is the invoice for?">
+        <div className="flex flex-col gap-2">
+          {paidChecks.map((c) => (
+            <Button
+              key={c.id}
+              size="lg"
+              variant="secondary"
+              isDisabled={offline}
+              onPress={() => {
+                setOpen(null);
+                void actions.issueInvoice(c.id);
+              }}
+              className="justify-between"
+            >
+              <span>{c.label}{c.seat_no != null ? ` · Seat ${c.seat_no}` : ""}</span>
+              <span className="text-caption text-ink-2">{c.invoice_no ? `Invoice ${c.invoice_no}` : c.payments.map((p) => p.tender).join(", ")}</span>
+            </Button>
+          ))}
+        </div>
+      </Sheet>
     </>
   );
 }

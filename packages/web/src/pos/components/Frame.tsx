@@ -6,6 +6,7 @@ import { useNow } from "../lib/device";
 import { formatClock } from "../lib/format";
 import { useNavStore } from "../state/nav";
 import { useConnectionStore } from "../state/ui";
+import { PrintBanner } from "./PrintBanner";
 import { UserMenu } from "./UserMenu";
 
 export type FrameProps = {
@@ -49,7 +50,7 @@ export function Frame({ left, title, right, children }: FrameProps) {
   );
 }
 
-/** The disconnected banner (design 7.8): stays until the stream is back, then turns green and closes. */
+/** The one banner slot (design 2.2): the connection first (design 7.8), otherwise the print failure alert (design 4.8). */
 function ConnectionBanner() {
   const { status, asOf, recoveredAt } = useConnectionStore();
   const now = useNow(1000);
@@ -61,5 +62,5 @@ function ConnectionBanner() {
     );
   }
   if (recoveredAt && now - recoveredAt < 4000) return <Banner tone="success">Connected · caught up with the register</Banner>;
-  return null;
+  return <PrintBanner />;
 }

@@ -13,9 +13,11 @@ import { useNavStore } from "../state/nav";
 import { useSessionStore } from "../state/session";
 import { useStationStore } from "../state/station";
 import { useConnectionStore } from "../state/ui";
+import { BillScreen } from "../screens/BillScreen";
 import { FloorScreen } from "../screens/FloorScreen";
 import { OrderScreen } from "../screens/OrderScreen";
 import { OrdersScreen } from "../screens/OrdersScreen";
+import { PayScreen } from "../screens/PayScreen";
 import { ShiftScreen } from "../screens/ShiftScreen";
 import { IdleOverlay } from "./IdleOverlay";
 import { NoticeHost } from "./NoticeHost";
@@ -82,7 +84,7 @@ export function PosShell() {
   return (
     <PosProvider value={value}>
       <div className="flex h-dvh w-full flex-col overflow-hidden bg-bg text-ink">
-        {screen.kind === "floor" ? <FloorScreen /> : screen.kind === "orders" ? <OrdersScreen /> : screen.kind === "shift" ? <ShiftScreen /> : <OrderScreen orderId={screen.orderId} />}
+        {screen.kind === "floor" ? <FloorScreen /> : screen.kind === "orders" ? <OrdersScreen /> : screen.kind === "shift" ? <ShiftScreen /> : screen.kind === "bill" ? <BillScreen orderId={screen.orderId} /> : screen.kind === "pay" ? <PayScreen key={screen.checkId} orderId={screen.orderId} checkId={screen.checkId} /> : <OrderScreen orderId={screen.orderId} />}
       </div>
       <NoticeHost />
       <OverrideSheet />
