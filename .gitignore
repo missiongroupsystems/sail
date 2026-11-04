@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.next/
+out/
+coverage/
+.turbo/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+.pgdata/
+packages/server/.pg/
+packages/web/next-env.d.ts
+packages/guest/next-env.d.ts
+*.tsbuildinfo

@@ -1,0 +1,34 @@
+{
+  "name": "sail",
+  "private": true,
+  "version": "0.9.0-beta.1",
+  "packageManager": "pnpm@10.17.1",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "openapi:check": "pnpm --filter @sail/server openapi:check",
+    "db:generate": "pnpm --filter @sail/server db:generate",
+    "db:migrate": "pnpm --filter @sail/server db:migrate",
+    "check:no-other-pos": "node scripts/check-no-other-pos.mjs"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.0",
+    "typescript": "^5.9.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "embedded-postgres",
+      "@embedded-postgres/linux-x64",
+      "@embedded-postgres/linux-arm64",
+      "@embedded-postgres/darwin-arm64",
+      "@embedded-postgres/darwin-x64",
+      "esbuild",
+      "sharp"
+    ]
+  }
+}
