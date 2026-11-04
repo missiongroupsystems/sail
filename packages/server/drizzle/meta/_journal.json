@@ -92,6 +92,20 @@
       "when": 1793804340717,
       "tag": "0012_rls_refunds",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793804927730,
+      "tag": "0013_guest",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793804928279,
+      "tag": "0014_rls_guest",
+      "breakpoints": true
     }
   ]
 }

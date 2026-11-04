@@ -1,5 +1,5 @@
-import { LaterPhase } from "@/components/LaterPhase";
+import { redirect } from "next/navigation";
 
-export default function Page() {
-  return <LaterPhase href="/menu" />;
+export default function MenuPage() {
+  redirect("/menu/products");
 }

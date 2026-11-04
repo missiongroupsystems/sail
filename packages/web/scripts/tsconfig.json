@@ -1,0 +1,5 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "noEmit": true, "incremental": false, "plugins": [] },
+  "include": ["./pos-smoke.ts", "../next-env.d.ts"]
+}

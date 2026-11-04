@@ -8,9 +8,13 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "gen:api": "openapi-typescript ../server/openapi.json -o src/lib/api/schema.d.ts"
+    "gen:api": "openapi-typescript ../server/openapi.json -o src/lib/api/schema.d.ts",
+    "pos:smoke": "tsx --tsconfig scripts/tsconfig.json scripts/pos-smoke.ts"
   },
   "dependencies": {
+    "@dnd-kit/core": "6.3.1",
+    "@dnd-kit/sortable": "10.0.0",
+    "@dnd-kit/utilities": "3.2.2",
     "@hookform/resolvers": "^5.2.0",
     "@sail/shared": "workspace:*",
     "@sail/ui": "workspace:*",
@@ -24,7 +28,8 @@
     "react-aria-components": "^1.22.0",
     "react-dom": "^19.1.0",
     "react-hook-form": "^7.60.0",
-    "zod": "^4.1.0"
+    "zod": "^4.1.0",
+    "zustand": "^5.0.16"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.0",
@@ -33,6 +38,7 @@
     "@types/react-dom": "^19.1.0",
     "openapi-typescript": "^7.9.0",
     "tailwindcss": "^4.1.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.0"
   }
 }

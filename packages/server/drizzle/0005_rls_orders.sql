@@ -19,7 +19,7 @@ CREATE UNIQUE INDEX orders_one_open_per_table ON orders (table_id) WHERE table_i
 --> statement-breakpoint
 -- Invariant: every adjustment's line amounts add up to its total (checked at commit).
 CREATE OR REPLACE FUNCTION sail.check_adjustment_sum() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, sail AS $$
 DECLARE adj uuid; total_lines integer; total_adj integer; gst_lines integer; gst_adj integer;
 BEGIN
   adj := COALESCE(NEW.adjustment_id, OLD.adjustment_id);
@@ -35,7 +35,7 @@ END $$;
 CREATE CONSTRAINT TRIGGER order_adjustment_lines_sum AFTER INSERT OR UPDATE OR DELETE ON order_adjustment_lines DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION sail.check_adjustment_sum();
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION sail.check_adjustment_sum_from_adjustment() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, sail AS $$
 DECLARE total_lines integer; total_adj integer;
 BEGIN
   -- Deferred: the row may have been replaced by a later re-price in the same transaction.
@@ -52,7 +52,7 @@ CREATE CONSTRAINT TRIGGER order_adjustments_sum AFTER INSERT OR UPDATE ON order_
 --> statement-breakpoint
 -- Invariant: the order total equals the sum of its non-voided line totals (checked at commit).
 CREATE OR REPLACE FUNCTION sail.check_order_total() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, sail AS $$
 DECLARE oid uuid; lines_total integer; order_total integer;
 BEGIN
   oid := COALESCE(NEW.order_id, OLD.order_id, NEW.id, OLD.id);
@@ -68,12 +68,15 @@ END $$;
 CREATE CONSTRAINT TRIGGER order_lines_total_sum AFTER INSERT OR UPDATE OR DELETE ON order_lines DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION sail.check_order_total();
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION sail.check_order_total_from_order() RETURNS trigger
-LANGUAGE plpgsql AS $$
-DECLARE lines_total integer;
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, sail AS $$
+DECLARE lines_total integer; order_total integer;
 BEGIN
+  -- Deferred: re-read the row, which may have been re-priced since this trigger was queued.
+  SELECT total INTO order_total FROM orders WHERE id = NEW.id;
+  IF NOT FOUND THEN RETURN NULL; END IF;
   SELECT COALESCE(SUM(total), 0) INTO lines_total FROM order_lines WHERE order_id = NEW.id AND status <> 'voided';
-  IF lines_total <> NEW.total THEN
-    RAISE EXCEPTION 'order_total_sum: line totals % do not add up to order total %', lines_total, NEW.total USING ERRCODE = 'P0001';
+  IF lines_total <> order_total THEN
+    RAISE EXCEPTION 'order_total_sum: line totals % do not add up to order total %', lines_total, order_total USING ERRCODE = 'P0001';
   END IF;
   RETURN NULL;
 END $$;

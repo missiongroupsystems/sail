@@ -9,3 +9,4 @@ import "./modules/v04-orders.js";
 import "./modules/v05-printing.js";
 import "./modules/v06-payments.js";
 import "./modules/v07-splits-refunds.js";
+import "./modules/v08-guest.js";

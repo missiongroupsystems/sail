@@ -65,7 +65,7 @@ CREATE TRIGGER print_jobs_notify AFTER INSERT OR UPDATE OF status ON print_jobs 
 --> statement-breakpoint
 -- Job lifecycle guard: queued → claimed → printed | failed; queued | failed → rerouted; claimed → queued (stale re-queue).
 CREATE OR REPLACE FUNCTION sail.print_job_transition_guard() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, sail AS $$
 BEGIN
   IF OLD.status = NEW.status THEN RETURN NEW; END IF;
   IF (OLD.status = 'queued' AND NEW.status IN ('claimed','rerouted','failed'))

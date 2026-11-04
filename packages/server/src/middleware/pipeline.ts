@@ -83,7 +83,8 @@ export async function applyRls(t: RequestTx, principal: Principal) {
     set_config('app.current_outlets', ${outletScopeFor(principal)}, true),
     set_config('app.current_principal', ${principal.id}, true),
     set_config('app.current_principal_type', ${principal.type}, true),
-    set_config('app.current_role', ${role ?? ""}, true)`;
+    set_config('app.current_role', ${role ?? ""}, true),
+    set_config('app.current_order', ${principal.type === "guest" ? (principal.orderId ?? "") : ""}, true)`;
   await t.sql.unsafe(`set local role ${dbRoleFor(principal)}`);
 }
 

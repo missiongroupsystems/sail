@@ -24,7 +24,7 @@ CREATE UNIQUE INDEX shifts_one_open_per_outlet ON shifts (outlet_id) WHERE statu
 --> statement-breakpoint
 -- Invariant: a check's totals equal the sums of its allocations, and a line's allocations across checks add up to the line (checked at commit).
 CREATE OR REPLACE FUNCTION sail.check_allocation_sums() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, sail AS $$
 DECLARE c uuid; l uuid; sum_total integer; sum_base integer; chk record; line_total integer; line_alloc integer; n_alloc integer;
 BEGIN
   c := COALESCE(NEW.check_id, OLD.check_id);

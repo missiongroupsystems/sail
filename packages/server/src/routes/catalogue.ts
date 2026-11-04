@@ -559,3 +559,18 @@ export async function consumeDailyCap(outletId: string, productId: string, qty: 
 export async function releaseDailyCap(outletId: string, productId: string, qty: number, today: string) {
   await tx()`update stock_status set cap_remaining = least(daily_cap, coalesce(cap_remaining, 0) + ${qty}), updated_at = now() where outlet_id = ${outletId} and product_id = ${productId} and daily_cap is not null and cap_date = ${today}`;
 }
+
+registerOperations({
+  "availability.delete": { op: "availability.delete", summary: "Delete an availability rule", description: "Removes the rule; the product or section becomes always available again when no rules remain.", tier: "T3", minRole: "admin", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff", "agent"], emits: ["availability_rule.deleted"], mcp: { expose: false, toolsets: [] } },
+});
+export function availabilityDeleteRoute(app: OpenAPIHono<AppEnv>) {
+  defineOp(app, { op: "availability.delete", method: "delete", path: "/v1/availability-rules/{id}", tags: ["catalogue"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 200: jsonResponse(mutationResponse(z.object({ id: z.string() }))), ...errorResponses } }, async (c) => {
+    const p = c.get("principal");
+    const { id } = c.req.valid("param");
+    const rows = await db().delete(availabilityRules).where(and(eq(availabilityRules.id, id), eq(availabilityRules.merchantId, p.merchantId))).returning({ id: availabilityRules.id, targetId: availabilityRules.targetId });
+    if (!rows.length) throw AppError.notFound("availability rule", id);
+    const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "availability_rule.deleted", aggregate: { kind: "availability_rule", id }, operationId: "availability.delete", payload: { target_id: rows[0]!.targetId }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
+    await recordAudit(p, { action: "availability.delete", targetKind: "availability_rule", targetId: id });
+    return c.json({ data: { id }, events: [ev], warnings: [] }, 200);
+  });
+}

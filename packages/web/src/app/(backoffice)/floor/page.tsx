@@ -1,5 +1,22 @@
-import { LaterPhase } from "@/components/LaterPhase";
+import { PageHeader } from "@sail/ui";
+import { req } from "@/lib/api";
+import { getScope, orSignIn, requireApi } from "@/lib/api.server";
+import { FloorView } from "./FloorView";
 
-export default function Page() {
-  return <LaterPhase href="/floor" />;
+export const metadata = { title: "Floor & QR" };
+
+export default async function FloorPage() {
+  const api = await requireApi();
+  const scope = await getScope();
+  const outlets = await orSignIn(req(api.GET("/v1/outlets")));
+  const outletId = outlets.data.find((o) => o.id === scope.outletId)?.id ?? outlets.data[0]?.id ?? null;
+  const [areas, tables] = outletId
+    ? await orSignIn(Promise.all([req(api.GET("/v1/areas", { params: { query: { outlet_id: outletId } } })), req(api.GET("/v1/tables", { params: { query: { outlet_id: outletId, include_archived: "true" } } }))]))
+    : [null, null];
+  return (
+    <>
+      <PageHeader title="Floor & QR" description="Areas and tables per outlet. Drag a table to move it; tap it to edit. QR sheets arrive in a later phase." />
+      <FloorView outlets={outlets.data} scope={scope} initialOutletId={outletId} initialAreas={areas?.data ?? []} initialTables={tables?.data ?? []} />
+    </>
+  );
 }

@@ -1,0 +1,43 @@
+"use client";
+
+import { useEffect } from "react";
+import { useThemeStore, type ThemeMode } from "../state/ui";
+
+const TIME_ZONE = "Asia/Singapore";
+/** Service ends in the small hours: a station still on at 3 am stays dim. */
+const SERVICE_UNTIL = "05:00";
+
+function localHHMM(d = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: TIME_ZONE }).formatToParts(d);
+  const h = parts.find((p) => p.type === "hour")?.value ?? "00";
+  const m = parts.find((p) => p.type === "minute")?.value ?? "00";
+  return `${h === "24" ? "00" : h}:${m}`;
+}
+
+/** Service theme by schedule (design 7.3): from the outlet's `service_theme_from` (default 18:00) until 05:00. */
+export function scheduledTheme(serviceFrom: string | null | undefined, now = new Date()): "day" | "service" {
+  const from = serviceFrom && /^\d{2}:\d{2}$/.test(serviceFrom) ? serviceFrom : "18:00";
+  const t = localHHMM(now);
+  return t >= from || t < SERVICE_UNTIL ? "service" : "day";
+}
+
+export function effectiveTheme(mode: ThemeMode, serviceFrom: string | null | undefined): "day" | "service" {
+  return mode === "auto" ? scheduledTheme(serviceFrom) : mode;
+}
+
+function apply(theme: "day" | "service") {
+  const root = document.documentElement;
+  if (theme === "service") root.dataset.theme = "service";
+  else delete root.dataset.theme;
+}
+
+/** Keeps `data-theme` on the root in step with the schedule and the manual toggle; re-checks every minute. */
+export function useThemeScheduler(serviceFrom: string | null | undefined) {
+  const mode = useThemeStore((s) => s.mode);
+  useEffect(() => {
+    apply(effectiveTheme(mode, serviceFrom));
+    if (mode !== "auto") return;
+    const t = setInterval(() => apply(effectiveTheme(mode, serviceFrom)), 60_000);
+    return () => clearInterval(t);
+  }, [mode, serviceFrom]);
+}

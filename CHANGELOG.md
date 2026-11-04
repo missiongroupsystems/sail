@@ -4,6 +4,16 @@ All notable changes to Sail. Phases follow `docs/roadmap.md`; each has a complet
 
 ## Unreleased (feat/beta-v1)
 
+### v0.8 Scan to Order
+- Rotatable table QR tokens and a printable QR sheet (PDF); public guest sessions with short-lived tokens, rate-limited per device and table.
+- `app_guest` principal and read-only Postgres role (menu and own order only); guest writes run as the register after validation.
+- Guest rounds held for acceptance or fired immediately per channel link; accept/reject at the POS; table requests with printed slips; call for bill marks the table; guest order view without prices or payments; per-order guest stream; sessions revoked when the order closes.
+- Invariant triggers made SECURITY DEFINER and re-read rows at commit; events filter by aggregate; availability rule delete; dev:local runs the worker.
+
+### Web: iPad POS (v0.4) and back-office catalogue, pricing, floor, orders screens (v0.3)
+- POS at /pos: pairing, lock and PIN, floor with live tables, orders list, order entry with layouts, modifier sheet, order sheet and action dock, manager approval sheet, undo, discounts, event store over SSE with catch-up, Day/Service themes.
+- Back office: products, bulk price, modifier groups, menus with drag-and-drop, categories, availability, sold out, legacy CSV import review; pricing rules with versions and simulator; customers; floor editor; orders drawer; stations pairing; channels, tenders, void reasons.
+
 ### v0.7 Bill splitting and refunds
 - Split evenly by N, by seat (shared lines even or on a Shared bill) and by item with equal shares; free until the first payment, locked per paid bill; per-bill receipts, invoices and cash rounding.
 - Refunds: full, by lines and quantities, by amount; adjustments and GST reversed in proportion; tenders assigned to original payments within caps; cash rounding on cash refunds; Manager+ or override; reason required.

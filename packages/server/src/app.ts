@@ -49,7 +49,10 @@ export function buildApp() {
     if (pg.code === "23505") return c.json({ code: "state_conflict", message: "A record with the same unique value already exists", remedy: "Use a different value or update the existing record.", details: { constraint: pg.constraint_name } }, 409);
     if (pg.code === "23503") return c.json({ code: "validation", message: "A referenced record does not exist", details: { constraint: pg.constraint_name, detail: pg.detail } }, 400);
     if (pg.code === "23514" || pg.code === "P0001") return c.json({ code: "invariant_violation", message: pg.message ?? "An invariant was violated", details: { constraint: pg.constraint_name } }, 422);
-    if (pg.code === "42501") return c.json({ code: "permission_denied", message: "Not permitted for this principal", details: { rls: true } }, 403);
+    if (pg.code === "42501") {
+      logger.warn({ err: pg, requestId, path: c.req.path }, "database refused the statement for this principal");
+      return c.json({ code: "permission_denied", message: "Not permitted for this principal", details: { rls: true } }, 403);
+    }
     logger.error({ err, requestId }, "unhandled error");
     const body = ApiErrorSchema.parse({ code: "internal", message: "Something went wrong on the server", details: { request_id: requestId } });
     return c.json(body, 500);

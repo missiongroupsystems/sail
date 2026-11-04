@@ -56,6 +56,8 @@ const { buildApp } = await import("../src/app.js");
 const { startListener } = await import("../src/sse/listener.js");
 const app = buildApp();
 await startListener();
+const { runWorker } = await import("../src/worker/index.js");
+await runWorker(); // imports, scheduled rules, stale print claims, guest session expiry
 const port = Number(process.env.PORT);
 serve({ fetch: app.fetch, port }, () => {
   const info = { api: `http://localhost:${port}`, database_url: url, admin_email: "admin@sail.local", admin_pin: "123456", ...boot };

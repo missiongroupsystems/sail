@@ -4,7 +4,7 @@ import { db } from "../db/client.js";
 import { checks, merchantSettings, orderLines, orders, payments, shifts, tenderTypes } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { Principal } from "../auth/principal.js";
-import { repriceOrder } from "./orders.js";
+import { orderClosed, repriceOrder } from "./orders.js";
 import { activeRules } from "./pricing-rules.js";
 import { syncAllocations } from "./checks.js";
 import { businessDateFor } from "../lib/time.js";
@@ -130,6 +130,7 @@ export async function maybeComplete(orderId: string, now = new Date()): Promise<
   if ((pending?.n ?? 0) > 0) return false;
   await db().update(checks).set({ status: "paid", paidAt: now }).where(and(eq(checks.orderId, orderId), eq(checks.status, "open")));
   await db().update(orders).set({ status: "completed", completedAt: now, updatedAt: now }).where(eq(orders.id, orderId));
+  await orderClosed(orderId);
   return true;
 }
 

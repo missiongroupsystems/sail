@@ -9,3 +9,4 @@ export * from "./orders.js";
 export * from "./printing.js";
 export * from "./payments.js";
 export * from "./refunds.js";
+export * from "./guest.js";

@@ -353,3 +353,12 @@ export async function tableExists(tableId: string, outletId: string) {
   const [t] = await db().select({ id: tables.id }).from(tables).where(and(eq(tables.id, tableId), eq(tables.outletId, outletId), isNull(tables.archivedAt))).limit(1);
   return !!t;
 }
+
+/** Called when an order completes or is cancelled (guest sessions expire, v0.8). */
+const closedHooks: ((orderId: string) => Promise<void>)[] = [];
+export function registerOrderClosedHook(fn: (orderId: string) => Promise<void>) {
+  closedHooks.push(fn);
+}
+export async function orderClosed(orderId: string) {
+  for (const h of closedHooks) await h(orderId);
+}

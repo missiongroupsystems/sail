@@ -7893,6 +7893,15 @@
             "required": false,
             "name": "types",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "aggregate_id",
+            "in": "query"
           }
         ],
         "responses": {
@@ -17953,6 +17962,393 @@
                         "days_of_week",
                         "start_time",
                         "end_time"
+                      ]
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "seq": {
+                            "type": "integer"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "occurredAt": {
+                            "type": "string"
+                          },
+                          "businessDate": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "seq",
+                          "type",
+                          "occurredAt",
+                          "businessDate"
+                        ]
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "events",
+                    "warnings"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict (state, version or idempotency)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invariant violation or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "catalogue"
+        ],
+        "operationId": "availability.delete",
+        "description": "Removes the rule; the product or section becomes always available again when no rules remain.",
+        "summary": "Delete an availability rule",
+        "x-sail": {
+          "op": "availability.delete",
+          "tier": "T3",
+          "min_role": "admin",
+          "override_allowed": false,
+          "reason_required": false,
+          "dry_run": false,
+          "principals": [
+            "staff",
+            "agent"
+          ],
+          "emits": [
+            "availability_rule.deleted"
+          ],
+          "mcp": {
+            "expose": false,
+            "toolsets": []
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id"
                       ]
                     },
                     "events": {
@@ -67991,6 +68387,4404 @@
                     "events",
                     "warnings"
                   ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict (state, version or idempotency)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invariant violation or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/guest/sessions": {
+      "post": {
+        "tags": [
+          "guest"
+        ],
+        "operationId": "guest_sessions.create",
+        "description": "Exchanges the table token for a short-lived guest token scoped to the table and its open order. Rate-limited per device and per table. Ordering is possible only while the table has an open order, unless the channel allows opening on first scan.",
+        "summary": "Start a guest session from a table QR code",
+        "x-sail": {
+          "op": "guest_sessions.create",
+          "tier": "T0",
+          "min_role": null,
+          "override_allowed": false,
+          "reason_required": false,
+          "dry_run": false,
+          "principals": [],
+          "emits": [],
+          "mcp": {
+            "expose": false,
+            "toolsets": []
+          }
+        },
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "minLength": 10,
+                    "maxLength": 200
+                  },
+                  "device_id": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 120
+                  },
+                  "guest_name": {
+                    "type": "string",
+                    "maxLength": 40
+                  }
+                },
+                "required": [
+                  "token",
+                  "device_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "guest_token": {
+                          "type": "string"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "table": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name"
+                          ]
+                        },
+                        "outlet": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name"
+                          ]
+                        },
+                        "brand_id": {
+                          "type": "string"
+                        },
+                        "channel_link_id": {
+                          "type": "string"
+                        },
+                        "order_open": {
+                          "type": "boolean"
+                        },
+                        "can_order": {
+                          "type": "boolean"
+                        },
+                        "hold_orders": {
+                          "type": "boolean"
+                        },
+                        "service_requests": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "expires_at": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "guest_token",
+                        "session_id",
+                        "table",
+                        "outlet",
+                        "brand_id",
+                        "channel_link_id",
+                        "order_open",
+                        "can_order",
+                        "hold_orders",
+                        "service_requests",
+                        "expires_at"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict (state, version or idempotency)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invariant violation or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/guest/order": {
+      "get": {
+        "tags": [
+          "guest"
+        ],
+        "operationId": "guest.order",
+        "description": "The table's lines (menu prices only, no fees or totals), round statuses and the guest's requests.",
+        "summary": "What the table has ordered",
+        "x-sail": {
+          "op": "guest.order",
+          "tier": "T0",
+          "min_role": null,
+          "override_allowed": false,
+          "reason_required": false,
+          "dry_run": false,
+          "principals": [
+            "guest"
+          ],
+          "emits": [],
+          "mcp": {
+            "expose": true,
+            "toolsets": [
+              "guest"
+            ]
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict (state, version or idempotency)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invariant violation or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/guest/rounds": {
+      "post": {
+        "tags": [
+          "guest"
+        ],
+        "operationId": "rounds.submit",
+        "description": "Lines in the same shape as lines.add, validated against the channel menu, availability and caps. With hold orders on, the round waits for staff acceptance; otherwise it fires and prints straight away. Never takes payment.",
+        "summary": "Send a round to the table's order",
+        "x-sail": {
+          "op": "rounds.submit",
+          "tier": "T1",
+          "min_role": null,
+          "override_allowed": false,
+          "reason_required": false,
+          "dry_run": false,
+          "principals": [
+            "guest"
+          ],
+          "emits": [
+            "round.submitted",
+            "line.added",
+            "order.repriced",
+            "order.fired"
+          ],
+          "mcp": {
+            "expose": true,
+            "toolsets": [
+              "guest"
+            ]
+          }
+        },
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "round_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "line_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "product_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "quantity": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 50
+                        },
+                        "modifiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "group_id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "product_id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "quantity": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 20
+                              }
+                            },
+                            "required": [
+                              "group_id",
+                              "product_id"
+                            ]
+                          },
+                          "maxItems": 40
+                        },
+                        "notes": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 200
+                        },
+                        "seat_no": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 1,
+                          "maximum": 99
+                        }
+                      },
+                      "required": [
+                        "line_id",
+                        "product_id",
+                        "quantity"
+                      ]
+                    },
+                    "minItems": 1,
+                    "maxItems": 30
+                  },
+                  "guest_name": {
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "round_id",
+                  "lines"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict (state, version or idempotency)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invariant violation or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/guest/requests": {
+      "post": {
+        "tags": [
+          "guest"
+        ],
+        "operationId": "service_requests.create",
+        "description": "One of the channel's configured requests or `call_for_bill`, which also marks the table as bill requested. Rate-limited.",
+        "summary": "Call staff",
+        "x-sail": {
+          "op": "service_requests.create",
+          "tier": "T1",
+          "min_role": null,
+          "override_allowed": false,
+          "reason_required": false,
+          "dry_run": false,
+          "principals": [
+            "guest"
+          ],
+          "emits": [
+            "service_request.created",
+            "order.bill_requested"
+          ],
+          "mcp": {
+            "expose": true,
+            "toolsets": [
+              "guest"
+            ]
+          }
+        },
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "guest_name": {
+                    "type": "string",
+                    "maxLength": 40
+                  }
+                },
+                "required": [
+                  "type"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict (state, version or idempotency)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invariant violation or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/guest/stream": {
+      "get": {
+        "tags": [
+          "guest"
+        ],
+        "operationId": "guest.stream",
+        "description": "Signals changes to the table's order (round accepted, order ready). Poll guest.order when there is no order yet.",
+        "summary": "Guest live-update stream (SSE)",
+        "x-sail": {
+          "op": "guest.stream",
+          "tier": "T0",
+          "min_role": null,
+          "override_allowed": false,
+          "reason_required": false,
+          "dry_run": false,
+          "principals": [
+            "guest"
+          ],
+          "emits": [],
+          "mcp": {
+            "expose": false,
+            "toolsets": []
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "text/event-stream: hello, change, resync for the table's order",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict (state, version or idempotency)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invariant violation or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/outlets/{id}/rounds": {
+      "get": {
+        "tags": [
+          "guest"
+        ],
+        "operationId": "rounds.list",
+        "description": "Pending rounds waiting for acceptance, and recent decided ones.",
+        "summary": "QR rounds of an outlet",
+        "x-sail": {
+          "op": "rounds.list",
+          "tier": "T0",
+          "min_role": "server",
+          "override_allowed": false,
+          "reason_required": false,
+          "dry_run": false,
+          "principals": [
+            "staff",
+            "station",
+            "agent"
+          ],
+          "emits": [],
+          "mcp": {
+            "expose": true,
+            "toolsets": [
+              "pos.read"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "accepted",
+                "rejected",
+                "fired"
+              ]
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": {}
+                      }
+                    },
+                    "next_cursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "next_cursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict (state, version or idempotency)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invariant violation or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/rounds/{id}/accept": {
+      "post": {
+        "tags": [
+          "guest"
+        ],
+        "operationId": "rounds.accept",
+        "description": "Fires the round's lines and prints kitchen tickets.",
+        "summary": "Accept a held QR round",
+        "x-sail": {
+          "op": "rounds.accept",
+          "tier": "T2",
+          "min_role": "server",
+          "override_allowed": false,
+          "reason_required": false,
+          "dry_run": true,
+          "principals": [
+            "staff",
+            "agent"
+          ],
+          "emits": [
+            "round.accepted",
+            "order.fired",
+            "print_job.created"
+          ],
+          "mcp": {
+            "expose": true,
+            "toolsets": [
+              "pos.order"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "seq": {
+                            "type": "integer"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "occurredAt": {
+                            "type": "string"
+                          },
+                          "businessDate": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "seq",
+                          "type",
+                          "occurredAt",
+                          "businessDate"
+                        ]
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "events",
+                    "warnings"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict (state, version or idempotency)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invariant violation or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/rounds/{id}/reject": {
+      "post": {
+        "tags": [
+          "guest"
+        ],
+        "operationId": "rounds.reject",
+        "description": "Removes the round's lines with the given reason and releases daily caps.",
+        "summary": "Reject a held QR round",
+        "x-sail": {
+          "op": "rounds.reject",
+          "tier": "T2",
+          "min_role": "server",
+          "override_allowed": false,
+          "reason_required": true,
+          "dry_run": true,
+          "principals": [
+            "staff",
+            "agent"
+          ],
+          "emits": [
+            "round.rejected",
+            "line.voided"
+          ],
+          "mcp": {
+            "expose": true,
+            "toolsets": [
+              "pos.order"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "seq": {
+                            "type": "integer"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "occurredAt": {
+                            "type": "string"
+                          },
+                          "businessDate": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "seq",
+                          "type",
+                          "occurredAt",
+                          "businessDate"
+                        ]
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "events",
+                    "warnings"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict (state, version or idempotency)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invariant violation or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/outlets/{id}/service-requests": {
+      "get": {
+        "tags": [
+          "guest"
+        ],
+        "operationId": "service_requests.list",
+        "description": "Open and recently acknowledged requests.",
+        "summary": "Table requests of an outlet",
+        "x-sail": {
+          "op": "service_requests.list",
+          "tier": "T0",
+          "min_role": "server",
+          "override_allowed": false,
+          "reason_required": false,
+          "dry_run": false,
+          "principals": [
+            "staff",
+            "station",
+            "agent"
+          ],
+          "emits": [],
+          "mcp": {
+            "expose": true,
+            "toolsets": [
+              "pos.read"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "acknowledged"
+              ]
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": {}
+                      }
+                    },
+                    "next_cursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "next_cursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict (state, version or idempotency)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invariant violation or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/service-requests/{id}/acknowledge": {
+      "post": {
+        "tags": [
+          "guest"
+        ],
+        "operationId": "service_requests.acknowledge",
+        "description": "Marks the request done.",
+        "summary": "Acknowledge a table request",
+        "x-sail": {
+          "op": "service_requests.acknowledge",
+          "tier": "T1",
+          "min_role": "server",
+          "override_allowed": false,
+          "reason_required": false,
+          "dry_run": false,
+          "principals": [
+            "staff",
+            "agent"
+          ],
+          "emits": [
+            "service_request.acknowledged"
+          ],
+          "mcp": {
+            "expose": true,
+            "toolsets": [
+              "pos.order"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "seq": {
+                            "type": "integer"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "occurredAt": {
+                            "type": "string"
+                          },
+                          "businessDate": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "seq",
+                          "type",
+                          "occurredAt",
+                          "businessDate"
+                        ]
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "events",
+                    "warnings"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict (state, version or idempotency)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invariant violation or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tables/{id}/qr/rotate": {
+      "post": {
+        "tags": [
+          "guest"
+        ],
+        "operationId": "tables.rotate_qr_token",
+        "description": "Old QR codes for the table stop working. Admin.",
+        "summary": "Rotate a table's QR token",
+        "x-sail": {
+          "op": "tables.rotate_qr_token",
+          "tier": "T3",
+          "min_role": "admin",
+          "override_allowed": false,
+          "reason_required": false,
+          "dry_run": false,
+          "principals": [
+            "staff"
+          ],
+          "emits": [
+            "table.qr_rotated"
+          ],
+          "mcp": {
+            "expose": false,
+            "toolsets": []
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "url": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "url"
+                      ]
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "seq": {
+                            "type": "integer"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "occurredAt": {
+                            "type": "string"
+                          },
+                          "businessDate": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "seq",
+                          "type",
+                          "occurredAt",
+                          "businessDate"
+                        ]
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "events",
+                    "warnings"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict (state, version or idempotency)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invariant violation or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/outlets/{id}/qr-sheet.pdf": {
+      "get": {
+        "tags": [
+          "guest"
+        ],
+        "operationId": "tables.qr_sheet",
+        "description": "Rotates every table token at the outlet and returns a PDF of QR cards for ordinary printers. Admin.",
+        "summary": "Printable QR sheet (PDF)",
+        "x-sail": {
+          "op": "tables.qr_sheet",
+          "tier": "T3",
+          "min_role": "admin",
+          "override_allowed": false,
+          "reason_required": false,
+          "dry_run": false,
+          "principals": [
+            "staff"
+          ],
+          "emits": [
+            "table.qr_rotated"
+          ],
+          "mcp": {
+            "expose": false,
+            "toolsets": []
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PDF of QR cards",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }

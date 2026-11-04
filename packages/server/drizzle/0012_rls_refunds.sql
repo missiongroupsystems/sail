@@ -21,7 +21,7 @@ CREATE TRIGGER refund_tenders_immutable BEFORE UPDATE OR DELETE ON refund_tender
 -- Invariant (at commit): a refund's lines and tenders both add up to its total; each line's refunds never exceed
 -- its allocation on that check; each payment's refunds never exceed what it paid.
 CREATE OR REPLACE FUNCTION sail.check_refund_sums() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, sail AS $$
 DECLARE r record; lines_total integer; tenders_total integer; alloc record; refunded record; pay_amount integer; pay_refunded integer; v_check uuid;
 BEGIN
   SELECT * INTO r FROM refunds WHERE id = NEW.refund_id;

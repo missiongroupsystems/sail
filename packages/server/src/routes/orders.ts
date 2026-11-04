@@ -11,7 +11,7 @@ import { recordAudit } from "../lib/audit.js";
 import { principalCanSeeOutlet, principalRole, type Principal } from "../auth/principal.js";
 import { compileMenu } from "../services/menu.js";
 import { buildLines, resolveModifiers, type LineInput } from "../services/lines.js";
-import { bumpVersion, loadSnapshot, lockOrder, nextOrderNo, OPEN_STATUSES, openOrderForTable, paidTotal, repriceOrder, resolveUnitPrice, tableExists, type OrderSnapshot } from "../services/orders.js";
+import { bumpVersion, loadSnapshot, lockOrder, nextOrderNo, OPEN_STATUSES, openOrderForTable, orderClosed, paidTotal, repriceOrder, resolveUnitPrice, tableExists, type OrderSnapshot } from "../services/orders.js";
 import { requireRoleOrOverride } from "../services/overrides.js";
 import { activeRules } from "../services/pricing-rules.js";
 import { releaseDailyCap } from "./catalogue.js";
@@ -510,6 +510,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       await db().update(orderLines).set({ status: "voided", voidedAt: now, voidReason: `Order cancelled: ${b.reason}`, voidedBy: p.type === "staff" ? p.id : null, baseAmount: 0, discountAmount: 0, netAmount: 0, feeAmount: 0, gstAmount: 0, total: 0 }).where(eq(orderLines.id, l.id));
     }
     await db().update(orders).set({ status: "cancelled", cancelledAt: now, cancelReason: b.reason }).where(eq(orders.id, id));
+    await orderClosed(id);
     const ev = await emit(c, p, o, "order.cancelled", { reason: b.reason }, { reason: { text: b.reason } });
     await recordAudit(p, { action: "orders.cancel", targetKind: "order", targetId: id, outletId: o.outletId, reason: b.reason });
     return finish(c, p, id, [ev]);

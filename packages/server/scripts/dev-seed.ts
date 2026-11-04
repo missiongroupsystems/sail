@@ -93,7 +93,7 @@ export async function devSeed(url: string, boot: BootstrapResult): Promise<void>
 
       // Channel links: POS and Scan to Order.
       await tx`insert into channel_links (merchant_id, channel, outlet_id, brand_id, menu_id) values (${m}, 'pos', ${boot.outletId}, ${boot.brandId}, ${menuId})`;
-      await tx`insert into channel_links (merchant_id, channel, outlet_id, brand_id, menu_id, hold_orders, service_requests) values (${m}, 'scan_to_order', ${boot.outletId}, ${boot.brandId}, ${menuId}, true, ${JSON.stringify(["Water", "Cutlery", "Chilli", "Serviettes"])}::jsonb)`;
+      await tx`insert into channel_links (merchant_id, channel, outlet_id, brand_id, menu_id, hold_orders, service_requests) values (${m}, 'scan_to_order', ${boot.outletId}, ${boot.brandId}, ${menuId}, true, ${tx.json(["Water", "Cutlery", "Chilli", "Serviettes"])})`;
 
       // Floor plan.
       const area = async (name: string, sort: number) => {
@@ -125,7 +125,7 @@ export async function devSeed(url: string, boot: BootstrapResult): Promise<void>
       // Pricing rules: the seed set plus the worked-example rules.
       for (const rule of SEED_RULES) {
         const parsed = PricingRuleSchema.parse(rule);
-        await tx`insert into pricing_rules (merchant_id, rule_key, version, status, effective_from, body, note, created_by) values (${m}, ${parsed.id}, 1, 'active', '2026-01-01T00:00:00Z', ${JSON.stringify({ ...parsed, version: 1 })}::jsonb, 'seed', 'system')`;
+        await tx`insert into pricing_rules (merchant_id, rule_key, version, status, effective_from, body, note, created_by) values (${m}, ${parsed.id}, 1, 'active', '2026-01-01T00:00:00Z', ${tx.json({ ...parsed, version: 1 })}, 'seed', 'system')`;
       }
       const extra = [
         { id: "promo:25-off-food", kind: "discount", name: "25% off food", calc: "percent", value: { type: "fixed", amount: 2500 }, scope: { type: "categories", category_ids: [food] }, priority: 10, application: "auto", report_class: "promo", conditions: { order_types: ["dine_in", "takeaway"] } },
@@ -134,7 +134,7 @@ export async function devSeed(url: string, boot: BootstrapResult): Promise<void>
       ];
       for (const r of extra) {
         const parsed = PricingRuleSchema.parse(r);
-        await tx`insert into pricing_rules (merchant_id, rule_key, version, status, effective_from, body, note, created_by) values (${m}, ${parsed.id}, 1, 'active', '2026-01-01T00:00:00Z', ${JSON.stringify({ ...parsed, version: 1 })}::jsonb, 'demo', 'system')`;
+        await tx`insert into pricing_rules (merchant_id, rule_key, version, status, effective_from, body, note, created_by) values (${m}, ${parsed.id}, 1, 'active', '2026-01-01T00:00:00Z', ${tx.json({ ...parsed, version: 1 })}, 'demo', 'system')`;
       }
 
       // POS layout.
@@ -145,7 +145,7 @@ export async function devSeed(url: string, boot: BootstrapResult): Promise<void>
         { id: "drinks", name: "Drinks", tiles: [{ id: "hot", kind: "folder", label: "Hot", color: "teal", access_level: "everyone", tiles: [tile("d1", "Kopi", kopi, "teal"), tile("d2", "Teh Tarik", teh, "teal")] }, tile("d3", "Kopi Peng", kopiPeng, "sky"), tile("d4", "Canned drink", can, "sky"), tile("d5", "Tiger", tiger, "indigo", "cashier"), tile("d6", "House wine", wine, "plum", "cashier")] },
       ];
       const layoutId = randomUUID();
-      await tx`insert into pos_layouts (id, merchant_id, brand_id, name, pages) values (${layoutId}, ${m}, ${boot.brandId}, 'Harbour Kitchen main', ${JSON.stringify(pages)}::jsonb)`;
+      await tx`insert into pos_layouts (id, merchant_id, brand_id, name, pages) values (${layoutId}, ${m}, ${boot.brandId}, 'Harbour Kitchen main', ${tx.json(pages)})`;
       await tx`update stations set layout_id = ${layoutId} where id = ${boot.stationId}`;
 
       // More staff for PIN sign-in.

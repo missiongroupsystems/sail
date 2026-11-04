@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { PairingPanel } from "@/components/backoffice/PairingPanel";
 import { FormSection, RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
@@ -174,7 +175,7 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
           station.paired ? (
             <StatusDot status="paid" label={station.device_label ? `Paired · ${station.device_label}` : "Paired"} />
           ) : (
-            <StatusDot status="neutral" label="Not paired. Pairing an iPad arrives with the POS (v0.4)." muted />
+            <StatusDot status="neutral" label="Not paired. Issue a pairing code below." muted />
           )
         ) : (
           "A station is one iPad at the counter or on the floor."
@@ -224,6 +225,11 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
             Seats
           </RhfSwitch>
         </FormSection>
+        {station ? (
+          <FormSection title="Pairing" hint="An iPad becomes this station by entering a one-time code. The code expires in 10 minutes.">
+            <PairingPanel station={station} />
+          </FormSection>
+        ) : null}
         <InlineError error={save.error ?? archive.error} />
       </form>
     </Sheet>

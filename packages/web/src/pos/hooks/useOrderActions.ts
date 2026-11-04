@@ -1,0 +1,418 @@
+"use client";
+
+import { useQueryClient } from "@tanstack/react-query";
+import { formatCents } from "@sail/ui";
+import { useCallback, useMemo } from "react";
+import { ApiError, idempotencyKey, toApiError } from "@/lib/api";
+import * as reg from "../api/register";
+import type { CompiledProduct, ManualRule, MutationResult, OrderSnapshot, OrderType, OverrideAction, Role, SnapshotLine } from "../api/types";
+import { useSessionStore } from "../state/session";
+import { useUiStore } from "../state/ui";
+import { applySnapshot, posKeys } from "./queries";
+import { useApi } from "./useApi";
+
+const RANK: Record<Role, number> = { server: 10, cashier: 20, manager: 30, finance: 40, admin: 50 };
+const MIN_ROLE: Record<OverrideAction, Role> = { "lines.void_fired": "manager", "lines.add_open_price": "manager", "adjustments.apply_manual": "server", "adjustments.remove": "server" };
+
+export function roleAtLeast(role: Role | null | undefined, min: Role): boolean {
+  return role ? RANK[role] >= RANK[min] : false;
+}
+
+export type AddLineInput = {
+  product: CompiledProduct;
+  quantity: number;
+  modifiers?: { group_id: string; product_id: string; name: string; price: number; quantity?: number }[];
+  notes?: string | null;
+  seat?: number | null;
+  hold?: boolean;
+  openPrice?: number | null;
+  orderType: OrderType;
+};
+
+/**
+ * Every change to one order, with the register's rules applied on the client
+ * side of the contract: optimistic lines that never show a guessed amount,
+ * `expected_version` on edits with a quiet retry for new lines, Undo for T1
+ * actions, and the manager approval sheet for T3 actions (design 2.5, 4.3, 4.7).
+ */
+export function useOrderActions(orderId: string) {
+  const api = useApi();
+  const qc = useQueryClient();
+  const role = useSessionStore((s) => s.staff?.role ?? null);
+  const { notify, showUndo, beginMutation, endMutation, requestOverride } = useUiStore.getState();
+
+  const key = posKeys.order(orderId);
+  const snapshot = useCallback(() => qc.getQueryData<OrderSnapshot>(key), [qc, key]);
+
+  const fail = useCallback(
+    (e: unknown) => {
+      const err = toApiError(e);
+      notify({ text: err.message, remedy: err.remedy ?? null, tone: "alert", orderId }, 8000);
+    },
+    [notify, orderId],
+  );
+
+  /**
+   * Run a register mutation with `expected_version`, keep the snapshot it
+   * returns, and handle a version conflict: refetch, then either retry once
+   * without a version (safe for adding lines) or tell the user in one line.
+   */
+  const run = useCallback(
+    async (exec: (expectedVersion: number | null) => Promise<MutationResult>, opts: { versioned?: boolean; onConflict?: "retry-unversioned" | "refetch"; onRetried?: () => void } = {}): Promise<OrderSnapshot | null> => {
+      beginMutation(orderId);
+      try {
+        const current = snapshot();
+        const expected = opts.versioned === false ? null : (current?.version ?? null);
+        try {
+          const res = await exec(expected);
+          applySnapshot(qc, res.data);
+          for (const w of res.warnings) notify({ text: w, tone: "info", orderId }, 6000);
+          return res.data;
+        } catch (e) {
+          if (e instanceof ApiError && e.code === "version_conflict") {
+            await qc.invalidateQueries({ queryKey: key });
+            if (opts.onConflict === "retry-unversioned") {
+              const res = await exec(null);
+              applySnapshot(qc, res.data);
+              opts.onRetried?.();
+              return res.data;
+            }
+            notify({ text: "The order changed on another station", remedy: "Check the order and try again.", tone: "info", orderId }, 6000);
+            return null;
+          }
+          throw e;
+        }
+      } finally {
+        endMutation(orderId);
+      }
+    },
+    [beginMutation, endMutation, key, notify, orderId, qc, snapshot],
+  );
+
+  /**
+   * Manager approval (design 4.7): if the role is below the action's minimum,
+   * ask first; if the register still says permission_denied with
+   * override_allowed, ask then. Returns null when the approval was declined.
+   */
+  const withApproval = useCallback(
+    async <T,>(action: OverrideAction, target: { kind: "order" | "order_line"; id: string }, title: string, quote: string | null, exec: (overrideId: string | null) => Promise<T>, minRole: Role = MIN_ROLE[action]): Promise<T | null> => {
+      const ask = async () => {
+        const grant = await requestOverride({ action, targetKind: target.kind, targetId: target.id, title, quote });
+        return grant;
+      };
+      if (!roleAtLeast(role, minRole)) {
+        const grant = await ask();
+        if (!grant) return null;
+        return exec(grant.override_id);
+      }
+      try {
+        return await exec(null);
+      } catch (e) {
+        if (e instanceof ApiError && e.code === "permission_denied" && e.details?.override_allowed) {
+          const grant = await ask();
+          if (!grant) return null;
+          return exec(grant.override_id);
+        }
+        throw e;
+      }
+    },
+    [requestOverride, role],
+  );
+
+  const addLine = useCallback(
+    async (input: AddLineInput) => {
+      const lineId = idempotencyKey();
+      const idem = idempotencyKey();
+      const now = new Date().toISOString();
+      const optimistic: SnapshotLine = {
+        id: lineId,
+        product_id: input.product.id,
+        name: input.product.name,
+        kitchen_name: input.product.kitchen_name,
+        sku: input.product.sku,
+        quantity: input.quantity,
+        unit_price: 0,
+        open_price: input.openPrice ?? null,
+        modifiers: (input.modifiers ?? []).map((m) => ({ modifier_id: `${m.group_id}:${m.product_id}`, product_id: m.product_id, name: m.name, quantity: m.quantity ?? 1, price: m.price, group_id: m.group_id })),
+        notes: input.notes ?? null,
+        seat_no: input.seat ?? null,
+        source: "pos",
+        round_id: null,
+        status: input.hold ? "held" : "pending",
+        fire_round: null,
+        fired_at: null,
+        voided_at: null,
+        void_reason: null,
+        amounts: { base: 0, discount: 0, net: 0, fee: 0, gst: 0, total: 0 },
+        tags: input.product.tags,
+        category_id: input.product.category_id,
+        sort: Number.MAX_SAFE_INTEGER,
+        added_by: null,
+        created_at: now,
+        optimistic: true,
+      };
+      qc.setQueryData<OrderSnapshot>(key, (s) => (s ? { ...s, lines: [...s.lines, optimistic] } : s));
+      const body: reg.LineInput = {
+        line_id: lineId,
+        product_id: input.product.id,
+        quantity: input.quantity,
+        modifiers: input.modifiers?.map((m) => ({ group_id: m.group_id, product_id: m.product_id, quantity: m.quantity ?? 1 })),
+        notes: input.notes ?? null,
+        seat_no: input.seat ?? null,
+        hold: input.hold ?? false,
+        open_price: input.openPrice ?? null,
+      };
+      const label = `Added ${input.product.name}${input.quantity > 1 ? ` ×${input.quantity}` : ""}`;
+      try {
+        // A version conflict means another station changed the order meanwhile; adding is safe to replay (design 4.3).
+        const exec = (overrideId: string | null) =>
+          run((expected) => reg.addLines(api, orderId, [body], { key: idem, expectedVersion: expected, overrideId }), {
+            onConflict: "retry-unversioned",
+            onRetried: () => notify({ text: "Your 1 new line was kept", tone: "info", orderId }, 4000),
+          });
+        const snap = input.openPrice != null ? await withApproval("lines.add_open_price", { kind: "order", id: orderId }, `Add ${input.product.name} at ${formatCents(input.openPrice)}`, "Open price · needs a manager", exec) : await exec(null);
+        if (!snap) {
+          qc.setQueryData<OrderSnapshot>(key, (s) => (s ? { ...s, lines: s.lines.filter((l) => l.id !== lineId) } : s));
+          return null;
+        }
+        showUndo(label, async () => {
+          try {
+            await run((expected) => reg.voidLine(api, orderId, lineId, { reason_text: "Undo" }, { expectedVersion: expected }));
+          } catch (e) {
+            fail(e);
+          }
+        });
+        return snap;
+      } catch (e) {
+        qc.setQueryData<OrderSnapshot>(key, (s) => (s ? { ...s, lines: s.lines.filter((l) => l.id !== lineId) } : s));
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, key, notify, orderId, qc, run, showUndo, withApproval],
+  );
+
+  const patchLine = useCallback(
+    async (lineId: string, patch: reg.LinePatch, undoLabel?: string | null) => {
+      try {
+        const before = snapshot()?.lines.find((l) => l.id === lineId);
+        const snap = await run((expected) => reg.updateLine(api, orderId, lineId, patch, { expectedVersion: expected }));
+        if (snap && undoLabel && before) {
+          const revert: reg.LinePatch = {};
+          if (patch.hold !== undefined) revert.hold = before.status === "held";
+          if (patch.quantity !== undefined) revert.quantity = before.quantity;
+          if (patch.seat_no !== undefined) revert.seat_no = before.seat_no;
+          if (patch.notes !== undefined) revert.notes = before.notes;
+          showUndo(undoLabel, async () => {
+            try {
+              await run((expected) => reg.updateLine(api, orderId, lineId, revert, { expectedVersion: expected }));
+            } catch (e) {
+              fail(e);
+            }
+          });
+        }
+        return snap;
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, orderId, run, showUndo, snapshot],
+  );
+
+  /** Remove (before sending) or Void (after sending, with manager approval). */
+  const removeLine = useCallback(
+    async (line: SnapshotLine, reason: { id?: string; text: string }, quantity?: number) => {
+      const body = { reason_id: reason.id, reason_text: reason.id ? undefined : reason.text, quantity };
+      try {
+        if (line.status === "fired") {
+          const qty = quantity ?? line.quantity;
+          return await withApproval(
+            "lines.void_fired",
+            { kind: "order_line", id: line.id },
+            `Void ${line.name} ×${qty}`,
+            `already sent · ${formatCents(line.amounts.total)}${line.kitchen_name ? " · prints a void ticket" : ""}`,
+            (overrideId) => run((expected) => reg.voidLine(api, orderId, line.id, body, { expectedVersion: expected, overrideId })),
+          );
+        }
+        return await run((expected) => reg.voidLine(api, orderId, line.id, body, { expectedVersion: expected }));
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, orderId, run, withApproval],
+  );
+
+  const send = useCallback(async () => {
+    try {
+      return await run((expected) => reg.fireOrder(api, orderId, {}, { expectedVersion: expected }));
+    } catch (e) {
+      fail(e);
+      return null;
+    }
+  }, [api, fail, orderId, run]);
+
+  const holdAllNew = useCallback(async () => {
+    const s = snapshot();
+    if (!s) return null;
+    const ids = s.lines.filter((l) => l.status === "pending" && !l.optimistic).map((l) => l.id);
+    if (!ids.length) return null;
+    try {
+      let last: OrderSnapshot | null = null;
+      for (const id of ids) last = await run((expected) => reg.updateLine(api, orderId, id, { hold: true }, { expectedVersion: expected }));
+      if (last) {
+        showUndo(`Held ${ids.length} ${ids.length === 1 ? "line" : "lines"}`, async () => {
+          try {
+            for (const id of ids) await run((expected) => reg.updateLine(api, orderId, id, { hold: false }, { expectedVersion: expected }));
+          } catch (e) {
+            fail(e);
+          }
+        });
+      }
+      return last;
+    } catch (e) {
+      fail(e);
+      return null;
+    }
+  }, [api, fail, orderId, run, showUndo, snapshot]);
+
+  const releaseHeld = useCallback(async () => {
+    const s = snapshot();
+    if (!s) return null;
+    const ids = s.lines.filter((l) => l.status === "held").map((l) => l.id);
+    try {
+      let last: OrderSnapshot | null = null;
+      for (const id of ids) last = await run((expected) => reg.updateLine(api, orderId, id, { hold: false }, { expectedVersion: expected }));
+      return last;
+    } catch (e) {
+      fail(e);
+      return null;
+    }
+  }, [api, fail, orderId, run, snapshot]);
+
+  const changeType = useCallback(
+    async (input: reg.ChangeTypeInput) => {
+      try {
+        return await run((expected) => reg.changeOrderType(api, orderId, input, { expectedVersion: expected }));
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, orderId, run],
+  );
+
+  const moveTable = useCallback(
+    async (tableId: string) => {
+      try {
+        return await run((expected) => reg.moveTable(api, orderId, tableId, { expectedVersion: expected }));
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, orderId, run],
+  );
+
+  const attachCustomer = useCallback(
+    async (customerId: string) => {
+      try {
+        return await run((expected) => reg.attachCustomer(api, orderId, customerId, { expectedVersion: expected }));
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, orderId, run],
+  );
+
+  const detachCustomer = useCallback(async () => {
+    try {
+      return await run((expected) => reg.detachCustomer(api, orderId, { expectedVersion: expected }));
+    } catch (e) {
+      fail(e);
+      return null;
+    }
+  }, [api, fail, orderId, run]);
+
+  const updateDetails = useCallback(
+    async (patch: reg.DetailsPatch) => {
+      try {
+        return await run((expected) => reg.updateOrderDetails(api, orderId, patch, { expectedVersion: expected }));
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, orderId, run],
+  );
+
+  const cancel = useCallback(
+    async (reason: string) => {
+      try {
+        return await run((expected) => reg.cancelOrder(api, orderId, reason, { expectedVersion: expected }));
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, orderId, run],
+  );
+
+  const markReady = useCallback(async () => {
+    try {
+      return await run((expected) => reg.markReady(api, orderId, { expectedVersion: expected }));
+    } catch (e) {
+      fail(e);
+      return null;
+    }
+  }, [api, fail, orderId, run]);
+
+  /** Apply a manual rule (design 4.3 Discount). The rule's own minimum role decides whether to ask a manager first. */
+  const applyDiscount = useCallback(
+    async (rule: ManualRule, enteredValue: number | null, reason: string | null, lineIds: string[] | null) => {
+      const applicationId = idempotencyKey();
+      const input: reg.AdjustmentInput = { application_id: applicationId, rule_key: rule.rule_key, entered_value: enteredValue, reason, line_ids: lineIds };
+      const valueText = rule.value.type === "open" && enteredValue != null ? (rule.calc === "percent" ? `${enteredValue / 100}%` : formatCents(enteredValue)) : null;
+      try {
+        return await withApproval(
+          "adjustments.apply_manual",
+          { kind: "order", id: orderId },
+          `Apply ${rule.name}${valueText ? ` · ${valueText}` : ""}`,
+          reason ? `Reason: ${reason}` : null,
+          (overrideId) => run((expected) => reg.applyAdjustment(api, orderId, input, { expectedVersion: expected, overrideId })),
+          rule.min_role,
+        );
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, orderId, run, withApproval],
+  );
+
+  const removeDiscount = useCallback(
+    async (applicationId: string, ruleName: string, minRole: Role) => {
+      try {
+        return await withApproval(
+          "adjustments.remove",
+          { kind: "order", id: orderId },
+          `Remove ${ruleName}`,
+          null,
+          (overrideId) => run((expected) => reg.removeAdjustment(api, orderId, applicationId, { expectedVersion: expected, overrideId })),
+          minRole,
+        );
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, orderId, run, withApproval],
+  );
+
+  return useMemo(
+    () => ({ addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, role }),
+    [addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, role],
+  );
+}

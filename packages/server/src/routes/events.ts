@@ -51,7 +51,7 @@ export function eventRoutes(app: OpenAPIHono<AppEnv>) {
       method: "get",
       path: "/v1/outlets/{id}/events",
       tags: ["events"],
-      request: { params: z.object({ id: z.uuid() }), query: z.object({ after: z.coerce.number().int().min(0).default(0), limit: z.coerce.number().int().min(1).max(1000).default(500), types: z.string().optional() }) },
+      request: { params: z.object({ id: z.uuid() }), query: z.object({ after: z.coerce.number().int().min(0).default(0), limit: z.coerce.number().int().min(1).max(1000).default(500), types: z.string().optional(), aggregate_id: z.uuid().optional() }) },
       responses: { 200: jsonResponse(z.object({ data: z.array(EventSchema), latest_seq: z.number().int(), has_more: z.boolean() })), ...errorResponses },
     },
     async (c) => {
@@ -64,6 +64,7 @@ export function eventRoutes(app: OpenAPIHono<AppEnv>) {
         const types = q.types.split(",").filter(Boolean);
         conds.push(sql`${events.type} = any(${types})`);
       }
+      if (q.aggregate_id) conds.push(eq(events.aggregateId, q.aggregate_id));
       const rows = await db()
         .select()
         .from(events)

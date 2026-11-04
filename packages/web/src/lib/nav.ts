@@ -24,10 +24,10 @@ export type Section = {
 /** Every section from design 3.2, in order. Unbuilt sections still render, never a gap. */
 export const SECTIONS: Section[] = [
   { href: "/today", label: "Today", icon: Sun },
-  { href: "/orders", label: "Orders", icon: Receipt, arrives: "v0.4" },
-  { href: "/menu", label: "Menu", icon: BookOpen, arrives: "v0.3" },
-  { href: "/pricing", label: "Pricing", icon: Tags, arrives: "v0.3" },
-  { href: "/floor", label: "Floor & QR", icon: LayoutGrid, arrives: "v0.4" },
+  { href: "/orders", label: "Orders", icon: Receipt },
+  { href: "/menu", label: "Menu", icon: BookOpen },
+  { href: "/pricing", label: "Pricing", icon: Tags },
+  { href: "/floor", label: "Floor & QR", icon: LayoutGrid },
   { href: "/printing", label: "Printing", icon: Printer, arrives: "v0.5" },
   { href: "/team", label: "Team", icon: Users },
   { href: "/reports", label: "Reports", icon: ChartNoAxesColumn, arrives: "v0.9" },
@@ -40,5 +40,26 @@ export const SETTINGS_TABS = [
   { href: "/settings/outlets", label: "Outlets" },
   { href: "/settings/brands", label: "Brands" },
   { href: "/settings/stations", label: "Stations" },
+  { href: "/settings/channels", label: "Channels" },
+  { href: "/settings/tenders", label: "Tenders" },
+  { href: "/settings/void-reasons", label: "Void reasons" },
   { href: "/settings/merchant", label: "Merchant" },
+] as const;
+
+/** Menu section tabs (design 3.2): products, modifiers, menus and sections, availability, sold out. */
+export const MENU_TABS = [
+  { href: "/menu/products", label: "Products" },
+  { href: "/menu/modifiers", label: "Modifier groups" },
+  { href: "/menu/menus", label: "Menus & sections" },
+  { href: "/menu/categories", label: "Categories" },
+  { href: "/menu/availability", label: "Availability" },
+  { href: "/menu/sold-out", label: "Sold out" },
+  { href: "/menu/import", label: "Import" },
+] as const;
+
+/** Pricing section tabs: rules, simulator, customer groups; tax and rounding live in merchant settings. */
+export const PRICING_TABS = [
+  { href: "/pricing/rules", label: "Rules" },
+  { href: "/pricing/simulator", label: "Simulator" },
+  { href: "/pricing/customers", label: "Customers & groups" },
 ] as const;

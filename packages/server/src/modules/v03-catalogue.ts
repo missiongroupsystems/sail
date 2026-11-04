@@ -1,6 +1,6 @@
 import { registerRoutes } from "../app.js";
 import { registerWorkerTask } from "../worker/index.js";
-import { catalogueRoutes } from "../routes/catalogue.js";
+import { availabilityDeleteRoute, catalogueRoutes } from "../routes/catalogue.js";
 import { floorRoutes } from "../routes/floor.js";
 import { customerRoutes } from "../routes/customers.js";
 import { pricingRoutes } from "../routes/pricing.js";
@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 
 /** v0.3: catalogue, menus, channels, floor, reference lists, customers, pricing configuration and the legacy importer. */
 registerRoutes(catalogueRoutes);
+registerRoutes(availabilityDeleteRoute);
 registerRoutes(floorRoutes);
 registerRoutes(customerRoutes);
 registerRoutes(pricingRoutes);

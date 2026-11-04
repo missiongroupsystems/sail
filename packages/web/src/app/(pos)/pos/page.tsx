@@ -1,10 +1,10 @@
-export const metadata = { title: "POS" };
+"use client";
 
-/** The `(pos)` route group is reserved for the client-rendered station app (design 11.1). */
-export default function PosPlaceholder() {
-  return (
-    <main className="flex min-h-dvh items-center justify-center px-6">
-      <p className="text-line text-ink-2">The POS arrives in a later phase (v0.4: lock screen, floor plan and order entry).</p>
-    </main>
-  );
+import dynamic from "next/dynamic";
+
+// The station app reads localStorage and sessionStorage on boot, so it renders only in the browser (design 11.1).
+const PosApp = dynamic(() => import("@/pos/PosApp"), { ssr: false, loading: () => null });
+
+export default function PosPage() {
+  return <PosApp />;
 }

@@ -384,3 +384,115 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Back-office components (v0.3) live beside the core set; Tailwind scans them too. */
+@source "./backoffice";
+
+/* ---- POS (v0.4) ---------------------------------------------------------
+ * Tile palette (7.3): the 12 curated tile colours, tuned for both themes. Only
+ * the 6pt band on a tile uses them; the tile body stays neutral.
+ */
+:root {
+  --tile-slate: #5b6b82;
+  --tile-stone: #857b6c;
+  --tile-brass: #a8822e;
+  --tile-amber: #cf8400;
+  --tile-olive: #6f7f1f;
+  --tile-sage: #4f8a66;
+  --tile-teal: #1c8080;
+  --tile-sky: #2f80c9;
+  --tile-indigo: #4c57c4;
+  --tile-plum: #8a4596;
+  --tile-rose: #c84b6e;
+  --tile-brick: #b64b31;
+}
+[data-theme="service"] {
+  --tile-slate: #8c9bb3;
+  --tile-stone: #b3a896;
+  --tile-brass: #d6ad55;
+  --tile-amber: #f0a92c;
+  --tile-olive: #a3b43f;
+  --tile-sage: #79bd92;
+  --tile-teal: #4fb5b5;
+  --tile-sky: #6aaef0;
+  --tile-indigo: #8a94ee;
+  --tile-plum: #b97ac6;
+  --tile-rose: #ec7d9c;
+  --tile-brick: #e57a60;
+}
+
+/* POS motion (7.7): wrong-PIN shake, the 400 ms changed-row highlight, and the thin pricing progress line. */
+@keyframes pos-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-10px);
+  }
+  40% {
+    transform: translateX(10px);
+  }
+  60% {
+    transform: translateX(-6px);
+  }
+  80% {
+    transform: translateX(6px);
+  }
+}
+@keyframes pos-flash {
+  from {
+    background-color: color-mix(in srgb, var(--status-seated) 22%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+@keyframes pos-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes pos-line-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.pos-shake {
+  animation: pos-shake 320ms var(--ease-enter);
+}
+.pos-flash {
+  animation: pos-flash var(--dur-highlight) var(--ease-leave);
+}
+.pos-progress {
+  animation: pos-progress 1.2s linear infinite;
+}
+.pos-line-in {
+  animation: pos-line-in var(--dur-line) var(--ease-enter);
+}
+/* Tiles and POS controls: no selection, no iOS callout, no double-tap zoom (11.3). */
+.pos-touch {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* POS components live beside the core set; Tailwind scans them too. */
+@source "./pos";
+
+/* Table fills on the floor plan (7.3): status colour at 16% by day, 24% in Service, full strength on icon and outline. */
+:root {
+  --table-fill: 16%;
+}
+[data-theme="service"] {
+  --table-fill: 24%;
+}
