@@ -271,3 +271,15 @@ describe("OpenAPI contract and manifest", () => {
     expect(Object.keys(doc.paths).length).toBeGreaterThanOrEqual(12);
   });
 });
+
+describe("business-day time helpers", () => {
+  it("computes business dates across the cutoff and the next cutoff instant", async () => {
+    const { businessDateFor, nextCutoff, zonedToUtc } = await import("../src/lib/time.js");
+    // 01:30 Singapore on 5 Nov is still business day 4 Nov with a 04:00 cutoff.
+    expect(businessDateFor(new Date("2026-11-04T17:30:00Z"), "04:00", "Asia/Singapore")).toBe("2026-11-04");
+    expect(businessDateFor(new Date("2026-11-04T20:30:00Z"), "04:00", "Asia/Singapore")).toBe("2026-11-05");
+    expect(zonedToUtc("2026-11-05", "04:00", "Asia/Singapore").toISOString()).toBe("2026-11-04T20:00:00.000Z");
+    expect(nextCutoff(new Date("2026-11-04T13:00:00Z"), "04:00", "Asia/Singapore").toISOString()).toBe("2026-11-04T20:00:00.000Z");
+    expect(nextCutoff(new Date("2026-11-04T21:00:00Z"), "04:00", "Asia/Singapore").toISOString()).toBe("2026-11-05T20:00:00.000Z");
+  });
+});

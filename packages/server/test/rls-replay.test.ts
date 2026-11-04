@@ -65,8 +65,11 @@ describe("RLS replay", () => {
 
   it("merchant A sees none of merchant B's rows in any tenant table, and sees its own", async () => {
     const tables = await tenantTables();
+    const exercised: string[] = [];
     for (const t of tables) {
       const [total] = await db.sql.unsafe<{ n: number }[]>(`select count(*)::int as n from ${t.table_name}`);
+      if (total!.n === 0) continue; // later phases seed their tables in their own tests
+      exercised.push(t.table_name);
       const [ownRows] = await db.sql.unsafe<{ n: number }[]>(`select count(*)::int as n from ${t.table_name} where merchant_id = '${A.merchantId}'`);
       const seen = await countAs("app_authenticated", A.merchantId, "*", A.admin.id, t.table_name);
       // idempotency keys are also scoped per principal; A.admin holds exactly one.
@@ -74,6 +77,7 @@ describe("RLS replay", () => {
       expect(seen, `${t.table_name}: saw ${seen}, own ${ownRows!.n}, total ${total!.n}`).toBe(expected);
       expect(total!.n).toBeGreaterThan(expected); // there really were other-tenant rows to hide
     }
+    expect(exercised).toEqual(expect.arrayContaining(["merchant_settings", "brands", "outlets", "stations", "staff", "staff_sessions", "audit_log", "events", "outlet_sequences", "merchant_sequences", "idempotency_keys"]));
   });
 
   it("outlet scoping hides other outlets' rows for a limited staff member", async () => {

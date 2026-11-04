@@ -4,4 +4,4 @@
  * tasks. Keeping registration explicit makes the walking skeleton small and
  * the build order (roadmap) visible.
  */
-export {};
+import "./modules/v03-catalogue.js";

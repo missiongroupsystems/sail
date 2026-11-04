@@ -1,3 +1,7 @@
 export * from "./org.js";
 export * from "./staff.js";
 export * from "./system.js";
+export * from "./catalogue.js";
+export * from "./customers.js";
+export * from "./pricing.js";
+export * from "./imports.js";

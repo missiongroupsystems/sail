@@ -33,3 +33,27 @@ export function shiftDate(isoDate: string, days: number): string {
 export function nowIso(): string {
   return new Date().toISOString();
 }
+
+/** Convert a local date and time in `timeZone` to a UTC instant (handles any fixed or DST offset by iteration). */
+export function zonedToUtc(isoDate: string, time: string, timeZone: string): Date {
+  const [y, mo, d] = isoDate.split("-").map(Number) as [number, number, number];
+  const [h, mi] = time.split(":").map(Number) as [number, number];
+  let guess = Date.UTC(y, mo - 1, d, h, mi, 0, 0);
+  for (let i = 0; i < 2; i++) {
+    const local = localParts(new Date(guess), timeZone);
+    const [ly, lmo, ld] = local.date.split("-").map(Number) as [number, number, number];
+    const [lh, lmi] = local.time.split(":").map(Number) as [number, number];
+    const asIfUtc = Date.UTC(ly, lmo - 1, ld, lh, lmi, 0, 0);
+    const diff = asIfUtc - guess; // how far the zone is ahead of UTC at this instant
+    guess = Date.UTC(y, mo - 1, d, h, mi, 0, 0) - diff;
+  }
+  return new Date(guess);
+}
+
+/** The next business-day cutoff strictly after `now`. */
+export function nextCutoff(now: Date, cutoff: string, timeZone: string): Date {
+  const { date } = localParts(now, timeZone);
+  let candidate = zonedToUtc(date, cutoff, timeZone);
+  if (candidate.getTime() <= now.getTime()) candidate = zonedToUtc(shiftDate(date, 1), cutoff, timeZone);
+  return candidate;
+}
