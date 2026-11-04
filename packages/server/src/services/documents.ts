@@ -153,7 +153,7 @@ export async function createDigitalReceipt(input: { merchantId: string; outletId
   // Email and SMS providers are a v0.9 input (roadmap §6); until then the link and QR are the delivery.
   const deliveryStatus = input.channel === "email" || input.channel === "sms" ? "provider_not_configured" : "link_only";
   await db().insert(digitalReceipts).values({ token, merchantId: input.merchantId, outletId: input.outletId, checkId: input.checkId ?? null, refundId: input.refundId ?? null, document: input.document, channel: input.channel, destination: input.destination ?? null, deliveryStatus, expiresAt });
-  return { token, url: `${config().WEB_APP_URL.replace(/\/$/, "")}/r/${token}`, delivery_status: deliveryStatus };
+  return { token, url: `${config().GUEST_APP_URL.replace(/\/$/, "")}/r/${token}`, delivery_status: deliveryStatus };
 }
 
 export async function readDigitalReceipt(token: string) {
