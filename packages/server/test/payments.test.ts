@@ -261,7 +261,9 @@ describe("checks and payments", () => {
     const z = await call<{ data: { tenders: { tender: string; amount: number; rounding: number }[]; cash: { expected: number; float: number } } }>("GET", `/v1/outlets/${A.outletId}/z-report`, { token: cashierPin });
     expect(z.status).toBe(200);
     const cashTender = z.body.data.tenders.find((t) => t.tender === "Cash")!;
-    expect(cashTender.rounding).toBeGreaterThanOrEqual(1);
+    const [dayCash] = await db.sql`select coalesce(sum(amount),0)::int as amount, coalesce(sum(rounding_cents),0)::int as rounding from payments where outlet_id = ${A.outletId} and is_cash and status = 'recorded' and business_date = ${(await db.sql`select business_date from payments where id = ${cash.body.payment!.amount ? (await db.sql`select id from payments where check_id = ${added.body.data.checks[0]!.id}`)[0]!.id : ""}`)[0]!.business_date}`;
+    expect(cashTender).toMatchObject({ amount: dayCash!.amount, rounding: dayCash!.rounding });
+    expect(cashTender.amount).toBeGreaterThanOrEqual(total);
     const closed = await call<{ data: { expected_cash_cents: number; variance_cents: number; report: { cash: { float: number; cash_payments: number; rounding: number; expected: number } } } }>("POST", `/v1/shifts/${shift.body.data.id}/close`, { token: cashierPin, body: { counted_cash_cents: 20_000 + total + rounding - 100, variance_reason: "Short $1" } });
     expect(closed.status, JSON.stringify(closed.body)).toBe(200);
     expect(closed.body.data.report.cash).toMatchObject({ float: 20_000, cash_payments: total, rounding, expected: 20_000 + total + rounding });
