@@ -63,7 +63,7 @@ Web, guest and relay findings are summarised in "UI and relay" below; they were 
 
 Throughput rose from 126 to 177 requests/s with no gate rejections. The remaining gap to the 300 ms p95 target is not locking: reads that take no locks inflate 7× under the same load, which is the single event loop shared by the load generator and the server, and one small Postgres. The structural fixes are what carry over to staging; the number to confirm there is the p95 from a separate load-generating process against Fly in `sin` and Supabase in `ap-southeast-1`.
 
-**Tests.** Server 129 (was 117; one was failing at the start of the review because of finding 1), shared 278 (reference set 153 pricing cases plus 24 split and refund cases), relay 11 (was 3). `openapi:check` and `manifest:check` pass; the migration drift check is clean (0018 is hand-written).
+**Tests.** Server 129 (was 117; one was failing at the start of the review because of finding 1), shared 278 (reference set 153 pricing cases plus 24 split and refund cases), relay 11 (was 3). `openapi:check` and `manifest:check` pass; the migration drift check is clean (0018 is hand-written). Both contract smoke scripts pass against `dev:local` with the reviewed UIs' wrapper functions: `pnpm --filter @sail/web pos:smoke` (the reopen section now expects `order_has_refunds` on the refunded order and reopens a fresh takeaway order instead) and `pnpm --filter @sail/guest smoke`. Every package typechecks and the web, guest and server bundles build.
 
 ## UI and relay
 

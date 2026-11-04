@@ -427,21 +427,39 @@ if (quote) {
   }
 }
 
-// 24. Reopen (Manager+, same day) with an override, then complete again.
+// 24. Reopen (Manager+, same day) with an override, then complete again. An order that already has a refund cannot be
+// reopened (reversing its payments would double-count the refund), so the refunded order is refused and a fresh
+// takeaway order exercises the reopen flow.
 await expectError("orders.reopen as Cashier", () => reg.reopenOrder(api, billOrderId, "Closed by mistake"), "permission_denied");
-const reopenGrant = await step("overrides.grant orders.reopen", () => reg.grantOverride(api, { action: "orders.reopen", target_kind: "order", target_id: billOrderId, approver_pin: "222222" }));
-if (reopenGrant) {
-  const reopened = await step("orders.reopen with override", () => reg.reopenOrder(api, billOrderId, "Closed by mistake", { overrideId: reopenGrant.override_id }), (r) => `status ${r.data.status}, balance ${r.data.balance}, bills ${r.data.checks.map((c) => `${c.label}=${c.status}`).join(" ")}`);
-  if (reopened) {
-    bill = reopened.data;
-    // Reopening reverses the payments: every bill is open again and must be paid once more (the register's rule; see the report).
-    check("reopen reversed the payments", bill.balance === bill.totals.total && bill.checks.every((c) => c.status === "open"), `balance ${bill.balance} of ${bill.totals.total}`);
-    await expectError("orders.complete with a balance", () => reg.completeOrder(api, billOrderId, { expectedVersion: bill.version }), "invariant_violation");
-    for (const c of bill.checks.filter((x) => x.status === "open")) {
-      const paid = await step(`payments.record card ${c.label} (after reopen)`, () => reg.recordPayment(api, c.id, { payment_id: idempotencyKey(), tender_type_id: cardTender.id, amount: c.balance }, { expectedVersion: bill.version }), (r) => `order ${r.data.status}`);
-      if (paid) bill = paid.data;
+const refundedGrant = await step("overrides.grant orders.reopen (refunded order)", () => reg.grantOverride(api, { action: "orders.reopen", target_kind: "order", target_id: billOrderId, approver_pin: "222222" }));
+if (refundedGrant) {
+  const refused = await expectError("orders.reopen of a refunded order", () => reg.reopenOrder(api, billOrderId, "Closed by mistake", { overrideId: refundedGrant.override_id }), "invariant_violation");
+  if (refused) check("refusal names the refund", (refused.details as { invariant?: string } | undefined)?.invariant === "order_has_refunds", JSON.stringify(refused.details));
+}
+{
+  const reopenOrderId = idempotencyKey();
+  const openedTa = await step("orders.open takeaway (for reopen)", () => reg.openOrder(api, { order_id: reopenOrderId, order_type: "takeaway", takeaway_ref: "Reopen" }), (r) => r.data.order_no);
+  if (openedTa) {
+    let ro = (await reg.addLines(api, reopenOrderId, [{ line_id: idempotencyKey(), product_id: kopi.id, quantity: 1 }])).data;
+    ro = (await reg.fireOrder(api, reopenOrderId)).data;
+    const roBill = ro.checks[0]!;
+    const roPaid = await step("payments.record card (for reopen)", () => reg.recordPayment(api, roBill.id, { payment_id: idempotencyKey(), tender_type_id: cardTender.id, amount: roBill.balance }), (r) => `order ${r.data.status}`);
+    if (roPaid) ro = roPaid.data;
+    const reopenGrant = await step("overrides.grant orders.reopen", () => reg.grantOverride(api, { action: "orders.reopen", target_kind: "order", target_id: reopenOrderId, approver_pin: "222222" }));
+    if (reopenGrant) {
+      const reopened = await step("orders.reopen with override", () => reg.reopenOrder(api, reopenOrderId, "Closed by mistake", { overrideId: reopenGrant.override_id }), (r) => `status ${r.data.status}, balance ${r.data.balance}, bills ${r.data.checks.map((c) => `${c.label}=${c.status}`).join(" ")}`);
+      if (reopened) {
+        ro = reopened.data;
+        // Reopening reverses the payments: every bill is open again and must be paid once more.
+        check("reopen reversed the payments", ro.balance === ro.totals.total && ro.checks.every((c) => c.status === "open"), `balance ${ro.balance} of ${ro.totals.total}`);
+        await expectError("orders.complete with a balance", () => reg.completeOrder(api, reopenOrderId, { expectedVersion: ro.version }), "invariant_violation");
+        for (const c of ro.checks.filter((x) => x.status === "open")) {
+          const paid = await step(`payments.record card ${c.label} (after reopen)`, () => reg.recordPayment(api, c.id, { payment_id: idempotencyKey(), tender_type_id: cardTender.id, amount: c.balance }, { expectedVersion: ro.version }), (r) => `order ${r.data.status}`);
+          if (paid) ro = paid.data;
+        }
+        check("order completed again", ro.status === "completed", ro.status);
+      }
     }
-    check("order completed again", bill.status === "completed", bill.status);
   }
 }
 
