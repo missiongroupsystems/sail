@@ -5,3 +5,4 @@
  * the build order (roadmap) visible.
  */
 import "./modules/v03-catalogue.js";
+import "./modules/v04-orders.js";

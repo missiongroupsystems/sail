@@ -8,7 +8,7 @@ import type { AppEnv } from "../lib/context.js";
 import { defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
-import { hashSecret } from "../auth/tokens.js";
+import { hashSecret, pinLookup } from "../auth/tokens.js";
 
 export const StaffSchema = z.object({
   id: z.string(),
@@ -106,6 +106,7 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
         outletIds: body.outlet_ids ?? [],
         brandIds: body.brand_ids ?? [],
         pinHash: body.pin ? hashSecret(body.pin) : null,
+        pinLookup: body.pin ? pinLookup(p.merchantId, body.pin) : null,
         legacyId: body.legacy_id ?? null,
         riskCeiling: body.risk_ceiling ?? null,
       })
@@ -129,7 +130,7 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
         ...(body.role !== undefined && { role: body.role }),
         ...(body.outlet_ids !== undefined && { outletIds: body.outlet_ids }),
         ...(body.brand_ids !== undefined && { brandIds: body.brand_ids }),
-        ...(body.pin !== undefined && { pinHash: body.pin ? hashSecret(body.pin) : null, pinFailedAttempts: 0, pinLockedUntil: null }),
+        ...(body.pin !== undefined && { pinHash: body.pin ? hashSecret(body.pin) : null, pinLookup: body.pin ? pinLookup(p.merchantId, body.pin) : null, pinFailedAttempts: 0, pinLockedUntil: null }),
         ...(body.legacy_id !== undefined && { legacyId: body.legacy_id }),
         ...(body.risk_ceiling !== undefined && { riskCeiling: body.risk_ceiling }),
         ...(body.active !== undefined && { active: body.active }),

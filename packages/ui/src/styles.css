@@ -1,0 +1,386 @@
+/*
+ * Sail design tokens and Tailwind registration (design.md section 7).
+ *
+ * Layers: base tokens -> theme (Day on :root, Service under [data-theme="service"])
+ * -> brand tokens ([data-brand] sets --brand-accent). Tailwind utilities read the
+ * tokens through `@theme inline`, so `bg-surface text-ink border-line` follow the
+ * active theme at runtime without a rebuild.
+ */
+@import "tailwindcss";
+
+/* Component source for Tailwind's scanner; the consuming app adds its own files. */
+@source "./components";
+
+/* ---- 7.3 Colour: Day --------------------------------------------------- */
+:root {
+  color-scheme: light;
+
+  --bg: #f6f3ee;
+  --surface: #ffffff;
+  --surface-2: #efebe4;
+  --line: #ddd7cd;
+  --ink: #1c1d1f;
+  --ink-2: #5e5a53;
+  --primary: #1c1d1f;
+  --on-primary: #f6f3ee;
+  --status-seated: #2563eb;
+  --status-sent: #b26b00;
+  --status-bill: #b4235e;
+  --status-paid: #1e7f4f;
+  --status-alert: #c62d1f;
+  --agent: #5b4cd6;
+
+  /* Brand layer (section 9). Only the accent is themeable; controls never change. */
+  --brand-accent: var(--agent);
+
+  /* ---- 7.2 Spacing: base unit 4pt; scale 4, 8, 12, 16, 24, 32, 48, 64 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ---- 7.6 Shape */
+  --radius-tile: 10px;
+  --radius-sheet: 16px;
+  --radius-chip: 9999px;
+  --hairline: 1px;
+
+  /* ---- 7.5 Touch targets */
+  --target-min: 44px;
+  --target-standard: 56px;
+  --dock-height: 72px;
+  --topbar-height: 56px;
+  --banner-height: 48px;
+
+  /* ---- 7.4 Type scale (POS sizes). The back office sets data-scale="compact". */
+  --fs-display: 48px;
+  --lh-display: 56px;
+  --fw-display: 500;
+  --fs-amount-xl: 34px;
+  --lh-amount-xl: 40px;
+  --fw-amount-xl: 600;
+  --fs-title: 24px;
+  --lh-title: 30px;
+  --fw-title: 600;
+  --fs-heading: 20px;
+  --lh-heading: 26px;
+  --fw-heading: 600;
+  --fs-line: 17px;
+  --lh-line: 24px;
+  --fw-line: 500;
+  --fs-body: 15px;
+  --lh-body: 22px;
+  --fw-body: 400;
+  --fs-caption: 13px;
+  --lh-caption: 18px;
+  --fw-caption: 500;
+
+  /* ---- 7.7 Motion */
+  --ease-enter: cubic-bezier(0.2, 0, 0, 1);
+  --ease-leave: cubic-bezier(0.4, 0, 1, 1);
+  --dur-press: 80ms;
+  --dur-line: 140ms;
+  --dur-move: 200ms;
+  --dur-sheet-open: 200ms;
+  --dur-sheet-close: 160ms;
+  --dur-highlight: 400ms;
+  --dur-banner: 160ms;
+
+  /* Elevation: one soft shadow, only for sheets over content; scrim at 40%. */
+  --shadow-sheet: 0 12px 40px rgba(28, 29, 31, 0.18);
+  --scrim: rgba(28, 29, 31, 0.4);
+}
+
+/* ---- 7.3 Colour: Service (dim dining rooms; charcoal, never pure black) */
+[data-theme="service"] {
+  color-scheme: dark;
+
+  --bg: #121315;
+  --surface: #1b1d20;
+  --surface-2: #24272b;
+  --line: #33373c;
+  --ink: #ece8e1;
+  --ink-2: #a9a49b;
+  --primary: #ece8e1;
+  --on-primary: #121315;
+  --status-seated: #5b9bff;
+  --status-sent: #f0b44a;
+  --status-bill: #f27aa5;
+  --status-paid: #4dc98c;
+  --status-alert: #ff6b5e;
+  --agent: #a99cff;
+
+  --shadow-sheet: 0 12px 40px rgba(0, 0, 0, 0.5);
+  --scrim: rgba(0, 0, 0, 0.4);
+}
+
+/* Back office: the same family one step smaller (14pt body). */
+[data-scale="compact"] {
+  --fs-display: 40px;
+  --lh-display: 48px;
+  --fs-amount-xl: 28px;
+  --lh-amount-xl: 34px;
+  --fs-title: 20px;
+  --lh-title: 26px;
+  --fs-heading: 17px;
+  --lh-heading: 24px;
+  --fs-line: 15px;
+  --lh-line: 22px;
+  --fs-body: 14px;
+  --lh-body: 20px;
+  --fs-caption: 12px;
+  --lh-caption: 16px;
+}
+
+/* ---- Tailwind registration ----------------------------------------------
+ * `inline` keeps the var() reference in the generated utility, so a theme
+ * switch on data-theme re-colours everything without a rebuild.
+ */
+@theme inline {
+  --color-*: initial;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-primary: var(--primary);
+  --color-on-primary: var(--on-primary);
+  --color-status-seated: var(--status-seated);
+  --color-status-sent: var(--status-sent);
+  --color-status-bill: var(--status-bill);
+  --color-status-paid: var(--status-paid);
+  --color-status-alert: var(--status-alert);
+  --color-agent: var(--agent);
+  --color-brand-accent: var(--brand-accent);
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-white: #ffffff;
+  --color-black: #000000;
+
+  --font-sans: var(--font-plex-sans, "IBM Plex Sans"), "IBM Plex Sans", -apple-system, "PingFang SC", "PingFang TC",
+    "Hiragino Sans", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono, "IBM Plex Mono"), "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --text-*: initial;
+  --text-display: var(--fs-display);
+  --text-display--line-height: var(--lh-display);
+  --text-display--font-weight: var(--fw-display);
+  --text-amount-xl: var(--fs-amount-xl);
+  --text-amount-xl--line-height: var(--lh-amount-xl);
+  --text-amount-xl--font-weight: var(--fw-amount-xl);
+  --text-title: var(--fs-title);
+  --text-title--line-height: var(--lh-title);
+  --text-title--font-weight: var(--fw-title);
+  --text-heading: var(--fs-heading);
+  --text-heading--line-height: var(--lh-heading);
+  --text-heading--font-weight: var(--fw-heading);
+  --text-line: var(--fs-line);
+  --text-line--line-height: var(--lh-line);
+  --text-line--font-weight: var(--fw-line);
+  --text-body: var(--fs-body);
+  --text-body--line-height: var(--lh-body);
+  --text-body--font-weight: var(--fw-body);
+  --text-caption: var(--fs-caption);
+  --text-caption--line-height: var(--lh-caption);
+  --text-caption--font-weight: var(--fw-caption);
+
+  --radius-*: initial;
+  --radius-none: 0;
+  --radius-tile: var(--radius-tile);
+  --radius-sheet: var(--radius-sheet);
+  --radius-chip: var(--radius-chip);
+  --radius-full: 9999px;
+
+  --shadow-*: initial;
+  --shadow-sheet: var(--shadow-sheet);
+
+  --ease-enter: var(--ease-enter);
+  --ease-leave: var(--ease-leave);
+
+  --spacing: 4px;
+
+  --animate-sheet-in: sheet-in var(--dur-sheet-open) var(--ease-enter);
+  --animate-sheet-out: sheet-out var(--dur-sheet-close) var(--ease-leave) forwards;
+  --animate-fade-in: fade-in var(--dur-sheet-open) var(--ease-enter);
+  --animate-fade-out: fade-out var(--dur-sheet-close) var(--ease-leave) forwards;
+  --animate-rise-in: rise-in var(--dur-sheet-open) var(--ease-enter);
+  --animate-rise-out: rise-out var(--dur-sheet-close) var(--ease-leave) forwards;
+  --animate-skeleton: skeleton 1.6s ease-in-out infinite;
+
+  @keyframes sheet-in {
+    from {
+      transform: translateX(24px);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes sheet-out {
+    from {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateX(24px);
+      opacity: 0;
+    }
+  }
+  @keyframes rise-in {
+    from {
+      transform: translateY(8px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes rise-out {
+    from {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateY(8px);
+      opacity: 0;
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes skeleton {
+    0%,
+    100% {
+      opacity: 0.55;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+}
+
+/* ---- Base ------------------------------------------------------------- */
+@layer base {
+  html {
+    background-color: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: var(--fs-body);
+    line-height: var(--lh-body);
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    min-height: 100dvh;
+    margin: 0;
+  }
+  /* Controls: no double-tap-to-zoom delay, no callout on tiles and buttons (11.3). */
+  button,
+  [role="button"],
+  a,
+  input,
+  select,
+  textarea,
+  label,
+  [role="tab"],
+  [role="menuitem"],
+  [role="option"],
+  [role="row"],
+  [role="switch"],
+  [role="checkbox"] {
+    touch-action: manipulation;
+  }
+  button,
+  [role="button"] {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  input,
+  textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  /* Keyboard focus is always visible (section 10). */
+  :focus-visible {
+    outline: 2px solid var(--status-seated);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--status-seated) 25%, transparent);
+  }
+  hr {
+    border: 0;
+    border-top: var(--hairline) solid var(--line);
+  }
+}
+
+/* ---- Utilities ---------------------------------------------------------- */
+@utility tabular {
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+@utility hairline {
+  border-width: var(--hairline);
+  border-style: solid;
+  border-color: var(--line);
+}
+@utility hairline-t {
+  border-top: var(--hairline) solid var(--line);
+}
+@utility hairline-b {
+  border-bottom: var(--hairline) solid var(--line);
+}
+@utility hairline-l {
+  border-left: var(--hairline) solid var(--line);
+}
+@utility hairline-r {
+  border-right: var(--hairline) solid var(--line);
+}
+/* The agent treatment (2.1): dashed outline, agent hue at low opacity. */
+@utility agent-treatment {
+  outline: 1.5px dashed var(--agent);
+  outline-offset: -1.5px;
+  background-color: color-mix(in srgb, var(--agent) 8%, transparent);
+}
+@utility target-min {
+  min-height: var(--target-min);
+  min-width: var(--target-min);
+}
+@utility press {
+  transition: transform var(--dur-press) var(--ease-enter), background-color var(--dur-press) var(--ease-enter),
+    opacity var(--dur-press) var(--ease-enter);
+}
+
+/* ---- 7.7 Reduced motion: movement becomes cross-fades; the highlight stays */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.keep-motion),
+  *:not(.keep-motion)::before,
+  *:not(.keep-motion)::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { ROLES } from "@sail/shared";
 import { withTransaction, type RequestTx } from "../db/client.js";
 import { importJobs, type ImportEntity, type ImportMapping, type ImportReport } from "../db/schema/index.js";
-import { hashSecret } from "../auth/tokens.js";
+import { hashSecret, pinLookup } from "../auth/tokens.js";
 import { parseCsv } from "./csv.js";
 import { TILE_COLOURS } from "../routes/floor.js";
 import type { LayoutPage, LayoutTile } from "../db/schema/catalogue.js";
@@ -296,7 +296,10 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               const pin = get(row, "pin");
               if (pin && !/^\d{6}$/.test(pin)) throw new Error("pin must be 6 digits");
               const values: Record<string, unknown> = { name, email: get(row, "email") || null, role, outlet_ids: outletIds, initials: initialsFor(name), active: get(row, "active") ? bool(get(row, "active")) : true };
-              if (pin) values["pin_hash"] = hashSecret(pin);
+              if (pin) {
+                values["pin_hash"] = hashSecret(pin);
+                values["pin_lookup"] = pinLookup(merchantId, pin);
+              }
               const { id } = await upsert("staff", lid, values);
               legacy.staff!.set(lid, id);
               break;

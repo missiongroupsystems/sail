@@ -1,5 +1,5 @@
 import { createRemoteJWKSet, jwtVerify, SignJWT, type JWTPayload } from "jose";
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { config } from "../config.js";
 import { AppError } from "../lib/errors.js";
 
@@ -151,4 +151,11 @@ export function randomDigits(n: number): string {
   let s = "";
   while (s.length < n) s += randomBytes(1)[0]! % 10;
   return s.slice(0, n);
+}
+
+/** Indexed PIN lookup value: HMAC(secret, merchant:pin). A database leak alone cannot brute-force PINs without the server secret. */
+export function pinLookup(merchantId: string, pin: string): string {
+  const cfg = config();
+  const secret = cfg.STATION_TOKEN_SECRET ?? cfg.DEV_AUTH_SECRET ?? "sail-pin-lookup";
+  return createHmac("sha256", secret).update(`${merchantId}:${pin}`).digest("hex");
 }

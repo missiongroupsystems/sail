@@ -62,11 +62,14 @@ export const requestPipeline: MiddlewareHandler<AppEnv> = async (c, next) => {
       t.principal = { type: principal.type, id: principal.id, merchantId: principal.merchantId };
       await next();
       if (c.error) throw c.error;
-      if (c.res.status >= 400) throw new RollbackSignal(c.res);
+      if (c.res.status >= 400 || t.dryRun) throw new RollbackSignal(c.res);
     });
     logger.debug({ requestId, path, ms: Math.round(performance.now() - started) }, "request");
   } catch (e) {
-    if (e instanceof RollbackSignal) return; // response already set
+    if (e instanceof RollbackSignal) {
+      if (c.get("dryRun")) c.header("x-dry-run", "true");
+      return; // response already set; transaction rolled back
+    }
     throw e;
   } finally {
     release();

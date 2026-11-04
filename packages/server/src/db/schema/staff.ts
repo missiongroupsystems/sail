@@ -18,6 +18,8 @@ export const staff = pgTable(
     role: roleEnum("role").notNull(),
     /** scrypt hash of the 6-digit POS PIN (v0.4). */
     pinHash: text("pin_hash"),
+    /** HMAC(merchant_id:pin) with the server secret, for a single indexed lookup at sign-in. Unique per merchant. */
+    pinLookup: text("pin_lookup"),
     pinFailedAttempts: integer("pin_failed_attempts").notNull().default(0),
     pinLockedUntil: timestamp("pin_locked_until", { withTimezone: true }),
     /** Outlet scope. Empty = every outlet of the merchant. */
@@ -36,6 +38,7 @@ export const staff = pgTable(
     index("staff_merchant_idx").on(t.merchantId),
     uniqueIndex("staff_auth_subject_uq").on(t.authSubject),
     uniqueIndex("staff_merchant_email_uq").on(t.merchantId, t.email),
+    uniqueIndex("staff_merchant_pin_uq").on(t.merchantId, t.pinLookup),
   ],
 );
 

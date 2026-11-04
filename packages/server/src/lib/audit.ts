@@ -10,7 +10,7 @@ export type AuditInput = {
   outletId?: string | null;
   details?: Record<string, unknown>;
   reason?: string | null;
-  approver?: { id: string; name?: string } | null;
+  approver?: { id: string; name?: string | null } | null;
   overrideId?: string | null;
 };
 

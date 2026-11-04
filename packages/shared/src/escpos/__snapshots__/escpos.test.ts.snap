@@ -1,0 +1,402 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`templates (golden text at both widths) > 58mm > kitchen ticket 1`] = `
+"  Sail Kopitiam Tanjong Pagar
+         Sail Kopitiam
+--------------------------------
+P-0042                   Dine-in
+Table 12, 4 pax          Round 2
+Server: Amy
+          Station: Front counter
+4 Nov 2026, 7:42 pm Job 8f3a2c1d
+--------------------------------
+2 Laksa                       S1
++ Extra chilli
++ No cockles
+* LESS SPICY PLEASE
+1 Kopi C kosong               S2
+12 Hainanese chicken rice set
+   with extra steamed chicken
+   and achar
++ Large
++ Chicken thigh instead of
+     breast
+* ALLERGY: PEANUTS. SERVE WITH
+     THE MAINS
+--------------------------------
+          Copy 1 of 2
+"
+`;
+
+exports[`templates (golden text at both widths) > 58mm > pre-bill 1`] = `
+"  Sail Kopitiam Tanjong Pagar
+         Sail Kopitiam
+--------------------------------
+            Pre-bill
+             Bill 1
+P-0042                   Dine-in
+Table 12, 4 pax
+4 Nov 2026, 7:42 pm  Server: Amy
+--------------------------------
+2 Laksa                   $33.00
+2 @ $16.00
++ Extra chilli             $1.00
+1 Kopi C kosong            $1.80
+1 Tiger beer tower 3L     $14.00
+--------------------------------
+Subtotal                  $48.80
+Service charge 10%         $4.88
+Total                     $53.68
+GST 9% (included)          $4.43
+--------------------------------
+Balance due               $53.68
+--------------------------------
+     This is not a receipt
+"
+`;
+
+exports[`templates (golden text at both widths) > 58mm > receipt, GST exclusive, card 1`] = `
+"  Sail Kopitiam Tanjong Pagar
+         Sail Kopitiam
+         Tel 6123 4567
+         UEN 201234567A
+--------------------------------
+            Receipt
+          Bill 2 of 3
+P-0042                   Dine-in
+Table 12, 4 pax
+4 Nov 2026, 7:42 pm  Server: Amy
+Invoice INV-000123
+--------------------------------
+2 Laksa                   $33.00
+2 @ $16.00
++ Extra chilli             $1.00
+S1
+1 Kopi C kosong            $1.80
++ Less sweet
+S2
+1 Tiger beer tower 3L     $14.00
+share 1/3
+--------------------------------
+Subtotal                  $48.80
+Member 10% off            −$4.88
+Service charge 10%         $4.39
+GST 9%                     $4.35
+Total                     $52.66
+--------------------------------
+Card A1B2                 $52.66
+--------------------------------
+  Thank you for dining with us
+ GST registered. Prices exclude
+        GST where shown.
+        Digital receipt
+https://r.sail.example/8f3a2c1d
+"
+`;
+
+exports[`templates (golden text at both widths) > 58mm > receipt, GST inclusive, cash with rounding and change 1`] = `
+"  Sail Kopitiam Tanjong Pagar
+         Sail Kopitiam
+--------------------------------
+            Receipt
+             Bill 1
+P-0042                   Dine-in
+Table 12, 4 pax
+4 Nov 2026, 7:42 pm  Server: Amy
+--------------------------------
+2 Laksa                   $33.00
+2 @ $16.00
++ Extra chilli             $1.00
+1 Kopi C kosong            $1.80
+1 Tiger beer tower 3L     $14.00
+--------------------------------
+Subtotal                  $48.80
+Service charge 10%         $4.88
+Total                     $53.68
+GST 9% (included)          $4.43
+--------------------------------
+Cash                      $53.70
+Cash rounding              $0.02
+Change                     $6.30
+--------------------------------
+  Thank you for dining with us
+"
+`;
+
+exports[`templates (golden text at both widths) > 58mm > refund receipt 1`] = `
+"  Sail Kopitiam Tanjong Pagar
+         Sail Kopitiam
+         Tel 6123 4567
+         UEN 201234567A
+--------------------------------
+         Refund receipt
+             Bill 1
+P-0042                   Dine-in
+Table 12, 4 pax
+4 Nov 2026, 7:42 pm  Server: Amy
+Invoice INV-000120
+Refund of bill P-0041/1 dated 3
+  Nov 2026
+Credit note CN-000045
+Reason: Late dish
+--------------------------------
+1 Laksa                  −$16.00
+--------------------------------
+Subtotal                 −$16.00
+Service charge 10%        −$1.60
+GST 9%                    −$1.58
+Refund total             −$19.18
+--------------------------------
+Card R-77                −$19.18
+"
+`;
+
+exports[`templates (golden text at both widths) > 58mm > reprint ticket (delivery) 1`] = `
+"  Sail Kopitiam Tanjong Pagar
+         Sail Kopitiam
+================================
+         REPRINT
+================================
+P-0044                  Delivery
+Ben Tan 9123 4567
+Ready by 8:05 pm
+Deliver to: Blk 123 Tanjong
+  Pagar Plaza #05-67, Singapore
+  081234
+Notes: Leave at the door, call
+  on arrival
+Server: Amy
+4 Nov 2026, 7:45 pm Job d3110e01
+--------------------------------
+1 Nasi lemak
++ Add fried egg
+* NO PEANUTS
+--------------------------------
+      Copy 1 of 1  REPRINT
+"
+`;
+
+exports[`templates (golden text at both widths) > 58mm > service slip 1`] = `
+"        Service request
+   Call for bill
+--------------------------------
+Table 12, 4 pax
+Guest: Ben
+P-0042                   Dine-in
+4 Nov 2026, 7:42 pm Job 5e7v1ce1
+"
+`;
+
+exports[`templates (golden text at both widths) > 58mm > void ticket 1`] = `
+"  Sail Kopitiam Tanjong Pagar
+         Sail Kopitiam
+================================
+            VOID
+================================
+P-0042                   Dine-in
+Table 12, 4 pax
+Server: Amy
+          Station: Front counter
+4 Nov 2026, 7:42 pm Job v01d0001
+--------------------------------
+1 Kopi C kosong               S2
+--------------------------------
+              VOID
+"
+`;
+
+exports[`templates (golden text at both widths) > 80mm > kitchen ticket 1`] = `
+"          Sail Kopitiam Tanjong Pagar
+                 Sail Kopitiam
+------------------------------------------------
+P-0042                                   Dine-in
+Table 12, 4 pax                          Round 2
+Server: Amy               Station: Front counter
+4 Nov 2026, 7:42 pm                 Job 8f3a2c1d
+------------------------------------------------
+2 Laksa                                       S1
++ Extra chilli
++ No cockles
+* LESS SPICY PLEASE
+1 Kopi C kosong                               S2
+12 Hainanese chicken rice set with extra steamed
+   chicken and achar
++ Large
++ Chicken thigh instead of breast
+* ALLERGY: PEANUTS. SERVE WITH THE MAINS
+------------------------------------------------
+                  Copy 1 of 2
+"
+`;
+
+exports[`templates (golden text at both widths) > 80mm > pre-bill 1`] = `
+"          Sail Kopitiam Tanjong Pagar
+                 Sail Kopitiam
+------------------------------------------------
+                    Pre-bill
+                     Bill 1
+P-0042                                   Dine-in
+Table 12, 4 pax
+4 Nov 2026, 7:42 pm                  Server: Amy
+------------------------------------------------
+2 Laksa                                   $33.00
+2 @ $16.00
++ Extra chilli                             $1.00
+1 Kopi C kosong                            $1.80
+1 Tiger beer tower 3L                     $14.00
+------------------------------------------------
+Subtotal                                  $48.80
+Service charge 10%                         $4.88
+Total                                     $53.68
+GST 9% (included)                          $4.43
+------------------------------------------------
+Balance due                               $53.68
+------------------------------------------------
+             This is not a receipt
+"
+`;
+
+exports[`templates (golden text at both widths) > 80mm > receipt, GST exclusive, card 1`] = `
+"          Sail Kopitiam Tanjong Pagar
+                 Sail Kopitiam
+                 Tel 6123 4567
+                 UEN 201234567A
+------------------------------------------------
+                    Receipt
+                  Bill 2 of 3
+P-0042                                   Dine-in
+Table 12, 4 pax
+4 Nov 2026, 7:42 pm                  Server: Amy
+Invoice INV-000123
+------------------------------------------------
+2 Laksa                                   $33.00
+2 @ $16.00
++ Extra chilli                             $1.00
+S1
+1 Kopi C kosong                            $1.80
++ Less sweet
+S2
+1 Tiger beer tower 3L                     $14.00
+share 1/3
+------------------------------------------------
+Subtotal                                  $48.80
+Member 10% off                            −$4.88
+Service charge 10%                         $4.39
+GST 9%                                     $4.35
+Total                                     $52.66
+------------------------------------------------
+Card A1B2                                 $52.66
+------------------------------------------------
+          Thank you for dining with us
+GST registered. Prices exclude GST where shown.
+                Digital receipt
+        https://r.sail.example/8f3a2c1d
+"
+`;
+
+exports[`templates (golden text at both widths) > 80mm > receipt, GST inclusive, cash with rounding and change 1`] = `
+"          Sail Kopitiam Tanjong Pagar
+                 Sail Kopitiam
+------------------------------------------------
+                    Receipt
+                     Bill 1
+P-0042                                   Dine-in
+Table 12, 4 pax
+4 Nov 2026, 7:42 pm                  Server: Amy
+------------------------------------------------
+2 Laksa                                   $33.00
+2 @ $16.00
++ Extra chilli                             $1.00
+1 Kopi C kosong                            $1.80
+1 Tiger beer tower 3L                     $14.00
+------------------------------------------------
+Subtotal                                  $48.80
+Service charge 10%                         $4.88
+Total                                     $53.68
+GST 9% (included)                          $4.43
+------------------------------------------------
+Cash                                      $53.70
+Cash rounding                              $0.02
+Change                                     $6.30
+------------------------------------------------
+          Thank you for dining with us
+"
+`;
+
+exports[`templates (golden text at both widths) > 80mm > refund receipt 1`] = `
+"          Sail Kopitiam Tanjong Pagar
+                 Sail Kopitiam
+                 Tel 6123 4567
+                 UEN 201234567A
+------------------------------------------------
+                 Refund receipt
+                     Bill 1
+P-0042                                   Dine-in
+Table 12, 4 pax
+4 Nov 2026, 7:42 pm                  Server: Amy
+Invoice INV-000120
+Refund of bill P-0041/1 dated 3 Nov 2026
+Credit note CN-000045
+Reason: Late dish
+------------------------------------------------
+1 Laksa                                  −$16.00
+------------------------------------------------
+Subtotal                                 −$16.00
+Service charge 10%                        −$1.60
+GST 9%                                    −$1.58
+Refund total                             −$19.18
+------------------------------------------------
+Card R-77                                −$19.18
+"
+`;
+
+exports[`templates (golden text at both widths) > 80mm > reprint ticket (delivery) 1`] = `
+"          Sail Kopitiam Tanjong Pagar
+                 Sail Kopitiam
+================================================
+                 REPRINT
+================================================
+P-0044                                  Delivery
+Ben Tan 9123 4567
+Ready by 8:05 pm
+Deliver to: Blk 123 Tanjong Pagar Plaza #05-67,
+  Singapore 081234
+Notes: Leave at the door, call on arrival
+Server: Amy
+4 Nov 2026, 7:45 pm                 Job d3110e01
+------------------------------------------------
+1 Nasi lemak
++ Add fried egg
+* NO PEANUTS
+------------------------------------------------
+              Copy 1 of 1  REPRINT
+"
+`;
+
+exports[`templates (golden text at both widths) > 80mm > service slip 1`] = `
+"                Service request
+           Call for bill
+------------------------------------------------
+Table 12, 4 pax
+Guest: Ben
+P-0042                                   Dine-in
+4 Nov 2026, 7:42 pm                 Job 5e7v1ce1
+"
+`;
+
+exports[`templates (golden text at both widths) > 80mm > void ticket 1`] = `
+"          Sail Kopitiam Tanjong Pagar
+                 Sail Kopitiam
+================================================
+                    VOID
+================================================
+P-0042                                   Dine-in
+Table 12, 4 pax
+Server: Amy               Station: Front counter
+4 Nov 2026, 7:42 pm                 Job v01d0001
+------------------------------------------------
+1 Kopi C kosong                               S2
+------------------------------------------------
+                      VOID
+"
+`;

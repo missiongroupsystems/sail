@@ -11,6 +11,8 @@ export type RequestTx = {
   db: Db;
   /** Principal context applied with set_config for this transaction. */
   principal: { type: string; id: string; merchantId: string | null } | null;
+  /** Dry run: the transaction will be rolled back; events skip sequence allocation and emit nothing. */
+  dryRun: boolean;
 };
 
 const als = new AsyncLocalStorage<RequestTx>();
@@ -61,7 +63,7 @@ export async function withTransaction<T>(fn: (ctx: RequestTx) => Promise<T>, pri
     // Drizzle's postgres-js driver reads `client.options` (parsers/serializers); a
     // TransactionSql has none, so borrow the pool's options for the handle.
     const client = Object.assign(t, { options: (sql as unknown as { options: unknown }).options }) as unknown as Sql;
-    const ctx: RequestTx = { sql: t, db: drizzle(client, { schema }), principal };
+    const ctx: RequestTx = { sql: t, db: drizzle(client, { schema }), principal, dryRun: false };
     return als.run(ctx, () => fn(ctx));
   }) as Promise<T>;
 }
@@ -74,6 +76,14 @@ export function currentTx(): RequestTx {
 
 export function maybeTx(): RequestTx | undefined {
   return als.getStore();
+}
+
+/** Mark the current request transaction as a dry run (vision 2, principle 10). */
+export function markDryRun() {
+  currentTx().dryRun = true;
+}
+export function isDryRun(): boolean {
+  return als.getStore()?.dryRun ?? false;
 }
 
 /** The Drizzle handle for the current request transaction. */

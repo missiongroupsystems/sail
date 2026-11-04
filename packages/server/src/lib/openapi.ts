@@ -1,4 +1,5 @@
 import { createRoute, OpenAPIHono, z, type RouteConfig, type RouteHandler } from "@hono/zod-openapi";
+import type { Next } from "hono";
 import { ApiErrorSchema, operation, roleAtLeast, type OperationSpec } from "@sail/shared";
 import { AppError } from "./errors.js";
 import type { AppEnv } from "./context.js";
@@ -60,7 +61,10 @@ export function createApp() {
  * principal and role checks. Every /v1 route goes through here, so no route
  * checks roles by hand.
  */
-export function defineOp<R extends OpRoute>(app: OpenAPIHono<AppEnv>, route: R, handler: RouteHandler<R & { operationId: string }, AppEnv>) {
+/** The typed context a handler receives for a route (validated params, query and body). */
+export type OpContext<R extends OpRoute> = Parameters<RouteHandler<R & { operationId: string }, AppEnv>>[0];
+
+export function defineOp<R extends OpRoute>(app: OpenAPIHono<AppEnv>, route: R, handler: (c: OpContext<R>, next: Next) => Promise<Response> | Response) {
   const { op, ...rest } = route;
   const spec = operation(op);
   const full = createRoute({

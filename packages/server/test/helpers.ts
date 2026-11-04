@@ -5,7 +5,7 @@ import type { Role } from "@sail/shared";
 import { setConfigForTests, loadConfig } from "../src/config.js";
 import { setPoolForTests } from "../src/db/client.js";
 import { resetGateForTests } from "../src/middleware/pipeline.js";
-import { signDevBackOfficeToken, signSailToken, hashSecret } from "../src/auth/tokens.js";
+import { signDevBackOfficeToken, signSailToken, hashSecret, pinLookup } from "../src/auth/tokens.js";
 
 export const TEST_SECRETS = {
   DEV_AUTH_SECRET: "dev-secret-for-tests-only-0123456789",
@@ -56,6 +56,7 @@ export async function freshDb(overrides: Partial<Record<string, string>> = {}): 
   };
 }
 
+/** PINs used by seedMerchant: admin 111111, manager 222222, cashier 333333, server 444444, outlet-2 cashier 555555. */
 export type SeededMerchant = {
   merchantId: string;
   brandId: string;
@@ -80,12 +81,12 @@ export async function seedMerchant(sql: Sql, name = "Test Merchant"): Promise<Se
   await sql`insert into brands (id, merchant_id, name) values (${brandId}, ${merchantId}, ${name + " Brand"})`;
   await sql`insert into outlets (id, merchant_id, name) values (${outletId}, ${merchantId}, ${name + " Outlet 1"})`;
   await sql`insert into outlets (id, merchant_id, name) values (${outlet2Id}, ${merchantId}, ${name + " Outlet 2"})`;
-  const mk = async (role: Role, label: string, outletIds: string[] = [], pin = "123456") => {
+  const mk = async (role: Role, label: string, outletIds: string[] = [], pin: string) => {
     const id = randomUUID();
     const sub = `test:${id}`;
     const pinHash = hashSecret(pin);
-    await sql`insert into staff (id, merchant_id, name, email, auth_subject, role, outlet_ids, pin_hash)
-      values (${id}, ${merchantId}, ${label}, ${`${label.toLowerCase().replace(/\s+/g, ".")}@${merchantId.slice(0, 8)}.test`}, ${sub}, ${role}, ${outletIds}, ${pinHash})`;
+    await sql`insert into staff (id, merchant_id, name, email, auth_subject, role, outlet_ids, pin_hash, pin_lookup)
+      values (${id}, ${merchantId}, ${label}, ${`${label.toLowerCase().replace(/\s+/g, ".")}@${merchantId.slice(0, 8)}.test`}, ${sub}, ${role}, ${outletIds}, ${pinHash}, ${pinLookup(merchantId, pin)})`;
     const token = await signDevBackOfficeToken(sub);
     return { id, token };
   };
@@ -94,11 +95,11 @@ export async function seedMerchant(sql: Sql, name = "Test Merchant"): Promise<Se
     brandId,
     outletId,
     outlet2Id,
-    admin: await mk("admin", "Ada Admin"),
-    manager: await mk("manager", "Mia Manager"),
-    cashier: await mk("cashier", "Cal Cashier"),
-    server: await mk("server", "Sam Server"),
-    outlet2Cashier: await mk("cashier", "Olive Outlet Two", [outlet2Id]),
+    admin: await mk("admin", "Ada Admin", [], "111111"),
+    manager: await mk("manager", "Mia Manager", [], "222222"),
+    cashier: await mk("cashier", "Cal Cashier", [], "333333"),
+    server: await mk("server", "Sam Server", [], "444444"),
+    outlet2Cashier: await mk("cashier", "Olive Outlet Two", [outlet2Id], "555555"),
   };
 }
 
