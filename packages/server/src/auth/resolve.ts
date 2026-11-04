@@ -38,7 +38,8 @@ export async function resolvePrincipal(token: string, t: RequestTx): Promise<Pri
       await t.db.update(staffSessions).set({ endedAt: new Date() }).where(eq(staffSessions.id, sess.id));
       throw new AppError("unauthenticated", "Your PIN session expired after inactivity", { remedy: "Sign in again with your PIN." });
     }
-    await t.db.update(staffSessions).set({ lastSeenAt: new Date() }).where(eq(staffSessions.id, sess.id));
+    // Best-effort: skip when another request of the same session holds the row (a proposal approval replays a frozen request inside the approver's request).
+    await t.sql`update staff_sessions set last_seen_at = now() where id in (select id from staff_sessions where id = ${sess.id} for update skip locked)`;
     const [row] = await t.db.select().from(staff).where(eq(staff.id, sess.staffId)).limit(1);
     if (!row || !row.active) throw new AppError("unauthenticated", "Staff record is inactive");
     return {

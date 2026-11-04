@@ -1,0 +1,5899 @@
+{
+  "generated_from": "openapi.json x-sail manifest",
+  "tools": [
+    {
+      "name": "adjustments_apply_manual",
+      "op": "adjustments.apply_manual",
+      "method": "POST",
+      "path": "/v1/orders/{id}/adjustments",
+      "tier": "T2",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "adjustment.applied",
+        "order.repriced"
+      ],
+      "description": "Apply a manual pricing rule\n\nApplies a manual discount or waiver (for example staff meal, % off item, service-charge waiver) with its entered value and lines. The rule's own minimum role, override and reason settings apply. Automatic rules never need applying.\n\nRisk tier T2. Needs role server or above. Emits adjustment.applied, order.repriced.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "application_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "rule_key": {
+                "type": "string",
+                "minLength": 1
+              },
+              "entered_value": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "line_ids": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "minItems": 1
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 200
+              }
+            },
+            "required": [
+              "application_id",
+              "rule_key"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "adjustments_remove",
+      "op": "adjustments.remove",
+      "method": "DELETE",
+      "path": "/v1/orders/{id}/adjustments/{application_id}",
+      "tier": "T2",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "adjustment.removed",
+        "order.repriced"
+      ],
+      "description": "Remove a manual pricing rule from an order\n\nBlocked when the adjustment is frozen by a payment.\n\nRisk tier T2. Needs role server or above. Emits adjustment.removed, order.repriced.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "application_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 200
+              }
+            }
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "application_id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "areas_get",
+      "op": "areas.get",
+      "method": "GET",
+      "path": "/v1/areas/{id}",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "Get a area\n\nGet a area\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "areas_list",
+      "op": "areas.list",
+      "method": "GET",
+      "path": "/v1/areas",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "List areas\n\nList areas\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "audit_list",
+      "op": "audit.list",
+      "method": "GET",
+      "path": "/v1/audit",
+      "tier": "T0",
+      "min_role": "manager",
+      "toolsets": [
+        "reports",
+        "watch"
+      ],
+      "emits": [],
+      "description": "List audit entries\n\nWho did what, on which target, when, and who approved it. Filter by actor, action, target or time.\n\nRisk tier T0. Needs role manager or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "actor_id": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "target_kind": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          },
+          "cursor": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "auth_me",
+      "op": "auth.me",
+      "method": "GET",
+      "path": "/v1/me",
+      "tier": "T0",
+      "min_role": null,
+      "toolsets": [
+        "pos.read",
+        "reports",
+        "watch",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "Who am I\n\nReturns the caller's principal: type, role, merchant and outlet scope. Use it to decide which buttons to show; the server enforces permissions regardless.\n\nRisk tier T0.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "availability_get",
+      "op": "availability.get",
+      "method": "GET",
+      "path": "/v1/availability-rules/{id}",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "Get a availability rule\n\nGet a availability rule\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "availability_list",
+      "op": "availability.list",
+      "method": "GET",
+      "path": "/v1/availability-rules",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "List availability rules\n\nList availability rules\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "target_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "brands_list",
+      "op": "brands.list",
+      "method": "GET",
+      "path": "/v1/brands",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "List brands\n\nBrands of the caller's merchant.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "business_days_close",
+      "op": "business_days.close",
+      "method": "POST",
+      "path": "/v1/outlets/{id}/business-days/close",
+      "tier": "T2",
+      "min_role": "manager",
+      "toolsets": [
+        "pos.payment"
+      ],
+      "emits": [
+        "business_day.closed"
+      ],
+      "description": "Close a business day\n\nSnapshots the Z-report once every shift is closed. Manager+.\n\nRisk tier T2. Needs role manager or above. Emits business_day.closed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "business_date": {
+                "type": "string"
+              }
+            }
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "business_days_z_report",
+      "op": "business_days.z_report",
+      "method": "GET",
+      "path": "/v1/outlets/{id}/z-report",
+      "tier": "T0",
+      "min_role": "cashier",
+      "toolsets": [
+        "reports",
+        "pos.read"
+      ],
+      "emits": [],
+      "description": "Z-report\n\nSales, tenders, expected vs counted cash, rounding, voids and covers for an outlet (or station) and business date. Figures come from the register.\n\nRisk tier T0. Needs role cashier or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "business_date": {
+            "type": "string"
+          },
+          "station_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "categories_get",
+      "op": "categories.get",
+      "method": "GET",
+      "path": "/v1/categories/{id}",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "Get a report category\n\nGet a report category\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "categories_list",
+      "op": "categories.list",
+      "method": "GET",
+      "path": "/v1/categories",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "List report categorys\n\nList report categorys\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "channel_links_get",
+      "op": "channel_links.get",
+      "method": "GET",
+      "path": "/v1/channel-links/{id}",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "Get a channel link\n\nGet a channel link\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "channel_links_list",
+      "op": "channel_links.list",
+      "method": "GET",
+      "path": "/v1/channel-links",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "List channel links\n\nList channel links\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "pos",
+              "scan_to_order"
+            ]
+          },
+          "brand_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "checks_allocate",
+      "op": "checks.allocate",
+      "method": "POST",
+      "path": "/v1/orders/{id}/checks/allocate",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "checks.allocated"
+      ],
+      "description": "Move or share items between bills\n\nPut each listed item wholly on one bill, or share it equally between the listed bills (a bottle three ways). A paid bill's allocations are locked.\n\nRisk tier T1. Needs role server or above. Emits checks.allocated.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "allOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "expected_version": {
+                    "type": "integer"
+                  },
+                  "dry_run": {
+                    "type": "boolean"
+                  },
+                  "override_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "moves": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "line_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "check_ids": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "minItems": 1,
+                          "maxItems": 20
+                        }
+                      },
+                      "required": [
+                        "line_id",
+                        "check_ids"
+                      ]
+                    },
+                    "minItems": 0
+                  },
+                  "add_checks": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20
+                  }
+                },
+                "required": [
+                  "moves"
+                ]
+              }
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "checks_list",
+      "op": "checks.list",
+      "method": "GET",
+      "path": "/v1/orders/{id}/checks",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read"
+      ],
+      "emits": [],
+      "description": "Bills of an order\n\nChecks with allocations, payments and balances.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "checks_print_prebill",
+      "op": "checks.print_prebill",
+      "method": "POST",
+      "path": "/v1/orders/{id}/prebill",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "print_job.created",
+        "order.bill_requested"
+      ],
+      "description": "Print a pre-bill\n\nPrints the bill (or every bill of the order) on the station's receipt printer and marks the table as bill requested.\n\nRisk tier T1. Needs role server or above. Emits print_job.created, order.bill_requested.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "check_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "checks_split_by_seat",
+      "op": "checks.split_by_seat",
+      "method": "POST",
+      "path": "/v1/orders/{id}/checks/split-by-seat",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "checks.split"
+      ],
+      "description": "Split the bill by seat\n\nOne bill per seat number; items without a seat are shared evenly across the seats, or put on a separate Shared bill with `shared: manual`.\n\nRisk tier T1. Needs role server or above. Emits checks.split.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "allOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "expected_version": {
+                    "type": "integer"
+                  },
+                  "dry_run": {
+                    "type": "boolean"
+                  },
+                  "override_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "shared": {
+                    "type": "string",
+                    "enum": [
+                      "even",
+                      "manual"
+                    ],
+                    "default": "even"
+                  }
+                }
+              }
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "checks_split_even",
+      "op": "checks.split_even",
+      "method": "POST",
+      "path": "/v1/orders/{id}/checks/split-even",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "checks.split"
+      ],
+      "description": "Split the bill evenly\n\nN bills, every item shared 1/N. Bills add up to the order to the cent (largest remainder; bill order breaks ties). Only before the first payment.\n\nRisk tier T1. Needs role server or above. Emits checks.split.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "allOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "expected_version": {
+                    "type": "integer"
+                  },
+                  "dry_run": {
+                    "type": "boolean"
+                  },
+                  "override_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "n": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20
+                  }
+                },
+                "required": [
+                  "n"
+                ]
+              }
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "checks_unsplit",
+      "op": "checks.unsplit",
+      "method": "POST",
+      "path": "/v1/orders/{id}/checks/unsplit",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "checks.split"
+      ],
+      "description": "Back to one bill\n\nOnly before the first payment.\n\nRisk tier T1. Needs role server or above. Emits checks.split.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "allOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "expected_version": {
+                    "type": "integer"
+                  },
+                  "dry_run": {
+                    "type": "boolean"
+                  },
+                  "override_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "properties": {}
+              }
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "customer_groups_get",
+      "op": "customer_groups.get",
+      "method": "GET",
+      "path": "/v1/customer-groups/{id}",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "Get a customer group\n\nGet a customer group\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "customer_groups_list",
+      "op": "customer_groups.list",
+      "method": "GET",
+      "path": "/v1/customer-groups",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "List customer groups\n\nList customer groups\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "customers_find",
+      "op": "customers.find",
+      "method": "GET",
+      "path": "/v1/customers",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read"
+      ],
+      "emits": [],
+      "description": "Find customers\n\nBy mobile (exact or prefix) or name prefix. Contact details are masked for agent principals.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mobile": {
+            "type": "string"
+          },
+          "q": {
+            "type": "string"
+          },
+          "group_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "customers_get",
+      "op": "customers.get",
+      "method": "GET",
+      "path": "/v1/customers/{id}",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read"
+      ],
+      "emits": [],
+      "description": "Get a customer with their groups\n\nContact details are masked for agent principals.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "customers_upsert",
+      "op": "customers.upsert",
+      "method": "PUT",
+      "path": "/v1/customers",
+      "tier": "T1",
+      "min_role": "cashier",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "customer.upserted"
+      ],
+      "description": "Create or update a customer\n\nMobile is unique per merchant. Consent changes are evented.\n\nRisk tier T1. Needs role cashier or above. Emits customer.upserted.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "mobile": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 3
+              },
+              "email": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "email"
+              },
+              "marketing_consent": {
+                "type": "boolean"
+              },
+              "notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "legacy_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "group_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "archived": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          }
+        },
+        "required": [
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "documents_issue_invoice",
+      "op": "documents.issue_invoice",
+      "method": "POST",
+      "path": "/v1/checks/{id}/invoice",
+      "tier": "T2",
+      "min_role": "cashier",
+      "toolsets": [
+        "pos.payment"
+      ],
+      "emits": [
+        "invoice.issued"
+      ],
+      "description": "Issue a tax invoice\n\nNumbered PDF tax invoice for a paid bill, including the outlet UEN. Gap-free numbering per merchant. Issued once; later calls return the same number.\n\nRisk tier T2. Needs role cashier or above. Emits invoice.issued.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "events_list",
+      "op": "events.list",
+      "method": "GET",
+      "path": "/v1/outlets/{id}/events",
+      "tier": "T0",
+      "min_role": null,
+      "toolsets": [
+        "watch",
+        "pos.read"
+      ],
+      "emits": [],
+      "description": "Catch up on outlet events\n\nEvents for an outlet after a sequence number. This is the source of truth for every live view; the SSE stream only signals that new events exist.\n\nRisk tier T0.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "after": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 500
+          },
+          "types": {
+            "type": "string"
+          },
+          "aggregate_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "floor_snapshot",
+      "op": "floor.snapshot",
+      "method": "GET",
+      "path": "/v1/outlets/{id}/floor",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read"
+      ],
+      "emits": [],
+      "description": "Floor plan snapshot\n\nAreas and tables with live status (free, seated, sent, bill requested, paid), pax, elapsed time, pending QR rounds and table requests.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "imports_create",
+      "op": "imports.create",
+      "method": "POST",
+      "path": "/v1/imports",
+      "tier": "T1",
+      "min_role": "admin",
+      "toolsets": [
+        "config.author"
+      ],
+      "emits": [
+        "import.queued"
+      ],
+      "description": "Upload legacy CSV files and queue an import\n\nQueues a dry run by default: the worker produces a report of creates, updates, unchanged and rejected rows (with reasons) without changing data. Apply it with imports.apply. Records match on legacy_id or SKU, so re-runs update instead of duplicating.\n\nRisk tier T1. Needs role admin or above. Emits import.queued.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "mapping": {
+                "type": "object",
+                "properties": {
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "entity": {
+                          "type": "string",
+                          "enum": [
+                            "brands",
+                            "outlets",
+                            "categories",
+                            "products",
+                            "modifier_groups",
+                            "modifier_options",
+                            "menus",
+                            "menu_sections",
+                            "menu_items",
+                            "areas",
+                            "tables",
+                            "tender_types",
+                            "void_reasons",
+                            "staff",
+                            "customers",
+                            "layouts"
+                          ]
+                        },
+                        "columns": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "defaults": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "entity",
+                        "columns"
+                      ]
+                    },
+                    "minItems": 1
+                  },
+                  "options": {
+                    "type": "object",
+                    "properties": {
+                      "brand_legacy_id": {
+                        "type": "string"
+                      },
+                      "outlet_legacy_id": {
+                        "type": "string"
+                      },
+                      "tile_colour_map": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "files"
+                ]
+              },
+              "files": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "dry_run": {
+                "type": "boolean",
+                "default": true
+              }
+            },
+            "required": [
+              "mapping",
+              "files"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "imports_get",
+      "op": "imports.get",
+      "method": "GET",
+      "path": "/v1/imports/{id}",
+      "tier": "T0",
+      "min_role": "admin",
+      "toolsets": [
+        "config.author"
+      ],
+      "emits": [],
+      "description": "Get an import job with its full report\n\nThe full dry-run or apply report, including rejected rows and reasons.\n\nRisk tier T0. Needs role admin or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "imports_list",
+      "op": "imports.list",
+      "method": "GET",
+      "path": "/v1/imports",
+      "tier": "T0",
+      "min_role": "admin",
+      "toolsets": [
+        "config.author"
+      ],
+      "emits": [],
+      "description": "List import jobs\n\nImport jobs with status and report summary.\n\nRisk tier T0. Needs role admin or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "layouts_get",
+      "op": "layouts.get",
+      "method": "GET",
+      "path": "/v1/layouts/{id}",
+      "tier": "T0",
+      "min_role": null,
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "Get a POS layout\n\nPages, folders and tiles for one layout. Stations cache it with the menu.\n\nRisk tier T0.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "layouts_list",
+      "op": "layouts.list",
+      "method": "GET",
+      "path": "/v1/layouts",
+      "tier": "T0",
+      "min_role": null,
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "List POS layouts\n\nLayouts per brand: pages > folders > tiles with colour and access level.\n\nRisk tier T0.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "brand_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "include_archived": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "lines_add",
+      "op": "lines.add",
+      "method": "POST",
+      "path": "/v1/orders/{id}/lines",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "line.added",
+        "order.repriced"
+      ],
+      "description": "Add lines to an order\n\nAll-or-nothing: every line must be on the channel's menu, available, not sold out, within its daily cap, and have valid modifiers (min/max, nesting to 2 levels). Open prices need Manager+ (or an override). Returns the re-priced snapshot.\n\nRisk tier T1. Needs role server or above. Emits line.added, order.repriced.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "lines": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "line_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "product_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "quantity": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 999
+                    },
+                    "modifiers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "group_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "product_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "quantity": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 99
+                          }
+                        },
+                        "required": [
+                          "group_id",
+                          "product_id"
+                        ]
+                      },
+                      "maxItems": 40
+                    },
+                    "notes": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
+                    },
+                    "seat_no": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 1,
+                      "maximum": 99
+                    },
+                    "hold": {
+                      "type": "boolean"
+                    },
+                    "open_price": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "line_id",
+                    "product_id",
+                    "quantity"
+                  ]
+                },
+                "minItems": 1,
+                "maxItems": 100
+              }
+            },
+            "required": [
+              "lines"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "lines_update",
+      "op": "lines.update",
+      "method": "PATCH",
+      "path": "/v1/orders/{id}/lines/{line_id}",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "line.updated",
+        "order.repriced"
+      ],
+      "description": "Update an unsent line\n\nQuantity, notes, seat, hold/unhold or modifiers on a line that has not been sent to the kitchen. Caps are re-checked on a quantity increase.\n\nRisk tier T1. Needs role server or above. Emits line.updated, order.repriced.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "line_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "quantity": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 999
+              },
+              "notes": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 200
+              },
+              "seat_no": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1,
+                "maximum": 99
+              },
+              "hold": {
+                "type": "boolean"
+              },
+              "modifiers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "group_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "product_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "quantity": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "group_id",
+                    "product_id"
+                  ]
+                }
+              }
+            }
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "line_id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "lines_void",
+      "op": "lines.void",
+      "method": "POST",
+      "path": "/v1/orders/{id}/lines/{line_id}/void",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "line.voided",
+        "order.repriced",
+        "print_job.created"
+      ],
+      "description": "Remove or void a line\n\nA reason is required. Before sending: Server+ and the daily cap is released. After sending: Manager+ or a manager override, and a void ticket prints to the printers that got the item. Not on a line whose bill has a payment.\n\nRisk tier T1. Needs role server or above. A reason is required. Emits line.voided, order.repriced, print_job.created.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "line_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "quantity": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "reason_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "reason_text": {
+                "type": "string",
+                "maxLength": 200
+              }
+            }
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "line_id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "menu_get",
+      "op": "menu.get",
+      "method": "GET",
+      "path": "/v1/channel-links/{id}/menu",
+      "tier": "T0",
+      "min_role": null,
+      "toolsets": [
+        "pos.read",
+        "guest"
+      ],
+      "emits": [],
+      "description": "Compiled menu for a channel link\n\nEverything a station or guest needs to order from one channel link: sections, products with resolved prices and modifier groups, availability and sold-out status. Cache it by `version`. Never computes order totals.\n\nRisk tier T0.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "menus_get",
+      "op": "menus.get",
+      "method": "GET",
+      "path": "/v1/menus/{id}",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "Get a menu with sections and items\n\nGet a menu with sections and items\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "menus_list",
+      "op": "menus.list",
+      "method": "GET",
+      "path": "/v1/menus",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "List menus\n\nList menus\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "brand_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "include_archived": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "merchants_get",
+      "op": "merchants.get",
+      "method": "GET",
+      "path": "/v1/merchant",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author",
+        "reports"
+      ],
+      "emits": [],
+      "description": "Get the merchant and its settings\n\nTax mode, GST rate, cash rounding and business-day cutoff for the caller's merchant.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "modifier_groups_get",
+      "op": "modifier_groups.get",
+      "method": "GET",
+      "path": "/v1/modifier-groups/{id}",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "Get a modifier group with its options\n\nGet a modifier group with its options\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "modifier_groups_list",
+      "op": "modifier_groups.list",
+      "method": "GET",
+      "path": "/v1/modifier-groups",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "List modifier groups\n\nList modifier groups\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string"
+          },
+          "include_archived": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 200
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "orders_attach_customer",
+      "op": "orders.attach_customer",
+      "method": "POST",
+      "path": "/v1/orders/{id}/customer",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "order.customer_attached",
+        "order.repriced"
+      ],
+      "description": "Attach a customer\n\nCustomer-group conditions re-evaluate; frozen order-level results stay frozen.\n\nRisk tier T1. Needs role server or above. Emits order.customer_attached, order.repriced.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "customer_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "customer_id"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "orders_cancel",
+      "op": "orders.cancel",
+      "method": "POST",
+      "path": "/v1/orders/{id}/cancel",
+      "tier": "T2",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "order.cancelled"
+      ],
+      "description": "Cancel an order\n\nOnly with no payments and no fired lines (void fired lines first, which needs Manager+). Releases daily caps.\n\nRisk tier T2. Needs role server or above. A reason is required. Emits order.cancelled.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "required": [
+              "reason"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "orders_change_type",
+      "op": "orders.change_type",
+      "method": "POST",
+      "path": "/v1/orders/{id}/change-type",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "order.type_changed",
+        "order.repriced"
+      ],
+      "description": "Change the order type\n\nRe-prices with the new type's prices and fees. Blocked after the first payment.\n\nRisk tier T1. Needs role server or above. Emits order.type_changed, order.repriced.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "order_type": {
+                "type": "string",
+                "enum": [
+                  "dine_in",
+                  "takeaway",
+                  "pickup",
+                  "delivery"
+                ]
+              },
+              "table_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "pax": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              },
+              "customer_ref": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "mobile": {
+                    "type": "string",
+                    "maxLength": 30
+                  }
+                }
+              },
+              "delivery_address": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "ready_by": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "order_type"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "orders_complete",
+      "op": "orders.complete",
+      "method": "POST",
+      "path": "/v1/orders/{id}/complete",
+      "tier": "T2",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "order.completed"
+      ],
+      "description": "Complete an order\n\nEvery bill paid (balance 0) and every item sent or removed.\n\nRisk tier T2. Needs role server or above. Emits order.completed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "orders_detach_customer",
+      "op": "orders.detach_customer",
+      "method": "DELETE",
+      "path": "/v1/orders/{id}/customer",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "order.customer_detached",
+        "order.repriced"
+      ],
+      "description": "Detach the customer\n\nRemoves the customer; group discounts re-evaluate.\n\nRisk tier T1. Needs role server or above. Emits order.customer_detached, order.repriced.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "orders_fire",
+      "op": "orders.fire",
+      "method": "POST",
+      "path": "/v1/orders/{id}/fire",
+      "tier": "T2",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order",
+        "kitchen"
+      ],
+      "emits": [
+        "order.fired",
+        "print_job.created"
+      ],
+      "description": "Send lines to the kitchen\n\nFires the given lines (default: every pending, unheld line). Creates one print job per target printer in the same transaction. On a pay-before-firing station, blocked until the balance is 0.\n\nRisk tier T2. Needs role server or above. Emits order.fired, print_job.created.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "line_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "include_held": {
+                "type": "boolean"
+              }
+            }
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "orders_get",
+      "op": "orders.get",
+      "method": "GET",
+      "path": "/v1/orders/{id}",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read"
+      ],
+      "emits": [],
+      "description": "Get an order snapshot\n\nThe priced order: lines, adjustments, totals, checks, payments and balance. Amounts come from the register; never recompute them.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "orders_list",
+      "op": "orders.list",
+      "method": "GET",
+      "path": "/v1/outlets/{id}/orders",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "reports"
+      ],
+      "emits": [],
+      "description": "List orders\n\nOrders of an outlet by status, type, table, business date or search; takeaway/pickup/delivery sorted by ready-by.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "order_type": {
+            "type": "string",
+            "enum": [
+              "dine_in",
+              "takeaway",
+              "pickup",
+              "delivery"
+            ]
+          },
+          "business_date": {
+            "type": "string"
+          },
+          "table_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "open_only": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "q": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 200
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "orders_mark_out_for_delivery",
+      "op": "orders.mark_out_for_delivery",
+      "method": "POST",
+      "path": "/v1/orders/{id}/out-for-delivery",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "order.status_changed"
+      ],
+      "description": "Mark a delivery order out for delivery\n\nDelivery orders only, from ready.\n\nRisk tier T1. Needs role server or above. Emits order.status_changed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 200
+              }
+            }
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "orders_mark_ready",
+      "op": "orders.mark_ready",
+      "method": "POST",
+      "path": "/v1/orders/{id}/ready",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order",
+        "kitchen"
+      ],
+      "emits": [
+        "order.status_changed"
+      ],
+      "description": "Mark an order ready\n\nFrom fired to ready (pickup and delivery lists).\n\nRisk tier T1. Needs role server or above. Emits order.status_changed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 200
+              }
+            }
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "orders_move_table",
+      "op": "orders.move_table",
+      "method": "POST",
+      "path": "/v1/orders/{id}/move-table",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "order.moved"
+      ],
+      "description": "Move an order to another table\n\nThe target table must have no open order.\n\nRisk tier T1. Needs role server or above. Emits order.moved.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "table_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "table_id"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "orders_open",
+      "op": "orders.open",
+      "method": "POST",
+      "path": "/v1/orders",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "order.opened"
+      ],
+      "description": "Open an order\n\nOpens an order of one type (dine-in with a table and pax; takeaway with an optional name; pickup with a customer reference and ready-by; delivery with address). Returns the priced snapshot. At most one open dine-in order per table.\n\nRisk tier T1. Needs role server or above. Emits order.opened.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "order_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "order_type": {
+                "type": "string",
+                "enum": [
+                  "dine_in",
+                  "takeaway",
+                  "pickup",
+                  "delivery"
+                ]
+              },
+              "outlet_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "brand_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "table_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "pax": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 99
+              },
+              "customer_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "customer_ref": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "mobile": {
+                    "type": "string",
+                    "maxLength": 30
+                  }
+                }
+              },
+              "delivery_address": {
+                "type": "string",
+                "maxLength": 400
+              },
+              "delivery_notes": {
+                "type": "string",
+                "maxLength": 400
+              },
+              "ready_by": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "notes": {
+                "type": "string",
+                "maxLength": 400
+              },
+              "takeaway_ref": {
+                "type": "string",
+                "maxLength": 40
+              }
+            },
+            "required": [
+              "order_id",
+              "order_type"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "orders_quote",
+      "op": "orders.quote",
+      "method": "POST",
+      "path": "/v1/orders/{id}/quote",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read"
+      ],
+      "emits": [],
+      "description": "Quote an order with the full pricing trace\n\nRe-runs the pricing pipeline on the order's current lines (optionally with hypothetical extra lines) and returns totals with every step. Pure: writes nothing.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "extra_lines": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "line_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "product_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "quantity": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 999
+                    },
+                    "modifiers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "group_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "product_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "quantity": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 99
+                          }
+                        },
+                        "required": [
+                          "group_id",
+                          "product_id"
+                        ]
+                      },
+                      "maxItems": 40
+                    },
+                    "notes": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 200
+                    },
+                    "seat_no": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 1,
+                      "maximum": 99
+                    },
+                    "hold": {
+                      "type": "boolean"
+                    },
+                    "open_price": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "line_id",
+                    "product_id",
+                    "quantity"
+                  ]
+                }
+              }
+            }
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "orders_reopen",
+      "op": "orders.reopen",
+      "method": "POST",
+      "path": "/v1/orders/{id}/reopen",
+      "tier": "T3",
+      "min_role": "manager",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "order.reopened",
+        "payment.reversed"
+      ],
+      "description": "Reopen a completed order\n\nSame business day, Manager+ (or override). Reverses the order's payments as events and unlocks the bills; the order is then recharged.\n\nRisk tier T3. Needs role manager or above. A reason is required. Emits order.reopened, payment.reversed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "required": [
+              "reason"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "orders_update_details",
+      "op": "orders.update_details",
+      "method": "PATCH",
+      "path": "/v1/orders/{id}",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "order.details_updated"
+      ],
+      "description": "Update order details\n\nPax, customer reference, ready-by, delivery address, notes. Fields must be valid for the order type.\n\nRisk tier T1. Needs role server or above. Emits order.details_updated.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "pax": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1,
+                "maximum": 99
+              },
+              "customer_ref": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "mobile": {
+                    "type": "string",
+                    "maxLength": 30
+                  }
+                }
+              },
+              "delivery_address": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 400
+              },
+              "delivery_notes": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 400
+              },
+              "ready_by": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "notes": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 400
+              }
+            }
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "outlets_list",
+      "op": "outlets.list",
+      "method": "GET",
+      "path": "/v1/outlets",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author",
+        "reports"
+      ],
+      "emits": [],
+      "description": "List outlets\n\nOutlets the caller can see (their outlet scope).\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "payments_record",
+      "op": "payments.record",
+      "method": "POST",
+      "path": "/v1/checks/{id}/payments",
+      "tier": "T2",
+      "min_role": "cashier",
+      "toolsets": [
+        "pos.payment"
+      ],
+      "emits": [
+        "payment.recorded",
+        "check.paid",
+        "order.completed"
+      ],
+      "description": "Record a payment on a bill\n\nApplies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.\n\nRisk tier T2. Needs role cashier or above. Emits payment.recorded, check.paid, order.completed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "payment_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "tender_type_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "amount": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "tendered": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "tip_cents": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "reference": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 80
+              }
+            },
+            "required": [
+              "payment_id",
+              "tender_type_id",
+              "amount"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pricing_rules_list",
+      "op": "pricing_rules.list",
+      "method": "GET",
+      "path": "/v1/pricing-rules",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author",
+        "reports"
+      ],
+      "emits": [],
+      "description": "List pricing rules\n\nEvery rule with its versions, or only the set active at a given time (`active_at`). Fees and discounts share one shape.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "rule_key": {
+            "type": "string"
+          },
+          "active_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pricing_rules_validate",
+      "op": "pricing_rules.validate",
+      "method": "POST",
+      "path": "/v1/pricing-rules/validate",
+      "tier": "T0",
+      "min_role": "manager",
+      "toolsets": [
+        "config.author"
+      ],
+      "emits": [],
+      "description": "Validate the rule set\n\nWarnings for likely mistakes: overlapping exclusive rules, products no fee covers, caps below the minimum. Optionally validates a proposed rule set instead of the active one.\n\nRisk tier T0. Needs role manager or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "rules": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          }
+        },
+        "required": [
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pricing_simulate",
+      "op": "pricing.simulate",
+      "method": "POST",
+      "path": "/v1/pricing/simulate",
+      "tier": "T0",
+      "min_role": "manager",
+      "toolsets": [
+        "config.author",
+        "reports"
+      ],
+      "emits": [],
+      "description": "Simulate the pricing pipeline\n\nPrices a sample basket for an outlet, order type, channel and customer groups with the active rules (or a supplied rule set) and returns the full step-by-step trace. Pure: writes nothing. Totals come from the register, never from the caller.\n\nRisk tier T0. Needs role manager or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "outlet_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "brand_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "order_type": {
+                "type": "string",
+                "enum": [
+                  "dine_in",
+                  "takeaway",
+                  "pickup",
+                  "delivery"
+                ]
+              },
+              "channel": {
+                "type": "string",
+                "enum": [
+                  "pos",
+                  "scan_to_order"
+                ],
+                "default": "pos"
+              },
+              "customer_group_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": []
+              },
+              "lines": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "line_id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "product_id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "category_id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "default": null
+                        },
+                        "parent_category_id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "default": null
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "default": []
+                        },
+                        "is_bcrs": {
+                          "type": "boolean",
+                          "default": false
+                        },
+                        "quantity": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "prices": {
+                          "type": "object",
+                          "properties": {
+                            "base": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "by_order_type": {
+                              "type": "object",
+                              "properties": {
+                                "dine_in": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "takeaway": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "pickup": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "delivery": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                }
+                              }
+                            }
+                          },
+                          "required": [
+                            "base"
+                          ]
+                        },
+                        "open_price": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "default": null
+                        },
+                        "modifiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "modifier_id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "product_id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "quantity": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "default": 1
+                              },
+                              "price": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "modifier_id",
+                              "product_id",
+                              "price"
+                            ]
+                          },
+                          "default": []
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "line_id",
+                        "product_id",
+                        "quantity",
+                        "prices"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "product_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "quantity": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "default": 1
+                        },
+                        "open_price": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0
+                        },
+                        "line_id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "product_id"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "manual_applications": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "application_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "rule_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "entered_value": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0,
+                      "default": null
+                    },
+                    "line_ids": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "string"
+                      },
+                      "default": null
+                    },
+                    "applied_by": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "default": null
+                    },
+                    "approved_by": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "default": null
+                    },
+                    "override_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "default": null
+                    },
+                    "reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "default": null
+                    }
+                  },
+                  "required": [
+                    "application_id",
+                    "rule_id"
+                  ]
+                },
+                "default": []
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "rules": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              },
+              "tax_mode": {
+                "type": "string",
+                "enum": [
+                  "inclusive",
+                  "exclusive"
+                ]
+              }
+            },
+            "required": [
+              "outlet_id",
+              "brand_id",
+              "order_type",
+              "lines"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          }
+        },
+        "required": [
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "print_jobs_list",
+      "op": "print_jobs.list",
+      "method": "GET",
+      "path": "/v1/outlets/{id}/print-jobs",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "kitchen",
+        "watch",
+        "reports"
+      ],
+      "emits": [],
+      "description": "Print jobs of an outlet\n\nBy status, printer or order; `late=true` returns jobs not printed within 10 seconds (the POS alert). Includes the plain-text rendering for previews.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "printer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "order_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "late": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "print_jobs_reprint",
+      "op": "print_jobs.reprint",
+      "method": "POST",
+      "path": "/v1/print-jobs/{id}/reprint",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "kitchen"
+      ],
+      "emits": [
+        "print_job.created"
+      ],
+      "description": "Reprint a ticket\n\nA new job marked REPRINT on the same printer.\n\nRisk tier T1. Needs role server or above. Emits print_job.created.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {}
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "print_jobs_reroute",
+      "op": "print_jobs.reroute",
+      "method": "POST",
+      "path": "/v1/print-jobs/reroute",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "kitchen"
+      ],
+      "emits": [
+        "print_job.created",
+        "print_job.rerouted"
+      ],
+      "description": "Reroute waiting tickets to another printer\n\nNew jobs on the target printer (default: each printer's configured backup); the originals are marked rerouted. Not for jobs already printed.\n\nRisk tier T1. Needs role server or above. Emits print_job.created, print_job.rerouted.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "job_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "minItems": 1,
+                "maxItems": 100
+              },
+              "printer_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "job_ids"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          }
+        },
+        "required": [
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "printers_get",
+      "op": "printers.get",
+      "method": "GET",
+      "path": "/v1/printers/{id}",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "Get a printer\n\nGet a printer\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "printers_list",
+      "op": "printers.list",
+      "method": "GET",
+      "path": "/v1/printers",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "List printers\n\nList printers\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "products_get",
+      "op": "products.get",
+      "method": "GET",
+      "path": "/v1/products/{id}",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "Get a product\n\nGet a product\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "products_list",
+      "op": "products.list",
+      "method": "GET",
+      "path": "/v1/products",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "Search products\n\nProducts and components of the merchant, searchable by name, SKU or tag; paginated. Use menu.get for what a station or guest may order.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string"
+          },
+          "brand_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "category_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tag": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "product",
+              "component"
+            ]
+          },
+          "include_archived": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          },
+          "cursor": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "proposals_get",
+      "op": "proposals.get",
+      "method": "GET",
+      "path": "/v1/proposals/{id}",
+      "tier": "T0",
+      "min_role": null,
+      "toolsets": [
+        "pos.read",
+        "pos.order",
+        "pos.refund",
+        "pos.payment",
+        "kitchen",
+        "watch"
+      ],
+      "emits": [],
+      "description": "One proposal\n\nStatus, frozen request, decision and the executed result. Agents poll this after a `requires_confirmation` response.\n\nRisk tier T0.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "proposals_list",
+      "op": "proposals.list",
+      "method": "GET",
+      "path": "/v1/outlets/{id}/proposals",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "pos.order",
+        "pos.refund",
+        "watch"
+      ],
+      "emits": [],
+      "description": "Proposals for an outlet\n\nPending proposals waiting for a human, and recent decided ones. Agents see their own.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "failed",
+              "expired"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "receipts_print",
+      "op": "receipts.print",
+      "method": "POST",
+      "path": "/v1/checks/{id}/receipt/print",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "pos.payment"
+      ],
+      "emits": [
+        "print_job.created"
+      ],
+      "description": "Print a receipt\n\nPrints the receipt for a paid bill on the station's receipt printer.\n\nRisk tier T1. Needs role server or above. Emits print_job.created.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "receipts_send",
+      "op": "receipts.send",
+      "method": "POST",
+      "path": "/v1/checks/{id}/receipt/send",
+      "tier": "T2",
+      "min_role": "cashier",
+      "toolsets": [
+        "pos.payment"
+      ],
+      "emits": [
+        "receipt.sent"
+      ],
+      "description": "Send a digital receipt\n\nCreates a receipt link (for a QR code on screen) or queues an email/SMS. Email and SMS need a provider, which is not configured yet; the link always works.\n\nRisk tier T2. Needs role cashier or above. Emits receipt.sent.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "channel": {
+                "type": "string",
+                "enum": [
+                  "qr",
+                  "link",
+                  "email",
+                  "sms"
+                ]
+              },
+              "destination": {
+                "type": "string",
+                "maxLength": 120
+              }
+            },
+            "required": [
+              "channel"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "refunds_create",
+      "op": "refunds.create",
+      "method": "POST",
+      "path": "/v1/checks/{id}/refunds",
+      "tier": "T3",
+      "min_role": "manager",
+      "toolsets": [
+        "pos.refund"
+      ],
+      "emits": [
+        "refund.created",
+        "check.refunded",
+        "print_job.created"
+      ],
+      "description": "Refund a bill\n\nFull, by lines and quantities, or by amount. Manager, Finance or Admin, or a lower role with a manager override. Reason required. Produces a numbered refund receipt and, when the bill was invoiced, a numbered credit note. Each line's refunds never exceed its paid amount; each payment's refunds never exceed what it paid. Refunded items do not restore daily caps.\n\nRisk tier T3. Needs role manager or above. A reason is required. Emits refund.created, check.refunded, print_job.created.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "refund_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "request": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "full"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "lines"
+                        ]
+                      },
+                      "lines": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "line_id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "quantity": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          },
+                          "required": [
+                            "line_id",
+                            "quantity"
+                          ]
+                        },
+                        "minItems": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "lines"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "amount"
+                        ]
+                      },
+                      "amount": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "amount"
+                    ]
+                  }
+                ]
+              },
+              "tender_split": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "payment_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "amount": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "payment_id",
+                    "amount"
+                  ]
+                }
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "reference": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 80
+              },
+              "print": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "refund_id",
+              "request",
+              "reason"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "refunds_list",
+      "op": "refunds.list",
+      "method": "GET",
+      "path": "/v1/orders/{id}/refunds",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "reports"
+      ],
+      "emits": [],
+      "description": "Refunds of an order\n\nRefunds with their lines, tenders and document numbers.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "refunds_quote",
+      "op": "refunds.quote",
+      "method": "POST",
+      "path": "/v1/checks/{id}/refunds/quote",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.refund",
+        "pos.read"
+      ],
+      "emits": [],
+      "description": "Quote a refund\n\nReversal per line, adjustment and GST, plus the split across the original payments with per-payment caps and cash rounding. Pure: writes nothing. Agents must show these figures, never their own.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "request": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "full"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "lines"
+                        ]
+                      },
+                      "lines": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "line_id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "quantity": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          },
+                          "required": [
+                            "line_id",
+                            "quantity"
+                          ]
+                        },
+                        "minItems": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "lines"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "amount"
+                        ]
+                      },
+                      "amount": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "amount"
+                    ]
+                  }
+                ]
+              },
+              "tender_split": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "payment_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "amount": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "payment_id",
+                    "amount"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "request"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "refunds_receipt_print",
+      "op": "refunds.receipt_print",
+      "method": "POST",
+      "path": "/v1/refunds/{id}/receipt/print",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "print_job.created"
+      ],
+      "description": "Print a refund receipt\n\nReprints the refund receipt on the station's receipt printer.\n\nRisk tier T1. Needs role server or above. Emits print_job.created.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "refunds_receipt_send",
+      "op": "refunds.receipt_send",
+      "method": "POST",
+      "path": "/v1/refunds/{id}/receipt/send",
+      "tier": "T2",
+      "min_role": "cashier",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "receipt.sent"
+      ],
+      "description": "Send a refund receipt digitally\n\nA public link (QR) for the refund receipt.\n\nRisk tier T2. Needs role cashier or above. Emits receipt.sent.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "channel": {
+                "type": "string",
+                "enum": [
+                  "qr",
+                  "link",
+                  "email",
+                  "sms"
+                ]
+              },
+              "destination": {
+                "type": "string",
+                "maxLength": 120
+              }
+            },
+            "required": [
+              "channel"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reports_daily",
+      "op": "reports.daily",
+      "method": "GET",
+      "path": "/v1/outlets/{id}/reports/daily",
+      "tier": "T0",
+      "min_role": "manager",
+      "toolsets": [
+        "reports"
+      ],
+      "emits": [],
+      "description": "Daily outlet report\n\nThe Z-report plus breakdowns for one outlet and business date; `.pdf` for the printable summary.\n\nRisk tier T0. Needs role manager or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "business_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "json",
+              "pdf"
+            ],
+            "default": "json"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reports_exceptions",
+      "op": "reports.exceptions",
+      "method": "GET",
+      "path": "/v1/reports/exceptions",
+      "tier": "T0",
+      "min_role": "manager",
+      "toolsets": [
+        "reports"
+      ],
+      "emits": [],
+      "description": "Void, discount and refund report\n\nWho voided, discounted or refunded, who approved, the reason and the rule applied.\n\nRisk tier T0. Needs role manager or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "brand_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "station_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "shift_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "pos",
+              "scan_to_order"
+            ]
+          },
+          "order_type": {
+            "type": "string",
+            "enum": [
+              "dine_in",
+              "takeaway",
+              "pickup",
+              "delivery"
+            ]
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "category_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "json",
+              "csv"
+            ],
+            "default": "json"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reports_print_health",
+      "op": "reports.print_health",
+      "method": "GET",
+      "path": "/v1/reports/print-health",
+      "tier": "T0",
+      "min_role": "manager",
+      "toolsets": [
+        "reports"
+      ],
+      "emits": [],
+      "description": "Print health\n\nJobs, printed, failed, rerouted, reprinted and late counts with p50/p95 fire-to-printed seconds by printer and relay.\n\nRisk tier T0. Needs role manager or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "json",
+              "csv"
+            ],
+            "default": "json"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reports_product_mix",
+      "op": "reports.product_mix",
+      "method": "GET",
+      "path": "/v1/reports/product-mix",
+      "tier": "T0",
+      "min_role": "manager",
+      "toolsets": [
+        "reports"
+      ],
+      "emits": [],
+      "description": "Product mix\n\nQuantity, gross, discounts and net by item, category or staff member, with share of net in basis points.\n\nRisk tier T0. Needs role manager or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "brand_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "station_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "shift_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "pos",
+              "scan_to_order"
+            ]
+          },
+          "order_type": {
+            "type": "string",
+            "enum": [
+              "dine_in",
+              "takeaway",
+              "pickup",
+              "delivery"
+            ]
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "category_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "json",
+              "csv"
+            ],
+            "default": "json"
+          },
+          "group_by": {
+            "type": "string",
+            "enum": [
+              "item",
+              "category",
+              "staff"
+            ],
+            "default": "item"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reports_sales_summary",
+      "op": "reports.sales_summary",
+      "method": "GET",
+      "path": "/v1/reports/sales-summary",
+      "tier": "T0",
+      "min_role": "manager",
+      "toolsets": [
+        "reports"
+      ],
+      "emits": [],
+      "description": "Sales summary\n\nTotals and breakdowns (by day, order type, source, tender, category, rule and reporting class, voids, refunds) for a date range with filters for outlet, brand, station, shift, source, order type, staff and category. `format=csv` returns CSV. Every figure is a sum of register-written cents.\n\nRisk tier T0. Needs role manager or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "brand_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "station_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "shift_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "pos",
+              "scan_to_order"
+            ]
+          },
+          "order_type": {
+            "type": "string",
+            "enum": [
+              "dine_in",
+              "takeaway",
+              "pickup",
+              "delivery"
+            ]
+          },
+          "staff_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "category_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "json",
+              "csv"
+            ],
+            "default": "json"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "rounds_accept",
+      "op": "rounds.accept",
+      "method": "POST",
+      "path": "/v1/rounds/{id}/accept",
+      "tier": "T2",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "round.accepted",
+        "order.fired",
+        "print_job.created"
+      ],
+      "description": "Accept a held QR round\n\nFires the round's lines and prints kitchen tickets.\n\nRisk tier T2. Needs role server or above. Emits round.accepted, order.fired, print_job.created.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {}
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "rounds_list",
+      "op": "rounds.list",
+      "method": "GET",
+      "path": "/v1/outlets/{id}/rounds",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read"
+      ],
+      "emits": [],
+      "description": "QR rounds of an outlet\n\nPending rounds waiting for acceptance, and recent decided ones.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "rejected",
+              "fired"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "rounds_reject",
+      "op": "rounds.reject",
+      "method": "POST",
+      "path": "/v1/rounds/{id}/reject",
+      "tier": "T2",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "round.rejected",
+        "line.voided"
+      ],
+      "description": "Reject a held QR round\n\nRemoves the round's lines with the given reason and releases daily caps.\n\nRisk tier T2. Needs role server or above. A reason is required. Emits round.rejected, line.voided.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "required": [
+              "reason"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "service_requests_acknowledge",
+      "op": "service_requests.acknowledge",
+      "method": "POST",
+      "path": "/v1/service-requests/{id}/acknowledge",
+      "tier": "T1",
+      "min_role": "server",
+      "toolsets": [
+        "pos.order"
+      ],
+      "emits": [
+        "service_request.acknowledged"
+      ],
+      "description": "Acknowledge a table request\n\nMarks the request done.\n\nRisk tier T1. Needs role server or above. Emits service_request.acknowledged.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {}
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "service_requests_list",
+      "op": "service_requests.list",
+      "method": "GET",
+      "path": "/v1/outlets/{id}/service-requests",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read"
+      ],
+      "emits": [],
+      "description": "Table requests of an outlet\n\nOpen and recently acknowledged requests.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "acknowledged"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "shifts_close",
+      "op": "shifts.close",
+      "method": "POST",
+      "path": "/v1/shifts/{id}/close",
+      "tier": "T2",
+      "min_role": "cashier",
+      "toolsets": [
+        "pos.payment"
+      ],
+      "emits": [
+        "shift.closed"
+      ],
+      "description": "Close a shift\n\nWith the counted cash. Returns expected vs counted cash including rounding, and the shift's Z figures. Cashier+ for own shift; Manager+ for another's.\n\nRisk tier T2. Needs role cashier or above. Emits shift.closed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "counted_cash_cents": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "counted_counts": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "variance_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 200
+              }
+            },
+            "required": [
+              "counted_cash_cents"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "shifts_list",
+      "op": "shifts.list",
+      "method": "GET",
+      "path": "/v1/outlets/{id}/shifts",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "reports"
+      ],
+      "emits": [],
+      "description": "Shifts of an outlet\n\nOpen and closed shifts with their summaries.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed"
+            ]
+          },
+          "station_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "business_date": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "shifts_open",
+      "op": "shifts.open",
+      "method": "POST",
+      "path": "/v1/shifts",
+      "tier": "T2",
+      "min_role": "cashier",
+      "toolsets": [
+        "pos.payment"
+      ],
+      "emits": [
+        "shift.opened"
+      ],
+      "description": "Open a shift\n\nWith a counted float. One open shift per station (or per outlet when no station).\n\nRisk tier T2. Needs role cashier or above. Emits shift.opened.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "outlet_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "station_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 40
+              },
+              "float_cents": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "float_counts": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "required": [
+              "float_cents"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "staff_list",
+      "op": "staff.list",
+      "method": "GET",
+      "path": "/v1/staff",
+      "tier": "T0",
+      "min_role": "manager",
+      "toolsets": [
+        "reports"
+      ],
+      "emits": [],
+      "description": "List staff\n\nStaff of the merchant with role and outlet scope. PINs are never returned.\n\nRisk tier T0. Needs role manager or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_inactive": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stock_list",
+      "op": "stock.list",
+      "method": "GET",
+      "path": "/v1/outlets/{id}/stock",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "kitchen"
+      ],
+      "emits": [],
+      "description": "Sold-out and capped products at an outlet\n\nSold-out and capped products at an outlet\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stock_mark_sold_out",
+      "op": "stock.mark_sold_out",
+      "method": "POST",
+      "path": "/v1/stock/sold-out",
+      "tier": "T1",
+      "min_role": "cashier",
+      "toolsets": [
+        "kitchen"
+      ],
+      "emits": [
+        "stock.sold_out"
+      ],
+      "description": "Mark a product sold out at an outlet\n\nToday, until a date, or indefinitely. Enforced by lines.add and rounds.submit.\n\nRisk tier T1. Needs role cashier or above. Emits stock.sold_out.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "outlet_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "product_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "until": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "today"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "indefinite"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "outlet_id",
+              "product_id",
+              "until"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          }
+        },
+        "required": [
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stock_restore",
+      "op": "stock.restore",
+      "method": "POST",
+      "path": "/v1/stock/restore",
+      "tier": "T1",
+      "min_role": "cashier",
+      "toolsets": [
+        "kitchen"
+      ],
+      "emits": [
+        "stock.restored"
+      ],
+      "description": "Restore a sold-out product\n\nRestore a sold-out product\n\nRisk tier T1. Needs role cashier or above. Emits stock.restored.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "outlet_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "product_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "outlet_id",
+              "product_id"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          }
+        },
+        "required": [
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stock_set_daily_cap",
+      "op": "stock.set_daily_cap",
+      "method": "POST",
+      "path": "/v1/stock/daily-cap",
+      "tier": "T2",
+      "min_role": "manager",
+      "toolsets": [
+        "kitchen"
+      ],
+      "emits": [
+        "stock.cap_set"
+      ],
+      "description": "Set a daily quantity cap\n\nCounts down with sales and blocks at 0. Null removes the cap.\n\nRisk tier T2. Needs role manager or above. Emits stock.cap_set.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "outlet_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "product_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "quantity": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            },
+            "required": [
+              "outlet_id",
+              "product_id",
+              "quantity"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          }
+        },
+        "required": [
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "tables_get",
+      "op": "tables.get",
+      "method": "GET",
+      "path": "/v1/tables/{id}",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "Get a table\n\nGet a table\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "tables_list",
+      "op": "tables.list",
+      "method": "GET",
+      "path": "/v1/tables",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "List tables\n\nList tables\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "area_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "tender_types_get",
+      "op": "tender_types.get",
+      "method": "GET",
+      "path": "/v1/tender-types/{id}",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "Get a tender type\n\nGet a tender type\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "tender_types_list",
+      "op": "tender_types.list",
+      "method": "GET",
+      "path": "/v1/tender-types",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "List tender types\n\nList tender types\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "void_reasons_get",
+      "op": "void_reasons.get",
+      "method": "GET",
+      "path": "/v1/void-reasons/{id}",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "Get a void reason\n\nGet a void reason\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "void_reasons_list",
+      "op": "void_reasons.list",
+      "method": "GET",
+      "path": "/v1/void-reasons",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "List void reasons\n\nList void reasons\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "outlet_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

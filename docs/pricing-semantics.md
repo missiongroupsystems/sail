@@ -66,6 +66,7 @@ price(order, rules, context) → { lines, adjustments, totals, trace, warnings, 
   - lines added after the freeze receive line-level rules only (minus any with minimum spend);
   - fees recompute on the current discounted amounts, so a frozen discount keeps a paid check stable.
 - `pricing_status` is `frozen` whenever a frozen context is passed.
+- When every line a frozen rule was stored on has since been removed, the frozen adjustment is still re-emitted, with no lines and a total of 0, so the bill keeps its audit trail of what was applied at the first payment (reference case R151).
 
 ## 6. Output invariants (all property-tested)
 1. Every adjustment's line amounts sum to its total; the same for GST.

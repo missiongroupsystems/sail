@@ -63,6 +63,7 @@ export type Principal =
       sessionId: string;
       onBehalfOf: string | null;
       riskCeiling: string;
+      toolsets: string[];
     };
 
 /** The Postgres role for SET LOCAL ROLE. */

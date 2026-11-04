@@ -97,9 +97,50 @@ describe("RLS replay", () => {
     ).rejects.toThrow(/row-level security/);
   });
 
-  it("guest, relay and agent roles have no access to staff tables yet", async () => {
-    for (const role of ["app_guest", "app_relay", "app_agent"]) {
+  it("guest and relay roles have no access to staff; the agent role sees names but never PIN hashes", async () => {
+    for (const role of ["app_guest", "app_relay"]) {
       await expect(countAs(role, A.merchantId, "*", A.admin.id, "staff")).rejects.toThrow(/permission denied/);
+    }
+    const names = await db.sql.begin(async (tx) => {
+      await tx`select set_config('app.current_merchant', ${A.merchantId}, true), set_config('app.current_outlets', '*', true), set_config('app.current_principal', ${A.admin.id}, true), set_config('app.current_principal_type', 'agent', true)`;
+      await tx.unsafe("set local role app_agent");
+      return tx.unsafe<{ name: string }[]>("select name from staff");
+    });
+    expect(names.length).toBeGreaterThan(0);
+  });
+
+  it("app_agent sees none of merchant B's rows in the tables it may read, and nothing at all in token and session tables", async () => {
+    const tables = await tenantTables();
+    const readable: string[] = [];
+    const denied: string[] = [];
+    for (const t of tables) {
+      const [priv] = await db.sql<{ any: boolean }[]>`select has_any_column_privilege('app_agent', ${t.table_name}::regclass, 'SELECT') as any`;
+      (priv!.any ? readable : denied).push(t.table_name);
+    }
+    expect(denied).toEqual(expect.arrayContaining(["staff_sessions", "station_pairing_codes", "relay_pairing_codes", "table_qr_tokens", "guest_sessions", "agent_sessions"]));
+    expect(readable).toEqual(expect.arrayContaining(["orders", "order_lines", "products", "events", "staff", "customers"]));
+    for (const t of readable) {
+      const [total] = await db.sql.unsafe<{ n: number }[]>(`select count(merchant_id)::int as n from ${t}`);
+      if (!total || total.n === 0) continue;
+      const [bOwn] = await db.sql.unsafe<{ n: number }[]>(`select count(merchant_id)::int as n from ${t} where merchant_id = '${B.merchantId}'`);
+      const seenByA = await db.sql.begin(async (tx) => {
+        await tx`select set_config('app.current_merchant', ${A.merchantId}, true), set_config('app.current_outlets', '*', true), set_config('app.current_principal', ${A.admin.id}, true), set_config('app.current_principal_type', 'agent', true)`;
+        await tx.unsafe("set local role app_agent");
+        const [row] = await tx.unsafe<{ n: number }[]>(`select count(merchant_id)::int as n from ${t} where merchant_id = '${B.merchantId}'`);
+        return row!.n;
+      });
+      expect(seenByA, `app_agent for A saw ${seenByA} of B's ${bOwn!.n} rows in ${t}`).toBe(0);
+    }
+  });
+
+  it("app_guest cannot read payments, checks, refunds, staff or other tables beyond the menu and its own order", async () => {
+    for (const t of ["payments", "checks", "refunds", "staff", "shifts", "customers", "pricing_rules", "audit_log", "print_jobs"]) {
+      const attempt = db.sql.begin(async (tx) => {
+        await tx`select set_config('app.current_merchant', ${A.merchantId}, true), set_config('app.current_outlets', ${A.outletId}, true), set_config('app.current_principal', ${A.admin.id}, true), set_config('app.current_principal_type', 'guest', true), set_config('app.current_order', '', true)`;
+        await tx.unsafe("set local role app_guest");
+        return tx.unsafe(`select count(*) from ${t}`);
+      });
+      await expect(attempt, `app_guest could read ${t}`).rejects.toMatchObject({ code: "42501" });
     }
   });
 });

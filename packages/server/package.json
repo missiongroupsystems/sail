@@ -19,6 +19,7 @@
     "manifest:generate": "tsx scripts/mcp-manifest.ts write",
     "manifest:check": "tsx scripts/mcp-manifest.ts check",
     "dev:local": "tsx scripts/dev-local.ts",
+    "load:local": "tsx scripts/load-local.ts",
     "bootstrap": "tsx scripts/bootstrap.ts"
   },
   "dependencies": {

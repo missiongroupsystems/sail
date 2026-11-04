@@ -4,6 +4,14 @@ All notable changes to Sail. Phases follow `docs/roadmap.md`; each has a complet
 
 ## Unreleased (feat/beta-v1)
 
+### v0.9 Reporting, hardening and beta readiness
+- Reports from SQL views (`report_*`, security_invoker): sales summary with every §4.10 filter, product mix by item/category/staff, void/discount/refund exceptions, print health (late counts, p50/p95 fire-to-printed), daily outlet report combining the Z-report with breakdowns; CSV everywhere and a PDF daily summary.
+- Agent principal (vision §7): agent identities with role, scope, toolsets, risk ceiling and budgets; 15-minute task-bound sessions with on-behalf-of intersection; `app_agent` Postgres role with no access to secrets or configuration writes; proposals for operations above the ceiling, approved or rejected by staff and replayed exactly as the approver; kill switch and credential rotation.
+- MCP adapter (`--role=mcp`): tools generated from the OpenAPI x-sail manifest, filtered per identity, every call an in-process API request; floor and menu resources; untrusted text wrapped; committed `mcp-tools.json` checked in CI.
+- Reference set grown to 152 pricing cases plus 24 hand-worked split and refund cases.
+- Hardening documents: release and rollback policy, runbooks (card-terminal mismatch, mid-service outage), token-scope security review, MCP guide; parallel-run reconciliation script; local load-test script. RLS replay covers `app_agent` and `app_guest`.
+- Session last-seen updates skip locked rows so nested register requests cannot deadlock.
+
 ### v0.8 Scan to Order
 - Rotatable table QR tokens and a printable QR sheet (PDF); public guest sessions with short-lived tokens, rate-limited per device and table.
 - `app_guest` principal and read-only Postgres role (menu and own order only); guest writes run as the register after validation.

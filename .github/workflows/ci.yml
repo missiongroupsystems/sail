@@ -34,6 +34,8 @@ jobs:
         run: pnpm --filter @sail/server test
       - name: OpenAPI contract is committed and reviewed
         run: pnpm --filter @sail/server openapi:check
+      - name: MCP tool manifest matches the routes
+        run: pnpm --filter @sail/server manifest:check
       - name: Migration drift (schema changes need a generated migration)
         run: |
           pnpm --filter @sail/server exec drizzle-kit generate --name ci_drift_check

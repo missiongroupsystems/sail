@@ -20,6 +20,8 @@ export const MeSchema = z.object({
   outlet_id: z.string().nullable(),
   station_id: z.string().nullable(),
   via: z.string().nullable(),
+  risk_ceiling: z.string().nullable(),
+  agent: z.object({ identity_id: z.string(), session_id: z.string(), toolsets: z.array(z.string()), on_behalf_of: z.string().nullable() }).nullable(),
 });
 
 export function authRoutes(app: OpenAPIHono<AppEnv>) {
@@ -37,6 +39,8 @@ export function authRoutes(app: OpenAPIHono<AppEnv>) {
           outlet_id: "outletId" in p ? (p.outletId ?? null) : null,
           station_id: "stationId" in p ? (p.stationId ?? null) : null,
           via: p.type === "staff" ? p.via : null,
+          risk_ceiling: p.type === "staff" || p.type === "agent" ? p.riskCeiling : null,
+          agent: p.type === "agent" ? { identity_id: p.identityId, session_id: p.sessionId, toolsets: p.toolsets, on_behalf_of: p.onBehalfOf } : null,
         },
       },
       200,

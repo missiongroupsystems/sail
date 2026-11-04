@@ -2,6 +2,7 @@ import { createRoute, OpenAPIHono, z, type RouteConfig, type RouteHandler } from
 import type { Next } from "hono";
 import { ApiErrorSchema, operation, roleAtLeast, type OperationSpec } from "@sail/shared";
 import { AppError } from "./errors.js";
+import { aboveCeiling, createProposal, toProposal } from "../services/agents.js";
 import type { AppEnv } from "./context.js";
 import { principalRole } from "../auth/principal.js";
 
@@ -78,6 +79,30 @@ export function defineOp<R extends OpRoute>(app: OpenAPIHono<AppEnv>, route: R, 
   app.openapi(full, (async (c: any, next: any) => {
     c.set("operationId", op);
     enforce(c, spec);
+    const principal = c.get("principal") as AppEnv["Variables"]["principal"] | undefined;
+    const method = String(c.req.method).toUpperCase();
+    // Reads, quotes and dry runs are T0 by nature (vision 7.3); anything else above the caller's ceiling becomes a proposal.
+    if (principal && method !== "GET" && spec.principals.length > 0 && aboveCeiling(principal, spec)) {
+      let body: unknown = null;
+      try {
+        body = await c.req.json();
+      } catch {
+        body = null;
+      }
+      if (spec.dryRun && (body as { dry_run?: unknown } | null)?.dry_run === true) return handler(c, next); // a dry run commits nothing: T0 by nature
+      const proposal = await createProposal({ principal, spec, method, path: c.req.path + (c.req.url.includes("?") ? c.req.url.slice(c.req.url.indexOf("?")) : ""), body, idempotencyKey: c.get("idempotencyKey") ?? null, rationale: c.req.header("x-rationale") ?? null, correlationId: c.get("correlationId") });
+      const ceiling = principal.type === "agent" || principal.type === "staff" ? principal.riskCeiling : null;
+      return c.json(
+        {
+          code: "requires_confirmation",
+          message: `${spec.op} is a ${spec.tier} operation, above this ${principal.type === "agent" ? "agent" : "person"}'s ${ceiling} ceiling; a proposal was created for a human to approve`,
+          remedy: `Ask a ${spec.minRole ?? "staff member"} or above to approve proposal ${proposal.id} on the POS or in the back office. Poll proposals.get for the outcome; propose again from the fresh state if it fails.`,
+          details: { proposal_id: proposal.id, tier: spec.tier, ceiling, expires_at: proposal.expiresAt.toISOString() },
+          data: toProposal(proposal),
+        },
+        202,
+      );
+    }
     return handler(c, next);
   }) as never);
   return full;
