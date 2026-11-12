@@ -9,7 +9,8 @@ import { PERMISSIONS } from "./roles.js";
 export type RiskTier = "T0" | "T1" | "T2" | "T3";
 export type PrincipalKind = "staff" | "station" | "guest" | "relay" | "agent";
 
-export type Toolset = "pos.read" | "pos.order" | "pos.payment" | "pos.refund" | "kitchen" | "guest" | "config.author" | "reports" | "watch";
+export const TOOLSETS = ["pos.read", "pos.order", "pos.payment", "pos.refund", "kitchen", "guest", "config.author", "reports", "watch"] as const;
+export type Toolset = (typeof TOOLSETS)[number];
 
 export type OperationSpec = {
   /** `group.verb` */
@@ -68,7 +69,7 @@ export const OPERATIONS: Record<string, OperationSpec> = {
     dryRun: false,
     principals: ["staff", "station", "guest", "relay", "agent"],
     emits: [],
-    mcp: { expose: true, toolsets: ["pos.read", "reports", "watch", "config.author"] },
+    mcp: { expose: true, toolsets: [...TOOLSETS] },
   },
   "merchants.get": {
     op: "merchants.get",
@@ -104,7 +105,7 @@ export const OPERATIONS: Record<string, OperationSpec> = {
   "stations.list": { op: "stations.list", summary: "List stations", description: "POS stations of an outlet with their settings and pairing state.", tier: "T0", minRole: "server", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: STAFF_AND_STATION, emits: [], mcp: { expose: false, toolsets: [] } },
   "stations.create": { op: "stations.create", summary: "Create a station", description: "Creates a station record for an outlet. Pair an iPad to it with stations.pair.", tier: "T3", ...fromPermission("config.edit"), reasonRequired: false, dryRun: false, principals: STAFF, emits: ["station.created"], mcp: { expose: false, toolsets: [] } },
   "stations.update": { op: "stations.update", summary: "Update a station", description: "Changes a station's layout, printers, pay-before-firing or seat settings.", tier: "T3", ...fromPermission("config.edit"), reasonRequired: false, dryRun: false, principals: STAFF, emits: ["station.updated"], mcp: { expose: false, toolsets: [] } },
-  "staff.list": { op: "staff.list", summary: "List staff", description: "Staff of the merchant with role and outlet scope. PINs are never returned.", tier: "T0", minRole: "manager", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: STAFF, emits: [], mcp: { expose: true, toolsets: ["reports"] } },
+  "staff.list": { op: "staff.list", summary: "List staff", description: "Staff of the merchant with role and outlet scope. PINs are never returned.", tier: "T0", minRole: "manager", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: [], mcp: { expose: false, toolsets: [] } },
   "staff.create": { op: "staff.create", summary: "Add a staff member", description: "Adds a staff member with a role, outlet and brand scope, optional back-office email and POS PIN.", tier: "T3", ...fromPermission("staff.edit"), reasonRequired: false, dryRun: false, principals: STAFF, emits: ["staff.created"], mcp: { expose: false, toolsets: [] } },
   "staff.update": { op: "staff.update", summary: "Update a staff member", description: "Changes role, scope, PIN or active state.", tier: "T3", ...fromPermission("staff.edit"), reasonRequired: false, dryRun: false, principals: STAFF, emits: ["staff.updated"], mcp: { expose: false, toolsets: [] } },
   "audit.list": { op: "audit.list", summary: "List audit entries", description: "Who did what, on which target, when, and who approved it. Filter by actor, action, target or time.", tier: "T0", ...fromPermission("audit.list"), reasonRequired: false, dryRun: false, principals: STAFF, emits: [], mcp: { expose: true, toolsets: ["reports", "watch"] } },

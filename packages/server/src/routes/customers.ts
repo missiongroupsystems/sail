@@ -12,24 +12,19 @@ import { recordAudit } from "../lib/audit.js";
 import { compact, defineCrud } from "../lib/crud.js";
 
 registerOperations({
-  "customers.find": { op: "customers.find", summary: "Find customers", description: "By mobile (exact or prefix) or name prefix. Contact details are masked for agent principals.", tier: "T0", minRole: "server", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff", "agent"], emits: [], mcp: { expose: true, toolsets: ["pos.read"] } },
-  "customers.get": { op: "customers.get", summary: "Get a customer with their groups", description: "Contact details are masked for agent principals.", tier: "T0", minRole: "server", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff", "agent"], emits: [], mcp: { expose: true, toolsets: ["pos.read"] } },
-  "customers.upsert": { op: "customers.upsert", summary: "Create or update a customer", description: "Mobile is unique per merchant. Consent changes are evented.", tier: "T1", minRole: "cashier", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff", "agent"], emits: ["customer.upserted"], mcp: { expose: true, toolsets: ["pos.order"] } },
+  "customers.find": { op: "customers.find", summary: "Find customers", description: "By mobile (exact or prefix) or name prefix. Not available to agents: they cannot read customer contact details.", tier: "T0", minRole: "server", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: [], mcp: { expose: false, toolsets: [] } },
+  "customers.get": { op: "customers.get", summary: "Get a customer with their groups", description: "Not available to agents: they cannot read customer contact details.", tier: "T0", minRole: "server", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: [], mcp: { expose: false, toolsets: [] } },
+  "customers.upsert": { op: "customers.upsert", summary: "Create or update a customer", description: "Mobile is unique per merchant. Consent changes are evented. Not available to agents.", tier: "T1", minRole: "cashier", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: ["customer.upserted"], mcp: { expose: false, toolsets: [] } },
   "customer_groups.set_members": { op: "customer_groups.set_members", summary: "Add or remove customers from a group", description: "Changes pricing eligibility, so it is a configuration change and is evented.", tier: "T3", minRole: "manager", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff", "agent"], emits: ["customer_group.members_changed"], mcp: { expose: false, toolsets: [] } },
 });
 
 export const CustomerSchema = z.object({ id: z.string(), name: z.string(), mobile: z.string().nullable(), email: z.string().nullable(), marketing_consent: z.boolean(), notes: untrusted(z.string().nullable()), group_ids: z.array(z.string()), legacy_id: z.string().nullable(), archived: z.boolean() });
 const CustomerUpsert = z.object({ id: z.uuid().optional(), name: untrusted(z.string().min(1), "name@customers"), mobile: untrusted(z.string().min(3).nullable().optional(), "mobile@customers"), email: z.string().email().nullable().optional(), marketing_consent: z.boolean().optional(), notes: untrusted(z.string().nullable().optional()), legacy_id: z.string().nullable().optional(), group_ids: z.array(z.uuid()).optional(), archived: z.boolean().optional() });
 
-function mask(value: string | null, agent: boolean): string | null {
-  if (!value || !agent) return value;
-  return value.length <= 4 ? "••••" : `${"•".repeat(value.length - 4)}${value.slice(-4)}`;
-}
-
-async function toCustomer(rows: (typeof customers.$inferSelect)[], agent: boolean) {
+async function toCustomer(rows: (typeof customers.$inferSelect)[]) {
   const ids = rows.map((r) => r.id);
   const members = ids.length ? await db().select().from(customerGroupMembers).where(inArray(customerGroupMembers.customerId, ids)) : [];
-  return rows.map((r) => ({ id: r.id, name: r.name, mobile: mask(r.mobile, agent), email: mask(r.email, agent), marketing_consent: r.marketingConsent, notes: r.notes, group_ids: members.filter((m) => m.customerId === r.id).map((m) => m.groupId), legacy_id: r.legacyId, archived: r.archivedAt != null }));
+  return rows.map((r) => ({ id: r.id, name: r.name, mobile: r.mobile, email: r.email, marketing_consent: r.marketingConsent, notes: r.notes, group_ids: members.filter((m) => m.customerId === r.id).map((m) => m.groupId), legacy_id: r.legacyId, archived: r.archivedAt != null }));
 }
 
 export function customerRoutes(app: OpenAPIHono<AppEnv>) {
@@ -50,15 +45,14 @@ export function customerRoutes(app: OpenAPIHono<AppEnv>) {
       .where(and(...conds))
       .orderBy(asc(customers.name))
       .limit(q.limit);
-    return c.json({ data: await toCustomer(rows, p.type === "agent"), next_cursor: null }, 200);
+    return c.json({ data: await toCustomer(rows), next_cursor: null }, 200);
   });
 
   defineOp(app, { op: "customers.get", method: "get", path: "/v1/customers/{id}", tags: ["customers"], request: { params: z.object({ id: z.uuid() }) }, responses: { 200: jsonResponse(dataResponse(CustomerSchema)), ...errorResponses } }, async (c) => {
-    const p = c.get("principal");
     const { id } = c.req.valid("param");
     const [row] = await db().select().from(customers).where(eq(customers.id, id)).limit(1);
     if (!row) throw AppError.notFound("customer", id);
-    return c.json({ data: (await toCustomer([row], p.type === "agent"))[0]! }, 200);
+    return c.json({ data: (await toCustomer([row]))[0]! }, 200);
   });
 
   defineOp(app, { op: "customers.upsert", method: "put", path: "/v1/customers", tags: ["customers"], request: { body: jsonBody(CustomerUpsert) }, responses: { 200: jsonResponse(mutationResponse(CustomerSchema)), ...errorResponses } }, async (c) => {
@@ -92,10 +86,10 @@ export function customerRoutes(app: OpenAPIHono<AppEnv>) {
       await db().delete(customerGroupMembers).where(eq(customerGroupMembers.customerId, row!.id));
       if (b.group_ids.length) await db().insert(customerGroupMembers).values(b.group_ids.map((groupId) => ({ merchantId: p.merchantId, groupId, customerId: row!.id })));
     }
-    const data = (await toCustomer([row!], false))[0]!;
+    const data = (await toCustomer([row!]))[0]!;
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "customer.upserted", aggregate: { kind: "customer", id: row!.id }, operationId: "customers.upsert", payload: { name: data.name, consent: data.marketing_consent, group_ids: data.group_ids }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
     await recordAudit(p, { action: "customers.upsert", targetKind: "customer", targetId: row!.id, details: { consent: data.marketing_consent } });
-    return c.json({ data: (await toCustomer([row!], p.type === "agent"))[0]!, events: [ev], warnings: [] }, 200);
+    return c.json({ data: (await toCustomer([row!]))[0]!, events: [ev], warnings: [] }, 200);
   });
 
   const GroupSchema = z.object({ id: z.string(), name: z.string(), description: z.string().nullable(), archived: z.boolean() });

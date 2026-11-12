@@ -202,7 +202,7 @@ describe("ceilings and proposals", () => {
   });
 
   it("an agent with a T2 ceiling still cannot comp, fire or take a payment by itself: each one is a proposal a person approves", async () => {
-    const r = await call<{ data: { credential: string } }>("POST", "/v1/agent-identities", { token: A.admin.token, body: { name: "Attended", role: "manager", outlet_ids: [A.outletId], toolsets: ["pos.read", "pos.order", "pos.payment"], risk_ceiling: "T2" } });
+    const r = await call<{ data: { id: string; credential: string } }>("POST", "/v1/agent-identities", { token: A.admin.token, body: { name: "Attended", role: "manager", outlet_ids: [A.outletId], toolsets: ["pos.read", "pos.order", "pos.payment"], risk_ceiling: "T2" } });
     const tok = (await startSession(r.body.data.credential, { on_behalf_of: await delegate(managerPin, r.body.data.id) })).body.data.agent_token;
     const o = await call<{ data: Snap & { totals: { total: number } } }>("POST", "/v1/orders", { token: tok, body: { order_id: randomUUID(), order_type: "takeaway", takeaway_ref: "C", outlet_id: A.outletId, brand_id: A.brandId } });
     const s = (await call<{ data: Snap & { totals: { total: number } } }>("POST", `/v1/orders/${o.body.data.id}/lines`, { token: tok, body: { lines: [{ line_id: randomUUID(), product_id: ids.laksa, quantity: 1 }] } })).body.data;

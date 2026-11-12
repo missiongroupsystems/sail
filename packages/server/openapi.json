@@ -133,9 +133,14 @@
             "expose": true,
             "toolsets": [
               "pos.read",
+              "pos.order",
+              "pos.payment",
+              "pos.refund",
+              "kitchen",
+              "guest",
+              "config.author",
               "reports",
-              "watch",
-              "config.author"
+              "watch"
             ]
           }
         },
@@ -4928,8 +4933,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "merchant.settings_updated"
@@ -5861,8 +5865,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "brand.created"
@@ -6311,8 +6314,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "brand.updated"
@@ -7195,8 +7197,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "outlet.created"
@@ -7720,8 +7721,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "outlet.updated"
@@ -8678,8 +8678,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "station.created"
@@ -9208,8 +9207,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "station.updated"
@@ -9733,15 +9731,12 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [],
           "mcp": {
-            "expose": true,
-            "toolsets": [
-              "reports"
-            ]
+            "expose": false,
+            "toolsets": []
           }
         },
         "parameters": [
@@ -10151,8 +10146,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "staff.created"
@@ -10674,8 +10668,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "staff.updated"
@@ -12175,8 +12168,7 @@
           "dry_run": false,
           "principals": [
             "staff",
-            "station",
-            "agent"
+            "station"
           ],
           "emits": [],
           "mcp": {
@@ -12881,8 +12873,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "report_category.created"
@@ -13676,8 +13667,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "report_category.updated"
@@ -14647,8 +14637,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "product.created"
@@ -15698,8 +15687,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "product.updated"
@@ -16304,8 +16292,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "product.updated"
@@ -17165,8 +17152,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "modifier_group.created"
@@ -18082,8 +18068,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "modifier_group.updated"
@@ -18980,8 +18965,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "menu.created"
@@ -19921,8 +19905,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "menu.updated"
@@ -20861,8 +20844,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "availability_rule.created"
@@ -21729,8 +21711,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "availability_rule.updated"
@@ -22202,8 +22183,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "availability_rule.deleted"
@@ -25003,8 +24983,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "area.created"
@@ -25782,8 +25761,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "area.updated"
@@ -26613,8 +26591,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "table.created"
@@ -27478,8 +27455,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "table.updated"
@@ -28372,8 +28348,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "tender_type.created"
@@ -29243,8 +29218,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "tender_type.updated"
@@ -30113,8 +30087,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "void_reason.created"
@@ -30898,8 +30871,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "void_reason.updated"
@@ -31756,8 +31728,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "channel_link.created"
@@ -32617,8 +32588,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "channel_link.updated"
@@ -33467,8 +33437,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "layout.created"
@@ -34855,8 +34824,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "layout.updated"
@@ -35665,7 +35633,7 @@
           "customers"
         ],
         "operationId": "customers.find",
-        "description": "By mobile (exact or prefix) or name prefix. Contact details are masked for agent principals.",
+        "description": "By mobile (exact or prefix) or name prefix. Not available to agents: they cannot read customer contact details.",
         "summary": "Find customers",
         "x-sail": {
           "op": "customers.find",
@@ -35675,15 +35643,12 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [],
           "mcp": {
-            "expose": true,
-            "toolsets": [
-              "pos.read"
-            ]
+            "expose": false,
+            "toolsets": []
           }
         },
         "parameters": [
@@ -36086,7 +36051,7 @@
           "customers"
         ],
         "operationId": "customers.upsert",
-        "description": "Mobile is unique per merchant. Consent changes are evented.",
+        "description": "Mobile is unique per merchant. Consent changes are evented. Not available to agents.",
         "summary": "Create or update a customer",
         "x-sail": {
           "op": "customers.upsert",
@@ -36096,17 +36061,14 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "customer.upserted"
           ],
           "mcp": {
-            "expose": true,
-            "toolsets": [
-              "pos.order"
-            ]
+            "expose": false,
+            "toolsets": []
           }
         },
         "requestBody": {
@@ -36571,7 +36533,7 @@
           "customers"
         ],
         "operationId": "customers.get",
-        "description": "Contact details are masked for agent principals.",
+        "description": "Not available to agents: they cannot read customer contact details.",
         "summary": "Get a customer with their groups",
         "x-sail": {
           "op": "customers.get",
@@ -36581,15 +36543,12 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [],
           "mcp": {
-            "expose": true,
-            "toolsets": [
-              "pos.read"
-            ]
+            "expose": false,
+            "toolsets": []
           }
         },
         "parameters": [
@@ -37342,8 +37301,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "customer_group.created"
@@ -38105,8 +38063,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "customer_group.updated"
@@ -38522,8 +38479,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "customer_group.members_changed"
@@ -43901,17 +43857,14 @@
           "reason_required": false,
           "dry_run": true,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "import.queued"
           ],
           "mcp": {
-            "expose": true,
-            "toolsets": [
-              "config.author"
-            ]
+            "expose": false,
+            "toolsets": []
           }
         },
         "requestBody": {
@@ -44561,15 +44514,12 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [],
           "mcp": {
-            "expose": true,
-            "toolsets": [
-              "config.author"
-            ]
+            "expose": false,
+            "toolsets": []
           }
         },
         "responses": {
@@ -45043,15 +44993,12 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [],
           "mcp": {
-            "expose": true,
-            "toolsets": [
-              "config.author"
-            ]
+            "expose": false,
+            "toolsets": []
           }
         },
         "parameters": [
@@ -46153,8 +46100,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [],
           "mcp": {
@@ -57279,8 +57225,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "printer.created"
@@ -58308,8 +58253,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "printer.updated"
@@ -58898,8 +58842,7 @@
           "dry_run": false,
           "principals": [
             "staff",
-            "station",
-            "agent"
+            "station"
           ],
           "emits": [],
           "mcp": {
@@ -59317,8 +59260,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "relay.created"
@@ -59775,8 +59717,7 @@
           "dry_run": false,
           "principals": [
             "staff",
-            "station",
-            "agent"
+            "station"
           ],
           "emits": [],
           "mcp": {
@@ -60172,8 +60113,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "relay.updated"
@@ -69369,8 +69309,7 @@
           "dry_run": false,
           "principals": [
             "staff",
-            "station",
-            "agent"
+            "station"
           ],
           "emits": [],
           "mcp": {
@@ -74631,8 +74570,7 @@
           "dry_run": false,
           "principals": [
             "staff",
-            "station",
-            "agent"
+            "station"
           ],
           "emits": [],
           "mcp": {
@@ -86758,8 +86696,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "display_destination.created"
@@ -87616,8 +87553,7 @@
           "reason_required": false,
           "dry_run": false,
           "principals": [
-            "staff",
-            "agent"
+            "staff"
           ],
           "emits": [
             "display_destination.updated"

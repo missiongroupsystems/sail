@@ -133,28 +133,38 @@ export function manifestExtension(spec: OperationSpec) {
     override_allowed: spec.overrideAllowed,
     reason_required: spec.reasonRequired,
     dry_run: spec.dryRun,
-    principals: spec.principals,
+    principals: callers(spec),
     emits: spec.emits,
     mcp: spec.mcp,
   };
+}
+
+/** Who may call an operation. An agent reaches only what is exposed over MCP, whether it calls through MCP or over plain HTTP. */
+function callers(spec: OperationSpec): OperationSpec["principals"] {
+  return spec.mcp.expose ? spec.principals : spec.principals.filter((p) => p !== "agent");
 }
 
 function enforce(c: { get(k: "principal"): AppEnv["Variables"]["principal"] | undefined }, spec: OperationSpec) {
   if (spec.principals.length === 0) return; // public route (health, dev token, pairing)
   const principal = c.get("principal");
   if (!principal) throw new AppError("unauthenticated", "Missing bearer token");
-  if (!spec.principals.includes(principal.type)) {
+  if (!callers(spec).includes(principal.type)) {
     throw new AppError("permission_denied", `${spec.op} is not available to ${principal.type} principals`, {
       remedy: principal.type === "station" ? "Sign in with a PIN first." : "Use a staff or station token.",
       details: { action: spec.op, principal_type: principal.type },
     });
+  }
+  // An agent's toolsets bound what it may do, not only which tools it is shown.
+  if (principal.type === "agent" && !spec.mcp.toolsets.some((t) => principal.toolsets.includes(t))) {
+    throw new AppError("permission_denied", `${spec.op} is outside this agent's toolsets`, { remedy: "An Admin can widen the identity's toolsets.", details: { action: spec.op, toolsets: spec.mcp.toolsets } });
   }
   if (spec.minRole) {
     const role = principalRole(principal);
     if (!role) throw new AppError("permission_denied", `${spec.op} needs a signed-in staff member`, { remedy: "Sign in with a PIN first.", details: { action: spec.op, required_role: spec.minRole } });
     if (!roleAtLeast(role, spec.minRole)) {
       // Manager override grants are checked by the handler (v0.4) when override_allowed; here the base role check fails.
-      if (!spec.overrideAllowed || !hasOverrideHeader(c)) throw AppError.permission(spec.minRole, spec.overrideAllowed, spec.op);
+      // An agent never holds a grant, so an override header means nothing for it.
+      if (!spec.overrideAllowed || principal.type === "agent" || !hasOverrideHeader(c)) throw AppError.permission(spec.minRole, spec.overrideAllowed, spec.op);
     }
   }
 }

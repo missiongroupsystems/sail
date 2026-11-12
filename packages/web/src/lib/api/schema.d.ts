@@ -1197,12 +1197,12 @@ export interface paths {
         };
         /**
          * Find customers
-         * @description By mobile (exact or prefix) or name prefix. Contact details are masked for agent principals.
+         * @description By mobile (exact or prefix) or name prefix. Not available to agents: they cannot read customer contact details.
          */
         get: operations["customers.find"];
         /**
          * Create or update a customer
-         * @description Mobile is unique per merchant. Consent changes are evented.
+         * @description Mobile is unique per merchant. Consent changes are evented. Not available to agents.
          */
         put: operations["customers.upsert"];
         post?: never;
@@ -1221,7 +1221,7 @@ export interface paths {
         };
         /**
          * Get a customer with their groups
-         * @description Contact details are masked for agent principals.
+         * @description Not available to agents: they cannot read customer contact details.
          */
         get: operations["customers.get"];
         put?: never;

@@ -68,3 +68,30 @@ describe("A13: an on_behalf_of session ends with the person's session", () => {
     expect((await openTakeaway(tok)).status).toBe(401);
   });
 });
+
+describe("A3: toolsets and MCP exposure are enforced by the API", () => {
+  it("a reports-only identity cannot edit orders or stock over plain HTTP, nor propose a configuration change MCP does not expose", async () => {
+    const id = await identity({ role: "admin", toolsets: ["reports"], risk_ceiling: "T1" });
+    const tok = await session(id.credential);
+    expect((await openTakeaway(tok)).status).toBe(403);
+    expect((await call("POST", "/v1/stock/sold-out", { token: tok, body: { outlet_id: w.m.outletId, product_id: w.ids.kopi, until: "today" } })).status).toBe(403);
+    expect((await call("GET", `/v1/reports/sales-summary?outlet_id=${w.m.outletId}`, { token: tok })).status).toBe(200);
+    expect((await call("GET", "/v1/me", { token: tok })).status).toBe(200);
+    const all = await identity({ role: "admin", toolsets: ["pos.read", "pos.order", "pos.payment", "pos.refund", "kitchen", "guest", "config.author", "reports", "watch"], risk_ceiling: "T1" });
+    const atok = await session(all.credential);
+    const before = (await db.sql<{ n: number }[]>`select count(*)::int as n from proposals`)[0]!.n;
+    expect((await call("PATCH", `/v1/products/${w.ids.wine}`, { token: atok, body: { price: 1 } })).status).toBe(403);
+    expect((await call("PATCH", `/v1/staff/${w.m.admin.id}`, { token: atok, body: { pin: "135790" } })).status).toBe(403);
+    expect((await db.sql<{ n: number }[]>`select count(*)::int as n from proposals`)[0]!.n).toBe(before);
+  });
+});
+
+describe("A9: an override header means nothing for an agent", () => {
+  it("a server-role agent is refused a Manager operation with or without x-override-id", async () => {
+    const id = await identity({ role: "server", toolsets: ["pos.order", "pos.refund"], risk_ceiling: "T1" });
+    const tok = await session(id.credential);
+    const o = await openTakeaway(w.pins.manager);
+    expect((await call("POST", `/v1/orders/${o.body.data.id}/reopen`, { token: tok, body: { reason: "x" } })).status).toBe(403);
+    expect((await call("POST", `/v1/orders/${o.body.data.id}/reopen`, { token: tok, body: { reason: "x" }, headers: { "x-override-id": "anything" } })).status).toBe(403);
+  });
+});

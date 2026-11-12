@@ -174,6 +174,7 @@ export function printingRoutes(app: OpenAPIHono<AppEnv>) {
     create: z.object({ id: z.uuid().optional(), outlet_id: z.uuid(), name: z.string().min(1) }),
     patch: z.object({ name: z.string().min(1).optional() }),
     aggregateKind: "relay",
+    principals: { read: ["staff", "station"], write: ["staff"] },
     mcp: { read: false },
     toApi: toRelay,
     fromCreate: (b) => ({ id: b.id, merchantId: "", outletId: b.outlet_id, name: b.name }),
