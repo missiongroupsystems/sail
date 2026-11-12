@@ -1,16 +1,19 @@
 "use client";
 
-import { DataTable, DescriptionList, EmptyState, InlineError, Money, SectionHeading, Skeleton, type DataTableColumn } from "@sail/ui";
+import { DataTable, DescriptionList, EmptyState, InlineError, Money, SectionHeading, Skeleton, taxRows, type DataTableColumn } from "@sail/ui";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
-import type { Outlet } from "@/lib/api/types";
+import type { Outlet, TaxBreakdown } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
+import { useSession } from "@/lib/session-context";
 import { ReportRange, useReportRange } from "../ReportRange";
 
 /** The register's sales summary (reports.sales_summary). Figures are shown as the register reports them. */
 type SalesSummary = {
-  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; gst: number; net: number; refunds: number; net_after_refunds: number; rounding: number; tips: number };
+  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; tax: number; net: number; refunds: number; net_after_refunds: number; rounding: number; tips: number };
+  /** `totals.tax` by component. */
+  taxes: TaxBreakdown[];
   by_day: { business_date: string; orders: number; covers: number; gross: number; net: number }[];
   by_tender: { tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number }[];
   by_category: { category_id: string | null; category: string; quantity: number; gross: number; net: number }[];
@@ -47,6 +50,7 @@ export function SalesView({ outlets, scope, initialOutletId }: { outlets: Outlet
     placeholderData: keepPreviousData,
   });
   const t = report.data?.totals;
+  const taxMode = useSession().merchant.settings.tax_mode;
 
   return (
     <>
@@ -65,8 +69,9 @@ export function SalesView({ outlets, scope, initialOutletId }: { outlets: Outlet
                 { term: "Gross", detail: <Money cents={t.gross} />, numeric: true },
                 { term: "Discounts", detail: <Money cents={-t.discounts} />, numeric: true },
                 { term: "Service and fees", detail: <Money cents={t.fees} />, numeric: true },
-                { term: "GST", detail: <Money cents={t.gst} />, numeric: true },
+                ...taxRows(report.data.taxes, taxMode).before.map((x) => ({ term: x.label, detail: <Money cents={x.amount} />, numeric: true })),
                 { term: "Net", detail: <Money cents={t.net} />, numeric: true },
+                ...taxRows(report.data.taxes, taxMode).after.map((x) => ({ term: x.label, detail: <Money cents={x.amount} />, numeric: true })),
                 { term: "Refunds", detail: <Money cents={-t.refunds} />, numeric: true },
                 { term: "Net after refunds", detail: <Money cents={t.net_after_refunds} />, numeric: true },
                 { term: "Cash rounding", detail: <Money cents={t.rounding} signed />, numeric: true },

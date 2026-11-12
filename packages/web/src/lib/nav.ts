@@ -44,6 +44,7 @@ export const SETTINGS_TABS = [
   { href: "/settings/stations", label: "Stations" },
   { href: "/settings/channels", label: "Channels" },
   { href: "/settings/tenders", label: "Tenders" },
+  { href: "/settings/tax", label: "Tax classes" },
   { href: "/settings/void-reasons", label: "Void reasons" },
   { href: "/settings/merchant", label: "Merchant" },
 ] as const;
@@ -59,7 +60,7 @@ export const MENU_TABS = [
   { href: "/menu/import", label: "Import" },
 ] as const;
 
-/** Pricing section tabs: rules, simulator, customer groups; tax and rounding live in merchant settings. */
+/** Pricing section tabs: rules, simulator, customer groups; tax classes and rounding live in settings. */
 export const PRICING_TABS = [
   { href: "/pricing/rules", label: "Rules" },
   { href: "/pricing/simulator", label: "Simulator" },

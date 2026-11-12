@@ -1,12 +1,12 @@
 "use client";
 
-import { Button, Money, SegmentedControl, Skeleton, useLocale } from "@sail/ui";
+import { Button, Money, SegmentedControl, Skeleton, taxRows, useLocale } from "@sail/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toApiError } from "@/lib/api";
 import { closeBusinessDay } from "../../api/register";
 import { usePos } from "../../components/PosContext";
-import { useZReport } from "../../hooks/queries";
+import { useMerchant, useZReport } from "../../hooks/queries";
 import { useApi } from "../../hooks/useApi";
 import { roleAtLeast } from "../../hooks/useOrderActions";
 import { ORDER_TYPE_LABEL } from "../../lib/format";
@@ -26,6 +26,8 @@ export function ZReportView() {
   const [busy, setBusy] = useState(false);
   const [closedAt, setClosedAt] = useState<string | null>(null);
   const r = report.data;
+  const taxMode = useMerchant().data?.settings.tax_mode ?? "exclusive";
+  const tax = taxRows(r?.sales.taxes ?? [], taxMode);
   const canCloseDay = roleAtLeast(staff.role, "manager");
 
   const closeDay = async () => {
@@ -66,8 +68,13 @@ export function ZReportView() {
               <Row label="Gross" cents={r.sales.gross} />
               <Row label="Discounts" cents={-r.sales.discounts} />
               <Row label="Service and fees" cents={r.sales.fees} />
-              <Row label="GST" cents={r.sales.gst} />
+              {tax.before.map((t) => (
+                <Row key={t.key} label={t.label} cents={t.amount} />
+              ))}
               <Row label="Net sales" cents={r.sales.net} strong />
+              {tax.after.map((t) => (
+                <Row key={t.key} label={t.label} cents={t.amount} />
+              ))}
             </dl>
             {r.adjustments.length ? (
               <dl className="mt-2 pt-2 hairline-t">

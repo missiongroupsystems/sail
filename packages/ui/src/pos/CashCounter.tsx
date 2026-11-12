@@ -21,19 +21,6 @@ export function denominationsFrom(minorUnits: readonly number[], money: LocaleFo
     .map((v) => ({ key: String(v), label: money(v, { dropZeroFraction: true }), cents: v }));
 }
 
-/**
- * Notes and coins for a currency the merchant has not configured: a 1-2-5 series from the smallest coin (the
- * cash rounding increment when there is one) up to 100 major units, or 10,000 for a currency with no minor unit.
- */
-export function fallbackDenominationValues(minorDigits: number, smallestCoin: number | null): number[] {
-  const major = 10 ** minorDigits;
-  const top = (minorDigits === 0 ? 10_000 : 100) * major;
-  const bottom = smallestCoin && smallestCoin > 0 ? smallestCoin : 10 ** Math.max(0, minorDigits - 2);
-  const out: number[] = [];
-  for (let decade = 1; decade <= top; decade *= 10) for (const step of [1, 2, 5]) if (step * decade >= bottom && step * decade <= top) out.push(step * decade);
-  return out;
-}
-
 export type CashCounterMode = "total" | "counts";
 
 export type CashCounterProps = {
@@ -72,19 +59,22 @@ export function CashCounter({ mode, onModeChange, totalDigits, onTotalDigitsChan
   const setCount = (k: string, n: number) => onCountsChange({ ...counts, [k]: Math.max(0, Math.min(999, n)) });
   return (
     <div className={cx("flex flex-col gap-4", className)}>
-      <div role="group" aria-label="How to count" className="inline-flex self-start items-center gap-1 rounded-tile bg-surface-2 p-1">
-        {(["total", "counts"] as CashCounterMode[]).map((m) => (
-          <AriaButton
-            key={m}
-            aria-pressed={mode === m}
-            isDisabled={isDisabled}
-            onPress={() => onModeChange(m)}
-            className={cx("press pos-touch min-h-11 rounded-[8px] px-4 text-line outline-none data-[pressed]:scale-[0.97] data-[focus-visible]:outline-2 data-[focus-visible]:outline-status-seated", mode === m ? "bg-surface text-ink" : "text-ink-2")}
-          >
-            {m === "total" ? "One total" : "Count notes and coins"}
-          </AriaButton>
-        ))}
-      </div>
+      {/* A merchant with no notes and coins configured counts one total only. */}
+      {denominations.length ? (
+        <div role="group" aria-label="How to count" className="inline-flex self-start items-center gap-1 rounded-tile bg-surface-2 p-1">
+          {(["total", "counts"] as CashCounterMode[]).map((m) => (
+            <AriaButton
+              key={m}
+              aria-pressed={mode === m}
+              isDisabled={isDisabled}
+              onPress={() => onModeChange(m)}
+              className={cx("press pos-touch min-h-11 rounded-[8px] px-4 text-line outline-none data-[pressed]:scale-[0.97] data-[focus-visible]:outline-2 data-[focus-visible]:outline-status-seated", mode === m ? "bg-surface text-ink" : "text-ink-2")}
+            >
+              {m === "total" ? "One total" : "Count notes and coins"}
+            </AriaButton>
+          ))}
+        </div>
+      ) : null}
       {mode === "total" ? (
         <AmountPad digits={totalDigits} onChange={onTotalDigitsChange} mode="cents" isDisabled={isDisabled} hint="Cash in the drawer" />
       ) : (

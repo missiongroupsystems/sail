@@ -59,8 +59,8 @@ export function describeScope(b: RuleBody, categories: Category[]): string {
   switch (b.scope.type) {
     case "all":
       return "Everything";
-    case "bcrs":
-      return "BCRS items";
+    case "deposit":
+      return "Deposit items";
     case "tags":
       return `Tags: ${b.scope.tags.join(", ")}`;
     case "products":
@@ -176,7 +176,7 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
         rowKey={(r) => r.rule_key}
         onRowAction={(r) => setSheet({ mode: "edit", row: r })}
         rowClassName={(r) => (r.current.status === "archived" ? "text-ink-2" : undefined)}
-        emptyState={<EmptyState variant="quiet" title="No pricing rules" hint="Tap Add fee or Add discount. The service charge and GST deposit usually come first." />}
+        emptyState={<EmptyState variant="quiet" title="No pricing rules" hint="Tap Add fee or Add discount. A service charge or a deposit usually comes first." />}
       />
       <InlineError error={versions.error} className="mt-4" />
 

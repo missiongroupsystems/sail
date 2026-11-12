@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, DescriptionList, Dialog, InlineError, Money, SectionHeading, Sheet, Skeleton, TextField, useLocale } from "@sail/ui";
+import { Badge, Button, DescriptionList, Dialog, InlineError, Money, SectionHeading, Sheet, Skeleton, taxRows, TextField, useLocale } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { label, LINE_STATUS_LABEL, ORDER_STATUS_LABEL, ORDER_TYPE_LABEL, CHANNEL_LABEL } from "@/components/backoffice/labels";
@@ -227,8 +227,9 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                 { term: "Subtotal", detail: <Money cents={o.totals.subtotal} />, numeric: true },
                 { term: "Discounts", detail: <Money cents={o.totals.discount_total} />, numeric: true },
                 { term: "Fees", detail: <Money cents={o.totals.fee_total} />, numeric: true },
-                { term: o.totals.tax_mode === "inclusive" ? "GST (included)" : "GST", detail: <Money cents={o.totals.gst_total} />, numeric: true },
+                ...taxRows(o.totals.taxes, o.totals.tax_mode).before.map((t) => ({ term: t.label, detail: <Money cents={t.amount} />, numeric: true })),
                 { term: <span className="text-ink">Total</span>, detail: <Money cents={o.totals.total} size="heading" />, numeric: true },
+                ...taxRows(o.totals.taxes, o.totals.tax_mode).after.map((t) => ({ term: t.label, detail: <Money cents={t.amount} />, numeric: true })),
                 { term: "Paid", detail: <Money cents={o.paid_total} />, numeric: true },
                 { term: "Balance", detail: <Money cents={o.balance} />, numeric: true },
               ]}

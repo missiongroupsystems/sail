@@ -2,7 +2,7 @@ import { PERMISSIONS, roleAtLeast, type PermissionKey, type Role } from "@sail/s
 import type { ClientPathsWithMethod, MethodResponse } from "openapi-fetch";
 import { ApiError, type ApiClient } from "@/lib/api";
 import type { paths } from "@/lib/api/schema";
-import type { Me } from "@/lib/api/types";
+import type { Me, TaxAmount, TaxBreakdown } from "@/lib/api/types";
 
 /**
  * Register payloads the back office reads beyond lib/api/types.ts. The OpenAPI
@@ -51,14 +51,14 @@ export type CheckSnapshot = {
   label: string;
   status: "open" | "paid" | "partially_refunded" | "refunded" | string;
   seat_no: number | null;
-  totals: { subtotal: number; discount_total: number; fee_total: number; gst_total: number; total: number };
+  totals: { subtotal: number; discount_total: number; fee_total: number; tax_total: number; taxes: TaxAmount[]; total: number };
   paid_total: number;
   rounding_total: number;
   refunded_total: number;
   balance: number;
   locked: boolean;
   invoice_no: string | null;
-  allocations: { line_id: string; share: string; base: number; discount: number; fee: number; gst: number; total: number }[];
+  allocations: { line_id: string; share: string; base: number; discount: number; fee: number; tax: number; taxes: TaxAmount[]; total: number }[];
   payments: CheckPayment[];
 };
 export const CHECK_STATUS_LABEL: Record<string, string> = { open: "Unpaid", paid: "Paid", partially_refunded: "Partly refunded", refunded: "Refunded" };
@@ -67,8 +67,8 @@ export const CHECK_STATUS_LABEL: Record<string, string> = { open: "Unpaid", paid
 export type RefundRequest = { kind: "full" } | { kind: "lines"; lines: { line_id: string; quantity: number }[] } | { kind: "amount"; amount: number };
 export type RefundQuote = {
   check_id: string;
-  lines: { line_id: string; quantity: number; base: number; discount: number; fee: number; gst: number; total: number; adjustments: Record<string, { amount: number; gst: number }> }[];
-  totals: { base: number; discount: number; fee: number; gst: number; total: number };
+  lines: { line_id: string; quantity: number; base: number; discount: number; fee: number; tax: number; taxes: TaxAmount[]; total: number; adjustments: Record<string, { amount: number; tax: number }> }[];
+  totals: { base: number; discount: number; fee: number; tax: number; taxes: TaxAmount[]; total: number };
   tenders: { payment_id: string; tender: string; is_cash: boolean; amount: number; rounding_cents: number }[];
   cash_out: number;
   remaining_after: { total: number };
@@ -84,7 +84,7 @@ export type Refund = {
   refunded_by: string | null;
   approved_by: string | null;
   business_date: string;
-  totals: { base: number; discount: number; fee: number; gst: number; total: number };
+  totals: { base: number; discount: number; fee: number; tax: number; taxes: TaxAmount[]; total: number };
   refund_receipt_no: string;
   credit_note_no: string | null;
   created_at: string;
@@ -151,7 +151,7 @@ export const REQUEST_TYPE_LABEL: Record<string, string> = { call_staff: "Call st
 export type ZReport = {
   scope: { outlet_id: string; station_id: string | null; business_date: string; shift_id: string | null };
   orders: { count: number; by_type: Record<string, number>; covers: number; open_count: number };
-  sales: { gross: number; discounts: number; fees: number; gst: number; net: number };
+  sales: { gross: number; discounts: number; fees: number; tax: number; taxes: TaxBreakdown[]; net: number };
   adjustments: { rule_key: string; name: string; kind: string; report_class: string; total: number; count: number }[];
   tenders: { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number }[];
   cash: { float: number; cash_payments: number; rounding: number; refunds: number; expected: number; counted: number | null; variance: number | null };

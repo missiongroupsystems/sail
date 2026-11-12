@@ -10,6 +10,7 @@ import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { Warnings } from "@/components/backoffice/Warnings";
 import { ORDER_TYPES, ORDER_TYPE_LABEL } from "@/components/backoffice/labels";
+import { taxClassItems, useTaxClasses } from "@/components/backoffice/tax-classes";
 import { FormSection, RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
@@ -33,7 +34,8 @@ const Schema = z.object({
   price: cents.nullable().refine((v): boolean => v !== null, "Enter a base price"),
   prices: z.object({ dine_in: cents.nullable(), takeaway: cents.nullable(), pickup: cents.nullable(), delivery: cents.nullable() }),
   tags: z.array(z.string()),
-  is_bcrs: z.boolean(),
+  tax_class_id: z.string(),
+  has_deposit: z.boolean(),
   open_price: z.boolean(),
   modifier_group_ids: z.array(z.string()),
 });
@@ -52,7 +54,8 @@ function defaults(p: Product | null): Values {
     price: p?.price ?? null,
     prices: { dine_in: by.dine_in ?? null, takeaway: by.takeaway ?? null, pickup: by.pickup ?? null, delivery: by.delivery ?? null },
     tags: p?.tags ?? [],
-    is_bcrs: p?.is_bcrs ?? false,
+    tax_class_id: p?.tax_class_id ?? NONE,
+    has_deposit: p?.has_deposit ?? false,
     open_price: p?.open_price ?? false,
     modifier_group_ids: p?.modifier_group_ids ?? [],
   };
@@ -75,7 +78,8 @@ function toBody(v: Values): Omit<ProductCreate, "id"> {
     price: v.price ?? 0,
     prices_by_order_type: by,
     tags: v.tags,
-    is_bcrs: v.is_bcrs,
+    tax_class_id: v.tax_class_id === NONE ? null : v.tax_class_id,
+    has_deposit: v.has_deposit,
     open_price: v.open_price,
     modifier_group_ids: v.modifier_group_ids,
   };
@@ -101,6 +105,8 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
     enabled: state !== null,
     staleTime: 60_000,
   });
+  const taxClasses = useTaxClasses(state !== null);
+  const defaultClass = taxClasses.data?.find((c) => c.is_default);
   const groupName = useMemo(() => new Map((groups.data ?? []).map((g) => [g.id, g.name])), [groups.data]);
   const catLabel = useMemo(() => categoryLabels(categories), [categories]);
 
@@ -202,10 +208,21 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
             <RhfSwitch control={form.control} name="open_price" description="Staff key in the price when they add it.">
               Open price
             </RhfSwitch>
-            <RhfSwitch control={form.control} name="is_bcrs" description="A container deposit applies to this item.">
-              BCRS deposit item
+            <RhfSwitch control={form.control} name="has_deposit" description="A deposit rule (scope: deposit items) applies to this item.">
+              Deposit item
             </RhfSwitch>
           </div>
+        </FormSection>
+
+        <FormSection title="Tax">
+          <RhfSelect
+            control={form.control}
+            name="tax_class_id"
+            label="Tax class"
+            items={[{ id: NONE, label: defaultClass ? `Merchant default (${defaultClass.name})` : "Merchant default", description: "Follows the default class if it changes." }, ...taxClassItems(taxClasses.data ?? [], product?.tax_class_id ?? null)]}
+            description="Sets the tax rates this item is charged at."
+            className="sm:max-w-[360px]"
+          />
         </FormSection>
 
         <FormSection title="Tags" hint="Tags drive pricing scopes and menu filters.">

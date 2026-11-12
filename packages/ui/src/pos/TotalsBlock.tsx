@@ -12,7 +12,7 @@ export type TotalsRow = {
   /** The register's name for the row: "Subtotal", "Service charge 10%", "Staff meal". */
   label: string;
   cents: number;
-  kind: "subtotal" | "adjustment" | "gst" | "total";
+  kind: "subtotal" | "adjustment" | "tax" | "total";
   /** Secondary note, for example "frozen" or "approved by Aisha". */
   note?: string | null;
   /** A manual adjustment the signed-in user may take off again. */

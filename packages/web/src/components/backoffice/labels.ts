@@ -33,7 +33,7 @@ export const WEEKDAYS = [
 
 export const REPORT_CLASS_LABEL: Record<string, string> = {
   service_charge: "Service charge",
-  deposit: "Deposit (BCRS)",
+  deposit: "Deposit",
   delivery_fee: "Delivery fee",
   packaging_fee: "Packaging fee",
   promo: "Promotion",

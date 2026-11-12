@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, DescriptionList, InlineError, Money, MoneyField, Sheet, Steps, Switch, TextField, cx, useLocale } from "@sail/ui";
+import { Badge, Button, DescriptionList, InlineError, Money, MoneyField, Sheet, Steps, Switch, taxRows, TextField, cx, useLocale } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { label } from "@/components/backoffice/labels";
@@ -325,8 +325,9 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
                         { term: "Items", detail: <Money cents={-quote.data.totals.base} />, numeric: true },
                         ...(quote.data.totals.discount ? [{ term: "Discounts given back", detail: <Money cents={quote.data.totals.discount} />, numeric: true }] : []),
                         ...(quote.data.totals.fee ? [{ term: "Fees", detail: <Money cents={-quote.data.totals.fee} />, numeric: true }] : []),
-                        { term: "GST", detail: <Money cents={-quote.data.totals.gst} />, numeric: true },
+                        ...taxRows(quote.data.totals.taxes, order.totals.tax_mode).before.map((t) => ({ term: t.label, detail: <Money cents={-t.amount} />, numeric: true })),
                         { term: <span className="text-ink">Refund</span>, detail: <Money cents={-quote.data.totals.total} size="heading" />, numeric: true },
+                        ...taxRows(quote.data.totals.taxes, order.totals.tax_mode).after.map((t) => ({ term: t.label, detail: <Money cents={-t.amount} />, numeric: true })),
                       ]}
                     />
                   </section>

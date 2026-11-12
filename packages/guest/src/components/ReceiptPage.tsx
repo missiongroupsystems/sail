@@ -1,6 +1,6 @@
 "use client";
 
-import { BillDocumentView, LocaleProvider, localeSettings } from "@sail/ui";
+import { BillDocumentView, LocaleProvider } from "@sail/ui";
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, createGuestApi, readReceipt, toApiError } from "@/lib/api";
 import type { ReceiptRead } from "@/lib/types";
@@ -8,8 +8,11 @@ import { Notice } from "./Notices";
 
 type State = { kind: "loading" } | { kind: "ok"; receipt: ReceiptRead } | { kind: "expired" } | { kind: "error"; error: ApiError };
 
-/** /r/<token>: the bill document for the guest's phone, with the brand's name on it (design 4.5 receipt chooser → QR). */
-export function ReceiptPage({ token, fallbackLocale }: { token: string; fallbackLocale: string }) {
+/**
+ * /r/<token>: the bill document for the guest's phone, with the brand's name on it (design 4.5 receipt chooser → QR).
+ * Amounts, dates and times format from the document's own currency, locale and zone.
+ */
+export function ReceiptPage({ token }: { token: string }) {
   const api = useMemo(() => createGuestApi({ getToken: () => null }), []);
   const [state, setState] = useState<State>({ kind: "loading" });
 
@@ -43,7 +46,7 @@ export function ReceiptPage({ token, fallbackLocale }: { token: string; fallback
   if (state.kind === "error") return <Notice title={state.error.message} body={state.error.remedy ?? "Try again in a moment."} />;
 
   return (
-    <LocaleProvider settings={localeSettings(state.receipt.settings, fallbackLocale)}>
+    <LocaleProvider settings={{ currency: state.receipt.document.currency, locale: state.receipt.document.header.locale, timeZone: state.receipt.document.header.time_zone }}>
       <main className="mx-auto w-full max-w-[560px] px-4 py-8">
         <BillDocumentView document={state.receipt.document} />
         <p className="mt-8 text-caption text-ink-2">Thank you for dining with us.</p>

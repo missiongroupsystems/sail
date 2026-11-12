@@ -29,7 +29,7 @@ export type BillCardProps = {
   label: string;
   status: BillCardStatus;
   lines: BillCardLine[];
-  /** Adjustments, GST, total, paid and balance as the register returned them. */
+  /** Adjustments, tax, total, paid and balance as the register returned them. */
   rows: BillCardRow[];
   /** Tenders on a paid bill: "Card · $41.56". */
   tenders?: { id: string; label: string; cents: number }[];

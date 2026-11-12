@@ -91,6 +91,15 @@ export type PricingRuleVersion = Res<"get", "/v1/pricing-rules">["data"][number]
 export type PricingRuleVersionCreate = Body<"/v1/pricing-rules", "post">;
 export type PricingSimulateBody = Body<"/v1/pricing/simulate", "post">;
 export type PricingSimulation = Res<"post", "/v1/pricing/simulate">["data"];
+export type TaxClass = Res<"get", "/v1/tax-classes">["data"][number];
+export type TaxRate = TaxClass["rates"][number];
+export type TaxComponent = TaxRate["components"][number];
+export type TaxClassCreate = Body<"/v1/tax-classes", "post">;
+export type TaxClassPatch = Body<"/v1/tax-classes/{id}", "patch">;
+export type TaxRateSet = Body<"/v1/tax-classes/{id}/rates", "put">;
+/** One tax component of an amount: `name` is the whole printed label ("VAT 20%"). `taxable` excludes tax in both modes. */
+export type TaxBreakdown = PricingSimulation["totals"]["taxes"][number];
+export type TaxAmount = Omit<TaxBreakdown, "taxable">;
 export type PricingValidationWarning = Res<"post", "/v1/pricing-rules/validate">["data"]["warnings"][number];
 
 export type ImportJob = Res<"get", "/v1/imports/{id}">["data"];
@@ -127,7 +136,10 @@ export type OrderLine = {
   fired_at: string | null;
   voided_at: string | null;
   void_reason: string | null;
-  amounts: { base: number; discount: number; net: number; fee: number; gst: number; total: number };
+  amounts: { base: number; discount: number; net: number; fee: number; tax: number; total: number };
+  /** amounts.tax by component. */
+  taxes: TaxBreakdown[];
+  tax_class_id: string;
   tags: string[];
   category_id: string | null;
   sort: number;
@@ -142,8 +154,10 @@ export type OrderAdjustment = {
   kind: string;
   level: string;
   report_class: string;
+  /** Fees only: the class the fee is taxed at, null when untaxed. */
+  tax_class_id: string | null;
   total: number;
-  gst_total: number;
+  tax_total: number;
   capped: boolean;
   frozen: boolean;
   manual_application_id: string | null;
@@ -151,7 +165,7 @@ export type OrderAdjustment = {
   applied_by: string | null;
   approved_by: string | null;
   reason: string | null;
-  lines: { line_id: string; amount: number; gst_amount: number }[];
+  lines: { line_id: string; amount: number; tax_amount: number }[];
 };
 export type OrderSnapshot = {
   id: string;
@@ -182,7 +196,7 @@ export type OrderSnapshot = {
   bill_requested_at: string | null;
   round_count: number;
   pricing_status: "live" | "frozen";
-  totals: { tax_mode: string; gst_bps: number; subtotal: number; discount_total: number; fee_total: number; gst_total: number; total: number };
+  totals: { tax_mode: string; tax_rounding: string; subtotal: number; discount_total: number; fee_total: number; tax_total: number; taxes: TaxBreakdown[]; total: number };
   lines: OrderLine[];
   adjustments: OrderAdjustment[];
   manual_applications: { id: string; rule_key: string; entered_value: number | null; line_ids: string[] | null; applied_by: string | null; reason: string | null }[];

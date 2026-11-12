@@ -47,6 +47,7 @@ export const keys = {
   voidReasons: ["void-reasons"] as const,
   customers: (filters: Record<string, string | undefined>) => ["customers", filters] as const,
   customerGroups: ["customer-groups"] as const,
+  taxClasses: ["tax-classes"] as const,
   pricingRules: ["pricing-rules"] as const,
   pricingValidation: ["pricing-validation"] as const,
   imports: ["imports"] as const,

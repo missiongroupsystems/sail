@@ -73,7 +73,7 @@ export interface paths {
         };
         /**
          * Get the merchant and its settings
-         * @description Tax mode, GST rate, cash rounding and business-day cutoff for the caller's merchant.
+         * @description Currency, locale, time zone, tax mode and rounding, default tax class, cash rounding, cash denominations for the cash counter, registration labels and business-day cutoff for the caller's merchant.
          */
         get: operations["merchants.get"];
         put?: never;
@@ -99,7 +99,7 @@ export interface paths {
         head?: never;
         /**
          * Update merchant settings
-         * @description Changes tax mode, GST rate, cash rounding increment or the business-day cutoff. Affects every outlet. Orders already priced keep their snapshot.
+         * @description Changes the locale, time zone, tax mode or rounding, default tax class, cash rounding increment, cash denominations, registration labels or the business-day cutoff. Affects every outlet. Orders already priced keep their tax snapshot. The currency cannot change once set.
          */
         patch: operations["merchants.update_settings"];
         trace?: never;
@@ -163,7 +163,7 @@ export interface paths {
         put?: never;
         /**
          * Create an outlet
-         * @description Creates an outlet with its hours, UEN and business-day cutoff.
+         * @description Creates an outlet with its hours, business and tax registration numbers, and optional time zone, tax mode and business-day cutoff overrides.
          */
         post: operations["outlets.create"];
         delete?: never;
@@ -187,7 +187,7 @@ export interface paths {
         head?: never;
         /**
          * Update an outlet
-         * @description Changes an outlet's details, hours, UEN or cutoff.
+         * @description Changes an outlet's details, hours, registration numbers or its time zone, tax mode and cutoff overrides.
          */
         patch: operations["outlets.update"];
         trace?: never;
@@ -447,7 +447,7 @@ export interface paths {
         head?: never;
         /**
          * Update a product
-         * @description Changes a product, its prices per order type, tags, BCRS flag or attached modifier groups; archive by setting archived.
+         * @description Changes a product, its prices per order type, tags, tax class, deposit flag or attached modifier groups; archive by setting archived.
          */
         patch: operations["products.update"];
         trace?: never;
@@ -463,7 +463,7 @@ export interface paths {
         put?: never;
         /**
          * Bulk price edit
-         * @description Sets base prices for many products at once. Prices are integer cents.
+         * @description Sets base prices for many products at once. Prices are integers in the currency's minor units.
          */
         post: operations["products.bulk_price"];
         delete?: never;
@@ -1199,6 +1199,90 @@ export interface paths {
          */
         post: operations["pricing_rules.validate"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tax-classes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List tax classes and their rates
+         * @description Every tax class of the merchant with its rates: the default rate (no outlet, no order type) and any outlet or order-type rate. A rate is a list of named components in basis points; an empty list is tax-exempt.
+         */
+        get: operations["tax_classes.list"];
+        put?: never;
+        /**
+         * Create a tax class
+         * @description Creates a tax class with its default rate. Products, open items and fees name a class; orders opened afterwards use it. Admin only.
+         */
+        post: operations["tax_classes.create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tax-classes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update a tax class
+         * @description Renames a class, makes it the merchant default, or archives it (refused while products or fees use it, and for the default). Admin only.
+         */
+        patch: operations["tax_classes.update"];
+        trace?: never;
+    };
+    "/v1/tax-classes/{id}/rates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set a tax rate
+         * @description Sets the components of a class's rate for every outlet and order type, for one outlet, for one order type, or for both. Orders already open keep the rates they were opened with. Admin only.
+         */
+        put: operations["tax_rates.set"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tax-classes/{id}/rates/{rate_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a tax rate
+         * @description Removes an outlet or order-type rate, so the class's less specific rate applies again. The default rate cannot be removed. Admin only.
+         */
+        delete: operations["tax_rates.delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2243,7 +2327,7 @@ export interface paths {
         put?: never;
         /**
          * Issue a tax invoice
-         * @description Numbered PDF tax invoice for a paid bill, including the outlet UEN. Gap-free numbering per merchant. Issued once; later calls return the same number.
+         * @description Numbered PDF tax invoice for a paid bill, including the outlet's business and tax registration numbers. Gap-free numbering per merchant. Issued once; later calls return the same number.
          */
         post: operations["documents.issue_invoice"];
         delete?: never;
@@ -2463,7 +2547,7 @@ export interface paths {
         put?: never;
         /**
          * Quote a refund
-         * @description Reversal per line, adjustment and GST, plus the split across the original payments with per-payment caps and cash rounding. Pure: writes nothing. Agents must show these figures, never their own.
+         * @description Reversal per line, adjustment and tax component, plus the split across the original payments with per-payment caps and cash rounding. Pure: writes nothing. Agents must show these figures, never their own.
          */
         post: operations["refunds.quote"];
         delete?: never;
@@ -2601,7 +2685,7 @@ export interface paths {
         };
         /**
          * What the table has ordered
-         * @description The table's lines (menu prices only, no fees or totals), round statuses and the guest's requests.
+         * @description The table's lines (menu prices only, no fees or totals), round statuses, the guest's requests, and whether ordering is possible (`can_order`). A session started before the table was seated is bound to the table's order here, so no new session is needed.
          */
         get: operations["guest.order"];
         put?: never;
@@ -3112,6 +3196,7 @@ export interface operations {
                             in_flight: number;
                             waiting: number;
                             rejected: number;
+                            timed_out: number;
                         };
                         sse_subscribers: number;
                     };
@@ -3417,11 +3502,17 @@ export interface operations {
                             settings: {
                                 /** @enum {string} */
                                 tax_mode: "inclusive" | "exclusive";
-                                gst_bps: number;
+                                /** @enum {string} */
+                                tax_rounding: "per_line" | "per_rate";
                                 cash_rounding_increment: number | null;
+                                cash_denominations: number[];
                                 business_day_cutoff: string;
                                 timezone: string;
                                 currency: string;
+                                currency_exponent: number;
+                                locale: string;
+                                business_registration_label: string;
+                                tax_registration_label: string;
                                 receipt_footer: string | null;
                                 receipt_show_outlet_phone: boolean;
                                 busy_mode_threshold: number;
@@ -3547,11 +3638,16 @@ export interface operations {
                 "application/json": {
                     /** @enum {string} */
                     tax_mode?: "inclusive" | "exclusive";
-                    gst_bps?: number;
+                    /** @enum {string} */
+                    tax_rounding?: "per_line" | "per_rate";
                     cash_rounding_increment?: number | null;
+                    cash_denominations?: number[];
                     business_day_cutoff?: string;
                     timezone?: string;
                     currency?: string;
+                    locale?: string;
+                    business_registration_label?: string;
+                    tax_registration_label?: string;
                     receipt_footer?: string | null;
                     receipt_show_outlet_phone?: boolean;
                     busy_mode_threshold?: number;
@@ -3573,11 +3669,17 @@ export interface operations {
                             settings: {
                                 /** @enum {string} */
                                 tax_mode: "inclusive" | "exclusive";
-                                gst_bps: number;
+                                /** @enum {string} */
+                                tax_rounding: "per_line" | "per_rate";
                                 cash_rounding_increment: number | null;
+                                cash_denominations: number[];
                                 business_day_cutoff: string;
                                 timezone: string;
                                 currency: string;
+                                currency_exponent: number;
+                                locale: string;
+                                business_registration_label: string;
+                                tax_registration_label: string;
                                 receipt_footer: string | null;
                                 receipt_show_outlet_phone: boolean;
                                 busy_mode_threshold: number;
@@ -4163,7 +4265,8 @@ export interface operations {
                             name: string;
                             address: string | null;
                             phone: string | null;
-                            uen: string | null;
+                            business_registration_no: string | null;
+                            tax_registration_no: string | null;
                             business_day_cutoff: string | null;
                             hours: {
                                 [key: string]: [
@@ -4299,7 +4402,8 @@ export interface operations {
                     name: string;
                     address?: string | null;
                     phone?: string | null;
-                    uen?: string | null;
+                    business_registration_no?: string | null;
+                    tax_registration_no?: string | null;
                     business_day_cutoff?: string | null;
                     hours?: {
                         [key: string]: [
@@ -4325,7 +4429,8 @@ export interface operations {
                             name: string;
                             address: string | null;
                             phone: string | null;
-                            uen: string | null;
+                            business_registration_no: string | null;
+                            tax_registration_no: string | null;
                             business_day_cutoff: string | null;
                             hours: {
                                 [key: string]: [
@@ -4468,7 +4573,8 @@ export interface operations {
                     name?: string;
                     address?: string | null;
                     phone?: string | null;
-                    uen?: string | null;
+                    business_registration_no?: string | null;
+                    tax_registration_no?: string | null;
                     business_day_cutoff?: string | null;
                     hours?: {
                         [key: string]: [
@@ -4495,7 +4601,8 @@ export interface operations {
                             name: string;
                             address: string | null;
                             phone: string | null;
-                            uen: string | null;
+                            business_registration_no: string | null;
+                            tax_registration_no: string | null;
                             business_day_cutoff: string | null;
                             hours: {
                                 [key: string]: [
@@ -6628,7 +6735,8 @@ export interface operations {
                             };
                             category_id: string | null;
                             tags: string[];
-                            is_bcrs: boolean;
+                            has_deposit: boolean;
+                            tax_class_id: string | null;
                             open_price: boolean;
                             modifier_group_ids: string[];
                             legacy_id: string | null;
@@ -6775,7 +6883,9 @@ export interface operations {
                     /** Format: uuid */
                     category_id?: string | null;
                     tags?: string[];
-                    is_bcrs?: boolean;
+                    has_deposit?: boolean;
+                    /** Format: uuid */
+                    tax_class_id?: string | null;
                     open_price?: boolean;
                     modifier_group_ids?: string[];
                     legacy_id?: string | null;
@@ -6808,7 +6918,8 @@ export interface operations {
                             };
                             category_id: string | null;
                             tags: string[];
-                            is_bcrs: boolean;
+                            has_deposit: boolean;
+                            tax_class_id: string | null;
                             open_price: boolean;
                             modifier_group_ids: string[];
                             legacy_id: string | null;
@@ -6966,7 +7077,8 @@ export interface operations {
                             };
                             category_id: string | null;
                             tags: string[];
-                            is_bcrs: boolean;
+                            has_deposit: boolean;
+                            tax_class_id: string | null;
                             open_price: boolean;
                             modifier_group_ids: string[];
                             legacy_id: string | null;
@@ -7111,7 +7223,9 @@ export interface operations {
                     /** Format: uuid */
                     category_id?: string | null;
                     tags?: string[];
-                    is_bcrs?: boolean;
+                    has_deposit?: boolean;
+                    /** Format: uuid */
+                    tax_class_id?: string | null;
                     open_price?: boolean;
                     modifier_group_ids?: string[];
                     legacy_id?: string | null;
@@ -7145,7 +7259,8 @@ export interface operations {
                             };
                             category_id: string | null;
                             tags: string[];
-                            is_bcrs: boolean;
+                            has_deposit: boolean;
+                            tax_class_id: string | null;
                             open_price: boolean;
                             modifier_group_ids: string[];
                             legacy_id: string | null;
@@ -15415,8 +15530,9 @@ export interface operations {
                         parent_category_id?: string | null;
                         /** @default [] */
                         tags?: string[];
+                        tax_class_id: string;
                         /** @default false */
-                        is_bcrs?: boolean;
+                        has_deposit?: boolean;
                         quantity: number;
                         prices: {
                             base: number;
@@ -15492,8 +15608,14 @@ export interface operations {
                                 discount_amount: number;
                                 net_amount: number;
                                 fee_amount: number;
-                                gst_on_net: number;
-                                gst_on_fees: number;
+                                tax_on_net: number;
+                                tax_on_fees: number;
+                                taxes: {
+                                    name: string;
+                                    bps: number;
+                                    amount: number;
+                                    taxable: number;
+                                }[];
                                 total: number;
                             }[];
                             adjustments: {
@@ -15506,13 +15628,13 @@ export interface operations {
                                 level: "line" | "order";
                                 /** @enum {string} */
                                 report_class: "service_charge" | "deposit" | "delivery_fee" | "packaging_fee" | "promo" | "comp" | "staff_meal" | "ent" | "other";
-                                gst_applicable: boolean;
+                                tax_class_id: string | null;
                                 total: number;
-                                gst_total: number;
+                                tax_total: number;
                                 lines: {
                                     line_id: string;
                                     amount: number;
-                                    gst_amount: number;
+                                    tax_amount: number;
                                 }[];
                                 capped: boolean;
                                 frozen: boolean;
@@ -15531,7 +15653,13 @@ export interface operations {
                                 discount_total: number;
                                 net_subtotal: number;
                                 fee_total: number;
-                                gst_total: number;
+                                tax_total: number;
+                                taxes: {
+                                    name: string;
+                                    bps: number;
+                                    amount: number;
+                                    taxable: number;
+                                }[];
                                 total: number;
                             };
                             trace: {
@@ -15694,6 +15822,781 @@ export interface operations {
                                 product_ids?: string[];
                             }[];
                         };
+                    };
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Permission denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Conflict (state, version or idempotency) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Invariant violation or unavailable */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    "tax_classes.list": {
+        parameters: {
+            query?: {
+                include_archived?: "true" | "false";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            id: string;
+                            name: string;
+                            is_default: boolean;
+                            archived: boolean;
+                            rates: {
+                                id: string;
+                                outlet_id: string | null;
+                                /** @enum {string|null} */
+                                order_type: "dine_in" | "takeaway" | "pickup" | "delivery" | null;
+                                components: {
+                                    name: string;
+                                    bps: number;
+                                }[];
+                            }[];
+                        }[];
+                        next_cursor: string | null;
+                    };
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Permission denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Conflict (state, version or idempotency) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Invariant violation or unavailable */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    "tax_classes.create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Request body */
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    id?: string;
+                    name: string;
+                    components: {
+                        name: string;
+                        bps: number;
+                    }[];
+                    is_default?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            id: string;
+                            name: string;
+                            is_default: boolean;
+                            archived: boolean;
+                            rates: {
+                                id: string;
+                                outlet_id: string | null;
+                                /** @enum {string|null} */
+                                order_type: "dine_in" | "takeaway" | "pickup" | "delivery" | null;
+                                components: {
+                                    name: string;
+                                    bps: number;
+                                }[];
+                            }[];
+                        };
+                        events: {
+                            id: string;
+                            seq: number;
+                            type: string;
+                            occurredAt: string;
+                            businessDate: string;
+                        }[];
+                        warnings: string[];
+                    };
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Permission denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Conflict (state, version or idempotency) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Invariant violation or unavailable */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    "tax_classes.update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Request body */
+        requestBody: {
+            content: {
+                "application/json": {
+                    name?: string;
+                    /** @enum {boolean} */
+                    is_default?: true;
+                    archived?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            id: string;
+                            name: string;
+                            is_default: boolean;
+                            archived: boolean;
+                            rates: {
+                                id: string;
+                                outlet_id: string | null;
+                                /** @enum {string|null} */
+                                order_type: "dine_in" | "takeaway" | "pickup" | "delivery" | null;
+                                components: {
+                                    name: string;
+                                    bps: number;
+                                }[];
+                            }[];
+                        };
+                        events: {
+                            id: string;
+                            seq: number;
+                            type: string;
+                            occurredAt: string;
+                            businessDate: string;
+                        }[];
+                        warnings: string[];
+                    };
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Permission denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Conflict (state, version or idempotency) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Invariant violation or unavailable */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    "tax_rates.set": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Request body */
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    outlet_id: string | null;
+                    /** @enum {string|null} */
+                    order_type: "dine_in" | "takeaway" | "pickup" | "delivery" | null;
+                    components: {
+                        name: string;
+                        bps: number;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            id: string;
+                            name: string;
+                            is_default: boolean;
+                            archived: boolean;
+                            rates: {
+                                id: string;
+                                outlet_id: string | null;
+                                /** @enum {string|null} */
+                                order_type: "dine_in" | "takeaway" | "pickup" | "delivery" | null;
+                                components: {
+                                    name: string;
+                                    bps: number;
+                                }[];
+                            }[];
+                        };
+                        events: {
+                            id: string;
+                            seq: number;
+                            type: string;
+                            occurredAt: string;
+                            businessDate: string;
+                        }[];
+                        warnings: string[];
+                    };
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Permission denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Conflict (state, version or idempotency) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Invariant violation or unavailable */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    "tax_rates.delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                rate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            id: string;
+                            name: string;
+                            is_default: boolean;
+                            archived: boolean;
+                            rates: {
+                                id: string;
+                                outlet_id: string | null;
+                                /** @enum {string|null} */
+                                order_type: "dine_in" | "takeaway" | "pickup" | "delivery" | null;
+                                components: {
+                                    name: string;
+                                    bps: number;
+                                }[];
+                            }[];
+                        };
+                        events: {
+                            id: string;
+                            seq: number;
+                            type: string;
+                            occurredAt: string;
+                            businessDate: string;
+                        }[];
+                        warnings: string[];
                     };
                 };
             };
@@ -22116,6 +23019,7 @@ export interface operations {
                             rerouted_from: string | null;
                             created_at: string;
                             age_seconds: number;
+                            round_no: number | null;
                             text: string;
                             payload?: string;
                         }[];
@@ -22397,6 +23301,7 @@ export interface operations {
                             rerouted_from: string | null;
                             created_at: string;
                             age_seconds: number;
+                            round_no: number | null;
                             text: string;
                             payload?: string;
                         };
@@ -22555,6 +23460,7 @@ export interface operations {
                             rerouted_from: string | null;
                             created_at: string;
                             age_seconds: number;
+                            round_no: number | null;
                             text: string;
                             payload?: string;
                         };
@@ -22709,6 +23615,7 @@ export interface operations {
                             rerouted_from: string | null;
                             created_at: string;
                             age_seconds: number;
+                            round_no: number | null;
                             text: string;
                             payload?: string;
                         }[];

@@ -126,7 +126,7 @@ export function ProductsView({ initialPage, categories, brands, scope }: { initi
           {p.tags.map((t) => (
             <Badge key={t}>{t}</Badge>
           ))}
-          {p.is_bcrs ? <Badge tone="seated">BCRS</Badge> : null}
+          {p.has_deposit ? <Badge tone="seated">Deposit</Badge> : null}
           {p.open_price ? <Badge tone="sent">Open price</Badge> : null}
         </span>
       ),

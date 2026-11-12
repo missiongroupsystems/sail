@@ -1,10 +1,9 @@
 "use client";
 
-import { ActionDock, Button, GroupHeader, LineRow, SeatStrip, TotalsBlock, type TotalsRow, useLocale } from "@sail/ui";
+import { ActionDock, Button, GroupHeader, LineRow, SeatStrip, taxRows, TotalsBlock, type TaxRow, type TotalsRow, useLocale } from "@sail/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GuestRound, ManualRule, OrderSnapshot, PrintJob, SnapshotLine } from "../api/types";
 import type { OrderActions } from "../hooks/useOrderActions";
-import { gstLabel } from "../lib/format";
 import { useUiStore } from "../state/ui";
 import { usePos } from "./PosContext";
 import { jobsForRound } from "./ReprintSheet";
@@ -90,7 +89,8 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
   const sendable = live.filter((l) => l.status === "pending" && !l.optimistic && !pendingLineIds.has(l.id)).length;
   const seats = Math.max(order.pax ?? 0, ...live.map((l) => l.seat_no ?? 0), 1);
 
-  const inclusive = order.totals.tax_mode === "inclusive";
+  const tax = taxRows(order.totals.taxes, order.totals.tax_mode);
+  const taxRow = (t: TaxRow): TotalsRow => ({ key: t.key, label: t.label, cents: t.amount, kind: "tax" });
   const rows: TotalsRow[] = [
     { key: "subtotal", label: "Subtotal", cents: order.totals.subtotal, kind: "subtotal" },
     ...order.adjustments.map<TotalsRow>((a) => {
@@ -106,8 +106,9 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
         removeDisabled: offline,
       };
     }),
-    { key: "gst", label: gstLabel(order.totals.gst_bps, inclusive), cents: order.totals.gst_total, kind: "gst" },
+    ...tax.before.map(taxRow),
     { key: "total", label: "Total", cents: order.totals.total, kind: "total" },
+    ...tax.after.map(taxRow),
     ...(order.paid_total > 0 ? [{ key: "paid", label: "Paid", cents: order.paid_total, kind: "adjustment" as const, note: order.pricing_status === "frozen" ? "prices frozen" : null }, { key: "balance", label: "Balance", cents: order.balance, kind: "adjustment" as const }] : []),
   ];
 

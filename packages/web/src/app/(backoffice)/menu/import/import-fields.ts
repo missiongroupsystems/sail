@@ -32,11 +32,11 @@ const id = (hint = "Matches rows on re-runs"): ImportField => ({ name: "legacy_i
 
 export const FIELDS: Record<ImportEntity, ImportField[]> = {
   brands: [{ name: "name", required: true }, id(), { name: "accent_color", hint: "Hex colour" }],
-  outlets: [{ name: "name", required: true }, id(), { name: "address" }, { name: "phone" }, { name: "uen" }, { name: "business_day_cutoff", hint: "HH:MM" }],
+  outlets: [{ name: "name", required: true }, id(), { name: "address" }, { name: "phone" }, { name: "business_registration_no" }, { name: "tax_registration_no" }, { name: "business_day_cutoff", hint: "HH:MM" }],
   categories: [{ name: "name", required: true }, id(), { name: "parent_legacy_id", hint: "Parents must appear first" }, { name: "sort" }],
   products: [
     { name: "name", required: true },
-    { name: "price", required: true, hint: "16.00, $16 or 1600c" },
+    { name: "price", required: true, hint: "In the currency's decimals with \".\" (16.00), or minor units (1600c)" },
     { name: "sku", hint: "Required unless legacy_id is mapped" },
     id("Required unless sku is mapped"),
     { name: "kind", hint: "product or component" },
@@ -44,7 +44,8 @@ export const FIELDS: Record<ImportEntity, ImportField[]> = {
     { name: "category_legacy_id" },
     { name: "brand_legacy_id" },
     { name: "tags", hint: "Separated by ; or |" },
-    { name: "is_bcrs", hint: "1/true/yes" },
+    { name: "tax_class", hint: "Class name; blank for the default" },
+    { name: "has_deposit", hint: "1/true/yes" },
     { name: "open_price", hint: "1/true/yes" },
     { name: "kitchen_name" },
     { name: "archived", hint: "1/true/yes" },

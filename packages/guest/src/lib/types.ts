@@ -104,4 +104,5 @@ export type RoundModifierInput = { group_id: string; product_id: string; quantit
 export type RoundLineInput = { line_id: string; product_id: string; quantity: number; modifiers?: RoundModifierInput[]; notes?: string | null };
 export type RoundInput = { round_id: string; lines: RoundLineInput[]; guest_name?: string; notes?: string };
 
-export type ReceiptRead = { document: BillDocumentLike; channel: string; created_at: string; settings?: LocaleSettingsSource };
+/** The document carries its own currency, locale and zone. */
+export type ReceiptRead = { document: BillDocumentLike; channel: string; created_at: string };

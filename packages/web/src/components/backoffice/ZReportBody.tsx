@@ -1,6 +1,7 @@
 "use client";
 
-import { DescriptionList, Money, SectionHeading, Stat, useLocale } from "@sail/ui";
+import { DescriptionList, Money, SectionHeading, Stat, taxRows, useLocale } from "@sail/ui";
+import { useSession } from "@/lib/session-context";
 import { label, ORDER_TYPE_LABEL, REPORT_CLASS_LABEL } from "./labels";
 import { plural, type ZReport } from "./register";
 
@@ -12,13 +13,14 @@ import { plural, type ZReport } from "./register";
 export function ZReportBody({ report, stationName }: { report: ZReport; stationName?: (id: string | null) => string }) {
   const { stamp } = useLocale();
   const r = report;
+  const tax = taxRows(r.sales.taxes, useSession().merchant.settings.tax_mode);
   const types = Object.entries(r.orders.by_type);
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-wrap gap-x-10 gap-y-4">
         <Stat label="Net sales" value={<Money cents={r.sales.net} size="title" />} hint={plural(r.orders.count, "completed order")} />
         <Stat label="Covers" value={r.orders.covers} hint={r.orders.open_count ? `${r.orders.open_count} still open` : undefined} />
-        <Stat label="GST" value={<Money cents={r.sales.gst} size="heading" />} />
+        <Stat label="Tax" value={<Money cents={r.sales.tax} size="heading" />} />
         <Stat label="Discounts" value={<Money cents={r.sales.discounts} size="heading" />} />
         <Stat label="Fees" value={<Money cents={r.sales.fees} size="heading" />} />
         <Stat label="Refunds" value={<Money cents={r.refunds.amount} size="heading" />} hint={plural(r.refunds.count, "refund")} tone={r.refunds.amount ? "alert" : "default"} />
@@ -33,8 +35,9 @@ export function ZReportBody({ report, stationName }: { report: ZReport; stationN
               { term: "Gross (items)", detail: <Money cents={r.sales.gross} />, numeric: true },
               { term: "Discounts", detail: <Money cents={-r.sales.discounts} />, numeric: true },
               { term: "Fees", detail: <Money cents={r.sales.fees} />, numeric: true },
-              { term: "GST", detail: <Money cents={r.sales.gst} />, numeric: true },
+              ...tax.before.map((t) => ({ term: t.label, detail: <Money cents={t.amount} />, numeric: true })),
               { term: <span className="text-ink">Net sales</span>, detail: <Money cents={r.sales.net} size="heading" />, numeric: true },
+              ...tax.after.map((t) => ({ term: t.label, detail: <Money cents={t.amount} />, numeric: true })),
             ]}
           />
         </section>

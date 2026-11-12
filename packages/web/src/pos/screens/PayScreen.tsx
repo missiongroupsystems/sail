@@ -216,7 +216,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
           </div>
           <dl className="px-4 pt-2 pb-4 hairline-t">
             <Row label="Subtotal" cents={check.totals.subtotal} />
-            {billRows(check, snap.totals.tax_mode === "inclusive").map((r) => (
+            {billRows(check, snap.totals.tax_mode).map((r) => (
               <Row key={r.key} label={r.label} cents={r.cents} total={r.kind === "total"} />
             ))}
             {check.paid_total === 0 ? <Row label="Paid" cents={0} /> : null}

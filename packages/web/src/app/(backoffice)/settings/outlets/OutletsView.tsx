@@ -8,13 +8,16 @@ import { api } from "@/lib/api.browser";
 import type { Outlet } from "@/lib/api/types";
 import { summariseHours } from "@/lib/hours";
 import { keys } from "@/lib/query";
+import { useSession } from "@/lib/session-context";
 import { OutletSheet, type OutletSheetState } from "./OutletSheet";
 
-const columns: DataTableColumn<Outlet>[] = [
+/** Registration columns are headed with the merchant's own labels. */
+const outletColumns = (labels: { business: string; tax: string }): DataTableColumn<Outlet>[] => [
   { key: "name", header: "Name", sortable: true, isRowHeader: true, render: (o) => <span className="text-ink">{o.name}</span> },
   { key: "address", header: "Address", render: (o) => <span className="text-ink-2">{o.address ?? "—"}</span> },
   { key: "phone", header: "Phone", render: (o) => <span className="tabular">{o.phone ?? "—"}</span> },
-  { key: "uen", header: "UEN", render: (o) => <span className="font-mono text-caption">{o.uen ?? "—"}</span> },
+  { key: "business_registration_no", header: labels.business, render: (o) => <span className="font-mono text-caption">{o.business_registration_no ?? "—"}</span> },
+  { key: "tax_registration_no", header: labels.tax, render: (o) => <span className="font-mono text-caption">{o.tax_registration_no ?? "—"}</span> },
   { key: "business_day_cutoff", header: "Day ends", sortable: true, render: (o) => <span className="tabular">{o.business_day_cutoff ?? "Merchant default"}</span> },
   { key: "hours", header: "Hours", render: (o) => <span className="text-ink-2">{summariseHours(o.hours)}</span> },
   {
@@ -27,6 +30,8 @@ const columns: DataTableColumn<Outlet>[] = [
 ];
 
 export function OutletsView({ initialOutlets }: { initialOutlets: Outlet[] }) {
+  const { business_registration_label, tax_registration_label } = useSession().merchant.settings;
+  const columns = outletColumns({ business: business_registration_label, tax: tax_registration_label });
   const [showArchived, setShowArchived] = useState(false);
   const [sheet, setSheet] = useState<OutletSheetState>(null);
 

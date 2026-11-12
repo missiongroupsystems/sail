@@ -411,7 +411,7 @@ if (invoice && invoiceAgain) check("same invoice number on reissue", invoice.inv
 
 // 23. Refund by line on bill 2 (invoiced → credit note): Cashier is below Manager, so a manager override.
 const b2Line = bill.checks.find((x) => x.id === b2.id)!.allocations[0]!;
-const quote = await step("refunds.quote lines", () => reg.quoteRefund(api, b2.id, { kind: "lines", lines: [{ line_id: b2Line.line_id, quantity: 1 }] }), (q) => `total ${q.totals.total} (gst ${q.totals.gst}), tenders ${q.tenders.map((t) => `${t.tender}=${t.amount}${t.rounding_cents ? `±${t.rounding_cents}` : ""}`).join(" ")}, cash_out ${q.cash_out}`);
+const quote = await step("refunds.quote lines", () => reg.quoteRefund(api, b2.id, { kind: "lines", lines: [{ line_id: b2Line.line_id, quantity: 1 }] }), (q) => `total ${q.totals.total} (tax ${q.totals.tax}), tenders ${q.tenders.map((t) => `${t.tender}=${t.amount}${t.rounding_cents ? `±${t.rounding_cents}` : ""}`).join(" ")}, cash_out ${q.cash_out}`);
 if (quote) {
   await expectError("refunds.create as Cashier", () => reg.createRefund(api, b2.id, { refund_id: idempotencyKey(), request: { kind: "lines", lines: [{ line_id: b2Line.line_id, quantity: 1 }] }, reason: "Guest complaint" }), "permission_denied");
   const rGrant = await step("overrides.grant refunds.create (check)", () => reg.grantOverride(api, { action: "refunds.create", target_kind: "check", target_id: b2.id, approver_pin: "222222" }), (g) => `by ${g.approver.name}`);

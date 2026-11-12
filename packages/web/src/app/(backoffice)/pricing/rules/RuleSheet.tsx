@@ -10,6 +10,7 @@ import { CHANNELS, CHANNEL_LABEL, ORDER_TYPES, ORDER_TYPE_LABEL, REPORT_CLASSES,
 import { ProductSearch } from "@/components/backoffice/ProductSearch";
 import { Warnings } from "@/components/backoffice/Warnings";
 import { productName, useProductsById } from "@/components/backoffice/products";
+import { taxClassItems, useTaxClasses } from "@/components/backoffice/tax-classes";
 import { FormSection, RhfCheckboxGroup, RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
@@ -50,6 +51,8 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
   const calc = useWatch({ control: form.control, name: "calc" });
   const valueType = useWatch({ control: form.control, name: "value_type" });
   const scopeType = useWatch({ control: form.control, name: "scope_type" });
+  const formTaxClassId = useWatch({ control: form.control, name: "tax_class_id" });
+  const taxClasses = useTaxClasses(state !== null);
   const application = useWatch({ control: form.control, name: "application" });
   const effective = useWatch({ control: form.control, name: "effective" });
   const name = useWatch({ control: form.control, name: "name" });
@@ -268,9 +271,17 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
                 render={({ field, fieldState }) => <MoneyField label="Cap per order" value={field.value} onChange={field.onChange} onBlur={field.onBlur} placeholder="No cap" description="The most this rule can add or take off one order." isInvalid={!!fieldState.error} errorMessage={fieldState.error?.message} />}
               />
             </div>
-            <RhfSwitch control={form.control} name="gst_applicable" description={kind === "fee" ? "GST is charged on this fee." : "Discounts carry no GST of their own; leave on."}>
-              GST applies
-            </RhfSwitch>
+            {kind === "fee" ? (
+              <RhfSelect
+                control={form.control}
+                name="tax_class_id"
+                label="Tax class"
+                placeholder="Choose a tax class"
+                description="The tax charged on this fee. Discounts take the tax class of the lines they reduce."
+                items={[{ id: NONE, label: "Not taxed", description: "For a deposit, for example." }, ...taxClassItems(taxClasses.data ?? [], formTaxClassId === NONE ? null : formTaxClassId)]}
+                className="sm:max-w-[360px]"
+              />
+            ) : null}
           </FormSection>
 
           <FormSection title="Applies to" hint="Which lines the rule looks at. Exclusions win over the scope.">
@@ -283,7 +294,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
                 { id: "categories", label: "Categories", description: "Includes their sub-categories." },
                 { id: "products", label: "Specific products" },
                 { id: "tags", label: "Products with a tag" },
-                { id: "bcrs", label: "BCRS deposit items" },
+                { id: "deposit", label: "Deposit items" },
               ]}
               className="sm:max-w-[360px]"
             />

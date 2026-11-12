@@ -1,17 +1,17 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, InlineError, useLocale, type LocaleFormat } from "@sail/ui";
+import { Button, InlineError, TagsField, useLocale, type LocaleFormat } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { FormSection, RhfSelect, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Merchant, MerchantSettingsPatch } from "@/lib/api/types";
-import { formatBps } from "@/lib/format";
 import { TIME_RE } from "@/lib/hours";
 import { keys } from "@/lib/query";
 
@@ -23,16 +23,24 @@ function roundingItems(money: LocaleFormat["money"]) {
   ];
 }
 
+function isLocale(tag: string): boolean {
+  try {
+    return Intl.getCanonicalLocales(tag).length === 1;
+  } catch {
+    return false;
+  }
+}
+
 const Schema = z.object({
   name: z.string().trim().min(1, "Enter the merchant's name"),
   tax_mode: z.enum(["inclusive", "exclusive"]),
-  gst_bps: z
-    .string()
-    .trim()
-    .regex(/^\d+$/, "Enter whole basis points, like 900 for 9%")
-    .refine((v) => Number(v) <= 10_000, "GST cannot exceed 100%"),
+  tax_rounding: z.enum(["per_line", "per_rate"]),
   cash_rounding_increment: z.string(),
+  cash_denominations: z.array(z.number().int().positive()),
   business_day_cutoff: z.string().regex(TIME_RE, "Use 24-hour time, like 04:00"),
+  locale: z.string().trim().refine(isLocale, "Enter a language tag, like en-GB or de-DE"),
+  business_registration_label: z.string().trim().min(1, "Enter a label"),
+  tax_registration_label: z.string().trim().min(1, "Enter a label"),
   receipt_footer: z.string(),
 });
 type Values = z.infer<typeof Schema>;
@@ -41,9 +49,13 @@ function toValues(m: Merchant): Values {
   return {
     name: m.name,
     tax_mode: m.settings.tax_mode,
-    gst_bps: String(m.settings.gst_bps),
+    tax_rounding: m.settings.tax_rounding,
     cash_rounding_increment: m.settings.cash_rounding_increment ? String(m.settings.cash_rounding_increment) : "off",
+    cash_denominations: m.settings.cash_denominations,
     business_day_cutoff: m.settings.business_day_cutoff,
+    locale: m.settings.locale,
+    business_registration_label: m.settings.business_registration_label,
+    tax_registration_label: m.settings.tax_registration_label,
     receipt_footer: m.settings.receipt_footer ?? "",
   };
 }
@@ -52,15 +64,19 @@ function toPatch(v: Values): MerchantSettingsPatch {
   return {
     name: v.name.trim(),
     tax_mode: v.tax_mode,
-    gst_bps: Number(v.gst_bps),
+    tax_rounding: v.tax_rounding,
     cash_rounding_increment: v.cash_rounding_increment === "off" ? null : Number(v.cash_rounding_increment),
+    cash_denominations: [...v.cash_denominations].sort((a, b) => b - a),
     business_day_cutoff: v.business_day_cutoff,
+    locale: v.locale.trim(),
+    business_registration_label: v.business_registration_label.trim(),
+    tax_registration_label: v.tax_registration_label.trim(),
     receipt_footer: v.receipt_footer.trim() || null,
   };
 }
 
 export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant }) {
-  const { clock, money } = useLocale();
+  const { clock, money, moneyText, parseMoney } = useLocale();
   const qc = useQueryClient();
   const router = useRouter();
   const [savedAt, setSavedAt] = useState<Date | null>(null);
@@ -78,9 +94,6 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
     },
   });
 
-  const gst = form.watch("gst_bps");
-  const gstPreview = /^\d+$/.test(gst) ? formatBps(Number(gst)) : null;
-
   return (
     <form noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex max-w-[640px] flex-col gap-10">
       <FormSection title="Merchant">
@@ -93,24 +106,58 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
           name="tax_mode"
           label="Tax mode"
           items={[
-            { id: "inclusive", label: "Prices include GST", description: "Menu prices are what the guest pays." },
-            { id: "exclusive", label: "GST added at the bill", description: "Menu prices are before tax." },
+            { id: "inclusive", label: "Prices include tax", description: "Menu prices are what the guest pays." },
+            { id: "exclusive", label: "Tax added at the bill", description: "Menu prices are before tax." },
           ]}
         />
-        <RhfTextField
+        <RhfSelect
           control={form.control}
-          name="gst_bps"
-          label="GST rate"
-          inputMode="numeric"
-          numeric
-          suffix="bps"
-          description={gstPreview ? `${gst} basis points = ${gstPreview}` : "In basis points: 900 = 9%."}
-          className="sm:max-w-[240px]"
+          name="tax_rounding"
+          label="Tax rounding"
+          items={[
+            { id: "per_line", label: "Per line", description: "Each line's tax is rounded, then added up." },
+            { id: "per_rate", label: "Per rate", description: "Tax is rounded once for each rate on the bill." },
+          ]}
         />
+        <p className="text-caption text-ink-2">
+          Rates are set per tax class in{" "}
+          <Link href="/settings/tax" className="text-ink underline underline-offset-4">
+            Tax classes
+          </Link>
+          .
+        </p>
+      </FormSection>
+
+      <FormSection title="Money and language" hint={`Amounts are in ${merchant.data.settings.currency}, which cannot change once set.`}>
+        <RhfTextField control={form.control} name="locale" label="Locale" description="Formats money, dates and times, for example en-GB or de-DE." className="sm:max-w-[240px]" />
       </FormSection>
 
       <FormSection title="Cash and day">
         <RhfSelect control={form.control} name="cash_rounding_increment" label="Cash rounding" items={roundingItems(money)} description="Card and other non-cash payments are never rounded." className="sm:max-w-[320px]" />
+        <Controller
+          control={form.control}
+          name="cash_denominations"
+          render={({ field, fieldState }) => (
+            <TagsField
+              label="Notes and coins"
+              description="For the cash counter at the register. Type an amount and press Enter."
+              placeholder="Add an amount"
+              normalise={false}
+              value={field.value.map(moneyText)}
+              onChange={(texts) => {
+                const values = texts.map(parseMoney);
+                if (values.some((v) => typeof v !== "number" || v <= 0)) {
+                  form.setError("cash_denominations", { message: "Enter each note or coin as an amount, like " + moneyText(500) });
+                  return;
+                }
+                form.clearErrors("cash_denominations");
+                field.onChange([...new Set(values as number[])].sort((a, b) => b - a));
+              }}
+              isInvalid={!!fieldState.error}
+              errorMessage={fieldState.error?.message}
+            />
+          )}
+        />
         <RhfTextField
           control={form.control}
           name="business_day_cutoff"
@@ -123,6 +170,10 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
       </FormSection>
 
       <FormSection title="Receipts">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <RhfTextField control={form.control} name="business_registration_label" label="Business registration label" description="Printed before each outlet's business registration number." />
+          <RhfTextField control={form.control} name="tax_registration_label" label="Tax registration label" description="Printed before each outlet's tax registration number." />
+        </div>
         <RhfTextField control={form.control} name="receipt_footer" label="Receipt footer" multiline rows={3} description="Printed under every receipt. Leave empty for none." />
       </FormSection>
 

@@ -3,21 +3,24 @@
 import { cx } from "../lib/cx";
 import { Money } from "../components/Money";
 import { useLocale } from "../lib/locale";
-import { makeLocaleFormat } from "../lib/locale-format";
-import { formatBpsText } from "../pos/AmountPad";
+import { taxRows } from "../lib/tax";
 
 /**
  * The bill document the register prints (shared/escpos BillDocument), typed
  * structurally so this package stays free of the schema. Every amount is an
- * integer in cents from the register; this component only formats.
+ * integer in minor units of `currency` from the register; this component only
+ * formats. Render it under a `LocaleProvider` built from the document's own
+ * `currency`, `header.locale` and `header.time_zone`.
  */
 export type BillDocumentLike = {
   kind: "prebill" | "receipt" | "refund_receipt";
-  header: { outlet_name: string; brand_name: string; order_no: string; table_name?: string; printed_at: string; server_name?: string; pax?: number; time_zone?: string };
+  header: { outlet_name: string; brand_name: string; order_no: string; table_name?: string; printed_at: string; server_name?: string; pax?: number; time_zone: string; locale: string };
+  /** ISO 4217 code every amount is in. */
+  currency: string;
   check_label: string;
   lines: { quantity: number; name: string; unit_price: number; amount: number; modifiers: { name: string; price: number }[]; seat_no?: number; share?: string }[];
   adjustments: { name: string; amount: number; kind: "fee" | "discount" }[];
-  totals: { subtotal: number; discount_total: number; fee_total: number; gst_total: number; total: number; tax_mode: "inclusive" | "exclusive"; gst_bps: number };
+  totals: { subtotal: number; discount_total: number; fee_total: number; tax_total: number; total: number; tax_mode: "inclusive" | "exclusive"; taxes: { name: string; bps: number; amount: number }[] };
   payments?: { tender: string; amount: number; rounding_cents?: number; reference?: string; change?: number }[];
   balance?: number;
   invoice_no?: string;
@@ -27,7 +30,8 @@ export type BillDocumentLike = {
   refund_reason?: string;
   footer_lines?: string[];
   outlet_phone?: string;
-  uen?: string;
+  business_registration?: { label: string; value: string };
+  tax_registration?: { label: string; value: string };
 };
 
 export type BillDocumentViewProps = {
@@ -48,16 +52,13 @@ function Row({ label, cents, strong, muted, signed }: { label: string; cents: nu
 
 /**
  * One bill grammar on every surface (design principle 10): the lines, the
- * adjustments, the GST line in the outlet's tax mode, the total, then the
+ * adjustments, a row per tax component in the outlet's tax mode, the total, then the
  * payments with cash rounding and change, and the document numbers.
  */
 export function BillDocumentView({ document: doc, className }: BillDocumentViewProps) {
   const t = doc.totals;
-  const gst = formatBpsText(t.gst_bps);
-  // The document's own zone (the outlet's at print time) wins over the viewer's.
-  const loc = useLocale();
-  const zone = doc.header.time_zone;
-  const { stamp } = zone && zone !== loc.timeZone ? makeLocaleFormat({ currency: loc.currency, locale: loc.locale, timeZone: zone }) : loc;
+  const tax = taxRows(t.taxes, t.tax_mode);
+  const { stamp } = useLocale();
   return (
     <article className={cx("flex flex-col gap-6", className)} aria-label={`${KIND_LABEL[doc.kind]} ${doc.check_label}`}>
       <header className="flex flex-col gap-1">
@@ -115,11 +116,15 @@ export function BillDocumentView({ document: doc, className }: BillDocumentViewP
         {doc.adjustments.map((a, i) => (
           <Row key={i} label={a.name} cents={a.amount} muted />
         ))}
-        {t.tax_mode === "exclusive" ? <Row label={`GST ${gst}`} cents={t.gst_total} muted /> : null}
+        {tax.before.map((r) => (
+          <Row key={r.key} label={r.label} cents={r.amount} muted />
+        ))}
         <div className="pt-2 hairline-t">
           <Row label="Total" cents={t.total} strong />
         </div>
-        {t.tax_mode === "inclusive" ? <Row label={`Includes GST ${gst}`} cents={t.gst_total} muted /> : null}
+        {tax.after.map((r) => (
+          <Row key={r.key} label={r.label} cents={r.amount} muted />
+        ))}
       </section>
 
       {doc.payments?.length ? (
@@ -140,11 +145,17 @@ export function BillDocumentView({ document: doc, className }: BillDocumentViewP
         </section>
       ) : null}
 
-      {doc.footer_lines?.length || doc.outlet_phone || doc.uen ? (
+      {doc.footer_lines?.length || doc.outlet_phone || doc.business_registration || doc.tax_registration ? (
         <footer className="flex flex-col gap-1 pt-4 text-caption text-ink-2 hairline-t">
           {doc.footer_lines?.map((f, i) => <p key={i}>{f}</p>)}
           {doc.outlet_phone ? <p className="tabular">Tel {doc.outlet_phone}</p> : null}
-          {doc.uen ? <p className="font-mono">UEN {doc.uen}</p> : null}
+          {[doc.business_registration, doc.tax_registration].map((reg, i) =>
+            reg ? (
+              <p key={i} className="font-mono">
+                {reg.label} {reg.value}
+              </p>
+            ) : null,
+          )}
         </footer>
       ) : null}
     </article>

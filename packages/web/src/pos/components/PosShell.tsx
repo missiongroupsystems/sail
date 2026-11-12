@@ -1,8 +1,9 @@
 "use client";
 
-import { Button, deviceLocale, InlineError, LocaleProvider, localeSettings } from "@sail/ui";
+import { Button, InlineError, LocaleProvider } from "@sail/ui";
 import { useEffect, useMemo, useRef } from "react";
 import { idempotencyKey, toApiError } from "@/lib/api";
+import { merchantLocale } from "@/lib/locale";
 import { openOrder } from "../api/register";
 import { useApplySnapshot, useChannelLink, useFloor, useLayout, useMenu, useMerchant, useOutlet, useStations } from "../hooks/queries";
 import { useApi } from "../hooks/useApi";
@@ -43,7 +44,7 @@ export function PosShell() {
     );
   }
   return (
-    <LocaleProvider settings={localeSettings(merchant.data.settings, deviceLocale())}>
+    <LocaleProvider settings={merchantLocale(merchant.data.settings)}>
       <SignedInShell />
     </LocaleProvider>
   );

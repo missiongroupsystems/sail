@@ -1,6 +1,6 @@
 "use client";
 
-import { BackButton, Badge, BillCard, Button, Checkbox, Icon, Money, QuantityStepper, SegmentedControl, Sheet, Skeleton, type BillCardLine, type BillCardRow, type LocaleFormat, useLocale } from "@sail/ui";
+import { BackButton, Badge, BillCard, Button, Checkbox, Icon, Money, QuantityStepper, SegmentedControl, Sheet, Skeleton, taxRows, type BillCardLine, type BillCardRow, type LocaleFormat, useLocale } from "@sail/ui";
 import { Check } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
@@ -43,12 +43,14 @@ export function billLabel(check: CheckSnapshot): string {
 }
 
 /** Rows under a bill's lines: every figure as the register returned it. */
-export function billRows(check: CheckSnapshot, inclusive: boolean): BillCardRow[] {
+export function billRows(check: CheckSnapshot, taxMode: string): BillCardRow[] {
+  const tax = taxRows(check.totals.taxes, taxMode);
   const rows: BillCardRow[] = [];
   if (check.totals.discount_total !== 0) rows.push({ key: "discount", label: "Discounts", cents: check.totals.discount_total });
   if (check.totals.fee_total !== 0) rows.push({ key: "fee", label: "Service and fees", cents: check.totals.fee_total });
-  rows.push({ key: "gst", label: inclusive ? "Includes GST" : "GST", cents: check.totals.gst_total });
+  for (const t of tax.before) rows.push({ key: t.key, label: t.label, cents: t.amount });
   rows.push({ key: "total", label: "Total", cents: check.totals.total, kind: "total" });
+  for (const t of tax.after) rows.push({ key: t.key, label: t.label, cents: t.amount });
   if (check.paid_total > 0) rows.push({ key: "paid", label: "Paid", cents: check.paid_total, kind: "paid" });
   if (check.rounding_total !== 0) rows.push({ key: "rounding", label: "Cash rounding", cents: check.rounding_total });
   if (check.refunded_total > 0) rows.push({ key: "refunded", label: "Refunded", cents: -check.refunded_total });
@@ -92,7 +94,6 @@ export function BillScreen({ orderId }: { orderId: string }) {
   const paidChecks = useMemo(() => (snap?.checks ?? []).filter((c) => c.locked || c.payments.length > 0 || c.status !== "open"), [snap]);
   const lockReason = paidChecks.length ? `${paidChecks[0]!.label} is paid. Refund it to change the split.` : null;
   const lockedLineIds = useMemo(() => new Set(paidChecks.flatMap((c) => c.allocations.map((a) => a.line_id))), [paidChecks]);
-  const inclusive = snap?.totals.tax_mode === "inclusive";
   const canPay = roleAtLeast(staff.role, "cashier");
 
   if (!snap || mode === null) {
@@ -274,7 +275,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
                   label={billLabel(check)}
                   status={check.status}
                   lines={cardLines(check)}
-                  rows={billRows(check, inclusive)}
+                  rows={billRows(check, snap.totals.tax_mode)}
                   tenders={check.payments.filter((p) => p.status !== "voided").map((p) => ({ id: p.id, label: `${p.tender}${p.reference ? ` · ${p.reference}` : ""}`, cents: p.amount }))}
                   isTarget={Boolean(selectedLine) && !check.locked}
                   onPress={selectedLine && !check.locked ? () => void moveTo(check) : undefined}

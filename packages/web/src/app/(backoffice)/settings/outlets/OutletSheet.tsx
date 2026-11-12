@@ -11,6 +11,7 @@ import { FormSection, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Outlet, OutletCreate } from "@/lib/api/types";
+import { useSession } from "@/lib/session-context";
 import { formToHours, hoursToForm, TIME_RE, WEEKDAY_LABEL, WEEKDAYS, type HoursForm } from "@/lib/hours";
 
 export type OutletSheetState = { mode: "create" } | { mode: "edit"; outlet: Outlet } | null;
@@ -29,7 +30,8 @@ const Schema = z.object({
   name: z.string().trim().min(1, "Enter a name"),
   address: z.string(),
   phone: z.string(),
-  uen: z.string(),
+  business_registration_no: z.string(),
+  tax_registration_no: z.string(),
   business_day_cutoff: z.string().refine((v) => v === "" || TIME_RE.test(v), "Use 24-hour time, like 04:00"),
   hours: z.object({ mon: DaySchema, tue: DaySchema, wed: DaySchema, thu: DaySchema, fri: DaySchema, sat: DaySchema, sun: DaySchema }),
 });
@@ -40,7 +42,8 @@ function defaults(outlet: Outlet | null): Values {
     name: outlet?.name ?? "",
     address: outlet?.address ?? "",
     phone: outlet?.phone ?? "",
-    uen: outlet?.uen ?? "",
+    business_registration_no: outlet?.business_registration_no ?? "",
+    tax_registration_no: outlet?.tax_registration_no ?? "",
     business_day_cutoff: outlet?.business_day_cutoff ?? "",
     hours: outlet ? hoursToForm(outlet.hours) : hoursToForm(undefined),
   };
@@ -51,7 +54,8 @@ function toBody(v: Values): Omit<OutletCreate, "id"> {
     name: v.name.trim(),
     address: v.address.trim() || null,
     phone: v.phone.trim() || null,
-    uen: v.uen.trim() || null,
+    business_registration_no: v.business_registration_no.trim() || null,
+    tax_registration_no: v.tax_registration_no.trim() || null,
     business_day_cutoff: v.business_day_cutoff || null,
     hours: formToHours(v.hours as HoursForm),
   };
@@ -60,6 +64,7 @@ function toBody(v: Values): Omit<OutletCreate, "id"> {
 export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClose: () => void }) {
   const qc = useQueryClient();
   const router = useRouter();
+  const { business_registration_label, tax_registration_label } = useSession().merchant.settings;
   const outlet = state?.mode === "edit" ? state.outlet : null;
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(outlet) });
 
@@ -129,7 +134,10 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
           <RhfTextField control={form.control} name="address" label="Address" multiline rows={2} />
           <div className="grid gap-4 sm:grid-cols-2">
             <RhfTextField control={form.control} name="phone" label="Phone" type="tel" inputMode="tel" numeric />
-            <RhfTextField control={form.control} name="uen" label="UEN" mono description="Shown on receipts and invoices." />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <RhfTextField control={form.control} name="business_registration_no" label={business_registration_label} mono description="Shown on receipts and invoices." />
+            <RhfTextField control={form.control} name="tax_registration_no" label={tax_registration_label} mono description="Shown on receipts and invoices." />
           </div>
           <RhfTextField
             control={form.control}

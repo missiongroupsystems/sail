@@ -7,7 +7,7 @@ export const metadata = { title: "Settings" };
 export default function SettingsLayout({ children }: { children: ReactNode }) {
   return (
     <>
-      <PageHeader title="Settings" description="Outlets, brands, stations, channels, payment methods, void reasons and the merchant's tax and rounding rules." tabs={<SettingsTabs />} />
+      <PageHeader title="Settings" description="Outlets, brands, stations, channels, payment methods, tax classes, void reasons and the merchant's tax and rounding rules." tabs={<SettingsTabs />} />
       {children}
     </>
   );

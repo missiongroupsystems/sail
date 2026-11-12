@@ -1,22 +1,14 @@
 "use client";
 
-import { denominationsFrom, fallbackDenominationValues, useLocale, type Denomination } from "@sail/ui";
+import { denominationsFrom, useLocale, type Denomination } from "@sail/ui";
 import { useMemo } from "react";
 import { useMerchant } from "../hooks/queries";
 
-/**
- * The merchant's notes and coins for the cash counter and the cash-given buttons, largest first: the register's
- * `cash_denominations` (minor units) when it sends them, otherwise a series derived from the currency.
- */
+/** The merchant's notes and coins (`cash_denominations`, minor units) for the cash counter and the cash-given buttons, largest first. */
 export function useCashDenominations(): Denomination[] {
-  const { money, minorDigits } = useLocale();
-  const settings = useMerchant().data?.settings;
-  const configured = settings?.cash_denominations;
-  const smallestCoin = settings?.cash_rounding_increment ?? null;
-  return useMemo(() => {
-    const values = Array.isArray(configured) && configured.length > 0 ? configured : fallbackDenominationValues(minorDigits, smallestCoin);
-    return denominationsFrom(values, money);
-  }, [configured, smallestCoin, minorDigits, money]);
+  const { money } = useLocale();
+  const configured = useMerchant().data?.settings.cash_denominations;
+  return useMemo(() => denominationsFrom(configured ?? [], money), [configured, money]);
 }
 
 /**

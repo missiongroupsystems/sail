@@ -2,8 +2,8 @@ import { makeLocaleFormat, PageHeader } from "@sail/ui";
 import Link from "next/link";
 import { req } from "@/lib/api";
 import { getScope, orSignIn, requireApi } from "@/lib/api.server";
-import { formatBps, formatRounding } from "@/lib/format";
-import { merchantLocale } from "@/lib/locale.server";
+import { formatRounding } from "@/lib/format";
+import { merchantLocale } from "@/lib/locale";
 import { TodayView } from "./TodayView";
 
 export const metadata = { title: "Today" };
@@ -15,9 +15,9 @@ export default async function TodayPage() {
   const [merchant, outlets] = await orSignIn(Promise.all([req(api.GET("/v1/merchant")), req(api.GET("/v1/outlets"))]));
   const outletId = outlets.data.find((o) => o.id === scope.outletId)?.id ?? outlets.data[0]?.id ?? null;
   const s = merchant.data.settings;
-  const { money, longDate } = makeLocaleFormat(await merchantLocale(s));
+  const { money, longDate } = makeLocaleFormat(merchantLocale(s));
   const summary = [
-    `GST ${formatBps(s.gst_bps)} ${s.tax_mode === "inclusive" ? "included in prices" : "added at the bill"}`,
+    s.tax_mode === "inclusive" ? "tax included in prices" : "tax added at the bill",
     `cash rounding ${s.cash_rounding_increment ? formatRounding(s.cash_rounding_increment, money) : "off"}`,
     `day ends ${s.business_day_cutoff}`,
     s.currency,

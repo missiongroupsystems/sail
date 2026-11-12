@@ -21,6 +21,7 @@ export { InlineError, type InlineErrorProps, type InlineErrorSource } from "./co
 export { AttributionChip, initialsOf, type AttributionChipProps, type Attribution } from "./components/AttributionChip";
 export { Money, type MoneyProps } from "./components/Money";
 export { LocaleProvider, useLocale } from "./lib/locale";
+export { taxRows, type TaxAmountLike, type TaxRow } from "./lib/tax";
 export { makeLocaleFormat, localeSettings, localeFromAcceptLanguage, deviceLocale, deviceTimeZone, type LocaleFormat, type LocaleSettings, type LocaleSettingsSource, type MoneyFormatOptions } from "./lib/locale-format";
 export { StatusDot, type StatusDotProps, type Status } from "./components/StatusDot";
 export { Badge, type BadgeProps, type BadgeTone } from "./components/Badge";
@@ -72,5 +73,5 @@ export { BillDocumentView, type BillDocumentViewProps, type BillDocumentLike } f
 export { SegmentedControl, type SegmentedControlProps, type SegmentOption } from "./pos/SegmentedControl";
 export { BillCard, type BillCardProps, type BillCardLine, type BillCardRow, type BillCardStatus } from "./pos/BillCard";
 export { TenderGrid, type TenderGridProps, type Tender } from "./pos/TenderGrid";
-export { CashCounter, cashCounterTotal, denominationsFrom, fallbackDenominationValues, type CashCounterProps, type CashCounterMode, type Denomination } from "./pos/CashCounter";
+export { CashCounter, cashCounterTotal, denominationsFrom, type CashCounterProps, type CashCounterMode, type Denomination } from "./pos/CashCounter";
 export { Checklist, type ChecklistProps, type ChecklistItem, type ChecklistItemStatus } from "./pos/Checklist";

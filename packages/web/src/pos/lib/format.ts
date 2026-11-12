@@ -27,11 +27,6 @@ export function describeRuleValue(rule: ManualRule, money: LocaleFormat["money"]
   return rule.calc === "percent" ? `${formatBpsText(min)}–${formatBpsText(max)}` : `${money(min)}–${money(max)}`;
 }
 
-/** "GST 9%" from basis points. */
-export function gstLabel(bps: number, inclusive: boolean): string {
-  return `${inclusive ? "Includes GST" : "GST"} ${formatBpsText(bps)}`;
-}
-
 /** Initials for the user chip: "Mia Manager" → "MM". */
 export function initialsOf(name: string | null | undefined): string {
   if (!name) return "··";

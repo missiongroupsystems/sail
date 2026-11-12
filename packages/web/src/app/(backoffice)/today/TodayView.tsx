@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, Dialog, EmptyState, InlineError, Money, SectionHeading, Stat, StatusDot, TextField, useLocale } from "@sail/ui";
+import { Badge, Button, Dialog, EmptyState, InlineError, Money, SectionHeading, Stat, StatusDot, taxRows, TextField, useLocale } from "@sail/ui";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -25,7 +25,7 @@ const POLL = 15_000;
  */
 export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null }) {
   const { clock, dayClock, isoDate } = useLocale();
-  const { me } = useSession();
+  const { me, merchant } = useSession();
   const qc = useQueryClient();
   const { outletId, setOutletId } = useOutletChoice(outlets, scope, initialOutletId);
   const canDecide = can(me, "rounds.accept");
@@ -329,7 +329,9 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                   <div className="flex flex-wrap gap-x-10 gap-y-4">
                     <Stat label="Net sales" value={<Money cents={z.data.sales.net} size="heading" />} hint={`${plural(z.data.orders.count, "completed order")}`} />
                     <Stat label="Covers" value={z.data.orders.covers} hint={z.data.orders.open_count ? `${z.data.orders.open_count} still open` : undefined} />
-                    <Stat label="GST" value={<Money cents={z.data.sales.gst} size="heading" />} />
+                    {[...taxRows(z.data.sales.taxes, merchant.settings.tax_mode).before, ...taxRows(z.data.sales.taxes, merchant.settings.tax_mode).after].map((t) => (
+                      <Stat key={t.key} label={t.label} value={<Money cents={t.amount} size="heading" />} />
+                    ))}
                     {z.data.refunds.count ? <Stat label="Refunds" value={<Money cents={z.data.refunds.amount} size="heading" />} hint={plural(z.data.refunds.count, "refund")} /> : null}
                   </div>
                   <ul className="flex flex-wrap gap-x-10 gap-y-3">

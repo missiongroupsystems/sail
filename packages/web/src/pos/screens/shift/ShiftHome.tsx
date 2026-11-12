@@ -48,11 +48,11 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
   useEffect(() => {
     if (seeded || !closed.data || mine) return;
     setSeeded(true);
-    if (lastClosed?.float_counts && Object.keys(lastClosed.float_counts).length) {
+    if (lastClosed?.float_counts && Object.keys(lastClosed.float_counts).length && denominations.length) {
       setMode("counts");
       setCounts(lastClosed.float_counts);
     } else if (lastClosed) setDigits(String(lastClosed.float_cents));
-  }, [closed.data, lastClosed, mine, seeded]);
+  }, [closed.data, lastClosed, mine, seeded, denominations.length]);
 
   const total = cashCounterTotal(mode, digits, counts, denominations);
   const refresh = () => {

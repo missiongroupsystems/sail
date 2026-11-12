@@ -1,6 +1,6 @@
 "use client";
 
-import { AmountPad, Badge, Button, Money, QuantityStepper, ReasonPicker, Sheet, TextField, type PickedReason, useLocale } from "@sail/ui";
+import { AmountPad, Badge, Button, Money, QuantityStepper, ReasonPicker, Sheet, taxRows, TextField, type PickedReason, useLocale } from "@sail/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import { idempotencyKey, toApiError } from "@/lib/api";
@@ -97,7 +97,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
 
   const tenderSplit = useMemo(() => (split ? Object.entries(split).map(([payment_id, amount]) => ({ payment_id, amount })).filter((t) => t.amount > 0) : undefined), [split]);
 
-  // The register quotes every change (design 4.6): per line, service charge, GST, rounding and the tender split.
+  // The register quotes every change (design 4.6): per line, service charge, tax, rounding and the tender split.
   useEffect(() => {
     if (!isOpen || !check || !request || step === "bill" || step === "done") return;
     if (timer.current) clearTimeout(timer.current);
@@ -277,7 +277,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                     <AmountPad digits={digits} onChange={setDigits} mode="cents" hint={`Paid ${money(check.paid_total)}${check.refunded_total > 0 ? ` · ${money(check.refunded_total)} already refunded` : ""} · goodwill, spread across the bill`} />
                   </div>
                 ) : null}
-                {what === "full" ? <p className="text-body text-ink-2">Everything paid on {check.label} goes back, including service charge, GST and cash rounding, as the register works them out.</p> : null}
+                {what === "full" ? <p className="text-body text-ink-2">Everything paid on {check.label} goes back, including service charge, tax and cash rounding, as the register works them out.</p> : null}
               </div>
             ) : null}
 
@@ -378,7 +378,9 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                 <dl className="pt-2 hairline-t">
                   {quote.totals.discount !== 0 ? <Line label="Discounts reversed" value={money(-quote.totals.discount)} /> : null}
                   {quote.totals.fee !== 0 ? <Line label="Service and fees" value={money(-quote.totals.fee)} /> : null}
-                  <Line label="GST" value={money(-quote.totals.gst)} />
+                  {taxRows(quote.totals.taxes, order.totals.tax_mode).before.map((t) => (
+                    <Line key={t.key} label={t.label} value={money(-t.amount)} />
+                  ))}
                   {quote.tenders.some((t) => t.rounding_cents !== 0) ? <Line label="Cash rounding" value={quote.tenders.map((t) => money(t.rounding_cents)).join(" ")} /> : null}
                   <div className="mt-1 flex items-center justify-between gap-3 pt-2 hairline-t">
                     <dt className="text-title text-ink">Refund</dt>
@@ -386,6 +388,9 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                       <Money cents={quote.totals.total} size="title" className="text-ink" />
                     </dd>
                   </div>
+                  {taxRows(quote.totals.taxes, order.totals.tax_mode).after.map((t) => (
+                    <Line key={t.key} label={t.label} value={money(-t.amount)} />
+                  ))}
                 </dl>
                 <ul className="text-body text-ink-2">
                   {quote.tenders.map((t) => (

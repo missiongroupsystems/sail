@@ -42,13 +42,14 @@ export type Outlet = {
 
 /** The merchant settings the station reads: currency, zone and locale for every figure, and the cash it counts. */
 export type MerchantSettings = {
+  tax_mode: "inclusive" | "exclusive";
   currency: string;
   timezone: string;
-  /** BCP 47; the register is adding it. */
-  locale?: string | null;
+  /** BCP 47. */
+  locale: string;
   cash_rounding_increment: number | null;
-  /** Notes and coins in minor units; the register is adding it. */
-  cash_denominations?: number[] | null;
+  /** Notes and coins in minor units, largest first; may be empty. */
+  cash_denominations: number[];
 };
 export type Merchant = { id: string; name: string; settings: MerchantSettings };
 
@@ -65,7 +66,8 @@ export type CompiledProduct = {
   category_id: string | null;
   parent_category_id: string | null;
   tags: string[];
-  is_bcrs: boolean;
+  has_deposit: boolean;
+  tax_class_id: string;
   open_price: boolean;
   modifier_groups: string[];
   available_now: boolean;
@@ -119,7 +121,11 @@ export type FloorSnapshot = {
   other_orders: { id: string; order_no: string; order_type: OrderType; status: OrderStatus; ready_by: string | null; customer_ref: { name?: string; mobile?: string } | null; total: number }[];
 };
 
-export type LineAmounts = { base: number; discount: number; net: number; fee: number; gst: number; total: number };
+/** One tax component: `name` is the whole printed label ("VAT 20%"). `taxable` excludes tax in both modes. */
+export type TaxBreakdown = { name: string; bps: number; taxable: number; amount: number };
+export type TaxAmount = { name: string; bps: number; amount: number };
+
+export type LineAmounts = { base: number; discount: number; net: number; fee: number; tax: number; total: number };
 export type SnapshotModifier = { modifier_id: string; product_id: string; name: string; quantity: number; price: number; group_id: string };
 export type SnapshotLine = {
   id: string;
@@ -141,6 +147,9 @@ export type SnapshotLine = {
   voided_at: string | null;
   void_reason: string | null;
   amounts: LineAmounts;
+  /** amounts.tax by component. */
+  taxes: TaxBreakdown[];
+  tax_class_id: string;
   tags: string[];
   category_id: string | null;
   sort: number;
@@ -157,8 +166,10 @@ export type SnapshotAdjustment = {
   kind: "fee" | "discount" | string;
   level: string;
   report_class: string;
+  /** Fees only: the class the fee is taxed at, null when untaxed. */
+  tax_class_id: string | null;
   total: number;
-  gst_total: number;
+  tax_total: number;
   capped: boolean;
   frozen: boolean;
   manual_application_id: string | null;
@@ -166,7 +177,7 @@ export type SnapshotAdjustment = {
   applied_by: string | null;
   approved_by: string | null;
   reason: string | null;
-  lines: { line_id: string; amount: number; gst_amount: number }[];
+  lines: { line_id: string; amount: number; tax_amount: number }[];
 };
 export type OrderSnapshot = {
   id: string;
@@ -197,7 +208,7 @@ export type OrderSnapshot = {
   bill_requested_at: string | null;
   round_count: number;
   pricing_status: "live" | "frozen";
-  totals: { tax_mode: "inclusive" | "exclusive"; gst_bps: number; subtotal: number; discount_total: number; fee_total: number; gst_total: number; total: number };
+  totals: { tax_mode: "inclusive" | "exclusive"; tax_rounding: "per_line" | "per_rate"; subtotal: number; discount_total: number; fee_total: number; tax_total: number; taxes: TaxBreakdown[]; total: number };
   lines: SnapshotLine[];
   adjustments: SnapshotAdjustment[];
   manual_applications: { id: string; rule_key: string; entered_value: number | null; line_ids: string[] | null; applied_by: string | null; reason: string | null }[];
@@ -268,14 +279,14 @@ export type CheckPayment = {
   created_at: string;
 };
 /** One line's part of a bill: `share` is "1" or a fraction such as "1/3". */
-export type CheckAllocation = { line_id: string; share: string; base: number; discount: number; fee: number; gst: number; total: number };
+export type CheckAllocation = { line_id: string; share: string; base: number; discount: number; fee: number; tax: number; taxes: TaxAmount[]; total: number };
 export type CheckSnapshot = {
   id: string;
   index: number;
   label: string;
   status: CheckStatus;
   seat_no: number | null;
-  totals: { subtotal: number; discount_total: number; fee_total: number; gst_total: number; total: number };
+  totals: { subtotal: number; discount_total: number; fee_total: number; tax_total: number; taxes: TaxAmount[]; total: number };
   paid_total: number;
   rounding_total: number;
   refunded_total: number;
@@ -293,12 +304,12 @@ export type PaymentFigures = Partial<CheckPayment> & { change_due: number };
 export type PaymentResult = MutationResult & { payment: PaymentFigures };
 
 export type RefundRequest = { kind: "full" } | { kind: "lines"; lines: { line_id: string; quantity: number }[] } | { kind: "amount"; amount: number };
-export type RefundLineResult = { line_id: string; quantity: number; base: number; discount: number; fee: number; gst: number; total: number; adjustments: Record<string, { amount: number; gst: number }> };
+export type RefundLineResult = { line_id: string; quantity: number; base: number; discount: number; fee: number; tax: number; taxes: TaxAmount[]; total: number; adjustments: Record<string, { amount: number; tax: number }> };
 export type RefundTenderResult = { payment_id: string; tender: string; is_cash: boolean; amount: number; rounding_cents: number };
 export type RefundablePayment = { payment_id: string; tender: string; is_cash: boolean; amount: number; refunded: number };
 export type RefundQuote = {
   lines: RefundLineResult[];
-  totals: { base: number; discount: number; fee: number; gst: number; total: number };
+  totals: { base: number; discount: number; fee: number; tax: number; taxes: TaxAmount[]; total: number };
   tenders: RefundTenderResult[];
   cash_out: number;
   check_id: string;
@@ -314,7 +325,7 @@ export type Refund = {
   refunded_by: string | null;
   approved_by: string | null;
   business_date: string;
-  totals: { base: number; discount: number; fee: number; gst: number; total: number };
+  totals: { base: number; discount: number; fee: number; tax: number; taxes: TaxAmount[]; total: number };
   refund_receipt_no: string | null;
   credit_note_no: string | null;
   created_at: string;
@@ -350,7 +361,7 @@ export type Shift = {
 export type ZReport = {
   scope: { outlet_id: string; station_id: string | null; business_date: string; shift_id: string | null };
   orders: { count: number; by_type: Record<string, number>; covers: number; open_count: number };
-  sales: { gross: number; discounts: number; fees: number; gst: number; net: number };
+  sales: { gross: number; discounts: number; fees: number; tax: number; taxes: TaxBreakdown[]; net: number };
   adjustments: { rule_key: string; name: string; kind: string; report_class: string; total: number; count: number }[];
   tenders: { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number }[];
   cash: { float: number; cash_payments: number; rounding: number; refunds: number; expected: number; counted: number | null; variance: number | null };

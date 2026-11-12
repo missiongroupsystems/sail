@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, Checkbox, CheckboxGroup, DescriptionList, EmptyState, Icon, InlineError, Money, MoneyField, PercentField, SectionHeading, Select, TextField } from "@sail/ui";
+import { Badge, Button, Checkbox, CheckboxGroup, DescriptionList, EmptyState, Icon, InlineError, Money, MoneyField, PercentField, SectionHeading, Select, taxRows, TextField } from "@sail/ui";
 import { useMutation } from "@tanstack/react-query";
 import { Minus, Plus, X } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -81,9 +81,9 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
             selectedKey={taxMode}
             onSelectionChange={(k) => k && setTaxMode(k as TaxMode)}
             items={[
-              { id: "merchant", label: `Merchant setting (${merchantTaxMode === "inclusive" ? "GST included" : "GST added"})` },
-              { id: "inclusive", label: "GST included in prices" },
-              { id: "exclusive", label: "GST added at the bill" },
+              { id: "merchant", label: `Merchant setting (${merchantTaxMode === "inclusive" ? "tax included" : "tax added"})` },
+              { id: "inclusive", label: "Tax included in prices" },
+              { id: "exclusive", label: "Tax added at the bill" },
             ]}
           />
           <TextField label="Price as at" type="datetime-local" numeric value={at} onChange={setAt} description="Empty: now. Try a scheduled version." />
@@ -177,8 +177,9 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
                   { term: "Discounts", detail: <Money cents={result.totals.discount_total} />, numeric: true },
                   { term: "Net subtotal", detail: <Money cents={result.totals.net_subtotal} />, numeric: true },
                   { term: "Fees", detail: <Money cents={result.totals.fee_total} />, numeric: true },
-                  { term: result.totals.tax_mode === "inclusive" ? "GST (included)" : "GST", detail: <Money cents={result.totals.gst_total} />, numeric: true },
+                  ...taxRows(result.totals.taxes, result.totals.tax_mode).before.map((t) => ({ term: t.label, detail: <Money cents={t.amount} />, numeric: true })),
                   { term: <span className="text-ink">Total</span>, detail: <Money cents={result.totals.total} size="heading" />, numeric: true },
+                  ...taxRows(result.totals.taxes, result.totals.tax_mode).after.map((t) => ({ term: t.label, detail: <Money cents={t.amount} />, numeric: true })),
                 ]}
               />
               <Warnings warnings={result.warnings} className="mt-3" />
@@ -196,7 +197,7 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
                       <th className="py-1 text-right font-medium hairline-b">Base</th>
                       <th className="py-1 text-right font-medium hairline-b">Discount</th>
                       <th className="py-1 text-right font-medium hairline-b">Fees</th>
-                      <th className="py-1 text-right font-medium hairline-b">GST</th>
+                      <th className="py-1 text-right font-medium hairline-b">Tax</th>
                       <th className="py-1 text-right font-medium hairline-b">Total</th>
                     </tr>
                   </thead>
@@ -209,7 +210,7 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
                         <td className="py-1.5 text-right"><Money cents={l.base_amount} /></td>
                         <td className="py-1.5 text-right"><Money cents={l.discount_amount} /></td>
                         <td className="py-1.5 text-right"><Money cents={l.fee_amount} /></td>
-                        <td className="py-1.5 text-right"><Money cents={l.gst_on_net + l.gst_on_fees} /></td>
+                        <td className="py-1.5 text-right"><Money cents={l.tax_on_net + l.tax_on_fees} /></td>
                         <td className="py-1.5 text-right text-ink"><Money cents={l.total} /></td>
                       </tr>
                     ))}
@@ -236,7 +237,7 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
                       </span>
                       <span className="ml-auto inline-flex flex-col items-end">
                         <Money cents={a.total} signed />
-                        {a.gst_total ? <span className="text-caption text-ink-2">GST <Money cents={a.gst_total} size="caption" /></span> : null}
+                        {a.tax_total ? <span className="text-caption text-ink-2">Tax <Money cents={a.tax_total} size="caption" /></span> : null}
                       </span>
                     </li>
                   ))}
