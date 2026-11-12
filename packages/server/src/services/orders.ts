@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { z } from "zod";
 import { price, PricingContextSchema, sumCents, sumTaxBreakdowns, type Adjustment, type ManualApplication, type OrderType, type PricedLine, type PricingContext, type PricingLineInput, type PricingResult, type PricingRule, type TaxBreakdown, type TaxRate, ORDER_NUMBER_PREFIX, type ChannelType } from "@sail/shared";
 import { assertNotSettled, db, maybeTx, tx } from "../db/client.js";
 import { checkAllocations, checks, customerGroupMembers, orderAdjustmentLines, orderAdjustments, orderLines, orderManualApplications, orders, tables } from "../db/schema/index.js";
@@ -165,6 +166,9 @@ export async function lockedLineIds(orderId: string): Promise<Set<string>> {
   return new Set(rows.map((r) => r.id));
 }
 
+/** The one field of a stored rule snapshot the merge needs: rules evaluate in priority order. */
+const RulePriority = z.object({ priority: z.number() });
+
 const adjKey = (ruleKey: string, version: number, appId: string | null) => `${ruleKey}@${version}|${appId ?? ""}`;
 
 /**
@@ -263,7 +267,8 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
   // whether an adjustment came from the engine or was carried over from the paid lines.
   const step = (a: Adjustment) => (a.kind === "fee" ? 2 : a.level === "order" ? 1 : 0);
   const cmp = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
-  adjustments.sort((a, b) => step(a) - step(b) || a.rule_snapshot.priority - b.rule_snapshot.priority || cmp(a.rule_id, b.rule_id) || a.rule_version - b.rule_version || cmp(a.manual_application_id ?? "", b.manual_application_id ?? ""));
+  const priority = new Map(adjustments.map((a) => [a, RulePriority.parse(a.rule_snapshot).priority]));
+  adjustments.sort((a, b) => step(a) - step(b) || priority.get(a)! - priority.get(b)! || cmp(a.rule_id, b.rule_id) || a.rule_version - b.rule_version || cmp(a.manual_application_id ?? "", b.manual_application_id ?? ""));
   const allLines = [...engine.lines, ...lockedPriced];
   const totals: PricingResult["totals"] = {
     tax_mode: engine.totals.tax_mode,
