@@ -146,7 +146,7 @@ export function agentRoutes(app: OpenAPIHono<AppEnv>) {
     if (prop.orderId && current?.version !== prop.expectedVersion) {
       const e = AppError.version("The order has changed since this proposal was made", { current_version: current?.version ?? null, expected_version: prop.expectedVersion, order_id: prop.orderId });
       res = { status: e.status, text: async () => JSON.stringify(e.toBody()) };
-    } else if (prop.pin && JSON.stringify(pinNow) !== JSON.stringify(prop.pin)) {
+    } else if (prop.pin && !samePin(pinNow, prop.pin)) {
       const e = AppError.version("The figures have changed since this proposal was made", { proposed: prop.pin, current: pinNow });
       res = { status: e.status, text: async () => JSON.stringify(e.toBody()) };
     } else {
@@ -185,3 +185,10 @@ export function agentRoutes(app: OpenAPIHono<AppEnv>) {
 }
 
 export { TIERS };
+
+/** A stored pin comes back from jsonb with its keys reordered, so compare the figures, not the serialisation. */
+function samePin(a: Record<string, unknown> | null, b: Record<string, unknown>): boolean {
+  if (!a) return false;
+  const keys = Object.keys(b);
+  return Object.keys(a).length === keys.length && keys.every((k) => a[k] === b[k]);
+}
