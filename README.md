@@ -69,6 +69,8 @@ Nothing in the code assumes a country. A merchant is created from a region prese
 
 Beta (`0.9.0-beta.1`). Sail has never run a real service in production. The register has unit, property, reference-set and database tests, and an end-to-end suite drives the three apps in a browser, but nothing has been tested on real printers, real card terminals or a busy floor.
 
+There is no private address for security reports yet: [SECURITY.md](SECURITY.md) has a placeholder the maintainers will fill in before the repository is announced. Until then, do not post vulnerabilities in public issues.
+
 Missing today: an adapter for a real card-terminal provider (the interface and a simulator exist; by-hand card payments still work), online payments, offline mode, reviewed configuration changes, a self-serve sign-up and any bundled agents. See the [roadmap](docs/roadmap.md).
 
 ## Licence

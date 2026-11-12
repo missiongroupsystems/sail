@@ -9,7 +9,7 @@ const EnvSchema = z.object({
   PORT: z.coerce.number().int().default(8080),
   LOG_LEVEL: z.string().default("info"),
 
-  /** Supabase transaction pooler (port 6543). Used for every request transaction, with prepare:false. */
+  /** Postgres, directly or through a transaction pooler (for example on port 6543). Used for every request transaction, with prepare:false. */
   DATABASE_URL: z.string().min(1),
   /** Session connection (port 5432) for LISTEN, session-level advisory locks and migrations. */
   LISTEN_DATABASE_URL: z.string().min(1).optional(),
@@ -73,11 +73,28 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Env {
     throw new Error(`Invalid environment: ${issues}`);
   }
   const cfg = parsed.data;
+  if (cfg.NODE_ENV === "production") assertProductionSecrets(cfg);
   if (cfg.LISTEN_DATABASE_URL && !cfg.ALLOW_POOLER_LISTEN) {
     const port = safePort(cfg.LISTEN_DATABASE_URL);
     if (port !== 5432) throw new Error(`LISTEN_DATABASE_URL must use the session connection on port 5432, got ${port ?? "unknown"}`);
   }
   return cfg;
+}
+
+/** Secrets that sign tokens or verify them. */
+const SECRET_KEYS = ["SESSION_TOKEN_SECRET", "STATION_TOKEN_SECRET", "GUEST_TOKEN_SECRET", "RELAY_TOKEN_SECRET", "AGENT_TOKEN_SECRET", "SUPABASE_JWT_SECRET"] as const;
+export const PRODUCTION_SECRET_MIN_LENGTH = 32;
+/** The values the repository publishes (.env.example uses `change-me-`, dev:local uses `local-`): anyone could sign tokens with them. */
+const PLACEHOLDER = /^(change-me|local-)/i;
+
+/** A production server refuses to start with a published placeholder or a short secret. */
+function assertProductionSecrets(cfg: Env): void {
+  for (const key of SECRET_KEYS) {
+    const value = cfg[key];
+    if (value === undefined) continue;
+    if (PLACEHOLDER.test(value)) throw new Error(`Invalid environment: ${key} still has a placeholder value from the repository; generate one with \`openssl rand -hex 32\``);
+    if (value.length < PRODUCTION_SECRET_MIN_LENGTH) throw new Error(`Invalid environment: ${key} is too short for production (at least ${PRODUCTION_SECRET_MIN_LENGTH} characters)`);
+  }
 }
 
 /** The back-office identity provider: `oidc` when an external issuer is configured, `local` otherwise. */
