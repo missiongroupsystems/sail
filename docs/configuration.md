@@ -43,7 +43,7 @@ A preset is plain data in `packages/shared/src/presets.ts`. The engine and the s
 
 The rates in `us` and `eu-vat` are examples, not the law of any one state or country. Check them against your own before you trade.
 
-The preset is chosen when the merchant is created (`bootstrap --preset=<key>`, see [self-hosting.md](self-hosting.md#create-the-first-merchant)). `--time-zone` is always required (a preset only suggests one); `--currency` and `--locale` override the preset, and `blank` needs both.
+The preset is chosen when the merchant is created (in first-run setup, or `bootstrap --preset=<key>`; see [self-hosting.md](self-hosting.md#sign-in)). In `bootstrap`, `--time-zone` is always required (a preset only suggests one); `--currency` and `--locale` override the preset, and `blank` needs both.
 
 **Adding a preset.** Add the key to `REGION_PRESET_KEYS` and an entry to `REGION_PRESETS` in `presets.ts`, then run `pnpm --filter @sail/shared test`: `presets.test.ts` checks every preset: unique class codes, a default class and fee classes that exist, a known currency, denominations largest first and divisible by the rounding increment, and seed rules that parse. If the tax regime rounds or groups tax in a way no reference case covers, add cases under `packages/shared/src/pricing/reference`.
 
