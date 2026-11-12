@@ -19,8 +19,8 @@ export type World = {
 
 export type Snap = { id: string; version: number; status: string; totals: { total: number }; lines: { id: string; status: string; quantity: number }[]; checks: { id: string; totals: { total: number }; balance: number }[]; balance: number };
 
-export async function bootWorld(): Promise<{ db: TestDb; call: Call; w: World }> {
-  const db = await freshDb();
+export async function bootWorld(template?: string): Promise<{ db: TestDb; call: Call; w: World }> {
+  const db = await freshDb({}, template);
   const call = api(buildApp()).call;
   const m = await seedMerchant(db.sql, "Alpha");
   await withTransaction(() => seedRulesForMerchant(m.merchantId, sgSeedRules(m)));

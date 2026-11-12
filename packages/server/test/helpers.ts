@@ -19,13 +19,13 @@ export const TEST_SECRETS = {
 
 export type TestDb = { url: string; name: string; admin: Sql; sql: Sql; drop: () => Promise<void> };
 
-/** Clone the migrated template into a fresh database and point the server at it. */
-export async function freshDb(overrides: Partial<Record<string, string>> = {}): Promise<TestDb> {
+/** Clone the migrated template (or another template database) into a fresh database and point the server at it. */
+export async function freshDb(overrides: Partial<Record<string, string>> = {}, template = "sail_template"): Promise<TestDb> {
   const adminUrl = inject("pgAdminUrl");
   const port = inject("pgPort");
   const name = `t_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
   const admin = postgres(adminUrl, { max: 1, onnotice: () => {} });
-  await admin.unsafe(`create database ${name} template sail_template`);
+  await admin.unsafe(`create database ${name} template ${template}`);
   const url = `postgres://postgres@127.0.0.1:${port}/${name}`;
   setConfigForTests(
     loadConfig({
