@@ -2,7 +2,7 @@ import { createRoute, OpenAPIHono, z, type RouteConfig, type RouteHandler } from
 import type { Next } from "hono";
 import { ApiErrorSchema, operation, roleAtLeast, type OperationSpec } from "@sail/shared";
 import { AppError } from "./errors.js";
-import { aboveCeiling, createProposal, toProposal } from "../services/agents.js";
+import { aboveCeiling, createProposal, directCeiling, toProposal } from "../services/agents.js";
 import type { AppEnv } from "./context.js";
 import { principalRole } from "../auth/principal.js";
 
@@ -91,7 +91,7 @@ export function defineOp<R extends OpRoute>(app: OpenAPIHono<AppEnv>, route: R, 
       }
       if (spec.dryRun && (body as { dry_run?: unknown } | null)?.dry_run === true) return handler(c, next); // a dry run commits nothing: T0 by nature
       const proposal = await createProposal({ principal, spec, method, path: c.req.path + (c.req.url.includes("?") ? c.req.url.slice(c.req.url.indexOf("?")) : ""), body, idempotencyKey: c.get("idempotencyKey") ?? null, rationale: c.req.header("x-rationale") ?? null, correlationId: c.get("correlationId") });
-      const ceiling = principal.type === "agent" || principal.type === "staff" ? principal.riskCeiling : null;
+      const ceiling = principal.type === "agent" || principal.type === "staff" ? directCeiling(principal.type, principal.riskCeiling) : null;
       return c.json(
         {
           code: "requires_confirmation",

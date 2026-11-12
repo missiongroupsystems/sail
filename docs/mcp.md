@@ -33,8 +33,10 @@ Toolsets (vision §7.6): `pos.read`, `pos.order`, `pos.payment`, `pos.refund`, `
 |-|-|-|
 | T0 reads, quotes, dry runs | Runs | Runs |
 | T1 routine (add lines, split, mark sold out, reroute) | Runs | Proposal |
-| T2 consequential (fire, record a payment, close a shift) | Runs | Proposal |
+| T2 consequential (fire, record a payment, apply or remove a discount or comp, close a shift) | Always a proposal | Always a proposal |
 | T3 money out, overrides, configuration, identities | Always a proposal | Always a proposal |
+
+An agent never runs a T2 or T3 operation by itself, whatever its identity's ceiling: each one needs a person to confirm that one action, and the proposal is that confirmation (vision §7.3, "runs after the human taps confirm"). For an agent working on behalf of someone, that person can approve it (`POST /v1/proposals/{id}/approve`); it then runs as them. No front end shows proposals yet. A ceiling of T2 is accepted but today behaves as T1.
 
 A call above the ceiling returns HTTP 202 with `code: "requires_confirmation"` and the stored proposal: the frozen method, path, body, idempotency key and expected version. Staff see pending proposals on the floor (`pending_proposals`) and in `GET /v1/outlets/{id}/proposals`. A person with the operation's role approves (`POST /v1/proposals/{id}/approve`) or rejects with a reason. A proposal on an order or one of its bills is pinned to the order as it stood: its version and total are stored and shown as `order` (a stale `expected_version` is refused at once). On approval the register replays the frozen request **as the approver** with the frozen idempotency key, but only while the order is still at that version; once anyone has changed it, the proposer included, nothing executes, the result is `version_conflict` and the proposal is marked failed. Proposals expire after 10 minutes. The agent polls `proposals_get`.
 

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { SEED_RULE_IDS } from "@sail/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import "../src/modules.js";
@@ -10,7 +11,7 @@ import { withTransaction } from "../src/db/client.js";
 import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
 import { expireProposals } from "../src/services/agents.js";
 import { lockOrder } from "../src/services/orders.js";
-import { buildToolCatalog, createMcpHandler, loadCatalog, wrapUntrusted, type ToolDef } from "../src/mcp/index.js";
+import { buildToolCatalog, createMcpHandler, loadCatalog, toolsFor, wrapUntrusted, type ToolDef } from "../src/mcp/index.js";
 import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb, sgSeedRules } from "./helpers.js";
 
 let db: TestDb;
@@ -191,6 +192,29 @@ describe("ceilings and proposals", () => {
         await lockOrder(seen.id);
       }),
     ).rejects.toMatchObject({ code: "version_conflict" });
+  });
+
+  it("an agent with a T2 ceiling still cannot comp, fire or take a payment by itself: each one is a proposal a person approves", async () => {
+    const r = await call<{ data: { credential: string } }>("POST", "/v1/agent-identities", { token: A.admin.token, body: { name: "Attended", role: "manager", outlet_ids: [A.outletId], toolsets: ["pos.read", "pos.order", "pos.payment"], risk_ceiling: "T2" } });
+    const tok = (await startSession(r.body.data.credential, { on_behalf_of: managerPin })).body.data.agent_token;
+    const o = await call<{ data: Snap & { totals: { total: number } } }>("POST", "/v1/orders", { token: tok, body: { order_id: randomUUID(), order_type: "takeaway", takeaway_ref: "C", outlet_id: A.outletId, brand_id: A.brandId } });
+    const s = (await call<{ data: Snap & { totals: { total: number } } }>("POST", `/v1/orders/${o.body.data.id}/lines`, { token: tok, body: { lines: [{ line_id: randomUUID(), product_id: ids.laksa, quantity: 1 }] } })).body.data;
+    const comp = await call<{ code: string; data: Proposal }>("POST", `/v1/orders/${s.id}/adjustments`, { token: tok, body: { application_id: randomUUID(), rule_key: SEED_RULE_IDS.managerComp, reason: "Regular", line_ids: [s.lines[0]!.id] } });
+    expect(comp.status, JSON.stringify(comp.body)).toBe(202);
+    expect(comp.body.code).toBe("requires_confirmation");
+    expect((await call("POST", `/v1/orders/${s.id}/fire`, { token: tok, body: {} })).status).toBe(202);
+    expect((await call("POST", `/v1/checks/${s.checks[0]!.id}/payments`, { token: tok, body: { payment_id: randomUUID(), tender_type_id: ids.cash, amount: 100 } })).status).toBe(202);
+    const unchanged = (await call<{ data: Snap & { totals: { total: number }; paid_total: number } }>("GET", `/v1/orders/${s.id}`, { token: tok })).body.data;
+    expect(unchanged).toMatchObject({ status: "open", paid_total: 0, totals: { total: s.totals.total } });
+    // The person the agent works for confirms the comp; it runs as them.
+    const done = await call<{ data: Proposal }>("POST", `/v1/proposals/${comp.body.data.id}/approve`, { token: managerPin, body: {} });
+    expect(done.body.data).toMatchObject({ status: "approved", result: { status: 200 } });
+    expect((await call<{ data: { totals: { total: number } } }>("GET", `/v1/orders/${s.id}`, { token: tok })).body.data.totals.total).toBe(0);
+    // T1 still runs directly, and MCP lists the T2 tools as proposal-only.
+    expect((await call("POST", `/v1/orders/${s.id}/lines`, { token: tok, body: { lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] } })).status).toBe(200);
+    const tools = toolsFor(await loadCatalog(app), { type: "agent", role: "manager", risk_ceiling: "T2", agent: { toolsets: ["pos.order", "pos.payment"] } });
+    expect(tools.find((t) => t.name === "payments_record")!.description).toMatch(/^PROPOSAL ONLY/);
+    expect(tools.find((t) => t.name === "lines_add")!.description).not.toMatch(/PROPOSAL ONLY/);
   });
 
   it("T3 money-out is always a proposal even for a manager-role agent, and needs a Manager to approve; a cashier-role agent is refused by role first", async () => {

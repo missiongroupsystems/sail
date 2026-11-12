@@ -88,9 +88,19 @@ export async function resolveAgentPrincipal(token: string, t: RequestTx): Promis
 
 /* ---- Proposals ---- */
 
+/**
+ * The highest tier a principal runs without a person in the loop. An agent never runs T2 or T3 itself, whatever its
+ * identity's ceiling: food leaving the kitchen, money being recorded, a comp or an order closing needs a person to
+ * confirm that one action (vision 7.3), and the proposal is that confirmation.
+ */
+export function directCeiling(type: string, ceiling: string | null): string | null {
+  if (type !== "agent" || ceiling == null) return ceiling;
+  return tierRank(ceiling) > tierRank("T1") ? "T1" : ceiling;
+}
+
 /** Does this principal's ceiling stop it running an operation of this tier directly? */
 export function aboveCeiling(p: Principal, spec: OperationSpec): boolean {
-  if (p.type === "agent") return tierRank(spec.tier) > tierRank(p.riskCeiling);
+  if (p.type === "agent") return tierRank(spec.tier) > tierRank(directCeiling(p.type, p.riskCeiling)!);
   if (p.type === "staff" && p.riskCeiling) return tierRank(spec.tier) > tierRank(p.riskCeiling);
   return false;
 }

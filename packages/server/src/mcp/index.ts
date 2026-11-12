@@ -5,7 +5,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { CallToolRequestSchema, ListResourcesRequestSchema, ListResourceTemplatesRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { roleAtLeast, type Role } from "@sail/shared";
 import { logger } from "../logger.js";
-import { tierRank } from "../services/agents.js";
+import { directCeiling, tierRank } from "../services/agents.js";
 
 /**
  * The MCP adapter (vision 7.1): generated from the OpenAPI spec and its x-sail
@@ -109,7 +109,8 @@ type Me = { role: Role | null; risk_ceiling: string | null; agent: { toolsets: s
 /** The tools an identity may see: within its toolsets and role (vision 7.6). Above-ceiling tools stay listed because calling them creates a proposal. */
 export function toolsFor(catalog: ToolDef[], me: Me): ToolDef[] {
   const toolsets = me.agent?.toolsets ?? [];
-  return catalog.filter((t) => t.toolsets.some((s) => toolsets.includes(s)) && (!t.min_role || (me.role && roleAtLeast(me.role, t.min_role)))).map((t) => (me.risk_ceiling && tierRank(t.tier) > tierRank(me.risk_ceiling) ? { ...t, description: `PROPOSAL ONLY for this identity (tier ${t.tier} > ceiling ${me.risk_ceiling}): the call stores a proposal for a human to approve.\n\n${t.description}` } : t));
+  const ceiling = directCeiling(me.type, me.risk_ceiling);
+  return catalog.filter((t) => t.toolsets.some((s) => toolsets.includes(s)) && (!t.min_role || (me.role && roleAtLeast(me.role, t.min_role)))).map((t) => (ceiling && tierRank(t.tier) > tierRank(ceiling) ? { ...t, description: `PROPOSAL ONLY for this identity (tier ${t.tier} > ceiling ${ceiling}): the call stores a proposal for a human to approve.\n\n${t.description}` } : t));
 }
 
 /** Free text that came from outside the register (guests, notes, reasons) is wrapped so a model never reads it as an instruction (vision 11). */
