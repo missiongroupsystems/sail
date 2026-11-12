@@ -13,6 +13,7 @@ What is built, what comes next and what Sail will not do. There are no dates. Th
 - QR ordering at the table, without payment.
 - Back office, iPad POS and guest app, with an end-to-end browser suite.
 - Agent identities, risk tiers, proposals and an MCP adapter generated from the API spec.
+- A payment-provider interface for card terminals: payments sent to the terminal as intents, an outbox the worker drains, signed and replay-protected webhooks, and a terminal simulator. `payments.void` for a payment recorded in error.
 - Country-neutral configuration with region presets.
 
 ## Known gaps
@@ -26,7 +27,7 @@ What is built, what comes next and what Sail will not do. There are no dates. Th
 
 ## Next
 
-- Payments interface: a provider abstraction for card terminals and online payments, with signed webhooks and simulators, instead of recording card payments by hand. `payments.void` for a tender recorded in error.
+- An adapter for a real card-terminal provider, and refunds of terminal payments given back through the provider (today they are given back on the terminal by hand).
 - Linking a back-office login to a staff member without SQL, and a first-run setup flow.
 - Typed responses in the API spec for order snapshots, floor, menu and documents (they are open records today, so clients mirror the types).
 - Back-office screens for agent identities and proposals (both work through the API only).
@@ -41,7 +42,7 @@ What is built, what comes next and what Sail will not do. There are no dates. Th
 - An agent runner with playbooks, a sandbox register and evals, and assistants in the POS and back office.
 - Masked customer views, so agents can work with customer records without seeing contact details.
 - A kitchen display with bump and recall.
-- Paying on the guest's phone, once the payments interface exists. Today guests order and staff take payment.
+- Online payments and paying on the guest's phone, on top of the payment-provider interface. Today guests order and staff take payment.
 - Offline order taking with sync.
 - Fees that compound on other fees, usage limits per customer.
 - Merging and splitting tables; uneven splits within one line; refunds that restore stock caps.

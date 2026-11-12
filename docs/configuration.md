@@ -117,11 +117,24 @@ Tenders are rows in `tender_types` (Settings > Tenders, or `/v1/tender-types`):
 |-|-|
 | `is_cash` | Cash rounding applies; counts towards expected cash |
 | `opens_drawer` | Stored and imported, but not used by any logic yet |
-| `is_terminal` | Taken on a standalone card terminal and recorded by hand; Sail never talks to the terminal |
+| `is_terminal` | A card or wallet tender. Without `provider`, it is taken on a standalone terminal and recorded by hand |
+| `provider`, `terminal_id` | Set together. The POS sends the payment to that provider's terminal and the register records it when the provider approves; it cannot be recorded by hand. Never on a cash tender |
 | `requires_approval` | A Cashier needs a Manager, or a Manager's PIN for that exact payment and reference. On by default for a tender that is neither cash nor a terminal (a house account) |
 | `requires_reference` | A payment without a reference is refused |
 
-Who may do what is the fixed matrix in `packages/shared/src/roles.ts`, not a setting. A few entries: recording a payment needs Cashier+; refunds, reopening an order, open prices and voiding a sent item need Manager+ or a manager approval; editing configuration, staff and pricing rules needs Admin. A manual pricing rule (a discount or waiver staff apply) carries its own `min_role`, whether a manager may approve it for a lower role (`override_allowed`) and whether a reason is required (`reason_required`).
+### Payment providers
+
+A provider is registered in the server by name (see [how-to.md](how-to.md#5-write-a-payment-provider)); the only one built in is `simulator`, for development and tests. To use one:
+
+1. An Admin stores the secret the provider signs this merchant's webhooks with: `PUT /v1/payment-providers/{provider}` with `{ "webhook_secret": "..." }` (24 to 200 characters; it is never returned). The response gives the webhook path, `/v1/webhooks/payments/{provider}/{merchant_id}`, to enter at the provider.
+2. Create or edit a tender with `provider` and `terminal_id` (`/v1/tender-types`). Keep a by-hand card tender as well, for when the terminal is down.
+3. Run the worker (`--role=worker`): it sends payments to the terminal, polls for answers a webhook did not bring, and expires payments the terminal never answered (after 120 s).
+
+The simulator needs `PAYMENT_SIMULATOR_URL` pointing at `pnpm --filter @sail/server sim:payments` (or the one `dev:local` starts on a free port and writes to `.dev-local.json`). The demo merchant has a "Card (terminal)" tender on the simulator's terminal `sim-1` next to the by-hand "Card". Tell the simulator how the next payment on a terminal ends with `POST {simulator}/terminals/sim-1/next` and `{ "outcome": "decline" }`: `approve` (the default), `decline`, `timeout`, `duplicate` (the webhook arrives twice) or `late` (approved after the register has given up, so the approval is voided).
+
+A tip on a terminal payment is charged with the amount and recorded on the payment; cash rounding never applies to it. Voiding a payment (`payments.void`) needs Manager+ or a manager's approval, while its shift is open and its business day is not closed; see [architecture.md](architecture.md#payments).
+
+Who may do what is the fixed matrix in `packages/shared/src/roles.ts`, not a setting. A few entries: recording a payment or sending one to a terminal needs Cashier+; refunds, voiding a payment, reopening an order, open prices and voiding a sent item need Manager+ or a manager approval; editing configuration, staff and pricing rules needs Admin. A manual pricing rule (a discount or waiver staff apply) carries its own `min_role`, whether a manager may approve it for a lower role (`override_allowed`) and whether a reason is required (`reason_required`).
 
 ## Time zone and business day
 

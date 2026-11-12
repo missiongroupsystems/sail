@@ -1,6 +1,6 @@
-# How to add a route, a table and a migration
+# How to add a route, a table, a migration and a payment provider
 
-The three recipes every change follows, so the codebase keeps one pattern. Commands and checks are in [CONTRIBUTING.md](../CONTRIBUTING.md); the design behind them is in [architecture.md](architecture.md).
+The recipes every change follows, so the codebase keeps one pattern. Commands and checks are in [CONTRIBUTING.md](../CONTRIBUTING.md); the design behind them is in [architecture.md](architecture.md).
 
 ## 1. Add an operation (route)
 
@@ -36,3 +36,18 @@ The three recipes every change follows, so the codebase keeps one pattern. Comma
 - **RLS opt-outs** are listed in `db/rls-opt-out.ts` (health, the spec, the dev token, pairing, session starts and receipts) and covered by a test. Stream routes run their access check in a short transaction, then stream outside it.
 - **Idempotency** is per principal and key; the first request stores the response, replays return it with `Idempotent-Replayed: true`, a different body gives `idempotency_conflict`.
 - **Pricing** is only ever computed by `price()` in `@sail/shared`. Clients format the amounts the register returns; they never add them up.
+
+## 5. Write a payment provider
+
+A provider is a small client for a card-terminal service. It never touches the database and never runs in a request transaction: the worker calls it after the request that asked has committed, and the webhook route hands it the raw request. `packages/server/src/payments/simulator.ts` is a complete example.
+
+1. **Implement `PaymentProvider`** from `packages/server/src/payments/provider.ts` in `packages/server/src/payments/<name>.ts`:
+   - `startPayment({ account, reference, terminalId, amount, currency })` puts `amount` (bill amount plus tip, in minor units) on the terminal and returns the provider's id. `reference` is the register's intent id: send it as the provider's idempotency key, because the worker retries a start whose answer it did not get.
+   - `getPayment` returns where a payment stands (`pending`, `approved`, `declined`, `cancelled`, `voided`) or null when the provider has never seen it.
+   - `cancelPayment` stops a payment still on the terminal and returns the status it ended in. Return `approved` when it was too late; the register then voids it.
+   - `voidPayment` gives an approved payment back in full (a void before settlement, a refund after) and throws unless the money is back.
+   - `verifyWebhook({ headers, body, secret, now })` checks the signature over the raw body and the timestamp, then parses the body with a schema. Throw `WebhookRejected` for anything that does not verify. Return the event id, the reference, the provider's payment id, the status and the amount taken.
+2. **Register it** in `packages/server/src/modules/v10-payment-providers.ts` with `registerPaymentProvider(...)`. Its `name` is what tenders put in `provider` and what the webhook path carries.
+3. **Keep credentials out of the code.** The merchant's webhook secret comes in `account.webhookSecret`; anything else the provider needs (an API key) belongs in the environment or a merchant setting, never in a tender.
+4. **Throw on failure.** A thrown call is retried by the outbox with backoff and never blocks other payments. Use timeouts on every network call (the simulator uses 10 s), shorter than the outbox's 60 s lease.
+5. **Test** against the register as `test/payment-providers.test.ts` does for the simulator: approve, decline, duplicate and reordered webhooks, a bad signature, a bill that changed, a timeout.

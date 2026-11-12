@@ -6,7 +6,7 @@ It is for restaurant groups and developers who want a POS they can run, read and
 
 ## What works today
 
-- **POS** (`/pos`, iPad in landscape): pair a station, sign in with a PIN, floor plan with live tables, dine-in, takeaway, pickup and delivery orders, modifiers, seats, hold and send, voids, discounts with manager approval, bills split evenly, by seat or by item, several payment methods per bill, cash rounding, refunds, receipts and invoices, shift open and close with a counted drawer, Z-report.
+- **POS** (`/pos`, iPad in landscape): pair a station, sign in with a PIN, floor plan with live tables, dine-in, takeaway, pickup and delivery orders, modifiers, seats, hold and send, voids, discounts with manager approval, bills split evenly, by seat or by item, several payment methods per bill, cash rounding, card payments sent to a terminal through a payment-provider interface (a simulator ships; no real provider yet), voiding a payment taken in error, refunds, receipts and invoices, shift open and close with a counted drawer, Z-report.
 - **Kitchen printing** through a small relay at each outlet: ESC/POS over the network, routed by product tags and stations, a durable queue with alerts, reprint and reroute.
 - **Back office** (web): menu, modifiers, availability and sold out, pricing rules with a simulator, tax classes, floor plans and QR sheets, printers and relays, staff and roles, orders with refunds and documents, sales, item, print-health and Z reports, CSV import.
 - **Guest QR ordering**: guests scan the table's code, browse the menu, send rounds to the table's order (held for staff to accept, or sent straight to the kitchen), call staff and ask for the bill. Guests never pay on their phones.
@@ -57,14 +57,14 @@ Nothing in the code assumes a country. A merchant is created from a region prese
 - [Self-hosting](docs/self-hosting.md): services, environment variables, migrations, the first merchant.
 - [Pricing semantics](docs/pricing-semantics.md): every rule the pricing engine follows.
 - [MCP](docs/mcp.md): connecting an agent.
-- [How-to](docs/how-to.md): adding operations, tables and migrations.
+- [How-to](docs/how-to.md): adding operations, tables, migrations and payment providers.
 - [CSV import](docs/csv-mapping.md) and the [roadmap](docs/roadmap.md).
 
 ## Status
 
-Beta (`0.9.0-beta.1`). Sail has never run a real service in production. The register has unit, property, reference-set and database tests, and an end-to-end suite drives the three apps in a browser, but nothing has been tested on real printers, card terminals or a busy floor.
+Beta (`0.9.0-beta.1`). Sail has never run a real service in production. The register has unit, property, reference-set and database tests, and an end-to-end suite drives the three apps in a browser, but nothing has been tested on real printers, real card terminals or a busy floor.
 
-Missing today: payment provider and card-terminal integration (payments are recorded by hand), a kitchen display, offline mode, reviewed configuration changes, a self-serve sign-up and a way to link a back-office login without SQL, and any bundled agents. See the [roadmap](docs/roadmap.md).
+Missing today: an adapter for a real card-terminal provider (the interface and a simulator exist; by-hand card payments still work), online payments, a kitchen display, offline mode, reviewed configuration changes, a self-serve sign-up and a way to link a back-office login without SQL, and any bundled agents. See the [roadmap](docs/roadmap.md).
 
 ## Licence
 
