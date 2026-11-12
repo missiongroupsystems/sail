@@ -73,8 +73,12 @@ export const proposals = pgTable(
     /** The frozen request body, replayed exactly on approval. */
     body: jsonb("body").$type<unknown>(),
     idempotencyKey: text("idempotency_key"),
+    /** For a request on an order or one of its bills: the order's version when proposed. Execution is refused once the order has changed. */
     expectedVersion: integer("expected_version"),
     targetKind: text("target_kind"),
+    /** The order the request acts on, and its total when proposed: what the approver is shown. */
+    orderId: uuid("order_id"),
+    orderTotal: integer("order_total"),
     targetId: text("target_id"),
     /** The agent's rationale (free text from a model: shown to staff, never executed). */
     rationale: text("rationale"),

@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { price, PricingContextSchema, sumCents, sumTaxBreakdowns, type Adjustment, type ManualApplication, type OrderType, type PricedLine, type PricingContext, type PricingLineInput, type PricingResult, type PricingRule, type TaxBreakdown, type TaxRate, ORDER_NUMBER_PREFIX, type ChannelType } from "@sail/shared";
-import { assertNotSettled, db, tx } from "../db/client.js";
+import { assertNotSettled, db, maybeTx, tx } from "../db/client.js";
 import { checkAllocations, checks, customerGroupMembers, orderAdjustmentLines, orderAdjustments, orderLines, orderManualApplications, orders, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { activeRules } from "./pricing-rules.js";
@@ -126,6 +126,10 @@ export async function lockOrder(orderId: string, expectedVersion?: number | null
   const order = mapRow(row);
   if (expectedVersion != null && order.version !== expectedVersion) {
     throw AppError.version("The order was changed by someone else", { current_version: order.version, expected_version: expectedVersion, order_id: orderId });
+  }
+  const pinned = maybeTx()?.pinnedOrder;
+  if (pinned && pinned.orderId === orderId && order.version !== pinned.version) {
+    throw AppError.version("The order has changed since this proposal was made", { current_version: order.version, expected_version: pinned.version, order_id: orderId });
   }
   return order;
 }

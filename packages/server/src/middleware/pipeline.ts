@@ -8,6 +8,7 @@ import type { AppEnv } from "../lib/context.js";
 import { dbRoleFor, outletScopeFor, principalRole, type Principal } from "../auth/principal.js";
 import { resolvePrincipal } from "../auth/resolve.js";
 import { RLS_OPT_OUT, SHORT_TX_ROUTES } from "../db/rls-opt-out.js";
+import { proposalOrderPin } from "../services/agents.js";
 import { logger } from "../logger.js";
 
 let gate: AdmissionGate | null = null;
@@ -56,6 +57,8 @@ export const requestPipeline: MiddlewareHandler<AppEnv> = async (c, next) => {
   // frozen request) already holds the outer request's slot: taking a second one could deadlock the
   // gate once TX_MAX approvals run at once. It still gets its own transaction and RLS context.
   const nested = maybeTx() != null;
+  // Only an in-process replay can carry a proposal; the header from outside is ignored.
+  const proposalId = nested ? c.req.header("x-proposal-id") : undefined;
   const release = nested ? () => {} : await admissionGate().acquire();
   try {
     const started = performance.now();
@@ -64,6 +67,7 @@ export const requestPipeline: MiddlewareHandler<AppEnv> = async (c, next) => {
       c.set("principal", principal);
       await applyRls(t, principal);
       t.principal = { type: principal.type, id: principal.id, merchantId: principal.merchantId };
+      if (proposalId) t.pinnedOrder = await proposalOrderPin(proposalId);
       await next();
       if (c.error) throw c.error;
       if (c.res.status >= 400 || t.dryRun) throw new RollbackSignal(c.res);

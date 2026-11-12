@@ -9,6 +9,7 @@ import { buildApp, type App } from "../src/app.js";
 import { withTransaction } from "../src/db/client.js";
 import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
 import { expireProposals } from "../src/services/agents.js";
+import { lockOrder } from "../src/services/orders.js";
 import { buildToolCatalog, createMcpHandler, loadCatalog, wrapUntrusted, type ToolDef } from "../src/mcp/index.js";
 import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb, sgSeedRules } from "./helpers.js";
 
@@ -166,6 +167,30 @@ describe("ceilings and proposals", () => {
     expect(failed.body.data.status).toBe("failed");
     expect(failed.body.data.result!.status).toBe(409);
     expect(failed.body.warnings[0]).toMatch(/propose again/);
+  });
+
+  it("the approver approves the order as proposed: if anyone changes it afterwards, the proposer included, nothing executes", async () => {
+    const o = await call<{ data: Snap & { totals: { total: number } } }>("POST", "/v1/orders", { token: agentToken, body: { order_id: randomUUID(), order_type: "takeaway", takeaway_ref: "P", outlet_id: A.outletId, brand_id: A.brandId } });
+    const withLaksa = await call<{ data: Snap & { totals: { total: number } } }>("POST", `/v1/orders/${o.body.data.id}/lines`, { token: agentToken, body: { lines: [{ line_id: randomUUID(), product_id: ids.laksa, quantity: 1 }] } });
+    const seen = withLaksa.body.data;
+    const prop = await call<{ data: Proposal & { order: { id: string; version: number; total: number } } }>("POST", `/v1/orders/${seen.id}/fire`, { token: agentToken, body: {} });
+    expect(prop.status, JSON.stringify(prop.body)).toBe(202);
+    expect(prop.body.data.order).toEqual({ id: seen.id, version: seen.version, total: seen.totals.total });
+    // The proposer adds to the order before anyone approves.
+    expect((await call("POST", `/v1/orders/${seen.id}/lines`, { token: agentToken, body: { lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 3 }] } })).status).toBe(200);
+    const approved = await call<{ data: Proposal }>("POST", `/v1/proposals/${prop.body.data.id}/approve`, { token: serverPin, body: {} });
+    expect(approved.body.data).toMatchObject({ status: "failed", result: { status: 409, body: { code: "version_conflict" } } });
+    const after = (await call<{ data: Snap }>("GET", `/v1/orders/${seen.id}`, { token: serverPin })).body.data;
+    expect(after.lines.every((l) => l.status !== "fired")).toBe(true);
+    // A proposal for a version that is already stale is refused at once.
+    expect((await call<{ code: string }>("POST", `/v1/orders/${seen.id}/fire`, { token: agentToken, body: { expected_version: seen.version } })).body).toMatchObject({ code: "version_conflict" });
+    // And the replay itself refuses an order that moved after the approval's check.
+    await expect(
+      withTransaction(async (t) => {
+        t.pinnedOrder = { orderId: seen.id, version: seen.version };
+        await lockOrder(seen.id);
+      }),
+    ).rejects.toMatchObject({ code: "version_conflict" });
   });
 
   it("T3 money-out is always a proposal even for a manager-role agent, and needs a Manager to approve; a cashier-role agent is refused by role first", async () => {

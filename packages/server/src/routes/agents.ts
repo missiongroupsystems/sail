@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { operation, registerOperations, roleAtLeast, ROLES, type OperationSpec, type Role } from "@sail/shared";
 import { db, withTransaction } from "../db/client.js";
-import { agentIdentities, proposals } from "../db/schema/index.js";
+import { agentIdentities, orders, proposals } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
@@ -126,12 +126,21 @@ export function agentRoutes(app: OpenAPIHono<AppEnv>) {
     const role = principalRole(p);
     if (!role || (spec.minRole && !roleAtLeast(role, spec.minRole))) throw AppError.permission(spec.minRole ?? "server", false, spec.op);
     if (prop.tier === "T3" && !roleAtLeast(role, "manager")) throw AppError.permission("manager", false, spec.op);
-    // Execute the frozen request exactly, as the approver, through the ordinary pipeline (its own transaction, same checks).
-    const res = await app.request(prop.path, {
-      method: prop.method,
-      headers: { authorization: c.req.header("authorization") ?? "", "content-type": "application/json", "idempotency-key": prop.idempotencyKey ?? prop.id, "x-correlation-id": c.get("correlationId"), "x-proposal-id": prop.id },
-      body: prop.body == null ? undefined : JSON.stringify(prop.body),
-    });
+    // The approver approves the order as it was proposed: once it has changed, nothing executes.
+    const [current] = prop.orderId ? await db().select({ version: orders.version }).from(orders).where(eq(orders.id, prop.orderId)).limit(1) : [];
+    let res: { status: number; text: () => Promise<string> };
+    if (prop.orderId && current?.version !== prop.expectedVersion) {
+      const e = AppError.version("The order has changed since this proposal was made", { current_version: current?.version ?? null, expected_version: prop.expectedVersion, order_id: prop.orderId });
+      res = { status: e.status, text: async () => JSON.stringify(e.toBody()) };
+    } else {
+      // Execute the frozen request exactly, as the approver, through the ordinary pipeline (its own transaction, same checks);
+      // the replay's lockOrder refuses it if the order changes in between.
+      res = await app.request(prop.path, {
+        method: prop.method,
+        headers: { authorization: c.req.header("authorization") ?? "", "content-type": "application/json", "idempotency-key": prop.idempotencyKey ?? prop.id, "x-correlation-id": c.get("correlationId"), "x-proposal-id": prop.id },
+        body: prop.body == null ? undefined : JSON.stringify(prop.body),
+      });
+    }
     const text = await res.text();
     let body: unknown = text;
     try {

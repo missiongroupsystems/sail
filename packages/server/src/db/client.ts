@@ -15,6 +15,8 @@ export type RequestTx = {
   dryRun: boolean;
   /** Set once `settleInvariants` has run: the money tables must not be written again in this transaction. */
   settled: boolean;
+  /** A proposal being executed: its order must still be at the version the approver saw (checked by `lockOrder`). */
+  pinnedOrder: { orderId: string; version: number } | null;
 };
 
 const als = new AsyncLocalStorage<RequestTx>();
@@ -65,7 +67,7 @@ export async function withTransaction<T>(fn: (ctx: RequestTx) => Promise<T>, pri
     // Drizzle's postgres-js driver reads `client.options` (parsers/serializers); a
     // TransactionSql has none, so borrow the pool's options for the handle.
     const client = Object.assign(t, { options: (sql as unknown as { options: unknown }).options }) as unknown as Sql;
-    const ctx: RequestTx = { sql: t, db: drizzle(client, { schema }), principal, dryRun: false, settled: false };
+    const ctx: RequestTx = { sql: t, db: drizzle(client, { schema }), principal, dryRun: false, settled: false, pinnedOrder: null };
     return als.run(ctx, () => fn(ctx));
   }) as Promise<T>;
 }

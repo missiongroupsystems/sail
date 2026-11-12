@@ -97,17 +97,16 @@ export function aboveCeiling(p: Principal, spec: OperationSpec): boolean {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Best-effort target and outlet for a frozen request, so the proposal lands on the right POS. */
-export async function inferTarget(path: string, body: unknown): Promise<{ targetKind: string | null; targetId: string | null; outletId: string | null }> {
+/** Best-effort target, outlet and order for a frozen request, so the proposal lands on the right POS and is pinned to the order. */
+export async function inferTarget(path: string, body: unknown): Promise<{ targetKind: string | null; targetId: string | null; outletId: string | null; orderId: string | null }> {
   const segs = path.split("?")[0]!.split("/").filter(Boolean); // ["v1","orders","<id>","fire"]
   const kind = segs[1] ? segs[1].replace(/-/g, "_").replace(/s$/, "") : null;
   const id = segs[2] && UUID.test(segs[2]) ? segs[2] : null;
   const b = (body ?? {}) as Record<string, unknown>;
   let outletId = typeof b.outlet_id === "string" ? b.outlet_id : null;
   if (!outletId && kind === "outlet" && id) outletId = id;
-  if (!outletId && id && kind === "order") outletId = (await db().select({ o: orders.outletId }).from(orders).where(eq(orders.id, id)).limit(1))[0]?.o ?? null;
-  if (!outletId && id && kind === "check") outletId = (await db().select({ o: checks.outletId }).from(checks).where(eq(checks.id, id)).limit(1))[0]?.o ?? null;
-  return { targetKind: kind, targetId: id, outletId };
+  const order = id && kind === "order" ? (await db().select({ o: orders.outletId, id: orders.id }).from(orders).where(eq(orders.id, id)).limit(1))[0] : id && kind === "check" ? (await db().select({ o: checks.outletId, id: checks.orderId }).from(checks).where(eq(checks.id, id)).limit(1))[0] : undefined;
+  return { targetKind: kind, targetId: id, outletId: outletId ?? order?.o ?? null, orderId: order?.id ?? null };
 }
 
 export async function createProposal(input: { principal: Principal; spec: OperationSpec; method: string; path: string; body: unknown; idempotencyKey: string | null; rationale: string | null; correlationId: string }) {
@@ -117,10 +116,13 @@ export async function createProposal(input: { principal: Principal; spec: Operat
     const [identity] = await db().select({ max: agentIdentities.maxProposalsPerDay }).from(agentIdentities).where(eq(agentIdentities.id, p.identityId)).limit(1);
     if ((n?.n ?? 0) >= (identity?.max ?? 50)) throw new AppError("rate_limited", `Agent "${p.name}" has reached its daily proposal limit`, { remedy: "A Manager can review today's proposals; an Admin can raise the limit." });
   }
-  const { targetKind, targetId, outletId } = await inferTarget(input.path, input.body);
+  const { targetKind, targetId, outletId, orderId } = await inferTarget(input.path, input.body);
   const scope = p.type === "agent" ? p.outletIds : p.type === "staff" ? (p.outletId ? [p.outletId] : p.outletIds) : [];
   if (outletId && scope.length && !scope.includes(outletId)) throw AppError.notFound(targetKind ?? "target", targetId ?? undefined);
   const b = (input.body ?? {}) as Record<string, unknown>;
+  // Pin the proposal to the order as it is now, whatever the proposer sent: the approver approves this version and total.
+  const [order] = orderId ? await db().select({ version: orders.version, total: orders.total }).from(orders).where(eq(orders.id, orderId)).limit(1) : [];
+  if (order && typeof b.expected_version === "number" && b.expected_version !== order.version) throw AppError.version("The order was changed by someone else", { current_version: order.version, expected_version: b.expected_version, order_id: orderId });
   const [row] = await db()
     .insert(proposals)
     .values({
@@ -132,9 +134,11 @@ export async function createProposal(input: { principal: Principal; spec: Operat
       path: input.path,
       body: input.body ?? null,
       idempotencyKey: input.idempotencyKey,
-      expectedVersion: typeof b.expected_version === "number" ? b.expected_version : null,
+      expectedVersion: order ? order.version : typeof b.expected_version === "number" ? b.expected_version : null,
       targetKind,
       targetId,
+      orderId: order ? orderId : null,
+      orderTotal: order?.total ?? null,
       rationale: input.rationale,
       proposedByType: p.type,
       proposedById: p.id,
@@ -160,6 +164,7 @@ export const toProposal = (r: typeof proposals.$inferSelect) => ({
   expected_version: r.expectedVersion,
   target_kind: r.targetKind,
   target_id: r.targetId,
+  order: r.orderId == null ? null : { id: r.orderId, version: r.expectedVersion, total: r.orderTotal },
   rationale: r.rationale == null ? null : { untrusted_text: r.rationale },
   status: r.status,
   proposed_by: { type: r.proposedByType, id: r.proposedById, name: r.proposedByName, agent_identity_id: r.agentIdentityId, agent_session_id: r.agentSessionId },
@@ -184,6 +189,12 @@ export async function lockPendingProposal(id: string): Promise<typeof proposals.
   }
   if (row!.status !== "pending") throw AppError.state(`This proposal is already ${row!.status}`, []);
   return row!;
+}
+
+/** The order a proposal was pinned to, for the replayed request's `lockOrder`. */
+export async function proposalOrderPin(proposalId: string): Promise<{ orderId: string; version: number } | null> {
+  const [row] = await db().select({ orderId: proposals.orderId, version: proposals.expectedVersion }).from(proposals).where(eq(proposals.id, proposalId)).limit(1);
+  return row?.orderId && row.version != null ? { orderId: row.orderId, version: row.version } : null;
 }
 
 export async function expireProposals(): Promise<number> {

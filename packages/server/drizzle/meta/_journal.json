@@ -197,6 +197,13 @@
       "when": 1794498846261,
       "tag": "0027_bind_override_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794500975638,
+      "tag": "0028_proposal_order_freeze",
+      "breakpoints": true
     }
   ]
 }
