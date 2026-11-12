@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, isNull, lt, sql } from "drizzle-orm";
 import type { Role } from "@sail/shared";
 import { db, settleInvariants, tx, withOwnTransaction, withTransaction } from "../db/client.js";
-import { businessDayCloses, checks, merchantSettings, paymentIntents, paymentOutbox, paymentProviderAccounts, payments, tenderTypes, type EventActor, type PaymentIntent } from "../db/schema/index.js";
+import { businessDayCloses, checks, merchantSettings, paymentIntents, paymentOutbox, paymentProviderAccounts, payments, refunds, tenderTypes, type EventActor, type PaymentIntent } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
@@ -277,11 +277,14 @@ async function completeVoid(intentId: string): Promise<void> {
     if (!payment || payment.status !== "recorded") return;
     const [shift] = payment.shiftId ? await tx()<{ status: string }[]>`select status from shifts where id = ${payment.shiftId} for update` : [];
     const [dayClosed] = await db().select({ id: businessDayCloses.id }).from(businessDayCloses).where(and(eq(businessDayCloses.outletId, payment.outletId), eq(businessDayCloses.businessDate, payment.businessDate))).limit(1);
-    if ((shift && shift.status !== "open") || dayClosed) {
-      // The provider gave the money back after the register gave up waiting and the shift or day was closed: a closed
-      // day never changes (pricing-semantics §10), so the payment stands and staff record the return as a refund.
+    const [refunded] = await db().select({ n: sql<number>`count(*)::int` }).from(refunds).where(eq(refunds.checkId, payment.checkId));
+    // The same conditions as assertVoidable: the register gave up waiting, and since then the bill was refunded or the
+    // order cancelled (the guest already has money back), or the shift or day closed (a closed day never changes,
+    // pricing-semantics §10). The payment stands, and the event says why, for staff to settle with the guest.
+    const notApplied = order.status === "cancelled" ? "order_cancelled" : (refunded?.n ?? 0) > 0 ? "refunded" : shift && shift.status !== "open" ? "shift_closed" : dayClosed ? "business_day_closed" : null;
+    if (notApplied) {
       await settleInvariants();
-      await intentEvent(intent, "payment_intent.voided_after_close", { amount: intent.amount + intent.tipCents, payment_id: payment.id, needs_refund: true }, { actor: request.actor, operationId: "payments.provider_void", businessDay: bd });
+      await intentEvent(intent, "payment_intent.voided_not_applied", { amount: intent.amount + intent.tipCents, payment_id: payment.id, reason: notApplied }, { actor: request.actor, operationId: "payments.provider_void", businessDay: bd });
       return;
     }
     const by = principalFor(intent, request.actor);
