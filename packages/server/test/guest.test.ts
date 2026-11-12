@@ -251,4 +251,23 @@ describe("Scan to Order", () => {
     const floor = await call<{ data: { tables: { id: string; status: string }[] } }>("GET", `/v1/outlets/${A.outletId}/floor`, { token: serverPin });
     expect(floor.body.data.tables.find((t) => t.id === ids.table13)!.status).toBe("sent");
   });
+
+  it("a second phone at the table sees the first phone's accepted round as a guest round, not as staff additions", async () => {
+    resetGuestRateLimitsForTests();
+    const open = async (device: string) => (await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl13), device_id: device }, idempotencyKey: null })).body.data.guest_token;
+    const a = await open("device-ffff-0006");
+    const b = await open("device-gggg-0007");
+    const roundId = randomUUID();
+    const lineId = randomUUID();
+    const sent = await guestCall("POST", "/v1/guest/rounds", a, { round_id: roundId, lines: [{ line_id: lineId, product_id: ids.kopi, quantity: 1 }] });
+    expect(sent.status, JSON.stringify(sent.body)).toBe(201);
+    type View = { data: { lines: { id: string; round_id: string | null; mine: boolean }[]; rounds: { id: string; line_ids: string[]; mine: boolean }[] } };
+    const viewA = (await guestCall<View>("GET", "/v1/guest/order", a)).body.data;
+    const viewB = (await guestCall<View>("GET", "/v1/guest/order", b)).body.data;
+    expect(viewA.rounds.find((r) => r.id === roundId)).toMatchObject({ line_ids: [lineId], mine: true });
+    // Phone B lists the same round (not its own), so the line is filed under a guest round.
+    expect(viewB.rounds.find((r) => r.id === roundId)).toMatchObject({ line_ids: [lineId], mine: false });
+    expect(viewB.lines.find((l) => l.id === lineId)).toMatchObject({ round_id: roundId, mine: false });
+    expect(viewB.rounds.map((r) => r.id).sort()).toEqual(viewA.rounds.map((r) => r.id).sort());
+  });
 });
