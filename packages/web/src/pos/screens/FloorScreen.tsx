@@ -185,7 +185,7 @@ export function FloorScreen() {
     <Frame title={`${outlet?.name ?? ""}${area ? ` · ${area.name}` : ""}`}>
       <div className="flex min-h-0 flex-1">
         <section className="flex min-w-0 flex-1 flex-col px-5 pt-3 pb-3">
-          <div className="flex items-center gap-2" role="group" aria-label="Areas">
+          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Areas">
             {(snapshot?.areas ?? []).map((a) => (
               <Button key={a.id} size="lg" variant={a.id === area?.id ? "primary" : "secondary"} onPress={() => setAreaId(a.id)} aria-pressed={a.id === area?.id}>
                 {a.name}
