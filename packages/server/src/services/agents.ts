@@ -219,7 +219,7 @@ export async function requestOrderId(path: string, body: unknown): Promise<strin
 
 /** The order's money as the pricing engine last computed it, read in the current transaction. */
 export async function orderMoney(orderId: string): Promise<OrderMoney | null> {
-  const [o] = await db().select({ subtotal: orders.subtotal, discount_total: orders.discountTotal, fee_total: orders.feeTotal, tax_total: orders.taxTotal, total: orders.total }).from(orders).where(eq(orders.id, orderId)).limit(1);
+  const [o] = await db().select({ subtotal: orders.subtotal, discount_total: orders.discountTotal, fee_total: orders.feeTotal, tax_total: orders.taxTotal, total: orders.total, customer_id: orders.customerId }).from(orders).where(eq(orders.id, orderId)).limit(1);
   return o ?? null;
 }
 
@@ -227,13 +227,15 @@ export async function orderMoney(orderId: string): Promise<OrderMoney | null> {
  * Why an agent's call must go to a person instead of running, given the order before and after it ran: it lowered the
  * amount due, or it changed tax or fees without changing what was ordered (order type, guest count, customer). Two
  * cases have no "before" to compare with and are refused by what the request says: an agent setting an open price, and
- * an agent opening an order for a customer (whose group discounts would apply to every line added later). Refunds,
+ * linking a customer to the order (whose group discounts would apply to every line added later). Refunds,
  * payments, comps and discounts are T2 or T3 and always proposals.
  */
 export function moneyEffect(before: OrderMoney | null, after: OrderMoney | null, body: unknown): string | null {
   const b = (body ?? {}) as { lines?: { open_price?: unknown }[]; open_price?: unknown; customer_id?: unknown };
   if (b.open_price != null || b.lines?.some((l) => l?.open_price != null)) return "sets an open price";
-  if (!before && after && b.customer_id != null) return "opens an order for a customer, whose group pricing applies to it";
+  // A customer's group pricing applies to every line added later, so linking one (by id, or by a mobile number that
+  // matches a customer) is judged now, not by today's totals.
+  if (after?.customer_id && after.customer_id !== (before?.customer_id ?? null)) return "links a customer to the order, whose group pricing then applies to it";
   if (!before || !after) return null;
   if (after.total < before.total) return "lowers the amount due";
   if (after.subtotal === before.subtotal && (after.fee_total !== before.fee_total || after.tax_total !== before.tax_total || after.discount_total !== before.discount_total)) return "changes tax, fees or discounts";

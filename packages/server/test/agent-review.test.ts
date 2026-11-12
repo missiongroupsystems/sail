@@ -134,7 +134,7 @@ describe("A2: an agent call that lowers the amount due, or changes tax or fees, 
   it("attaching a customer in a discount group (the R1.2 comp) proposes instead of comping", async () => {
     const group = await call<{ data: { id: string } }>("POST", "/v1/customer-groups", { token: w.m.manager.token, body: { name: "Friends" } });
     await call("POST", "/v1/pricing-rules", { token: w.m.admin.token, body: { rule_key: "promo:friends", body: { kind: "discount", name: "Friends 100%", calc: "percent", value: { type: "fixed", amount: 10000 }, scope: { type: "all" }, conditions: { customer_group_ids: [group.body.data.id] }, priority: 30, application: "auto", report_class: "promo" }, effective_from: "2026-01-01T00:00:00Z" } });
-    const vip = await call<{ data: { id: string } }>("PUT", "/v1/customers", { token: w.pins.manager, body: { name: "Friend", group_ids: [group.body.data.id] } });
+    const vip = await call<{ data: { id: string } }>("PUT", "/v1/customers", { token: w.pins.manager, body: { name: "Friend", mobile: "+6500007777", group_ids: [group.body.data.id] } });
     const tok = await agentFor("server");
     const o = await openTakeaway(tok);
     const a = await addLine(tok, o.body.data.id, { product_id: w.ids.wine });
@@ -147,6 +147,12 @@ describe("A2: an agent call that lowers the amount due, or changes tax or fees, 
     // Opening an order with that customer has no "before" to compare with, so it is a proposal too.
     const open = await call<{ code: string }>("POST", "/v1/orders", { token: tok, body: { order_id: randomUUID(), order_type: "takeaway", takeaway_ref: "C", outlet_id: w.m.outletId, brand_id: w.m.brandId, customer_id: vip.body.data.id } });
     expect(open.status).toBe(202);
+    // Opening one with the customer's number would link the customer too; an agent cannot read mobiles, so it is refused.
+    const byMobile = await call<{ code: string }>("POST", "/v1/orders", { token: tok, body: { order_id: randomUUID(), order_type: "takeaway", outlet_id: w.m.outletId, brand_id: w.m.brandId, customer_ref: { name: "F", mobile: "+6500007777" } } });
+    expect(byMobile.status, JSON.stringify(byMobile.body)).toBe(403);
+    // Attaching the customer to an order with nothing on it yet moves no money today, but every later line would be discounted.
+    const empty = await openTakeaway(tok);
+    expect((await call("POST", `/v1/orders/${empty.body.data.id}/customer`, { token: tok, body: { customer_id: vip.body.data.id } })).status).toBe(202);
     // A person approves it and it runs as them.
     const ap = await call<{ data: { status: string } }>("POST", `/v1/proposals/${att.body.data.id}/approve`, { token: w.pins.manager, body: {} });
     expect(ap.body.data.status).toBe("approved");
@@ -183,7 +189,7 @@ describe("A2: an agent call that lowers the amount due, or changes tax or fees, 
 });
 
 describe("A2: the money-effect rule itself", () => {
-  const m = (total: number, extra: Partial<Record<"subtotal" | "discount_total" | "fee_total" | "tax_total", number>> = {}) => ({ subtotal: 1000, discount_total: 0, fee_total: 100, tax_total: 99, total, ...extra });
+  const m = (total: number, extra: Partial<Record<"subtotal" | "discount_total" | "fee_total" | "tax_total", number>> & { customer_id?: string | null } = {}) => ({ subtotal: 1000, discount_total: 0, fee_total: 100, tax_total: 99, total, customer_id: null, ...extra });
   it("flags a lower amount due, a tax or fee change with the same lines, an open price and an order opened for a customer; lets ordinary growth through", async () => {
     const { moneyEffect } = await import("../src/services/agents.js");
     expect(moneyEffect(m(1199), m(1100, { fee_total: 0 }), {})).toBe("lowers the amount due");
@@ -191,7 +197,10 @@ describe("A2: the money-effect rule itself", () => {
     expect(moneyEffect(m(1199), m(1199, { tax_total: 0, fee_total: 199 }), {})).toBe("changes tax, fees or discounts");
     expect(moneyEffect(m(1199), m(2398, { subtotal: 2000, fee_total: 200, tax_total: 198 }), {})).toBeNull(); // a line added
     expect(moneyEffect(m(0), m(1), { lines: [{ open_price: 1 }] })).toBe("sets an open price");
-    expect(moneyEffect(null, m(0, { subtotal: 0 }), { customer_id: randomUUID() })).toMatch(/customer/);
+    const customer = randomUUID();
+    expect(moneyEffect(null, m(0, { subtotal: 0, customer_id: customer }), {})).toMatch(/customer/); // opened for a customer, by id or by mobile
+    expect(moneyEffect(m(0, { subtotal: 0 }), m(0, { subtotal: 0, customer_id: customer }), {})).toMatch(/customer/); // attached to an empty order
+    expect(moneyEffect(m(1199, { customer_id: customer }), m(2398, { subtotal: 2000, fee_total: 200, tax_total: 198, customer_id: customer }), {})).toBeNull(); // lines added for an approved customer
     expect(moneyEffect(null, m(0, { subtotal: 0 }), {})).toBeNull();
   });
 });
