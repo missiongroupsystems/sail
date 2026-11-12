@@ -11,6 +11,7 @@ import { appendEvent } from "../lib/events.js";
 import { businessDateFor } from "../lib/time.js";
 import { businessDayInputs } from "./business-day.js";
 import { zReport } from "./shifts.js";
+import { repriceOrder } from "./orders.js";
 
 /**
  * Agent principals: identities provisioned by an Admin, 15-minute
@@ -38,6 +39,8 @@ export function issueCredential(identityId: string): { credential: string; hash:
  * passes as `on_behalf_of`. The runner never holds the person's own token, so it can never act or approve as them.
  */
 export async function mintDelegation(person: Extract<Principal, { type: "staff" }>, identityId: string): Promise<{ grant: string; expiresAt: Date }> {
+  // The agent acts for the person only while the session they delegate from lasts, so it must be one the register can check.
+  if (!person.sessionId && !person.backofficeSessionId) throw new AppError("permission_denied", "Delegate from a PIN session or a back-office session issued by this server", { remedy: "Sign in on a station with your PIN, or to the back office with your email and password, and delegate again." });
   const [identity] = await db().select({ id: agentIdentities.id }).from(agentIdentities).where(and(eq(agentIdentities.id, identityId), eq(agentIdentities.merchantId, person.merchantId))).limit(1);
   if (!identity) throw AppError.notFound("agent identity", identityId);
   const secret = randomToken(32);
@@ -184,7 +187,7 @@ export function aboveCeiling(p: Principal, spec: OperationSpec): boolean {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Best-effort target, outlet and order for a frozen request, so the proposal lands on the right POS and is pinned to the order. */
-export async function inferTarget(path: string, body: unknown): Promise<{ targetKind: string | null; targetId: string | null; outletId: string | null; orderId: string | null }> {
+export async function inferTarget(path: string, body: unknown): Promise<{ targetKind: string | null; targetId: string | null; outletId: string | null; orderId: string | null; missing: boolean }> {
   const segs = path.split("?")[0]!.split("/").filter(Boolean); // ["v1","orders","<id>","fire"]
   const kind = segs[1] ? segs[1].replace(/-/g, "_").replace(/s$/, "") : null;
   const id = segs[2] && UUID.test(segs[2]) ? segs[2] : null;
@@ -204,7 +207,9 @@ export async function inferTarget(path: string, body: unknown): Promise<{ target
     print_job: () => db().select({ o: printJobs.outletId, id: sql<null>`null` }).from(printJobs).where(eq(printJobs.id, id!)).limit(1),
   };
   const order = id && kind && lookups[kind] ? (await lookups[kind]())[0] : undefined;
-  return { targetKind: kind, targetId: id, outletId: outletId ?? order?.o ?? null, orderId: order?.id ?? null };
+  // A known kind of target the caller cannot see (another outlet or brand, or no such row) is missing, never "no outlet".
+  const missing = !!(id && kind && lookups[kind] && !order);
+  return { targetKind: kind, targetId: id, outletId: outletId ?? order?.o ?? null, orderId: order?.id ?? null, missing };
 }
 
 /* ---- Money effect: what an agent may not do by itself, whatever the operation's tier ---- */
@@ -217,9 +222,19 @@ export async function requestOrderId(path: string, body: unknown): Promise<strin
   return /^\/v1\/orders\/?$/.test(path.split("?")[0]!) && typeof b.order_id === "string" && UUID.test(b.order_id) ? b.order_id : null;
 }
 
+/**
+ * The order's money as the pricing engine computes it now: the order is locked and repriced first, so a rule that has
+ * expired since the last reprice, or a line added a moment ago, cannot hide what the agent's call changes.
+ */
+export async function currentOrderMoney(orderId: string): Promise<OrderMoney | null> {
+  const [row] = await tx()<{ status: string }[]>`select status from orders where id = ${orderId} for update`;
+  if (row && row.status !== "completed" && row.status !== "cancelled") await repriceOrder(orderId);
+  return orderMoney(orderId);
+}
+
 /** The order's money as the pricing engine last computed it, read in the current transaction. */
 export async function orderMoney(orderId: string): Promise<OrderMoney | null> {
-  const [o] = await db().select({ subtotal: orders.subtotal, discount_total: orders.discountTotal, fee_total: orders.feeTotal, tax_total: orders.taxTotal, total: orders.total, customer_id: orders.customerId }).from(orders).where(eq(orders.id, orderId)).limit(1);
+  const [o] = await db().select({ subtotal: orders.subtotal, discount_total: orders.discountTotal, fee_total: orders.feeTotal, tax_total: orders.taxTotal, total: orders.total, customer_id: orders.customerId, order_type: orders.orderType, pax: orders.pax }).from(orders).where(eq(orders.id, orderId)).limit(1);
   return o ?? null;
 }
 
@@ -236,6 +251,9 @@ export function moneyEffect(before: OrderMoney | null, after: OrderMoney | null,
   // A customer's group pricing applies to every line added later, so linking one (by id, or by a mobile number that
   // matches a customer) is judged now, not by today's totals.
   if (after?.customer_id && after.customer_id !== (before?.customer_id ?? null)) return "links a customer to the order, whose group pricing then applies to it";
+  // So do the order type and the guest count: prices, fees and tax can depend on them, even before any line is added.
+  if (before && after && before.order_type !== after.order_type) return "changes the order type, which can change prices, fees and tax";
+  if (before && after && before.pax !== after.pax) return "changes the guest count, which can change per-guest fees and minimum spend";
   if (!before || !after) return null;
   if (after.total < before.total) return "lowers the amount due";
   if (after.subtotal === before.subtotal && (after.fee_total !== before.fee_total || after.tax_total !== before.tax_total || after.discount_total !== before.discount_total)) return "changes tax, fees or discounts";
@@ -277,9 +295,12 @@ export async function createProposal(input: { principal: Principal; spec: Operat
     const [identity] = await db().select({ id: agentIdentities.id, merchantId: agentIdentities.merchantId, name: agentIdentities.name, maxOpsPerHour: agentIdentities.maxOpsPerHour, maxProposalsPerDay: agentIdentities.maxProposalsPerDay }).from(agentIdentities).where(eq(agentIdentities.id, p.identityId)).limit(1);
     await takeAgentBudget(identity!, proposalBudget(identity!));
   }
-  const { targetKind, targetId, outletId, orderId } = await inferTarget(input.path, input.body);
+  const { targetKind, targetId, outletId, orderId, missing } = await inferTarget(input.path, input.body);
+  if (missing) throw AppError.notFound(targetKind ?? "target", targetId ?? undefined);
   const scope = p.type === "agent" ? p.outletIds : p.type === "staff" ? (p.outletId ? [p.outletId] : p.outletIds) : [];
   if (outletId && scope.length && !scope.includes(outletId)) throw AppError.notFound(targetKind ?? "target", targetId ?? undefined);
+  // Everything an agent can propose happens at an outlet; one it could not place would reach no one who can check it.
+  if (p.type === "agent" && !outletId) throw AppError.notFound(targetKind ?? "target", targetId ?? undefined);
   const b = (input.body ?? {}) as Record<string, unknown>;
   // Pin the proposal to the order as it is now, whatever the proposer sent: the approver approves this version and total.
   const [order] = orderId ? await db().select({ version: orders.version, total: orders.total }).from(orders).where(eq(orders.id, orderId)).limit(1) : [];

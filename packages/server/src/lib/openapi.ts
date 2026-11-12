@@ -3,7 +3,7 @@ import type { Next } from "hono";
 import { ApiErrorSchema, operation, roleAtLeast, type OperationSpec } from "@sail/shared";
 import { AppError } from "./errors.js";
 import { markDryRun, tx } from "../db/client.js";
-import { aboveCeiling, createProposal, directCeiling, moneyEffect, orderMoney, requestOrderId, takeAgentBudget, toProposal } from "../services/agents.js";
+import { aboveCeiling, createProposal, currentOrderMoney, directCeiling, moneyEffect, orderMoney, requestOrderId, takeAgentBudget, toProposal } from "../services/agents.js";
 import type { MoneyEffect } from "../db/schema/index.js";
 import type { Principal } from "../auth/principal.js";
 import type { AppEnv } from "./context.js";
@@ -122,8 +122,8 @@ export function defineOp<R extends OpRoute>(app: OpenAPIHono<AppEnv>, route: R, 
     // lowered the amount due or changed tax or fees, undo it and propose it instead, showing both.
     const orderId = await requestOrderId(path, body);
     if (!orderId) return handler(c, next);
-    const before = await orderMoney(orderId);
     await tx().unsafe("savepoint agent_money_effect");
+    const before = await currentOrderMoney(orderId);
     const res = await handler(c, next);
     if (res.status >= 400) return res;
     const after = await orderMoney(orderId);

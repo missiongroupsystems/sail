@@ -189,7 +189,7 @@ describe("A2: an agent call that lowers the amount due, or changes tax or fees, 
 });
 
 describe("A2: the money-effect rule itself", () => {
-  const m = (total: number, extra: Partial<Record<"subtotal" | "discount_total" | "fee_total" | "tax_total", number>> & { customer_id?: string | null } = {}) => ({ subtotal: 1000, discount_total: 0, fee_total: 100, tax_total: 99, total, customer_id: null, ...extra });
+  const m = (total: number, extra: Partial<Record<"subtotal" | "discount_total" | "fee_total" | "tax_total", number>> & { customer_id?: string | null; order_type?: string; pax?: number | null } = {}) => ({ subtotal: 1000, discount_total: 0, fee_total: 100, tax_total: 99, total, customer_id: null, order_type: "dine_in", pax: 2, ...extra });
   it("flags a lower amount due, a tax or fee change with the same lines, an open price and an order opened for a customer; lets ordinary growth through", async () => {
     const { moneyEffect } = await import("../src/services/agents.js");
     expect(moneyEffect(m(1199), m(1100, { fee_total: 0 }), {})).toBe("lowers the amount due");
@@ -202,6 +202,9 @@ describe("A2: the money-effect rule itself", () => {
     expect(moneyEffect(m(0, { subtotal: 0 }), m(0, { subtotal: 0, customer_id: customer }), {})).toMatch(/customer/); // attached to an empty order
     expect(moneyEffect(m(1199, { customer_id: customer }), m(2398, { subtotal: 2000, fee_total: 200, tax_total: 198, customer_id: customer }), {})).toBeNull(); // lines added for an approved customer
     expect(moneyEffect(null, m(0, { subtotal: 0 }), {})).toBeNull();
+    // The order's terms, judged even on an empty order where no total moves yet.
+    expect(moneyEffect(m(0, { subtotal: 0 }), m(0, { subtotal: 0, order_type: "takeaway" }), {})).toMatch(/order type/);
+    expect(moneyEffect(m(0, { subtotal: 0 }), m(0, { subtotal: 0, pax: 6 }), {})).toMatch(/guest count/);
   });
 });
 
@@ -417,4 +420,44 @@ describe("A8: staff contact details never reach the audit log or events", () => 
     const stored = await db.sql`select id from events where payload::text like ${"%" + addr + "%"} union all select id from audit_log where details::text like ${"%" + addr + "%"}`;
     expect(stored).toEqual([]);
   });
+});
+
+describe("review follow-ups", () => {
+  it("an agent cannot propose on an order outside its brand or outlet: the target is not found, and nothing is stored", async () => {
+    const b2 = randomUUID();
+    await call("POST", "/v1/brands", { token: w.m.admin.token, body: { id: b2, name: "Brand two" } });
+    const tok = await session((await identity({ role: "manager", toolsets: ["pos.order"], risk_ceiling: "T1", brand_ids: [b2] })).credential);
+    const o = await openTakeaway(w.pins.cashier);
+    await addLine(w.pins.cashier, o.body.data.id, { product_id: w.ids.kopi });
+    const before = (await db.sql<{ n: number }[]>`select count(*)::int as n from proposals`)[0]!.n;
+    expect((await call("POST", `/v1/orders/${o.body.data.id}/fire`, { token: tok, body: {} })).status).toBe(404);
+    expect((await call("POST", `/v1/orders/${o.body.data.id}/cancel`, { token: tok, body: { reason: "x" } })).status).toBe(404);
+    expect((await db.sql<{ n: number }[]>`select count(*)::int as n from proposals`)[0]!.n).toBe(before);
+  });
+
+  it("changing an empty dine-in order to takeaway is a proposal, so the service charge cannot be dropped before the lines go on", async () => {
+    const areaId = randomUUID();
+    const tableId = randomUUID();
+    await call("POST", "/v1/areas", { token: w.m.admin.token, body: { id: areaId, outlet_id: w.m.outletId, name: "Patio" } });
+    await call("POST", "/v1/tables", { token: w.m.admin.token, body: { id: tableId, outlet_id: w.m.outletId, area_id: areaId, name: "P1" } });
+    const tok = await session((await identity({ role: "server", toolsets: ["pos.order"], risk_ceiling: "T1" })).credential);
+    const o = await call<{ data: Snap }>("POST", "/v1/orders", { token: w.pins.server, body: { order_id: randomUUID(), order_type: "dine_in", table_id: tableId, pax: 2, outlet_id: w.m.outletId, brand_id: w.m.brandId } });
+    expect((await call("POST", `/v1/orders/${o.body.data.id}/change-type`, { token: tok, body: { order_type: "takeaway" } })).status).toBe(202);
+    expect((await call("PATCH", `/v1/orders/${o.body.data.id}`, { token: tok, body: { pax: 8 } })).status).toBe(202);
+  });
+
+  it("the before figure is today's price: a discount that has ended cannot mask a removal", async () => {
+    const tok = await session((await identity({ role: "server", toolsets: ["pos.order"], risk_ceiling: "T1" })).credential);
+    const rule = await call("POST", "/v1/pricing-rules", { token: w.m.admin.token, body: { rule_key: "promo:window", body: { kind: "discount", name: "Window 20%", calc: "percent", value: { type: "fixed", amount: 2000 }, scope: { type: "all" }, priority: 40, application: "auto", report_class: "promo" }, effective_from: "2026-01-01T00:00:00Z" } });
+    expect(rule.status, JSON.stringify(rule.body)).toBeLessThan(300);
+    const o = await openTakeaway(w.pins.server);
+    const a = await addLine(w.pins.server, o.body.data.id, { product_id: w.ids.wine });
+    const s = (await addLine(w.pins.server, o.body.data.id, { product_id: w.ids.laksa })).body.data;
+    // The discount ends (as a time window does) without anything repricing the order: its stored totals still carry it.
+    await db.sql`update pricing_rules set archived_at = now() where rule_key = 'promo:window'`;
+    const laksa = s.lines.find((l) => l.id !== a.body.data.lines[0]!.id)!;
+    const v = await call("POST", `/v1/orders/${o.body.data.id}/lines/${laksa.id}/void`, { token: tok, body: { reason_text: "not wanted" } });
+    expect(v.status, JSON.stringify(v.body)).toBe(202);
+  });
+
 });

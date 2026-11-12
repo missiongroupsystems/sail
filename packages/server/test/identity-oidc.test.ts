@@ -80,4 +80,10 @@ describe("oidc provider", () => {
     // Resets are the issuer's job.
     expect((await call("POST", `/v1/staff/${id}/password-reset`, { token: adminToken, body: {} })).status).toBe(404);
   });
+
+  it("a person signed in through the issuer cannot delegate to an agent: the register cannot tell when that sign-in ends", async () => {
+    const ident = await call<{ data: { id: string } }>("POST", "/v1/agent-identities", { token: adminToken, body: { name: "Issuer agent", role: "server", toolsets: ["pos.read"] } });
+    expect(ident.status, JSON.stringify(ident.body)).toBe(201);
+    expect((await call("POST", `/v1/agent-identities/${ident.body.data.id}/delegations`, { token: adminToken, body: {} })).status).toBe(403);
+  });
 });

@@ -103,7 +103,7 @@ export const agentUsage = pgTable(
 );
 
 /** An order's money as the pricing engine last computed it, and the customer whose group pricing applies to it. */
-export type OrderMoney = { subtotal: number; discount_total: number; fee_total: number; tax_total: number; total: number; customer_id: string | null };
+export type OrderMoney = { subtotal: number; discount_total: number; fee_total: number; tax_total: number; total: number; customer_id: string | null; order_type: string; pax: number | null };
 export type MoneyEffect = { reason: string; before: OrderMoney | null; after: OrderMoney | null };
 
 export type ProposalStatus = "pending" | "approved" | "rejected" | "failed" | "expired";
