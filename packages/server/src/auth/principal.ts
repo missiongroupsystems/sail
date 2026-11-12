@@ -101,6 +101,11 @@ export function outletScopeFor(p: Principal): string {
   }
 }
 
+/** The brand scope stored in app.current_brands: '*' or a comma list. Only people and agents carry one. */
+export function brandScopeFor(p: Principal): string {
+  return (p.type === "staff" || p.type === "agent") && p.brandIds.length > 0 ? p.brandIds.join(",") : "*";
+}
+
 export function principalRole(p: Principal): Role | null {
   return p.type === "staff" || p.type === "agent" ? p.role : null;
 }

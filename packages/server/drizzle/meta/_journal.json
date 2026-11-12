@@ -309,6 +309,13 @@
       "when": 1794515405695,
       "tag": "0043_proposal_state_pin",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1794515852196,
+      "tag": "0044_rls_brand_scope",
+      "breakpoints": true
     }
   ]
 }

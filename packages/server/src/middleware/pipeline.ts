@@ -5,7 +5,7 @@ import { maybeTx, withTransaction, type RequestTx } from "../db/client.js";
 import { AppError } from "../lib/errors.js";
 import { AdmissionGate } from "../lib/gate.js";
 import type { AppEnv } from "../lib/context.js";
-import { dbRoleFor, outletScopeFor, principalRole, type Principal } from "../auth/principal.js";
+import { brandScopeFor, dbRoleFor, outletScopeFor, principalRole, type Principal } from "../auth/principal.js";
 import { resolvePrincipal } from "../auth/resolve.js";
 import { RLS_OPT_OUT, SHORT_TX_ROUTES } from "../db/rls-opt-out.js";
 import { proposalOrderPin } from "../services/agents.js";
@@ -89,6 +89,7 @@ export async function applyRls(t: RequestTx, principal: Principal) {
   await t.sql`select
     set_config('app.current_merchant', ${principal.merchantId}, true),
     set_config('app.current_outlets', ${outletScopeFor(principal)}, true),
+    set_config('app.current_brands', ${brandScopeFor(principal)}, true),
     set_config('app.current_principal', ${principal.id}, true),
     set_config('app.current_principal_type', ${principal.type}, true),
     set_config('app.current_role', ${role ?? ""}, true),

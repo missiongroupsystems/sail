@@ -21,7 +21,7 @@ In a deployment, run `node dist/index.js --role=mcp` next to the API with the AP
 
 ## Get a token
 
-1. An Admin creates an **agent identity** with `POST /v1/agent-identities`: name, role, outlet and brand scope, toolsets, risk ceiling (T0, T1 or T2; T3 is never available to agents) and budgets. The response shows the credential once. There is no back-office screen for this yet.
+1. An Admin creates an **agent identity** with `POST /v1/agent-identities`: name, role, outlet and brand scope (enforced by row-level security, as for staff), toolsets, risk ceiling (T0, T1 or T2; T3 is never available to agents) and budgets. The response shows the credential once. There is no back-office screen for this yet.
 2. The agent starts a **session**: `POST /v1/agent-sessions { credential, task_id?, on_behalf_of? }` returns a 15-minute agent token.
    For an attended agent, the person first delegates with `POST /v1/agent-identities/{id}/delegations`, signed in with their own PIN session or back-office session. That returns a single-use grant, valid for five minutes, which the runner passes as `on_behalf_of`. The runner never holds the person's own token. The session's role is the lower of the agent's and the person's, and its outlets the intersection. The agent stops acting for them when the session they delegated from ends.
 3. The MCP client sends `Authorization: Bearer <agent token>`. Staff and station tokens are refused by the MCP endpoint; they use the API directly.

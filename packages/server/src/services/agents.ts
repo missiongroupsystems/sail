@@ -68,6 +68,7 @@ export async function startAgentSession(input: { credential: string; taskId?: st
     outletIds = intersect(identity.outletIds, human.outlet_ids);
     brandIds = intersect(identity.brandIds, human.brand_ids);
     if (identity.outletIds.length && human.outlet_ids.length && outletIds.length === 0) throw new AppError("permission_denied", "The agent and this person share no outlet");
+    if (identity.brandIds.length && human.brand_ids.length && brandIds.length === 0) throw new AppError("permission_denied", "The agent and this person share no brand");
     onBehalfOf = human;
   }
   const expiresAt = new Date(Date.now() + AGENT_SESSION_SECONDS * 1000);

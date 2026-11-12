@@ -360,3 +360,37 @@ describe("A5, A6: no proposal or idempotency record holds a secret", () => {
     for (const s of [r1.body.data.credential, r1.body.data.credential.split(".")[1]!, g.body.data.grant.split(".")[1]!, code.body.data.code]) expect(stored).not.toContain(s);
   });
 });
+
+describe("A7: brand scope is enforced, for agents and for staff", () => {
+  it("an identity scoped to another brand cannot open or read this brand's orders, and disjoint scopes never widen to every brand", async () => {
+    const b2 = randomUUID();
+    expect((await call("POST", "/v1/brands", { token: w.m.admin.token, body: { id: b2, name: "Other brand" } })).status).toBe(201);
+    const id = await identity({ role: "cashier", toolsets: ["pos.order", "pos.read"], risk_ceiling: "T1", brand_ids: [b2] });
+    const tok = await session(id.credential);
+    const refused = await openTakeaway(tok);
+    expect([403, 404, 422], JSON.stringify(refused.body)).toContain(refused.status);
+    expect(JSON.stringify(refused.body)).not.toContain("internal");
+    const own = await openTakeaway(w.pins.cashier);
+    expect((await call("GET", `/v1/orders/${own.body.data.id}`, { token: tok })).status).toBe(404);
+    // A person scoped to brand B1 delegating to a B2 agent shares no brand: refused, not "all brands".
+    await db.sql`update staff set brand_ids = ${db.sql.array([w.m.brandId])}::uuid[] where id = ${w.m.manager.id}`;
+    try {
+      const pin = (await call<{ data: { session_token: string } }>("POST", "/v1/stations/sessions", { token: w.stationToken, body: { pin: "222222" } })).body.data.session_token;
+      await expect(session(id.credential, { on_behalf_of: await delegate(pin, id.id) })).rejects.toThrow(/share no brand/);
+    } finally {
+      await db.sql`update staff set brand_ids = '{}' where id = ${w.m.manager.id}`;
+    }
+  });
+
+  it("a staff member scoped to another brand cannot open an order on this one", async () => {
+    const b3 = randomUUID();
+    await call("POST", "/v1/brands", { token: w.m.admin.token, body: { id: b3, name: "Third brand" } });
+    await db.sql`update staff set brand_ids = ${db.sql.array([b3])}::uuid[] where id = ${w.m.server.id}`;
+    try {
+      const pin = (await call<{ data: { session_token: string } }>("POST", "/v1/stations/sessions", { token: w.station2Token, body: { pin: "444444" } })).body.data.session_token;
+      expect([403, 404]).toContain((await openTakeaway(pin)).status);
+    } finally {
+      await db.sql`update staff set brand_ids = '{}' where id = ${w.m.server.id}`;
+    }
+  });
+});

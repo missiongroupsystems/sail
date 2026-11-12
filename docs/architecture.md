@@ -27,7 +27,7 @@ Every request goes through `packages/server/src/middleware/pipeline.ts` (steps 1
 1. **Admission gate** (`lib/gate.ts`). At most `TX_MAX` request transactions run at once; up to `QUEUE_MAX` wait for `QUEUE_WAIT_MS`; beyond that the API returns 503 `overloaded`.
 2. **One transaction per request.** A response of 400 or above, or a dry run, rolls it back.
 3. **Principal.** `auth/resolve.ts` turns the bearer token into a principal (staff, station, guest, relay or agent).
-4. **RLS context.** `set_config('app.current_merchant' | 'app.current_outlets' | 'app.current_principal' | ...)` and `SET LOCAL ROLE` to the principal's database role.
+4. **RLS context.** `set_config('app.current_merchant' | 'app.current_outlets' | 'app.current_brands' | 'app.current_principal' | ...)` and `SET LOCAL ROLE` to the principal's database role.
 5. **Idempotency.** Every `POST`, `PUT`, `PATCH` and `DELETE`, except the public pairing and session-start routes and the streams, needs an `Idempotency-Key` header. A repeat with the same body replays the stored response; the same key with another body is `idempotency_conflict`.
 6. **The operation.** `defineOp` (`lib/openapi.ts`) checks the principal kind and the minimum role from the manifest before the handler runs. Handlers add only the checks the manifest cannot express: manager approvals and a manual rule's own role, and the approver's role on a proposal.
 
@@ -41,7 +41,7 @@ Merchant > brand > outlet > station. Every tenant table has `merchant_id`, and `
 
 | Postgres role | Used by | Can reach |
 |-|-|-|
-| `app_authenticated` | Staff (back office or PIN) and paired stations | The merchant's rows within the outlet scope; what each person may do is decided by the role checks |
+| `app_authenticated` | Staff (back office or PIN) and paired stations | The merchant's rows within the outlet scope and the person's brand scope; what each person may do is decided by the role checks |
 | `app_guest` | Guest sessions from a table QR code | Reads the merchant's catalogue and its own session, order and requests; writes only its idempotency keys |
 | `app_relay` | Print relays | The outlet's printers, print jobs and the relay's heartbeat |
 | `app_agent` | Agent sessions | Operational tables; no PIN or token hashes, no customer contact columns, no configuration writes |
