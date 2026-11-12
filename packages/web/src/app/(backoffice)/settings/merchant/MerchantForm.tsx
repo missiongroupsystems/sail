@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, InlineError } from "@sail/ui";
+import { Button, InlineError, useLocale, type LocaleFormat } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -11,17 +11,17 @@ import { FormSection, RhfSelect, RhfTextField } from "@/components/forms/fields"
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Merchant, MerchantSettingsPatch } from "@/lib/api/types";
-import { formatBps, formatClock } from "@/lib/format";
+import { formatBps } from "@/lib/format";
 import { TIME_RE } from "@/lib/hours";
 import { keys } from "@/lib/query";
 
-const ROUNDING = [
-  { id: "off", label: "Off", description: "Cash is taken to the cent." },
-  { id: "5", label: "5¢", description: "Round cash totals to the nearest 5 cents." },
-  { id: "10", label: "10¢" },
-  { id: "50", label: "50¢" },
-  { id: "100", label: "$1" },
-];
+/** Increments in the merchant's minor units, labelled in its currency. */
+function roundingItems(money: LocaleFormat["money"]) {
+  return [
+    { id: "off", label: "Off", description: "Cash is taken to the smallest unit." },
+    ...[5, 10, 50, 100].map((n) => ({ id: String(n), label: money(n, { dropZeroFraction: true }), description: `Round cash totals to the nearest ${money(n, { dropZeroFraction: true })}.` })),
+  ];
+}
 
 const Schema = z.object({
   name: z.string().trim().min(1, "Enter the merchant's name"),
@@ -60,6 +60,7 @@ function toPatch(v: Values): MerchantSettingsPatch {
 }
 
 export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant }) {
+  const { clock, money } = useLocale();
   const qc = useQueryClient();
   const router = useRouter();
   const [savedAt, setSavedAt] = useState<Date | null>(null);
@@ -109,7 +110,7 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
       </FormSection>
 
       <FormSection title="Cash and day">
-        <RhfSelect control={form.control} name="cash_rounding_increment" label="Cash rounding" items={ROUNDING} description="Card and PayNow payments are never rounded." className="sm:max-w-[320px]" />
+        <RhfSelect control={form.control} name="cash_rounding_increment" label="Cash rounding" items={roundingItems(money)} description="Card and other non-cash payments are never rounded." className="sm:max-w-[320px]" />
         <RhfTextField
           control={form.control}
           name="business_day_cutoff"
@@ -131,7 +132,7 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
         <Button variant="primary" type="submit" isPending={save.isPending} isDisabled={!form.formState.isDirty && !save.isError}>
           Save changes
         </Button>
-        {savedAt && !form.formState.isDirty ? <span className="text-caption text-ink-2">Saved · {formatClock(savedAt)}</span> : null}
+        {savedAt && !form.formState.isDirty ? <span className="text-caption text-ink-2">Saved · {clock(savedAt)}</span> : null}
       </div>
     </form>
   );

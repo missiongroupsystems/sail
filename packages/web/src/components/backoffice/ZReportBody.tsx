@@ -1,6 +1,6 @@
 "use client";
 
-import { DescriptionList, Money, SectionHeading, Stat } from "@sail/ui";
+import { DescriptionList, Money, SectionHeading, Stat, useLocale } from "@sail/ui";
 import { label, ORDER_TYPE_LABEL, REPORT_CLASS_LABEL } from "./labels";
 import { plural, type ZReport } from "./register";
 
@@ -10,6 +10,7 @@ import { plural, type ZReport } from "./register";
  * and the stored summary on a closed shift. Nothing here is computed.
  */
 export function ZReportBody({ report, stationName }: { report: ZReport; stationName?: (id: string | null) => string }) {
+  const { stamp } = useLocale();
   const r = report;
   const types = Object.entries(r.orders.by_type);
   return (
@@ -120,7 +121,7 @@ export function ZReportBody({ report, stationName }: { report: ZReport; stationN
 
       <p className="text-caption text-ink-2 tabular">
         Business day {r.scope.business_date}
-        {r.scope.station_id ? ` · ${stationName ? stationName(r.scope.station_id) : "one station"}` : " · all stations"} · generated {new Date(r.generated_at).toLocaleString("en-SG", { timeZone: "Asia/Singapore", dateStyle: "medium", timeStyle: "short" })}
+        {r.scope.station_id ? ` · ${stationName ? stationName(r.scope.station_id) : "one station"}` : " · all stations"} · generated {stamp(r.generated_at)}
       </p>
     </div>
   );

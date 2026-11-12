@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, DataTable, EmptyState, InlineError, Select, Switch, type DataTableColumn } from "@sail/ui";
+import { Badge, Button, DataTable, EmptyState, InlineError, Select, Switch, type DataTableColumn, useLocale } from "@sail/ui";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
@@ -12,7 +12,7 @@ import { req } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Outlet } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
-import { formatDayClock, shortId } from "@/lib/format";
+import { shortId } from "@/lib/format";
 
 const ANY = "__any__";
 
@@ -28,6 +28,7 @@ export function orderJobs(jobs: PrintJob[]): PrintJob[] {
 }
 
 export function PrintJobsView({ outlets, scope, initialOutletId, initialPrinters }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; initialPrinters: Printer[] }) {
+  const { dayClock } = useLocale();
   const { outletId, setOutletId } = useOutletChoice(outlets, scope, initialOutletId);
   const [status, setStatus] = useState<string | null>(null);
   const [printerId, setPrinterId] = useState<string | null>(null);
@@ -65,7 +66,7 @@ export function PrintJobsView({ outlets, scope, initialOutletId, initialPrinters
       render: (j) => (
         <span className="inline-flex flex-col leading-tight">
           <span className={`tabular ${isLate(j) ? "text-status-alert" : "text-ink"}`}>{isWaiting(j) ? formatElapsed(j.age_seconds) : "—"}</span>
-          <span className="text-caption text-ink-2 whitespace-nowrap">{formatDayClock(j.created_at)}</span>
+          <span className="text-caption text-ink-2 whitespace-nowrap">{dayClock(j.created_at)}</span>
         </span>
       ),
     },

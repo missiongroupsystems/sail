@@ -4,10 +4,10 @@ import { Delete } from "lucide-react";
 import { Button as AriaButton } from "react-aria-components";
 import { cx } from "../lib/cx";
 import { Icon } from "../components/Icon";
-import { formatCents } from "../components/Money";
+import { useLocale } from "../lib/locale";
 
 export type AmountPadProps = {
-  /** Digits typed so far, as a string ("1250" is $12.50 in `cents` mode, or 12.50% in `percent` mode). */
+  /** Digits typed so far, as a string: minor units in `cents` mode ("1250" is $12.50, or ¥1,250), basis points in `percent` mode (12.50%). */
   digits: string;
   onChange: (digits: string) => void;
   /** `cents`: a money amount; `percent`: a percentage with two decimals (digits are basis points). */
@@ -29,8 +29,9 @@ export function formatBpsText(bps: number): string {
 
 /** An amount pad (design 8): currency or percentage entry, digits typed right to left like a till. */
 export function AmountPad({ digits, onChange, mode, hint, isDisabled, className }: AmountPadProps) {
+  const { money } = useLocale();
   const n = Number(digits || "0");
-  const text = mode === "cents" ? formatCents(n) : formatBpsText(n);
+  const text = mode === "cents" ? money(n) : formatBpsText(n);
   const press = (k: string) => {
     if (isDisabled) return;
     if (k === "⌫") return onChange(digits.slice(0, -1));

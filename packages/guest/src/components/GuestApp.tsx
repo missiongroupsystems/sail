@@ -1,6 +1,6 @@
 "use client";
 
-import { BrandButton } from "@sail/ui";
+import { BrandButton, LocaleProvider, localeSettings } from "@sail/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
@@ -47,15 +47,16 @@ function viewFromHash(hash: string): View {
 const RECHECK_MS = 15_000;
 const RECHECK_MAX_MS = 60_000;
 
-export function GuestApp({ token }: { token: string }) {
+/** `fallbackLocale` is the browser's, from the request, until the register sends the merchant's with the session. */
+export function GuestApp({ token, fallbackLocale }: { token: string; fallbackLocale: string }) {
   return (
     <QueryProvider>
-      <GuestAppInner token={token} />
+      <GuestAppInner token={token} fallbackLocale={fallbackLocale} />
     </QueryProvider>
   );
 }
 
-function GuestAppInner({ token }: { token: string }) {
+function GuestAppInner({ token, fallbackLocale }: { token: string; fallbackLocale: string }) {
   const queryClient = useQueryClient();
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [session, setSession] = useState<GuestSession | null>(null);
@@ -364,82 +365,84 @@ function GuestAppInner({ token }: { token: string }) {
   const product = itemSheet ? menu.products[itemSheet.productId] : undefined;
 
   return (
-    <div className="min-h-dvh bg-bg text-ink">
-      {view === "menu" ? (
-        <MenuView
-          session={session}
-          menu={menu}
-          canOrder={canOrder}
-          basketItems={basket.items}
-          orderView={orderView}
-          onOpenItem={(productId) => openItem(productId, null)}
-          onReview={() => navigate("review")}
-          onCallStaff={() => setStaffSheet(true)}
-          onStatus={() => navigate(orderView?.rounds.some((r) => r.mine) ? "status" : "table")}
-        />
-      ) : null}
-      {view === "review" ? (
-        <ReviewView
-          session={session}
-          menu={menu}
-          items={basket.items}
-          guestName={basket.guestName}
-          onGuestName={basket.setGuestName}
-          canOrder={canOrder}
-          sending={sending}
-          error={sendError}
-          onEdit={(key) => {
-            const item = basket.items.find((i) => i.key === key);
-            if (item) openItem(item.product_id, key);
-          }}
-          onRemove={(key) => {
-            basket.remove(key);
-            setSendError(null);
-          }}
-          onSend={() => void send()}
-          onBack={() => navigate("menu")}
-          onClearError={clearSendError}
-        />
-      ) : null}
-      {view === "status" ? (
-        <StatusView
-          session={session}
-          orderView={orderView}
-          loading={orderQuery.isPending}
-          error={orderError}
-          lastRoundId={basket.lastRoundId}
-          streamStatus={streamStatus}
-          onOrderMore={() => navigate("menu")}
-          onCallStaff={() => setStaffSheet(true)}
-          onOurTable={() => navigate("table")}
-        />
-      ) : null}
-      {view === "table" ? <OurTableView session={session} orderView={orderView} loading={orderQuery.isPending} error={orderError} onBack={() => navigate(basket.lastRoundId ? "status" : "menu")} onCallStaff={() => setStaffSheet(true)} onOrderMore={() => navigate("menu")} /> : null}
+    <LocaleProvider settings={localeSettings(session.settings, fallbackLocale)}>
+      <div className="min-h-dvh bg-bg text-ink">
+        {view === "menu" ? (
+          <MenuView
+            session={session}
+            menu={menu}
+            canOrder={canOrder}
+            basketItems={basket.items}
+            orderView={orderView}
+            onOpenItem={(productId) => openItem(productId, null)}
+            onReview={() => navigate("review")}
+            onCallStaff={() => setStaffSheet(true)}
+            onStatus={() => navigate(orderView?.rounds.some((r) => r.mine) ? "status" : "table")}
+          />
+        ) : null}
+        {view === "review" ? (
+          <ReviewView
+            session={session}
+            menu={menu}
+            items={basket.items}
+            guestName={basket.guestName}
+            onGuestName={basket.setGuestName}
+            canOrder={canOrder}
+            sending={sending}
+            error={sendError}
+            onEdit={(key) => {
+              const item = basket.items.find((i) => i.key === key);
+              if (item) openItem(item.product_id, key);
+            }}
+            onRemove={(key) => {
+              basket.remove(key);
+              setSendError(null);
+            }}
+            onSend={() => void send()}
+            onBack={() => navigate("menu")}
+            onClearError={clearSendError}
+          />
+        ) : null}
+        {view === "status" ? (
+          <StatusView
+            session={session}
+            orderView={orderView}
+            loading={orderQuery.isPending}
+            error={orderError}
+            lastRoundId={basket.lastRoundId}
+            streamStatus={streamStatus}
+            onOrderMore={() => navigate("menu")}
+            onCallStaff={() => setStaffSheet(true)}
+            onOurTable={() => navigate("table")}
+          />
+        ) : null}
+        {view === "table" ? <OurTableView session={session} orderView={orderView} loading={orderQuery.isPending} error={orderError} onBack={() => navigate(basket.lastRoundId ? "status" : "menu")} onCallStaff={() => setStaffSheet(true)} onOrderMore={() => navigate("menu")} /> : null}
 
-      {product && itemSheet ? (
-        <ItemSheet
-          key={`${itemSheet.productId}:${itemSheet.editKey ?? "new"}:${itemSheet.nonce}`}
-          isOpen={itemSheet.open}
-          onOpenChange={(open) => {
-            if (!open) closeItem();
-          }}
-          menu={menu}
-          product={product}
-          editing={editing}
-          groupError={sendError?.kind === "group" && editing && offendingKey(sendError, basket.items, menu) === editing.key ? sendError.error.message : null}
-          onAdd={(item) => {
-            basket.add(item);
-            closeItem();
-          }}
-          onUpdate={(key, item) => {
-            basket.update(key, item);
-            setSendError(null);
-            closeItem();
-          }}
-        />
-      ) : null}
-      <CallStaffSheet isOpen={staffSheet} onOpenChange={setStaffSheet} api={api} requests={session.service_requests} guestName={basket.guestName} />
-    </div>
+        {product && itemSheet ? (
+          <ItemSheet
+            key={`${itemSheet.productId}:${itemSheet.editKey ?? "new"}:${itemSheet.nonce}`}
+            isOpen={itemSheet.open}
+            onOpenChange={(open) => {
+              if (!open) closeItem();
+            }}
+            menu={menu}
+            product={product}
+            editing={editing}
+            groupError={sendError?.kind === "group" && editing && offendingKey(sendError, basket.items, menu) === editing.key ? sendError.error.message : null}
+            onAdd={(item) => {
+              basket.add(item);
+              closeItem();
+            }}
+            onUpdate={(key, item) => {
+              basket.update(key, item);
+              setSendError(null);
+              closeItem();
+            }}
+          />
+        ) : null}
+        <CallStaffSheet isOpen={staffSheet} onOpenChange={setStaffSheet} api={api} requests={session.service_requests} guestName={basket.guestName} />
+      </div>
+    </LocaleProvider>
   );
 }
 

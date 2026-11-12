@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, InlineError, MoneyField, Select, Sheet, TagsField } from "@sail/ui";
+import { Button, InlineError, MoneyField, Select, Sheet, TagsField, useLocale } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, X } from "lucide-react";
 import { Icon } from "@sail/ui";
@@ -82,6 +82,7 @@ function toBody(v: Values): Omit<ProductCreate, "id"> {
 }
 
 export function ProductSheet({ state, onClose, categories, brands }: { state: ProductSheetState; onClose: () => void; categories: Category[]; brands: Brand[] }) {
+  const { stamp } = useLocale();
   const qc = useQueryClient();
   const product = state?.mode === "edit" ? state.product : null;
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(product) });
@@ -130,7 +131,7 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
       isDismissable={!busy}
       width="lg"
       title={product ? product.name : "New product"}
-      description={product ? (product.archived ? "Archived. Restore it to sell it again." : `Updated ${new Date(product.updated_at).toLocaleString("en-SG")}`) : "A product is anything that can be sold or added as a modifier."}
+      description={product ? (product.archived ? "Archived. Restore it to sell it again." : `Updated ${stamp(product.updated_at)}`) : "A product is anything that can be sold or added as a modifier."}
       footer={
         <>
           {product ? (

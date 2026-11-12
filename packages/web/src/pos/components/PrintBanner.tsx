@@ -1,11 +1,11 @@
 "use client";
 
-import { Banner, Button, Sheet } from "@sail/ui";
+import { Banner, Button, Sheet, useLocale } from "@sail/ui";
 import { useState } from "react";
 import type { PrintJob } from "../api/types";
 import { usePrintAlerts, type LateGroup } from "../hooks/usePrintAlerts";
 import { useNow } from "../lib/device";
-import { formatClock, formatElapsed } from "../lib/format";
+import { formatElapsed } from "../lib/format";
 import { useNavStore } from "../state/nav";
 import { usePos } from "./PosContext";
 
@@ -99,6 +99,7 @@ function tableNameFor(job: PrintJob, tablesById: Map<string, { name: string; ord
 }
 
 function JobRow({ job, tableName, onOpen }: { job: PrintJob; tableName: string | null; onOpen?: () => void }) {
+  const { clock } = useLocale();
   const who = tableName ? `Table ${tableName}` : job.order_id ? "Order" : "Outlet";
   return (
     <li className="flex min-h-12 items-center justify-between gap-3 rounded-tile bg-surface-2 px-3 py-2">
@@ -108,7 +109,7 @@ function JobRow({ job, tableName, onOpen }: { job: PrintJob; tableName: string |
           {job.copies > 1 ? ` · copy ${job.copy_no}/${job.copies}` : ""}
         </span>
         <span className="block text-caption text-ink-2 tabular">
-          {formatClock(job.created_at)} · {job.status}
+          {clock(job.created_at)} · {job.status}
           {job.attempts > 1 ? ` · ${job.attempts} tries` : ""}
           {job.last_error ? ` · ${job.last_error}` : ""}
         </span>

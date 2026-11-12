@@ -51,13 +51,6 @@ export function label(map: Record<string, string>, key: string | null | undefine
   return map[key] ?? key.replace(/_/g, " ");
 }
 
-/** Today's date as YYYY-MM-DD in the merchant's zone (Asia/Singapore for the beta). */
-export function todayBusinessDate(timeZone = "Asia/Singapore"): string {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")}`;
-}
-
 /** Slug for a new rule key: "Service charge" -> "service_charge". */
 export function slugKey(name: string): string {
   return name

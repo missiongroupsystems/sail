@@ -1,9 +1,8 @@
 "use client";
 
-import { BrandButton, InlineError, cx } from "@sail/ui";
+import { BrandButton, InlineError, cx, useLocale } from "@sail/ui";
 import { ArrowLeft } from "lucide-react";
 import type { ApiError } from "@/lib/api";
-import { formatClock } from "@/lib/format";
 import { lineStatusLabel, lineStatusTone, roundStage } from "@/lib/status";
 import type { GuestLine, GuestSession, OrderView } from "@/lib/types";
 import { LineText } from "./StatusView";
@@ -23,6 +22,7 @@ const toneClass = { sent: "text-status-sent", paid: "text-status-paid", seated: 
 
 /** "Our table" (design 4.11): everything the table has ordered, with statuses, this guest's items marked. */
 export function OurTableView({ session, orderView, loading, error, onBack, onCallStaff, onOrderMore }: OurTableViewProps) {
+  const { clock } = useLocale();
   const order = orderView?.order ?? null;
   const rounds = [...(orderView?.rounds ?? [])].sort((a, b) => a.submitted_at.localeCompare(b.submitted_at));
   const lines = orderView?.lines ?? [];
@@ -74,10 +74,10 @@ export function OurTableView({ session, orderView, loading, error, onBack, onCal
           if (!rl.length && r.status !== "rejected") return null;
           const stage = roundStage(r, order);
           return (
-            <section key={r.id} aria-label={`Order sent ${formatClock(r.submitted_at)}`} className="flex flex-col">
+            <section key={r.id} aria-label={`Order sent ${clock(r.submitted_at)}`} className="flex flex-col">
               <h2 className="flex items-baseline justify-between gap-3 pb-1 text-caption text-ink-2">
                 <span className="tabular">
-                  Sent {formatClock(r.submitted_at)}
+                  Sent {clock(r.submitted_at)}
                   {r.guest_name ? ` · ${r.guest_name}` : ""}
                   {r.mine ? " · Yours" : ""}
                 </span>

@@ -1,12 +1,11 @@
 "use client";
 
-import { Button, InlineError, StatusDot } from "@sail/ui";
+import { Button, InlineError, StatusDot, useLocale } from "@sail/ui";
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { PairingCode, Station } from "@/lib/api/types";
-import { formatClock } from "@/lib/format";
 
 function useCountdown(until: string | null): string | null {
   const [left, setLeft] = useState<number | null>(null);
@@ -26,6 +25,7 @@ function useCountdown(until: string | null): string | null {
 
 /** "Pair an iPad": a one-time 6-digit code, shown large (design 7.4 display style) with its expiry. */
 export function PairingPanel({ station }: { station: Station }) {
+  const { clock } = useLocale();
   const code = useMutation<PairingCode, ApiError>({
     mutationFn: () => req(api.POST("/v1/stations/{id}/pairing-code", { params: { path: { id: station.id } }, body: {} })).then((r) => r.data),
   });
@@ -42,7 +42,7 @@ export function PairingPanel({ station }: { station: Station }) {
             {code.data.code}
           </p>
           <p className="text-caption text-ink-2 tabular">
-            Expires at {formatClock(code.data.expires_at)} · {left} left · one use only
+            Expires at {clock(code.data.expires_at)} · {left} left · one use only
           </p>
         </div>
       ) : null}

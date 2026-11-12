@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, EmptyState, Menu, MenuItem, MenuTrigger, Money, SegmentedControl, Sheet, Skeleton, TextField, type BadgeTone } from "@sail/ui";
+import { Badge, Button, EmptyState, Menu, MenuItem, MenuTrigger, Money, SegmentedControl, Sheet, Skeleton, TextField, type BadgeTone, useLocale } from "@sail/ui";
 import { useMemo, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import { idempotencyKey, toApiError } from "@/lib/api";
@@ -10,7 +10,7 @@ import { Frame } from "../components/Frame";
 import { usePos } from "../components/PosContext";
 import { useApplySnapshot, useOpenOrders, useTodaysOrders } from "../hooks/queries";
 import { useApi } from "../hooks/useApi";
-import { formatClock, ORDER_STATUS_LABEL, ORDER_TYPE_LABEL, todayAt } from "../lib/format";
+import { ORDER_STATUS_LABEL, ORDER_TYPE_LABEL, todayAt } from "../lib/format";
 import { useNavStore } from "../state/nav";
 import { useUiStore } from "../state/ui";
 
@@ -18,6 +18,7 @@ const STATUS_TONE: Record<string, BadgeTone> = { open: "seated", fired: "sent", 
 
 /** Orders (design 3.1): takeaway, pickup and delivery, sorted by ready-by, with + New order and Ready; and today's closed orders for Refund and Reopen. */
 export function OrdersScreen() {
+  const { clock } = useLocale();
   const api = useApi();
   const { outlet, station, offline, tablesById } = usePos();
   const [view, setView] = useState<"open" | "today">("open");
@@ -89,7 +90,7 @@ export function OrdersScreen() {
                       {o.customer_ref?.mobile ? <span className="text-ink-2"> · {o.customer_ref.mobile}</span> : null}
                     </span>
                     <span className="block truncate text-caption text-ink-2">
-                      {o.status === "completed" && o.completed_at ? `Paid ${formatClock(o.completed_at)}` : o.status === "cancelled" && o.cancelled_at ? `Cancelled ${formatClock(o.cancelled_at)}` : o.ready_by ? `Ready by ${formatClock(o.ready_by)}` : `Opened ${formatClock(o.opened_at)}`}
+                      {o.status === "completed" && o.completed_at ? `Paid ${clock(o.completed_at)}` : o.status === "cancelled" && o.cancelled_at ? `Cancelled ${clock(o.cancelled_at)}` : o.ready_by ? `Ready by ${clock(o.ready_by)}` : `Opened ${clock(o.opened_at)}`}
                       {o.delivery_address ? ` · ${o.delivery_address}` : ""}
                       {` · ${o.lines.filter((l) => l.status !== "voided").reduce((n, l) => n + l.quantity, 0)} items`}
                       {o.status === "completed" ? ` · ${o.checks.length} ${o.checks.length === 1 ? "bill" : "bills"} · ${[...new Set(o.checks.flatMap((c) => c.payments.map((p) => p.tender)))].join(", ")}` : ""}

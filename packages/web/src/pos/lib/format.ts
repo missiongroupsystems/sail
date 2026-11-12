@@ -1,7 +1,5 @@
-import { formatBpsText, formatCents } from "@sail/ui";
+import { formatBpsText, type LocaleFormat } from "@sail/ui";
 import type { ManualRule, OrderStatus, OrderType } from "../api/types";
-
-export { formatClock } from "@/lib/format";
 
 /** "0:42" (m:ss), "1:05:12" past an hour. Elapsed time on tables (design 6). */
 export function formatElapsed(totalSeconds: number): string {
@@ -20,13 +18,13 @@ export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = { open: "New", fi
 export const ROLE_LABEL: Record<string, string> = { server: "Server", cashier: "Cashier", manager: "Manager", finance: "Finance", admin: "Admin" };
 
 /** "10%", "1–50%", "$0.01–$1,000.00": the rule's value or range, for the Discount list (design 4.3). */
-export function describeRuleValue(rule: ManualRule): string {
+export function describeRuleValue(rule: ManualRule, money: LocaleFormat["money"]): string {
   if (rule.value.type === "fixed") {
     if (rule.calc === "percent") return formatBpsText(rule.value.amount);
-    return rule.value.amount === 0 ? "Waives" : formatCents(rule.value.amount);
+    return rule.value.amount === 0 ? "Waives" : money(rule.value.amount);
   }
   const { min, max } = rule.value;
-  return rule.calc === "percent" ? `${formatBpsText(min)}–${formatBpsText(max)}` : `${formatCents(min)}–${formatCents(max)}`;
+  return rule.calc === "percent" ? `${formatBpsText(min)}–${formatBpsText(max)}` : `${money(min)}–${money(max)}`;
 }
 
 /** "GST 9%" from basis points. */

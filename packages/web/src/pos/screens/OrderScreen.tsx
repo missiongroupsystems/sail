@@ -1,6 +1,6 @@
 "use client";
 
-import { BackButton, Button, formatCents, Money, Skeleton } from "@sail/ui";
+import { BackButton, Button, Money, Skeleton, useLocale } from "@sail/ui";
 import { useEffect, useMemo, useState } from "react";
 import type { GuestRound, SnapshotLine } from "../api/types";
 import { Catalogue } from "../components/Catalogue";
@@ -16,7 +16,7 @@ import { ReprintSheet } from "../components/ReprintSheet";
 import { useLateJobs, useManualRules, useOrder, useOrderPrintJobs, usePendingRounds } from "../hooks/queries";
 import { useOrderActions } from "../hooks/useOrderActions";
 import { useNow } from "../lib/device";
-import { formatClock, formatElapsed, ORDER_TYPE_LABEL } from "../lib/format";
+import { formatElapsed, ORDER_TYPE_LABEL } from "../lib/format";
 import { useNavStore } from "../state/nav";
 import { useUiStore } from "../state/ui";
 
@@ -24,6 +24,7 @@ type SheetState = { kind: "line"; lineId: string } | { kind: "discount" } | { ki
 
 /** Order entry (design 4.3): rail + catalogue, the order sheet, and the sheets that hang off them. Closed orders stay readable for Reopen, Refund and receipts. */
 export function OrderScreen({ orderId }: { orderId: string }) {
+  const { money, clock } = useLocale();
   const { tablesById, station, offline } = usePos();
   const screen = useNavStore((s) => s.screen);
   const back = useNavStore((s) => s.back);
@@ -58,7 +59,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
         snap.pax ? `${snap.pax} ${snap.pax === 1 ? "guest" : "guests"}` : null,
         ORDER_TYPE_LABEL[snap.order_type],
         snap.customer_ref?.name ?? null,
-        closed ? `Done ${snap.completed_at ? formatClock(snap.completed_at) : ""}` : snap.ready_by ? `ready by ${formatClock(snap.ready_by)}` : formatElapsed((now - new Date(snap.opened_at).getTime()) / 1000),
+        closed ? `Done ${snap.completed_at ? clock(snap.completed_at) : ""}` : snap.ready_by ? `ready by ${clock(snap.ready_by)}` : formatElapsed((now - new Date(snap.opened_at).getTime()) / 1000),
       ]
         .filter(Boolean)
         .join(" · ")
@@ -89,7 +90,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
                 <p className="text-caption text-ink-2 uppercase tracking-[0.04em]">Done</p>
                 <Money cents={snap.paid_total} size="display" className="text-ink" />
                 <p className="text-body text-ink-2">
-                  {snap.checks.length} {snap.checks.length === 1 ? "bill" : "bills"} · paid {snap.completed_at ? formatClock(snap.completed_at) : ""}
+                  {snap.checks.length} {snap.checks.length === 1 ? "bill" : "bills"} · paid {snap.completed_at ? clock(snap.completed_at) : ""}
                   {snap.checks.some((c) => c.refunded_total > 0) ? " · partly refunded" : ""}
                 </p>
               </div>
@@ -100,8 +101,8 @@ export function OrderScreen({ orderId }: { orderId: string }) {
                       {c.label}
                       <span className="text-caption text-ink-2">
                         {" · "}
-                        {c.payments.map((p) => `${p.tender} ${formatCents(p.amount)}`).join(", ")}
-                        {c.refunded_total > 0 ? ` · refunded ${formatCents(c.refunded_total)}` : ""}
+                        {c.payments.map((p) => `${p.tender} ${money(p.amount)}`).join(", ")}
+                        {c.refunded_total > 0 ? ` · refunded ${money(c.refunded_total)}` : ""}
                         {c.invoice_no ? ` · Invoice ${c.invoice_no}` : ""}
                       </span>
                     </span>

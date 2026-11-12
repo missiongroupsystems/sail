@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, DataTable, EmptyState, InlineError, Select, Sheet, TextField, type DataTableColumn } from "@sail/ui";
+import { Badge, Button, DataTable, EmptyState, InlineError, Select, Sheet, TextField, type DataTableColumn, type LocaleFormat, useLocale } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
@@ -11,20 +11,20 @@ import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Outlet, Product, StockEntry } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
-import { formatDayClock } from "@/lib/format";
 import { keys } from "@/lib/query";
 
 type Until = "today" | "indefinite" | "at";
 type Mode = { kind: "sold_out"; product: Product | null } | { kind: "cap"; product: Product | null } | null;
 
-function soldOutLabel(e: StockEntry): string {
+function soldOutLabel(e: StockEntry, dayClock: LocaleFormat["dayClock"]): string {
   if (!e.sold_out) return "";
   if (!e.sold_out_until) return "Sold out indefinitely";
-  return `Sold out until ${formatDayClock(e.sold_out_until)}`;
+  return `Sold out until ${dayClock(e.sold_out_until)}`;
 }
 
 /** Sold out (design 1.1: "86" is the staff word). Per outlet: what is sold out or capped today, and the actions to change it. */
 export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; initialStock: StockEntry[] }) {
+  const { dayClock } = useLocale();
   const qc = useQueryClient();
   const { outletId, setOutletId } = useOutletChoice(outlets, scope, initialOutletId);
   const [mode, setMode] = useState<Mode>(null);
@@ -69,7 +69,7 @@ export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: {
         header: "Status",
         render: (e) => (
           <span className="flex flex-wrap gap-1">
-            {e.sold_out ? <Badge tone="alert">{soldOutLabel(e)}</Badge> : null}
+            {e.sold_out ? <Badge tone="alert">{soldOutLabel(e, dayClock)}</Badge> : null}
             {e.daily_cap !== null ? (
               <Badge tone={e.cap_remaining === 0 ? "alert" : "sent"}>
                 Daily cap {e.daily_cap}
@@ -105,7 +105,7 @@ export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: {
         ),
       },
     ],
-    [byId, restore, dailyCap],
+    [byId, restore, dailyCap, dayClock],
   );
 
   const picked = mode?.product ?? null;

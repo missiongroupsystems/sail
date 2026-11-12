@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
+import { localeFromAcceptLanguage } from "@sail/ui";
 import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import { getTheme } from "@/lib/api.server";
 import "./globals.css";
@@ -32,9 +34,11 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
-  const theme = await getTheme();
+  const [theme, requestHeaders] = await Promise.all([getTheme(), headers()]);
+  // The browser's language until a signed-in surface knows the merchant's (LocaleProvider then sets it).
+  const lang = localeFromAcceptLanguage(requestHeaders.get("accept-language")) ?? "en";
   return (
-    <html lang="en-SG" data-theme={theme === "service" ? "service" : undefined} className={`${plexSans.variable} ${plexMono.variable}`} suppressHydrationWarning>
+    <html lang={lang} data-theme={theme === "service" ? "service" : undefined} className={`${plexSans.variable} ${plexMono.variable}`} suppressHydrationWarning>
       <body className="bg-bg font-sans text-ink antialiased">{children}</body>
     </html>
   );

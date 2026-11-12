@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, DataTable, DescriptionList, EmptyState, Icon, InlineError, SectionHeading, Select, Stat, StatusDot, TextField, type DataTableColumn } from "@sail/ui";
+import { Badge, Button, DataTable, DescriptionList, EmptyState, Icon, InlineError, SectionHeading, Select, Stat, StatusDot, TextField, type DataTableColumn, useLocale } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Upload, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
@@ -8,7 +8,6 @@ import { Warnings } from "@/components/backoffice/Warnings";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { ImportEntity, ImportJob, ImportJobSummary, ImportMapping, ImportReport } from "@/lib/api/types";
-import { formatDayClock } from "@/lib/format";
 import { keys } from "@/lib/query";
 import { useSession } from "@/lib/session-context";
 import { autoMap, csvHeader, csvRowCount, ENTITY_LABEL, ENTITY_ORDER, FIELDS, guessEntity } from "./import-fields";
@@ -50,6 +49,7 @@ function readText(file: File): Promise<string> {
  * page comes from the register's report.
  */
 export function ImportView({ initialJobs }: { initialJobs: ImportJobSummary[] }) {
+  const { dayClock } = useLocale();
   const { me } = useSession();
   const qc = useQueryClient();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -123,7 +123,7 @@ export function ImportView({ initialJobs }: { initialJobs: ImportJobSummary[] })
   });
 
   const historyColumns: DataTableColumn<ImportJobSummary>[] = [
-    { key: "created_at", header: "When", isRowHeader: true, render: (j) => <span className="tabular whitespace-nowrap">{formatDayClock(j.created_at)}</span> },
+    { key: "created_at", header: "When", isRowHeader: true, render: (j) => <span className="tabular whitespace-nowrap">{dayClock(j.created_at)}</span> },
     { key: "kind", header: "Run", render: (j) => (j.dry_run ? <Badge>Dry run</Badge> : <Badge tone="paid">Apply</Badge>) },
     { key: "status", header: "Status", render: (j) => statusDot(j) },
     { key: "files", header: "Files", render: (j) => <span className="text-ink-2">{j.file_names.join(", ")}</span> },
@@ -274,9 +274,10 @@ function summarise(report: ImportReport): string {
 }
 
 function JobReport({ job, canApply, onApply, applying, applyError }: { job: ImportJob; canApply: boolean; onApply: () => void; applying: boolean; applyError: ApiError | null }) {
+  const { dayClock } = useLocale();
   const [entityFilter, setEntityFilter] = useState<string>(ANY);
   const report = job.report;
-  const entities = report ? ENTITY_ORDER.filter((e) => report.entities[e]) : [];
+  const entities = useMemo(() => (report ? ENTITY_ORDER.filter((e) => report.entities[e]) : []), [report]);
   const rejected = useMemo(() => {
     if (!report) return [];
     return entities.flatMap((e) => (report.entities[e]?.rejected ?? []).map((r, i) => ({ id: `${e}-${r.row}-${i}`, entity: e, ...r }))).filter((r) => entityFilter === ANY || r.entity === entityFilter);
@@ -316,7 +317,7 @@ function JobReport({ job, canApply, onApply, applying, applyError }: { job: Impo
           { term: "Status", detail: statusDot(job) },
           { term: "Run", detail: job.dry_run ? "Dry run: nothing was changed" : "Applied to the register" },
           { term: "Files", detail: job.file_names.join(", ") },
-          { term: "Finished", detail: job.finished_at ? formatDayClock(job.finished_at) : "—" },
+          { term: "Finished", detail: job.finished_at ? dayClock(job.finished_at) : "—" },
         ]}
       />
       {RUNNING.has(job.status) ? <p className="text-ink-2">The worker is processing the files. This page refreshes every few seconds.</p> : null}

@@ -1,6 +1,6 @@
 "use client";
 
-import { BackButton, Badge, BillCard, Button, Checkbox, formatCents, Icon, Money, QuantityStepper, SegmentedControl, Sheet, Skeleton, type BillCardLine, type BillCardRow } from "@sail/ui";
+import { BackButton, Badge, BillCard, Button, Checkbox, Icon, Money, QuantityStepper, SegmentedControl, Sheet, Skeleton, type BillCardLine, type BillCardRow, type LocaleFormat, useLocale } from "@sail/ui";
 import { Check } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
@@ -33,9 +33,9 @@ function detectMode(order: OrderSnapshot): Mode {
 export const shareText = (share: string) => FRACTIONS[share] ?? (share === "1" ? "" : share);
 
 /** "$13.50 each", or "$13.50 or $13.48 each" when the register's even shares differ by a cent. */
-function shareSummary(totals: number[]): string {
+function shareSummary(totals: number[], money: LocaleFormat["money"]): string {
   const distinct = [...new Set(totals)].sort((a, b) => b - a);
-  return `${distinct.map((t) => formatCents(t)).join(" or ")} each`;
+  return `${distinct.map((t) => money(t)).join(" or ")} each`;
 }
 
 export function billLabel(check: CheckSnapshot): string {
@@ -62,6 +62,7 @@ export function billRows(check: CheckSnapshot, inclusive: boolean): BillCardRow[
  * per bill, and the lock on paid bills.
  */
 export function BillScreen({ orderId }: { orderId: string }) {
+  const { money } = useLocale();
   const { tablesById, offline, staff } = usePos();
   const back = useNavStore((s) => s.back);
   const openPay = useNavStore((s) => s.openPay);
@@ -107,7 +108,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
 
   const table = snap.table_id ? tablesById.get(snap.table_id) : null;
   const backLabel = snap.order_type === "dine_in" ? `Table ${table?.name ?? ""}` : snap.order_no;
-  const title = ["Bill", snap.pax ? `${snap.pax} ${snap.pax === 1 ? "guest" : "guests"}` : ORDER_TYPE_LABEL[snap.order_type], `Total ${formatCents(snap.totals.total)}`].join(" · ");
+  const title = ["Bill", snap.pax ? `${snap.pax} ${snap.pax === 1 ? "guest" : "guests"}` : ORDER_TYPE_LABEL[snap.order_type], `Total ${money(snap.totals.total)}`].join(" · ");
 
   const switchMode = async (next: Mode) => {
     if (next === mode) return;
@@ -255,7 +256,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
               <span className="text-line text-ink">Split evenly between</span>
               <QuantityStepper value={evenN ?? snap.checks.length} onChange={changeEven} min={2} max={20} label="Number of bills" />
               <span className="text-line text-ink">bills</span>
-              {inFlight ? <span className="text-caption text-ink-2">Checking…</span> : snap.checks[0] ? <span className="text-caption text-ink-2 tabular">{shareSummary(snap.checks.map((c) => c.totals.total))}</span> : null}
+              {inFlight ? <span className="text-caption text-ink-2">Checking…</span> : snap.checks[0] ? <span className="text-caption text-ink-2 tabular">{shareSummary(snap.checks.map((c) => c.totals.total), money)}</span> : null}
             </div>
           ) : null}
           {mode === "seat" ? (
@@ -296,7 +297,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
                           Pre-bill
                         </Button>
                         <Button size="lg" variant="primary" isDisabled={offline || check.balance <= 0 || live.length === 0} onPress={() => payFor(check)} className="gap-1">
-                          Pay {formatCents(check.balance)} ▸{!canPay ? <Badge tone="bill">Manager approval</Badge> : null}
+                          Pay {money(check.balance)} ▸{!canPay ? <Badge tone="bill">Manager approval</Badge> : null}
                         </Button>
                       </>
                     )
@@ -313,7 +314,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
             ) : (
               // The register keeps the invariant (bills always add up to the order); the figure shown is its order total, never a client sum.
               <span className="inline-flex items-center gap-2 text-line text-ink" role="status" aria-live="polite">
-                <Icon icon={Check} size={20} className="text-status-paid" /> Bills add up to {formatCents(snap.totals.total)}
+                <Icon icon={Check} size={20} className="text-status-paid" /> Bills add up to {money(snap.totals.total)}
               </span>
             )}
             <div className="flex-1" />

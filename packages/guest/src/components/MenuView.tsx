@@ -1,10 +1,9 @@
 "use client";
 
-import { BrandButton, MenuItemRow, ScrollTabs, type MenuItemState } from "@sail/ui";
+import { BrandButton, MenuItemRow, ScrollTabs, type MenuItemState, useLocale } from "@sail/ui";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BasketItem } from "@/lib/basket";
-import { formatClock } from "@/lib/format";
 import type { CompiledMenu, CompiledProduct, CompiledSection, GuestSession, OrderView } from "@/lib/types";
 import { BasketBar } from "./BasketBar";
 import { StaffBanner } from "./StaffBanner";
@@ -37,6 +36,7 @@ function guestOrderable(p: CompiledProduct | undefined): p is CompiledProduct {
 
 /** The landing screen (design 4.11): brand, table, sticky section tabs and the typography-led menu. */
 export function MenuView({ session, menu, canOrder, basketItems, orderView, onOpenItem, onReview, onCallStaff, onStatus }: MenuViewProps) {
+  const { clock } = useLocale();
   const groups = useMemo<Group[]>(() => {
     const sections = [...menu.menu.sections].sort((a, b) => a.sort - b.sort);
     const hasItems = (s: CompiledSection) => s.items.some((i) => guestOrderable(menu.products[i.product_id]));
@@ -130,7 +130,7 @@ export function MenuView({ session, menu, canOrder, basketItems, orderView, onOp
           {!canOrder ? <StaffBanner className="mx-4 mb-2" /> : null}
           {latest || tableHasLines ? (
             <button type="button" onClick={onStatus} className="press mx-4 mb-2 flex min-h-12 w-[calc(100%-32px)] items-center justify-between gap-3 rounded-tile bg-surface-2 px-4 text-left text-body text-ink">
-              <span className="min-w-0 truncate">{latest ? `Your order · Sent ${formatClock(latest.submitted_at)}` : "See what the table has ordered"}</span>
+              <span className="min-w-0 truncate">{latest ? `Your order · Sent ${clock(latest.submitted_at)}` : "See what the table has ordered"}</span>
               <ChevronRight size={20} className="shrink-0 text-ink-2" aria-hidden />
             </button>
           ) : null}

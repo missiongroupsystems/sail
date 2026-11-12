@@ -1,6 +1,6 @@
 "use client";
 
-import { AmountPad, Badge, Button, formatCents, Money, QuantityStepper, ReasonPicker, Sheet, TextField, type PickedReason } from "@sail/ui";
+import { AmountPad, Badge, Button, Money, QuantityStepper, ReasonPicker, Sheet, TextField, type PickedReason, useLocale } from "@sail/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import { idempotencyKey, toApiError } from "@/lib/api";
@@ -35,6 +35,7 @@ export type RefundSheetProps = {
  * The summary on the right follows every step.
  */
 export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }: RefundSheetProps) {
+  const { money } = useLocale();
   const { staff, offline } = usePos();
   const reasonsQuery = useVoidReasons();
   const refundable = useMemo(() => order.checks.filter((c) => c.paid_total > 0 && c.status !== "refunded"), [order.checks]);
@@ -183,8 +184,8 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
         ) : null}
         {step === "review" ? (
           <Button size="lg" variant="primary" isDisabled={offline || busy || quoting || !quote || total <= 0} isPending={busy} onPress={submit} className="gap-2">
-            {offline ? "Offline" : canRefund ? `Refund ${formatCents(total)} ▸` : "Manager approval ▸"}
-            {!canRefund && !offline ? <Badge tone="bill">Refund {formatCents(total)}</Badge> : null}
+            {offline ? "Offline" : canRefund ? `Refund ${money(total)} ▸` : "Manager approval ▸"}
+            {!canRefund && !offline ? <Badge tone="bill">Refund {money(total)}</Badge> : null}
           </Button>
         ) : (
           <Button size="lg" variant="primary" isDisabled={!next() || busy} onPress={() => setStep(next()!)}>
@@ -195,18 +196,18 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
     );
 
   return (
-    <Sheet isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title={step === "done" && result ? `Refunded ${formatCents(result.refund.totals.total)}` : "Refund"} description={check ? `${check.label} · paid ${formatCents(check.paid_total)}` : "Pick the bill to refund from"} width="lg" isDismissable={!busy} footer={footer}>
+    <Sheet isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title={step === "done" && result ? `Refunded ${money(result.refund.totals.total)}` : "Refund"} description={check ? `${check.label} · paid ${money(check.paid_total)}` : "Pick the bill to refund from"} width="lg" isDismissable={!busy} footer={footer}>
       {step === "done" && result ? (
         <div className="flex flex-col gap-4">
-          <p className="text-display text-ink tabular">Refunded {formatCents(result.refund.totals.total)}</p>
+          <p className="text-display text-ink tabular">Refunded {money(result.refund.totals.total)}</p>
           <dl className="flex flex-col gap-1 text-line text-ink">
             {result.refund.refund_receipt_no ? <Line label="Refund receipt" value={result.refund.refund_receipt_no} /> : null}
             {result.refund.credit_note_no ? <Line label="Credit note" value={result.refund.credit_note_no} /> : null}
             <Line label="Reason" value={result.refund.reason} />
             {result.refund.quote.tenders.map((t) => (
-              <Line key={t.payment_id} label={`Back to ${t.tender}`} value={formatCents(t.amount)} />
+              <Line key={t.payment_id} label={`Back to ${t.tender}`} value={money(t.amount)} />
             ))}
-            {result.refund.quote.cash_out > 0 ? <Line label="Cash handed back" value={formatCents(result.refund.quote.cash_out)} /> : null}
+            {result.refund.quote.cash_out > 0 ? <Line label="Cash handed back" value={money(result.refund.quote.cash_out)} /> : null}
           </dl>
           {result.refund.quote.tenders.some((t) => !t.is_cash) ? <p className="text-body text-ink-2">Card refunds are made on the terminal. The refund receipt is printing.</p> : null}
         </div>
@@ -229,8 +230,8 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                     <span>
                       <span className="block text-line">{c.label}{c.seat_no != null ? ` · Seat ${c.seat_no}` : ""}</span>
                       <span className="block text-caption opacity-80">
-                        {c.payments.map((p) => `${p.tender} ${formatCents(p.amount)}`).join(" · ")}
-                        {c.refunded_total > 0 ? ` · refunded ${formatCents(c.refunded_total)}` : ""}
+                        {c.payments.map((p) => `${p.tender} ${money(p.amount)}`).join(" · ")}
+                        {c.refunded_total > 0 ? ` · refunded ${money(c.refunded_total)}` : ""}
                       </span>
                     </span>
                     <Money cents={c.paid_total} size="line" />
@@ -262,7 +263,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                               {a.share !== "1" ? <span className="ml-2 rounded-chip bg-surface px-1.5 text-caption text-ink-2 tabular">{a.share}</span> : null}
                             </span>
                             <span className="block text-caption text-ink-2 tabular">
-                              {l.quantity} on the order · {formatCents(a.total)} on this bill
+                              {l.quantity} on the order · {money(a.total)} on this bill
                             </span>
                           </span>
                           <QuantityStepper value={n} onChange={(v) => setQty({ ...qty, [a.line_id]: v })} min={0} max={l.quantity} label={`${l.name} quantity to refund`} />
@@ -273,7 +274,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                 ) : null}
                 {what === "amount" ? (
                   <div className="flex justify-center">
-                    <AmountPad digits={digits} onChange={setDigits} mode="cents" hint={`Paid ${formatCents(check.paid_total)}${check.refunded_total > 0 ? ` · ${formatCents(check.refunded_total)} already refunded` : ""} · goodwill, spread across the bill`} />
+                    <AmountPad digits={digits} onChange={setDigits} mode="cents" hint={`Paid ${money(check.paid_total)}${check.refunded_total > 0 ? ` · ${money(check.refunded_total)} already refunded` : ""} · goodwill, spread across the bill`} />
                   </div>
                 ) : null}
                 {what === "full" ? <p className="text-body text-ink-2">Everything paid on {check.label} goes back, including service charge, GST and cash rounding, as the register works them out.</p> : null}
@@ -311,9 +312,9 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                           <span className="min-w-0">
                             <span className="block text-line text-ink">{p.tender}</span>
                             <span className="block text-caption text-ink-2 tabular">
-                              paid {formatCents(p.amount)}
-                              {p.refunded > 0 ? ` · already refunded ${formatCents(p.refunded)}` : ""}
-                              {!p.is_cash ? " · Refund on the terminal, then tap Refunded" : suggested?.rounding_cents ? ` · cash rounding ${formatCents(suggested.rounding_cents)}` : ""}
+                              paid {money(p.amount)}
+                              {p.refunded > 0 ? ` · already refunded ${money(p.refunded)}` : ""}
+                              {!p.is_cash ? " · Refund on the terminal, then tap Refunded" : suggested?.rounding_cents ? ` · cash rounding ${money(suggested.rounding_cents)}` : ""}
                             </span>
                           </span>
                           <AriaButton
@@ -321,10 +322,10 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                               setEditingTender(editing ? null : p.payment_id);
                               setTenderDigits(String(amount));
                             }}
-                            aria-label={`Refund ${formatCents(amount)} to ${p.tender}, tap to change`}
+                            aria-label={`Refund ${money(amount)} to ${p.tender}, tap to change`}
                             className="press pos-touch min-h-12 rounded-tile bg-surface px-4 text-title tabular text-ink outline-none hairline data-[pressed]:scale-[0.98]"
                           >
-                            {formatCents(amount)}
+                            {money(amount)}
                           </AriaButton>
                         </div>
                         {editing ? (
@@ -375,10 +376,10 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                   ) : null}
                 </ul>
                 <dl className="pt-2 hairline-t">
-                  {quote.totals.discount !== 0 ? <Line label="Discounts reversed" value={formatCents(-quote.totals.discount)} /> : null}
-                  {quote.totals.fee !== 0 ? <Line label="Service and fees" value={formatCents(-quote.totals.fee)} /> : null}
-                  <Line label="GST" value={formatCents(-quote.totals.gst)} />
-                  {quote.tenders.some((t) => t.rounding_cents !== 0) ? <Line label="Cash rounding" value={quote.tenders.map((t) => formatCents(t.rounding_cents)).join(" ")} /> : null}
+                  {quote.totals.discount !== 0 ? <Line label="Discounts reversed" value={money(-quote.totals.discount)} /> : null}
+                  {quote.totals.fee !== 0 ? <Line label="Service and fees" value={money(-quote.totals.fee)} /> : null}
+                  <Line label="GST" value={money(-quote.totals.gst)} />
+                  {quote.tenders.some((t) => t.rounding_cents !== 0) ? <Line label="Cash rounding" value={quote.tenders.map((t) => money(t.rounding_cents)).join(" ")} /> : null}
                   <div className="mt-1 flex items-center justify-between gap-3 pt-2 hairline-t">
                     <dt className="text-title text-ink">Refund</dt>
                     <dd>
@@ -389,7 +390,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                 <ul className="text-body text-ink-2">
                   {quote.tenders.map((t) => (
                     <li key={t.payment_id}>
-                      {formatCents(t.amount)} back to {t.tender}
+                      {money(t.amount)} back to {t.tender}
                       {!t.is_cash ? " · refund on the terminal, then tap Refunded" : ""}
                     </li>
                   ))}
@@ -404,9 +405,9 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
             <h3 className="text-caption text-ink-2 uppercase tracking-[0.04em]">Summary</h3>
             <dl className="mt-2 flex flex-col gap-2 text-body">
               <Line label="Bill" value={check ? check.label : "—"} />
-              <Line label="What" value={what === "full" ? "Whole bill" : what === "lines" ? `${Object.values(qty).filter((n) => n > 0).length} items` : digits ? formatCents(Number(digits)) : "An amount"} />
+              <Line label="What" value={what === "full" ? "Whole bill" : what === "lines" ? `${Object.values(qty).filter((n) => n > 0).length} items` : digits ? money(Number(digits)) : "An amount"} />
               <Line label="Why" value={reasonText || "—"} />
-              <Line label="Back to" value={quote ? quote.tenders.map((t) => `${t.tender} ${formatCents(t.amount)}`).join(", ") || "—" : "—"} />
+              <Line label="Back to" value={quote ? quote.tenders.map((t) => `${t.tender} ${money(t.amount)}`).join(", ") || "—" : "—"} />
             </dl>
             <div className="mt-3 flex items-center justify-between pt-2 hairline-t">
               <span className="text-line text-ink">Refund</span>

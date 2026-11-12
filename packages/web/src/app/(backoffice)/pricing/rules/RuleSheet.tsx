@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Badge, Button, Icon, InlineError, MoneyField, PercentField, Sheet, TagsField, TextField } from "@sail/ui";
+import { Badge, Button, Icon, InlineError, MoneyField, PercentField, Sheet, TagsField, TextField, useLocale } from "@sail/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -14,7 +14,6 @@ import { FormSection, RhfCheckboxGroup, RhfSelect, RhfSwitch, RhfTextField } fro
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Brand, Category, CustomerGroup, Outlet, PricingRuleVersion } from "@/lib/api/types";
-import { formatDayClock } from "@/lib/format";
 import { keys } from "@/lib/query";
 import type { RuleRow } from "./RulesView";
 import { emptyForm, formFrom, fromLocalInput, NONE, RuleFormSchema, toBody, type RuleForm } from "./rule-form";
@@ -29,6 +28,7 @@ const STATUS_LABEL: Record<PricingRuleVersion["status"], string> = { active: "Ac
  * register returns validation warnings for the resulting active set.
  */
 export function RuleSheet({ state, onClose, outlets, brands, categories, groups, allRules }: { state: RuleSheetState; onClose: () => void; outlets: Outlet[]; brands: Brand[]; categories: Category[]; groups: CustomerGroup[]; allRules: RuleRow[] }) {
+  const { dayClock } = useLocale();
   const qc = useQueryClient();
   const row = state?.mode === "edit" ? state.row : null;
   const form = useForm<RuleForm>({ resolver: zodResolver(RuleFormSchema), defaultValues: state?.mode === "edit" ? formFrom(state.row.current) : emptyForm(state?.mode === "create" ? state.kind : "fee") });
@@ -169,7 +169,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
       {saved ? (
         <div className="flex flex-col gap-4">
           <p className="text-ink">
-            Saved as version {saved.version.version}, {saved.version.status === "scheduled" ? `scheduled for ${formatDayClock(saved.version.effective_from)}` : "effective now"}.
+            Saved as version {saved.version.version}, {saved.version.status === "scheduled" ? `scheduled for ${dayClock(saved.version.effective_from)}` : "effective now"}.
           </p>
           <p className="text-ink-2">The register checked the resulting rule set:</p>
           <Warnings warnings={saved.warnings} tone={saved.warnings.some((w) => w.startsWith("blocking")) ? "blocking" : "advisory"} />
@@ -183,7 +183,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
                   <li key={v.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 hairline-b last:border-b-0">
                     <span className="tabular text-ink">v{v.version}</span>
                     <Badge tone={v.status === "active" ? "paid" : v.status === "scheduled" ? "sent" : v.status === "archived" ? "alert" : "neutral"}>{STATUS_LABEL[v.status]}</Badge>
-                    <span className="tabular text-caption text-ink-2">from {formatDayClock(v.effective_from)}</span>
+                    <span className="tabular text-caption text-ink-2">from {dayClock(v.effective_from)}</span>
                     {v.note ? <span className="text-caption text-ink-2">· {v.note}</span> : null}
                     {v.created_by ? <span className="text-caption text-ink-2">· by {v.created_by}</span> : null}
                   </li>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, DataTable, EmptyState, InlineError, StatusDot, Switch, type DataTableColumn } from "@sail/ui";
+import { Badge, Button, DataTable, EmptyState, InlineError, StatusDot, Switch, type DataTableColumn, useLocale } from "@sail/ui";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
@@ -12,7 +12,6 @@ import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Outlet, Product, Station } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
-import { formatDayClock } from "@/lib/format";
 import { useSession } from "@/lib/session-context";
 import { PrinterSheet, type PrinterSheetState } from "./PrinterSheet";
 
@@ -60,6 +59,7 @@ export function routingWarnings(products: Product[], printers: Printer[]): { war
 }
 
 export function PrintersView({ outlets, scope, initialOutletId, initialPrinters, initialRelays, initialStations }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; initialPrinters: Printer[]; initialRelays: Relay[]; initialStations: Station[] }) {
+  const { dayClock } = useLocale();
   const { me } = useSession();
   const admin = can(me, "print_jobs.test");
   const { outletId, setOutletId } = useOutletChoice(outlets, scope, initialOutletId);
@@ -139,8 +139,8 @@ export function PrintersView({ outlets, scope, initialOutletId, initialPrinters,
         return (
           <span className="inline-flex flex-col leading-tight">
             <StatusDot status={s.ok ? "paid" : "alert"} label={s.ok ? "Reachable" : s.error || "Not reachable"} />
-            <span className="pl-4 text-caption text-ink-2" title={formatDayClock(s.checked_at)}>
-              {s.relay} · {formatDayClock(s.checked_at)}
+            <span className="pl-4 text-caption text-ink-2" title={dayClock(s.checked_at)}>
+              {s.relay} · {dayClock(s.checked_at)}
             </span>
           </span>
         );

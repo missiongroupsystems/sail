@@ -1,6 +1,6 @@
 "use client";
 
-import { AmountPad, Button, FolderTile, PanelSheet, QuantityStepper, SearchField, SectionRail, Skeleton, TextField, Tile, formatCents } from "@sail/ui";
+import { AmountPad, Button, FolderTile, PanelSheet, QuantityStepper, SearchField, SectionRail, Skeleton, TextField, Tile, useLocale } from "@sail/ui";
 import { useMemo, useState } from "react";
 import type { CompiledProduct, FolderTile as FolderTileData, OrderSnapshot, ProductTile } from "../api/types";
 import type { useOrderActions } from "../hooks/useOrderActions";
@@ -165,6 +165,7 @@ function ModifierSheet({ product, onClose, onAdd }: { product: CompiledProduct; 
 
 /** Open-price items: the amount pad, then Add (Manager approval when the role is below Manager, design 4.7). */
 function OpenPriceSheet({ product, onClose, onAdd }: { product: CompiledProduct; onClose: () => void; onAdd: (cents: number) => Promise<void> }) {
+  const { money } = useLocale();
   const { staff } = usePos();
   const [digits, setDigits] = useState("");
   const cents = Number(digits || "0");
@@ -177,7 +178,7 @@ function OpenPriceSheet({ product, onClose, onAdd }: { product: CompiledProduct;
       description="Enter the price"
       footer={
         <Button variant="primary" size="lg" isDisabled={cents <= 0} onPress={() => void onAdd(cents)} className="min-w-[260px] min-h-16">
-          Add {product.name} at {formatCents(cents)}
+          Add {product.name} at {money(cents)}
           {needsApproval ? <span className="ml-2 rounded-chip bg-[color-mix(in_srgb,var(--status-bill)_14%,transparent)] px-2 text-caption text-status-bill">Manager approval</span> : null}
         </Button>
       }

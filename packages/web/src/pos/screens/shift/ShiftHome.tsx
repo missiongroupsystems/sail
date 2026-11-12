@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, CashCounter, cashCounterTotal, Checklist, formatCents, Money, ReasonPicker, Skeleton, type CashCounterMode, type ChecklistItem } from "@sail/ui";
+import { Button, CashCounter, cashCounterTotal, Checklist, Money, ReasonPicker, Skeleton, type CashCounterMode, type ChecklistItem, useLocale } from "@sail/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toApiError } from "@/lib/api";
@@ -9,8 +9,8 @@ import type { Shift, ZReport } from "../../api/types";
 import { usePos } from "../../components/PosContext";
 import { posKeys, useLateJobs, useOpenOrders, useOpenServiceRequests, usePendingRounds, useShifts } from "../../hooks/queries";
 import { useApi } from "../../hooks/useApi";
+import { useCashDenominations } from "../../lib/cash";
 import { roleAtLeast } from "../../hooks/useOrderActions";
-import { formatClock } from "../../lib/format";
 import { useNavStore } from "../../state/nav";
 import { useUiStore } from "../../state/ui";
 
@@ -22,6 +22,7 @@ type Phase = { kind: "idle" } | { kind: "checklist" } | { kind: "count" } | { ki
 
 /** Open shift → float; Close shift → checklist, blind count, result with the register's expected, counted and variance (design 4.9). */
 export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
+  const { money, clock } = useLocale();
   const api = useApi();
   const qc = useQueryClient();
   const { station, staff, offline } = usePos();
@@ -33,6 +34,7 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
   const mine = useMemo(() => (open.data ?? []).find((s) => s.station_id === station.id) ?? (open.data ?? []).find((s) => s.station_id === null) ?? null, [open.data, station.id]);
   const lastClosed = useMemo(() => [...(closed.data ?? [])].filter((s) => s.station_id === station.id || s.station_id === null).sort((a, b) => (b.closed_at ?? "").localeCompare(a.closed_at ?? ""))[0] ?? null, [closed.data, station.id]);
   const canOpen = roleAtLeast(staff.role, "cashier");
+  const denominations = useCashDenominations();
 
   const [mode, setMode] = useState<CashCounterMode>("total");
   const [digits, setDigits] = useState("");
@@ -52,7 +54,7 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
     } else if (lastClosed) setDigits(String(lastClosed.float_cents));
   }, [closed.data, lastClosed, mine, seeded]);
 
-  const total = cashCounterTotal(mode, digits, counts);
+  const total = cashCounterTotal(mode, digits, counts, denominations);
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ["pos", "shifts", station.outlet_id] });
     void qc.invalidateQueries({ queryKey: ["pos", "z-report", station.outlet_id] });
@@ -62,7 +64,7 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
     setBusy(true);
     try {
       await openShift(api, { float_cents: total, float_counts: mode === "counts" ? counts : null });
-      notify({ text: `Shift open with ${formatCents(total)}`, tone: "success" }, 4000);
+      notify({ text: `Shift open with ${money(total)}`, tone: "success" }, 4000);
       refresh();
       setDigits("");
       setCounts({});
@@ -148,8 +150,8 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
         <div>
           <h1 className="text-title text-ink">Shift closed</h1>
           <p className="text-body text-ink-2">
-            {phase.shift.opened_at ? `Opened ${formatClock(phase.shift.opened_at)}` : ""}
-            {phase.shift.closed_at ? ` · closed ${formatClock(phase.shift.closed_at)}` : ""} · {phase.shift.closed_by ?? staff.name}
+            {phase.shift.opened_at ? `Opened ${clock(phase.shift.opened_at)}` : ""}
+            {phase.shift.closed_at ? ` · closed ${clock(phase.shift.closed_at)}` : ""} · {phase.shift.closed_by ?? staff.name}
           </p>
         </div>
         <dl className="rounded-tile bg-surface px-5 py-3 hairline">
@@ -180,9 +182,9 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
     return (
       <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-8 py-8">
         <div>
-          <h1 className="text-title text-ink">Variance {formatCents(c.variance ?? 0)}</h1>
+          <h1 className="text-title text-ink">Variance {money(c.variance ?? 0)}</h1>
           <p className="text-body text-ink-2">
-            The register expected {formatCents(c.expected)} and you counted {formatCents(c.counted ?? total)}. Above {formatCents(VARIANCE_THRESHOLD_CENTS)} a reason is recorded with the close.
+            The register expected {money(c.expected)} and you counted {money(c.counted ?? total)}. Above {money(VARIANCE_THRESHOLD_CENTS)} a reason is recorded with the close.
           </p>
         </div>
         <ReasonPicker reasons={VARIANCE_REASONS.map((r) => ({ id: r, name: r }))} isDisabled={busy} onPick={(r) => void close(r.text)} />
@@ -201,13 +203,13 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
           <h1 className="text-title text-ink">Count the cash</h1>
           <p className="text-body text-ink-2">Everything in the drawer, float included. The register shows what it expected after you count.</p>
         </div>
-        <CashCounter mode={mode} onModeChange={setMode} totalDigits={digits} onTotalDigitsChange={setDigits} counts={counts} onCountsChange={setCounts} isDisabled={busy} />
+        <CashCounter mode={mode} onModeChange={setMode} totalDigits={digits} onTotalDigitsChange={setDigits} counts={counts} onCountsChange={setCounts} denominations={denominations} isDisabled={busy} />
         <div className="flex items-center justify-between gap-3">
           <Button size="lg" variant="quiet" isDisabled={busy} onPress={() => setPhase({ kind: "checklist" })}>
             Back to the checklist
           </Button>
           <Button size="lg" variant="primary" isDisabled={offline || busy || (mode === "total" && digits === "")} isPending={busy} onPress={() => void close(null)} className="min-w-[280px]">
-            {offline ? "Offline" : `Close shift · counted ${formatCents(total)} ▸`}
+            {offline ? "Offline" : `Close shift · counted ${money(total)} ▸`}
           </Button>
         </div>
       </div>
@@ -243,13 +245,13 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
           <h1 className="text-title text-ink">Open shift</h1>
           <p className="text-body text-ink-2">
             Count the float into the drawer.
-            {lastClosed ? ` Last close: ${formatCents(lastClosed.float_cents)} float${lastClosed.closed_at ? `, ${formatClock(lastClosed.closed_at)}` : ""}.` : ""}
+            {lastClosed ? ` Last close: ${money(lastClosed.float_cents)} float${lastClosed.closed_at ? `, ${clock(lastClosed.closed_at)}` : ""}.` : ""}
           </p>
         </div>
-        <CashCounter mode={mode} onModeChange={setMode} totalDigits={digits} onTotalDigitsChange={setDigits} counts={counts} onCountsChange={setCounts} isDisabled={busy || !canOpen} />
+        <CashCounter mode={mode} onModeChange={setMode} totalDigits={digits} onTotalDigitsChange={setDigits} counts={counts} onCountsChange={setCounts} denominations={denominations} isDisabled={busy || !canOpen} />
         {!canOpen ? <p className="text-body text-ink-2">Opening a shift needs a Cashier or above. Switch user to open it.</p> : null}
         <Button size="lg" variant="primary" isDisabled={offline || busy || !canOpen} isPending={busy} onPress={doOpen} className="min-w-[280px] self-end">
-          {offline ? "Offline" : `Open shift with ${formatCents(total)}`}
+          {offline ? "Offline" : `Open shift with ${money(total)}`}
         </Button>
       </div>
     );
@@ -260,7 +262,7 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
       <div>
         <h1 className="text-title text-ink">Shift open</h1>
         <p className="text-body text-ink-2">
-          Since {formatClock(mine.opened_at)} · opened by {mine.opened_by ?? "—"}
+          Since {clock(mine.opened_at)} · opened by {mine.opened_by ?? "—"}
           {mine.name ? ` · ${mine.name}` : ""}
           {mine.station_id === null ? " · whole outlet" : ""}
         </p>

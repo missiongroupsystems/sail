@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, QuantityStepper, SearchField, Sheet, Skeleton, TextField } from "@sail/ui";
+import { Badge, Button, QuantityStepper, SearchField, Sheet, Skeleton, TextField, useLocale } from "@sail/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
@@ -12,11 +12,12 @@ import { posKeys, useStock } from "../../hooks/queries";
 import { useApi } from "../../hooks/useApi";
 import { roleAtLeast } from "../../hooks/useOrderActions";
 import { searchMenu } from "../../lib/menu";
-import { formatClock, todayAt } from "../../lib/format";
+import { todayAt } from "../../lib/format";
 import { useUiStore } from "../../state/ui";
 
 /** Sold-out list (design 4.12): search or browse, tap the item, then Today / Until… / Indefinitely; Restore; a daily cap for Managers. */
 export function SoldOutView() {
+  const { clock } = useLocale();
   const api = useApi();
   const qc = useQueryClient();
   const { station, menu, staff, offline } = usePos();
@@ -62,7 +63,7 @@ export function SoldOutView() {
       <AriaButton onPress={() => setPicked(p)} className="press pos-touch flex min-h-14 w-full items-center justify-between gap-3 rounded-tile px-4 text-left outline-none data-[pressed]:bg-surface-2 data-[hovered]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:outline-status-seated">
         <span className="min-w-0">
           <span className="block truncate text-line text-ink">{p.name}</span>
-          <span className="block truncate text-caption text-ink-2">{p.sku ? `${p.sku} · ` : ""}{e?.sold_out ? (e.sold_out_until ? `Sold out until ${formatClock(e.sold_out_until)}` : "Sold out") : p.unavailable_reason ?? "Available"}{e?.daily_cap != null ? ` · cap ${e.daily_cap}${e.cap_remaining != null ? ` (${e.cap_remaining} left)` : ""}` : ""}</span>
+          <span className="block truncate text-caption text-ink-2">{p.sku ? `${p.sku} · ` : ""}{e?.sold_out ? (e.sold_out_until ? `Sold out until ${clock(e.sold_out_until)}` : "Sold out") : p.unavailable_reason ?? "Available"}{e?.daily_cap != null ? ` · cap ${e.daily_cap}${e.cap_remaining != null ? ` (${e.cap_remaining} left)` : ""}` : ""}</span>
         </span>
         {e?.sold_out ? <Badge tone="alert">Sold out</Badge> : e?.daily_cap != null ? <Badge tone="sent">Capped</Badge> : null}
       </AriaButton>
@@ -87,7 +88,7 @@ export function SoldOutView() {
         {stock.isLoading && !stock.data ? <Skeleton lines={3} /> : affected.length === 0 ? <p className="text-body text-ink-2">Nothing is sold out at this outlet.</p> : <ul className="flex flex-col gap-1">{affected.map(({ e, p }) => row(p!, e))}</ul>}
       </section>
 
-      <Sheet isOpen={Boolean(picked)} onOpenChange={(o) => (!o ? setPicked(null) : undefined)} title={picked?.name ?? ""} description={entry?.sold_out ? (entry.sold_out_until ? `Sold out until ${formatClock(entry.sold_out_until)}` : "Sold out") : "Available now"} isDismissable={!busy}>
+      <Sheet isOpen={Boolean(picked)} onOpenChange={(o) => (!o ? setPicked(null) : undefined)} title={picked?.name ?? ""} description={entry?.sold_out ? (entry.sold_out_until ? `Sold out until ${clock(entry.sold_out_until)}` : "Sold out") : "Available now"} isDismissable={!busy}>
         {picked ? (
           <div className="flex flex-col gap-6">
             {!canMark ? <p className="text-body text-ink-2">Marking items sold out needs a Cashier or above.</p> : null}

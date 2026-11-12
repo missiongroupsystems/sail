@@ -1,8 +1,10 @@
 "use client";
 
+import { useLocale } from "@sail/ui";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   findPosChannelLink,
+  getMerchant,
   getFloor,
   getLayout,
   getMenu,
@@ -30,6 +32,7 @@ import { useApi } from "./useApi";
 /** Query keys, by resource. The event store invalidates by these. */
 export const posKeys = {
   all: ["pos"] as const,
+  merchant: ["pos", "merchant"] as const,
   outlets: ["pos", "outlets"] as const,
   stations: (outletId: string) => ["pos", "stations", outletId] as const,
   channelLink: (outletId: string, brandId: string | null) => ["pos", "channel-link", outletId, brandId] as const,
@@ -54,6 +57,12 @@ export const posKeys = {
   requests: (outletId: string) => ["pos", "service-requests", outletId] as const,
   stock: (outletId: string) => ["pos", "stock", outletId] as const,
 };
+
+/** The merchant's settings (signed in: a station without a PIN session may not read them). */
+export function useMerchant() {
+  const api = useApi();
+  return useQuery({ queryKey: posKeys.merchant, queryFn: () => getMerchant(api), staleTime: 10 * 60_000 });
+}
 
 export function useOutlet(outletId: string | null) {
   const api = useApi();
@@ -139,14 +148,10 @@ export function useTenderTypes(outletId: string | null) {
   return useQuery({ queryKey: posKeys.tenderTypes(outletId ?? ""), queryFn: () => listTenderTypes(api, outletId), enabled: Boolean(outletId), staleTime: 10 * 60_000 });
 }
 
-/** Today's business date for the Orders screen's closed list, in the outlet's zone. The register decides the real cutoff; this only names the day. */
-export function todayBusinessDate(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Singapore", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-}
-
 export function useTodaysOrders(outletId: string | null, enabled = true) {
   const api = useApi();
-  const date = todayBusinessDate();
+  // Today in the merchant's zone, for the Orders screen's closed list. The register decides the real cutoff; this only names the day.
+  const date = useLocale().isoDate();
   return useQuery({ queryKey: posKeys.todaysOrders(outletId ?? "", date), queryFn: () => listTodaysOrders(api, outletId!, date), enabled: Boolean(outletId) && enabled, staleTime: 10_000 });
 }
 

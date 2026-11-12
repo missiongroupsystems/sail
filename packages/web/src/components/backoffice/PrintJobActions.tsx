@@ -1,11 +1,10 @@
 "use client";
 
-import { Badge, Button, Dialog, InlineError, Select, TicketPreview, type BadgeTone } from "@sail/ui";
+import { Badge, Button, Dialog, InlineError, Select, TicketPreview, type BadgeTone, useLocale } from "@sail/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
-import { formatDayClock } from "@/lib/format";
 import { label } from "./labels";
 import { PRINT_JOB_KIND_LABEL, PRINT_JOB_STATUS_LABEL, plural, type CreatedJob, type PrintJob, type Printer } from "./register";
 
@@ -110,12 +109,13 @@ export function RerouteDialog({ jobs, printers, isOpen, onClose, onReroute, isPe
 
 /** The job's plain text as the register rendered it, on paper the printer's width. */
 export function JobPreviewDialog({ job, printers, onClose }: { job: PrintJob | null; printers: Printer[]; onClose: () => void }) {
+  const { dayClock } = useLocale();
   const printer = job ? printers.find((p) => p.id === job.printer_id) : null;
   return (
     <Dialog isOpen={job !== null} onOpenChange={(open) => !open && onClose()} title={job ? label(PRINT_JOB_KIND_LABEL, job.kind) : "Ticket"} className="max-w-[560px]">
       {job ? (
         <div className="flex flex-col gap-3 pt-1 pb-3">
-          <TicketPreview text={job.text} paperWidth={printer?.paper_width ?? "80mm"} caption={`${printer?.name ?? "Printer"} · ${formatDayClock(job.created_at)} · copy ${job.copy_no} of ${job.copies} · job ${job.id.slice(0, 8)}`} />
+          <TicketPreview text={job.text} paperWidth={printer?.paper_width ?? "80mm"} caption={`${printer?.name ?? "Printer"} · ${dayClock(job.created_at)} · copy ${job.copy_no} of ${job.copies} · job ${job.id.slice(0, 8)}`} />
         </div>
       ) : null}
     </Dialog>

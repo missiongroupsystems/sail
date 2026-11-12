@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, NowRail, QuantityStepper, Sheet, Skeleton, StatusLegend, TableShape, type NowItem } from "@sail/ui";
+import { Button, NowRail, QuantityStepper, Sheet, Skeleton, StatusLegend, TableShape, type NowItem, useLocale } from "@sail/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { idempotencyKey, toApiError } from "@/lib/api";
 import { openOrder } from "../api/register";
@@ -12,7 +12,7 @@ import { useApplySnapshot, useFloor, useOpenServiceRequests, usePendingRounds } 
 import { useApi } from "../hooks/useApi";
 import { useNowActions } from "../hooks/useNowActions";
 import { useNow } from "../lib/device";
-import { formatClock, formatElapsed } from "../lib/format";
+import { formatElapsed } from "../lib/format";
 import { useNavStore } from "../state/nav";
 import { useSoundStore, useUiStore } from "../state/ui";
 
@@ -47,6 +47,7 @@ function tone(kind: "new" | "alert") {
  * with QR orders, table requests and ready pickups, each with its action inline.
  */
 export function FloorScreen() {
+  const { clock } = useLocale();
   const api = useApi();
   const { outlet, station, offline } = usePos();
   const floor = useFloor(station.outlet_id);
@@ -134,7 +135,7 @@ export function FloorScreen() {
         id: `round:${r.id}`,
         at: new Date(r.submitted_at).getTime(),
         title: `Table ${r.table_name ?? "?"} · QR order`,
-        detail: `${r.lines.length} ${r.lines.length === 1 ? "item" : "items"} · ${formatClock(r.submitted_at)}${r.guest_name ? ` · ${r.guest_name}` : ""}`,
+        detail: `${r.lines.length} ${r.lines.length === 1 ? "item" : "items"} · ${clock(r.submitted_at)}${r.guest_name ? ` · ${r.guest_name}` : ""}`,
         lines: r.lines.slice(0, 4).map((l) => `${l.quantity} ${l.name}${l.modifiers.length ? ` · ${l.modifiers.join(", ")}` : ""}`).concat(r.lines.length > 4 ? [`+${r.lines.length - 4} more`] : []),
         actions: [
           { id: "accept", label: "Accept", variant: "primary", onPress: () => void nowActions.acceptRound(r.id), isDisabled: offline || busy !== null, isPending: busy === r.id },
@@ -152,7 +153,7 @@ export function FloorScreen() {
         id: `req:${q.id}`,
         at: new Date(q.created_at).getTime(),
         title: `Table ${q.table_name ?? "?"} · ${requestLabel(q.type)}`,
-        detail: `${formatClock(q.created_at)}${q.guest_name ? ` · ${q.guest_name}` : ""} · table request`,
+        detail: `${clock(q.created_at)}${q.guest_name ? ` · ${q.guest_name}` : ""} · table request`,
         actions: [
           { id: "done", label: "Done", variant: "primary", onPress: () => void nowActions.acknowledge(q.id), isDisabled: offline || busy !== null, isPending: busy === q.id },
           ...(q.order_id ? [{ id: "view", label: "View", onPress: () => openOrderScreen(q.order_id!, "floor") }] : []),
@@ -168,7 +169,7 @@ export function FloorScreen() {
           id: `ready:${o.id}`,
           at: o.ready_by ? new Date(o.ready_by).getTime() : 1,
           title: `${o.order_no} · Ready${o.customer_ref?.name ? ` · ${o.customer_ref.name}` : ""}`,
-          detail: o.ready_by ? `Ready by ${formatClock(o.ready_by)}` : "Pickup ready",
+          detail: o.ready_by ? `Ready by ${clock(o.ready_by)}` : "Pickup ready",
           actions: [
             { id: "collected", label: "Collected", variant: "primary", onPress: () => void collect(o), isDisabled: offline || busy !== null, isPending: busy === o.id },
             { id: "view", label: "View", onPress: () => openOrderScreen(o.id, "orders") },

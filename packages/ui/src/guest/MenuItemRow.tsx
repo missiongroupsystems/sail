@@ -4,7 +4,8 @@ import { Plus } from "lucide-react";
 import { Button as AriaButton } from "react-aria-components";
 import { cx } from "../lib/cx";
 import { Icon } from "../components/Icon";
-import { Money, formatCents } from "../components/Money";
+import { Money } from "../components/Money";
+import { useLocale } from "../lib/locale";
 
 export type MenuItemState =
   /** Tapping opens the item sheet. */
@@ -39,6 +40,7 @@ const shell = "flex w-full items-start gap-4 py-4 text-left hairline-b";
  * with the word "Sold out" where the price was.
  */
 export function MenuItemRow({ name, description, price, state, reason, note, inBasket, onPress, className }: MenuItemRowProps) {
+  const { money } = useLocale();
   const dim = state === "sold_out" || state === "unavailable";
   const body = (
     <>
@@ -65,7 +67,7 @@ export function MenuItemRow({ name, description, price, state, reason, note, inB
     return (
       <AriaButton
         onPress={onPress}
-        aria-label={`${name}, ${formatCents(price)}${inBasket ? `, ${inBasket} in your order` : ""}`}
+        aria-label={`${name}, ${money(price)}${inBasket ? `, ${inBasket} in your order` : ""}`}
         aria-description={description ?? undefined}
         className={cx("group press cursor-default rounded-none outline-none touch-manipulation data-[pressed]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:-outline-offset-2 data-[focus-visible]:outline-status-seated", shell, className)}
       >

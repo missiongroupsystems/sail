@@ -4,7 +4,7 @@ import { ChevronRight } from "lucide-react";
 import { Button as AriaButton } from "react-aria-components";
 import { cx } from "../lib/cx";
 import { Icon } from "../components/Icon";
-import { formatCents } from "../components/Money";
+import { useLocale } from "../lib/locale";
 import { tileBand } from "./tileColours";
 
 export type TileProps = {
@@ -32,6 +32,7 @@ const base =
 
 /** A catalogue tile (design 4.3): 136 × 96, a 6pt colour band, name at 17pt, price in tabular figures. */
 export function Tile({ label, priceCents, colour, onPress, soldOut, unavailableReason, capRemaining, restrictedTo, isDisabled, className }: TileProps) {
+  const { money } = useLocale();
   const unavailable = soldOut || Boolean(unavailableReason);
   const lowStock = !unavailable && capRemaining != null && capRemaining <= 5;
   return (
@@ -39,7 +40,7 @@ export function Tile({ label, priceCents, colour, onPress, soldOut, unavailableR
       onPress={onPress}
       isDisabled={isDisabled}
       className={cx(base, className)}
-      aria-label={[label, priceCents != null ? formatCents(priceCents) : null, soldOut ? "sold out" : unavailableReason, lowStock ? `${capRemaining} left` : null, restrictedTo ? `needs ${restrictedTo} approval` : null]
+      aria-label={[label, priceCents != null ? money(priceCents) : null, soldOut ? "sold out" : unavailableReason, lowStock ? `${capRemaining} left` : null, restrictedTo ? `needs ${restrictedTo} approval` : null]
         .filter(Boolean)
         .join(", ")}
     >
@@ -48,7 +49,7 @@ export function Tile({ label, priceCents, colour, onPress, soldOut, unavailableR
         <span className="line-clamp-2 text-line leading-[22px] text-ink">{label}</span>
         <span className="flex items-end justify-between gap-2">
           {restrictedTo ? <span className="truncate rounded-chip bg-[color-mix(in_srgb,var(--status-bill)_14%,transparent)] px-2 text-caption text-status-bill">{restrictedTo} approval</span> : <span />}
-          {priceCents != null ? <span className="tabular text-caption text-ink-2">{formatCents(priceCents)}</span> : null}
+          {priceCents != null ? <span className="tabular text-caption text-ink-2">{money(priceCents)}</span> : null}
         </span>
       </span>
       {lowStock ? <span className="absolute top-3 right-2 rounded-chip bg-[color-mix(in_srgb,var(--status-sent)_18%,transparent)] px-2 text-caption text-status-sent tabular">{capRemaining} left</span> : null}

@@ -1,15 +1,14 @@
 "use client";
 
-import { Badge, Button, DataTable, EmptyState, InlineError, Money, Select, TextField, type DataTableColumn } from "@sail/ui";
+import { Badge, Button, DataTable, EmptyState, InlineError, Money, Select, TextField, type DataTableColumn, useLocale } from "@sail/ui";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { label, ORDER_STATUSES, ORDER_STATUS_LABEL, ORDER_TYPES, ORDER_TYPE_LABEL, todayBusinessDate } from "@/components/backoffice/labels";
+import { label, ORDER_STATUSES, ORDER_STATUS_LABEL, ORDER_TYPES, ORDER_TYPE_LABEL } from "@/components/backoffice/labels";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
 import { req } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { OrderSnapshot, Outlet } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
-import { formatClock, formatDayClock } from "@/lib/format";
 import { keys } from "@/lib/query";
 import { OrderDrawer } from "./OrderDrawer";
 
@@ -51,6 +50,7 @@ export function whoFor(o: OrderSnapshot, tableName: (id: string | null) => strin
 
 /** Orders: today and all, per outlet, with a read-only detail drawer. Amounts are the register's. */
 export function OrdersView({ outlets, scope, initialOutletId }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null }) {
+  const { clock, dayClock, isoDate } = useLocale();
   const { outletId, setOutletId } = useOutletChoice(outlets, scope, initialOutletId);
   const [range, setRange] = useState<Range>("today");
   const [status, setStatus] = useState<string | null>(null);
@@ -64,10 +64,10 @@ export function OrdersView({ outlets, scope, initialOutletId }: { outlets: Outle
     () => ({
       status: status ?? undefined,
       order_type: orderType ?? undefined,
-      business_date: range === "today" ? todayBusinessDate() : date || undefined,
+      business_date: range === "today" ? isoDate() : date || undefined,
       q: dq || undefined,
     }),
-    [status, orderType, range, date, dq],
+    [status, orderType, range, date, dq, isoDate],
   );
 
   const orders = useQuery({
@@ -88,7 +88,7 @@ export function OrdersView({ outlets, scope, initialOutletId }: { outlets: Outle
 
   const columns: DataTableColumn<OrderSnapshot>[] = [
     { key: "order_no", header: "Order", isRowHeader: true, render: (o) => <span className="font-mono text-ink">{o.order_no}</span> },
-    { key: "opened_at", header: "Opened", sortable: true, render: (o) => <span className="tabular whitespace-nowrap" title={formatDayClock(o.opened_at)}>{range === "today" ? formatClock(o.opened_at) : formatDayClock(o.opened_at)}</span> },
+    { key: "opened_at", header: "Opened", sortable: true, render: (o) => <span className="tabular whitespace-nowrap" title={dayClock(o.opened_at)}>{range === "today" ? clock(o.opened_at) : dayClock(o.opened_at)}</span> },
     { key: "order_type", header: "Type", sortable: true, render: (o) => label(ORDER_TYPE_LABEL, o.order_type) },
     { key: "status", header: "Status", sortable: true, render: (o) => <Badge tone={statusTone(o.status)}>{label(ORDER_STATUS_LABEL, o.status)}</Badge> },
     { key: "who", header: "Table / customer", render: (o) => <span className="text-ink-2">{whoFor(o, tableName)}{o.pax ? ` · ${o.pax} pax` : ""}</span> },

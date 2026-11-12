@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, formatCents, Money, SegmentedControl, Skeleton } from "@sail/ui";
+import { Button, Money, SegmentedControl, Skeleton, useLocale } from "@sail/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toApiError } from "@/lib/api";
@@ -16,6 +16,7 @@ import { Row } from "./ShiftHome";
 
 /** The Z-report (design 4.9): sales, tenders with the card total at 34pt, expected vs counted, voids, refunds and covers, every figure from the register. */
 export function ZReportView() {
+  const { money, clock } = useLocale();
   const api = useApi();
   const qc = useQueryClient();
   const { station, staff, offline } = usePos();
@@ -50,7 +51,7 @@ export function ZReportView() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-title text-ink">Z-report</h1>
-          <p className="text-body text-ink-2">{r ? `${r.scope.business_date} · ${scope === "station" ? station.name : "whole outlet"} · as of ${new Date(r.generated_at).toLocaleTimeString("en-SG", { hour: "numeric", minute: "2-digit" }).toLowerCase()}` : "Today, from the register"}</p>
+          <p className="text-body text-ink-2">{r ? `${r.scope.business_date} · ${scope === "station" ? station.name : "whole outlet"} · as of ${clock(r.generated_at)}` : "Today, from the register"}</p>
         </div>
         <SegmentedControl aria-label="Report scope" options={[{ id: "station", label: "This station" }, { id: "outlet", label: "Whole outlet" }]} selectedId={scope} onSelect={(id) => setScope(id as "station" | "outlet")} />
       </div>
@@ -92,7 +93,7 @@ export function ZReportView() {
             ) : null}
             <dl>
               {r.tenders.map((t) => (
-                <Row key={t.tender_type_id} label={`${t.tender} · ${t.count}${t.tips ? ` · tips ${formatCents(t.tips)}` : ""}`} cents={t.amount} />
+                <Row key={t.tender_type_id} label={`${t.tender} · ${t.count}${t.tips ? ` · tips ${money(t.tips)}` : ""}`} cents={t.amount} />
               ))}
               {r.tenders.length === 0 ? <p className="py-2 text-body text-ink-2">No payments yet.</p> : null}
             </dl>
@@ -134,7 +135,7 @@ export function ZReportView() {
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-        <p className="text-body text-ink-2">{closedAt ? `Business day closed at ${new Date(closedAt).toLocaleTimeString("en-SG", { hour: "numeric", minute: "2-digit" }).toLowerCase()}.` : canCloseDay ? "Close the business day once every shift is closed. The register snapshots this report." : "Closing the business day needs a Manager."}</p>
+        <p className="text-body text-ink-2">{closedAt ? `Business day closed at ${clock(closedAt)}.` : canCloseDay ? "Close the business day once every shift is closed. The register snapshots this report." : "Closing the business day needs a Manager."}</p>
         <Button size="lg" variant="primary" isDisabled={offline || busy || !canCloseDay || Boolean(closedAt)} isPending={busy} onPress={closeDay}>
           {offline ? "Offline" : "Close business day"}
         </Button>

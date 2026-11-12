@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, DataTable, Dialog, EmptyState, InlineError, Sheet, StatusDot, Switch, TextField, type DataTableColumn } from "@sail/ui";
+import { Button, DataTable, Dialog, EmptyState, InlineError, Sheet, StatusDot, Switch, TextField, type DataTableColumn, useLocale } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
@@ -11,10 +11,10 @@ import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Outlet } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
-import { formatDayClock } from "@/lib/format";
 import { useSession } from "@/lib/session-context";
 
 export function RelaysView({ outlets, scope, initialOutletId, initialRelays, initialPrinters }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; initialRelays: Relay[]; initialPrinters: Printer[] }) {
+  const { dayClock } = useLocale();
   const { me } = useSession();
   const qc = useQueryClient();
   const admin = roleIs(me, "admin");
@@ -61,9 +61,9 @@ export function RelaysView({ outlets, scope, initialOutletId, initialRelays, ini
   const columns: DataTableColumn<Relay>[] = [
     { key: "name", header: "Name", sortable: true, isRowHeader: true, render: (r) => <span className="text-ink">{r.name}</span> },
     { key: "online", header: "Status", sortable: true, sortValue: (r) => (r.archived ? 3 : !r.paired ? 2 : r.online ? 0 : 1), render: (r) => <RelayStatus relay={r} /> },
-    { key: "last_seen_at", header: "Last seen", sortable: true, render: (r) => <span className="tabular whitespace-nowrap text-ink-2">{r.last_seen_at ? formatDayClock(r.last_seen_at) : "Never"}</span> },
+    { key: "last_seen_at", header: "Last seen", sortable: true, render: (r) => <span className="tabular whitespace-nowrap text-ink-2">{r.last_seen_at ? dayClock(r.last_seen_at) : "Never"}</span> },
     { key: "version", header: "Version", sortable: true, render: (r) => <span className="font-mono text-caption text-ink-2">{r.version ?? "—"}</span> },
-    { key: "paired_at", header: "Paired", sortable: true, render: (r) => <span className="tabular whitespace-nowrap text-ink-2">{r.paired_at ? formatDayClock(r.paired_at) : "—"}</span> },
+    { key: "paired_at", header: "Paired", sortable: true, render: (r) => <span className="tabular whitespace-nowrap text-ink-2">{r.paired_at ? dayClock(r.paired_at) : "—"}</span> },
     {
       key: "printers",
       header: "Printers reachable",
@@ -134,6 +134,7 @@ export function RelaysView({ outlets, scope, initialOutletId, initialRelays, ini
 }
 
 function RelaySheet({ relay, printers, canEdit, canPair, onClose }: { relay: Relay | null; printers: Printer[]; canEdit: boolean; canPair: boolean; onClose: () => void }) {
+  const { dayClock } = useLocale();
   const qc = useQueryClient();
   const [name, setName] = useState(relay?.name ?? "");
   useEffect(() => setName(relay?.name ?? ""), [relay?.id, relay?.name]);
@@ -190,7 +191,7 @@ function RelaySheet({ relay, printers, canEdit, canPair, onClose }: { relay: Rel
                     <span className="text-ink">{printerName(id)}</span>
                     <span className="inline-flex items-baseline gap-3">
                       <StatusDot status={s.ok ? "paid" : "alert"} label={s.ok ? "Reachable" : s.error || "Not reachable"} />
-                      <span className="text-caption text-ink-2 tabular">{formatDayClock(s.checked_at)}</span>
+                      <span className="text-caption text-ink-2 tabular">{dayClock(s.checked_at)}</span>
                     </span>
                   </li>
                 ))}
