@@ -295,6 +295,13 @@
       "when": 1794514837771,
       "tag": "0041_rls_agent_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1794515003358,
+      "tag": "0042_proposal_money_effect",
+      "breakpoints": true
     }
   ]
 }

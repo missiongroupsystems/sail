@@ -102,6 +102,9 @@ export const agentUsage = pgTable(
   (t) => [primaryKey({ columns: [t.identityId, t.kind, t.windowStart] })],
 );
 
+export type OrderMoney = { subtotal: number; discount_total: number; fee_total: number; tax_total: number; total: number };
+export type MoneyEffect = { reason: string; before: OrderMoney | null; after: OrderMoney | null };
+
 export type ProposalStatus = "pending" | "approved" | "rejected" | "failed" | "expired";
 
 export const proposals = pgTable(
@@ -123,6 +126,8 @@ export const proposals = pgTable(
     /** The order the request acts on, and its total when proposed: what the approver is shown. */
     orderId: uuid("order_id"),
     orderTotal: integer("order_total"),
+    /** When an agent's call would have lowered the amount due or changed tax or fees: why, and the order's money before and after (the pricing engine's result). */
+    effect: jsonb("effect").$type<MoneyEffect | null>(),
     targetId: text("target_id"),
     /** The agent's rationale (free text from a model: shown to staff, never executed). */
     rationale: text("rationale"),

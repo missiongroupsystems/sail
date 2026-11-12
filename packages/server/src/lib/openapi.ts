@@ -2,8 +2,10 @@ import { createRoute, OpenAPIHono, z, type RouteConfig, type RouteHandler } from
 import type { Next } from "hono";
 import { ApiErrorSchema, operation, roleAtLeast, type OperationSpec } from "@sail/shared";
 import { AppError } from "./errors.js";
-import { markDryRun } from "../db/client.js";
-import { aboveCeiling, createProposal, directCeiling, toProposal } from "../services/agents.js";
+import { markDryRun, tx } from "../db/client.js";
+import { aboveCeiling, createProposal, directCeiling, moneyEffect, orderMoney, requestOrderId, toProposal } from "../services/agents.js";
+import type { MoneyEffect } from "../db/schema/index.js";
+import type { Principal } from "../auth/principal.js";
 import type { AppEnv } from "./context.js";
 import { principalRole } from "../auth/principal.js";
 
@@ -93,36 +95,59 @@ export function defineOp<R extends OpRoute>(app: OpenAPIHono<AppEnv>, route: R, 
     const principal = c.get("principal") as AppEnv["Variables"]["principal"] | undefined;
     const method = String(c.req.method).toUpperCase();
     // Reads, quotes and dry runs are T0 by nature; anything else above the caller's ceiling becomes a proposal.
-    if (principal && method !== "GET" && spec.principals.length > 0 && aboveCeiling(principal, spec)) {
-      if (spec.proposable === false) throw new AppError("permission_denied", `${spec.op} is above this caller's risk ceiling and cannot be proposed`, { remedy: "Ask someone without a risk ceiling to do it.", details: { action: spec.op, tier: spec.tier } });
-      let body: unknown = null;
-      try {
-        body = await c.req.json();
-      } catch {
-        body = null;
-      }
-      if (spec.dryRun && (body as { dry_run?: unknown } | null)?.dry_run === true) {
-        // A dry run commits nothing, so it is T0 by nature: mark the transaction here, so it rolls back even if the handler forgets to.
-        markDryRun();
-        c.set("dryRun", true);
-        return handler(c, next);
-      }
-      const proposal = await createProposal({ principal, spec, method, path: c.req.path + (c.req.url.includes("?") ? c.req.url.slice(c.req.url.indexOf("?")) : ""), body, idempotencyKey: c.get("idempotencyKey") ?? null, rationale: c.req.header("x-rationale") ?? null, correlationId: c.get("correlationId") });
-      const ceiling = principal.type === "agent" || principal.type === "staff" ? directCeiling(principal.type, principal.riskCeiling) : null;
-      return c.json(
-        {
-          code: "requires_confirmation",
-          message: `${spec.op} is a ${spec.tier} operation, above this ${principal.type === "agent" ? "agent" : "person"}'s ${ceiling} ceiling; a proposal was created for a human to approve`,
-          remedy: `Ask a ${spec.minRole ?? "staff member"} or above to approve proposal ${proposal.id} on the POS or in the back office. Poll proposals.get for the outcome; propose again from the fresh state if it fails.`,
-          details: { proposal_id: proposal.id, tier: spec.tier, ceiling, expires_at: proposal.expiresAt.toISOString() },
-          data: toProposal(proposal),
-        },
-        202,
-      );
+    const aboveTier = principal && method !== "GET" && spec.principals.length > 0 && aboveCeiling(principal, spec);
+    if (aboveTier && spec.proposable === false) throw new AppError("permission_denied", `${spec.op} is above this caller's risk ceiling and cannot be proposed`, { remedy: "Ask someone without a risk ceiling to do it.", details: { action: spec.op, tier: spec.tier } });
+    if (!principal || method === "GET" || (!aboveTier && principal.type !== "agent")) return handler(c, next);
+    const body = await readJson(c);
+    if (spec.dryRun && (body as { dry_run?: unknown } | null)?.dry_run === true) {
+      // A dry run commits nothing, so it is T0 by nature: mark the transaction here, so it rolls back even if the handler forgets to.
+      markDryRun();
+      c.set("dryRun", true);
+      return handler(c, next);
     }
-    return handler(c, next);
+    const path = c.req.path + (c.req.url.includes("?") ? c.req.url.slice(c.req.url.indexOf("?")) : "");
+    if (aboveTier) return propose(c, principal, spec, method, path, body);
+    // An agent at or below its ceiling: run the call, then compare the order's money before and after. If the call
+    // lowered the amount due or changed tax or fees, undo it and propose it instead, showing both.
+    const orderId = await requestOrderId(path, body);
+    if (!orderId) return handler(c, next);
+    const before = await orderMoney(orderId);
+    await tx().unsafe("savepoint agent_money_effect");
+    const res = await handler(c, next);
+    if (res.status >= 400) return res;
+    const after = await orderMoney(orderId);
+    const reason = moneyEffect(before, after, body);
+    if (!reason) return res;
+    await tx().unsafe("rollback to savepoint agent_money_effect");
+    return propose(c, principal, spec, method, path, body, { reason, before, after });
   }) as never);
   return full;
+}
+
+async function readJson(c: { req: { json(): Promise<unknown> } }): Promise<unknown> {
+  try {
+    return await c.req.json();
+  } catch {
+    return null;
+  }
+}
+
+/** Store the frozen request as a proposal and answer `requires_confirmation` (202). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function propose(c: any, principal: Principal, spec: OperationSpec, method: string, path: string, body: unknown, effect?: MoneyEffect): Promise<Response> {
+  const proposal = await createProposal({ principal, spec, method, path, body, idempotencyKey: c.get("idempotencyKey") ?? null, rationale: c.req.header("x-rationale") ?? null, correlationId: c.get("correlationId"), effect });
+  const ceiling = principal.type === "agent" || principal.type === "staff" ? directCeiling(principal.type, principal.riskCeiling) : null;
+  const who = principal.type === "agent" ? "agent" : "person";
+  return c.json(
+    {
+      code: "requires_confirmation",
+      message: effect ? `${spec.op} ${effect.reason}, which this ${who} may not do by itself; a proposal was created for a human to approve` : `${spec.op} is a ${spec.tier} operation, above this ${who}'s ${ceiling} ceiling; a proposal was created for a human to approve`,
+      remedy: `Ask a ${spec.minRole ?? "staff member"} or above to approve proposal ${proposal.id} on the POS or in the back office. Poll proposals.get for the outcome; propose again from the fresh state if it fails.`,
+      details: { proposal_id: proposal.id, tier: spec.tier, ceiling, expires_at: proposal.expiresAt.toISOString(), ...(effect ? { effect } : {}) },
+      data: toProposal(proposal),
+    },
+    202,
+  );
 }
 
 export function manifestExtension(spec: OperationSpec) {

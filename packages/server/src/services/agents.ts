@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { roleAtLeast, type OperationSpec, type Role } from "@sail/shared";
 import { db, tx, withOwnTransaction, type RequestTx } from "../db/client.js";
-import { agentDelegations, agentIdentities, agentSessions, backofficeSessions, checks, orders, paymentIntents, payments, proposals, staff, staffSessions, type OnBehalfOf, type ProposalStatus } from "../db/schema/index.js";
+import { agentDelegations, agentIdentities, agentSessions, backofficeSessions, checks, orders, paymentIntents, payments, proposals, staff, staffSessions, type MoneyEffect, type OnBehalfOf, type OrderMoney, type ProposalStatus } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { hashSecret, randomToken, sha256, signSailToken, verifySailToken, verifySecret } from "../auth/tokens.js";
 import type { Principal } from "../auth/principal.js";
@@ -202,7 +202,40 @@ export async function inferTarget(path: string, body: unknown): Promise<{ target
   return { targetKind: kind, targetId: id, outletId: outletId ?? order?.o ?? null, orderId: order?.id ?? null };
 }
 
-export async function createProposal(input: { principal: Principal; spec: OperationSpec; method: string; path: string; body: unknown; idempotencyKey: string | null; rationale: string | null; correlationId: string }) {
+/* ---- Money effect: what an agent may not do by itself, whatever the operation's tier ---- */
+
+/** The order a request acts on: from its path (an order, bill, payment or intent), or the order it opens. */
+export async function requestOrderId(path: string, body: unknown): Promise<string | null> {
+  const { orderId } = await inferTarget(path, body);
+  if (orderId) return orderId;
+  const b = (body ?? {}) as Record<string, unknown>;
+  return /^\/v1\/orders\/?$/.test(path.split("?")[0]!) && typeof b.order_id === "string" && UUID.test(b.order_id) ? b.order_id : null;
+}
+
+/** The order's money as the pricing engine last computed it, read in the current transaction. */
+export async function orderMoney(orderId: string): Promise<OrderMoney | null> {
+  const [o] = await db().select({ subtotal: orders.subtotal, discount_total: orders.discountTotal, fee_total: orders.feeTotal, tax_total: orders.taxTotal, total: orders.total }).from(orders).where(eq(orders.id, orderId)).limit(1);
+  return o ?? null;
+}
+
+/**
+ * Why an agent's call must go to a person instead of running, given the order before and after it ran: it lowered the
+ * amount due, or it changed tax or fees without changing what was ordered (order type, guest count, customer). Two
+ * cases have no "before" to compare with and are refused by what the request says: an agent setting an open price, and
+ * an agent opening an order for a customer (whose group discounts would apply to every line added later). Refunds,
+ * payments, comps and discounts are T2 or T3 and always proposals.
+ */
+export function moneyEffect(before: OrderMoney | null, after: OrderMoney | null, body: unknown): string | null {
+  const b = (body ?? {}) as { lines?: { open_price?: unknown }[]; open_price?: unknown; customer_id?: unknown };
+  if (b.open_price != null || b.lines?.some((l) => l?.open_price != null)) return "sets an open price";
+  if (!before && after && b.customer_id != null) return "opens an order for a customer, whose group pricing applies to it";
+  if (!before || !after) return null;
+  if (after.total < before.total) return "lowers the amount due";
+  if (after.subtotal === before.subtotal && (after.fee_total !== before.fee_total || after.tax_total !== before.tax_total || after.discount_total !== before.discount_total)) return "changes tax, fees or discounts";
+  return null;
+}
+
+export async function createProposal(input: { principal: Principal; spec: OperationSpec; method: string; path: string; body: unknown; idempotencyKey: string | null; rationale: string | null; correlationId: string; effect?: MoneyEffect }) {
   const { principal: p, spec } = input;
   if (p.type === "agent") {
     const [identity] = await db().select({ id: agentIdentities.id, merchantId: agentIdentities.merchantId, name: agentIdentities.name, maxOpsPerHour: agentIdentities.maxOpsPerHour, maxProposalsPerDay: agentIdentities.maxProposalsPerDay }).from(agentIdentities).where(eq(agentIdentities.id, p.identityId)).limit(1);
@@ -231,6 +264,7 @@ export async function createProposal(input: { principal: Principal; spec: Operat
       targetId,
       orderId: order ? orderId : null,
       orderTotal: order?.total ?? null,
+      effect: input.effect ?? null,
       rationale: input.rationale,
       proposedByType: p.type,
       proposedById: p.id,
@@ -258,6 +292,7 @@ export const toProposal = (r: typeof proposals.$inferSelect) => ({
   target_kind: r.targetKind,
   target_id: r.targetId,
   order: r.orderId == null ? null : { id: r.orderId, version: r.expectedVersion, total: r.orderTotal },
+  effect: r.effect,
   rationale: r.rationale == null ? null : { untrusted_text: r.rationale },
   status: r.status,
   proposed_by: { type: r.proposedByType, id: r.proposedById, name: r.proposedByName, agent_identity_id: r.agentIdentityId, agent_session_id: r.agentSessionId, on_behalf_of: r.onBehalfOfId },

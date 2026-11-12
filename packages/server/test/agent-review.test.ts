@@ -125,3 +125,73 @@ describe("A4: operation and proposal budgets hold under failures, concurrency an
     expect((await call("POST", `/v1/orders/${orders[0]}/fire`, { token: tok2, body: {} })).status).toBe(429);
   });
 });
+
+describe("A2: an agent call that lowers the amount due, or changes tax or fees, is a proposal showing before and after", () => {
+  type Proposal = { id: string; status: string; effect: { reason: string; before: { total: number } | null; after: { total: number } } | null };
+  const agentFor = async (role: string) => session((await identity({ role, toolsets: ["pos.order", "pos.read"], risk_ceiling: "T1" })).credential);
+  const totalOf = async (orderId: string) => (await call<{ data: Snap }>("GET", `/v1/orders/${orderId}`, { token: w.pins.manager })).body.data.totals.total;
+
+  it("attaching a customer in a discount group (the R1.2 comp) proposes instead of comping", async () => {
+    const group = await call<{ data: { id: string } }>("POST", "/v1/customer-groups", { token: w.m.manager.token, body: { name: "Friends" } });
+    await call("POST", "/v1/pricing-rules", { token: w.m.admin.token, body: { rule_key: "promo:friends", body: { kind: "discount", name: "Friends 100%", calc: "percent", value: { type: "fixed", amount: 10000 }, scope: { type: "all" }, conditions: { customer_group_ids: [group.body.data.id] }, priority: 30, application: "auto", report_class: "promo" }, effective_from: "2026-01-01T00:00:00Z" } });
+    const vip = await call<{ data: { id: string } }>("PUT", "/v1/customers", { token: w.pins.manager, body: { name: "Friend", group_ids: [group.body.data.id] } });
+    const tok = await agentFor("server");
+    const o = await openTakeaway(tok);
+    const a = await addLine(tok, o.body.data.id, { product_id: w.ids.wine });
+    expect(a.status).toBe(200);
+    const att = await call<{ code: string; data: Proposal }>("POST", `/v1/orders/${o.body.data.id}/customer`, { token: tok, body: { customer_id: vip.body.data.id } });
+    expect(att.status, JSON.stringify(att.body)).toBe(202);
+    expect(att.body.code).toBe("requires_confirmation");
+    expect(att.body.data.effect).toMatchObject({ before: { total: a.body.data.totals.total }, after: { total: 0 } });
+    expect(await totalOf(o.body.data.id)).toBe(a.body.data.totals.total);
+    // Opening an order with that customer has no "before" to compare with, so it is a proposal too.
+    const open = await call<{ code: string }>("POST", "/v1/orders", { token: tok, body: { order_id: randomUUID(), order_type: "takeaway", takeaway_ref: "C", outlet_id: w.m.outletId, brand_id: w.m.brandId, customer_id: vip.body.data.id } });
+    expect(open.status).toBe(202);
+    // A person approves it and it runs as them.
+    const ap = await call<{ data: { status: string } }>("POST", `/v1/proposals/${att.body.data.id}/approve`, { token: w.pins.manager, body: {} });
+    expect(ap.body.data.status).toBe("approved");
+    expect(await totalOf(o.body.data.id)).toBe(0);
+  });
+
+  it("an open price set by an agent (the R1.3 1-cent price) is a proposal, whatever the agent's role", async () => {
+    const tok = await agentFor("manager");
+    const o = await openTakeaway(tok);
+    const a = await addLine(tok, o.body.data.id, { product_id: w.ids.openItem, open_price: 1 });
+    expect(a.status, JSON.stringify(a.body)).toBe(202);
+    expect(await totalOf(o.body.data.id)).toBe(0);
+  });
+
+  it("changing dine-in to takeaway (the R1.4 dropped service charge) and changing the guest count are proposals when fees or the total move", async () => {
+    const areaId = randomUUID();
+    const tableId = randomUUID();
+    await call("POST", "/v1/areas", { token: w.m.admin.token, body: { id: areaId, outlet_id: w.m.outletId, name: "Main" } });
+    await call("POST", "/v1/tables", { token: w.m.admin.token, body: { id: tableId, outlet_id: w.m.outletId, area_id: areaId, name: "T1" } });
+    const tok = await agentFor("server");
+    const o = await call<{ data: Snap }>("POST", "/v1/orders", { token: w.pins.server, body: { order_id: randomUUID(), order_type: "dine_in", table_id: tableId, pax: 2, outlet_id: w.m.outletId, brand_id: w.m.brandId } });
+    const a = await addLine(w.pins.server, o.body.data.id, { product_id: w.ids.wine });
+    const ct = await call<{ data: Proposal }>("POST", `/v1/orders/${o.body.data.id}/change-type`, { token: tok, body: { order_type: "takeaway" } });
+    expect(ct.status, JSON.stringify(ct.body)).toBe(202);
+    expect(ct.body.data.effect!.after.total).toBeLessThan(a.body.data.totals.total);
+    expect(await totalOf(o.body.data.id)).toBe(a.body.data.totals.total);
+    // Routine edits that raise the amount due still run.
+    expect((await addLine(tok, o.body.data.id, { product_id: w.ids.kopi })).status).toBe(200);
+    // Removing an unsent line lowers what the guest owes, so an agent proposes it.
+    const s = (await call<{ data: Snap }>("GET", `/v1/orders/${o.body.data.id}`, { token: tok })).body.data;
+    const v = await call("POST", `/v1/orders/${o.body.data.id}/lines/${s.lines.at(-1)!.id}/void`, { token: tok, body: { reason_text: "guest changed mind" } });
+    expect(v.status, JSON.stringify(v.body)).toBe(202);
+  });
+});
+
+describe("A2: the money-effect rule itself", () => {
+  const m = (total: number, extra: Partial<Record<"subtotal" | "discount_total" | "fee_total" | "tax_total", number>> = {}) => ({ subtotal: 1000, discount_total: 0, fee_total: 100, tax_total: 99, total, ...extra });
+  it("flags a lower amount due, a tax or fee change with the same lines, an open price and an order opened for a customer; lets ordinary growth through", async () => {
+    const { moneyEffect } = await import("../src/services/agents.js");
+    expect(moneyEffect(m(1199), m(1100, { fee_total: 0 }), {})).toBe("lowers the amount due");
+    expect(moneyEffect(m(1199), m(1299, { fee_total: 200 }), { pax: 4 })).toBe("changes tax, fees or discounts"); // a per-guest fee raised by a guest count
+    expect(moneyEffect(m(1199), m(1199, { tax_total: 0, fee_total: 199 }), {})).toBe("changes tax, fees or discounts");
+    expect(moneyEffect(m(1199), m(2398, { subtotal: 2000, fee_total: 200, tax_total: 198 }), {})).toBeNull(); // a line added
+    expect(moneyEffect(m(0), m(1), { lines: [{ open_price: 1 }] })).toBe("sets an open price");
+    expect(moneyEffect(null, m(0, { subtotal: 0 }), { customer_id: randomUUID() })).toMatch(/customer/);
+    expect(moneyEffect(null, m(0, { subtotal: 0 }), {})).toBeNull();
+  });
+});
