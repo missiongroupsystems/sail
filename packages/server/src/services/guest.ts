@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import QRCode from "qrcode";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { db, tx } from "../db/client.js";
+import { db, tx, withOwnTransaction } from "../db/client.js";
 import { brands, channelLinks, guestRounds, guestSessions, orderLines, orders, outlets, serviceRequests, tableQrTokens, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { randomToken, sha256, signSailToken } from "../auth/tokens.js";
@@ -15,45 +15,52 @@ import type { Principal } from "../auth/principal.js";
  */
 export const GUEST_SESSION_HOURS = 4;
 
-/* ---- Rate limits (in-memory, per process; the admission gate still protects the database) ---- */
-type Bucket = { hits: number[] };
-const buckets = new Map<string, Bucket>();
-function limited(key: string, max: number, windowMs: number): number | null {
-  const now = Date.now();
-  const b = buckets.get(key) ?? { hits: [] };
-  b.hits = b.hits.filter((t) => now - t < windowMs);
-  if (b.hits.length >= max) {
-    buckets.set(key, b);
-    return Math.ceil((b.hits[0]! + windowMs - now) / 1000);
-  }
-  b.hits.push(now);
-  buckets.set(key, b);
-  return null;
+/* ---- Rate limits (sliding windows in Postgres, shared by every API machine; the admission gate still protects the database) ---- */
+/**
+ * Look at a key's hits inside the window, under a row lock so concurrent
+ * attempts count one after another, and keep only those. With `record`, add
+ * this attempt when it is allowed. Returns the seconds to wait when the window
+ * is full. Commits on its own, so a hit recorded before a refusal still counts.
+ * Times come from the database clock, so every API machine agrees.
+ */
+async function hitWindow(merchantId: string, key: string, [max, windowMs]: readonly [number, number], record: boolean): Promise<number | null> {
+  return withOwnTransaction(async (sql) => {
+    // An upsert that touches the row also locks it, so the worker's prune cannot delete it before the select below.
+    if (record) await sql`insert into guest_rate_hits (merchant_id, key) values (${merchantId}, ${key}) on conflict (merchant_id, key) do update set key = excluded.key`;
+    const [row] = await sql<{ hits: number[]; now: number }[]>`select (select coalesce(json_agg(floor(extract(epoch from h) * 1000)::bigint order by h), '[]'::json) from unnest(g.hits) h) as hits, floor(extract(epoch from clock_timestamp()) * 1000)::float8 as now from guest_rate_hits g where merchant_id = ${merchantId} and key = ${key} for update`;
+    if (!row) return null;
+    const hits = row.hits.filter((t) => row.now - t < windowMs);
+    const retry = hits.length >= max ? Math.ceil((hits[0]! + windowMs - row.now) / 1000) : null;
+    if (record && retry == null) hits.push(row.now);
+    await sql`update guest_rate_hits set hits = array(select to_timestamp(t::float8 / 1000) from jsonb_array_elements_text(${JSON.stringify(hits)}::jsonb) t) where merchant_id = ${merchantId} and key = ${key}`;
+    return retry;
+  });
 }
-export function resetGuestRateLimitsForTests() {
-  buckets.clear();
+/** Worker: drop keys with no hit inside the longest window. */
+export async function pruneGuestRateHits(): Promise<void> {
+  const longest = Math.max(...Object.values(RATE).map(([, ms]) => ms));
+  await withOwnTransaction((sql) => sql`delete from guest_rate_hits where not exists (select 1 from unnest(hits) h where h > clock_timestamp() - make_interval(secs => ${longest / 1000}))`);
+}
+function limitedError(what: string, retry: number): AppError {
+  return new AppError("rate_limited", `Too many ${what}; please wait`, { remedy: `Try again in ${retry} seconds.`, details: { retry_after_seconds: retry } });
+}
+export async function resetGuestRateLimitsForTests() {
+  await withOwnTransaction((sql) => sql`delete from guest_rate_hits`);
 }
 export const RATE = { sessionsPerDevice: [10, 3_600_000], sessionsPerTable: [30, 3_600_000], roundsPerSession: [1, 10_000], roundsPerTable: [40, 3_600_000], requestsPerTableType: [1, 60_000] } as const;
 
-export function enforceLimit(key: string, [max, windowMs]: readonly [number, number], what: string) {
-  const retry = limited(key, max, windowMs);
-  if (retry != null) throw new AppError("rate_limited", `Too many ${what}; please wait`, { remedy: `Try again in ${retry} seconds.`, details: { retry_after_seconds: retry } });
+export async function enforceLimit(merchantId: string, key: string, limit: readonly [number, number], what: string) {
+  const retry = await hitWindow(merchantId, key, limit, true);
+  if (retry != null) throw limitedError(what, retry);
 }
 
 /** Check without recording (record with `recordHit` once the request succeeded), so a rejected attempt does not count. */
-export function checkLimit(key: string, [max, windowMs]: readonly [number, number], what: string) {
-  const now = Date.now();
-  const b = buckets.get(key);
-  const hits = (b?.hits ?? []).filter((t) => now - t < windowMs);
-  if (hits.length >= max) {
-    const retry = Math.ceil((hits[0]! + windowMs - now) / 1000);
-    throw new AppError("rate_limited", `Too many ${what}; please wait`, { remedy: `Try again in ${retry} seconds.`, details: { retry_after_seconds: retry } });
-  }
+export async function checkLimit(merchantId: string, key: string, limit: readonly [number, number], what: string) {
+  const retry = await hitWindow(merchantId, key, limit, false);
+  if (retry != null) throw limitedError(what, retry);
 }
-export function recordHit(key: string) {
-  const b = buckets.get(key) ?? { hits: [] };
-  b.hits.push(Date.now());
-  buckets.set(key, b);
+export async function recordHit(merchantId: string, key: string, limit: readonly [number, number]) {
+  await hitWindow(merchantId, key, [Number.MAX_SAFE_INTEGER, limit[1]], true);
 }
 
 /** Run `fn` as the register (app_authenticated) inside a guest request, then drop back to app_guest. */
@@ -136,8 +143,8 @@ export async function createGuestSession(input: { token: string; deviceId: strin
   const [table] = await db().select().from(tables).where(and(eq(tables.id, tok.tableId), isNull(tables.archivedAt))).limit(1);
   if (!table) throw AppError.notFound("table");
   const deviceHash = sha256(`${tok.merchantId}:${input.deviceId}`);
-  enforceLimit(`sess:dev:${deviceHash}`, RATE.sessionsPerDevice, "sign-ins from this device");
-  enforceLimit(`sess:table:${table.id}`, RATE.sessionsPerTable, "sign-ins at this table");
+  await enforceLimit(tok.merchantId, `sess:dev:${deviceHash}`, RATE.sessionsPerDevice, "sign-ins from this device");
+  await enforceLimit(tok.merchantId, `sess:table:${table.id}`, RATE.sessionsPerTable, "sign-ins at this table");
   const [link] = await db().select().from(channelLinks).where(and(eq(channelLinks.outletId, table.outletId), eq(channelLinks.channel, "scan_to_order"), eq(channelLinks.enabled, true))).limit(1);
   if (!link) throw new AppError("unavailable", "Ordering from your phone is not available at this outlet", { remedy: "Please order with a member of staff." });
   const orderId = await openOrderIdForTable(table.id);

@@ -23,6 +23,8 @@ beforeAll(async () => {
     await db.sql`insert into events (merchant_id, outlet_id, seq, business_date, type, aggregate_kind, aggregate_id, operation_id, actor, correlation_id)
       values (${m.merchantId}, ${m.outletId}, 1, '2026-11-04', 'test', 'test', ${m.outletId}, 'test', '{"principal_type":"system","principal_id":"x","role":null}', ${m.outletId})`;
     await db.sql`insert into idempotency_keys (merchant_id, principal_id, key, request_hash) values (${m.merchantId}, ${m.admin.id}, 'k', 'h')`;
+    await db.sql`insert into pin_attempts (merchant_id, scope, failures) values (${m.merchantId}, 'station:x', 1)`;
+    await db.sql`insert into guest_rate_hits (merchant_id, key, hits) values (${m.merchantId}, 'k', array[now()])`;
     await db.sql`with s as (insert into stations (merchant_id, outlet_id, name) values (${m.merchantId}, ${m.outletId}, 'S') returning id)
       insert into staff_sessions (merchant_id, staff_id, station_id, outlet_id) select ${m.merchantId}, ${m.admin.id}, s.id, ${m.outletId} from s`;
   }
@@ -77,7 +79,7 @@ describe("RLS replay", () => {
       expect(seen, `${t.table_name}: saw ${seen}, own ${ownRows!.n}, total ${total!.n}`).toBe(expected);
       expect(total!.n).toBeGreaterThan(expected); // there really were other-tenant rows to hide
     }
-    expect(exercised).toEqual(expect.arrayContaining(["merchant_settings", "brands", "outlets", "stations", "staff", "staff_sessions", "audit_log", "events", "outlet_sequences", "merchant_sequences", "idempotency_keys"]));
+    expect(exercised).toEqual(expect.arrayContaining(["merchant_settings", "brands", "outlets", "stations", "staff", "staff_sessions", "audit_log", "events", "outlet_sequences", "merchant_sequences", "idempotency_keys", "pin_attempts", "guest_rate_hits"]));
   });
 
   it("outlet scoping hides other outlets' rows for a limited staff member", async () => {

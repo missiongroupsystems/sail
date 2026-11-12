@@ -71,6 +71,15 @@ export async function withTransaction<T>(fn: (ctx: RequestTx) => Promise<T>, pri
 }
 
 /**
+ * Run `fn` in a short transaction of its own, as the connection owner, that
+ * commits whatever happens to the request around it. For counters a refused
+ * request must still record (wrong PINs, rate-limit hits).
+ */
+export async function withOwnTransaction<T>(fn: (sql: TransactionSql) => Promise<T>): Promise<T> {
+  return pool6543().begin(fn) as Promise<T>;
+}
+
+/**
  * Fire the deferred invariant triggers (adjustment, order-total, allocation and
  * refund sums) now instead of at commit. Mutations call this after their last
  * money write and before they append events: the first event takes the outlet's

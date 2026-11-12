@@ -111,3 +111,27 @@ export const idempotencyKeys = pgTable(
   },
   (t) => [primaryKey({ columns: [t.principalId, t.key] }), index("idempotency_created_idx").on(t.createdAt)],
 );
+
+/** Wrong-PIN counter per station. It lives in Postgres so the lockout holds when more than one API machine serves the station. */
+export const pinAttempts = pgTable(
+  "pin_attempts",
+  {
+    merchantId: uuid("merchant_id").notNull(),
+    scope: text("scope").notNull(),
+    failures: integer("failures").notNull().default(0),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.merchantId, t.scope] })],
+);
+
+/** Recent hits per guest rate-limit key (sliding window), shared by every API machine. */
+export const guestRateHits = pgTable(
+  "guest_rate_hits",
+  {
+    merchantId: uuid("merchant_id").notNull(),
+    key: text("key").notNull(),
+    hits: timestamp("hits", { withTimezone: true, mode: "string" }).array().notNull().default([]),
+  },
+  (t) => [primaryKey({ columns: [t.merchantId, t.key] })],
+);

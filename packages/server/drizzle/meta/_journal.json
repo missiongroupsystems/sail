@@ -176,6 +176,20 @@
       "when": 1794496855732,
       "tag": "0024_cash_variance_threshold_required",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794498363714,
+      "tag": "0025_shared_attempt_counters",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794498368751,
+      "tag": "0026_rls_attempt_counters",
+      "breakpoints": true
     }
   ]
 }

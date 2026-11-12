@@ -167,7 +167,7 @@ describe("Scan to Order", () => {
     expect((gGot[1]!.data as { type: string }).type).toBe("order.status_changed");
     // Accepting twice is a clean state conflict; rejecting a second round removes its lines.
     expect((await call("POST", `/v1/rounds/${roundId}/accept`, { token: serverPin, body: {} })).status).toBe(409);
-    resetGuestRateLimitsForTests();
+    await resetGuestRateLimitsForTests();
     const round2 = randomUUID();
     await guestCall("POST", "/v1/guest/rounds", g, { round_id: round2, lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] });
     const rejected = await call<{ data: Snap }>("POST", `/v1/rounds/${round2}/reject`, { token: serverPin, body: { reason: "Kitchen closed" } });
@@ -202,14 +202,14 @@ describe("Scan to Order", () => {
     expect(ack.body.data.status).toBe("acknowledged");
     expect((await call("POST", `/v1/service-requests/${water.body.data.id}/acknowledge`, { token: serverPin, body: {} })).status).toBe(404);
     // Burst of sign-ins from one device is rate-limited.
-    resetGuestRateLimitsForTests();
+    await resetGuestRateLimitsForTests();
     let limited = 0;
     for (let i = 0; i < 12; i++) {
       const r = await call("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl13), device_id: "device-burst-0009" }, idempotencyKey: null });
       if (r.status === 429) limited++;
     }
     expect(limited).toBe(2);
-    resetGuestRateLimitsForTests();
+    await resetGuestRateLimitsForTests();
   });
 
   it("a guest and a station adding to the same order at once both succeed with no lost lines; the session ends when the order is paid", async () => {
@@ -255,7 +255,7 @@ describe("Scan to Order", () => {
   });
 
   it("a second phone at the table sees the first phone's accepted round as a guest round, not as staff additions", async () => {
-    resetGuestRateLimitsForTests();
+    await resetGuestRateLimitsForTests();
     const open = async (device: string) => (await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl13), device_id: device }, idempotencyKey: null })).body.data.guest_token;
     const a = await open("device-ffff-0006");
     const b = await open("device-gggg-0007");

@@ -88,8 +88,8 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "rounds.submit", method: "post", path: "/v1/guest/rounds", tags: ["guest"], request: { body: jsonBody(z.object({ round_id: z.uuid(), lines: z.array(LineInputSchema).min(1).max(30), guest_name: z.string().max(40).optional(), notes: z.string().max(200).optional() })) }, responses: { 201: jsonResponse(dataResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {
     const p = guestOnly(c.get("principal"));
     const b = c.req.valid("json");
-    checkLimit(`round:sess:${p.sessionId}`, RATE.roundsPerSession, "orders from this phone");
-    enforceLimit(`round:table:${p.tableId}`, RATE.roundsPerTable, "orders at this table");
+    await checkLimit(p.merchantId, `round:sess:${p.sessionId}`, RATE.roundsPerSession, "orders from this phone");
+    await enforceLimit(p.merchantId, `round:table:${p.tableId}`, RATE.roundsPerTable, "orders at this table");
     const [link] = await db().select().from(channelLinks).where(eq(channelLinks.id, p.channelLinkId)).limit(1);
     if (!link?.enabled) throw new AppError("unavailable", "Ordering from your phone is switched off", { remedy: "Please order with a member of staff." });
     const [session] = await db().select().from(guestSessions).where(eq(guestSessions.id, p.sessionId)).limit(1);
@@ -128,7 +128,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
       events.push(await appendEvent({ merchantId: p.merchantId, outletId: p.outletId, type: "order.repriced", aggregate: { kind: "order", id: orderId, version }, operationId: "rounds.submit", payload: { source: "guest" }, correlationId: c.get("correlationId"), businessDay: bd }, p));
       return { orderId, openedNow, hold, warnings };
     });
-    recordHit(`round:sess:${p.sessionId}`);
+    await recordHit(p.merchantId, `round:sess:${p.sessionId}`, RATE.roundsPerSession);
     // The guest's RLS scope was set at request start; the order may have been opened in this request.
     await tx()`select set_config('app.current_order', ${result.orderId}, true)`;
     const view = await guestOrderView({ ...p, orderId: result.orderId });
@@ -141,7 +141,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     const [link] = await db().select().from(channelLinks).where(eq(channelLinks.id, p.channelLinkId)).limit(1);
     if (!link) throw AppError.notFound("channel");
     if (b.type !== "call_for_bill" && !link.serviceRequests.includes(b.type)) throw AppError.validation(`"${b.type}" is not a request this table can make`, { remedy: `Choose one of: ${[...link.serviceRequests, "call_for_bill"].join(", ")}.` });
-    enforceLimit(`req:${p.tableId}:${b.type}`, RATE.requestsPerTableType, "requests of this kind");
+    await enforceLimit(p.merchantId, `req:${p.tableId}:${b.type}`, RATE.requestsPerTableType, "requests of this kind");
     const bd = await businessDayInputs(p.merchantId, p.outletId);
     const data = await asSystem(async () => {
       const orderId = (await db().select({ id: guestSessions.orderId }).from(guestSessions).where(eq(guestSessions.id, p.sessionId)).limit(1))[0]?.id ?? null;

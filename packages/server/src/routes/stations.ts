@@ -10,6 +10,7 @@ import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { hashSecret, pinLookup, randomDigits, randomToken, sha256, signSailToken, verifySecret } from "../auth/tokens.js";
 import { grantOverride } from "../services/overrides.js";
+import { assertPinNotLocked, clearPinFailures, pinScope, recordPinFailure } from "../services/pin-attempts.js";
 import { businessDayInputs, toStation } from "./org.js";
 import { config } from "../config.js";
 
@@ -20,8 +21,6 @@ registerOperations({
   "staff_sessions.end": { op: "staff_sessions.end", summary: "Sign out of a station", description: "Ends the current PIN session.", tier: "T1", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: ["staff_session.ended"], mcp: { expose: false, toolsets: [] } },
   "overrides.grant": { op: "overrides.grant", summary: "Manager override: approve one restricted action", description: "A Manager+ enters their PIN to authorise a single action (for example a void after firing or a refund) for the signed-in staff member, without switching users. Returns a single-use grant bound to that action and target, valid for 2 minutes. Pass it as `override_id` on the protected request.", tier: "T0", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: ["override.granted"], mcp: { expose: true, toolsets: ["pos.order"] } },
 });
-
-const failures = new Map<string, { count: number; until: number }>();
 
 export function stationRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "stations.pairing_code", method: "post", path: "/v1/stations/{id}/pairing-code", tags: ["stations"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 201: jsonResponse(mutationResponse(z.object({ code: z.string(), expires_at: z.string() }))), ...errorResponses } }, async (c) => {
@@ -61,21 +60,15 @@ export function stationRoutes(app: OpenAPIHono<AppEnv>) {
       const p = c.get("principal");
       if (p.type !== "station") throw new AppError("permission_denied", "Sign-in needs a station token", { remedy: "Pair this iPad to a station first." });
       const { pin } = c.req.valid("json");
-      const lock = failures.get(p.stationId);
-      if (lock && lock.until > Date.now()) throw new AppError("rate_limited", "Too many wrong PINs", { remedy: `Try again in ${Math.ceil((lock.until - Date.now()) / 1000)} seconds.`, details: { retry_after_seconds: Math.ceil((lock.until - Date.now()) / 1000) } });
+      const scope = pinScope(p);
+      await assertPinNotLocked(p.merchantId, scope);
       const [member] = await db().select().from(staff).where(and(eq(staff.merchantId, p.merchantId), eq(staff.pinLookup, pinLookup(p.merchantId, pin)), eq(staff.active, true))).limit(1);
       const ok = member && verifySecret(pin, member.pinHash) && (member.outletIds.length === 0 || member.outletIds.includes(p.outletId));
       if (!ok) {
-        const f = failures.get(p.stationId) ?? { count: 0, until: 0 };
-        f.count++;
-        if (f.count >= 5) {
-          f.until = Date.now() + 30_000;
-          f.count = 0;
-        }
-        failures.set(p.stationId, f);
+        await recordPinFailure(p.merchantId, scope);
         throw new AppError("unauthenticated", "PIN not recognised", { remedy: "Check your PIN. After 5 wrong attempts the station locks for 30 seconds." });
       }
-      failures.delete(p.stationId);
+      await clearPinFailures(p.merchantId, scope);
       const [sess] = await db().insert(staffSessions).values({ merchantId: p.merchantId, staffId: member.id, stationId: p.stationId, outletId: p.outletId }).returning();
       const idle = config().PIN_SESSION_IDLE_SECONDS;
       const token = await signSailToken({ typ: "pin", merchant_id: p.merchantId, outlet_id: p.outletId, station_id: p.stationId, staff_id: member.id, session_id: sess!.id, role: member.role }, 14 * 3600);
