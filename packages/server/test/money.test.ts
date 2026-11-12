@@ -302,6 +302,20 @@ const reconciles = (z: Z) => {
 };
 
 describe("shifts, business days and the Z-report", () => {
+  it("the Z-report and sales summary give refunded tax by component, so the tax due can be read off them", async () => {
+    const r = await regionMerchant("VatBack", { preset: "eu-vat", timeZone: "Europe/Amsterdam" }, [1210]);
+    const s = await r.order([{ p: 0, quantity: 2 }]);
+    await r.must("POST", `/v1/checks/${s.checks[0]!.id}/payments`, { payment_id: randomUUID(), tender_type_id: r.ids.card, amount: s.balance });
+    const lineId = (await db.sql<{ id: string }[]>`select id from order_lines where order_id = ${s.id}`)[0]!.id;
+    await r.must("POST", `/v1/checks/${s.checks[0]!.id}/refunds`, { refund_id: randomUUID(), request: { kind: "lines", lines: [{ line_id: lineId, quantity: 1 }] }, reason: "returned", print: false });
+    const [refund] = await db.sql<{ taxes: { name: string; bps: number; amount: number }[] }[]>`select taxes from refunds where order_id = ${s.id}`;
+    expect(refund!.taxes.reduce((a, t) => a + t.amount, 0)).toBeGreaterThan(0);
+    const z = (await r.must<{ data: Z & { refunds: { taxes: { name: string; bps: number; amount: number }[] } } }>("GET", `/v1/outlets/${r.m.outletId}/z-report`)).data;
+    expect(z.refunds.taxes).toEqual(refund!.taxes);
+    const sum = (await r.must<{ data: { refunds: { taxes: { name: string; bps: number; amount: number }[] } } }>("GET", `/v1/reports/sales-summary?outlet_id=${r.m.outletId}`)).data;
+    expect(sum.refunds.taxes).toEqual(refund!.taxes);
+  });
+
   it("orders.reopen refuses to reverse a payment whose shift or business day is closed, as payments.void does", async () => {
     const r = await regionMerchant("Reopen", { preset: "sg", timeZone: "Asia/Singapore" }, [2000]);
     const shift = await r.must<{ data: { id: string } }>("POST", "/v1/shifts", { outlet_id: r.m.outletId, station_id: null, float_cents: 10_000 });

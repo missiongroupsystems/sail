@@ -1,5 +1,5 @@
 import { and, eq, isNull, not, sql } from "drizzle-orm";
-import type { TaxBreakdown } from "@sail/shared";
+import type { TaxAmount, TaxBreakdown } from "@sail/shared";
 import { db, tx } from "../db/client.js";
 import { businessDayCloses, merchantSettings, orderAdjustments, orderLines, orders, payments, shifts, staff } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -29,7 +29,8 @@ export type ZReport = {
   /** `expected = float + cash_payments + rounding + tips - refunds`: cash tips stay in the drawer until they are paid out. */
   cash: { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number; counted: number | null; variance: number | null };
   voids: { count: number; quantity: number; value: number };
-  refunds: { count: number; amount: number };
+  /** `taxes` is the tax given back, by component: a period's tax due is `sales.taxes` less these, component by component. */
+  refunds: { count: number; amount: number; taxes: TaxAmount[] };
   /** Payments taken in this scope and then reversed (voided, or reversed by a reopen): they count in no tender. */
   reversals: { count: number; amount: number; cash_amount: number; items: { payment_id: string; order_no: string; tender: string; is_cash: boolean; amount: number; reversed_at: string | null; reversed_by: string | null; reason: string | null }[] };
   /**
@@ -45,7 +46,7 @@ export type ZReport = {
 type Scope = { outletId: string; businessDate: string; stationId?: string | null; shiftId?: string | null };
 
 /** Refund figures arrive in v0.7 through this provider. */
-let refundProvider: (scope: Scope) => Promise<{ count: number; amount: number; net: number; cash_amount: number }> = async () => ({ count: 0, amount: 0, net: 0, cash_amount: 0 });
+let refundProvider: (scope: Scope) => Promise<{ count: number; amount: number; net: number; cash_amount: number; taxes: TaxAmount[] }> = async () => ({ count: 0, amount: 0, net: 0, cash_amount: 0, taxes: [] });
 export function registerRefundTotals(fn: typeof refundProvider) {
   refundProvider = fn;
 }
@@ -114,7 +115,7 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
     tenders_summary: { cash: cashPayments, non_cash: tenders.filter((t) => !t.is_cash).reduce((s, t) => s + t.amount, 0), tips: tenders.reduce((s, t) => s + t.tips, 0), count: tenders.reduce((s, t) => s + t.count, 0) },
     cash: { float: cashCounts.float, cash_payments: cashPayments, rounding, tips: cashTips, refunds: refunds.cash_amount, expected, counted: cashCounts.counted, variance: cashCounts.counted == null ? null : cashCounts.counted - expected },
     voids: voidRows[0] ?? { count: 0, quantity: 0, value: 0 },
-    refunds: { count: refunds.count, amount: refunds.amount },
+    refunds: { count: refunds.count, amount: refunds.amount, taxes: refunds.taxes },
     reversals: {
       count: reversed.length,
       amount: reversed.reduce((s, p) => s + p.amount, 0),

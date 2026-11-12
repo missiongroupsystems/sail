@@ -143,5 +143,11 @@ registerRefundTotals(async (scope) => {
     .from(refundTenders)
     .innerJoin(refunds, eq(refunds.id, refundTenders.refundId))
     .where(and(where, eq(refundTenders.isCash, true)));
-  return { count: r?.count ?? 0, amount: r?.amount ?? 0, net: r?.net ?? 0, cash_amount: cash?.amount ?? 0 };
+  const taxes = await db()
+    .select({ name: sql<string>`t->>'name'`, bps: sql<number>`(t->>'bps')::int`, amount: sql<number>`coalesce(sum((t->>'amount')::bigint),0)::bigint` })
+    .from(sql`${refunds} cross join lateral jsonb_array_elements(${refunds.taxes}) t`)
+    .where(where)
+    .groupBy(sql`1`, sql`2`)
+    .orderBy(sql`2 desc`, sql`1`);
+  return { count: r?.count ?? 0, amount: r?.amount ?? 0, net: r?.net ?? 0, cash_amount: cash?.amount ?? 0, taxes };
 });
