@@ -259,6 +259,11 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
       lockedPriced.push({ line_id: l.id, quantity: l.quantity, unit_price: l.unitPrice, modifiers_per_unit: sumCents(l.modifiers.map((m) => m.price * m.quantity)), base_amount: l.baseAmount, discount_amount: l.discountAmount, net_amount: l.netAmount, fee_amount: l.feeAmount, tax_on_net: l.taxAmount - taxOnFees, tax_on_fees: taxOnFees, taxes: l.taxes, total: l.total });
     }
   }
+  // The engine's own order (line discounts, order discounts, fees; by priority and id), so a paid bill's rows keep their order
+  // whether an adjustment came from the engine or was carried over from the paid lines.
+  const step = (a: Adjustment) => (a.kind === "fee" ? 2 : a.level === "order" ? 1 : 0);
+  const cmp = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
+  adjustments.sort((a, b) => step(a) - step(b) || a.rule_snapshot.priority - b.rule_snapshot.priority || cmp(a.rule_id, b.rule_id) || a.rule_version - b.rule_version || cmp(a.manual_application_id ?? "", b.manual_application_id ?? ""));
   const allLines = [...engine.lines, ...lockedPriced];
   const totals: PricingResult["totals"] = {
     tax_mode: engine.totals.tax_mode,
@@ -289,12 +294,16 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
         as v(id, unit_price, base_amount, discount_amount, net_amount, fee_amount, tax_amount, taxes, total)
       where l.id = v.id`;
   }
+  // An adjustment keeps its id across re-prices (one rule version and application is one adjustment), so a paid bill's
+  // allocations and its refunds, which name adjustments by id, always find their rows.
+  const idByKey = new Map(storedAdjs.map((s) => [adjKey(s.ruleKey, s.ruleVersion, s.manualApplicationId), s.id]));
   await db().delete(orderAdjustments).where(eq(orderAdjustments.orderId, orderId));
   if (adjustments.length) {
     const inserted = await db()
       .insert(orderAdjustments)
       .values(
         adjustments.map((a, sort) => ({
+          id: idByKey.get(adjKey(a.rule_id, a.rule_version, a.manual_application_id)),
           merchantId: order.merchantId,
           outletId: order.outletId,
           orderId,
