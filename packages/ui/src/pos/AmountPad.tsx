@@ -27,7 +27,7 @@ export function formatBpsText(bps: number): string {
   return frac === 0 ? `${whole}%` : `${whole}.${String(frac).padStart(2, "0").replace(/0$/, "")}%`;
 }
 
-/** An amount pad (design 8): currency or percentage entry, digits typed right to left like a till. */
+/** An amount pad: currency or percentage entry, digits typed right to left like a till. */
 export function AmountPad({ digits, onChange, mode, hint, isDisabled, className }: AmountPadProps) {
   const { money } = useLocale();
   const n = Number(digits || "0");

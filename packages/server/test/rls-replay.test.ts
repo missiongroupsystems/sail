@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
 
 /**
- * RLS replay harness (Launchpad pattern, generalised): for every table with a
+ * RLS replay harness: for every table with a
  * merchant_id column, RLS must be enabled with at least one policy, and under
  * `app_authenticated` a session for merchant A must see none of merchant B's
  * rows. New tables are covered automatically; a table without RLS fails here.

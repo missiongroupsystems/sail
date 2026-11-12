@@ -12,7 +12,7 @@ import { usePos } from "./PosContext";
 const KIND_LABEL: Record<string, string> = { kitchen: "ticket", kitchen_ticket: "ticket", void: "void ticket", prebill: "pre-bill", receipt: "receipt", refund_receipt: "refund receipt", service_slip: "table request", test: "test page" };
 
 /**
- * The print failure banner (design 4.8): one L4 line for the printer with the
+ * The print failure banner: one L4 line for the printer with the
  * oldest waiting ticket, [Send to <backup>] [Retry] [Details], the relay-offline
  * wording when the print box itself is gone, and the green "back" line for 5 s.
  */

@@ -1,5 +1,5 @@
 /**
- * @sail/ui: the components are the design (design.md section 11.1).
+ * @sail/ui: the components are the design.
  * Import the tokens and Tailwind layer from "@sail/ui/styles.css".
  */
 export { cx } from "./lib/cx";
@@ -35,7 +35,7 @@ export { TagsField, type TagsFieldProps } from "./backoffice/TagsField";
 export { SectionTabs, type SectionTabsProps, type SectionTab } from "./backoffice/SectionTabs";
 export { DescriptionList, Stat, type DescriptionListProps, type DescriptionItem, type StatProps } from "./backoffice/DescriptionList";
 
-// POS components (v0.4): the lock screen, floor plan and order entry (design 4.1 to 4.3, 4.7).
+// POS components (v0.4): the lock screen, floor plan and order entry.
 export { TILE_COLOURS, tileBand, type TileColour } from "./pos/tileColours";
 export { PinPad, type PinPadProps } from "./pos/PinPad";
 export { Tile, FolderTile, type TileProps, type FolderTileProps } from "./pos/Tile";
@@ -55,11 +55,11 @@ export { AmountPad, formatBpsText, type AmountPadProps } from "./pos/AmountPad";
 export { NowRail, type NowRailProps, type NowItem } from "./pos/NowRail";
 export { PanelSheet, type PanelSheetProps } from "./pos/PanelSheet";
 
-// Back-office additions (v0.9): the refund stepper's progress row and plain-text ticket previews (design 4.6, 4.8).
+// Back-office additions (v0.9): the refund stepper's progress row and plain-text ticket previews.
 export { Steps, type StepsProps, type Step } from "./backoffice/Steps";
 export { TicketPreview, type TicketPreviewProps } from "./backoffice/TicketPreview";
 
-// Guest app components (v0.8): Scan to Order on phones (design 3.3, 4.11, 9, 10).
+// Guest app components (v0.8): Scan to Order on phones.
 export { BottomSheet, type BottomSheetProps } from "./guest/BottomSheet";
 export { BrandButton, type BrandButtonProps, type BrandButtonVariant } from "./guest/BrandButton";
 export { GuestStepper, type GuestStepperProps } from "./guest/GuestStepper";
@@ -69,7 +69,7 @@ export { MenuItemRow, type MenuItemRowProps, type MenuItemState } from "./guest/
 export { ScrollTabs, type ScrollTabsProps, type ScrollTab } from "./guest/ScrollTabs";
 export { BillDocumentView, type BillDocumentViewProps, type BillDocumentLike } from "./guest/BillDocumentView";
 
-// POS components (v0.6 to v0.8): bills, payment, cash count and the close-shift checklist (design 4.4, 4.5, 4.9).
+// POS components (v0.6 to v0.8): bills, payment, cash count and the close-shift checklist.
 export { SegmentedControl, type SegmentedControlProps, type SegmentOption } from "./pos/SegmentedControl";
 export { BillCard, type BillCardProps, type BillCardLine, type BillCardRow, type BillCardStatus } from "./pos/BillCard";
 export { TenderGrid, type TenderGridProps, type Tender } from "./pos/TenderGrid";

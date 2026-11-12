@@ -44,7 +44,7 @@ function readText(file: File): Promise<string> {
 }
 
 /**
- * The legacy POS importer (design 4.10: summary first). Upload CSVs, map
+ * The legacy POS importer (summary first). Upload CSVs, map
  * columns, queue a dry run, read the report, then apply. Every number on this
  * page comes from the register's report.
  */

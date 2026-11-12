@@ -8,7 +8,7 @@ import type { TestDb } from "./helpers.js";
 import { bootWorld, orderHelpers, type Call, type Snap, type World } from "./world.js";
 
 /**
- * Manager approval (scope doc 7.1 rule 9): a grant authorises exactly what the
+ * Manager approval: a grant authorises exactly what the
  * approver was shown, for the staff session that asked, once.
  */
 let db: TestDb;

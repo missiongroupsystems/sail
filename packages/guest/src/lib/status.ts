@@ -2,7 +2,7 @@ import type { RoundStage } from "@sail/ui";
 import type { GuestLine, GuestOrder, GuestRound } from "./types";
 
 /**
- * Where a round is (design 4.11): Sent → Accepted → Preparing → Done.
+ * Where a round is: Sent → Accepted → Preparing → Done.
  * pending = Sent; accepted or fired = Accepted, and Preparing once the order
  * itself is fired; Done when the order is ready or completed; rejected shows
  * "Not accepted" with staff's reason.
@@ -15,7 +15,7 @@ export function roundStage(round: Pick<GuestRound, "status">, order: Pick<GuestO
   return "accepted";
 }
 
-/** A word for each line on the "Our table" list (never colour alone, design 7.3). */
+/** A word for each line on the "Our table" list (never colour alone). */
 export function lineStatusLabel(line: Pick<GuestLine, "status">, order: Pick<GuestOrder, "status"> | null | undefined): string {
   switch (line.status) {
     case "held":

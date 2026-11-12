@@ -15,7 +15,7 @@ import { useNavStore } from "../../state/nav";
 import { useUiStore } from "../../state/ui";
 
 const VARIANCE_REASONS = ["Change given wrongly", "Cash paid out for a purchase", "Float was not counted at open", "Cash left in the drawer from the last shift"];
-/** What the register sends when a close needs a variance reason (shifts.close, design 4.9). */
+/** What the register sends when a close needs a variance reason (shifts.close). */
 type VarianceRefusal = { expected: number; counted: number; variance: number; variance_threshold: number };
 function varianceRefusal(details: Record<string, unknown> | undefined): VarianceRefusal | null {
   return details && typeof details.variance_threshold === "number" ? (details as VarianceRefusal) : null;
@@ -23,7 +23,7 @@ function varianceRefusal(details: Record<string, unknown> | undefined): Variance
 
 type Phase = { kind: "idle" } | { kind: "checklist" } | { kind: "count" } | { kind: "reason"; cash: VarianceRefusal } | { kind: "result"; shift: Shift; report: ZReport };
 
-/** Open shift → float; Close shift → checklist, blind count, result with the register's expected, counted and variance (design 4.9). */
+/** Open shift → float; Close shift → checklist, blind count, result with the register's expected, counted and variance. */
 export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
   const { money, clock } = useLocale();
   const api = useApi();
@@ -48,7 +48,7 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [left, setLeft] = useState<Set<string>>(new Set());
 
-  // The float defaults to the last close's figure (design 4.9).
+  // The float defaults to the last close's figure.
   useEffect(() => {
     if (seeded || !closed.data || mine) return;
     setSeeded(true);

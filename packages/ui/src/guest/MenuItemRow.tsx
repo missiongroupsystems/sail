@@ -10,7 +10,7 @@ import { useLocale } from "../lib/locale";
 export type MenuItemState =
   /** Tapping opens the item sheet. */
   | "orderable"
-  /** The table cannot order yet: the row is read-only (design 4.11). */
+  /** The table cannot order yet: the row is read-only. */
   | "browse"
   | "sold_out"
   | "unavailable";
@@ -35,7 +35,7 @@ export type MenuItemRowProps = {
 const shell = "flex w-full items-start gap-4 py-4 text-left hairline-b";
 
 /**
- * A typography-led menu item (design 4.11): name, price, one-line description
+ * A typography-led menu item: name, price, one-line description
  * and a 48px "+" when the table can order. Sold-out items stay listed, greyed,
  * with the word "Sold out" where the price was.
  */

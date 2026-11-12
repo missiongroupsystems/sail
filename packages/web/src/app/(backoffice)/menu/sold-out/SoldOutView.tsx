@@ -23,7 +23,7 @@ function soldOutLabel(e: StockEntry, dayClock: LocaleFormat["dayClock"]): string
   return `Sold out until ${dayClock(e.sold_out_until)}`;
 }
 
-/** Sold out (design 1.1: "86" is the staff word). Per outlet: what is sold out or capped today, and the actions to change it. */
+/** Sold out ("86" is the staff word). Per outlet: what is sold out or capped today, and the actions to change it. */
 export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; initialStock: StockEntry[] }) {
   const { dayClock, timeZone } = useLocale();
   const qc = useQueryClient();

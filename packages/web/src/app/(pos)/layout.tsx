@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
 /**
- * The `(pos)` route group (design 11.1, 11.3): a home-screen web app with no
+ * The `(pos)` route group: a home-screen web app with no
  * back-office navigation. The page inside is client-rendered and long-lived.
  */
 export const metadata: Metadata = {

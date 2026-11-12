@@ -12,7 +12,7 @@ export type OutletStreamOptions = {
   onStatus: (status: StreamStatus, asOf: number | null) => void;
   /** Called on every `hello`, so the first connection can refresh the views it missed before connecting. */
   onConnected?: (firstTime: boolean) => void;
-  /** A print job changed (design 4.8): the POS refreshes the late-job list. */
+  /** A print job changed: the POS refreshes the late-job list. */
   onJob?: (job: { job_id: string; status: string; printer_id: string | null }) => void;
 };
 
@@ -21,7 +21,7 @@ const STALE_MS = 65_000;
 const BACKOFF_MS = [1000, 2000, 4000, 8000, 15000, 30000];
 
 /**
- * The outlet event store's transport (design 11.1, 11.3): SSE over `fetch`
+ * The outlet event store's transport: SSE over `fetch`
  * streaming with a Bearer token. On `hello` it compares sequence numbers, on
  * `change` or `resync` it catches up through `events?after=`, reconnects with
  * exponential backoff, and catches up again when the tab becomes visible.

@@ -92,7 +92,7 @@ export function defineOp<R extends OpRoute>(app: OpenAPIHono<AppEnv>, route: R, 
     enforce(c, spec);
     const principal = c.get("principal") as AppEnv["Variables"]["principal"] | undefined;
     const method = String(c.req.method).toUpperCase();
-    // Reads, quotes and dry runs are T0 by nature (vision 7.3); anything else above the caller's ceiling becomes a proposal.
+    // Reads, quotes and dry runs are T0 by nature; anything else above the caller's ceiling becomes a proposal.
     if (principal && method !== "GET" && spec.principals.length > 0 && aboveCeiling(principal, spec)) {
       let body: unknown = null;
       try {

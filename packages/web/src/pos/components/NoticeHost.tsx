@@ -5,9 +5,9 @@ import { useState } from "react";
 import { useUiStore } from "../state/ui";
 
 /**
- * Bottom-left stack (design 2.5): the Undo toast and one-line notices, the opposite
+ * Bottom-left stack: the Undo toast and one-line notices, the opposite
  * corner from the primary action. Sits above sheets (z-50) so a register error from
- * an action started inside a sheet is seen where the action was (design 7.8), and
+ * an action started inside a sheet is seen where the action was, and
  * below the idle overlay (z-60).
  */
 export function NoticeHost() {

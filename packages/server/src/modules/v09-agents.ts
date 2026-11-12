@@ -4,7 +4,7 @@ import { agentRoutes } from "../routes/agents.js";
 import { expireProposals } from "../services/agents.js";
 import { withTransaction } from "../db/client.js";
 
-/** v0.9: agent identities and sessions, risk ceilings, proposals (vision 7.2 to 7.4). The MCP adapter in `mcp/` drives these over the same API. */
+/** v0.9: agent identities and sessions, risk ceilings, proposals. The MCP adapter in `mcp/` drives these over the same API. */
 registerRoutes(agentRoutes);
 
 registerWorkerTask({

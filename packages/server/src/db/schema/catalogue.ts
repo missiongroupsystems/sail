@@ -2,7 +2,7 @@ import { boolean, date, index, integer, jsonb, pgEnum, pgTable, primaryKey, text
 import { brands, merchants, outlets, stations } from "./org.js";
 import { taxClasses } from "./tax.js";
 
-/** Catalogue, menus, channels, floor and reference lists (scope doc 4.2). */
+/** Catalogue, menus, channels, floor and reference lists. */
 
 export const reportCategories = pgTable(
   "report_categories",
@@ -188,7 +188,7 @@ export const menuItems = pgTable(
 export const availabilityTargetEnum = pgEnum("availability_target", ["product", "section"]);
 
 /**
- * Availability (scope doc 4.2): by outlet and channel, plus day-of-week and
+ * Availability: by outlet and channel, plus day-of-week and
  * time windows. A target with no rules is always available; with rules, it is
  * available when ANY rule matches.
  */
@@ -348,7 +348,7 @@ export const voidReasons = pgTable(
 
 export const accessLevelEnum = pgEnum("access_level", ["everyone", "cashier", "manager", "admin"]);
 
-/** POS layouts: one per brand, pages > folders > tiles (scope doc 4.3). Tiles are a JSON tree per page. */
+/** POS layouts: one per brand, pages > folders > tiles. Tiles are a JSON tree per page. */
 export const posLayouts = pgTable(
   "pos_layouts",
   {
@@ -375,7 +375,7 @@ export type LayoutTile = {
   kind: "product" | "folder";
   product_id?: string;
   label: string;
-  /** One of the 12 curated tile colours (design 7.3). */
+  /** One of the 12 curated tile colours. */
   color: string;
   access_level: "everyone" | "cashier" | "manager" | "admin";
   tiles?: LayoutTile[];

@@ -22,7 +22,7 @@ export type LateGroup = {
 export type PrintAlerts = {
   late: PrintJob[];
   groups: LateGroup[];
-  /** No relay at the outlet has reported recently: the cause is the print box, not a printer (design 4.8). */
+  /** No relay at the outlet has reported recently: the cause is the print box, not a printer. */
   relayOffline: boolean;
   /** Set for 5 s after the last late ticket printed: the green "printer is back" banner. */
   recoveredAt: number | null;
@@ -33,7 +33,7 @@ export type PrintAlerts = {
 };
 
 /**
- * The print failure alert (design 4.8): late jobs from the register, grouped by
+ * The print failure alert: late jobs from the register, grouped by
  * printer, with the backup printer's name for "Send to…", relay status for the
  * offline wording, and the recovery moment. Polling is in `useLateJobs`.
  */
@@ -88,7 +88,7 @@ export function usePrintAlerts(outletId: string | null, now: number): PrintAlert
     void qc.invalidateQueries({ queryKey: ["pos", "print-jobs", outletId] });
   }, [outletId, qc]);
 
-  /** Reroute is T1 (design 4.8): it offers Undo, which sends the new tickets back to the printer they came from. */
+  /** Reroute is T1: it offers Undo, which sends the new tickets back to the printer they came from. */
   const reroute = useCallback(
     async (jobs: PrintJob[], printerId?: string | null) => {
       if (!jobs.length) return false;

@@ -37,7 +37,7 @@ export async function appendEvent(input: AppendEventInput, principal?: Principal
   const businessDate = businessDateFor(at, bd.cutoff, bd.timeZone);
   const actor: EventActor = input.actor ?? (principal ? (actorOf(principal) as EventActor) : { principal_type: "system", principal_id: "system", role: null });
   if (isDryRun()) {
-    // Dry runs emit nothing and allocate no sequence (vision 6.2); the caller still sees what WOULD be emitted.
+    // Dry runs emit nothing and allocate no sequence; the caller still sees what WOULD be emitted.
     return { id: "dry-run", seq: -1, occurredAt: at.toISOString(), type: input.type, businessDate };
   }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Parallel-run reconciliation (roadmap v0.9): compare one business day in Sail with the
+"""Parallel-run reconciliation: compare one business day in Sail with the
 outlet's legacy POS, tender by tender and in total, and list the differences.
 
 Inputs
@@ -14,7 +14,6 @@ Inputs
 Usage
   python3 scripts/reconcile-day.py --sail sales-summary.csv --legacy legacy-day.csv
 Exit code 0 when every tender and the total agree within tolerance, 1 otherwise.
-Python is allowed here by scope doc 10.2 condition 6 (ops scripts only).
 """
 import argparse
 import csv

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-/** Screen Wake Lock (design 11.3) while signed in; re-acquired when the tab becomes visible again. */
+/** Screen Wake Lock while signed in; re-acquired when the tab becomes visible again. */
 export function useWakeLock(active: boolean) {
   useEffect(() => {
     if (!active || typeof navigator === "undefined" || !("wakeLock" in navigator)) return;
@@ -30,7 +30,7 @@ export function useWakeLock(active: boolean) {
 }
 
 /**
- * Inactivity watch (design 4.1): `warning` is true for the last 10 s before
+ * Inactivity watch: `warning` is true for the last 10 s before
  * `timeoutSeconds` of no touches; `onTimeout` fires once. Any pointer or key
  * event resets it.
  */

@@ -15,7 +15,7 @@ import { searchMenu } from "../../lib/menu";
 import { todayAt } from "../../lib/format";
 import { useUiStore } from "../../state/ui";
 
-/** Sold-out list (design 4.12): search or browse, tap the item, then Today / Until… / Indefinitely; Restore; a daily cap for Managers. */
+/** Sold-out list: search or browse, tap the item, then Today / Until… / Indefinitely; Restore; a daily cap for Managers. */
 export function SoldOutView() {
   const { clock } = useLocale();
   const api = useApi();

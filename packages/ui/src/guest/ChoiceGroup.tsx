@@ -45,7 +45,7 @@ export type ChoiceGroupProps = {
   onChange: (value: ChoiceValue) => void;
   /** The register's message for this group, shown in place of the rule ("Choose 1 more: Protein"). */
   errorMessage?: string | null;
-  /** Rendered under a chosen option: its child group (nested choices live inline, design 4.3). */
+  /** Rendered under a chosen option: its child group (nested choices live inline). */
   renderUnder?: (optionId: string) => ReactNode;
   /** A child group: indented under its parent's option, with "for Chicken" in the heading. */
   parentLabel?: string;
@@ -85,7 +85,7 @@ function OptionText({ option }: { option: ChoiceOption }) {
 }
 
 /**
- * A modifier group for the item sheet (design 4.11, 10): a real radio group or
+ * A modifier group for the item sheet: a real radio group or
  * checkbox group whose rule ("Choose 1") is its accessible description, so
  * VoiceOver announces it with the group. Targets are 48px rows. A chosen option
  * may show a per-option stepper and its child group right underneath it.

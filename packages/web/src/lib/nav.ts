@@ -17,13 +17,13 @@ export type Section = {
   href: string;
   label: string;
   icon: LucideIcon;
-  /** Roadmap phase when the section is not built yet (design 11.4). */
+  /** Roadmap phase when the section is not built yet. */
   arrives?: string;
   /** One line on what the section will hold, shown on its placeholder page. */
   summary?: string;
 };
 
-/** Every section from design 3.2, in order. Unbuilt sections still render, never a gap. */
+/** Every section, in order. Unbuilt sections still render, never a gap. */
 export const SECTIONS: Section[] = [
   { href: "/today", label: "Today", icon: Sun },
   { href: "/orders", label: "Orders", icon: Receipt },
@@ -33,7 +33,7 @@ export const SECTIONS: Section[] = [
   { href: "/printing", label: "Printing", icon: Printer },
   { href: "/team", label: "Team", icon: Users },
   { href: "/reports", label: "Reports", icon: ChartNoAxesColumn },
-  { href: "/changes", label: "Changes", icon: GitPullRequestArrow, arrives: "with the agent work", summary: "Every configuration change, from a person or an assistant, will be reviewed here before it applies: summary, checks and impact first, then the row-level diff (design 4.10)." },
+  { href: "/changes", label: "Changes", icon: GitPullRequestArrow, arrives: "with the agent work", summary: "Every configuration change, from a person or an assistant, will be reviewed here before it applies: summary, checks and impact first, then the row-level diff." },
   { href: "/assistants", label: "Assistants", icon: Bot, arrives: "with the agent work", summary: "Assistant identities and roles, playbooks, activity and traces, budgets, and the on/off switch. Until then the register runs with assistants off." },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
@@ -49,7 +49,7 @@ export const SETTINGS_TABS = [
   { href: "/settings/merchant", label: "Merchant" },
 ] as const;
 
-/** Menu section tabs (design 3.2): products, modifiers, menus and sections, availability, sold out. */
+/** Menu section tabs: products, modifiers, menus and sections, availability, sold out. */
 export const MENU_TABS = [
   { href: "/menu/products", label: "Products" },
   { href: "/menu/modifiers", label: "Modifier groups" },
@@ -67,7 +67,7 @@ export const PRICING_TABS = [
   { href: "/pricing/customers", label: "Customers & groups" },
 ] as const;
 
-/** Printing section tabs (design 3.2): printers, relays, the print job queue. */
+/** Printing section tabs: printers, relays, the print job queue. */
 export const PRINTING_TABS = [
   { href: "/printing/printers", label: "Printers" },
   { href: "/printing/relays", label: "Relays" },

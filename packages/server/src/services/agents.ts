@@ -9,9 +9,9 @@ import type { Principal } from "../auth/principal.js";
 import { appendEvent } from "../lib/events.js";
 
 /**
- * Agent principals (vision 7.2): identities provisioned by an Admin, 15-minute
+ * Agent principals: identities provisioned by an Admin, 15-minute
  * task-bound sessions, on-behalf-of intersection of role and scope, a risk
- * ceiling, and proposals for anything above it (vision 7.4).
+ * ceiling, and proposals for anything above it.
  */
 export const TIERS = ["T0", "T1", "T2", "T3"] as const;
 export type Tier = (typeof TIERS)[number];
@@ -91,7 +91,7 @@ export async function resolveAgentPrincipal(token: string, t: RequestTx): Promis
 /**
  * The highest tier a principal runs without a person in the loop. An agent never runs T2 or T3 itself, whatever its
  * identity's ceiling: food leaving the kitchen, money being recorded, a comp or an order closing needs a person to
- * confirm that one action (vision 7.3), and the proposal is that confirmation.
+ * confirm that one action, and the proposal is that confirmation.
  */
 export function directCeiling(type: string, ceiling: string | null): string | null {
   if (type !== "agent" || ceiling == null) return ceiling;

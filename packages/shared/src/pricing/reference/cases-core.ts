@@ -38,7 +38,7 @@ export const ruleB: PricingRuleInput = {
 export const CORE_CASES: RefCase[] = [
   {
     id: "R001",
-    title: "Scope doc 4.8 worked example: VIP orders $80 food and $120 wine (exclusive GST)",
+    title: "Worked example: VIP orders $80 food and $120 wine (exclusive GST)",
     covers: ["line_percent", "scope_categories", "scope_tags", "min_spend_scoped", "customer_group", "fee_percent", "fee_taxed", "tax_exclusive", "seed_rules"],
     working:
       "Rule A: 25% of 8000 = 2000 off food → food net 6000. Rule B: wine spend 12000 ≥ 10000 and customer is VIP → 10% of 12000 = 1200 → wine net 10800. " +

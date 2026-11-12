@@ -479,7 +479,7 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: menu }, 200);
   });
 
-  /* Stock primitives (vision 5.10) */
+  /* Stock primitives */
   const stockBody = z.object({ outlet_id: z.uuid(), product_id: z.uuid() });
   // Caps and "sold out for today" are per business day (the outlet's cutoff), the same date lines.add and rounds.submit use.
   const todayFor = (merchantId: string, outletId: string) => businessToday(merchantId, outletId);

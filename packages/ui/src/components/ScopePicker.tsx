@@ -23,7 +23,7 @@ export type ScopePickerProps = {
 export const ALL = "__all__";
 
 /**
- * Merchant ▸ Brand ▸ Outlet (design 3.2). Every back-office page respects the
+ * Merchant ▸ Brand ▸ Outlet. Every back-office page respects the
  * selection. The merchant is fixed by the sign-in; brand and outlet narrow it.
  */
 export function ScopePicker({ merchantName, brands, outlets, value, onChange, collapsed, className }: ScopePickerProps) {

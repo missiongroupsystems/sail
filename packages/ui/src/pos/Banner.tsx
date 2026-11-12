@@ -23,7 +23,7 @@ const tones: Record<BannerTone, { icon: typeof Info; cls: string }> = {
   info: { icon: Info, cls: "bg-surface-2 text-ink" },
 };
 
-/** An L4 banner (design 2.2, 7.8): full width under the top bar, never a modal, never over the action dock. */
+/** An L4 banner: full width under the top bar, never a modal, never over the action dock. */
 export function Banner({ tone, children, actions, queued, className }: BannerProps) {
   const t = tones[tone];
   return (
@@ -36,7 +36,7 @@ export function Banner({ tone, children, actions, queued, className }: BannerPro
   );
 }
 
-/** The reserved 48pt slot: present whether or not a banner shows, so nothing jumps (design 7.2). */
+/** The reserved 48pt slot: present whether or not a banner shows, so nothing jumps. */
 export function BannerSlot({ children, className }: { children?: ReactNode; className?: string }) {
   return <div className={cx("h-12 shrink-0 overflow-hidden", className)}>{children ? <div className="animate-rise-in h-full">{children}</div> : null}</div>;
 }

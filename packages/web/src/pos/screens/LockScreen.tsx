@@ -11,7 +11,7 @@ import { useSessionStore } from "../state/session";
 import { useStationStore } from "../state/station";
 
 /**
- * The lock screen (design 4.1): outlet and station, a clock, a big PIN pad that
+ * The lock screen: outlet and station, a clock, a big PIN pad that
  * unlocks on the 6th digit. Wrong PIN shakes; a lockout shows the register's
  * countdown. The menu and layout load here so the floor is instant after sign-in.
  */
@@ -25,7 +25,7 @@ export function LockScreen() {
   const lockNote = useSessionStore((s) => s.lockNote);
   const now = useNow(1000);
 
-  // Warm the caches while locked (design 5.2: cold start to the floor ≤ 3 s).
+  // Warm the caches while locked (cold start to the floor ≤ 3 s).
   const link = useChannelLink(station.outlet_id, station.brand_id);
   const menu = useMenu(link.data?.id);
   useLayout(station.layout_id);

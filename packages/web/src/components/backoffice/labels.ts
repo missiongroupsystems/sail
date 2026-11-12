@@ -1,4 +1,4 @@
-/** Plain words for API enums (design 1.1). The API says `dine_in`; the UI says "Dine-in". */
+/** Plain words for API enums. The API says `dine_in`; the UI says "Dine-in". */
 
 export const ORDER_TYPE_LABEL: Record<string, string> = { dine_in: "Dine-in", takeaway: "Takeaway", pickup: "Pickup", delivery: "Delivery" };
 export const ORDER_TYPES = ["dine_in", "takeaway", "pickup", "delivery"] as const;

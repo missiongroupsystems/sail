@@ -43,7 +43,7 @@ export function RelayStatus({ relay }: { relay: Relay }) {
 }
 
 /**
- * "Pair a relay": a one-time 6-digit code shown large (design 7.4 display style)
+ * "Pair a relay": a one-time 6-digit code shown large
  * with its expiry, and the docker command from the runbook with the code in it.
  * Pairing a spare replaces the old token, so the previous device stops working.
  */

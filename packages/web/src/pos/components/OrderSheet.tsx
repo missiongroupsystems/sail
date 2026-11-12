@@ -18,22 +18,22 @@ export type OrderSheetProps = {
   onDiscount: () => void;
   onBill: () => void;
   onPay: () => void;
-  /** Tap a sent round's header: Reprint (design 4.12). */
+  /** Tap a sent round's header: Reprint. */
   onReprintRound: (round: { number: number; firedAt: string | null }) => void;
-  /** QR rounds waiting for acceptance on this order (design 4.11). */
+  /** QR rounds waiting for acceptance on this order. */
   pendingRounds: GuestRound[];
   onAcceptRound: (round: GuestRound) => void;
   onRejectRound: (round: GuestRound) => void;
-  /** Print jobs for this order and the ids the register lists as late (design 4.8: ⚠ instead of ✓). */
+  /** Print jobs for this order and the ids the register lists as late (⚠ instead of ✓). */
   jobs: PrintJob[];
   lateJobIds: Set<string>;
-  /** Closed order (design 4.12 Reopen, 4.6 Refund). */
+  /** Closed order (Reopen, Refund). */
   onReopen: () => void;
   onRefund: () => void;
   onReceipt: () => void;
 };
 
-/** "pricing" after 150 ms of waiting for the register (design 7.8). */
+/** "pricing" after 150 ms of waiting for the register. */
 function usePricing(orderId: string): boolean {
   const n = useUiStore((s) => s.inFlight[orderId] ?? 0);
   const [pricing, setPricing] = useState(false);
@@ -49,9 +49,9 @@ function usePricing(orderId: string): boolean {
 }
 
 /**
- * The order sheet (design 4.3): lines grouped NEW / HELD / SENT rounds, guest
- * lines with a QR chip and a waiting QR round above them (design 4.11), print
- * status per sent round (design 4.8), the totals block with every adjustment by
+ * The order sheet: lines grouped NEW / HELD / SENT rounds, guest
+ * lines with a QR chip and a waiting QR round above them, print
+ * status per sent round, the totals block with every adjustment by
  * name plus Paid and Balance once money has been taken, and the action dock.
  */
 export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, onDiscount, onBill, onPay, onReprintRound, pendingRounds, onAcceptRound, onRejectRound, jobs, lateJobIds, onReopen, onRefund, onReceipt }: OrderSheetProps) {
@@ -71,7 +71,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
   }, [order.lines]);
   const removed = order.lines.filter((l) => l.status === "voided" && l.fire_round == null);
 
-  // Flash a row whose register amount changed; slide in a row we have not seen (design 7.7).
+  // Flash a row whose register amount changed; slide in a row we have not seen.
   const prevAmounts = useRef(new Map<string, number>());
   const seen = useRef(new Set<string>());
   const flashes = new Set<string>();
@@ -112,7 +112,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
     ...(order.paid_total > 0 ? [{ key: "paid", label: "Paid", cents: order.paid_total, kind: "adjustment" as const, note: order.pricing_status === "frozen" ? "prices frozen" : null }, { key: "balance", label: "Balance", cents: order.balance, kind: "adjustment" as const }] : []),
   ];
 
-  /** ✓ printed, ◷ waiting or ⚠ not printed for a round, from the register's jobs (design 4.8). */
+  /** ✓ printed, ◷ waiting or ⚠ not printed for a round, from the register's jobs. */
   const printStatusFor = (firedAt: string | null): "printed" | "waiting" | "late" | null => {
     const mine = jobsForRound(jobs, firedAt);
     if (!mine.length) return null;

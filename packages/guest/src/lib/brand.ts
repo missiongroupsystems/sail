@@ -3,7 +3,7 @@ import { displayFontVariable } from "./display-fonts";
 import type { Brand } from "./types";
 
 /**
- * Brand theming (design 9): the accent, the display font and the logo arrive
+ * Brand theming: the accent, the display font and the logo arrive
  * with the channel link's menu and become custom properties on the element
  * that carries `data-brand`. Controls keep Sail's shape; only these change.
  */

@@ -10,7 +10,7 @@ import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb, sgSeedRul
 
 /**
  * Beta v1 review: regression tests for the defects found in the end-to-end
- * audit (docs/completions/beta-v1-review.md). Each test names the defect it
+ * audit. Each test names the defect it
  * guards against.
  */
 let db: TestDb;

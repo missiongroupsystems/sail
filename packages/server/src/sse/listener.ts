@@ -4,7 +4,7 @@ import { logger } from "../logger.js";
 
 /**
  * LISTEN on one dedicated session connection (port 5432) and fan each
- * notification out to in-process SSE subscribers (scope doc 7.1 rule 7).
+ * notification out to in-process SSE subscribers.
  * pg_notify is not durable: after the connection drops and recovers, every
  * subscriber receives `resync` and catches up from the event log.
  */

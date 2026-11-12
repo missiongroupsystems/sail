@@ -53,7 +53,7 @@ function Row({ label, cents, strong, muted, signed }: { label: string; cents: nu
 }
 
 /**
- * One bill grammar on every surface (design principle 10): the lines, the
+ * One bill grammar on every surface: the lines, the
  * adjustments, a row per tax component in the outlet's tax mode, the total, then the
  * payments with cash rounding, tip and change, and the document numbers.
  */

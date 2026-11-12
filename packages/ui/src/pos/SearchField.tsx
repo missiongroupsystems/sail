@@ -15,7 +15,7 @@ export type SearchFieldProps = {
   className?: string;
 };
 
-/** The POS search field (design 4.3): 56pt, filters the channel's menu after one character. Never focused automatically. */
+/** The POS search field: 56pt, filters the channel's menu after one character. Never focused automatically. */
 export function SearchField({ value, onChange, placeholder = "Search", label = "Search the menu", autoFocus, className }: SearchFieldProps) {
   return (
     <AriaSearchField value={value} onChange={onChange} aria-label={label} autoFocus={autoFocus} className={cx("group relative flex items-center", className)}>

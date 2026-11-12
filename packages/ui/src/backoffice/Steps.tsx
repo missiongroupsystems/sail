@@ -15,7 +15,7 @@ export type StepsProps = {
 };
 
 /**
- * A short stepper's progress row (design 4.6 refund stepper, 8 RefundStepper): a
+ * A short stepper's progress row: a
  * numbered dot and a label per step. Done steps show a tick; the current step is
  * ink; later steps are quiet. Keyboard-operable where going back is allowed.
  */

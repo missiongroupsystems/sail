@@ -3,7 +3,7 @@ import type { TaxAmount } from "./pricing/schemas.js";
 import { sumTaxes } from "./splits.js";
 
 /**
- * Refund reversal (scope doc 4.5). A refund reverses a share of each line's
+ * Refund reversal. A refund reverses a share of each line's
  * allocated components on one check: by whole check, by lines and quantities,
  * or by an amount spread across the check's lines in proportion. The caller
  * passes what has already been refunded so caps hold: a line's refunds never

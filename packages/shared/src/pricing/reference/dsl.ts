@@ -2,7 +2,7 @@ import { presetSeedRules, REGION_PRESETS } from "../../presets.js";
 import type { PricingContextInput, PricingLineInput, PricingOrderInput, PricingRuleInput, TaxRateInput } from "../schemas.js";
 
 /**
- * Readable fixture format for the pricing reference set (scope doc 9; roadmap v0.2).
+ * Readable fixture format for the pricing reference set.
  *
  * Every expected amount is hand-calculated and written as an arithmetic
  * expression so a second person (a product owner or someone in finance) can check it by reading the

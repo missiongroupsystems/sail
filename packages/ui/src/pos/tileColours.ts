@@ -1,4 +1,4 @@
-/** The 12 curated tile colours (design 7.3). The layout editor and the importer only ever produce these. */
+/** The 12 curated tile colours. The layout editor and the importer only ever produce these. */
 export const TILE_COLOURS = ["slate", "stone", "brass", "amber", "olive", "sage", "teal", "sky", "indigo", "plum", "rose", "brick"] as const;
 export type TileColour = (typeof TILE_COLOURS)[number];
 

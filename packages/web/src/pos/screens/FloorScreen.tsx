@@ -19,7 +19,7 @@ import { useSoundStore, useUiStore } from "../state/ui";
 const REQUEST_LABEL: Record<string, string> = { water: "Water", call_staff: "Call staff", call_for_bill: "Bill, please", cutlery: "Cutlery", napkins: "Napkins", help: "Help" };
 const requestLabel = (type: string) => REQUEST_LABEL[type] ?? type.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 
-/** Two short soft tones (design 7.9), only when the station has turned sound on. The context is created on the toggle tap, which is the user gesture browsers need. */
+/** Two short soft tones, only when the station has turned sound on. The context is created on the toggle tap, which is the user gesture browsers need. */
 let audio: AudioContext | null = null;
 function tone(kind: "new" | "alert") {
   try {
@@ -42,7 +42,7 @@ function tone(kind: "new" | "alert") {
 }
 
 /**
- * The floor plan (design 4.2): area tabs, tables drawn at their positions with
+ * The floor plan: area tabs, tables drawn at their positions with
  * status as colour + icon, pax and elapsed time, the legend, and the Now rail
  * with QR orders, table requests and ready pickups, each with its action inline.
  */
@@ -71,10 +71,10 @@ export function FloorScreen() {
   const [seating, setSeating] = useState<FloorTable | null>(null);
   const [opening, setOpening] = useState(false);
   const [rejecting, setRejecting] = useState<GuestRound | null>(null);
-  // One order id per pax sheet: a second tap after a timeout replays the same open instead of a duplicate (design 4.2 envelope).
+  // One order id per pax sheet: a second tap after a timeout replays the same open instead of a duplicate.
   const seatingOrderId = useRef(idempotencyKey());
 
-  // A new QR order or table request plays the soft tone when sound is on (design 7.9).
+  // A new QR order or table request plays the soft tone when sound is on.
   const waitingIds = useRef<Set<string> | null>(null);
   useEffect(() => {
     const ids = new Set([...(rounds.data ?? []).map((r) => `r:${r.id}`), ...(requests.data ?? []).map((r) => `q:${r.id}`)]);
@@ -240,7 +240,7 @@ export function FloorScreen() {
   );
 }
 
-/** 1–8 as big buttons, "More…" for 9+ (design 4.2). */
+/** 1–8 as big buttons, "More…" for 9+. */
 function PaxPicker({ suggested, isPending, onPick }: { suggested: number; isPending: boolean; onPick: (pax: number) => void }) {
   const [more, setMore] = useState(false);
   const [n, setN] = useState(Math.max(9, suggested));
@@ -268,7 +268,7 @@ function PaxPicker({ suggested, isPending, onPick }: { suggested: number; isPend
   );
 }
 
-/** Tables on a grid from x/y/w/h; the cell size follows the width so every layout fits (design 4.2). */
+/** Tables on a grid from x/y/w/h; the cell size follows the width so every layout fits. */
 function FloorCanvas({ tables, now, receivedAt, disabled, onTable }: { tables: FloorTable[]; now: number; receivedAt: number; disabled: boolean; onTable: (t: FloorTable) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);

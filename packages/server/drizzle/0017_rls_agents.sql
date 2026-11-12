@@ -1,4 +1,4 @@
--- Hand-written: RLS for agent identities, sessions and proposals, and the narrow app_agent role (vision 7.2, 11).
+-- Hand-written: RLS for agent identities, sessions and proposals, and the narrow app_agent role.
 -- app_agent reaches the same tables as a station through the same operations, but:
 --   * no grants at all on token, pairing, PIN-session and credential tables;
 --   * no access to PIN hashes, token hashes, auth subjects or raw customer contact columns (column-level grants);

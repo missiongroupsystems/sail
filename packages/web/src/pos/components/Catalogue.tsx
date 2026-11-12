@@ -18,7 +18,7 @@ export type CatalogueProps = {
 };
 
 /**
- * Section rail, catalogue grid and search (design 4.3). One tap adds a simple
+ * Section rail, catalogue grid and search. One tap adds a simple
  * item; items with required choices open the modifier sheet over the grid.
  */
 export function Catalogue({ order, actions, activeSeat }: CatalogueProps) {
@@ -116,7 +116,7 @@ export function Catalogue({ order, actions, activeSeat }: CatalogueProps) {
 
 type AddInput = { product: CompiledProduct; quantity: number; modifiers: ReturnType<typeof toModifiers>; notes: string | null };
 
-/** The modifier sheet (design 4.3): over the catalogue, required groups first; Add stays disabled with the reason on the button. */
+/** The modifier sheet: over the catalogue, required groups first; Add stays disabled with the reason on the button. */
 function ModifierSheet({ product, onClose, onAdd }: { product: CompiledProduct; onClose: () => void; onAdd: (input: AddInput) => Promise<void> }) {
   const { menu } = usePos();
   const [selection, setSelection] = useState<Selection>(() => (menu ? defaultSelection(menu, product) : {}));
@@ -163,7 +163,7 @@ function ModifierSheet({ product, onClose, onAdd }: { product: CompiledProduct; 
   );
 }
 
-/** Open-price items: the amount pad, then Add (Manager approval when the role is below Manager, design 4.7). */
+/** Open-price items: the amount pad, then Add (Manager approval when the role is below Manager). */
 function OpenPriceSheet({ product, onClose, onAdd }: { product: CompiledProduct; onClose: () => void; onAdd: (cents: number) => Promise<void> }) {
   const { money } = useLocale();
   const { staff } = usePos();

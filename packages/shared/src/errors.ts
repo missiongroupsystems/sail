@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * The one error shape every client sees (vision 4.2). Errors are instructions:
+ * The one error shape every client sees. Errors are instructions:
  * they carry a stable code, what was involved, and a remedy.
  */
 export const ERROR_CODES = [

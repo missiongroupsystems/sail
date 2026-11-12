@@ -8,10 +8,10 @@ import { businessDayInputs } from "./business-day.js";
 import { defaultTaxClassId } from "./tax.js";
 
 /**
- * The compiled menu for one channel link (`menu.get`, vision 5.12): sections,
+ * The compiled menu for one channel link (`menu.get`): sections,
  * products with resolved prices and modifier groups, availability and stock,
  * ready for the POS and the guest app to cache. The POS keeps one channel
- * link's menu in memory, never the whole catalogue (design 11.3).
+ * link's menu in memory, never the whole catalogue.
  */
 export type CompiledMenu = {
   channel_link: { id: string; channel: ChannelType; outlet_id: string; brand_id: string; menu_id: string; hold_orders: boolean; open_on_first_scan: boolean; service_requests: string[] };

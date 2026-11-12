@@ -9,7 +9,7 @@ export type NowItem = {
   /** "T7 · QR order · 3", "P-031 · Ready · Lim". */
   title: string;
   detail?: string | null;
-  /** Lines of a QR order, shown under the detail (design 4.2). */
+  /** Lines of a QR order, shown under the detail. */
   lines?: string[];
   actions?: { id: string; label: string; onPress: () => void; variant?: ButtonVariant; isDisabled?: boolean; isPending?: boolean }[];
 };
@@ -21,7 +21,7 @@ export type NowRailProps = {
   className?: string;
 };
 
-/** The "Now" rail (design 4.2): everything waiting for a person, oldest first; "Nothing waiting" when empty. */
+/** The "Now" rail: everything waiting for a person, oldest first; "Nothing waiting" when empty. */
 export function NowRail({ items, footer, className }: NowRailProps) {
   return (
     <aside className={cx("flex h-full w-[300px] shrink-0 flex-col hairline-l bg-surface", className)} aria-label="Now">

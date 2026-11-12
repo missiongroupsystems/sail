@@ -1,6 +1,6 @@
 export const dynamic = "force-static";
 
-/** Web app manifest (design 11.3): standalone, landscape, scoped to /pos so the swipe-back gesture cannot leave the POS. */
+/** Web app manifest: standalone, landscape, scoped to /pos so the swipe-back gesture cannot leave the POS. */
 export function GET(): Response {
   const manifest = {
     name: "Sail POS",

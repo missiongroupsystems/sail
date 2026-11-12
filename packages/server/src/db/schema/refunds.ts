@@ -3,7 +3,7 @@ import type { TaxAmount } from "@sail/shared";
 import { orderLines, orders } from "./orders.js";
 import { checks, payments } from "./payments.js";
 
-/** Refunds (scope doc 4.5): full, by lines or by amount, against one check, assigned to original payments. Immutable once created. */
+/** Refunds: full, by lines or by amount, against one check, assigned to original payments. Immutable once created. */
 export const refundKindEnum = pgEnum("refund_kind", ["full", "lines", "amount"]);
 
 export const refunds = pgTable(

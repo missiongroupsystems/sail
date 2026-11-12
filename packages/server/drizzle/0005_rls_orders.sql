@@ -14,7 +14,7 @@ BEGIN
   END LOOP;
 END $$;
 --> statement-breakpoint
--- At most one open dine-in order per table (vision 5.2).
+-- At most one open dine-in order per table.
 CREATE UNIQUE INDEX orders_one_open_per_table ON orders (table_id) WHERE table_id IS NOT NULL AND status IN ('open','fired','ready','out_for_delivery');
 --> statement-breakpoint
 -- Invariant: every adjustment's line amounts add up to its total (checked at commit).

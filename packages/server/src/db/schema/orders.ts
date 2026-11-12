@@ -6,7 +6,7 @@ import { customers } from "./customers.js";
 import { staff } from "./staff.js";
 
 /**
- * Orders (scope doc 4.3): one model with an order_type. Current-state tables
+ * Orders: one model with an order_type. Current-state tables
  * are authoritative; every change also appends to `events` (per-outlet
  * sequence). Money columns are integer cents written only from the pricing
  * pipeline's result.
@@ -177,7 +177,7 @@ export const orderManualApplications = pgTable(
   (t) => [index("order_manual_applications_order_idx").on(t.orderId)],
 );
 
-/** One row per rule application from the latest pricing run (scope doc 7.2). */
+/** One row per rule application from the latest pricing run. */
 export const orderAdjustments = pgTable(
   "order_adjustments",
   {
@@ -228,7 +228,7 @@ export const orderAdjustmentLines = pgTable(
   (t) => [uniqueIndex("order_adjustment_lines_uq").on(t.adjustmentId, t.orderLineId), index("order_adjustment_lines_line_idx").on(t.orderLineId)],
 );
 
-/** Single-use manager override grants (scope doc 7.1 rule 9). */
+/** Single-use manager override grants. */
 export const overrides = pgTable(
   "overrides",
   {
@@ -256,7 +256,7 @@ export const overrides = pgTable(
   (t) => [index("overrides_outlet_idx").on(t.outletId, t.expiresAt)],
 );
 
-/** One-time station pairing codes (scope doc 4.1). */
+/** One-time station pairing codes. */
 export const stationPairingCodes = pgTable(
   "station_pairing_codes",
   {

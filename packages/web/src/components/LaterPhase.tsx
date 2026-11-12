@@ -1,7 +1,7 @@
 import { PageHeader } from "@sail/ui";
 import { SECTIONS } from "@/lib/nav";
 
-/** A section from design 3.2 that this phase does not build yet. One quiet line; never a gap or a 404. */
+/** A section that this phase does not build yet. One quiet line; never a gap or a 404. */
 export function LaterPhase({ href }: { href: string }) {
   const section = SECTIONS.find((s) => s.href === href);
   const label = section?.label ?? "This section";

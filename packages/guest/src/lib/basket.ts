@@ -9,7 +9,7 @@ export type BasketItem = {
   key: string;
   product_id: string;
   name: string;
-  /** Menu price in cents from the register, shown per item; the client never totals it (design principle 8). */
+  /** Menu price in cents from the register, shown per item; the client never totals it. */
   unit_price: number;
   quantity: number;
   modifiers: ChosenModifier[];
@@ -18,7 +18,7 @@ export type BasketItem = {
 
 export type BasketState = {
   items: BasketItem[];
-  /** "So staff know whose order it is" (design 4.11). */
+  /** "So staff know whose order it is". */
   guestName: string;
   /** The round in flight: the same round_id and Idempotency-Key are reused when a send is retried unchanged. */
   pending: { round_id: string; idempotency_key: string } | null;

@@ -1,7 +1,7 @@
 import { PricingRuleSchema, type PricingRule, type PricingRuleInput } from "./schemas.js";
 
 /**
- * Pure validation over a rule set and a catalogue snapshot (scope doc 4.8,
+ * Pure validation over a rule set and a catalogue snapshot (
  * "Validation flags likely mistakes"). Returns warnings; it never throws for
  * business problems, only for malformed input.
  */

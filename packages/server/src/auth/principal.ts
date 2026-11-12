@@ -4,7 +4,7 @@ import { db } from "../db/client.js";
 import { outlets } from "../db/schema/index.js";
 
 /**
- * The resolved caller of a request (scope doc 7.1 rule 8; vision 7.2). Every
+ * The resolved caller of a request. Every
  * principal maps onto the same RLS pipeline: set_config('app.current_*') then
  * SET LOCAL ROLE.
  */

@@ -9,7 +9,7 @@ export type IconProps = Omit<LucideProps, "ref"> & {
   label?: string;
 };
 
-/** Lucide at a 1.75 stroke (design 7.6). Decorative unless a `label` is given. */
+/** Lucide at a 1.75 stroke. Decorative unless a `label` is given. */
 export function Icon({ icon: Glyph, size = 20, label, className, ...rest }: IconProps) {
   return (
     <Glyph

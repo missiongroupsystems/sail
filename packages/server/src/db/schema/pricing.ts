@@ -2,7 +2,7 @@ import { index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, u
 import { merchants } from "./org.js";
 
 /**
- * Pricing rules (scope doc 4.8), versioned. `rule_key` is the stable identity
+ * Pricing rules, versioned. `rule_key` is the stable identity
  * the engine sees as `rule.id`; each change creates a new version row with an
  * `effective_from`. The active set at time T is, for each rule_key, the newest
  * non-archived version with effective_from <= T. Orders keep the snapshot they

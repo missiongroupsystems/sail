@@ -3,7 +3,7 @@ import { CentsSchema, ChannelTypeSchema, NonNegativeCentsSchema, OrderTypeSchema
 import { RoleSchema } from "../roles.js";
 
 /**
- * Pricing rules (scope doc 4.8). One record type covers fees and discounts.
+ * Pricing rules. One record type covers fees and discounts.
  * The condition set is FIXED: anything outside this schema needs a decision.
  *
  * Values: percentages are basis points (1000 = 10%); fixed amounts are cents.

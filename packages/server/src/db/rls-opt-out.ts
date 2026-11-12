@@ -1,5 +1,5 @@
 /**
- * Routes that run with NO per-request RLS transaction (scope doc 7.1 rule 8:
+ * Routes that run with NO per-request RLS transaction (
  * `/health` only, plus the spec itself and the development token endpoint,
  * which is disabled in production). Covered by a test.
  */

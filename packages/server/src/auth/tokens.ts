@@ -4,7 +4,7 @@ import { config } from "../config.js";
 import { AppError } from "../lib/errors.js";
 
 /**
- * Token types (scope doc 7.1 rule 8). All are plain bearer tokens.
+ * Token types. All are plain bearer tokens.
  *
  * - Back-office users: Supabase JWTs (JWKS or HS256), or a DEV_AUTH_SECRET JWT in development and tests.
  * - Sail-issued tokens: HS256 JWTs with a `typ` claim, each signed with its own secret.

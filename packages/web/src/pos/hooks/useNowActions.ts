@@ -10,7 +10,7 @@ import { applySnapshot, posKeys } from "./queries";
 import { useApi } from "./useApi";
 
 /**
- * Actions on the Now rail (design 4.2, 4.11): accept or reject a QR order,
+ * Actions on the Now rail: accept or reject a QR order,
  * acknowledge a table request, and mark a ready pickup collected. Each is one
  * tap; the register's snapshot goes straight into the cache.
  */

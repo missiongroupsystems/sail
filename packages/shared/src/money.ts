@@ -121,7 +121,7 @@ export function percentOfCents(amount: Cents, bps: number): Cents {
 
 /**
  * Round `amount` to the nearest `increment` minor units, halves rounded up
- * (away from zero): 5 for CHF (0.05), 100 for SEK (1 krona), 10 for JPY. Used only for cash tenders (scope doc 4.3). Returns the rounded
+ * (away from zero): 5 for CHF (0.05), 100 for SEK (1 krona), 10 for JPY. Used only for cash tenders. Returns the rounded
  * amount and the difference `rounded - amount`.
  */
 export function roundCash(amount: Cents, increment: number): { rounded: Cents; roundingCents: Cents } {

@@ -12,7 +12,7 @@ export type DockAction = {
   isPending?: boolean;
   /** Longer accessible name when the label is terse ("Send 2 to kitchen"). */
   ariaLabel?: string;
-  /** Shows the "Manager approval" badge (design 4.7). */
+  /** Shows the "Manager approval" badge. */
   needsApproval?: boolean;
   /** This action changes the register; while offline it is disabled and labelled "Offline". */
   mutates?: boolean;
@@ -21,12 +21,12 @@ export type DockAction = {
 export type ActionDockProps = {
   primary: DockAction;
   secondaries?: DockAction[];
-  /** Disconnected (design 7.8): mutating buttons read "Offline". */
+  /** Disconnected: mutating buttons read "Offline". */
   offline?: boolean;
   className?: string;
 };
 
-/** The action dock (design 1, 4.3): always the bottom 72pt, one primary action bottom right. */
+/** The action dock: always the bottom 72pt, one primary action bottom right. */
 export function ActionDock({ primary, secondaries = [], offline, className }: ActionDockProps) {
   const render = (a: DockAction, variant: "primary" | "secondary") => {
     const blocked = offline && a.mutates !== false;

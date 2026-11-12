@@ -3,7 +3,7 @@ import type { BasketItem } from "./basket";
 import { activeGroups, selectionFromModifiers, unmetRequirement } from "./modifiers";
 import type { CompiledMenu } from "./types";
 
-/** What went wrong when a round was sent, so the review page can put the register's words where they belong (design 7.8). */
+/** What went wrong when a round was sent, so the review page can put the register's words where they belong. */
 export type SendError =
   | { kind: "table_not_open"; error: ApiError }
   | { kind: "rate_limited"; error: ApiError; retryIn: number }

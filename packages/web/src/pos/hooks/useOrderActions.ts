@@ -33,7 +33,7 @@ export type AddLineInput = {
  * Every change to one order, with the register's rules applied on the client
  * side of the contract: optimistic lines that never show a guessed amount,
  * `expected_version` on edits with a quiet retry for new lines, Undo for T1
- * actions, and the manager approval sheet for T3 actions (design 2.5, 4.3, 4.7).
+ * actions, and the manager approval sheet for T3 actions.
  */
 export function useOrderActions(orderId: string) {
   const api = useApi();
@@ -91,7 +91,7 @@ export function useOrderActions(orderId: string) {
   );
 
   /**
-   * Manager approval (design 4.7): if the role is below the action's minimum,
+   * Manager approval: if the role is below the action's minimum,
    * ask first; if the register still says permission_denied with
    * override_allowed, ask then. Returns null when the approval was declined.
    */
@@ -167,7 +167,7 @@ export function useOrderActions(orderId: string) {
       };
       const label = `Added ${input.product.name}${input.quantity > 1 ? ` ×${input.quantity}` : ""}`;
       try {
-        // A version conflict means another station changed the order meanwhile; adding is safe to replay (design 4.3).
+        // A version conflict means another station changed the order meanwhile; adding is safe to replay.
         const exec = (overrideId: string | null) =>
           run((expected) => reg.addLines(api, orderId, [body], { key: idem, expectedVersion: expected, overrideId }), {
             onConflict: "retry-unversioned",
@@ -371,7 +371,7 @@ export function useOrderActions(orderId: string) {
     }
   }, [api, fail, orderId, run]);
 
-  /** Apply a manual rule (design 4.3 Discount). The rule's own minimum role decides whether to ask a manager first. */
+  /** Apply a manual rule. The rule's own minimum role decides whether to ask a manager first. */
   const applyDiscount = useCallback(
     async (rule: ManualRule, enteredValue: number | null, reason: string | null, lineIds: string[] | null) => {
       const applicationId = idempotencyKey();
@@ -411,7 +411,7 @@ export function useOrderActions(orderId: string) {
     [api, fail, orderId, run, withApproval],
   );
 
-  /* ---- Bills (design 4.4): the register recomputes every split; the response is the only source of amounts. ---- */
+  /* ---- Bills: the register recomputes every split; the response is the only source of amounts. ---- */
 
   const splitEven = useCallback(
     async (n: number) => {
@@ -476,7 +476,7 @@ export function useOrderActions(orderId: string) {
     [api, fail, notify, orderId, qc, snapshot],
   );
 
-  /* ---- Payments (design 4.5) ---- */
+  /* ---- Payments ---- */
 
   /** The bill's balance moved since it was loaded (payments.record replies 400 `validation` with `details.balance`): refresh so the prefilled amount follows the register. */
   const refreshIfBalanceChanged = useCallback(
@@ -503,7 +503,7 @@ export function useOrderActions(orderId: string) {
 
   /**
    * Record a payment. The caller keeps `payment_id` for the whole attempt, so a
-   * double tap or a retry after a timeout records once (design 4.5). Cashier+;
+   * double tap or a retry after a timeout records once. Cashier+;
    * a Server gets the Manager approval sheet.
    */
   const pay = useCallback(
@@ -603,7 +603,7 @@ export function useOrderActions(orderId: string) {
     [api, fail, key, notify, orderId, qc],
   );
 
-  /* ---- Refunds (design 4.6): the quote is the register's; Manager+ or an approval for the signed-in role. ---- */
+  /* ---- Refunds: the quote is the register's; Manager+ or an approval for the signed-in role. ---- */
 
   const quoteRefund = useCallback(
     async (checkId: string, request: RefundRequest, tenderSplit?: reg.TenderSplit) => {
@@ -648,7 +648,7 @@ export function useOrderActions(orderId: string) {
     [api, fail, notify, orderId],
   );
 
-  /* ---- Scan to Order (design 4.11): a held round is accepted (sent) or rejected with a reason. ---- */
+  /* ---- Scan to Order: a held round is accepted (sent) or rejected with a reason. ---- */
 
   const acceptRound = useCallback(
     async (roundId: string) => {
@@ -678,7 +678,7 @@ export function useOrderActions(orderId: string) {
     [api, fail, qc, run],
   );
 
-  /* ---- Printing (design 4.12 reprint) ---- */
+  /* ---- Printing ---- */
 
   const reprint = useCallback(
     async (jobId: string) => {

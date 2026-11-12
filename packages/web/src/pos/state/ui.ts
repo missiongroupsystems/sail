@@ -5,7 +5,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import type { ConnectionStatus } from "@sail/ui";
 import type { OverrideSubject } from "../api/types";
 
-/* ---- Theme (design 7.3): schedule from the outlet, or a manual choice -------- */
+/* ---- Theme: schedule from the outlet, or a manual choice -------- */
 
 export type ThemeMode = "auto" | "day" | "service";
 
@@ -15,13 +15,13 @@ export const useThemeStore = create<ThemeState>()(
   persist((set) => ({ mode: "auto", setMode: (mode) => set({ mode }) }), { name: "sail.pos.theme", storage: createJSONStorage(() => localStorage) }),
 );
 
-/* ---- Sound (design 7.9): off by default; a short tone for a new QR order or table request ---- */
+/* ---- Sound: off by default; a short tone for a new QR order or table request ---- */
 
 type SoundState = { enabled: boolean; setEnabled: (on: boolean) => void };
 
 export const useSoundStore = create<SoundState>()(persist((set) => ({ enabled: false, setEnabled: (enabled) => set({ enabled }) }), { name: "sail.pos.sound", storage: createJSONStorage(() => localStorage) }));
 
-/* ---- Connection (design 7.8) --------------------------------------------- */
+/* ---- Connection --------------------------------------------- */
 
 type ConnectionState = {
   status: ConnectionStatus;
@@ -59,7 +59,7 @@ export type OverrideRequest = {
 type UiState = {
   undo: UndoEntry | null;
   notices: Notice[];
-  /** Mutations in flight per order; the totals block shows "pricing" after 150 ms (design 7.8). */
+  /** Mutations in flight per order; the totals block shows "pricing" after 150 ms. */
   inFlight: Record<string, number>;
   activeSeat: Record<string, number | null>;
   override: OverrideRequest | null;

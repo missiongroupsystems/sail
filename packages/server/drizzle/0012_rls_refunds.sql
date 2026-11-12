@@ -1,4 +1,4 @@
--- Hand-written: RLS and invariants for refunds (scope doc 4.5): immutable records, sums, per-line and per-payment caps.
+-- Hand-written: RLS and invariants for refunds: immutable records, sums, per-line and per-payment caps.
 
 --> statement-breakpoint
 DO $$

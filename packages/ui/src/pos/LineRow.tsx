@@ -25,9 +25,9 @@ export type LineRowProps = {
   flash?: boolean;
   /** Slide in on first render (new line). */
   entering?: boolean;
-  /** Print status of a sent line (design 4.3): ✓ printed, ◷ waiting, ⚠ not printed. Omit for the plain "sent" mark. */
+  /** Print status of a sent line: ✓ printed, ◷ waiting, ⚠ not printed. Omit for the plain "sent" mark. */
   printStatus?: "printed" | "waiting" | "late" | null;
-  /** A small source chip after the name, for example "QR" on guest lines (design 4.11). */
+  /** A small source chip after the name, for example "QR" on guest lines. */
   chip?: string | null;
   onPress?: () => void;
   className?: string;
@@ -39,7 +39,7 @@ const PRINT_STATUS = {
   late: { icon: AlertTriangle, text: "not printed", cls: "text-status-alert" },
 } as const;
 
-/** An order line (design 4.3): quantity, name, modifiers, notes, seat chip, amount in tabular figures. */
+/** An order line: quantity, name, modifiers, notes, seat chip, amount in tabular figures. */
 export function LineRow({ quantity, name, modifiers = [], notes, seat, amountCents, status, voidReason, flash, entering, printStatus, chip, onPress, className }: LineRowProps) {
   const voided = status === "voided";
   const print = status === "sent" && printStatus ? PRINT_STATUS[printStatus] : null;

@@ -9,7 +9,7 @@ import { Icon } from "./../components/Icon";
 export type PinPadProps = {
   value: string;
   onChange: (value: string) => void;
-  /** Called once the pad holds `length` digits. The pad submits itself; there is no extra tap (design 4.1). */
+  /** Called once the pad holds `length` digits. The pad submits itself; there is no extra tap. */
   onComplete?: (pin: string) => void;
   length?: number;
   /** "PIN not recognised": shakes the dots (flashes under reduced motion). Changing the text shakes again. */
@@ -17,7 +17,7 @@ export type PinPadProps = {
   /** Lockout countdown from the register's rate_limited error; keys are disabled while it runs. */
   lockedForSeconds?: number | null;
   isDisabled?: boolean;
-  /** Show "Unlock" under the dots once 4 digits are in (design 4.1). */
+  /** Show "Unlock" under the dots once 4 digits are in. */
   unlockHint?: boolean;
   /** Busy while the register checks the PIN. */
   isPending?: boolean;
@@ -27,7 +27,7 @@ export type PinPadProps = {
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"] as const;
 
 /**
- * The PIN pad (design 4.1, 7.5): keys 88 × 72, digits 48pt, six dots. Used for
+ * The PIN pad: keys 88 × 72, digits 48pt, six dots. Used for
  * sign-in and for manager approval (4.7).
  */
 export function PinPad({ value, onChange, onComplete, length = 6, error, lockedForSeconds, isDisabled, unlockHint = true, isPending, className }: PinPadProps) {

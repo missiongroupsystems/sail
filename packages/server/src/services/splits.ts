@@ -7,7 +7,7 @@ import { AppError } from "../lib/errors.js";
 import { checksFor, syncAllocations, type CheckRow } from "./checks.js";
 
 /**
- * Bill splitting (scope doc 4.4): evenly by N, by seat, or by item with equal
+ * Bill splitting: evenly by N, by seat, or by item with equal
  * shares for shared lines. Every mode ends in `syncAllocations` with an explicit
  * share vector per line, so the allocator is the only place amounts are split.
  * Splits are free until the first payment; a paid bill's allocations are fixed.

@@ -1,6 +1,6 @@
 import { Info } from "lucide-react";
 
-/** The table has no open order (design 4.11): guests can browse, not order, until staff seat them. */
+/** The table has no open order: guests can browse, not order, until staff seat them. */
 export function StaffBanner({ className }: { className?: string }) {
   return (
     <div role="status" aria-live="polite" className={`flex items-start gap-3 rounded-tile bg-surface-2 px-4 py-3 text-body text-ink ${className ?? ""}`}>

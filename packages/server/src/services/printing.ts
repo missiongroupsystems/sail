@@ -9,7 +9,7 @@ import type { Principal } from "../auth/principal.js";
 import { businessDayInputs, printLocale } from "./business-day.js";
 
 /**
- * Printing (scope doc 4.7): routing rules, server-side rendering with the
+ * Printing: routing rules, server-side rendering with the
  * shared ESC/POS templates, and the durable job queue. One job per target
  * printer (per copy), created in the same transaction as the fire or void.
  */

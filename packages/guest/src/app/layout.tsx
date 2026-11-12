@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   formatDetection: { telephone: false, address: false, email: false },
 };
 
-// No maximum-scale and no user-scalable=no: pinch zoom is never disabled in the guest app (design 10).
+// No maximum-scale and no user-scalable=no: pinch zoom is never disabled in the guest app.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,

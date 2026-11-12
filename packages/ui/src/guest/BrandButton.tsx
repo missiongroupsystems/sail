@@ -25,12 +25,12 @@ export type BrandButtonProps = Omit<AriaButtonProps, "className" | "children"> &
   /** Full width: the one primary action at the bottom of a guest screen. */
   block?: boolean;
   className?: string;
-  /** A verb with its object: "Add to order", "Send to kitchen", "Call staff" (design 6). */
+  /** A verb with its object: "Add to order", "Send to kitchen", "Call staff". */
   children: ReactNode;
 };
 
 /**
- * The guest app's button (design 9): the brand accent shows here, on a 48px
+ * The guest app's button: the brand accent shows here, on a 48px
  * target (7.5). Labels are verbs; amounts in them come from the register.
  */
 export function BrandButton({ variant = "secondary", block = false, className, children, isPending, ...rest }: BrandButtonProps) {

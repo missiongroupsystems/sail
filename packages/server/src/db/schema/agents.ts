@@ -2,7 +2,7 @@ import { boolean, index, integer, jsonb, pgTable, text, timestamp, uuid } from "
 import { merchants } from "./org.js";
 
 /**
- * Agent identities, sessions and proposals (vision 7.2 to 7.4). An agent is an
+ * Agent identities, sessions and proposals. An agent is an
  * untrusted client with a valid badge: it reaches the same operations through
  * the same permission checks, capped by a risk ceiling; anything above the
  * ceiling becomes a proposal a human approves.
@@ -25,7 +25,7 @@ export const agentIdentities = pgTable(
     credentialHash: text("credential_hash"),
     credentialRotatedAt: timestamp("credential_rotated_at", { withTimezone: true }),
     enabled: boolean("enabled").notNull().default(true),
-    /** Per-identity limits (vision 11): operations per hour, proposals per day. */
+    /** Per-identity limits: operations per hour, proposals per day. */
     maxOpsPerHour: integer("max_ops_per_hour").notNull().default(600),
     maxProposalsPerDay: integer("max_proposals_per_day").notNull().default(50),
     createdBy: uuid("created_by"),

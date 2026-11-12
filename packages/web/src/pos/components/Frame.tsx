@@ -23,7 +23,7 @@ const TABS = [
   { id: "shift", label: "Shift" },
 ];
 
-/** Top bar (56pt), the reserved banner slot (48pt) and the screen (design 7.2). */
+/** Top bar (56pt), the reserved banner slot (48pt) and the screen. */
 export function Frame({ left, title, right, children }: FrameProps) {
   const { clock } = useLocale();
   const screen = useNavStore((s) => s.screen);
@@ -50,7 +50,7 @@ export function Frame({ left, title, right, children }: FrameProps) {
   );
 }
 
-/** The one banner slot (design 2.2): the connection first (design 7.8), otherwise the print failure alert (design 4.8). */
+/** The one banner slot: the connection first, otherwise the print failure alert. */
 function ConnectionBanner() {
   const { clock } = useLocale();
   const { status, asOf, recoveredAt } = useConnectionStore();

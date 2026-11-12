@@ -25,7 +25,7 @@ export function initialsOf(name: string | null | undefined, fallback = "?"): str
 }
 
 /**
- * Who did a committed thing (design 2.1): a person's initials, an assistant acting
+ * Who did a committed thing: a person's initials, an assistant acting
  * for someone, a guest from a QR order, or the system. Agents are never people:
  * no faces, no first names.
  */

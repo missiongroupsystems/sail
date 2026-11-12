@@ -6,7 +6,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 
 /**
- * Migration runner: drift check → migrate → drift check (Launchpad discipline).
+ * Migration runner: drift check → migrate → drift check.
  * Runs on a session connection. Forward-only. Never `drizzle-kit push` against
  * a shared environment.
  */

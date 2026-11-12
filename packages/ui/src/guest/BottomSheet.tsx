@@ -21,7 +21,7 @@ export type BottomSheetProps = {
 };
 
 /**
- * The guest sheet (design 7.6, 7.7): slides up from the bottom of the phone,
+ * The guest sheet: slides up from the bottom of the phone,
  * 16px top corners, one soft shadow and a 40% scrim. React Aria moves focus
  * into the dialog on open and back to the trigger on close (section 10).
  */

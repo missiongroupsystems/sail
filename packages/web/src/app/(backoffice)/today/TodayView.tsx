@@ -20,7 +20,7 @@ import { orderJobs } from "../printing/jobs/PrintJobsView";
 const POLL = 15_000;
 
 /**
- * Today (design 3.2): what needs a person now, for one outlet. Trays first; the
+ * Today: what needs a person now, for one outlet. Trays first; the
  * day's figures last and quiet. Everything polls the register every 15 s.
  */
 export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null }) {

@@ -1,5 +1,5 @@
 /**
- * The curated display faces a brand may choose for the guest app (design 9):
+ * The curated display faces a brand may choose for the guest app:
  * every one is open-licence, self-hosted through next/font and checked for
  * legibility at heading sizes. `lib/fonts.ts` loads them; this module is the
  * plain list so client code can map a brand's `display_font` to its variable.

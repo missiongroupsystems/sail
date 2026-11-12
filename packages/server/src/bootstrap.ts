@@ -8,7 +8,7 @@ import { isCashRoundingIncrement, isValidLocale, isValidTimeZone } from "./lib/l
  * Create a merchant with settings, one brand, one outlet, one station and an
  * Admin staff member, starting from a region preset (tax classes and rates,
  * service charge and deposit rules, tenders, cash denominations). There is no
- * self-serve onboarding in v0.9 (scope doc 5), so this is how a merchant is
+ * self-serve onboarding in v0.9, so this is how a merchant is
  * created: by Engineering, once, per environment.
  */
 export type BootstrapInput = {

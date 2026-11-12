@@ -9,7 +9,7 @@ import { useNavStore } from "../state/nav";
 import { useSessionStore } from "../state/session";
 import { useThemeStore } from "../state/ui";
 
-/** Initials in the top bar (design 4.1): Switch user, theme, Sign out. */
+/** Initials in the top bar: Switch user, theme, Sign out. */
 export function UserMenu() {
   const api = useApi();
   const staff = useSessionStore((s) => s.staff);

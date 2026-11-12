@@ -6,7 +6,7 @@ import { AppError } from "../lib/errors.js";
 import type { Principal } from "../auth/principal.js";
 
 /**
- * Shifts and the basic Z-report (scope doc 4.3 "Shifts and cash", 4.10). The
+ * Shifts and the basic Z-report. The
  * full breakdown by rule and reporting class arrives in v0.9; this covers
  * sales, tenders, expected vs counted cash, rounding, voids and covers.
  */

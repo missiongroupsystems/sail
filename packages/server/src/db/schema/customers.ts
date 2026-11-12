@@ -1,7 +1,7 @@
 import { boolean, index, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { merchants } from "./org.js";
 
-/** Customers and customer groups (scope doc 4.9). Groups feed pricing-rule conditions. */
+/** Customers and customer groups. Groups feed pricing-rule conditions. */
 export const customers = pgTable(
   "customers",
   {

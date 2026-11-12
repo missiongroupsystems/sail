@@ -2,7 +2,7 @@ import { allocateByShares, sumCents, type Cents, type Share } from "./money.js";
 import type { TaxAmount } from "./pricing/schemas.js";
 
 /**
- * Bill allocation (scope doc 4.4). A line's priced components are split across
+ * Bill allocation. A line's priced components are split across
  * checks by equal shares with the largest-remainder allocator; each component
  * is allocated on its own (each tax component too) and a check's total is the
  * sum of its allocated components, so the checks always add up to the order to

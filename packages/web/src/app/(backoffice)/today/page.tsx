@@ -8,7 +8,7 @@ import { TodayView } from "./TodayView";
 
 export const metadata = { title: "Today" };
 
-/** Today (design 3.2): what needs a person now at one outlet. Not a KPI dashboard. */
+/** Today: what needs a person now at one outlet. Not a KPI dashboard. */
 export default async function TodayPage() {
   const api = await requireApi();
   const scope = await getScope();

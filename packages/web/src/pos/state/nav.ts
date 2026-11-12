@@ -6,7 +6,7 @@ export type Origin = "floor" | "orders";
 
 /**
  * The three destinations plus the order screen and the two screens that hang
- * off it, Bill and Pay (design 3.1, 4.4, 4.5). Client-side only: one long-lived
+ * off it, Bill and Pay. Client-side only: one long-lived
  * page per station.
  */
 export type Screen =

@@ -14,7 +14,7 @@ import type { OrderType } from "../../api/types";
 import { useUiStore } from "../../state/ui";
 import { Row } from "./ShiftHome";
 
-/** The Z-report (design 4.9): sales, tenders with the card total at 34pt, expected vs counted, voids, refunds and covers, every figure from the register. */
+/** The Z-report: sales, tenders with the card total at 34pt, expected vs counted, voids, refunds and covers, every figure from the register. */
 export function ZReportView() {
   const { money, clock } = useLocale();
   const api = useApi();

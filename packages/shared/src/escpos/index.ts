@@ -1,5 +1,5 @@
 /**
- * ESC/POS ticket and receipt renderer (scope doc 4.7). The server builds the
+ * ESC/POS ticket and receipt renderer. The server builds the
  * data in types.ts, calls a template in templates.ts, stores the `text`
  * preview and hands the `bytes` to the print relay.
  */

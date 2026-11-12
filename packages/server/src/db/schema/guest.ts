@@ -3,7 +3,7 @@ import { outlets } from "./org.js";
 import { channelLinks, tables } from "./catalogue.js";
 import { orders } from "./orders.js";
 
-/** Scan to Order (scope doc 4.6): table QR tokens, guest sessions, guest rounds and table requests. Guests never pay. */
+/** Scan to Order: table QR tokens, guest sessions, guest rounds and table requests. Guests never pay. */
 
 export const tableQrTokens = pgTable(
   "table_qr_tokens",

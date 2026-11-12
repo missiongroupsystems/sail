@@ -1,7 +1,7 @@
 import { boolean, index, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { merchants } from "./org.js";
 
-/** Legacy POS importer jobs (scope doc 4.2): CSV-first, re-runnable, dry-run report first. */
+/** Legacy POS importer jobs: CSV-first, re-runnable, dry-run report first. */
 export const importStatusEnum = pgEnum("import_status", ["queued", "running", "dry_run_complete", "applied", "failed"]);
 
 export const importJobs = pgTable(

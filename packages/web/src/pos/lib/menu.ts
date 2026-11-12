@@ -26,7 +26,7 @@ export function tileIndex(layout: Layout | undefined): Map<string, Pick<ProductT
   return m;
 }
 
-/** Search the channel's menu, never the whole catalogue (design 4.3). Starts after one character. */
+/** Search the channel's menu, never the whole catalogue. Starts after one character. */
 export function searchMenu(menu: CompiledMenu, query: string, limit = 60): CompiledProduct[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];

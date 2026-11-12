@@ -19,7 +19,7 @@ import { RefundSheet, refundableChecks } from "./RefundSheet";
 const REFUND_KIND_LABEL: Record<string, string> = { full: "Whole bill", lines: "Some items", amount: "An amount" };
 
 /**
- * The order drawer (design 3.2 Orders): lines, adjustments, bills, refunds,
+ * The order drawer: lines, adjustments, bills, refunds,
  * tickets, events and audit, read-only for Servers. Other roles get the actions
  * their role allows; the register enforces every one of them again.
  */

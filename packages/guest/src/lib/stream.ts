@@ -8,7 +8,7 @@ export type GuestStreamOptions = {
   onStatus?: (status: GuestStreamStatus) => void;
   /** The register rejected the token: the table session has ended. */
   onUnauthenticated?: () => void;
-  /** How often to refetch while there is no order to stream (design 4.11: 15 s). */
+  /** How often to refetch while there is no order to stream (15 s). */
   pollMs?: number;
 };
 
@@ -18,7 +18,7 @@ const BACKOFF_MS = [1000, 2000, 4000, 8000, 15000, 30000];
 const COALESCE_MS = 150;
 
 /**
- * Live updates for the guest (design 11.1, 11.3): `/v1/guest/stream` over
+ * Live updates for the guest: `/v1/guest/stream` over
  * `fetch` streaming with the Bearer token. The stream only signals; every
  * `hello`, `change` and `resync` makes the app refetch the order view, as does
  * the tab becoming visible again. While the table has no order the register

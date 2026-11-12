@@ -3,7 +3,7 @@ import { CentsSchema, OrderTypeSchema, TaxModeSchema } from "../domain.js";
 import { TaxAmountSchema } from "../pricing/schemas.js";
 
 /**
- * Data contracts for the ESC/POS templates (scope doc 4.7).
+ * Data contracts for the ESC/POS templates.
  *
  * The server builds these from the order, check and payment records and
  * stores them on the print job. They are printer-agnostic: every amount is an

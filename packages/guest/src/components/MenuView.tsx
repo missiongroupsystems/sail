@@ -34,7 +34,7 @@ function guestOrderable(p: CompiledProduct | undefined): p is CompiledProduct {
   return p !== undefined && !p.open_price;
 }
 
-/** The landing screen (design 4.11): brand, table, sticky section tabs and the typography-led menu. */
+/** The landing screen: brand, table, sticky section tabs and the typography-led menu. */
 export function MenuView({ session, menu, canOrder, basketItems, orderView, onOpenItem, onReview, onCallStaff, onStatus }: MenuViewProps) {
   const { clock } = useLocale();
   const groups = useMemo<Group[]>(() => {

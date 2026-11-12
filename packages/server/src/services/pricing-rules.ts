@@ -72,7 +72,7 @@ export async function archiveRule(merchantId: string, ruleKey: string) {
   return rows.length;
 }
 
-/** Seed a merchant that has no rules yet with a preset's rules (`presetSeedRules`, scope doc 4.8). */
+/** Seed a merchant that has no rules yet with a preset's rules (`presetSeedRules`). */
 export async function seedRulesForMerchant(merchantId: string, rules: readonly PricingRuleInput[], effectiveFrom = new Date(0)) {
   const [existing] = await db().select({ n: sql<number>`count(*)::int` }).from(pricingRules).where(eq(pricingRules.merchantId, merchantId));
   if (existing && existing.n > 0) return 0;

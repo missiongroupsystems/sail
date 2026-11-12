@@ -11,7 +11,7 @@ import type { LayoutPage, LayoutTile } from "../db/schema/catalogue.js";
 import { logger } from "../logger.js";
 
 /**
- * Legacy POS importer (scope doc 4.2): CSV-first, one-way, re-runnable. Records
+ * Legacy POS importer: CSV-first, one-way, re-runnable. Records
  * match on `legacy_id` (or SKU for products), so a re-run updates rows instead
  * of duplicating them. A dry run produces the same report and rolls back.
  * Runs on the worker, never in a request transaction. Column mapping is

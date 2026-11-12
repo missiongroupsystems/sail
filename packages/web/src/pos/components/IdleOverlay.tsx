@@ -1,6 +1,6 @@
 "use client";
 
-/** The screen dims for the last 10 s before auto-lock; any tap cancels it (design 4.1). */
+/** The screen dims for the last 10 s before auto-lock; any tap cancels it. */
 export function IdleOverlay({ secondsLeft, onTouch }: { secondsLeft: number; onTouch: () => void }) {
   return (
     <button

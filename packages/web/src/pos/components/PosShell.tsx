@@ -76,7 +76,7 @@ function SignedInShell() {
   useWakeLock(true);
   const idle = useIdleLock(true, expiresInSeconds, () => lock("Locked after inactivity. Sign in to continue."));
 
-  // A counter station opens on a new takeaway order (design 3.1), once per sign-in.
+  // A counter station opens on a new takeaway order, once per sign-in.
   const homed = useRef(false);
   useEffect(() => {
     if (homed.current || station.home !== "takeaway" || screen.kind !== "floor") return;

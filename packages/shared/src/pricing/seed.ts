@@ -2,7 +2,7 @@ import type { OrderType } from "../domain.js";
 import type { PricingRuleInput } from "./schemas.js";
 
 /**
- * Seed rules (scope doc 4.8): every new merchant starts with the manual
+ * Seed rules: every new merchant starts with the manual
  * discounts below, plus the service charge and deposit its region preset
  * names, all editable. IDs are stable `seed:` keys so the database seed and the
  * reference set agree. The service-charge waiver switches off every fee in the

@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Generate or check the committed MCP tool manifest (vision 7.1): the tools an
+ * Generate or check the committed MCP tool manifest: the tools an
  * agent can reach, derived from the OpenAPI spec and its x-sail manifest with no
  * logic of its own. `check` fails CI when a route's exposure changed without the
  * manifest being regenerated and reviewed.

@@ -9,7 +9,7 @@ const REPORTS = [
   { href: "/reports/print-health", title: "Print health", detail: "Jobs, failures, reroutes, reprints and late tickets by printer, with time to print." },
 ];
 
-/** Reports (design 3.2, 4.10): every report the register serves. Never a gap or a 404. */
+/** Reports: every report the register serves. Never a gap or a 404. */
 export default function ReportsIndex() {
   return (
     <div className="flex max-w-[720px] flex-col gap-8">

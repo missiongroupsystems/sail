@@ -29,7 +29,7 @@ function clampTable(t: { x: number; y: number; w: number; h: number }) {
   return { x: Math.max(0, Math.min(COLS - w, t.x)), y: Math.max(0, Math.min(ROWS - h, t.y)), w, h };
 }
 
-/** Floor plan editor (design 8: FloorCanvas / TableShape, editor variant). Grid units are what the API stores. */
+/** Floor plan editor (FloorCanvas / TableShape, editor variant). Grid units are what the API stores. */
 export function FloorView({ outlets, scope, initialOutletId, initialAreas, initialTables }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; initialAreas: Area[]; initialTables: Table[] }) {
   const qc = useQueryClient();
   const { me } = useSession();
@@ -72,7 +72,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
   const patchTable = useMutation<{ data: Table }, ApiError, { id: string; body: TablePatch }>({
     mutationFn: ({ id, body }) => req(api.PATCH("/v1/tables/{id}", { params: { path: { id } }, body })),
     onMutate: ({ id, body }) => {
-      // Lines may be optimistic (design 1.8): the table moves at once; the register's reply settles it.
+      // Lines may be optimistic: the table moves at once; the register's reply settles it.
       qc.setQueryData<Table[]>(keys.tables(outletId ?? ""), (prev) => prev?.map((t) => (t.id === id ? { ...t, ...body, shape: body.shape ?? t.shape } : t)));
     },
     onSettled: () => qc.invalidateQueries({ queryKey: keys.tables(outletId ?? "") }),

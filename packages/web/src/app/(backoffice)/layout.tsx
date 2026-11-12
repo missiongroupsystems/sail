@@ -8,7 +8,7 @@ import { SessionProvider } from "@/lib/session-context";
 import { Shell } from "@/components/Shell";
 
 /**
- * The back-office frame (design 3.2): scope picker and left navigation, user menu,
+ * The back-office frame: scope picker and left navigation, user menu,
  * content. Everything here comes from the register through the session's token.
  */
 export default async function BackofficeLayout({ children }: { children: ReactNode }) {

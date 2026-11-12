@@ -4,7 +4,7 @@ import { BrandButton } from "@sail/ui";
 import { countItems } from "@/lib/format";
 
 /**
- * The sticky basket bar (design 4.11): "Review 3 items". It carries no total,
+ * The sticky basket bar: "Review 3 items". It carries no total,
  * because the client never adds cents (principle 8); the review page shows
  * each item's menu price and the bill at the POS has the real total.
  */

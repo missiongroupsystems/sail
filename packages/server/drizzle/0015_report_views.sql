@@ -1,4 +1,4 @@
--- Hand-written: reporting views (scope doc 4.10). Reports read from SQL views; no separate analytics stack.
+-- Hand-written: reporting views. Reports read from SQL views; no separate analytics stack.
 -- Views run with the caller's rights (security_invoker), so row-level security on the underlying tables applies.
 
 --> statement-breakpoint

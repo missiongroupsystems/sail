@@ -1,7 +1,7 @@
 import { boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { merchants, outlets, stations } from "./org.js";
 
-/** Network ESC/POS printing through a print relay at each outlet (scope doc 4.7). */
+/** Network ESC/POS printing through a print relay at each outlet. */
 
 export const printerRoleEnum = pgEnum("printer_role", ["kitchen", "receipt"]);
 

@@ -9,7 +9,7 @@ import { Notice } from "./Notices";
 type State = { kind: "loading" } | { kind: "ok"; receipt: ReceiptRead } | { kind: "expired" } | { kind: "error"; error: ApiError };
 
 /**
- * /r/<token>: the bill document for the guest's phone, with the brand's name on it (design 4.5 receipt chooser → QR).
+ * /r/<token>: the bill document for the guest's phone, with the brand's name on it.
  * Amounts, dates and times format from the document's own currency, locale and zone.
  */
 export function ReceiptPage({ token }: { token: string }) {

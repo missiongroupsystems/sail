@@ -23,7 +23,7 @@ const item =
   "press pos-touch flex min-h-14 w-full items-center rounded-tile px-3 text-left text-line outline-none " +
   "data-[pressed]:scale-[0.98] data-[hovered]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated";
 
-/** The section rail (design 4.3): 140pt, the layout's pages as items, the brand accent on the selected one. */
+/** The section rail: 140pt, the layout's pages as items, the brand accent on the selected one. */
 export function SectionRail({ items, selectedId, onSelect, folder, footer, className }: SectionRailProps) {
   return (
     <nav aria-label="Menu sections" className={cx("flex h-full w-[140px] shrink-0 flex-col gap-1 py-2 pr-2", className)}>

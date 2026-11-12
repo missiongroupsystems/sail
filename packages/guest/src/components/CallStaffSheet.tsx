@@ -17,10 +17,10 @@ export type CallStaffSheetProps = {
 type Outcome = { kind: "sending" } | { kind: "sent" } | { kind: "too_soon"; remedy: string | null } | { kind: "error"; message: string; remedy: string | null };
 
 const SENT = "Sent. Someone will be with you shortly.";
-/** Pressed again too soon (design 4.11): say so, with the register's remedy ("Try again in 42 seconds."). */
+/** Pressed again too soon: say so, with the register's remedy ("Try again in 42 seconds."). */
 const tooSoon = (remedy: string | null) => `Already sent. ${remedy ?? "Please give us a moment."}`;
 
-/** Call staff (design 4.11): the channel's requests as big buttons, plus "Ask for the bill". Each confirms; repeats say so. */
+/** Call staff: the channel's requests as big buttons, plus "Ask for the bill". Each confirms; repeats say so. */
 export function CallStaffSheet({ isOpen, onOpenChange, api, requests, guestName }: CallStaffSheetProps) {
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({});
   useEffect(() => {

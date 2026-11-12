@@ -49,7 +49,7 @@ const key =
   "data-[pressed]:scale-[0.97] data-[pressed]:brightness-90 data-[disabled]:opacity-40 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated";
 
 /**
- * Cash count (design 4.9): a single total on the amount pad, or a denomination
+ * Cash count: a single total on the amount pad, or a denomination
  * counter with a row per note and coin adding up live. Used for the float at
  * open and the blind count at close.
  */

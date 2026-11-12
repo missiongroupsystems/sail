@@ -10,7 +10,7 @@ import { RLS_OPT_OUT, SHORT_TX_ROUTES } from "../db/rls-opt-out.js";
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /**
- * Idempotency-Key on every mutation (scope doc 7.1 rule 3). The key is scoped to
+ * Idempotency-Key on every mutation. The key is scoped to
  * the principal. A repeat with the same body replays the stored response; the
  * same key with a different body is `idempotency_conflict`.
  *

@@ -2,7 +2,7 @@ import { bigint, date, index, integer, jsonb, pgTable, primaryKey, text, timesta
 import { merchants, outlets } from "./org.js";
 
 /**
- * The append-only event log (scope doc 7.1 rule 4; vision 6.2). Outlet events
+ * The append-only event log. Outlet events
  * get a per-outlet sequence; merchant-level (configuration) events get a
  * per-merchant sequence and a null outlet_id.
  */
@@ -68,7 +68,7 @@ export const merchantSequences = pgTable("merchant_sequences", {
 });
 
 /**
- * Audit log (scope doc 4.1): who did what, on which target, when, and who
+ * Audit log: who did what, on which target, when, and who
  * approved it. Written by one server-side function (`audit.record`).
  */
 export const auditLog = pgTable(

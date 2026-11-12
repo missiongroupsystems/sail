@@ -27,7 +27,7 @@ export function refundableChecks(checks: CheckSnapshot[]): CheckSnapshot[] {
 }
 
 /**
- * Refund stepper (design 4.6): bill → what → why → review from the register's
+ * Refund stepper: bill → what → why → review from the register's
  * quote → "Refund $19.18". Every figure on the review step is the quote's; the
  * sheet never computes money. Manager, Finance or Admin (the caller gates it).
  */

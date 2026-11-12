@@ -16,7 +16,7 @@ import { formatElapsed } from "../../lib/format";
 import { useNavStore } from "../../state/nav";
 import { useUiStore } from "../../state/ui";
 
-/** Printers (design 3.1 Shift, 4.8): status from the relay, waiting tickets with Send to backup and Retry, and Reprint from recent jobs. */
+/** Printers: status from the relay, waiting tickets with Send to backup and Retry, and Reprint from recent jobs. */
 export function PrintersView() {
   const { clock, dayClock } = useLocale();
   const api = useApi();

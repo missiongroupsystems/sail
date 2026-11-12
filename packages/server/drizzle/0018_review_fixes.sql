@@ -1,4 +1,4 @@
--- Beta v1 review (docs/completions/beta-v1-review.md).
+-- Beta v1 review.
 -- A voided line is worth quantity × (unit price + modifiers per unit); the earlier view ignored modifiers,
 -- so the void report and the Z-report under-stated voids of items with paid modifiers.
 CREATE OR REPLACE VIEW report_voids WITH (security_invoker = true) AS

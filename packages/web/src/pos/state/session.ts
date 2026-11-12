@@ -8,7 +8,7 @@ type SessionState = {
   /** The PIN session token: memory plus sessionStorage, so a reload keeps the shift but a closed tab does not. */
   token: string | null;
   staff: Staff | null;
-  /** Inactivity timeout from the register (design 4.1). */
+  /** Inactivity timeout from the register. */
   expiresInSeconds: number;
   /** Why the lock screen is showing, if a reason is worth saying ("Your session ended"). */
   lockNote: string | null;

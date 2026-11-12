@@ -111,7 +111,7 @@ export function maybeTx(): RequestTx | undefined {
   return als.getStore();
 }
 
-/** Mark the current request transaction as a dry run (vision 2, principle 10). */
+/** Mark the current request transaction as a dry run. */
 export function markDryRun() {
   currentTx().dryRun = true;
 }

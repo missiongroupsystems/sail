@@ -18,7 +18,7 @@ const Schema = z.object({ name: z.string().trim().min(1, "Enter a reason"), for_
 type Values = z.infer<typeof Schema>;
 const defaults = (r: VoidReason | null): Values => ({ name: r?.name ?? "", for_refunds: r?.for_refunds ?? false, sort: r ? String(r.sort) : "" });
 
-/** Reasons staff pick when voiding a sent line or refunding (design 8: ReasonPicker). */
+/** Reasons staff pick when voiding a sent line or refunding (ReasonPicker). */
 export function VoidReasonsView({ initialReasons }: { initialReasons: VoidReason[] }) {
   const [showArchived, setShowArchived] = useState(false);
   const [sheet, setSheet] = useState<SheetState>(null);

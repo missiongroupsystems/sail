@@ -27,7 +27,7 @@ type Values = z.infer<typeof Schema>;
 
 const defaults = (t: TenderType | null): Values => ({ name: t?.name ?? "", is_cash: t?.is_cash ?? false, opens_drawer: t?.opens_drawer ?? false, is_terminal: t?.is_terminal ?? false, requires_approval: t?.requires_approval ?? true, requires_reference: t?.requires_reference ?? false, sort: t ? String(t.sort) : "" });
 
-/** Payment methods (design 1.1: the API says tender). */
+/** Payment methods (the API says tender). */
 export function TendersView({ initialTenders }: { initialTenders: TenderType[] }) {
   const [showArchived, setShowArchived] = useState(false);
   const [sheet, setSheet] = useState<SheetState>(null);

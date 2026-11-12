@@ -11,7 +11,7 @@ import { businessDayInputs } from "./business-day.js";
 import { registerRefundTotals } from "./shifts.js";
 
 /**
- * Refunds (scope doc 4.5): quote with the pure reversal, then record the refund,
+ * Refunds: quote with the pure reversal, then record the refund,
  * its lines and tenders, the refund receipt number and, for invoiced checks,
  * the credit note. Refunds count on the business day they happen and never
  * restore daily caps.

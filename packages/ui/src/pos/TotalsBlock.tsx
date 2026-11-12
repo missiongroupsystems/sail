@@ -22,13 +22,13 @@ export type TotalsRow = {
 
 export type TotalsBlockProps = {
   rows: TotalsRow[];
-  /** The register has not replied within 150 ms: previous figures at 60% with a thin progress line (design 7.8). */
+  /** The register has not replied within 150 ms: previous figures at 60% with a thin progress line. */
   pricing?: boolean;
   className?: string;
 };
 
 /**
- * The totals block (design 4.3): every adjustment by its rule name and with
+ * The totals block: every adjustment by its rule name and with
  * the sign the register returned (discounts arrive negative and render with a
  * true minus sign). Rows whose amount changed flash once for 400 ms.
  */
@@ -58,7 +58,7 @@ export function TotalsBlock({ rows, pricing, className }: TotalsBlockProps) {
       <div aria-hidden className={cx("absolute inset-x-3 top-0 h-px overflow-hidden", pricing ? "bg-rule" : "bg-transparent")}>
         {pricing ? <div className="pos-progress keep-motion h-full w-1/2 bg-ink" /> : null}
       </div>
-      {/* Polite live region (design 10): a changed row is announced; the whole block is not re-read. */}
+      {/* Polite live region: a changed row is announced; the whole block is not re-read. */}
       <dl className={cx("transition-opacity duration-150", pricing && "opacity-60")} aria-live="polite" aria-atomic="false">
         {rows.map((r) => (
           <div

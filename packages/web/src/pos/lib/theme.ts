@@ -15,7 +15,7 @@ function localHHMM(timeZone: string, d = new Date()): string {
   return `${h === "24" ? "00" : h}:${m}`;
 }
 
-/** Service theme by schedule (design 7.3): from the outlet's `service_theme_from` (default 18:00) until 05:00. */
+/** Service theme by schedule: from the outlet's `service_theme_from` (default 18:00) until 05:00. */
 export function scheduledTheme(serviceFrom: string | null | undefined, timeZone: string, now = new Date()): "day" | "service" {
   const from = serviceFrom && /^\d{2}:\d{2}$/.test(serviceFrom) ? serviceFrom : "18:00";
   const t = localHHMM(timeZone, now);

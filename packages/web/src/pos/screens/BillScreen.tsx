@@ -59,7 +59,7 @@ export function billRows(check: CheckSnapshot, taxMode: string): BillCardRow[] {
 }
 
 /**
- * The Bill screen (design 4.4): One / Even / By seat / By item, bills as
+ * The Bill screen: One / Even / By seat / By item, bills as
  * cards with the register's figures, "✓ Bills add up to", Pre-bill and Pay
  * per bill, and the lock on paid bills.
  */
@@ -335,7 +335,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
   );
 }
 
-/** "Share between bills…" (design 4.4): pick the bills for an equal share, such as the wine three ways. */
+/** "Share between bills…": pick the bills for an equal share, such as the wine three ways. */
 function ShareSheet({ line, checks, onClose, onShare }: { line: SnapshotLine | null; checks: CheckSnapshot[]; onClose: () => void; onShare: (line: SnapshotLine, checkIds: string[]) => void }) {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   useEffect(() => {

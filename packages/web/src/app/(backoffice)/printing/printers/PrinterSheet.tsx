@@ -85,7 +85,7 @@ function toBody(v: Values): PrinterPatch {
   };
 }
 
-/** Create or edit a printer (design 7.6 side sheet). The backup picker only offers printers of the same role. */
+/** Create or edit a printer. The backup picker only offers printers of the same role. */
 export function PrinterSheet({ state, outletId, printers, stations, canEdit, onClose }: { state: PrinterSheetState; outletId: string; printers: Printer[]; stations: Station[]; canEdit: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const printer = state?.mode === "edit" ? state.printer : null;

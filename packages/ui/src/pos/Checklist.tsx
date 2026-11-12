@@ -16,7 +16,7 @@ export type ChecklistItem = {
   /** Go to where the item is resolved (the Orders screen, the Now rail…). */
   onView?: () => void;
   viewLabel?: string;
-  /** Leave it for the next shift where the register allows it (design 4.9). */
+  /** Leave it for the next shift where the register allows it. */
   onLeave?: () => void;
   leaveLabel?: string;
 };
@@ -26,7 +26,7 @@ export type ChecklistProps = {
   className?: string;
 };
 
-/** The close-shift checklist (design 4.9): one row per register read, each resolved or explicitly left open. */
+/** The close-shift checklist: one row per register read, each resolved or explicitly left open. */
 export function Checklist({ items, className }: ChecklistProps) {
   return (
     <ul className={cx("flex flex-col gap-2", className)} aria-label="Before closing">

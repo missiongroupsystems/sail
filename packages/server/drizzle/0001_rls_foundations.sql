@@ -1,4 +1,4 @@
--- Hand-written migration (scope doc 10.2 condition 5): roles, grants, RLS, helper functions and triggers.
+-- Hand-written migration: roles, grants, RLS, helper functions and triggers.
 -- Generated migrations never touch these; later phases add their own hand-written files.
 
 --> statement-breakpoint
@@ -123,7 +123,7 @@ CREATE POLICY idempotency_keys_principal ON idempotency_keys FOR ALL TO app_auth
   USING (merchant_id = sail.merchant_id() AND principal_id = sail.principal_id())
   WITH CHECK (merchant_id = sail.merchant_id() AND principal_id = sail.principal_id());
 --> statement-breakpoint
--- Live updates: signal new events to the API's LISTEN connection when the transaction commits (scope doc 7.1 rule 7).
+-- Live updates: signal new events to the API's LISTEN connection when the transaction commits.
 CREATE OR REPLACE FUNCTION sail.notify_event() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN

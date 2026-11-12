@@ -60,7 +60,7 @@ const ruleB: PricingRuleInput = {
 };
 const serviceCharge = SG_SEED_RULES.find((r) => r.id === SEED_RULE_IDS.serviceCharge)!;
 
-describe("worked example from the scope doc (4.8)", () => {
+describe("worked example", () => {
   const o = order([line("food", 8000, { category_id: "food" }), line("wine", 12_000, { tags: ["alcohol"] })], { customer_group_ids: ["vip"] });
 
   it("produces $20 off food, $12 off wine and $16.80 service charge", () => {

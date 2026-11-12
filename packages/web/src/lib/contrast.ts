@@ -1,5 +1,5 @@
 /**
- * WCAG 2.x contrast for brand accents (design 9): an accent that fails 4.5:1 for
+ * WCAG 2.x contrast for brand accents: an accent that fails 4.5:1 for
  * text on its button gets a derived darker or lighter variant, shown before saving.
  */
 
@@ -66,7 +66,7 @@ function hslToRgb({ h, s, l }: { h: number; s: number; l: number }): Rgb {
 }
 
 export const WHITE: Rgb = { r: 255, g: 255, b: 255 };
-/** `ink` by day (design 7.3). */
+/** `ink` by day. */
 export const INK: Rgb = { r: 0x1c, g: 0x1d, b: 0x1f };
 export const MIN_TEXT_CONTRAST = 4.5;
 

@@ -11,7 +11,7 @@ import { businessDateFor } from "../lib/time.js";
 import { businessDayInputs } from "./business-day.js";
 
 /**
- * Payments (scope doc 4.3): several tenders per check, part payments until the
+ * Payments: several tenders per check, part payments until the
  * balance is 0, cash rounding only on a cash tender that settles the balance,
  * the pricing freeze at the first payment, and auto-completion.
  */
@@ -57,7 +57,7 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
   const now = new Date();
 
   if (firstPayment && !order.pricingFrozenAt) {
-    // Freeze order-level and minimum-spend results (scope doc 4.8). The re-price runs with the rules
+    // Freeze order-level and minimum-spend results. The re-price runs with the rules
     // active now, so a scheduled rule that switched on since the last edit is reflected on the bill.
     const result = await repriceOrder(order.id, now);
     const rules = await activeRules(order.merchantId, now);

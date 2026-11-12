@@ -15,7 +15,7 @@ export type ReceiptChooserProps = {
   heading: string;
   /** "Change $6.85", from the register. */
   sub?: string | null;
-  /** Leave the screen with no choice after this long (design 4.5: 4 s). 0 turns it off. */
+  /** Leave the screen with no choice after this long (4 s). 0 turns it off. */
   autoReturnMs?: number;
   onDone: () => void;
   doneLabel: string;
@@ -24,7 +24,7 @@ export type ReceiptChooserProps = {
 type Choice = "print" | "qr" | "send" | "none" | null;
 
 /**
- * The payment done screen (design 4.5): the result in one line, then Print,
+ * The payment done screen: the result in one line, then Print,
  * QR on screen, Email/SMS and No receipt as large buttons, Get invoice, and an
  * auto-return that any tap cancels.
  */

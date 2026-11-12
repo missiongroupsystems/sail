@@ -12,7 +12,7 @@ export type BillCardStatus = "open" | "paid" | "partially_refunded" | "refunded"
 export type BillCardLine = {
   id: string;
   name: string;
-  /** "⅓" or "1/3" share of a line split between bills (design 4.4). */
+  /** "⅓" or "1/3" share of a line split between bills. */
   share?: string | null;
   detail?: string | null;
   amountCents: number;
@@ -33,7 +33,7 @@ export type BillCardProps = {
   rows: BillCardRow[];
   /** Tenders on a paid bill: "Card · $41.56". */
   tenders?: { id: string; label: string; cents: number }[];
-  /** Highlight as the target while a line is selected (design 4.4: tap a line, then a bill). */
+  /** Highlight as the target while a line is selected (tap a line, then a bill). */
   isTarget?: boolean;
   onPress?: () => void;
   isDisabled?: boolean;
@@ -44,7 +44,7 @@ export type BillCardProps = {
 
 const STATUS_LABEL: Record<BillCardStatus, string> = { open: "", paid: "Paid", partially_refunded: "Partly refunded", refunded: "Refunded" };
 
-/** One bill as a column card (design 4.4): lines with their share, totals, a lock when paid, and the bill's own actions. */
+/** One bill as a column card: lines with their share, totals, a lock when paid, and the bill's own actions. */
 export function BillCard({ label, status, lines, rows, tenders, isTarget, onPress, isDisabled, actions, className }: BillCardProps) {
   const paid = status !== "open";
   const body = (

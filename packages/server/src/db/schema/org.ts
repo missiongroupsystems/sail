@@ -1,6 +1,6 @@
 import { boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
-/** Merchant > Brand > Outlet > Station (scope doc 4.1). Every row carries merchant_id. */
+/** Merchant > Brand > Outlet > Station. Every row carries merchant_id. */
 
 export const taxModeEnum = pgEnum("tax_mode", ["inclusive", "exclusive"]);
 export const taxRoundingEnum = pgEnum("tax_rounding", ["per_line", "per_rate"]);
@@ -21,7 +21,7 @@ export const merchantSettings = pgTable("merchant_settings", {
   cashRoundingIncrement: integer("cash_rounding_increment"),
   /** Notes and coins the POS cash counter offers, largest first, in minor units. Empty = enter the total only. */
   cashDenominations: integer("cash_denominations").array().notNull().default([]),
-  /** Closing a shift more than this many minor units out needs a reason (design 4.9). */
+  /** Closing a shift more than this many minor units out needs a reason. */
   cashVarianceThreshold: integer("cash_variance_threshold").notNull(),
   /** HH:MM local time at which the business day rolls over. */
   businessDayCutoff: text("business_day_cutoff").notNull().default("04:00"),
@@ -36,7 +36,7 @@ export const merchantSettings = pgTable("merchant_settings", {
   taxRegistrationLabel: text("tax_registration_label").notNull(),
   receiptFooter: text("receipt_footer"),
   receiptShowOutletPhone: boolean("receipt_show_outlet_phone").notNull().default(true),
-  /** Outlets with more open orders than this show the POS in busy mode (design 2.2). */
+  /** Outlets with more open orders than this show the POS in busy mode. */
   busyModeThreshold: integer("busy_mode_threshold").notNull().default(12),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -49,7 +49,7 @@ export const brands = pgTable(
       .notNull()
       .references(() => merchants.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    /** Brand accent colour (hex) for the order header stripe and the guest app (design 9). */
+    /** Brand accent colour (hex) for the order header stripe and the guest app. */
     accentColor: text("accent_color"),
     displayFont: text("display_font"),
     logoUrl: text("logo_url"),
@@ -78,7 +78,7 @@ export const outlets = pgTable(
     businessDayCutoff: text("business_day_cutoff"),
     /** Opening hours by weekday: { mon: [["11:00","22:00"]], ... } */
     hours: jsonb("hours").$type<Record<string, [string, string][]>>().notNull().default({}),
-    /** Service (dark) theme starts at this local time (design 7.3). */
+    /** Service (dark) theme starts at this local time. */
     serviceThemeFrom: text("service_theme_from").default("18:00"),
     legacyId: text("legacy_id"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),

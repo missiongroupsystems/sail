@@ -11,7 +11,7 @@ export type Selection = Record<string, string[]>;
 
 export type ChosenModifier = { group_id: string; product_id: string; name: string; price: number; quantity?: number };
 
-/** The groups in play: the product's own, plus child groups under chosen options (2 levels, design 4.3). */
+/** The groups in play: the product's own, plus child groups under chosen options (2 levels). */
 export function activeGroups(menu: CompiledMenu, product: CompiledProduct, selection: Selection): { group: CompiledGroup; parent: { group: CompiledGroup; option: string } | null }[] {
   const out: { group: CompiledGroup; parent: { group: CompiledGroup; option: string } | null }[] = [];
   for (const gid of product.modifier_groups) {
@@ -24,7 +24,7 @@ export function activeGroups(menu: CompiledMenu, product: CompiledProduct, selec
       if (child) out.push({ group: child, parent: { group: g, option: pid } });
     }
   }
-  // Required groups first (design 4.3).
+  // Required groups first.
   return out.sort((a, b) => Number(b.group.min_select > 0) - Number(a.group.min_select > 0));
 }
 
@@ -82,7 +82,7 @@ export type ModifierPickerProps = {
   isDisabled?: boolean;
 };
 
-/** Required groups first, "Choose 1" / "Choose up to 3", nested groups inline under their option (design 4.3). */
+/** Required groups first, "Choose 1" / "Choose up to 3", nested groups inline under their option. */
 export function ModifierPicker({ menu, product, selection, onChange, isDisabled }: ModifierPickerProps) {
   const { money } = useLocale();
   const groups = activeGroups(menu, product, selection);

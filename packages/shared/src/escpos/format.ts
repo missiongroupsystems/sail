@@ -1,7 +1,7 @@
 import type { OrderType } from "../domain.js";
 
 /**
- * Copy helpers shared by the templates (design doc section 6: sentence case).
+ * Copy helpers shared by the templates (sentence case).
  * Dates and clock times follow the merchant's locale and time zone, which the
  * caller always passes: "7:42 PM" in en-US, "19:42" in de-DE.
  */

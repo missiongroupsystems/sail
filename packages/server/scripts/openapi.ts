@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Generate or check the committed OpenAPI spec (scope doc 10.2 condition 2).
+ * Generate or check the committed OpenAPI spec.
  * `check` fails when the spec built from the code differs from openapi.json,
  * so an unreviewed contract change fails CI.
  */

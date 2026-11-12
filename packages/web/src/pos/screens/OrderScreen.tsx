@@ -22,7 +22,7 @@ import { useUiStore } from "../state/ui";
 
 type SheetState = { kind: "line"; lineId: string } | { kind: "discount" } | { kind: "refund"; checkId?: string | null } | { kind: "reprint"; round: { number: number; firedAt: string | null } | null } | { kind: "reopen" } | { kind: "reject"; round: GuestRound } | null;
 
-/** Order entry (design 4.3): rail + catalogue, the order sheet, and the sheets that hang off them. Closed orders stay readable for Reopen, Refund and receipts. */
+/** Order entry: rail + catalogue, the order sheet, and the sheets that hang off them. Closed orders stay readable for Reopen, Refund and receipts. */
 export function OrderScreen({ orderId }: { orderId: string }) {
   const { money, clock } = useLocale();
   const { tablesById, station, offline } = usePos();
@@ -46,7 +46,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
   const late = useLateJobs(station.outlet_id);
   const lateJobIds = useMemo(() => new Set((late.data ?? []).map((j) => j.id)), [late.data]);
 
-  // A cancelled order leaves the screen; a completed one stays readable (design 4.12: Reopen, Refund).
+  // A cancelled order leaves the screen; a completed one stays readable (Reopen, Refund).
   useEffect(() => {
     if (snap && snap.status === "cancelled") back();
   }, [snap, back]);

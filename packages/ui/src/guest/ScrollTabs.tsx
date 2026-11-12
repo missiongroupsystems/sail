@@ -17,7 +17,7 @@ export type ScrollTabsProps = {
 };
 
 /**
- * Sticky section tabs for the guest menu (design 4.11): one horizontal row
+ * Sticky section tabs for the guest menu: one horizontal row
  * that scrolls, the selected tab underlined in the brand accent (section 9).
  * They jump to sections on the same page, so they are navigation, not a tablist.
  */

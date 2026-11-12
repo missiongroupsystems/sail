@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * The five fixed roles (scope doc 4.1). Server < Cashier < Manager; Finance
+ * The five fixed roles. Server < Cashier < Manager; Finance
  * and Admin sit above Manager. "X+" means role X or any higher rank.
  */
 export const ROLES = ["server", "cashier", "manager", "finance", "admin"] as const;
@@ -23,7 +23,7 @@ export function lowerRole(a: Role, b: Role): Role {
   return RANK[a] <= RANK[b] ? a : b;
 }
 
-/** Tile and manual-rule access levels (scope doc 4.3). */
+/** Tile and manual-rule access levels. */
 export const ACCESS_LEVELS = ["everyone", "cashier", "manager", "admin"] as const;
 export type AccessLevel = (typeof ACCESS_LEVELS)[number];
 export const AccessLevelSchema = z.enum(ACCESS_LEVELS);

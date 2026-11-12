@@ -1,5 +1,5 @@
 /*
- * Sail design tokens and Tailwind registration (design.md section 7).
+ * Sail design tokens and Tailwind registration.
  *
  * Layers: base tokens -> theme (Day on :root, Service under [data-theme="service"])
  * -> brand tokens ([data-brand] sets --brand-accent). Tailwind utilities read the
@@ -498,7 +498,7 @@
 }
 
 /* ---- Guest app (v0.8) ----------------------------------------------------
- * Phones, portrait, one column (design 3.3, 4.11, 7.2, 9). The guest surface
+ * Phones, portrait, one column. The guest surface
  * uses 16px body text so iOS does not zoom inputs, the brand's accent on its
  * controls and the brand's display font for headings. Brand tokens are set at
  * runtime on the element carrying data-brand (inline custom properties from the
@@ -559,7 +559,7 @@
 }
 
 /* ---- POS (v0.6 to v0.8): payment done screen and print alerts -------------
- * The auto-return bar on the receipt chooser (design 4.5: back to the floor
+ * The auto-return bar on the receipt chooser (back to the floor
  * after 4 s) and the on-screen QR, which must stay crisp when scaled.
  */
 @keyframes pos-countdown {

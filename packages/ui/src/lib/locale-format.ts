@@ -67,14 +67,14 @@ export type LocaleFormat = LocaleSettings & {
   isoDate: (d?: Date) => string;
 };
 
-const MINUS = "−"; // true minus sign (design 6)
+const MINUS = "−"; // true minus sign
 
 function toDate(d: string | Date): Date {
   return typeof d === "string" ? new Date(d) : d;
 }
 
 /**
- * Lower-cases only the day period ("PM" → "pm", design 6); other parts stay as the locale writes them. Node's ICU puts a
+ * Lower-cases only the day period ("PM" → "pm"); other parts stay as the locale writes them. Node's ICU puts a
  * narrow no-break space before the day period where browsers put a plain space, so server-rendered times would not
  * hydrate; the narrow space is written as a plain one on both sides.
  */

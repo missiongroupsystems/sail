@@ -10,7 +10,7 @@ import { config } from "../config.js";
 import type { Principal } from "../auth/principal.js";
 
 /**
- * Scan to Order services (scope doc 4.6). Guests never pay. Sessions are bound
+ * Scan to Order services. Guests never pay. Sessions are bound
  * to one table and its open order; rate limits apply per device and per table.
  */
 export const GUEST_SESSION_HOURS = 4;
@@ -220,7 +220,7 @@ export async function guestOrderView(p: Extract<Principal, { type: "guest" }>) {
     can_order: canOrder,
     hold_orders: link?.holdOrders ?? true,
     order: order ? { id: order.id, order_no: order.orderNo, status: order.status, opened_at: order.openedAt.toISOString(), bill_requested: order.billRequestedAt != null } : null,
-    // Prices are menu prices only; fees and discounts are shown on the bill at the POS (scope doc 4.6).
+    // Prices are menu prices only; fees and discounts are shown on the bill at the POS.
     lines: lines.map((l) => ({ id: l.id, name: l.name, quantity: l.quantity, modifiers: l.modifiers.map((m) => m.name), notes: l.notes, seat_no: l.seatNo, status: l.status, source: l.source, round_id: l.roundId, mine: rounds.some((r) => r.lineIds.includes(l.id)) })),
     rounds: allRounds.map((r) => ({ ...toRound(r), mine: r.guestSessionId === p.sessionId })),
     requests: requests.map(toRequest),

@@ -15,7 +15,7 @@ export type TopBarProps = {
   className?: string;
 };
 
-/** The POS top bar (design 3.1, 7.2): 56pt, destinations left, user menu and connection right. */
+/** The POS top bar: 56pt, destinations left, user menu and connection right. */
 export function TopBar({ left, title, right, className }: TopBarProps) {
   return (
     <header className={cx("flex h-14 shrink-0 items-center gap-4 px-3 hairline-b bg-surface", className)}>
@@ -34,7 +34,7 @@ export type TopTabsProps = {
   onSelect: (id: string) => void;
 };
 
-/** Floor | Orders | Shift: three destinations, no more (design 3.1). */
+/** Floor | Orders | Shift: three destinations, no more. */
 export function TopTabs({ tabs, selectedId, onSelect }: TopTabsProps) {
   return (
     <nav aria-label="Destinations" className="flex items-center gap-1">
@@ -60,7 +60,7 @@ export function TopTabs({ tabs, selectedId, onSelect }: TopTabsProps) {
   );
 }
 
-/** "◂ Floor": back is always top left, labelled with where it goes (design 3.1). */
+/** "◂ Floor": back is always top left, labelled with where it goes. */
 export function BackButton({ label, onPress }: { label: string; onPress: () => void }) {
   return (
     <AriaButton
@@ -85,7 +85,7 @@ export type ConnectionIndicatorProps = {
 const dot: Record<ConnectionStatus, string> = { online: "bg-status-paid", reconnecting: "bg-status-sent", offline: "bg-status-alert" };
 const word: Record<ConnectionStatus, string> = { online: "online", reconnecting: "reconnecting…", offline: "offline" };
 
-/** The connection indicator (design 7.8): online, reconnecting, offline with the "as of" time. */
+/** The connection indicator: online, reconnecting, offline with the "as of" time. */
 export function ConnectionIndicator({ status, asOf, className }: ConnectionIndicatorProps) {
   return (
     <span className={cx("inline-flex items-center gap-2 whitespace-nowrap text-caption text-ink-2", className)} role="status" aria-live="polite">

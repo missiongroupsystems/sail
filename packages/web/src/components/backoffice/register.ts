@@ -239,7 +239,7 @@ export async function openPdf(path: string, filename: string): Promise<void> {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-/** "0:14" elapsed from seconds, or "2 h 05" past an hour (design 6: "0:42" for elapsed time). */
+/** "0:14" elapsed from seconds, or "2 h 05" past an hour. */
 export function formatElapsed(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
   const h = Math.floor(s / 3600);

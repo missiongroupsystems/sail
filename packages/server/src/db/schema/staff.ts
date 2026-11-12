@@ -26,7 +26,7 @@ export const staff = pgTable(
     outletIds: uuid("outlet_ids").array().notNull().default([]),
     /** Brand scope. Empty = every brand. */
     brandIds: uuid("brand_ids").array().notNull().default([]),
-    /** Optional risk ceiling (vision 7.5): T0..T3. Null = role only. */
+    /** Optional risk ceiling: T0..T3. Null = role only. */
     riskCeiling: text("risk_ceiling"),
     leftHanded: boolean("left_handed").notNull().default(false),
     active: boolean("active").notNull().default(true),

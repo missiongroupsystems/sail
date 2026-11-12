@@ -20,7 +20,7 @@ export type OurTableViewProps = {
 
 const toneClass = { sent: "text-status-sent", paid: "text-status-paid", seated: "text-status-seated", "ink-2": "text-ink-2" } as const;
 
-/** "Our table" (design 4.11): everything the table has ordered, with statuses, this guest's items marked. */
+/** "Our table": everything the table has ordered, with statuses, this guest's items marked. */
 export function OurTableView({ session, orderView, loading, error, onBack, onCallStaff, onOrderMore }: OurTableViewProps) {
   const { clock } = useLocale();
   const order = orderView?.order ?? null;

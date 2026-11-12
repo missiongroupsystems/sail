@@ -11,13 +11,13 @@ export type TenderGridProps = {
   tenders: Tender[];
   selectedId: string | null;
   onSelect: (id: string) => void;
-  /** How many show as buttons before "More…" (design 4.5: three). */
+  /** How many show as buttons before "More…" (three). */
   visible?: number;
   isDisabled?: boolean;
   className?: string;
 };
 
-/** Payment methods (design 4.5): the top three as 56pt buttons, the rest unfolded by "More…". */
+/** Payment methods: the top three as 56pt buttons, the rest unfolded by "More…". */
 export function TenderGrid({ tenders, selectedId, onSelect, visible = 3, isDisabled, className }: TenderGridProps) {
   const [more, setMore] = useState(false);
   const selectedHidden = selectedId !== null && tenders.findIndex((t) => t.id === selectedId) >= visible;

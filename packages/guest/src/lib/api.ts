@@ -159,7 +159,7 @@ export function uuid(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-/* ---- The guest endpoints (scope doc 4.6). Public: sessions and receipts; the rest carry the guest Bearer token. ---- */
+/* ---- The guest endpoints. Public: sessions and receipts; the rest carry the guest Bearer token. ---- */
 
 /** Exchanges the table's QR token for a 4-hour guest token. Public; rate-limited per device and table. */
 export async function createSession(api: GuestApi, body: { token: string; device_id: string; guest_name?: string }): Promise<GuestSession> {

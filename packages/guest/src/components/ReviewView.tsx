@@ -27,7 +27,7 @@ export type ReviewViewProps = {
 };
 
 /**
- * The review page (design 4.11): the items with quantities and choices, edit
+ * The review page: the items with quantities and choices, edit
  * and remove, an optional name so staff know whose order it is, the plain note
  * about service charge and discounts, then "Send to kitchen".
  */

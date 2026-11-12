@@ -15,13 +15,13 @@ export type SegmentedControlProps = {
   options: SegmentOption[];
   selectedId: string;
   onSelect: (id: string) => void;
-  /** Pressing a disabled option: the parent shows its reason in one line (design 4.4). */
+  /** Pressing a disabled option: the parent shows its reason in one line. */
   onDisabledPress?: (option: SegmentOption) => void;
   "aria-label": string;
   className?: string;
 };
 
-/** A segmented control (design 4.4 split modes): one row of equal pills, the selected one filled. Disabled options stay visible with their reason. */
+/** A segmented control (split modes): one row of equal pills, the selected one filled. Disabled options stay visible with their reason. */
 export function SegmentedControl({ options, selectedId, onSelect, onDisabledPress, className, ...rest }: SegmentedControlProps) {
   return (
     <div role="group" aria-label={rest["aria-label"]} className={cx("inline-flex items-center gap-1 rounded-tile bg-surface-2 p-1", className)}>

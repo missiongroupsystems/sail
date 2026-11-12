@@ -15,7 +15,7 @@ export type AuditInput = {
 };
 
 /**
- * The single server-side audit writer (scope doc 4.1). Every restricted or
+ * The single server-side audit writer. Every restricted or
  * money-affecting action calls this inside its transaction.
  */
 export async function recordAudit(principal: Principal, input: AuditInput): Promise<void> {

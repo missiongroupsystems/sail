@@ -30,7 +30,7 @@ class RollbackSignal extends Error {
 }
 
 /**
- * The request pipeline (scope doc 10.2 condition 4): admission gate → one
+ * The request pipeline: admission gate → one
  * transaction per request → principal resolution → set_config('app.current_*')
  * → SET LOCAL ROLE → handler. A 4xx/5xx response rolls the transaction back.
  */

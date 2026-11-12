@@ -22,11 +22,11 @@ export type ReprintSheetProps = {
   onClose: () => void;
   order: OrderSnapshot;
   actions: OrderActions;
-  /** The round whose header was tapped; its tickets are listed first (design 4.12). */
+  /** The round whose header was tapped; its tickets are listed first. */
   round?: { number: number; firedAt: string | null } | null;
 };
 
-/** Reprint a ticket (design 4.12: Order → round header → Reprint). Every job the register printed for this order, with its status and printer. */
+/** Reprint a ticket (Order → round header → Reprint). Every job the register printed for this order, with its status and printer. */
 export function ReprintSheet({ isOpen, onClose, order, actions, round }: ReprintSheetProps) {
   const { clock } = useLocale();
   const { station, offline } = usePos();

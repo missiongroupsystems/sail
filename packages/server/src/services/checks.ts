@@ -6,7 +6,7 @@ import { brands, checkAllocations, checks, merchantSettings, orderAdjustmentLine
 import { AppError } from "../lib/errors.js";
 
 /**
- * Checks (bills) and allocations (scope doc 4.4). In v0.6 every order has one
+ * Checks (bills) and allocations. In v0.6 every order has one
  * check; the model already supports N checks and shares, which v0.7 uses for
  * splits. `syncAllocations` runs after every re-price: unlocked checks are
  * rebuilt from the current line components; a check with a payment is locked

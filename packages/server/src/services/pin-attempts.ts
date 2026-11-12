@@ -2,7 +2,7 @@ import { withOwnTransaction } from "../db/client.js";
 import { AppError } from "../lib/errors.js";
 
 /**
- * Wrong-PIN lockout (scope doc 4.1): 5 wrong PINs lock the scope for 30
+ * Wrong-PIN lockout: 5 wrong PINs lock the scope for 30
  * seconds. The scope is the station, so wrong sign-in PINs and wrong manager
  * approval PINs on one iPad add up on one counter; off a station (a back-office
  * approval request) it is the requesting staff member. The counter is in Postgres and every write commits on its own, so it holds

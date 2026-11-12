@@ -35,7 +35,7 @@ export type ButtonProps = Omit<AriaButtonProps, "className" | "children"> & {
   /** Icon-only buttons must carry an `aria-label` (POS: every action also has a visible label). */
   iconOnly?: boolean;
   className?: string;
-  /** Always a verb phrase: "Add outlet", "Save changes", never "OK" or "Submit" (design 6). */
+  /** Always a verb phrase: "Add outlet", "Save changes", never "OK" or "Submit". */
   children: ReactNode;
 };
 

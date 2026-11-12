@@ -16,7 +16,7 @@ import {
 } from "next/font/google";
 
 /*
- * Self-hosted through next/font (design 7.4, 9). Each face only declares its
+ * Self-hosted through next/font. Each face only declares its
  * @font-face under a CSS variable; the browser downloads a face when a heading
  * uses it, so only the brand's chosen display font is fetched. Nothing is
  * preloaded except the UI family. CJK falls back to the device's system faces.

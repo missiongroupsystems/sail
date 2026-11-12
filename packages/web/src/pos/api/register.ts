@@ -131,7 +131,7 @@ export async function getOrder(api: PosApi, orderId: string): Promise<OrderSnaps
 
 /**
  * Manual rules the signed-in role may apply, or see with a Manager approval
- * badge (design 4.3). Reads every version and keeps the active one per rule
+ * badge. Reads every version and keeps the active one per rule
  * key: the register's `active_at` filter currently fails its own body parse
  * (see the smoke test), so the POS filters the plain list instead.
  */
@@ -272,7 +272,7 @@ export async function grantOverride(api: PosApi, input: OverrideSubject & { appr
   return res.data as unknown as OverrideGrant;
 }
 
-/* ---- Bills (design 4.4) ----------------------------------------------------- */
+/* ---- Bills ----------------------------------------------------- */
 
 export async function listChecks(api: PosApi, orderId: string): Promise<CheckSnapshot[]> {
   return (await req(api.GET("/v1/orders/{id}/checks", { params: { path: { id: orderId } } }))).data as unknown as CheckSnapshot[];
@@ -302,7 +302,7 @@ export async function printPrebill(api: PosApi, orderId: string, checkId?: strin
   return res as unknown as MutationResult & { jobs: CreatedJob[] };
 }
 
-/* ---- Payments (design 4.5) -------------------------------------------------- */
+/* ---- Payments -------------------------------------------------- */
 
 export async function listTenderTypes(api: PosApi, outletId?: string | null): Promise<TenderType[]> {
   const res = await req(api.GET("/v1/tender-types", { params: { query: outletId ? { outlet_id: outletId } : {} } }));
@@ -310,7 +310,7 @@ export async function listTenderTypes(api: PosApi, outletId?: string | null): Pr
 }
 
 export type PaymentInput = {
-  /** Generated once per attempt on the iPad; the register ignores a replay with the same id (design 4.5). */
+  /** Generated once per attempt on the iPad; the register ignores a replay with the same id. */
   payment_id: string;
   tender_type_id: string;
   /** Cents applied to the bill. */
@@ -351,7 +351,7 @@ export async function issueInvoice(api: PosApi, checkId: string, opts?: Mutation
   return (await req(api.POST("/v1/checks/{id}/invoice", { params: { path: { id: checkId } }, body: mutation(opts), headers: headers(opts) }))).data as unknown as Invoice;
 }
 
-/* ---- Refunds (design 4.6) -------------------------------------------------------- */
+/* ---- Refunds -------------------------------------------------------- */
 
 export type TenderSplit = { payment_id: string; amount: number }[];
 
@@ -380,7 +380,7 @@ export async function sendRefundReceipt(api: PosApi, refundId: string, channel: 
   return res as unknown as { data: ReceiptSend; warnings: string[] };
 }
 
-/* ---- Shifts and reports (design 4.9) ------------------------------------------- */
+/* ---- Shifts and reports ------------------------------------------- */
 
 export async function listShifts(api: PosApi, outletId: string, query: { status?: "open" | "closed"; station_id?: string; business_date?: string } = {}): Promise<Shift[]> {
   return (await req(api.GET("/v1/outlets/{id}/shifts", { params: { path: { id: outletId }, query } }))).data as unknown as Shift[];
@@ -404,7 +404,7 @@ export async function closeBusinessDay(api: PosApi, outletId: string, businessDa
   return (await req(api.POST("/v1/outlets/{id}/business-days/close", { params: { path: { id: outletId } }, body: { ...mutation(opts), ...(businessDate ? { business_date: businessDate } : {}) }, headers: headers(opts) }))).data as unknown as { id: string; business_date: string; closed_at: string; report: ZReport };
 }
 
-/* ---- Printing (design 4.8) ------------------------------------------------------- */
+/* ---- Printing ------------------------------------------------------- */
 
 export async function listPrintJobs(api: PosApi, outletId: string, query: { late?: boolean; order_id?: string; status?: string; printer_id?: string; limit?: number } = {}): Promise<PrintJob[]> {
   const q: { late?: "true" | "false"; order_id?: string; status?: string; printer_id?: string; limit?: number } = {};
@@ -433,7 +433,7 @@ export async function listRelays(api: PosApi, outletId: string): Promise<Relay[]
   return ((await req(api.GET("/v1/relays", { params: { query: { outlet_id: outletId } } }))).data as unknown as Relay[]).filter((r) => !r.archived);
 }
 
-/* ---- Scan to Order on the POS (design 4.2, 4.11) --------------------------------- */
+/* ---- Scan to Order on the POS --------------------------------- */
 
 export async function listPendingRounds(api: PosApi, outletId: string): Promise<GuestRound[]> {
   return (await req(api.GET("/v1/outlets/{id}/rounds", { params: { path: { id: outletId }, query: { status: "pending" } } }))).data as unknown as GuestRound[];
@@ -455,7 +455,7 @@ export async function acknowledgeServiceRequest(api: PosApi, requestId: string, 
   return (await req(api.POST("/v1/service-requests/{id}/acknowledge", { params: { path: { id: requestId } }, body: {}, headers: headers(opts) }))).data as unknown as ServiceRequest;
 }
 
-/* ---- Sold out (design 4.12) -------------------------------------------------------- */
+/* ---- Sold out -------------------------------------------------------- */
 
 export async function listStock(api: PosApi, outletId: string): Promise<StockEntry[]> {
   return (await req(api.GET("/v1/outlets/{id}/stock", { params: { path: { id: outletId } } }))).data as unknown as StockEntry[];

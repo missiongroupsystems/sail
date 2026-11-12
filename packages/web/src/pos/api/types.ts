@@ -162,7 +162,7 @@ export type SnapshotLine = {
   sort: number;
   added_by: string | null;
   created_at: string;
-  /** Client only: the line is on its way to the register and has no amounts yet (design principle 8). */
+  /** Client only: the line is on its way to the register and has no amounts yet. */
   optimistic?: boolean;
 };
 export type SnapshotAdjustment = {
@@ -270,7 +270,7 @@ export type OverrideSubject = DistributiveOmit<GrantBody, "approver_pin" | "outl
 /** Permission keys the POS asks managers to approve (shared PERMISSIONS). */
 export type OverrideAction = OverrideSubject["action"];
 
-/* ---- v0.7 bills, payments, refunds (design 4.4 to 4.6) --------------------- */
+/* ---- v0.7 bills, payments, refunds --------------------- */
 
 export type CheckStatus = "open" | "paid" | "partially_refunded" | "refunded";
 export type CheckPayment = {
@@ -347,7 +347,7 @@ export type ReceiptSend = { token: string; url: string; delivery_status: string 
 export type Invoice = { invoice_no: string; issued_at: string; reused: boolean; pdf_url: string };
 export type CreatedJob = { id: string; printer_id: string; printer_name: string; kind: string; copy_no: number; copies: number };
 
-/* ---- v0.6 shifts and reports (design 4.9) --------------------------------- */
+/* ---- v0.6 shifts and reports --------------------------------- */
 
 export type Shift = {
   id: string;
@@ -382,7 +382,7 @@ export type ZReport = {
 };
 export type ShiftCloseResult = { data: Shift & { report: ZReport }; events: MutationEvent[]; warnings: string[] };
 
-/* ---- Printing (design 4.8) ------------------------------------------------- */
+/* ---- Printing ------------------------------------------------- */
 
 export type PrintJobStatus = "queued" | "claimed" | "printed" | "failed" | "rerouted" | string;
 export type PrintJob = {
@@ -410,7 +410,7 @@ export type PrintJob = {
 export type Printer = { id: string; outlet_id: string; name: string; role: "kitchen" | "receipt"; station_id: string | null; backup_printer_id: string | null; is_default_kitchen: boolean; supports_status: boolean; archived: boolean };
 export type Relay = { id: string; outlet_id: string; name: string; paired: boolean; last_seen_at: string | null; online: boolean; version: string | null; printer_status: Record<string, { ok: boolean; checked_at: string; error?: string }>; archived: boolean };
 
-/* ---- Scan to Order on the POS (design 4.2 Now rail, 4.11) ------------------ */
+/* ---- Scan to Order on the POS (Now rail) ------------------ */
 
 export type GuestRound = {
   id: string;

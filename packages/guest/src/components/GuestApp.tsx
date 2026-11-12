@@ -23,7 +23,7 @@ import { StatusView } from "./StatusView";
 
 type Phase = { kind: "loading" } | { kind: "invalid" } | { kind: "ended" } | { kind: "unavailable"; error: ApiError } | { kind: "ready" };
 
-/** The screens inside the one page (design 3.3). The URL hash carries them so the phone's back button works. */
+/** The screens inside the one page. The URL hash carries them so the phone's back button works. */
 export type View = "menu" | "review" | "status" | "table";
 function viewFromHash(hash: string): View {
   switch (hash) {
@@ -94,7 +94,7 @@ function GuestAppInner({ token }: { token: string }) {
     [token],
   );
 
-  /* ---- Session: reuse the stored one, else exchange the QR token (design 4.11 landing). ---- */
+  /* ---- Session: reuse the stored one, else exchange the QR token. ---- */
   const startSession = useCallback(
     async (force: boolean) => {
       const stored = force ? null : loadSession(token);
@@ -163,7 +163,7 @@ function GuestAppInner({ token }: { token: string }) {
     setView(v);
     window.scrollTo({ top: 0 });
   }, []);
-  // The screens swap inside one page, so move focus to the new screen's heading for VoiceOver (design 10).
+  // The screens swap inside one page, so move focus to the new screen's heading for VoiceOver.
   const firstView = useRef(true);
   useEffect(() => {
     if (firstView.current) {
@@ -199,7 +199,7 @@ function GuestAppInner({ token }: { token: string }) {
     if (session && menu) document.title = `Table ${session.table.name} · ${menu.brand.name}`;
   }, [session, menu]);
 
-  /* ---- Brand theming (design 9): tokens on the root element, so sheets rendered in a portal get them too. ---- */
+  /* ---- Brand theming: tokens on the root element, so sheets rendered in a portal get them too. ---- */
   const brandId = menu?.brand.id ?? null;
   const brandAccent = menu?.brand.accent_color ?? null;
   const brandFont = menu?.brand.display_font ?? null;
@@ -215,7 +215,7 @@ function GuestAppInner({ token }: { token: string }) {
     };
   }, [brandId, brandAccent, brandFont]);
 
-  /* ---- Live updates: the stream when an order exists, polling otherwise (design 4.11, 11.3). ---- */
+  /* ---- Live updates: the stream when an order exists, polling otherwise. ---- */
   const sessionId = session?.session_id ?? null;
   useEffect(() => {
     if (!sessionId) return;
@@ -287,7 +287,7 @@ function GuestAppInner({ token }: { token: string }) {
     };
   }, [session, canOrder, api, token, applySession]);
 
-  /* ---- Sending a round (design 4.11 review → send). ---- */
+  /* ---- Sending a round (review → send). ---- */
   const send = useCallback(async () => {
     if (!session || !menu || basket.items.length === 0 || sending) return;
     setSending(true);

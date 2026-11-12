@@ -27,7 +27,7 @@ function makeClient() {
 }
 
 /**
- * The station app (design 3.1, 11.1): one long-lived, client-rendered page.
+ * The station app: one long-lived, client-rendered page.
  * Pairing → lock screen → the signed-in shell with Floor, Orders, Shift and
  * the order screen, all routed in memory.
  */

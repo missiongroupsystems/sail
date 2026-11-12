@@ -19,7 +19,7 @@ const MENU_KINDS = new Set(["product", "menu", "modifier_group", "stock", "avail
 const ORDER_PREFIXES = ["order.", "line.", "adjustment.", "payment.", "check.", "refund.", "invoice.", "receipt."];
 
 /**
- * The outlet event store (design 11.1): one SSE stream per station that patches
+ * The outlet event store: one SSE stream per station that patches
  * TanStack Query caches. Orders you have open are refetched; the floor and the
  * orders list refresh; a one-line note says when another station changed the
  * order on screen.
@@ -118,7 +118,7 @@ export function useOutletStream(outletId: string | null, enabled: boolean, stati
           void qc.invalidateQueries({ queryKey: posKeys.requests(outletId) });
         }
       },
-      // Print jobs do not go through the event log's sequence; the relay's status changes arrive as `job` events (design 4.8).
+      // Print jobs do not go through the event log's sequence; the relay's status changes arrive as `job` events.
       onJob: () => void qc.invalidateQueries({ queryKey: ["pos", "print-jobs", outletId] }),
     });
     stream.start();

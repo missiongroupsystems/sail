@@ -2,7 +2,7 @@ import { Check, Circle, XCircle } from "lucide-react";
 import { cx } from "../lib/cx";
 import { Icon } from "../components/Icon";
 
-/** Where a QR order is (design 4.11): Sent → Accepted → Preparing → Done, or not accepted. */
+/** Where a QR order is: Sent → Accepted → Preparing → Done, or not accepted. */
 export type RoundStage = "sent" | "accepted" | "preparing" | "done" | "rejected";
 
 const STEPS: { stage: Exclude<RoundStage, "rejected">; label: string }[] = [
@@ -22,7 +22,7 @@ export type RoundTimelineProps = {
   className?: string;
 };
 
-/** The round's progress as a vertical list; every step has a word, never colour alone (design 7.3). */
+/** The round's progress as a vertical list; every step has a word, never colour alone. */
 export function RoundTimeline({ stage, rejectReason, holdOrders = true, className }: RoundTimelineProps) {
   const reached = ORDER[stage];
   return (

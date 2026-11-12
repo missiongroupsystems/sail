@@ -30,7 +30,7 @@ const base =
   "data-[pressed]:scale-[0.97] data-[pressed]:brightness-90 data-[hovered]:brightness-[1.03] " +
   "data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated";
 
-/** A catalogue tile (design 4.3): 136 × 96, a 6pt colour band, name at 17pt, price in tabular figures. */
+/** A catalogue tile: 136 × 96, a 6pt colour band, name at 17pt, price in tabular figures. */
 export function Tile({ label, priceCents, colour, onPress, soldOut, unavailableReason, capRemaining, restrictedTo, isDisabled, className }: TileProps) {
   const { money } = useLocale();
   const unavailable = soldOut || Boolean(unavailableReason);
@@ -70,7 +70,7 @@ export type FolderTileProps = {
   className?: string;
 };
 
-/** A folder tile: the same footprint with a ▸ corner (design 4.3). */
+/** A folder tile: the same footprint with a ▸ corner. */
 export function FolderTile({ label, colour, count, onPress, className }: FolderTileProps) {
   return (
     <AriaButton onPress={onPress} className={cx(base, className)} aria-label={`${label}, folder${count != null ? ` with ${count} items` : ""}`}>

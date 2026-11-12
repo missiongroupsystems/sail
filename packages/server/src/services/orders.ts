@@ -10,7 +10,7 @@ import { orderTaxRates, usedTaxClasses } from "./tax.js";
  * Order services: the register's own view of an order. Every mutation ends
  * with `repriceOrder` (the pricing pipeline run on the current lines) and
  * `bumpVersion`, then returns `loadSnapshot` so clients learn amounts from the
- * register, never by computing them (vision 2, principle 1).
+ * register, never by computing them.
  */
 
 export type OrderSnapshot = {

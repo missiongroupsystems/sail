@@ -16,7 +16,7 @@ import { shortId } from "@/lib/format";
 
 const ANY = "__any__";
 
-/** Late jobs first (oldest first), then the rest newest first (design 4.8: what needs a person now). */
+/** Late jobs first (oldest first), then the rest newest first (what needs a person now). */
 export function orderJobs(jobs: PrintJob[]): PrintJob[] {
   return jobs.slice().sort((a, b) => {
     const la = isLate(a) ? 1 : 0;

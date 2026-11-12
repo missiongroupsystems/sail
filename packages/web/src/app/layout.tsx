@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { getTheme } from "@/lib/api.server";
 import "./globals.css";
 
-// Self-hosted through next/font (design 7.4). CJK falls back to the device's system faces, set in the token stack.
+// Self-hosted through next/font. CJK falls back to the device's system faces, set in the token stack.
 const plexSans = IBM_Plex_Sans({
   subsets: ["latin"],
   weight: ["400", "500", "600"],

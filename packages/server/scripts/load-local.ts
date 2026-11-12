@@ -1,9 +1,9 @@
 /**
- * Local load test (roadmap v0.9 hardening). Runs the API in-process against an
+ * Local load test. Runs the API in-process against an
  * embedded Postgres, then drives N concurrent stations through open → add lines
  * → fire → pay while S SSE streams are connected, and prints p50/p95/p99 latency
  * per operation plus the admission-gate rejections. Local numbers size TX_MAX
- * and QUEUE_MAX; the Singapore p95 target (scope doc 9) needs staging.
+ * and QUEUE_MAX; the Singapore p95 target needs staging.
  *
  *   pnpm --filter @sail/server load:local            # 20 stations × 10 orders, 50 streams
  *   STATIONS=40 ORDERS=20 STREAMS=200 TX_MAX=16 pnpm --filter @sail/server load:local

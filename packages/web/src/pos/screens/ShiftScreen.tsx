@@ -18,7 +18,7 @@ const TABS: { id: ShiftTab; label: string }[] = [
   { id: "printers", label: "Printers" },
 ];
 
-/** The Shift destination (design 3.1, 4.9): open and close shift, Z-report, sold-out list, printers and reprints. */
+/** The Shift destination: open and close shift, Z-report, sold-out list, printers and reprints. */
 export function ShiftScreen() {
   const { outlet, station } = usePos();
   const [tab, setTab] = useState<ShiftTab>("shift");

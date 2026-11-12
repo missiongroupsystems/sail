@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-/** A full-page, one-idea notice (design 7.8 empty and error states): a heading, one line of what to do, optional action. */
+/** A full-page, one-idea notice (empty and error states): a heading, one line of what to do, optional action. */
 export function Notice({ title, body, children }: { title: string; body?: ReactNode; children?: ReactNode }) {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[560px] flex-col items-start justify-center gap-3 px-4 py-12">
@@ -11,7 +11,7 @@ export function Notice({ title, body, children }: { title: string; body?: ReactN
   );
 }
 
-/** First load only (design 7.8): a quiet skeleton, never a full-screen spinner. */
+/** First load only: a quiet skeleton, never a full-screen spinner. */
 export function LoadingMenu() {
   return (
     <main className="mx-auto w-full max-w-[560px] px-4 py-6" aria-busy="true" aria-label="Loading the menu">

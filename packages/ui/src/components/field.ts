@@ -1,4 +1,4 @@
-/** Shared field styling so every control reads as one grammar (design 1, principle 10). */
+/** Shared field styling so every control reads as one grammar (principle 10). */
 export const fieldLabel = "text-caption text-ink-2";
 export const fieldDescription = "text-caption text-ink-2";
 export const fieldError = "text-caption text-status-alert";

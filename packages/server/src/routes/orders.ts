@@ -164,7 +164,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     }
     let customerId = b.customer_id ?? null;
     if (!customerId && customerRef?.mobile) {
-      // Pickup and delivery orders create or match a customer from their reference (scope doc 4.9).
+      // Pickup and delivery orders create or match a customer from their reference.
       const mobile = customerRef.mobile.replace(/\s+/g, "");
       const [cust] = await db()
         .insert(customers)
@@ -441,7 +441,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     const qty = Math.min(b.quantity ?? line.quantity, line.quantity);
     let approval: { id: string; name: string | null } | null = null;
     if (fired && p.type === "agent") {
-      // Voiding food that has gone to the kitchen takes money off the bill: for an agent it is always a person's call (vision 7.3, T3).
+      // Voiding food that has gone to the kitchen takes money off the bill: for an agent it is always a person's call (T3).
       const proposal = await createProposal({ principal: p, spec: { ...operation("lines.void"), tier: "T3" }, method: "POST", path: c.req.path, body: b, idempotencyKey: c.get("idempotencyKey") ?? null, rationale: c.req.header("x-rationale") ?? null, correlationId: c.get("correlationId") });
       return c.json({ code: "requires_confirmation", message: "Voiding a line that has been sent to the kitchen needs a person to approve it; a proposal was created", remedy: `Ask a manager to approve proposal ${proposal.id}.`, details: { proposal_id: proposal.id, tier: "T3", ceiling: p.riskCeiling, expires_at: proposal.expiresAt.toISOString() }, data: toProposal(proposal) }, 202) as never;
     }
@@ -499,7 +499,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     const warnings: string[] = [];
     const pending: PendingEvent[] = [
       () => emit(c, p, o, "order.fired", { round, line_ids: toFire.map((l) => l.id), station_id: station?.id ?? null }),
-      // Kitchen tickets are created in the same transaction as the fire (scope doc 4.7); each job appends its own event.
+      // Kitchen tickets are created in the same transaction as the fire; each job appends its own event.
       async () => {
         for (const hook of fireHooks) warnings.push(...(await hook({ order: { ...o, roundCount: round }, lines: toFire, round, station, principal: p, correlationId: c.get("correlationId") })));
         return null;

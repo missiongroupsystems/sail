@@ -1,7 +1,7 @@
 import { AppError } from "./errors.js";
 
 /**
- * Admission gate (Launchpad pattern): at most TX_MAX request transactions run
+ * Admission gate: at most TX_MAX request transactions run
  * at once; QUEUE_MAX more wait; beyond that the request gets a 503 so the
  * database is never swamped.
  */

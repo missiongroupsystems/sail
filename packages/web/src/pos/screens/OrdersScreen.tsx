@@ -16,7 +16,7 @@ import { useUiStore } from "../state/ui";
 
 const STATUS_TONE: Record<string, BadgeTone> = { open: "seated", fired: "sent", ready: "paid", out_for_delivery: "bill", completed: "paid", cancelled: "neutral" };
 
-/** Orders (design 3.1): takeaway, pickup and delivery, sorted by ready-by, with + New order and Ready; and today's closed orders for Refund and Reopen. */
+/** Orders: takeaway, pickup and delivery, sorted by ready-by, with + New order and Ready; and today's closed orders for Refund and Reopen. */
 export function OrdersScreen() {
   const { clock } = useLocale();
   const api = useApi();
@@ -124,7 +124,7 @@ export function OrdersScreen() {
   );
 }
 
-/** + New order (design 4.12): Takeaway (optional name), Pickup (name, mobile, ready-by), Delivery (plus address and notes). */
+/** + New order: Takeaway (optional name), Pickup (name, mobile, ready-by), Delivery (plus address and notes). */
 export function NewOrderSheet({ type, onClose, onCreate }: { type: OrderType | null; onClose: () => void; onCreate: (input: OpenOrderInput) => Promise<void> }) {
   const [name, setName] = useState("");
   const [mobile, setMobile] = useState("");
@@ -133,7 +133,7 @@ export function NewOrderSheet({ type, onClose, onCreate }: { type: OrderType | n
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  // One order id per attempt: a retry after a timeout replays the same order instead of opening a second one (design 4.2 envelope).
+  // One order id per attempt: a retry after a timeout replays the same order instead of opening a second one.
   const [orderId, setOrderId] = useState(idempotencyKey);
 
   const reset = () => {

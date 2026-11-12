@@ -20,7 +20,7 @@ export type DiscountSheetProps = {
 };
 
 /**
- * Discount (design 4.3): the manual rules with names and ranges; rules above
+ * Discount: the manual rules with names and ranges; rules above
  * the role show a Manager approval badge instead of being hidden. Then the
  * value (open rules), the reason (when required), and Apply.
  */

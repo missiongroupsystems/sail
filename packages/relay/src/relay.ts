@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import { probe, sendJob, PrinterError, type PrinterTarget } from "./printer.js";
 
 /**
- * The relay loop (scope doc 4.7): pair once, then hold an SSE stream to the
+ * The relay loop: pair once, then hold an SSE stream to the
  * register, catch up on queued jobs after every (re)connect, claim → send →
  * acknowledge each job with retries and backoff, and send a heartbeat every
  * 30 seconds with printer reachability. Job IDs are reused on retry; a partial

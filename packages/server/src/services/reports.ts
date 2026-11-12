@@ -7,7 +7,7 @@ import { shiftDate } from "../lib/time.js";
 import type { ZReport } from "./shifts.js";
 
 /**
- * Operational reports (scope doc 4.10) read from the `report_*` views. Every
+ * Operational reports read from the `report_*` views. Every
  * figure is a sum of register-written cents; nothing here re-prices anything.
  */
 export type ReportFilters = {

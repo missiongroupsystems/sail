@@ -8,7 +8,7 @@ import { Icon } from "../components/Icon";
 
 export type TableStatus = "free" | "seated" | "sent" | "bill_requested" | "paid";
 
-/** Status is always colour + icon + word (design 4.2, 7.3). */
+/** Status is always colour + icon + word. */
 export const TABLE_STATUS: Record<TableStatus, { label: string; icon: LucideIcon; colour: string }> = {
   free: { label: "Free", icon: Circle, colour: "var(--ink-2)" },
   seated: { label: "Seated", icon: Users, colour: "var(--status-seated)" },
@@ -34,7 +34,7 @@ export type TableShapeProps = {
   className?: string;
 };
 
-/** A table on the floor plan (design 4.2): number at 20pt, pax, elapsed time, status colour + icon. */
+/** A table on the floor plan: number at 20pt, pax, elapsed time, status colour + icon. */
 export function TableShape({ name, shape, status, pax, elapsed, needsYou, highlight, isDisabled, onPress, style, className }: TableShapeProps) {
   const meta = TABLE_STATUS[status];
   const free = status === "free";
@@ -73,7 +73,7 @@ export function TableShape({ name, shape, status, pax, elapsed, needsYou, highli
   );
 }
 
-/** The always-visible legend (design 4.2): every status as colour + icon + word. */
+/** The always-visible legend: every status as colour + icon + word. */
 export function StatusLegend({ className }: { className?: string }) {
   return (
     <ul className={cx("flex flex-wrap items-center gap-x-5 gap-y-1 text-caption text-ink-2", className)} aria-label="Table status legend">

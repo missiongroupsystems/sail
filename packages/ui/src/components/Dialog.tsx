@@ -17,7 +17,7 @@ export type DialogProps = {
 };
 
 /**
- * Back office only (design 2.2: on the POS, modals are reserved for PIN entry).
+ * Back office only (on the POS, modals are reserved for PIN entry).
  * Never used for "Are you sure?" on routine or consequential actions; a labelled
  * button and Undo do that job.
  */

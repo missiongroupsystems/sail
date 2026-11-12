@@ -24,7 +24,7 @@ import {
 } from "./schemas.js";
 
 /**
- * The pricing pipeline (scope doc 4.8): one pure function shared by the server,
+ * The pricing pipeline: one pure function shared by the server,
  * the POS preview, the back-office simulator and refunds.
  *
  *   price(order, rules, context) → adjustments, per-line amounts, totals, trace

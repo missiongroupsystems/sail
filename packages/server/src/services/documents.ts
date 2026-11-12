@@ -8,7 +8,7 @@ import { randomToken } from "../auth/tokens.js";
 import { config } from "../config.js";
 
 /**
- * Tax documents (scope doc 4.3, 4.5): gap-free numbering per merchant inside
+ * Tax documents: gap-free numbering per merchant inside
  * the transaction, numbered PDF tax invoices with the outlet's registration
  * numbers, and digital receipt tokens.
  */
@@ -154,7 +154,7 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
 export async function createDigitalReceipt(input: { merchantId: string; outletId: string; checkId?: string | null; refundId?: string | null; document: unknown; channel: "qr" | "email" | "sms" | "link"; destination?: string | null }): Promise<{ token: string; url: string; delivery_status: string }> {
   const token = randomToken(18);
   const expiresAt = new Date(Date.now() + 90 * 24 * 3600 * 1000);
-  // Email and SMS providers are a v0.9 input (roadmap §6); until then the link and QR are the delivery.
+  // Email and SMS providers are a v0.9 input; until then the link and QR are the delivery.
   const deliveryStatus = input.channel === "email" || input.channel === "sms" ? "provider_not_configured" : "link_only";
   await db().insert(digitalReceipts).values({ token, merchantId: input.merchantId, outletId: input.outletId, checkId: input.checkId ?? null, refundId: input.refundId ?? null, document: input.document, channel: input.channel, destination: input.destination ?? null, deliveryStatus, expiresAt });
   return { token, url: `${config().GUEST_APP_URL.replace(/\/$/, "")}/r/${token}`, delivery_status: deliveryStatus };

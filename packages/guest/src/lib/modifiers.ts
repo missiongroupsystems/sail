@@ -6,7 +6,7 @@ export type Selection = Record<string, ChoiceValue>;
 
 export type ChosenModifier = { group_id: string; product_id: string; name: string; price: number; quantity: number };
 
-/** The product's own groups, required ones first (design 4.3, 4.11). Child groups render inline under their option. */
+/** The product's own groups, required ones first. Child groups render inline under their option. */
 export function topGroups(menu: CompiledMenu, product: CompiledProduct): CompiledGroup[] {
   const groups = product.modifier_groups.map((gid) => menu.modifier_groups[gid]).filter((g): g is CompiledGroup => Boolean(g));
   return groups.sort((a, b) => Number(b.min_select > 0) - Number(a.min_select > 0));

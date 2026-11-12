@@ -17,7 +17,7 @@ import { billLabel, billRows, shareText } from "./BillScreen";
 type Preview = { figures: PaymentFigures; left: number } | null;
 
 /**
- * Payment (design 4.5): the bill on the left, methods, the amount prefilled
+ * Payment: the bill on the left, methods, the amount prefilled
  * with the balance, cash with a dry run for rounding and change, card with the
  * amount at 34pt and the terminal instruction, then the done screen.
  */
@@ -104,7 +104,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
     [actions, check],
   );
 
-  // The register previews cash rounding and change, and the balance left after a part payment, on every change (design 4.5).
+  // The register previews cash rounding and change, and the balance left after a part payment, on every change.
   // A dry run still waiting when the inputs change, or when the payment is taken, is dropped with the effect.
   useEffect(() => {
     if (!tender || !check || done || busy) return;

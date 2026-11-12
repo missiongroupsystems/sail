@@ -5,7 +5,7 @@ import { closePool } from "./db/client.js";
 import { startListener, stopListener } from "./sse/listener.js";
 
 /**
- * One image, role flags (Launchpad pattern): `node dist/index.js --role=app|worker|mcp`.
+ * One image, role flags: `node dist/index.js --role=app|worker|mcp`.
  */
 const role = (process.argv.find((a) => a.startsWith("--role="))?.slice("--role=".length) ?? process.env.SAIL_ROLE ?? "app") as "app" | "worker" | "mcp";
 process.env.SAIL_ROLE = role;

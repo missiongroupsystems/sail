@@ -30,7 +30,7 @@ export type RefundSheetProps = {
 };
 
 /**
- * The refund stepper (design 4.6): which bill, what, why, back to which tenders,
+ * The refund stepper: which bill, what, why, back to which tenders,
  * review of the register's quote, then "Refund $19.18 ▸" or "Manager approval ▸".
  * The summary on the right follows every step.
  */
@@ -57,7 +57,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<RefundResult | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // One refund id per opening of the sheet: a retry after a timeout replays, never refunds twice (design 4.2 envelope).
+  // One refund id per opening of the sheet: a retry after a timeout replays, never refunds twice.
   const refundId = useRef(idempotencyKey());
 
   useEffect(() => {
@@ -97,7 +97,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
 
   const tenderSplit = useMemo(() => (split ? Object.entries(split).map(([payment_id, amount]) => ({ payment_id, amount })).filter((t) => t.amount > 0) : undefined), [split]);
 
-  // The register quotes every change (design 4.6): per line, service charge, tax, rounding and the tender split.
+  // The register quotes every change: per line, service charge, tax, rounding and the tender split.
   useEffect(() => {
     if (!isOpen || !check || !request || step === "bill" || step === "done") return;
     if (timer.current) clearTimeout(timer.current);

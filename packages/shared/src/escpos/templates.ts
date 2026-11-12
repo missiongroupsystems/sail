@@ -25,7 +25,7 @@ import { renderTextAsImageDefault, type RenderTextAsImage } from "./raster.js";
 import type { BillDocument, KitchenTicket, PrintJobPayload, PrinterProfile, ServiceSlip, TicketHeader } from "./types.js";
 
 /**
- * The three templates of scope doc 4.7: kitchen ticket (with void and reprint
+ * The three templates: kitchen ticket (with void and reprint
  * banners), bill (pre-bill, receipt, refund receipt) and service-request slip.
  *
  * Each template first builds a styled document (layout.ts), then renders it

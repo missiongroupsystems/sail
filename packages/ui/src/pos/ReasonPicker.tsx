@@ -20,7 +20,7 @@ export type ReasonPickerProps = {
   className?: string;
 };
 
-/** A one-tap reason list with "Other…" (design 2.4, 8). Rows are 56pt. */
+/** A one-tap reason list with "Other…". Rows are 56pt. */
 export function ReasonPicker({ reasons, onPick, otherLabel = "Other…", isDisabled, className }: ReasonPickerProps) {
   const [other, setOther] = useState(false);
   const [text, setText] = useState("");

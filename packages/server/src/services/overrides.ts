@@ -30,7 +30,7 @@ const sessionOf = (p: Principal) => (p.type === "staff" ? (p.sessionId ?? null) 
 const stationOf = (p: Principal) => (p.type === "staff" ? (p.stationId ?? null) : null);
 
 /**
- * Manager override (scope doc 4.1, 7.1 rule 9): a PIN of the required role
+ * Manager override: a PIN of the required role
  * authorises a single restricted action without switching the signed-in user.
  * The grant is bound to the action, its target, the arguments the approver
  * saw and the requesting staff session and station; it is used once and expires.

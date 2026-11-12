@@ -32,7 +32,7 @@ function useDebounced<T>(value: T, ms: number): T {
 }
 
 /**
- * Server-side product search (design 8: SearchField, empty / typing / no results).
+ * Server-side product search (SearchField, empty / typing / no results).
  * Results come from GET /v1/products?q=; picking one calls `onPick`.
  */
 export function ProductSearch({ onPick, label, placeholder = "Search products by name or SKU", brandId, kind, exclude = [], keepQuery, autoFocus, className }: ProductSearchProps) {

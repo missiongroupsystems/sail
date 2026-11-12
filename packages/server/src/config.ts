@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 /**
- * Environment configuration. Secrets are listed in docs/how-to.md and the
- * completion notes; nothing here has a production default.
+ * Environment configuration. Variables are listed in docs/self-hosting.md;
+ * nothing here has a production default.
  */
 const EnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),

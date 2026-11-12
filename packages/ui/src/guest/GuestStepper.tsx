@@ -20,7 +20,7 @@ const key =
   "data-[pressed]:scale-[0.97] data-[pressed]:brightness-90 data-[disabled]:opacity-40 " +
   "data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated";
 
-/** A quantity stepper with 48px keys (the guest minimum, design 7.5) and the value in tabular figures. */
+/** A quantity stepper with 48px keys (the guest minimum) and the value in tabular figures. */
 export function GuestStepper({ value, onChange, min = 1, max = 50, label = "Quantity", className }: GuestStepperProps) {
   return (
     <div className={cx("inline-flex items-center gap-2", className)} role="group" aria-label={label}>

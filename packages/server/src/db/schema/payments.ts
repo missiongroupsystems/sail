@@ -4,7 +4,7 @@ import { merchants, outlets, stations } from "./org.js";
 import { orderLines, orders } from "./orders.js";
 import { tenderTypes } from "./catalogue.js";
 
-/** Checks (bills), allocations, payments, document numbering, shifts and business days (scope doc 4.3–4.5, 7.2). */
+/** Checks (bills), allocations, payments, document numbering, shifts and business days. */
 
 export const checkStatusEnum = pgEnum("check_status", ["open", "paid", "partially_refunded", "refunded"]);
 

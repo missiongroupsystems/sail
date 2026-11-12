@@ -18,7 +18,7 @@ export type PanelSheetProps = {
 };
 
 /**
- * A sheet that slides in over one region only (design 4.3: the modifier sheet
+ * A sheet that slides in over one region only (the modifier sheet
  * covers the catalogue, never the order sheet). It is not modal: the rest of the
  * screen keeps working. Place it inside a `relative` container.
  */

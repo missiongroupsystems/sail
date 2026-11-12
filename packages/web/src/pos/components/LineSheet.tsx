@@ -16,7 +16,7 @@ export type LineSheetProps = {
 };
 
 /**
- * The line sheet (design 4.3): quantity, quick notes, seat, hold, and Remove
+ * The line sheet: quantity, quick notes, seat, hold, and Remove
  * (before sending) or Void (after sending, which needs manager approval).
  */
 export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {

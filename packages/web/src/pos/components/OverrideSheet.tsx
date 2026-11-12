@@ -9,7 +9,7 @@ import { ROLE_LABEL } from "../lib/format";
 import { useUiStore } from "../state/ui";
 
 /**
- * Manager approval, "Approve here" (design 4.7): states the action and the
+ * Manager approval, "Approve here": states the action and the
  * register's figures, takes the manager's PIN on the same iPad, then shows who
  * approved. The cashier stays signed in; the grant is for this one action.
  */

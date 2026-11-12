@@ -10,7 +10,7 @@ import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { compact, defineCrud } from "../lib/crud.js";
 
-/** The 12 curated tile colours (design 7.3); the importer maps legacy colours to the nearest one. */
+/** The 12 curated tile colours; the importer maps legacy colours to the nearest one. */
 export const TILE_COLOURS = ["slate", "stone", "brass", "amber", "olive", "sage", "teal", "sky", "indigo", "plum", "rose", "brick"] as const;
 
 registerOperations({

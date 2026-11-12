@@ -23,7 +23,7 @@ export function jobTone(status: string): BadgeTone {
   }
 }
 
-/** Waiting jobs that have not printed within the 10 s budget (design 4.8; server LATE_JOB_SECONDS). */
+/** Waiting jobs that have not printed within the 10 s budget (server LATE_JOB_SECONDS). */
 export function isLate(job: PrintJob): boolean {
   return (job.status === "queued" || job.status === "claimed" || job.status === "failed") && job.age_seconds >= 10;
 }

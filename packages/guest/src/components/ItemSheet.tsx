@@ -22,7 +22,7 @@ export type ItemSheetProps = {
 const MAX_QTY = 50;
 
 /**
- * The item sheet (design 4.11): required choices first, the same rules as the
+ * The item sheet: required choices first, the same rules as the
  * POS modifier picker, nested choices inline under the option that opens them,
  * a note for the kitchen, a quantity stepper, and one "Add to order" button
  * that carries the menu price and stays disabled, with the reason, until every

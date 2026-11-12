@@ -45,7 +45,7 @@ test("POS: pair, sign in, shift, order, split, cash and card, refund with a mana
     await sheet.getByRole("button", { name: "Chicken", exact: true }).click();
     await sheet.getByRole("button", { name: "Add Laksa" }).click();
     await expect(sheet).toBeHidden();
-    // One tap at a time: a second add sent while the first is still in flight carries a stale version and is replayed after a 409 (design 4.3).
+    // One tap at a time: a second add sent while the first is still in flight carries a stale version and is replayed after a 409.
     await expect(page.getByRole("button", { name: "Send 1 to kitchen" })).toBeVisible();
     await page.getByRole("button", { name: /^Mee Goreng,/ }).click();
     await expect(order.getByRole("button", { name: /Laksa/ })).toContainText("Chicken");

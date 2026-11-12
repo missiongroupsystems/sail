@@ -8,7 +8,7 @@ import { logger } from "../logger.js";
 import { directCeiling, tierRank } from "../services/agents.js";
 
 /**
- * The MCP adapter (vision 7.1): generated from the OpenAPI spec and its x-sail
+ * The MCP adapter: generated from the OpenAPI spec and its x-sail
  * manifest, with no logic of its own. Every tool call is an in-process API
  * request with the agent's bearer token, so it goes through the same auth, RLS
  * transaction, admission gate, idempotency, manifest and ceiling checks as a
@@ -138,7 +138,7 @@ export function buildToolCatalog(doc: OpenApiDoc): ToolDef[] {
 
 type Me = { role: Role | null; risk_ceiling: string | null; agent: { toolsets: string[] } | null; type: string };
 
-/** The tools an identity may see: within its toolsets and role (vision 7.6). Above-ceiling tools stay listed because calling them creates a proposal. */
+/** The tools an identity may see: within its toolsets and role. Above-ceiling tools stay listed because calling them creates a proposal. */
 export function toolsFor(catalog: ToolDef[], me: Me): ToolDef[] {
   const toolsets = me.agent?.toolsets ?? [];
   const ceiling = directCeiling(me.type, me.risk_ceiling);
@@ -147,7 +147,7 @@ export function toolsFor(catalog: ToolDef[], me: Me): ToolDef[] {
 
 /**
  * Free text that came from outside the register (guests, customers, notes, reasons) is wrapped so a model never reads
- * it as an instruction (vision 11). `keys` is the tool's `untrusted` list; every string under a marked key is wrapped,
+ * it as an instruction. `keys` is the tool's `untrusted` list; every string under a marked key is wrapped,
  * including inside a marked object such as `customer_ref`.
  */
 export function wrapUntrusted(value: unknown, keys: readonly string[], key?: string, depth = 0): unknown {

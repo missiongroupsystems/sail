@@ -23,7 +23,7 @@ function useCountdown(until: string | null): string | null {
   return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
 }
 
-/** "Pair an iPad": a one-time 6-digit code, shown large (design 7.4 display style) with its expiry. */
+/** "Pair an iPad": a one-time 6-digit code, shown large with its expiry. */
 export function PairingPanel({ station }: { station: Station }) {
   const { clock } = useLocale();
   const code = useMutation<PairingCode, ApiError>({
