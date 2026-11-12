@@ -3,16 +3,16 @@ import { resolve } from "node:path";
 import { expect, test as base, type Page, type Response } from "@playwright/test";
 
 export const API = process.env.E2E_API_URL ?? "http://localhost:8080";
-export const WEB = "http://localhost:3000";
-export const GUEST = "http://localhost:3001";
+export const WEB = process.env.E2E_WEB_URL ?? "http://localhost:3000";
+export const GUEST = process.env.E2E_GUEST_URL ?? "http://localhost:3001";
 
 type DemoMerchant = { merchantId: string; brandId: string; outletId: string; stationId: string };
 
 /**
  * What `dev:local` bootstrapped (written by packages/server/scripts/dev-local.ts): the Singapore demo merchant at the
- * top level and the EU VAT café (EUR, de-DE) under `eu`.
+ * top level and the EU VAT café (EUR, de-DE) under `eu`, and the card-terminal simulator's address.
  */
-export function devLocal(): DemoMerchant & { eu: DemoMerchant } {
+export function devLocal(): DemoMerchant & { eu: DemoMerchant; payment_simulator: string } {
   return JSON.parse(readFileSync(resolve(import.meta.dirname, "../../server/.dev-local.json"), "utf8"));
 }
 

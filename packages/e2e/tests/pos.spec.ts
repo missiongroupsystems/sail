@@ -166,3 +166,46 @@ test("station channel link: a paired station reads its POS channel link before a
   expect(links.data.length).toBeGreaterThan(0);
   expect(links.data.every((l) => l.channel === "pos" && l.outlet_id === outletId)).toBe(true);
 });
+
+/** Seat a free table for two, add a Mee Goreng, send it and open the pay screen on the terminal card. */
+async function sentToPay(page: Page) {
+  await page.getByRole("button", { name: "Floor", exact: true }).click();
+  await page.getByRole("button", { name: /^Table \d+, Free/ }).first().click();
+  await page.getByRole("button", { name: "2 guests", exact: true }).click();
+  await page.getByRole("button", { name: /^Mee Goreng,/ }).click();
+  await page.getByRole("button", { name: "Send 1 to kitchen" }).click();
+  await expect(page.getByRole("region", { name: "Order" }).getByText(/^Sent /)).toBeVisible();
+  await page.getByRole("button", { name: /^Pay \$/ }).click();
+  const methods = page.getByRole("group", { name: "Payment method" });
+  // The first three methods show; the demo's terminal card sits behind More.
+  await methods.getByRole("button", { name: /^More payment methods/ }).click();
+  await methods.getByRole("button", { name: "Card (terminal)", exact: true }).click();
+}
+
+test("POS: pay on the card terminal (simulator); a declined card then cash", async ({ page }) => {
+  test.setTimeout(300_000);
+  await test.step("pair the iPad and sign in with a cashier PIN", () => pairAndSignIn(page, CASHIER_PIN));
+
+  await test.step("send the bill to the terminal; the guest pays and the bill is paid", async () => {
+    await sentToPay(page);
+    await page.getByRole("button", { name: /^Send \$[\d.]+ to the terminal/ }).click();
+    await expect(page.getByText("Waiting for the terminal.")).toBeVisible();
+    // The simulator approves after a moment; the answer arrives on the event stream.
+    await expect(page.getByText(/^Paid · Bill 1 · /)).toBeVisible({ timeout: 30_000 });
+    await page.getByRole("button", { name: "No receipt" }).click();
+  });
+
+  await test.step("the terminal declines: the bill is untouched, then the guest pays cash", async () => {
+    const { payment_simulator } = devLocal();
+    const next = await fetch(`${payment_simulator}/terminals/sim-1/next`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ outcome: "decline" }) });
+    expect(next.ok, "telling the simulator to decline").toBe(true);
+    await sentToPay(page);
+    await page.getByRole("button", { name: /^Send \$[\d.]+ to the terminal/ }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "Declined on the terminal" })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("list", { name: "Payments on this bill" })).toHaveCount(0);
+    await page.getByRole("group", { name: "Payment method" }).getByRole("button", { name: "Cash", exact: true }).click();
+    await page.getByRole("button", { name: /^Take \$[\d.]+ cash/ }).click();
+    await expect(page.getByText(/^Paid · Bill 1 · /)).toBeVisible();
+    await page.getByRole("button", { name: "No receipt" }).click();
+  });
+});
