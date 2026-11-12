@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { formatBpsText, formatCents } from "@sail/ui";
+import { formatBpsText, useLocale } from "@sail/ui";
 import { useCallback, useMemo } from "react";
 import { ApiError, idempotencyKey, toApiError } from "@/lib/api";
 import * as reg from "../api/register";
@@ -39,9 +39,10 @@ export function useOrderActions(orderId: string) {
   const api = useApi();
   const qc = useQueryClient();
   const role = useSessionStore((s) => s.staff?.role ?? null);
+  const { money } = useLocale();
   const { notify, showUndo, beginMutation, endMutation, requestOverride } = useUiStore.getState();
 
-  const key = posKeys.order(orderId);
+  const key = useMemo(() => posKeys.order(orderId), [orderId]);
   const snapshot = useCallback(() => qc.getQueryData<OrderSnapshot>(key), [qc, key]);
 
   const fail = useCallback(
@@ -170,7 +171,7 @@ export function useOrderActions(orderId: string) {
             onConflict: "retry-unversioned",
             onRetried: () => notify({ text: "Your 1 new line was kept", tone: "info", orderId }, 4000),
           });
-        const snap = input.openPrice != null ? await withApproval("lines.add_open_price", { kind: "order", id: orderId }, `Add ${input.product.name} at ${formatCents(input.openPrice)}`, "Open price · needs a manager", exec) : await exec(null);
+        const snap = input.openPrice != null ? await withApproval("lines.add_open_price", { kind: "order", id: orderId }, `Add ${input.product.name} at ${money(input.openPrice)}`, "Open price · needs a manager", exec) : await exec(null);
         if (!snap) {
           qc.setQueryData<OrderSnapshot>(key, (s) => (s ? { ...s, lines: s.lines.filter((l) => l.id !== lineId) } : s));
           return null;
@@ -189,7 +190,7 @@ export function useOrderActions(orderId: string) {
         return null;
       }
     },
-    [api, fail, key, notify, orderId, qc, run, showUndo, withApproval],
+    [api, fail, key, money, notify, orderId, qc, run, showUndo, withApproval],
   );
 
   const patchLine = useCallback(
@@ -231,7 +232,7 @@ export function useOrderActions(orderId: string) {
             "lines.void_fired",
             { kind: "order_line", id: line.id },
             `Void ${line.name} ×${qty}`,
-            `already sent · ${formatCents(line.amounts.total)}${line.kitchen_name ? " · prints a void ticket" : ""}`,
+            `already sent · ${money(line.amounts.total)}${line.kitchen_name ? " · prints a void ticket" : ""}`,
             (overrideId) => run((expected) => reg.voidLine(api, orderId, line.id, body, { expectedVersion: expected, overrideId })),
           );
         }
@@ -241,7 +242,7 @@ export function useOrderActions(orderId: string) {
         return null;
       }
     },
-    [api, fail, orderId, run, withApproval],
+    [api, fail, money, orderId, run, withApproval],
   );
 
   const send = useCallback(async () => {
@@ -374,7 +375,7 @@ export function useOrderActions(orderId: string) {
     async (rule: ManualRule, enteredValue: number | null, reason: string | null, lineIds: string[] | null) => {
       const applicationId = idempotencyKey();
       const input: reg.AdjustmentInput = { application_id: applicationId, rule_key: rule.rule_key, entered_value: enteredValue, reason, line_ids: lineIds };
-      const valueText = rule.value.type === "open" && enteredValue != null ? (rule.calc === "percent" ? formatBpsText(enteredValue) : formatCents(enteredValue)) : null;
+      const valueText = rule.value.type === "open" && enteredValue != null ? (rule.calc === "percent" ? formatBpsText(enteredValue) : money(enteredValue)) : null;
       try {
         return await withApproval(
           "adjustments.apply_manual",
@@ -389,7 +390,7 @@ export function useOrderActions(orderId: string) {
         return null;
       }
     },
-    [api, fail, orderId, run, withApproval],
+    [api, fail, money, orderId, run, withApproval],
   );
 
   const removeDiscount = useCallback(
@@ -513,8 +514,8 @@ export function useOrderActions(orderId: string) {
         const res = await withApproval(
           "payments.record",
           { kind: "order", id: orderId },
-          `Take ${formatCents(input.amount)} by ${tenderName}`,
-          `${check.label} · balance ${formatCents(check.balance)}`,
+          `Take ${money(input.amount)} by ${tenderName}`,
+          `${check.label} · balance ${money(check.balance)}`,
           (overrideId) => reg.recordPayment(api, check.id, input, { key: input.payment_id, expectedVersion: snapshot()?.version ?? null, overrideId }),
         );
         if (!res) return null;
@@ -534,7 +535,7 @@ export function useOrderActions(orderId: string) {
         endMutation(orderId);
       }
     },
-    [api, beginMutation, endMutation, fail, key, notify, orderId, qc, refreshIfBalanceChanged, snapshot, withApproval],
+    [api, beginMutation, endMutation, fail, key, money, notify, orderId, qc, refreshIfBalanceChanged, snapshot, withApproval],
   );
 
   const complete = useCallback(async () => {
@@ -619,7 +620,7 @@ export function useOrderActions(orderId: string) {
       const refundId = input.refund_id ?? idempotencyKey();
       beginMutation(orderId);
       try {
-        const res = await withApproval("refunds.create", { kind: "check", id: check.id }, `Refund ${formatCents(total)}`, `${check.label} · ${input.reason}`, (overrideId) => reg.createRefund(api, check.id, { ...input, refund_id: refundId }, { key: refundId, expectedVersion: snapshot()?.version ?? null, overrideId }));
+        const res = await withApproval("refunds.create", { kind: "check", id: check.id }, `Refund ${money(total)}`, `${check.label} · ${input.reason}`, (overrideId) => reg.createRefund(api, check.id, { ...input, refund_id: refundId }, { key: refundId, expectedVersion: snapshot()?.version ?? null, overrideId }));
         if (!res) return null;
         applySnapshot(qc, res.data);
         void qc.invalidateQueries({ queryKey: posKeys.refunds(orderId) });
@@ -632,7 +633,7 @@ export function useOrderActions(orderId: string) {
         endMutation(orderId);
       }
     },
-    [api, beginMutation, endMutation, fail, notify, orderId, qc, snapshot, withApproval],
+    [api, beginMutation, endMutation, fail, money, notify, orderId, qc, snapshot, withApproval],
   );
 
   const printRefundReceipt = useCallback(

@@ -3,43 +3,56 @@
 import { Minus, Plus } from "lucide-react";
 import { Button as AriaButton } from "react-aria-components";
 import { cx } from "../lib/cx";
-import { formatCents, Money } from "../components/Money";
+import { Money } from "../components/Money";
+import { useLocale } from "../lib/locale";
+import type { LocaleFormat } from "../lib/locale-format";
 import { AmountPad } from "./AmountPad";
 
 export type Denomination = { key: string; label: string; cents: number };
 
-/** Singapore notes and coins, largest first. Keys are the value in cents, so counts round-trip through the register's `float_counts`. */
-export const SGD_DENOMINATIONS: Denomination[] = [
-  { key: "10000", label: "$100", cents: 10000 },
-  { key: "5000", label: "$50", cents: 5000 },
-  { key: "1000", label: "$10", cents: 1000 },
-  { key: "500", label: "$5", cents: 500 },
-  { key: "200", label: "$2", cents: 200 },
-  { key: "100", label: "$1", cents: 100 },
-  { key: "50", label: "50¢", cents: 50 },
-  { key: "20", label: "20¢", cents: 20 },
-  { key: "10", label: "10¢", cents: 10 },
-  { key: "5", label: "5¢", cents: 5 },
-];
+/**
+ * Rows for the counter from the merchant's notes and coins in minor units (largest first). Keys are the value in
+ * minor units, so counts round-trip through the register's `float_counts`. Labels follow the merchant's currency.
+ */
+export function denominationsFrom(minorUnits: readonly number[], money: LocaleFormat["money"]): Denomination[] {
+  return [...new Set(minorUnits)]
+    .filter((v) => Number.isSafeInteger(v) && v > 0)
+    .sort((a, b) => b - a)
+    .map((v) => ({ key: String(v), label: money(v, { dropZeroFraction: true }), cents: v }));
+}
+
+/**
+ * Notes and coins for a currency the merchant has not configured: a 1-2-5 series from the smallest coin (the
+ * cash rounding increment when there is one) up to 100 major units, or 10,000 for a currency with no minor unit.
+ */
+export function fallbackDenominationValues(minorDigits: number, smallestCoin: number | null): number[] {
+  const major = 10 ** minorDigits;
+  const top = (minorDigits === 0 ? 10_000 : 100) * major;
+  const bottom = smallestCoin && smallestCoin > 0 ? smallestCoin : 10 ** Math.max(0, minorDigits - 2);
+  const out: number[] = [];
+  for (let decade = 1; decade <= top; decade *= 10) for (const step of [1, 2, 5]) if (step * decade >= bottom && step * decade <= top) out.push(step * decade);
+  return out;
+}
 
 export type CashCounterMode = "total" | "counts";
 
 export type CashCounterProps = {
   mode: CashCounterMode;
   onModeChange: (mode: CashCounterMode) => void;
-  /** Digits typed on the amount pad in total mode ("20000" is $200.00). */
+  /** Digits typed on the amount pad in total mode, in minor units ("20000" is $200.00). */
   totalDigits: string;
   onTotalDigitsChange: (digits: string) => void;
   /** Pieces per denomination key in counts mode. */
   counts: Record<string, number>;
   onCountsChange: (counts: Record<string, number>) => void;
-  denominations?: Denomination[];
+  /** The merchant's notes and coins, largest first (see `denominationsFrom`). */
+  denominations: Denomination[];
   isDisabled?: boolean;
   className?: string;
 };
 
 /** The amount a count adds up to: the person's own count, before the register compares it with expected cash. */
-export function cashCounterTotal(mode: CashCounterMode, totalDigits: string, counts: Record<string, number>, denominations: Denomination[] = SGD_DENOMINATIONS): number {
+export function cashCounterTotal(mode: CashCounterMode, totalDigits: string, counts: Record<string, number>, denominations: Denomination[]): number {
   if (mode === "total") return Number(totalDigits || "0");
   return denominations.reduce((sum, d) => sum + (counts[d.key] ?? 0) * d.cents, 0);
 }
@@ -53,7 +66,8 @@ const key =
  * counter with a row per note and coin adding up live. Used for the float at
  * open and the blind count at close.
  */
-export function CashCounter({ mode, onModeChange, totalDigits, onTotalDigitsChange, counts, onCountsChange, denominations = SGD_DENOMINATIONS, isDisabled, className }: CashCounterProps) {
+export function CashCounter({ mode, onModeChange, totalDigits, onTotalDigitsChange, counts, onCountsChange, denominations, isDisabled, className }: CashCounterProps) {
+  const { money } = useLocale();
   const total = cashCounterTotal(mode, totalDigits, counts, denominations);
   const setCount = (k: string, n: number) => onCountsChange({ ...counts, [k]: Math.max(0, Math.min(999, n)) });
   return (
@@ -79,7 +93,7 @@ export function CashCounter({ mode, onModeChange, totalDigits, onTotalDigitsChan
             const n = counts[d.key] ?? 0;
             return (
               <div key={d.key} className="flex min-h-12 items-center gap-3">
-                <span className="w-14 text-line text-ink tabular">{d.label}</span>
+                <span className="min-w-14 text-line text-ink tabular">{d.label}</span>
                 <AriaButton onPress={() => setCount(d.key, n - 1)} isDisabled={isDisabled || n <= 0} aria-label={`Fewer ${d.label}`} className={key}>
                   <Minus size={18} strokeWidth={1.75} aria-hidden />
                 </AriaButton>
@@ -96,7 +110,7 @@ export function CashCounter({ mode, onModeChange, totalDigits, onTotalDigitsChan
                 <AriaButton onPress={() => setCount(d.key, n + 1)} isDisabled={isDisabled} aria-label={`More ${d.label}`} className={key}>
                   <Plus size={18} strokeWidth={1.75} aria-hidden />
                 </AriaButton>
-                <span className="ml-auto text-body text-ink-2 tabular">{n > 0 ? formatCents(n * d.cents) : ""}</span>
+                <span className="ml-auto text-body text-ink-2 tabular">{n > 0 ? money(n * d.cents) : ""}</span>
               </div>
             );
           })}

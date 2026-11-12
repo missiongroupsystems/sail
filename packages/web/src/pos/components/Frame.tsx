@@ -1,9 +1,8 @@
 "use client";
 
-import { Banner, BannerSlot, ConnectionIndicator, TopBar, TopTabs } from "@sail/ui";
+import { Banner, BannerSlot, ConnectionIndicator, TopBar, TopTabs, useLocale } from "@sail/ui";
 import type { ReactNode } from "react";
 import { useNow } from "../lib/device";
-import { formatClock } from "../lib/format";
 import { useNavStore } from "../state/nav";
 import { useConnectionStore } from "../state/ui";
 import { PrintBanner } from "./PrintBanner";
@@ -26,6 +25,7 @@ const TABS = [
 
 /** Top bar (56pt), the reserved banner slot (48pt) and the screen (design 7.2). */
 export function Frame({ left, title, right, children }: FrameProps) {
+  const { clock } = useLocale();
   const screen = useNavStore((s) => s.screen);
   const go = useNavStore((s) => s.go);
   const { status, asOf } = useConnectionStore();
@@ -38,7 +38,7 @@ export function Frame({ left, title, right, children }: FrameProps) {
           <>
             {right}
             <UserMenu />
-            <ConnectionIndicator status={status} asOf={asOf ? formatClock(new Date(asOf)) : null} className="ml-1" />
+            <ConnectionIndicator status={status} asOf={asOf ? clock(new Date(asOf)) : null} className="ml-1" />
           </>
         }
       />
@@ -52,12 +52,13 @@ export function Frame({ left, title, right, children }: FrameProps) {
 
 /** The one banner slot (design 2.2): the connection first (design 7.8), otherwise the print failure alert (design 4.8). */
 function ConnectionBanner() {
+  const { clock } = useLocale();
   const { status, asOf, recoveredAt } = useConnectionStore();
   const now = useNow(1000);
   if (status !== "online") {
     return (
       <Banner tone={status === "reconnecting" ? "waiting" : "alert"}>
-        {status === "reconnecting" ? "Connection lost · reconnecting…" : <>Connection lost · offline{asOf ? ` · as of ${formatClock(new Date(asOf))}` : ""} · reading the last known state</>}
+        {status === "reconnecting" ? "Connection lost · reconnecting…" : <>Connection lost · offline{asOf ? ` · as of ${clock(new Date(asOf))}` : ""} · reading the last known state</>}
       </Banner>
     );
   }

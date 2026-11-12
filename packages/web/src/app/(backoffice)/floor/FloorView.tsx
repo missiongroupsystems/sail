@@ -199,7 +199,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
                     className={cx(
                       "absolute flex items-center justify-center text-center outline-none transition-[left,top,width,height] duration-[80ms]",
                       t.shape === "round" ? "rounded-full" : "rounded-tile",
-                      t.archived ? "border border-dashed border-line text-ink-2" : "bg-surface-2 text-ink hairline hover:border-ink-2",
+                      t.archived ? "border border-dashed border-rule text-ink-2" : "bg-surface-2 text-ink hairline hover:border-ink-2",
                       isSelected && "border-ink ring-2 ring-status-seated ring-offset-1 ring-offset-surface",
                       drag?.id === t.id && "cursor-grabbing shadow-sheet",
                       !t.archived && !drag && "cursor-grab",

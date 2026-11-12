@@ -1,6 +1,6 @@
 "use client";
 
-import { AmountPad, Badge, Button, Checkbox, Money, ReasonPicker, Sheet, Skeleton } from "@sail/ui";
+import { AmountPad, Badge, Button, Checkbox, Money, ReasonPicker, Sheet, Skeleton, useLocale } from "@sail/ui";
 import { useEffect, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import type { ManualRule, OrderSnapshot } from "../api/types";
@@ -25,6 +25,7 @@ export type DiscountSheetProps = {
  * value (open rules), the reason (when required), and Apply.
  */
 export function DiscountSheet({ isOpen, onClose, order, rules, actions }: DiscountSheetProps) {
+  const { money } = useLocale();
   const { staff, offline } = usePos();
   const [rule, setRule] = useState<ManualRule | null>(null);
   const [digits, setDigits] = useState("");
@@ -62,7 +63,7 @@ export function DiscountSheet({ isOpen, onClose, order, rules, actions }: Discou
       isOpen={isOpen}
       onOpenChange={(o) => (!o ? onClose() : undefined)}
       title={rule ? rule.name : "Discount"}
-      description={rule ? describeRuleValue(rule) : "Manual rules the register allows on this order"}
+      description={rule ? describeRuleValue(rule, money) : "Manual rules the register allows on this order"}
       isDismissable={!busy}
       footer={
         rule ? (
@@ -71,7 +72,7 @@ export function DiscountSheet({ isOpen, onClose, order, rules, actions }: Discou
               Back to the list
             </Button>
             <Button variant="primary" size="lg" isDisabled={!canApply} isPending={busy} onPress={apply}>
-              {offline ? "Offline" : !inRange ? `Enter ${describeRuleValue(rule)}` : needsReason ? "Pick a reason" : `Apply ${rule.name}`}
+              {offline ? "Offline" : !inRange ? `Enter ${describeRuleValue(rule, money)}` : needsReason ? "Pick a reason" : `Apply ${rule.name}`}
               {above(rule) && inRange && !needsReason && !offline ? <span className="ml-1 rounded-chip bg-[color-mix(in_srgb,var(--status-bill)_14%,transparent)] px-2 text-caption text-status-bill">Manager approval</span> : null}
             </Button>
           </>
@@ -99,7 +100,7 @@ export function DiscountSheet({ isOpen, onClose, order, rules, actions }: Discou
                   <span className="min-w-0">
                     <span className="block truncate text-line text-ink">{r.name}</span>
                     <span className="block text-caption text-ink-2 tabular">
-                      {describeRuleValue(r)}
+                      {describeRuleValue(r, money)}
                       {r.kind === "fee" ? " · fee" : ""}
                       {r.reason_required ? " · reason required" : ""}
                     </span>
@@ -114,7 +115,7 @@ export function DiscountSheet({ isOpen, onClose, order, rules, actions }: Discou
         <div className="flex flex-col gap-6">
           {rule.value.type === "open" ? (
             <div className="flex justify-center">
-              <AmountPad digits={digits} onChange={setDigits} mode={rule.calc === "percent" ? "percent" : "cents"} hint={`Between ${describeRuleValue(rule)}`} />
+              <AmountPad digits={digits} onChange={setDigits} mode={rule.calc === "percent" ? "percent" : "cents"} hint={`Between ${describeRuleValue(rule, money)}`} />
             </div>
           ) : null}
           {rule.level === "line" && lineIds ? (

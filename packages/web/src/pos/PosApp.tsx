@@ -1,5 +1,6 @@
 "use client";
 
+import { deviceLocale, deviceTimeZone, LocaleProvider } from "@sail/ui";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { ApiError } from "@/lib/api";
@@ -34,7 +35,10 @@ export default function PosApp() {
   const sessionToken = useSessionStore((s) => s.token);
   return (
     <QueryClientProvider client={client}>
-      {!stationToken ? <PairingScreen /> : !sessionToken ? <LockScreen /> : <PosShell key={sessionToken} />}
+      {/* Before sign-in the station may not read the merchant's settings: the lock screen's clock uses the iPad's own. */}
+      <LocaleProvider settings={{ currency: null, locale: deviceLocale(), timeZone: deviceTimeZone() }}>
+        {!stationToken ? <PairingScreen /> : !sessionToken ? <LockScreen /> : <PosShell key={sessionToken} />}
+      </LocaleProvider>
     </QueryClientProvider>
   );
 }

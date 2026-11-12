@@ -19,14 +19,16 @@ export { EmptyState, type EmptyStateProps } from "./components/EmptyState";
 export { Skeleton, type SkeletonProps } from "./components/Skeleton";
 export { InlineError, type InlineErrorProps, type InlineErrorSource } from "./components/InlineError";
 export { AttributionChip, initialsOf, type AttributionChipProps, type Attribution } from "./components/AttributionChip";
-export { Money, formatCents, type MoneyProps, type FormatCentsOptions } from "./components/Money";
+export { Money, type MoneyProps } from "./components/Money";
+export { LocaleProvider, useLocale } from "./lib/locale";
+export { makeLocaleFormat, localeSettings, localeFromAcceptLanguage, deviceLocale, deviceTimeZone, type LocaleFormat, type LocaleSettings, type LocaleSettingsSource, type MoneyFormatOptions } from "./lib/locale-format";
 export { StatusDot, type StatusDotProps, type Status } from "./components/StatusDot";
 export { Badge, type BadgeProps, type BadgeTone } from "./components/Badge";
 export { PageHeader, SectionHeading, type PageHeaderProps, type SectionHeadingProps } from "./components/PageHeader";
 export { SideNav, type SideNavProps, type NavItem, type NavLinkProps } from "./components/SideNav";
 
 // Back-office additions (v0.3): fields that hold the API's integers while the person types dollars and percentages.
-export { MoneyField, parseMoney, moneyText, type MoneyFieldProps } from "./backoffice/MoneyField";
+export { MoneyField, type MoneyFieldProps } from "./backoffice/MoneyField";
 export { PercentField, parsePercent, percentText, type PercentFieldProps } from "./backoffice/PercentField";
 export { TagsField, type TagsFieldProps } from "./backoffice/TagsField";
 export { SectionTabs, type SectionTabsProps, type SectionTab } from "./backoffice/SectionTabs";
@@ -70,5 +72,5 @@ export { BillDocumentView, type BillDocumentViewProps, type BillDocumentLike } f
 export { SegmentedControl, type SegmentedControlProps, type SegmentOption } from "./pos/SegmentedControl";
 export { BillCard, type BillCardProps, type BillCardLine, type BillCardRow, type BillCardStatus } from "./pos/BillCard";
 export { TenderGrid, type TenderGridProps, type Tender } from "./pos/TenderGrid";
-export { CashCounter, cashCounterTotal, SGD_DENOMINATIONS, type CashCounterProps, type CashCounterMode, type Denomination } from "./pos/CashCounter";
+export { CashCounter, cashCounterTotal, denominationsFrom, fallbackDenominationValues, type CashCounterProps, type CashCounterMode, type Denomination } from "./pos/CashCounter";
 export { Checklist, type ChecklistProps, type ChecklistItem, type ChecklistItemStatus } from "./pos/Checklist";

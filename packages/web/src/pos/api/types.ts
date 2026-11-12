@@ -40,6 +40,18 @@ export type Outlet = {
   service_theme_from: string | null;
 };
 
+/** The merchant settings the station reads: currency, zone and locale for every figure, and the cash it counts. */
+export type MerchantSettings = {
+  currency: string;
+  timezone: string;
+  /** BCP 47; the register is adding it. */
+  locale?: string | null;
+  cash_rounding_increment: number | null;
+  /** Notes and coins in minor units; the register is adding it. */
+  cash_denominations?: number[] | null;
+};
+export type Merchant = { id: string; name: string; settings: MerchantSettings };
+
 export type ChannelLink = { id: string; channel: "pos" | "scan_to_order"; outlet_id: string; brand_id: string; menu_id: string; enabled: boolean };
 
 export type CompiledProduct = {

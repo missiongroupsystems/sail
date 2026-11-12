@@ -1,11 +1,10 @@
 "use client";
 
-import { Button, InlineError, StatusDot } from "@sail/ui";
+import { Button, InlineError, StatusDot, useLocale } from "@sail/ui";
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
-import { formatClock, formatDayClock } from "@/lib/format";
 import type { Relay, RelayPairingCode } from "./register";
 
 export function useCountdown(until: string | null): { text: string | null; expired: boolean } {
@@ -49,6 +48,7 @@ export function RelayStatus({ relay }: { relay: Relay }) {
  * Pairing a spare replaces the old token, so the previous device stops working.
  */
 export function RelayPairingPanel({ relay, canPair }: { relay: Relay; canPair: boolean }) {
+  const { clock, dayClock } = useLocale();
   const code = useMutation<RelayPairingCode, ApiError>({
     mutationFn: () => req(api.POST("/v1/relays/{id}/pairing-code", { params: { path: { id: relay.id } }, body: {} })).then((r) => r.data),
   });
@@ -71,8 +71,8 @@ export function RelayPairingPanel({ relay, canPair }: { relay: Relay; canPair: b
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <RelayStatus relay={relay} />
-        {relay.paired_at ? <span className="text-caption text-ink-2">Paired {formatDayClock(relay.paired_at)}</span> : null}
-        {relay.last_seen_at ? <span className="text-caption text-ink-2">Last seen {formatDayClock(relay.last_seen_at)}</span> : null}
+        {relay.paired_at ? <span className="text-caption text-ink-2">Paired {dayClock(relay.paired_at)}</span> : null}
+        {relay.last_seen_at ? <span className="text-caption text-ink-2">Last seen {dayClock(relay.last_seen_at)}</span> : null}
         {relay.version ? <span className="font-mono text-caption text-ink-2">{relay.version}</span> : null}
       </div>
 
@@ -84,7 +84,7 @@ export function RelayPairingPanel({ relay, canPair }: { relay: Relay; canPair: b
               {code.data!.code}
             </p>
             <p className="text-caption text-ink-2 tabular">
-              Expires at {formatClock(code.data!.expires_at)} · {left} left · one use only
+              Expires at {clock(code.data!.expires_at)} · {left} left · one use only
             </p>
           </div>
           <div className="flex flex-col gap-2">

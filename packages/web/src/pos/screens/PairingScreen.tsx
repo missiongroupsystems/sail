@@ -38,7 +38,7 @@ export function PairingScreen() {
           <div>
             <p className="text-caption text-ink-2 uppercase tracking-[0.04em]">Sail</p>
             <h1 className="text-title text-ink">Pair this iPad to a station</h1>
-            <p className="mt-2 text-body text-ink-2">In the back office, open Settings › Stations, choose the station and tap “Pairing code”. Enter the 6 digits here.</p>
+            <p className="mt-2 text-body text-ink-2">In the back office, open Settings › Stations, choose the station and tap “Pair an iPad”. Enter the 6 digits here.</p>
           </div>
           <TextField label="Name for this iPad" value={label} onChange={setLabel} placeholder="Bar iPad" inputClassName="min-h-14 text-line" maxLength={80} />
           <InlineError error={error} />

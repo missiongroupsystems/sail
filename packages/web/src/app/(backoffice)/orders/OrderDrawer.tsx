@@ -1,16 +1,16 @@
 "use client";
 
-import { Badge, Button, DescriptionList, Dialog, InlineError, Money, SectionHeading, Sheet, Skeleton, TextField } from "@sail/ui";
+import { Badge, Button, DescriptionList, Dialog, InlineError, Money, SectionHeading, Sheet, Skeleton, TextField, useLocale } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { label, LINE_STATUS_LABEL, ORDER_STATUS_LABEL, ORDER_TYPE_LABEL, CHANNEL_LABEL, todayBusinessDate } from "@/components/backoffice/labels";
+import { label, LINE_STATUS_LABEL, ORDER_STATUS_LABEL, ORDER_TYPE_LABEL, CHANNEL_LABEL } from "@/components/backoffice/labels";
 import { isWaiting, JobRowActions, JobStatus } from "@/components/backoffice/PrintJobActions";
 import { boKeys, can, CHECK_STATUS_LABEL, formatElapsed, openPdf, PRINT_JOB_KIND_LABEL, rolesFor, type CheckSnapshot, type InvoiceIssued, type Refund } from "@/components/backoffice/register";
 import { Warnings } from "@/components/backoffice/Warnings";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { OrderSnapshot } from "@/lib/api/types";
-import { formatDayClock, formatFullStamp, shortId } from "@/lib/format";
+import { shortId } from "@/lib/format";
 import { keys } from "@/lib/query";
 import { useSession } from "@/lib/session-context";
 import { statusTone, whoFor } from "./OrdersView";
@@ -24,6 +24,7 @@ const REFUND_KIND_LABEL: Record<string, string> = { full: "Whole bill", lines: "
  * their role allows; the register enforces every one of them again.
  */
 export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId: string | null; outletId: string | null; tableName: (id: string | null) => string; onClose: () => void }) {
+  const { dayClock, fullStamp, isoDate, money } = useLocale();
   const { me } = useSession();
   const qc = useQueryClient();
   const readOnly = me.role === "server" || !me.role;
@@ -76,7 +77,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
   const lines = useMemo(() => (o?.lines ?? []).slice().sort((a, b) => (a.seat_no ?? 0) - (b.seat_no ?? 0) || a.sort - b.sort), [o]);
   const checks = useMemo(() => ((o?.checks ?? []) as CheckSnapshot[]).slice().sort((a, b) => a.index - b.index), [o]);
   const refundable = useMemo(() => refundableChecks(checks), [checks]);
-  const sameDay = o ? o.business_date === todayBusinessDate() : false;
+  const sameDay = o ? o.business_date === isoDate() : false;
 
   const settle = async (text: string, warnings: string[] = []) => {
     setNote({ text, warnings });
@@ -113,7 +114,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
       onOpenChange={(open) => !open && onClose()}
       width="lg"
       title={o ? <span className="font-mono">{o.order_no}</span> : "Order"}
-      description={o ? `${label(ORDER_TYPE_LABEL, o.order_type)} · ${label(CHANNEL_LABEL, o.channel)} · opened ${formatDayClock(o.opened_at)}${o.opened_by.name ? ` by ${o.opened_by.name}` : ""}` : undefined}
+      description={o ? `${label(ORDER_TYPE_LABEL, o.order_type)} · ${label(CHANNEL_LABEL, o.channel)} · opened ${dayClock(o.opened_at)}${o.opened_by.name ? ` by ${o.opened_by.name}` : ""}` : undefined}
       footer={
         o && !readOnly ? (
           <>
@@ -146,7 +147,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
               { term: o.order_type === "dine_in" ? "Table" : "Customer", detail: `${whoFor(o, tableName)}${o.pax ? ` · ${o.pax} pax` : ""}` },
               { term: "Business date", detail: o.business_date, numeric: true },
               { term: "Pricing", detail: o.pricing_status === "frozen" ? "Frozen at first payment" : "Live" },
-              ...(o.ready_by ? [{ term: "Ready by", detail: formatDayClock(o.ready_by) }] : []),
+              ...(o.ready_by ? [{ term: "Ready by", detail: dayClock(o.ready_by) }] : []),
               ...(o.delivery_address ? [{ term: "Delivery address", detail: o.delivery_address }] : []),
               ...(o.notes ? [{ term: "Notes", detail: o.notes }] : []),
               { term: "Version", detail: `v${o.version} · ${o.round_count} ${o.round_count === 1 ? "round" : "rounds"}`, numeric: true },
@@ -185,7 +186,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                   {l.notes ? <p className="pl-11 text-caption text-ink-2">“{l.notes}”</p> : null}
                   {l.void_reason ? <p className="pl-11 text-caption text-status-alert no-underline">Voided: {l.void_reason}</p> : null}
                   <p className="pl-11 text-caption text-ink-2 tabular">
-                    {l.unit_price ? <Money cents={l.unit_price} size="caption" /> : "open price"} each{l.fired_at ? ` · sent ${formatDayClock(l.fired_at)}` : ""}
+                    {l.unit_price ? <Money cents={l.unit_price} size="caption" /> : "open price"} each{l.fired_at ? ` · sent ${dayClock(l.fired_at)}` : ""}
                     {l.added_by ? ` · ${l.added_by}` : ""}
                   </p>
                 </li>
@@ -274,12 +275,12 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                             <span>
                               {p.tender}
                               {p.reference ? ` · ${p.reference}` : ""}
-                              {p.recorded_by ? ` · ${p.recorded_by}` : ""} · {formatDayClock(p.created_at)}
+                              {p.recorded_by ? ` · ${p.recorded_by}` : ""} · {dayClock(p.created_at)}
                               {p.status === "reversed" ? " · reversed" : ""}
                             </span>
                             <span className="tabular">
                               <Money cents={p.amount} size="caption" />
-                              {p.rounding_cents ? ` (rounding ${p.rounding_cents > 0 ? "+" : "−"}${Math.abs(p.rounding_cents)}¢)` : ""}
+                              {p.rounding_cents ? ` (rounding ${money(p.rounding_cents, { signed: true })})` : ""}
                               {p.tip_cents ? ` · tip ` : ""}
                               {p.tip_cents ? <Money cents={p.tip_cents} size="caption" /> : null}
                             </span>
@@ -330,7 +331,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                     <Money cents={-r.totals.total} />
                   </div>
                   <p className="text-caption text-ink-2">
-                    {formatDayClock(r.created_at)}
+                    {dayClock(r.created_at)}
                     {r.refunded_by ? ` · ${r.refunded_by}` : ""}
                     {r.approved_by ? ` · approved by ${r.approved_by}` : ""} · {r.reason}
                   </p>
@@ -361,7 +362,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                   <span className="inline-flex min-w-0 flex-wrap items-baseline gap-2">
                     <span className="text-ink">{label(PRINT_JOB_KIND_LABEL, j.kind)}</span>
                     <span className="text-caption text-ink-2">
-                      {(printers.data ?? []).find((p) => p.id === j.printer_id)?.name ?? shortId(j.printer_id)} · {formatDayClock(j.created_at)}
+                      {(printers.data ?? []).find((p) => p.id === j.printer_id)?.name ?? shortId(j.printer_id)} · {dayClock(j.created_at)}
                       {j.copies > 1 ? ` · copy ${j.copy_no}/${j.copies}` : ""}
                       {isWaiting(j) ? ` · waiting ${formatElapsed(j.age_seconds)}` : ""}
                       {j.last_error ? ` · ${j.last_error}` : ""}
@@ -382,8 +383,8 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
             <ol className="flex flex-col">
               {(events.data ?? []).map((e) => (
                 <li key={e.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 hairline-b">
-                  <span className="tabular whitespace-nowrap text-ink-2" title={formatFullStamp(e.occurred_at)}>
-                    {formatDayClock(e.occurred_at)}
+                  <span className="tabular whitespace-nowrap text-ink-2" title={fullStamp(e.occurred_at)}>
+                    {dayClock(e.occurred_at)}
                   </span>
                   <span className="font-mono text-caption text-ink">{e.type}</span>
                   <span className="text-caption text-ink-2">
@@ -404,8 +405,8 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
             <ol className="flex flex-col">
               {(audit.data ?? []).map((a) => (
                 <li key={a.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 hairline-b">
-                  <span className="tabular whitespace-nowrap text-ink-2" title={formatFullStamp(a.occurred_at)}>
-                    {formatDayClock(a.occurred_at)}
+                  <span className="tabular whitespace-nowrap text-ink-2" title={fullStamp(a.occurred_at)}>
+                    {dayClock(a.occurred_at)}
                   </span>
                   <span className="font-mono text-caption text-ink">{a.action}</span>
                   <span className="text-caption text-ink-2">

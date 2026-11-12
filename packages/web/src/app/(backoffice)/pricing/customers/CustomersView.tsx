@@ -26,7 +26,7 @@ const CustomerSchema = z
   })
   .superRefine((v, ctx) => {
     if (v.email && !z.email().safeParse(v.email).success) ctx.addIssue({ code: "custom", path: ["email"], message: "Enter an email address" });
-    if (v.mobile && !/^\+?[\d\s-]{6,}$/.test(v.mobile)) ctx.addIssue({ code: "custom", path: ["mobile"], message: "Enter a mobile number like +65 9123 4567" });
+    if (v.mobile && !/^\+?[\d\s-]{6,}$/.test(v.mobile)) ctx.addIssue({ code: "custom", path: ["mobile"], message: "Enter a mobile number with its country code" });
   });
 type CustomerValues = z.infer<typeof CustomerSchema>;
 
@@ -215,7 +215,7 @@ function CustomerFormSheet({ state, groups, onClose }: { state: CustomerSheet; g
         <FormSection>
           <RhfTextField control={form.control} name="name" label="Name" autoFocus={!customer} />
           <div className="grid gap-4 sm:grid-cols-2">
-            <RhfTextField control={form.control} name="mobile" label="Mobile" type="tel" inputMode="tel" numeric placeholder="+65 9123 4567" />
+            <RhfTextField control={form.control} name="mobile" label="Mobile" type="tel" inputMode="tel" numeric placeholder="+ country code and number" />
             <RhfTextField control={form.control} name="email" label="Email" type="email" inputMode="email" />
           </div>
           <RhfTextField control={form.control} name="notes" label="Notes" multiline rows={2} description="Seen by staff on the order, never by the customer." />

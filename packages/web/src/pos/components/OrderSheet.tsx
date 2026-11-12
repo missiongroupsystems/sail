@@ -1,10 +1,10 @@
 "use client";
 
-import { ActionDock, Button, GroupHeader, LineRow, SeatStrip, TotalsBlock, formatCents, type TotalsRow } from "@sail/ui";
+import { ActionDock, Button, GroupHeader, LineRow, SeatStrip, TotalsBlock, type TotalsRow, useLocale } from "@sail/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GuestRound, ManualRule, OrderSnapshot, PrintJob, SnapshotLine } from "../api/types";
 import type { OrderActions } from "../hooks/useOrderActions";
-import { formatClock, gstLabel } from "../lib/format";
+import { gstLabel } from "../lib/format";
 import { useUiStore } from "../state/ui";
 import { usePos } from "./PosContext";
 import { jobsForRound } from "./ReprintSheet";
@@ -56,6 +56,7 @@ function usePricing(orderId: string): boolean {
  * name plus Paid and Balance once money has been taken, and the action dock.
  */
 export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, onDiscount, onBill, onPay, onReprintRound, pendingRounds, onAcceptRound, onRejectRound, jobs, lateJobIds, onReopen, onRefund, onReceipt }: OrderSheetProps) {
+  const { money, clock } = useLocale();
   const { station, offline, staff } = usePos();
   const pricing = usePricing(order.id);
   const closed = order.status === "completed";
@@ -153,7 +154,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
               <div className="flex min-h-9 items-center justify-between gap-2 px-3 pt-2 pb-1">
                 <span className="text-caption text-status-seated uppercase tracking-[0.04em]">
                   QR order · waiting for acceptance
-                  <span className="normal-case tracking-normal text-ink-2"> · {formatClock(r.submitted_at)}{r.guest_name ? ` · ${r.guest_name}` : ""}</span>
+                  <span className="normal-case tracking-normal text-ink-2"> · {clock(r.submitted_at)}{r.guest_name ? ` · ${r.guest_name}` : ""}</span>
                 </span>
                 <span className="flex gap-1">
                   <Button size="md" variant="quiet" isDisabled={offline} onPress={() => onRejectRound(r)} className="text-ink-2">
@@ -186,7 +187,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
           const ps = printStatusFor(firedAt);
           return (
             <div key={round}>
-              <GroupHeader label={`Sent ${firedAt ? formatClock(firedAt) : ""}`} detail={`round ${round}${ps === "late" ? " · ⚠ not printed" : ""}`} action={{ label: "Reprint", onPress: () => onReprintRound({ number: round, firedAt }), isDisabled: offline }} />
+              <GroupHeader label={`Sent ${firedAt ? clock(firedAt) : ""}`} detail={`round ${round}${ps === "late" ? " · ⚠ not printed" : ""}`} action={{ label: "Reprint", onPress: () => onReprintRound({ number: round, firedAt }), isDisabled: offline }} />
               {lines.map((l) => row(l, l.status === "voided" ? "voided" : "sent", ps))}
             </div>
           );
@@ -216,7 +217,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
           primary={
             sendable > 0
               ? { id: "send", label: `Send ${sendable} ▸`, ariaLabel: `Send ${sendable} to kitchen`, onPress: () => void actions.send() }
-              : { id: "pay", label: `Pay ${formatCents(order.balance)} ▸`, ariaLabel: `Pay ${formatCents(order.balance)}`, onPress: onPay, isDisabled: live.length === 0 || order.balance <= 0, needsApproval: !["cashier", "manager", "finance", "admin"].includes(staff.role) }
+              : { id: "pay", label: `Pay ${money(order.balance)} ▸`, ariaLabel: `Pay ${money(order.balance)}`, onPress: onPay, isDisabled: live.length === 0 || order.balance <= 0, needsApproval: !["cashier", "manager", "finance", "admin"].includes(staff.role) }
           }
           secondaries={[
             { id: "hold", label: "Hold", onPress: () => void actions.holdAllNew(), isDisabled: sendable === 0 },

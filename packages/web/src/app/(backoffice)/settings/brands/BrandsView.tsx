@@ -157,7 +157,7 @@ function BrandSheet({ state, onClose }: { state: SheetState; onClose: () => void
     >
       <form id="brand-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
         <FormSection>
-          <RhfTextField control={form.control} name="name" label="Name" placeholder="Harbour Kitchen" autoFocus={!brand} />
+          <RhfTextField control={form.control} name="name" label="Name" placeholder="Brand name" autoFocus={!brand} />
           <div className="flex items-end gap-3">
             <RhfTextField control={form.control} name="accent_color" label="Accent colour" placeholder="#B4235E" mono className="flex-1" description="Leave empty to use Sail's default." />
             <label className="relative flex size-11 shrink-0 cursor-default items-center justify-center rounded-tile hairline" style={{ background: HEX_RE.test(accent) ? accent : "var(--surface-2)" }}>

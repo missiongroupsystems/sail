@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, InlineError, Money, MoneyField, PercentField, Select, Sheet } from "@sail/ui";
+import { Button, InlineError, Money, MoneyField, PercentField, Select, Sheet, useLocale } from "@sail/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Warnings } from "@/components/backoffice/Warnings";
@@ -20,6 +20,7 @@ function newPrice(current: number, mode: Mode, amount: number | null, bps: numbe
 
 /** Select rows, set prices, one call to /v1/products/bulk-price. Per-order-type prices move with the base price. */
 export function BulkPriceSheet({ isOpen, products, onClose, onSaved }: { isOpen: boolean; products: Product[]; onClose: () => void; onSaved: () => void }) {
+  const { moneyText } = useLocale();
   const qc = useQueryClient();
   const [mode, setMode] = useState<Mode>("set");
   const [amount, setAmount] = useState<number | null>(null);
@@ -92,7 +93,7 @@ export function BulkPriceSheet({ isOpen, products, onClose, onSaved }: { isOpen:
           {mode === "percent" ? (
             <PercentField label="Percentage" value={bps} onChange={setBps} placeholder="10" description="Negative values are not supported; use an amount to reduce." />
           ) : (
-            <MoneyField label={mode === "set" ? "New base price" : "Amount"} value={amount} onChange={setAmount} placeholder={mode === "set" ? "0.00" : "0.50"} />
+            <MoneyField label={mode === "set" ? "New base price" : "Amount"} value={amount} onChange={setAmount} placeholder={mode === "set" ? undefined : moneyText(50)} />
           )}
         </div>
         {mode !== "set" ? (

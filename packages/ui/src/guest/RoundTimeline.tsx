@@ -36,12 +36,12 @@ export function RoundTimeline({ stage, rejectReason, holdOrders = true, classNam
         const skipped = stage === "rejected" && i > 1;
         return (
           <li key={s.stage} aria-current={current ? "step" : undefined} className={cx("relative flex min-h-12 items-start gap-3 py-1", skipped && "opacity-40")}>
-            {i < STEPS.length - 1 ? <span aria-hidden className={cx("absolute left-[11px] top-8 h-[calc(100%-20px)] w-0.5", done ? "bg-brand-accent" : "bg-line")} /> : null}
+            {i < STEPS.length - 1 ? <span aria-hidden className={cx("absolute left-[11px] top-8 h-[calc(100%-20px)] w-0.5", done ? "bg-brand-accent" : "bg-rule")} /> : null}
             <span
               aria-hidden
               className={cx(
                 "mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full",
-                isRejectedStep ? "text-status-alert" : done ? "bg-brand-accent text-on-brand-accent" : current ? "bg-brand-accent text-on-brand-accent ring-4 ring-[color-mix(in_srgb,var(--brand-accent)_22%,transparent)]" : "text-line",
+                isRejectedStep ? "text-status-alert" : done ? "bg-brand-accent text-on-brand-accent" : current ? "bg-brand-accent text-on-brand-accent ring-4 ring-[color-mix(in_srgb,var(--brand-accent)_22%,transparent)]" : "text-rule",
               )}
             >
               {isRejectedStep ? <Icon icon={XCircle} size={24} /> : done || current ? <Icon icon={Check} size={14} strokeWidth={3} /> : <Icon icon={Circle} size={24} strokeWidth={1.5} />}

@@ -157,7 +157,7 @@ export function ReceiptChooser({ order, check, actions, heading, sub, autoReturn
                   SMS
                 </Button>
               </div>
-              <TextField aria-label={channel === "email" ? "Email address" : "Mobile number"} value={destination} onChange={setDestination} type={channel === "email" ? "email" : "tel"} placeholder={channel === "email" ? "guest@example.com" : "9123 4567"} autoFocus inputClassName="min-h-14 text-line" />
+              <TextField aria-label={channel === "email" ? "Email address" : "Mobile number"} value={destination} onChange={setDestination} type={channel === "email" ? "email" : "tel"} placeholder={channel === "email" ? "guest@example.com" : "Mobile number"} autoFocus inputClassName="min-h-14 text-line" />
               <Button size="lg" variant="primary" isDisabled={offline || busy || destination.trim().length < 3} isPending={busy} onPress={send}>
                 Send receipt by {channel === "email" ? "email" : "SMS"}
               </Button>

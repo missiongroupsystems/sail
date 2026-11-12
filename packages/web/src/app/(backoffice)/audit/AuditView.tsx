@@ -1,12 +1,12 @@
 "use client";
 
-import { AttributionChip, Button, DataTable, EmptyState, InlineError, initialsOf, Select, TextField, type DataTableColumn } from "@sail/ui";
+import { AttributionChip, Button, DataTable, EmptyState, InlineError, initialsOf, Select, TextField, type DataTableColumn, useLocale } from "@sail/ui";
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { req } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { AuditEntry, AuditPage, Staff } from "@/lib/api/types";
-import { formatDayClock, formatFullStamp, shortId } from "@/lib/format";
+import { shortId } from "@/lib/format";
 import { keys } from "@/lib/query";
 
 const ANY = "__any__";
@@ -35,8 +35,17 @@ function who(a: AuditEntry) {
   return <AttributionChip who={{ kind: "person", initials: initialsOf(a.actor_name) }} />;
 }
 
+function When({ iso }: { iso: string }) {
+  const { fullStamp, dayClock } = useLocale();
+  return (
+    <span className="tabular whitespace-nowrap" title={fullStamp(iso)}>
+      {dayClock(iso)}
+    </span>
+  );
+}
+
 const columns: DataTableColumn<AuditEntry>[] = [
-  { key: "occurred_at", header: "When", isRowHeader: true, render: (a) => <span className="tabular whitespace-nowrap" title={formatFullStamp(a.occurred_at)}>{formatDayClock(a.occurred_at)}</span> },
+  { key: "occurred_at", header: "When", isRowHeader: true, render: (a) => <When iso={a.occurred_at} /> },
   {
     key: "actor",
     header: "Who",

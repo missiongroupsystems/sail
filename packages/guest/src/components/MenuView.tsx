@@ -1,10 +1,9 @@
 "use client";
 
-import { BrandButton, MenuItemRow, ScrollTabs, type MenuItemState } from "@sail/ui";
+import { BrandButton, MenuItemRow, ScrollTabs, type MenuItemState, useLocale } from "@sail/ui";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BasketItem } from "@/lib/basket";
-import { formatClock } from "@/lib/format";
 import type { CompiledMenu, CompiledProduct, CompiledSection, GuestSession, OrderView } from "@/lib/types";
 import { BasketBar } from "./BasketBar";
 import { StaffBanner } from "./StaffBanner";
@@ -30,11 +29,17 @@ function itemState(product: CompiledProduct, section: CompiledSection, canOrder:
   return { state: canOrder ? "orderable" : "browse", reason: null };
 }
 
+/** An open-price item needs staff to key its price (and a manager to approve it), so a guest never sees it. */
+function guestOrderable(p: CompiledProduct | undefined): p is CompiledProduct {
+  return p !== undefined && !p.open_price;
+}
+
 /** The landing screen (design 4.11): brand, table, sticky section tabs and the typography-led menu. */
 export function MenuView({ session, menu, canOrder, basketItems, orderView, onOpenItem, onReview, onCallStaff, onStatus }: MenuViewProps) {
+  const { clock } = useLocale();
   const groups = useMemo<Group[]>(() => {
     const sections = [...menu.menu.sections].sort((a, b) => a.sort - b.sort);
-    const hasItems = (s: CompiledSection) => s.items.some((i) => menu.products[i.product_id]);
+    const hasItems = (s: CompiledSection) => s.items.some((i) => guestOrderable(menu.products[i.product_id]));
     return sections
       .filter((s) => !s.parent_id)
       .map((section) => ({ section, children: sections.filter((c) => c.parent_id === section.id && hasItems(c)) }))
@@ -97,7 +102,7 @@ export function MenuView({ session, menu, canOrder, basketItems, orderView, onOp
     [...section.items]
       .sort((a, b) => a.sort - b.sort)
       .map((i) => menu.products[i.product_id])
-      .filter((p): p is CompiledProduct => Boolean(p))
+      .filter(guestOrderable)
       .map((p) => {
         const { state, reason } = itemState(p, section, canOrder);
         const note = p.cap_remaining != null && p.cap_remaining > 0 && p.cap_remaining <= 5 ? `Only ${p.cap_remaining} left today` : null;
@@ -125,7 +130,7 @@ export function MenuView({ session, menu, canOrder, basketItems, orderView, onOp
           {!canOrder ? <StaffBanner className="mx-4 mb-2" /> : null}
           {latest || tableHasLines ? (
             <button type="button" onClick={onStatus} className="press mx-4 mb-2 flex min-h-12 w-[calc(100%-32px)] items-center justify-between gap-3 rounded-tile bg-surface-2 px-4 text-left text-body text-ink">
-              <span className="min-w-0 truncate">{latest ? `Your order · Sent ${formatClock(latest.submitted_at)}` : "See what the table has ordered"}</span>
+              <span className="min-w-0 truncate">{latest ? `Your order · Sent ${clock(latest.submitted_at)}` : "See what the table has ordered"}</span>
               <ChevronRight size={20} className="shrink-0 text-ink-2" aria-hidden />
             </button>
           ) : null}

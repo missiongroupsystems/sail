@@ -12,6 +12,7 @@ import type {
   Invoice,
   Layout,
   ManualRule,
+  Merchant,
   MutationResult,
   OrderSnapshot,
   OrderType,
@@ -86,6 +87,10 @@ export async function getMe(api: PosApi) {
 }
 
 /* ---- Reference data ------------------------------------------------------ */
+
+export async function getMerchant(api: PosApi): Promise<Merchant> {
+  return (await req(api.GET("/v1/merchant"))).data as unknown as Merchant;
+}
 
 export async function listOutlets(api: PosApi): Promise<Outlet[]> {
   return (await req(api.GET("/v1/outlets"))).data as unknown as Outlet[];

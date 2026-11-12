@@ -1,8 +1,7 @@
 "use client";
 
-import { BrandButton, InlineError, RoundTimeline } from "@sail/ui";
+import { BrandButton, InlineError, RoundTimeline, useLocale } from "@sail/ui";
 import type { ApiError } from "@/lib/api";
-import { formatClock } from "@/lib/format";
 import { roundStage } from "@/lib/status";
 import type { GuestStreamStatus } from "@/lib/stream";
 import type { GuestLine, GuestRound, GuestSession, OrderView } from "@/lib/types";
@@ -36,6 +35,7 @@ export function LineText({ line }: { line: GuestLine }) {
 
 /** The order status page (design 4.11): the round's timeline, live, its items, and what happens next. */
 export function StatusView({ session, orderView, loading, error, lastRoundId, streamStatus, onOrderMore, onCallStaff, onOurTable }: StatusViewProps) {
+  const { clock } = useLocale();
   const order = orderView?.order ?? null;
   const mine = (orderView?.rounds ?? []).filter((r) => r.mine).sort((a, b) => b.submitted_at.localeCompare(a.submitted_at));
   const highlighted = mine.find((r) => r.id === lastRoundId) ?? mine[0] ?? null;
@@ -50,7 +50,7 @@ export function StatusView({ session, orderView, loading, error, lastRoundId, st
         </h1>
         <p className="text-body text-ink-2 tabular">
           Table {session.table.name}
-          {highlighted ? ` · ${formatClock(highlighted.submitted_at)}` : ""}
+          {highlighted ? ` · ${clock(highlighted.submitted_at)}` : ""}
           {highlighted?.guest_name ? ` · ${highlighted.guest_name}` : ""}
         </p>
       </header>
@@ -79,7 +79,7 @@ export function StatusView({ session, orderView, loading, error, lastRoundId, st
               return (
                 <div key={r.id} className="flex flex-col gap-2 rounded-tile bg-surface p-4 hairline">
                   <p className="flex items-baseline justify-between text-body">
-                    <span className="text-ink-2 tabular">Sent {formatClock(r.submitted_at)}</span>
+                    <span className="text-ink-2 tabular">Sent {clock(r.submitted_at)}</span>
                     <span className={stage === "rejected" ? "text-status-alert" : "text-ink"}>{stageWord(stage, session.hold_orders)}</span>
                   </p>
                   {stage === "rejected" && r.reject_reason ? <p className="text-caption text-ink-2">{r.reject_reason}</p> : null}

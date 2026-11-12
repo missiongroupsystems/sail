@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, DataTable, EmptyState, Icon, InlineError, Money, type DataTableColumn } from "@sail/ui";
+import { Badge, Button, DataTable, EmptyState, Icon, InlineError, Money, type DataTableColumn, useLocale } from "@sail/ui";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Info } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -8,7 +8,7 @@ import { label, REPORT_CLASS_LABEL, ROLE_LABEL } from "@/components/backoffice/l
 import { req } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Brand, Category, CustomerGroup, Outlet, PricingRuleVersion, PricingValidationWarning } from "@/lib/api/types";
-import { formatBps, formatDayClock } from "@/lib/format";
+import { formatBps } from "@/lib/format";
 import { keys } from "@/lib/query";
 import { RuleSheet, type RuleSheetState } from "./RuleSheet";
 import { bodyOf, type RuleBody } from "./rule-form";
@@ -73,6 +73,7 @@ export function describeScope(b: RuleBody, categories: Category[]): string {
 }
 
 export function RulesView({ initialVersions, outlets, brands, categories, groups }: { initialVersions: PricingRuleVersion[]; outlets: Outlet[]; brands: Brand[]; categories: Category[]; groups: CustomerGroup[] }) {
+  const { dayClock } = useLocale();
   const [sheet, setSheet] = useState<RuleSheetState>(null);
   const [showArchived, setShowArchived] = useState(false);
 
@@ -133,7 +134,7 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
           {statusBadge(r.current)}
           <span className="text-caption text-ink-2 tabular">
             v{r.current.version} · {r.current.status === "scheduled" ? "from " : ""}
-            {formatDayClock(r.current.effective_from)}
+            {dayClock(r.current.effective_from)}
           </span>
         </span>
       ),

@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, DescriptionList, InlineError, Money, MoneyField, Sheet, Steps, Switch, TextField, cx, formatCents } from "@sail/ui";
+import { Badge, Button, DescriptionList, InlineError, Money, MoneyField, Sheet, Steps, Switch, TextField, cx, useLocale } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { label } from "@/components/backoffice/labels";
@@ -32,6 +32,7 @@ export function refundableChecks(checks: CheckSnapshot[]): CheckSnapshot[] {
  * sheet never computes money. Manager, Finance or Admin (the caller gates it).
  */
 export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: { order: OrderSnapshot; checks: CheckSnapshot[]; initialCheckId: string | null; isOpen: boolean; onClose: () => void }) {
+  const { money } = useLocale();
   const qc = useQueryClient();
   const candidates = useMemo(() => refundableChecks(checks), [checks]);
   const steps = candidates.length > 1 ? ALL_STEPS : ALL_STEPS.filter((s) => s.id !== "bill");
@@ -67,7 +68,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
   const lineById = useMemo(() => new Map(order.lines.map((l) => [l.id, l])), [order.lines]);
   const billLines = useMemo(() => (check ? check.allocations.map((a) => ({ alloc: a, line: lineById.get(a.line_id) ?? null })).filter((x) => x.line && x.line.status !== "voided") : []), [check, lineById]);
   /** "paid $43.16 · $10.00 already refunded": the register's two figures, never their difference. */
-  const paidSoFar = (c: CheckSnapshot) => `paid ${formatCents(c.paid_total)}${c.refunded_total ? ` · ${formatCents(c.refunded_total)} already refunded` : ""}`;
+  const paidSoFar = (c: CheckSnapshot) => `paid ${money(c.paid_total)}${c.refunded_total ? ` · ${money(c.refunded_total)} already refunded` : ""}`;
 
   const reasons = useQuery({
     queryKey: keys.voidReasons,
@@ -126,7 +127,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
       onOpenChange={(o) => !o && onClose()}
       isDismissable={!refund.isPending}
       width="lg"
-      title={done ? `Refunded ${formatCents(done.refund.totals.total)}` : "Refund"}
+      title={done ? `Refunded ${money(done.refund.totals.total)}` : "Refund"}
       description={done ? `${order.order_no} · ${check?.label ?? "Bill"}` : check ? `${order.order_no} · ${check.label} · ${paidSoFar(check)}` : order.order_no}
       footer={
         done ? (
@@ -145,7 +146,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
             </Button>
             {step === "review" ? (
               <Button variant="primary" isDisabled={!quote.data || refund.isPending} isPending={refund.isPending} onPress={() => refund.mutate()}>
-                {quote.data ? `Refund ${formatCents(quote.data.totals.total)}` : "Refund"}
+                {quote.data ? `Refund ${money(quote.data.totals.total)}` : "Refund"}
               </Button>
             ) : (
               <Button variant="primary" isDisabled={!canContinue || !next} onPress={() => next && setStep(next)}>
@@ -340,7 +341,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
                           </span>
                           <span className="tabular">
                             <Money cents={t.amount} />
-                            {t.rounding_cents ? <span className="text-caption text-ink-2"> (rounding {formatCents(t.rounding_cents, { signed: true })})</span> : null}
+                            {t.rounding_cents ? <span className="text-caption text-ink-2"> (rounding {money(t.rounding_cents, { signed: true })})</span> : null}
                           </span>
                         </li>
                       ))}

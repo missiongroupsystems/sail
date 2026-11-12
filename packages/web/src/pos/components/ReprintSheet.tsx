@@ -1,11 +1,10 @@
 "use client";
 
-import { Button, Sheet, Skeleton } from "@sail/ui";
+import { Button, Sheet, Skeleton, useLocale } from "@sail/ui";
 import { useState } from "react";
 import type { OrderSnapshot, PrintJob } from "../api/types";
 import { useOrderPrintJobs } from "../hooks/queries";
 import type { OrderActions } from "../hooks/useOrderActions";
-import { formatClock } from "../lib/format";
 import { usePos } from "./PosContext";
 
 export const JOB_KIND_LABEL: Record<string, string> = { kitchen: "Kitchen ticket", kitchen_ticket: "Kitchen ticket", void: "Void ticket", prebill: "Pre-bill", receipt: "Receipt", refund_receipt: "Refund receipt", service_slip: "Table request", test: "Test page" };
@@ -29,6 +28,7 @@ export type ReprintSheetProps = {
 
 /** Reprint a ticket (design 4.12: Order → round header → Reprint). Every job the register printed for this order, with its status and printer. */
 export function ReprintSheet({ isOpen, onClose, order, actions, round }: ReprintSheetProps) {
+  const { clock } = useLocale();
   const { station, offline } = usePos();
   const jobs = useOrderPrintJobs(station.outlet_id, order.id, isOpen);
   const [busy, setBusy] = useState<string | null>(null);
@@ -51,7 +51,7 @@ export function ReprintSheet({ isOpen, onClose, order, actions, round }: Reprint
           {j.copies > 1 ? ` · copy ${j.copy_no}/${j.copies}` : ""}
         </span>
         <span className="block truncate text-caption text-ink-2 tabular">
-          {formatClock(j.created_at)} · {JOB_STATUS_LABEL[j.status] ?? j.status}
+          {clock(j.created_at)} · {JOB_STATUS_LABEL[j.status] ?? j.status}
           {j.last_error ? ` · ${j.last_error}` : ""}
           {j.reprint_of ? " · reprint" : ""}
         </span>
@@ -63,7 +63,7 @@ export function ReprintSheet({ isOpen, onClose, order, actions, round }: Reprint
   );
 
   return (
-    <Sheet isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Reprint ticket" description={round ? `Round ${round.number}${round.firedAt ? ` · sent ${formatClock(round.firedAt)}` : ""}` : "Tickets the register printed for this order"} isDismissable={busy === null}>
+    <Sheet isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Reprint ticket" description={round ? `Round ${round.number}${round.firedAt ? ` · sent ${clock(round.firedAt)}` : ""}` : "Tickets the register printed for this order"} isDismissable={busy === null}>
       {jobs.isLoading && !jobs.data ? <Skeleton lines={3} /> : null}
       {jobs.data && all.length === 0 ? <p className="text-body text-ink-2">No tickets have been printed for this order. Kitchen tickets print when a round is sent and a kitchen printer is set up.</p> : null}
       {forRound.length ? (

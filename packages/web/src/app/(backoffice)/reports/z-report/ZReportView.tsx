@@ -1,9 +1,8 @@
 "use client";
 
-import { Button, EmptyState, InlineError, Select, Skeleton, TextField } from "@sail/ui";
+import { Button, EmptyState, InlineError, Select, Skeleton, TextField, useLocale } from "@sail/ui";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { todayBusinessDate } from "@/components/backoffice/labels";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
 import { boKeys, can, rolesFor, type BusinessDayClose, type ZReport } from "@/components/backoffice/register";
 import { ZReportBody } from "@/components/backoffice/ZReportBody";
@@ -11,17 +10,17 @@ import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Outlet } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
-import { formatDayClock } from "@/lib/format";
 import { useSession } from "@/lib/session-context";
 
 const ALL = "__all__";
 
 export function ZReportView({ outlets, scope, initialOutletId }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null }) {
+  const { dayClock, isoDate } = useLocale();
   const { me } = useSession();
   const qc = useQueryClient();
   const canClose = can(me, "business_days.close");
   const { outletId, setOutletId } = useOutletChoice(outlets, scope, initialOutletId);
-  const [date, setDate] = useState(todayBusinessDate());
+  const [date, setDate] = useState(isoDate());
   const [stationId, setStationId] = useState<string | null>(null);
   const [closed, setClosed] = useState<BusinessDayClose | null>(null);
 
@@ -37,7 +36,7 @@ export function ZReportView({ outlets, scope, initialOutletId }: { outlets: Outl
     queryFn: () => req(api.GET("/v1/outlets/{id}/z-report", { params: { path: { id: outletId! }, query: { business_date: date, station_id: stationId ?? undefined } } })).then((r) => r.data as unknown as ZReport),
     enabled: outletId !== null && validDate,
     placeholderData: keepPreviousData,
-    refetchInterval: date === todayBusinessDate() ? 30_000 : false,
+    refetchInterval: date === isoDate() ? 30_000 : false,
   });
   const close = useMutation<{ data: BusinessDayClose; warnings: string[] }, ApiError>({
     mutationFn: () => req(api.POST("/v1/outlets/{id}/business-days/close", { params: { path: { id: outletId! } }, body: { business_date: date } })).then((r) => r as unknown as { data: BusinessDayClose; warnings: string[] }),
@@ -67,7 +66,7 @@ export function ZReportView({ outlets, scope, initialOutletId }: { outlets: Outl
       {closed ? (
         <div className="mb-6 flex flex-col gap-1 rounded-tile bg-surface-2 px-4 py-3" role="status">
           <p className="text-body text-ink">
-            Business day {closed.business_date} closed at {formatDayClock(closed.closed_at)}. The Z-report below is its snapshot.
+            Business day {closed.business_date} closed at {dayClock(closed.closed_at)}. The Z-report below is its snapshot.
           </p>
         </div>
       ) : null}

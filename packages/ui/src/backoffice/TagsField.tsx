@@ -67,7 +67,7 @@ export function TagsField({ label, description, errorMessage, value, onChange, p
               aria-label={`Remove ${tag}`}
               isDisabled={isDisabled}
               onPress={() => onChange(value.filter((t) => t !== tag))}
-              className="press inline-flex size-5 items-center justify-center rounded-full text-ink-2 outline-none data-[hovered]:bg-line data-[hovered]:text-ink data-[focus-visible]:outline-2 data-[focus-visible]:outline-status-seated"
+              className="press inline-flex size-5 items-center justify-center rounded-full text-ink-2 outline-none data-[hovered]:bg-rule data-[hovered]:text-ink data-[focus-visible]:outline-2 data-[focus-visible]:outline-status-seated"
             >
               <Icon icon={X} size={12} />
             </AriaButton>

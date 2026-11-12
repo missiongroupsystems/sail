@@ -1,6 +1,6 @@
 "use client";
 
-import { formatCents } from "@sail/ui";
+import { useLocale } from "@sail/ui";
 import { Check } from "lucide-react";
 import { Icon } from "@sail/ui";
 import { Button as AriaButton } from "react-aria-components";
@@ -84,6 +84,7 @@ export type ModifierPickerProps = {
 
 /** Required groups first, "Choose 1" / "Choose up to 3", nested groups inline under their option (design 4.3). */
 export function ModifierPicker({ menu, product, selection, onChange, isDisabled }: ModifierPickerProps) {
+  const { money } = useLocale();
   const groups = activeGroups(menu, product, selection);
 
   const toggle = (g: CompiledGroup, pid: string) => {
@@ -109,7 +110,7 @@ export function ModifierPicker({ menu, product, selection, onChange, isDisabled 
         const met = chosen.length >= group.min_select;
         const full = group.max_select != null && chosen.length >= group.max_select;
         return (
-          <section key={group.id} className={parent ? "ml-4 border-l-2 border-line pl-4" : ""} aria-label={group.name}>
+          <section key={group.id} className={parent ? "ml-4 border-l-2 border-rule pl-4" : ""} aria-label={group.name}>
             <header className="mb-2 flex items-baseline justify-between gap-2">
               <h3 className="text-line text-ink">
                 {group.name}
@@ -135,7 +136,7 @@ export function ModifierPicker({ menu, product, selection, onChange, isDisabled 
                       {on ? <Icon icon={Check} size={18} /> : <span className="inline-block size-[18px] shrink-0 rounded-full ring-1 ring-inset ring-current opacity-50" aria-hidden />}
                       <span className="truncate">{o.name}</span>
                     </span>
-                    {o.price > 0 ? <span className={"shrink-0 text-caption tabular " + (on ? "text-surface/80" : "text-ink-2")}>{formatCents(o.price, { signed: true })}</span> : null}
+                    {o.price > 0 ? <span className={"shrink-0 text-caption tabular " + (on ? "text-surface/80" : "text-ink-2")}>{money(o.price, { signed: true })}</span> : null}
                   </AriaButton>
                 );
               })}

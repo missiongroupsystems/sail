@@ -1,6 +1,6 @@
 "use client";
 
-import { AmountPad, BackButton, Badge, Button, formatCents, Money, Skeleton, TenderGrid, TextField } from "@sail/ui";
+import { AmountPad, BackButton, Badge, Button, Money, Skeleton, TenderGrid, TextField, useLocale } from "@sail/ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import { ApiError, idempotencyKey, toApiError } from "@/lib/api";
@@ -9,19 +9,10 @@ import { Frame } from "../components/Frame";
 import { usePos } from "../components/PosContext";
 import { ReceiptChooser } from "../components/ReceiptChooser";
 import { useOrder, useTenderTypes } from "../hooks/queries";
+import { likelyTendered, useCashDenominations } from "../lib/cash";
 import { roleAtLeast, useOrderActions } from "../hooks/useOrderActions";
 import { useNavStore } from "../state/nav";
 import { billLabel, billRows, shareText } from "./BillScreen";
-
-/** Notes a guest is likely to hand over for this amount: the next $10, $50 and $100 above it, distinct, up to three. */
-function nextNotes(cents: number): number[] {
-  const out: number[] = [];
-  for (const step of [1000, 5000, 10000]) {
-    const n = Math.ceil((cents + 1) / step) * step;
-    if (!out.includes(n)) out.push(n);
-  }
-  return out.slice(0, 3);
-}
 
 type Preview = { figures: PaymentFigures; left: number } | null;
 
@@ -31,6 +22,7 @@ type Preview = { figures: PaymentFigures; left: number } | null;
  * amount at 34pt and the terminal instruction, then the done screen.
  */
 export function PayScreen({ orderId, checkId }: { orderId: string; checkId: string }) {
+  const { money } = useLocale();
   const { station, tablesById, offline, staff } = usePos();
   const screen = useNavStore((s) => s.screen);
   const back = useNavStore((s) => s.back);
@@ -38,6 +30,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const openBill = useNavStore((s) => s.openBill);
   const order = useOrder(orderId);
   const tenders = useTenderTypes(station.outlet_id);
+  const denominations = useCashDenominations();
   const actions = useOrderActions(orderId);
   const snap = order.data;
   const check = snap?.checks.find((c) => c.id === checkId) ?? null;
@@ -52,9 +45,12 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<{ check: CheckSnapshot; order: OrderSnapshot; figures: PaymentFigures } | null>(null);
   const paymentId = useRef(idempotencyKey());
-  const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The dry run on the wire, if any. A payment waits for it: answered after the payment, a dry run is refused 409. */
+  const previewInFlight = useRef<Promise<unknown> | null>(null);
+  /** Set the moment Pay is pressed, before React re-renders: a dry-run timer that fires in between sends nothing. */
+  const paying = useRef(false);
 
-  const list: TenderType[] = tenders.data ?? [];
+  const list: TenderType[] = useMemo(() => tenders.data ?? [], [tenders.data]);
   const tender = list.find((t) => t.id === tenderId) ?? list[0] ?? null;
   const balance = check?.balance ?? 0;
   const amount = digits === null ? balance : Number(digits || "0");
@@ -74,38 +70,49 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   }, [tenderId, amount, tendered, reference]);
 
   const runPreview = useCallback(
-    (t: TenderType, amt: number, tnd: number | null) => {
+    (t: TenderType, amt: number, tnd: number | null): (() => void) | undefined => {
       if (!check || amt <= 0) {
         setPreview(null);
-        return;
+        return undefined;
       }
-      if (previewTimer.current) clearTimeout(previewTimer.current);
-      previewTimer.current = setTimeout(async () => {
+      // A dry run already sent when the inputs change, or when the payment is taken, still answers; its answer is ignored.
+      let dropped = false;
+      const timer = setTimeout(async () => {
+        if (paying.current) return;
         try {
           setPreviewError(null);
-          const res = await actions.previewPayment(check.id, { tender_type_id: t.id, amount: amt, ...(tnd != null ? { tendered: tnd } : {}) });
-          if (!res) return;
+          const request = actions.previewPayment(check.id, { tender_type_id: t.id, amount: amt, ...(tnd != null ? { tendered: tnd } : {}) });
+          previewInFlight.current = request;
+          const res = await request.finally(() => {
+            if (previewInFlight.current === request) previewInFlight.current = null;
+          });
+          if (!res || dropped) return;
           const after = res.data.checks.find((c) => c.id === check.id);
           setPreview({ figures: res.payment, left: after?.balance ?? 0 });
         } catch (e) {
+          if (dropped) return;
           const err = toApiError(e);
           setPreview(null);
           setPreviewError(err.remedy ? `${err.message}. ${err.remedy}` : err.message);
         }
       }, 200);
+      return () => {
+        dropped = true;
+        clearTimeout(timer);
+      };
     },
     [actions, check],
   );
 
   // The register previews cash rounding and change, and the balance left after a part payment, on every change (design 4.5).
+  // A dry run still waiting when the inputs change, or when the payment is taken, is dropped with the effect.
   useEffect(() => {
-    if (!tender || !check || done) return;
-    if (tender.is_cash || part) runPreview(tender, amount, tender.is_cash ? tendered : null);
-    else {
-      setPreview(null);
-      setPreviewError(amount > balance ? "Amount above the balance. Enter the balance or a smaller part payment." : null);
-    }
-  }, [tender, check, amount, tendered, part, balance, done, runPreview]);
+    if (!tender || !check || done || busy) return;
+    if (tender.is_cash || part) return runPreview(tender, amount, tender.is_cash ? tendered : null);
+    setPreview(null);
+    setPreviewError(amount > balance ? "Amount above the balance. Enter the balance or a smaller part payment." : null);
+    return undefined;
+  }, [tender, check, amount, tendered, part, balance, done, busy, runPreview]);
 
   const selectTender = (id: string) => {
     setTenderId(id);
@@ -116,8 +123,10 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const pay = async () => {
     if (!check || !tender || amount <= 0 || busy) return;
     setBusy(true);
+    paying.current = true;
     const id = paymentId.current;
     try {
+      await previewInFlight.current?.catch(() => undefined);
       const res = await actions.pay(check, { payment_id: id, tender_type_id: tender.id, amount, ...(tender.is_cash && tendered != null ? { tendered } : {}), ...(reference.trim() ? { reference: reference.trim() } : {}) }, tender.name);
       if (res) {
         const after = res.data.checks.find((c) => c.id === check.id) ?? check;
@@ -126,6 +135,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
     } catch (e) {
       if (!(e instanceof ApiError)) throw e;
     } finally {
+      paying.current = false;
       setBusy(false);
     }
   };
@@ -162,8 +172,8 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
           order={done.order}
           check={done.check}
           actions={actions}
-          heading={`Paid · ${done.check.label} · ${formatCents(paidAmount)}`}
-          sub={tender.is_cash && change > 0 ? `Change ${formatCents(change)}` : done.figures.rounding_cents ? `Cash rounding ${formatCents(done.figures.rounding_cents)}` : null}
+          heading={`Paid · ${done.check.label} · ${money(paidAmount)}`}
+          sub={tender.is_cash && change > 0 ? `Change ${money(change)}` : done.figures.rounding_cents ? `Cash rounding ${money(done.figures.rounding_cents)}` : null}
           onDone={leave}
           doneLabel={done.order.status === "completed" ? (screen.kind === "pay" && screen.from === "orders" ? "Back to orders" : "Back to floor") : done.order.checks.some((c) => c.status === "open") ? "Next bill" : "Back to the order"}
         />
@@ -176,8 +186,8 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const rounding = tender.is_cash && figures?.rounding_cents ? figures.rounding_cents : 0;
   const change = tender.is_cash && figures && tendered != null ? figures.change_due : null;
   const left = preview?.left ?? null;
-  const verb = tender.is_cash ? `Take ${formatCents(tendered ?? amount)} cash` : tender.is_terminal ? (part ? `Take ${formatCents(amount)} by ${tender.name}` : `Paid by ${tender.name}`) : `Take ${formatCents(amount)} by ${tender.name}`;
-  const label = `${verb}${part && left != null ? ` · ${formatCents(left)} left` : ""} ▸`;
+  const verb = tender.is_cash ? `Take ${money(tendered ?? amount)} cash` : tender.is_terminal ? (part ? `Take ${money(amount)} by ${tender.name}` : `Paid by ${tender.name}`) : `Take ${money(amount)} by ${tender.name}`;
+  const label = `${verb}${part && left != null ? ` · ${money(left)} left` : ""} ▸`;
   // Too little cash for the rounded amount comes back from the dry run as a validation error, which blocks the button with its remedy.
   const blocked = offline || busy || amount <= 0 || Boolean(previewError);
 
@@ -228,11 +238,11 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
                 setEditing((e) => !e);
                 if (digits === null) setDigits(String(balance));
               }}
-              aria-label={`Amount ${formatCents(amount)}, tap to edit`}
+              aria-label={`Amount ${money(amount)}, tap to edit`}
               aria-pressed={editing}
               className="press pos-touch min-h-14 rounded-tile bg-surface-2 px-5 text-title tabular text-ink outline-none data-[pressed]:scale-[0.98] data-[focus-visible]:outline-2 data-[focus-visible]:outline-status-seated"
             >
-              {formatCents(amount)}
+              {money(amount)}
             </AriaButton>
             {digits !== null && amount !== balance ? (
               <Button size="md" variant="quiet" onPress={() => setDigits(null)}>
@@ -254,17 +264,17 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
                 <Button size="lg" variant={tendered === null ? "primary" : "secondary"} onPress={() => setTendered(null)} aria-pressed={tendered === null}>
                   Exact
                 </Button>
-                {nextNotes(amount).map((n) => (
+                {likelyTendered(amount, denominations).map((n) => (
                   <Button key={n} size="lg" variant={tendered === n ? "primary" : "secondary"} onPress={() => setTendered(n)} aria-pressed={tendered === n} className="tabular">
-                    {formatCents(n).replace(/\.00$/, "")}
+                    {money(n, { dropZeroFraction: true })}
                   </Button>
                 ))}
               </div>
               <p className="text-body text-ink-2 tabular" role="status" aria-live="polite">
                 {figures ? (
                   <>
-                    {rounding !== 0 ? `Cash rounding ${formatCents(rounding)}` : part ? `Part payment of ${formatCents(amount)}` : "No cash rounding"}
-                    {change != null && tendered != null ? ` · change ${formatCents(change)}` : ""}
+                    {rounding !== 0 ? `Cash rounding ${money(rounding)}` : part ? `Part payment of ${money(amount)}` : "No cash rounding"}
+                    {change != null && tendered != null ? ` · change ${money(change)}` : ""}
                   </>
                 ) : previewError ? (
                   <span className="text-status-alert">{previewError}</span>
@@ -278,10 +288,10 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
               {tender.is_terminal ? (
                 <>
                   <Money cents={amount} size="amount-xl" className="text-ink" />
-                  <p className="text-line text-ink">Charge {formatCents(amount)} on the terminal, then tap Paid.</p>
+                  <p className="text-line text-ink">Charge {money(amount)} on the terminal, then tap Paid.</p>
                 </>
               ) : (
-                <p className="text-line text-ink">Record {formatCents(amount)} to {tender.name}.</p>
+                <p className="text-line text-ink">Record {money(amount)} to {tender.name}.</p>
               )}
               <TextField label="Reference (optional)" value={reference} onChange={setReference} inputClassName="min-h-14 text-line" className="max-w-[360px]" maxLength={80} mono />
               {previewError ? (

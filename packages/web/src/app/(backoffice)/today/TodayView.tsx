@@ -1,10 +1,10 @@
 "use client";
 
-import { Badge, Button, Dialog, EmptyState, InlineError, Money, SectionHeading, Stat, StatusDot, TextField } from "@sail/ui";
+import { Badge, Button, Dialog, EmptyState, InlineError, Money, SectionHeading, Stat, StatusDot, TextField, useLocale } from "@sail/ui";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { label, ORDER_TYPE_LABEL, todayBusinessDate } from "@/components/backoffice/labels";
+import { label, ORDER_TYPE_LABEL } from "@/components/backoffice/labels";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
 import { isLate, JobRowActions, RerouteDialog, useJobMutations } from "@/components/backoffice/PrintJobActions";
 import { boKeys, can, formatElapsed, plural, REQUEST_TYPE_LABEL, type FloorSnapshot, type GuestRound, type PrintJob, type ServiceRequest, type Shift, type ZReport } from "@/components/backoffice/register";
@@ -14,7 +14,6 @@ import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Outlet } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
-import { formatClock, formatDayClock } from "@/lib/format";
 import { useSession } from "@/lib/session-context";
 import { orderJobs } from "../printing/jobs/PrintJobsView";
 
@@ -25,6 +24,7 @@ const POLL = 15_000;
  * day's figures last and quiet. Everything polls the register every 15 s.
  */
 export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null }) {
+  const { clock, dayClock, isoDate } = useLocale();
   const { me } = useSession();
   const qc = useQueryClient();
   const { outletId, setOutletId } = useOutletChoice(outlets, scope, initialOutletId);
@@ -45,7 +45,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
       { queryKey: boKeys.printJobs(id, { late: "true" }), queryFn: () => req(api.GET("/v1/outlets/{id}/print-jobs", { params: { path: { id }, query: { late: "true", limit: 100 } } })).then((r) => r.data), enabled, refetchInterval: POLL },
       { queryKey: boKeys.relays(id), queryFn: () => req(api.GET("/v1/relays", { params: { query: { outlet_id: id } } })).then((r) => r.data), enabled, refetchInterval: POLL },
       { queryKey: boKeys.shifts(id, { status: "open" }), queryFn: () => req(api.GET("/v1/outlets/{id}/shifts", { params: { path: { id }, query: { status: "open" } } })).then((r) => r.data as unknown as Shift[]), enabled, refetchInterval: POLL },
-      { queryKey: boKeys.zReport(id, todayBusinessDate(), null), queryFn: () => req(api.GET("/v1/outlets/{id}/z-report", { params: { path: { id }, query: { business_date: todayBusinessDate() } } })).then((r) => r.data as unknown as ZReport), enabled, refetchInterval: POLL },
+      { queryKey: boKeys.zReport(id, isoDate(), null), queryFn: () => req(api.GET("/v1/outlets/{id}/z-report", { params: { path: { id }, query: { business_date: isoDate() } } })).then((r) => r.data as unknown as ZReport), enabled, refetchInterval: POLL },
     ],
   });
   const printers = useQuery({
@@ -92,7 +92,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
         <OutletChoice outlets={outlets} scope={scope} outletId={outletId} onChange={setOutletId} />
         {floor.data ? (
           <p className="text-caption text-ink-2 tabular">
-            As of {formatClock(floor.data.as_of)} · refreshes every 15 s
+            As of {clock(floor.data.as_of)} · refreshes every 15 s
           </p>
         ) : null}
       </div>
@@ -152,7 +152,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                         <span className="inline-flex flex-wrap items-baseline gap-2">
                           <span className="text-line text-ink">{label(ORDER_TYPE_LABEL, o.order_type)}</span>
                           <span className="text-ink-2">{o.customer_ref?.name || o.customer_ref?.mobile || ""}</span>
-                          {o.ready_by ? <span className="text-caption text-ink-2">ready by {formatClock(o.ready_by)}</span> : null}
+                          {o.ready_by ? <span className="text-caption text-ink-2">ready by {clock(o.ready_by)}</span> : null}
                         </span>
                         <span className="tabular text-ink-2">
                           <span className="font-mono text-caption">{o.order_no}</span> · <Money cents={o.total} />
@@ -180,7 +180,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                       <span className="inline-flex flex-wrap items-baseline gap-2">
                         <span className="text-line text-ink">{r.table_name ?? "Table"}</span>
                         {r.guest_name ? <span className="text-ink-2">{r.guest_name}</span> : null}
-                        <span className="text-caption text-ink-2 tabular">submitted {formatClock(r.submitted_at)} · waiting {formatElapsed((Date.now() - new Date(r.submitted_at).getTime()) / 1000)}</span>
+                        <span className="text-caption text-ink-2 tabular">submitted {clock(r.submitted_at)} · waiting {formatElapsed((Date.now() - new Date(r.submitted_at).getTime()) / 1000)}</span>
                       </span>
                       {canDecide ? (
                         <span className="inline-flex gap-1">
@@ -213,7 +213,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                       <span className="text-line text-ink">{r.table_name ?? "Table"}</span>
                       <Badge tone="bill">{label(REQUEST_TYPE_LABEL, r.type)}</Badge>
                       {r.guest_name ? <span className="text-ink-2">{r.guest_name}</span> : null}
-                      <span className="text-caption text-ink-2 tabular">{formatClock(r.created_at)} · waiting {formatElapsed((Date.now() - new Date(r.created_at).getTime()) / 1000)}</span>
+                      <span className="text-caption text-ink-2 tabular">{clock(r.created_at)} · waiting {formatElapsed((Date.now() - new Date(r.created_at).getTime()) / 1000)}</span>
                     </span>
                     {canAck ? (
                       <Button variant="quiet" className="min-h-9 px-2.5 text-caption" onPress={() => acknowledge.mutate(r)} isPending={acknowledge.isPending && acknowledge.variables?.id === r.id}>
@@ -291,7 +291,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                       <span className="text-line text-ink">{r.name}</span>
                       <RelayStatus relay={r} />
                     </span>
-                    <span className="text-caption text-ink-2 tabular">{r.last_seen_at ? `last seen ${formatDayClock(r.last_seen_at)}` : "never seen"}</span>
+                    <span className="text-caption text-ink-2 tabular">{r.last_seen_at ? `last seen ${dayClock(r.last_seen_at)}` : "never seen"}</span>
                   </li>
                 ))}
               </ul>
@@ -306,7 +306,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                   <li key={s.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 py-2 hairline-b">
                     <span className="inline-flex flex-wrap items-baseline gap-2">
                       <span className="text-line text-ink">{s.name ?? (s.station_id ? "Station shift" : "Outlet shift")}</span>
-                      <span className="text-caption text-ink-2">{s.opened_by ? `${s.opened_by} · ` : ""}since {formatClock(s.opened_at)}</span>
+                      <span className="text-caption text-ink-2">{s.opened_by ? `${s.opened_by} · ` : ""}since {clock(s.opened_at)}</span>
                     </span>
                     <span className="tabular text-ink-2">
                       float <Money cents={s.float_cents} />

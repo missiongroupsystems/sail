@@ -1,13 +1,12 @@
 "use client";
 
-import { Button, PinPad } from "@sail/ui";
+import { Button, PinPad, useLocale } from "@sail/ui";
 import { useCallback, useState } from "react";
 import { toApiError } from "@/lib/api";
 import { startSession } from "../api/register";
 import { useChannelLink, useLayout, useMenu } from "../hooks/queries";
 import { useApi } from "../hooks/useApi";
 import { useNow } from "../lib/device";
-import { formatClock } from "../lib/format";
 import { useSessionStore } from "../state/session";
 import { useStationStore } from "../state/station";
 
@@ -17,6 +16,7 @@ import { useStationStore } from "../state/station";
  * countdown. The menu and layout load here so the floor is instant after sign-in.
  */
 export function LockScreen() {
+  const { clock } = useLocale();
   const api = useApi();
   const station = useStationStore((s) => s.station)!;
   const unpair = useStationStore((s) => s.unpair);
@@ -69,7 +69,7 @@ export function LockScreen() {
           <p className="text-caption text-ink-2 uppercase tracking-[0.04em]">Sail</p>
           <h1 className="text-title text-ink">{outletName || "Station locked"}</h1>
           <p className="text-heading text-ink-2">{station.name}</p>
-          <p className="mt-8 text-display tabular text-ink">{formatClock(new Date(now))}</p>
+          <p className="mt-8 text-display tabular text-ink">{clock(new Date(now))}</p>
           {lockNote ? <p className="mt-4 text-body text-ink-2">{lockNote}</p> : null}
           <div className="mt-10">
             <Button variant="quiet" size="md" onPress={unpair} className="-ml-4 text-ink-2">

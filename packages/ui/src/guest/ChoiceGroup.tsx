@@ -62,9 +62,9 @@ function Mark({ shape, selected }: { shape: "radio" | "check"; selected: boolean
     <span
       aria-hidden
       className={cx(
-        "inline-flex size-6 shrink-0 items-center justify-center hairline bg-surface press",
+        "inline-flex size-6 shrink-0 items-center justify-center hairline press",
         shape === "radio" ? "rounded-full" : "rounded-[6px]",
-        selected && "border-brand-accent bg-brand-accent text-on-brand-accent",
+        selected ? "border-brand-accent bg-brand-accent text-on-brand-accent" : "bg-surface",
       )}
     >
       {shape === "radio" ? <span className={cx("size-2.5 rounded-full bg-on-brand-accent", selected ? "opacity-100" : "opacity-0")} /> : <Icon icon={Check} size={16} strokeWidth={2.5} className={selected ? "opacity-100" : "opacity-0"} />}
@@ -103,7 +103,7 @@ export function ChoiceGroup({ name, rule, required, met, mode, maxSelect, maxPer
     const child = renderUnder?.(option.id) ?? null;
     if (!stepper && !child) return null;
     return (
-      <div className="ml-9 flex flex-col gap-3 pb-2 pl-3 border-l-2 border-line">
+      <div className="ml-9 flex flex-col gap-3 pb-2 pl-3 border-l-2 border-rule">
         {stepper ? (
           <div className="flex items-center justify-between gap-3">
             <span className="text-caption text-ink-2">How many (up to {maxPerOption})</span>

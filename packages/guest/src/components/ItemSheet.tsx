@@ -1,6 +1,6 @@
 "use client";
 
-import { BottomSheet, BrandButton, ChoiceGroup, GuestStepper, Money, TextField, formatCents, type ChoiceValue } from "@sail/ui";
+import { BottomSheet, BrandButton, ChoiceGroup, GuestStepper, Money, TextField, type ChoiceValue, useLocale } from "@sail/ui";
 import { useState } from "react";
 import type { BasketItem } from "@/lib/basket";
 import { childGroup, defaultSelection, ruleText, selectionFromModifiers, setGroupValue, toModifiers, topGroups, unmetRequirement, type Selection } from "@/lib/modifiers";
@@ -29,6 +29,7 @@ const MAX_QTY = 50;
  * minimum is met.
  */
 export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupError, onAdd, onUpdate }: ItemSheetProps) {
+  const { money } = useLocale();
   // The parent keys this component per opening, so the initial state is the whole reset; a menu refetch while
   // the sheet is open leaves the guest's choices alone.
   const [selection, setSelection] = useState<Selection>(() => (editing ? selectionFromModifiers(editing.modifiers) : defaultSelection(menu, product)));
@@ -98,7 +99,7 @@ export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupE
 
   // The same rule as the POS picker: while a minimum is unmet the button says what is missing ("Choose 1 more: Protein").
   // It stays pressable so a VoiceOver user can reach it; pressing takes them to that group.
-  const addLabel = editing ? "Update item" : quantity > 1 ? `Add ${quantity} to order · ${formatCents(product.price)} each` : `Add to order · ${formatCents(product.price)}`;
+  const addLabel = editing ? "Update item" : quantity > 1 ? `Add ${quantity} to order · ${money(product.price)} each` : `Add to order · ${money(product.price)}`;
   const label = unmet ? unmet.message : addLabel;
 
   return (

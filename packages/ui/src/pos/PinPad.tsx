@@ -92,9 +92,9 @@ export function PinPad({ value, onChange, onComplete, length = 6, error, lockedF
         </p>
       </div>
       <div className="grid grid-cols-3 gap-2" role="group" aria-label="PIN keys">
-        {KEYS.map((key, i) =>
+        {KEYS.map((key) =>
           key === "" ? (
-            <span key={i} aria-hidden />
+            <span key="blank" aria-hidden />
           ) : (
             <AriaButton
               key={key}

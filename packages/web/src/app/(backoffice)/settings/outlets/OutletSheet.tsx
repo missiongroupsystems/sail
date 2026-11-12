@@ -125,7 +125,7 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
     >
       <form id="outlet-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
         <FormSection>
-          <RhfTextField control={form.control} name="name" label="Name" placeholder="Harbour Kitchen · Marina" autoFocus={!outlet} />
+          <RhfTextField control={form.control} name="name" label="Name" placeholder="Brand · Location" autoFocus={!outlet} />
           <RhfTextField control={form.control} name="address" label="Address" multiline rows={2} />
           <div className="grid gap-4 sm:grid-cols-2">
             <RhfTextField control={form.control} name="phone" label="Phone" type="tel" inputMode="tel" numeric />

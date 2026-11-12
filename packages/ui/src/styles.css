@@ -3,7 +3,7 @@
  *
  * Layers: base tokens -> theme (Day on :root, Service under [data-theme="service"])
  * -> brand tokens ([data-brand] sets --brand-accent). Tailwind utilities read the
- * tokens through `@theme inline`, so `bg-surface text-ink border-line` follow the
+ * tokens through `@theme inline`, so `bg-surface text-ink border-rule` follow the
  * active theme at runtime without a rebuild.
  */
 @import "tailwindcss";
@@ -145,7 +145,7 @@
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
-  --color-line: var(--line);
+  --color-rule: var(--line);
   --color-ink: var(--ink);
   --color-ink-2: var(--ink-2);
   --color-primary: var(--primary);

@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, Skeleton, StatusDot } from "@sail/ui";
+import { Badge, Button, Skeleton, StatusDot, useLocale } from "@sail/ui";
 import { useState } from "react";
 import { toApiError } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
@@ -12,13 +12,13 @@ import { usePrinters, useRecentPrintJobs, useRelays } from "../../hooks/queries"
 import { useApi } from "../../hooks/useApi";
 import { usePrintAlerts } from "../../hooks/usePrintAlerts";
 import { useNow } from "../../lib/device";
-import { formatDayClock } from "@/lib/format";
-import { formatClock, formatElapsed } from "../../lib/format";
+import { formatElapsed } from "../../lib/format";
 import { useNavStore } from "../../state/nav";
 import { useUiStore } from "../../state/ui";
 
 /** Printers (design 3.1 Shift, 4.8): status from the relay, waiting tickets with Send to backup and Retry, and Reprint from recent jobs. */
 export function PrintersView() {
+  const { clock, dayClock } = useLocale();
   const api = useApi();
   const qc = useQueryClient();
   const { station, offline } = usePos();
@@ -64,7 +64,7 @@ export function PrintersView() {
               <span className="flex items-center gap-2 text-line text-ink">
                 <StatusDot status={r.online ? "paid" : "alert"} label={r.name} />
               </span>
-              <span className="text-caption text-ink-2 tabular">{r.online ? "online" : r.last_seen_at ? `offline · last seen ${formatDayClock(r.last_seen_at)}` : "never connected"}</span>
+              <span className="text-caption text-ink-2 tabular">{r.online ? "online" : r.last_seen_at ? `offline · last seen ${dayClock(r.last_seen_at)}` : "never connected"}</span>
             </li>
           ))}
         </ul>
@@ -87,7 +87,7 @@ export function PrintersView() {
                     <Badge tone="neutral">{p.role === "kitchen" ? (p.is_default_kitchen ? "kitchen · default" : "kitchen") : "receipts"}</Badge>
                   </span>
                   <span className="block pl-5 text-caption text-ink-2">
-                    {waiting ? `${waiting.jobs.length} waiting · ${formatElapsed(waiting.oldestSeconds)}` : status ? (status.ok ? `ok · checked ${formatClock(status.checked_at)}` : status.error ?? "error") : anyRelayOnline ? "no status yet" : "print box offline"}
+                    {waiting ? `${waiting.jobs.length} waiting · ${formatElapsed(waiting.oldestSeconds)}` : status ? (status.ok ? `ok · checked ${clock(status.checked_at)}` : status.error ?? "error") : anyRelayOnline ? "no status yet" : "print box offline"}
                     {backup ? ` · backup ${backup.name}` : ""}
                   </span>
                 </span>
@@ -125,7 +125,7 @@ export function PrintersView() {
                     {j.copies > 1 ? ` · copy ${j.copy_no}/${j.copies}` : ""}
                   </span>
                   <span className="block truncate text-caption text-ink-2 tabular">
-                    {formatClock(j.created_at)} · {alerts.late.some((l) => l.id === j.id) ? "⚠ not printed" : (JOB_STATUS_LABEL[j.status] ?? j.status)}
+                    {clock(j.created_at)} · {alerts.late.some((l) => l.id === j.id) ? "⚠ not printed" : (JOB_STATUS_LABEL[j.status] ?? j.status)}
                     {j.last_error ? ` · ${j.last_error}` : ""}
                   </span>
                 </span>

@@ -24,7 +24,7 @@ export function Switch({ children, description, className, ...rest }: SwitchProp
       <span
         aria-hidden
         className={cx(
-          "mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-chip border border-transparent bg-line p-0.5 press",
+          "mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-chip border border-transparent bg-rule p-0.5 press",
           "group-data-[selected]:bg-status-paid group-data-[pressed]:scale-[0.97]",
           "group-data-[focus-visible]:outline-2 group-data-[focus-visible]:outline-offset-2 group-data-[focus-visible]:outline-status-seated",
         )}

@@ -1,9 +1,10 @@
 "use client";
 
+import { Button, deviceLocale, InlineError, LocaleProvider, localeSettings } from "@sail/ui";
 import { useEffect, useMemo, useRef } from "react";
 import { idempotencyKey, toApiError } from "@/lib/api";
 import { openOrder } from "../api/register";
-import { useApplySnapshot, useChannelLink, useFloor, useLayout, useMenu, useOutlet, useStations } from "../hooks/queries";
+import { useApplySnapshot, useChannelLink, useFloor, useLayout, useMenu, useMerchant, useOutlet, useStations } from "../hooks/queries";
 import { useApi } from "../hooks/useApi";
 import { useOutletStream } from "../hooks/useOutletStream";
 import { useIdleLock, useWakeLock } from "../lib/device";
@@ -24,8 +25,32 @@ import { NoticeHost } from "./NoticeHost";
 import { OverrideSheet } from "./OverrideSheet";
 import { PosProvider, type PosContextValue } from "./PosContext";
 
-/** The signed-in frame: reference data, the event store, theme schedule, wake lock and auto-lock around the current screen. */
+/** Signed in: every figure on the station follows the merchant's currency, locale and zone, so the shell waits for them. */
 export function PosShell() {
+  const merchant = useMerchant();
+  if (!merchant.data) {
+    return (
+      <main className="flex h-dvh w-full flex-col items-center justify-center gap-4 bg-bg px-8">
+        {merchant.error ? (
+          <>
+            <InlineError error={merchant.error} />
+            <Button variant="primary" size="lg" onPress={() => void merchant.refetch()}>
+              Try again
+            </Button>
+          </>
+        ) : null}
+      </main>
+    );
+  }
+  return (
+    <LocaleProvider settings={localeSettings(merchant.data.settings, deviceLocale())}>
+      <SignedInShell />
+    </LocaleProvider>
+  );
+}
+
+/** The signed-in frame: reference data, the event store, theme schedule, wake lock and auto-lock around the current screen. */
+function SignedInShell() {
   const api = useApi();
   const station = useStationStore((s) => s.station)!;
   const staff = useSessionStore((s) => s.staff)!;

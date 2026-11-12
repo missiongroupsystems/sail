@@ -1,5 +1,9 @@
+"use client";
+
 import { cx } from "../lib/cx";
 import { Money } from "../components/Money";
+import { useLocale } from "../lib/locale";
+import { makeLocaleFormat } from "../lib/locale-format";
 import { formatBpsText } from "../pos/AmountPad";
 
 /**
@@ -33,14 +37,6 @@ export type BillDocumentViewProps = {
 
 const KIND_LABEL: Record<BillDocumentLike["kind"], string> = { prebill: "Bill", receipt: "Receipt", refund_receipt: "Refund receipt" };
 
-function stamp(iso: string, timeZone?: string): string {
-  try {
-    return new Intl.DateTimeFormat("en-SG", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: timeZone ?? "Asia/Singapore" }).format(new Date(iso)).replace(/\b(AM|PM)\b/g, (m) => m.toLowerCase());
-  } catch {
-    return iso;
-  }
-}
-
 function Row({ label, cents, strong, muted, signed }: { label: string; cents: number; strong?: boolean; muted?: boolean; signed?: boolean }) {
   return (
     <div className={cx("flex items-baseline justify-between gap-4", strong ? "text-title text-ink" : muted ? "text-body text-ink-2" : "text-body text-ink")}>
@@ -58,6 +54,10 @@ function Row({ label, cents, strong, muted, signed }: { label: string; cents: nu
 export function BillDocumentView({ document: doc, className }: BillDocumentViewProps) {
   const t = doc.totals;
   const gst = formatBpsText(t.gst_bps);
+  // The document's own zone (the outlet's at print time) wins over the viewer's.
+  const loc = useLocale();
+  const zone = doc.header.time_zone;
+  const { stamp } = zone && zone !== loc.timeZone ? makeLocaleFormat({ currency: loc.currency, locale: loc.locale, timeZone: zone }) : loc;
   return (
     <article className={cx("flex flex-col gap-6", className)} aria-label={`${KIND_LABEL[doc.kind]} ${doc.check_label}`}>
       <header className="flex flex-col gap-1">
@@ -70,14 +70,14 @@ export function BillDocumentView({ document: doc, className }: BillDocumentViewP
           Order {doc.header.order_no}
           {doc.header.table_name ? ` · Table ${doc.header.table_name}` : ""}
           {" · "}
-          {stamp(doc.header.printed_at, doc.header.time_zone)}
+          {stamp(doc.header.printed_at)}
         </p>
         {doc.invoice_no ? <p className="font-mono text-caption text-ink-2">Tax invoice {doc.invoice_no}</p> : null}
         {doc.credit_note_no ? <p className="font-mono text-caption text-ink-2">Credit note {doc.credit_note_no}</p> : null}
         {doc.original_check_no ? (
           <p className="text-caption text-ink-2">
             Refund of {doc.original_check_no}
-            {doc.original_date ? `, paid ${stamp(doc.original_date, doc.header.time_zone)}` : ""}
+            {doc.original_date ? `, paid ${stamp(doc.original_date)}` : ""}
           </p>
         ) : null}
         {doc.refund_reason ? <p className="text-caption text-ink-2">Reason: {doc.refund_reason}</p> : null}
