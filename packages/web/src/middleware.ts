@@ -21,6 +21,6 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except API routes, Next internals, static files and the POS placeholder (which gets PIN sign-in later).
-  matcher: ["/((?!api/|_next/|pos|favicon.ico|.*\\..*).*)"],
+  // Everything except API routes, Next internals, static files, the POS and the kitchen display (paired stations, not back-office sign-in).
+  matcher: ["/((?!api/|_next/|pos|kds|favicon.ico|.*\\..*).*)"],
 };

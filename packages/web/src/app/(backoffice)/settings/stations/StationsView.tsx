@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { PairingPanel } from "@/components/backoffice/PairingPanel";
-import { FormSection, RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
+import { FormSection, RhfCheckboxGroup, RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Brand, Outlet, Station } from "@/lib/api/types";
@@ -25,11 +25,13 @@ const Schema = z.object({
   pay_before_firing: z.boolean(),
   seats_enabled: z.boolean(),
   home: z.enum(["floor", "takeaway"]),
+  kind: z.enum(["pos", "display"]),
+  display_destination_ids: z.array(z.string()),
 });
 type Values = z.infer<typeof Schema>;
 
 function defaults(s: Station | null): Values {
-  return { name: s?.name ?? "", brand_id: s?.brand_id ?? NONE, pay_before_firing: s?.pay_before_firing ?? false, seats_enabled: s?.seats_enabled ?? true, home: s?.home ?? "floor" };
+  return { name: s?.name ?? "", brand_id: s?.brand_id ?? NONE, pay_before_firing: s?.pay_before_firing ?? false, seats_enabled: s?.seats_enabled ?? true, home: s?.home ?? "floor", kind: s?.kind ?? "pos", display_destination_ids: s?.display_destination_ids ?? [] };
 }
 
 export function StationsView({
@@ -65,7 +67,7 @@ export function StationsView({
     { key: "brand_id", header: "Brand", sortable: true, sortValue: (s) => (s.brand_id ? brandName.get(s.brand_id) : ""), render: (s) => <span className="text-ink-2">{s.brand_id ? brandName.get(s.brand_id) ?? "Unknown brand" : "Any brand"}</span> },
     { key: "pay_before_firing", header: "Pay before sending", sortable: true, render: (s) => (s.pay_before_firing ? "Yes" : "—") },
     { key: "seats_enabled", header: "Seats", sortable: true, render: (s) => (s.seats_enabled ? "On" : "Off") },
-    { key: "home", header: "Home screen", sortable: true, render: (s) => HOME_LABEL[s.home] ?? s.home },
+    { key: "home", header: "Home screen", sortable: true, render: (s) => (s.kind === "display" ? "Kitchen display (/kds)" : (HOME_LABEL[s.home] ?? s.home)) },
     {
       key: "paired",
       header: "Pairing",
@@ -148,12 +150,21 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
     onClose();
   };
 
+  const kind = form.watch("kind");
+  const destinations = useQuery({
+    queryKey: ["display-destinations", outletId],
+    queryFn: () => req(api.GET("/v1/display-destinations", { params: { query: { outlet_id: outletId } } })).then((r) => r.data),
+    enabled: state !== null && kind === "display",
+  });
+
   const save = useMutation<Station, ApiError, Values>({
     mutationFn: async (v) => {
-      const body = { name: v.name.trim(), brand_id: v.brand_id === NONE ? null : v.brand_id, pay_before_firing: v.pay_before_firing, seats_enabled: v.seats_enabled, home: v.home };
+      const display = v.kind === "display";
+      // A display shows destinations and has no menu or service settings of its own.
+      const body = display ? { name: v.name.trim(), display_destination_ids: v.display_destination_ids } : { name: v.name.trim(), brand_id: v.brand_id === NONE ? null : v.brand_id, pay_before_firing: v.pay_before_firing, seats_enabled: v.seats_enabled, home: v.home };
       const res = station
         ? await req(api.PATCH("/v1/stations/{id}", { params: { path: { id: station.id } }, body }))
-        : await req(api.POST("/v1/stations", { body: { ...body, outlet_id: outletId } }));
+        : await req(api.POST("/v1/stations", { body: { ...body, kind: v.kind, outlet_id: outletId } }));
       return res.data;
     },
     onSuccess: settle,
@@ -178,7 +189,7 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
             <StatusDot status="neutral" label="Not paired. Issue a pairing code below." muted />
           )
         ) : (
-          "A station is one iPad at the counter or on the floor."
+          "A station is one iPad at the counter or on the floor, or a kitchen display."
         )
       }
       footer={
@@ -200,33 +211,54 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
       <form id="station-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
         <FormSection>
           <RhfTextField control={form.control} name="name" label="Name" placeholder="Counter 1" autoFocus={!station} />
-          <RhfSelect
-            control={form.control}
-            name="brand_id"
-            label="Brand"
-            items={[{ id: NONE, label: "Any brand", description: "The station uses the outlet's menu as configured." }, ...brands.map((b) => ({ id: b.id, label: b.name }))]}
-          />
-          <RhfSelect
-            control={form.control}
-            name="home"
-            label="Home screen"
-            description="Where the station opens after sign-in."
-            items={[
-              { id: "floor", label: "Floor plan", description: "Dine-in stations." },
-              { id: "takeaway", label: "New takeaway order", description: "Counter stations." },
-            ]}
-          />
+          {station ? null : (
+            <RhfSelect
+              control={form.control}
+              name="kind"
+              label="Kind"
+              items={[
+                { id: "pos", label: "POS station", description: "An iPad that takes orders and payments." },
+                { id: "display", label: "Kitchen display", description: "A screen at /kds that shows and bumps kitchen tickets, without a PIN." },
+              ]}
+            />
+          )}
         </FormSection>
-        <FormSection title="Service">
-          <RhfSwitch control={form.control} name="pay_before_firing" description="Nothing goes to the kitchen until the bill is paid. For counters and kiosks.">
-            Pay before sending
-          </RhfSwitch>
-          <RhfSwitch control={form.control} name="seats_enabled" description="Shows the seat strip so lines can be assigned to guests.">
-            Seats
-          </RhfSwitch>
-        </FormSection>
+        {kind === "display" ? (
+          <FormSection title="Kitchen display" hint="The display shows the tickets routed to these destinations. Set their routing in Printing › Printers.">
+            <RhfCheckboxGroup control={form.control} name="display_destination_ids" label="Destinations" options={(destinations.data ?? []).map((d) => ({ id: d.id, label: d.name }))} emptyHint="No display destinations at this outlet yet. Add one in Printing › Printers." />
+          </FormSection>
+        ) : (
+          <>
+            <FormSection>
+              <RhfSelect
+                control={form.control}
+                name="brand_id"
+                label="Brand"
+                items={[{ id: NONE, label: "Any brand", description: "The station uses the outlet's menu as configured." }, ...brands.map((b) => ({ id: b.id, label: b.name }))]}
+              />
+              <RhfSelect
+                control={form.control}
+                name="home"
+                label="Home screen"
+                description="Where the station opens after sign-in."
+                items={[
+                  { id: "floor", label: "Floor plan", description: "Dine-in stations." },
+                  { id: "takeaway", label: "New takeaway order", description: "Counter stations." },
+                ]}
+              />
+            </FormSection>
+            <FormSection title="Service">
+              <RhfSwitch control={form.control} name="pay_before_firing" description="Nothing goes to the kitchen until the bill is paid. For counters and kiosks.">
+                Pay before sending
+              </RhfSwitch>
+              <RhfSwitch control={form.control} name="seats_enabled" description="Shows the seat strip so lines can be assigned to guests.">
+                Seats
+              </RhfSwitch>
+            </FormSection>
+          </>
+        )}
         {station ? (
-          <FormSection title="Pairing" hint="An iPad becomes this station by entering a one-time code. The code expires in 10 minutes.">
+          <FormSection title="Pairing" hint={station.kind === "display" ? "A screen becomes this display by opening /kds and entering a one-time code. The code expires in 10 minutes." : "An iPad becomes this station by entering a one-time code. The code expires in 10 minutes."}>
             <PairingPanel station={station} />
           </FormSection>
         ) : null}

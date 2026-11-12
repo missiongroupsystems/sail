@@ -27,6 +27,8 @@ export type LineRowProps = {
   entering?: boolean;
   /** Print status of a sent line: ✓ printed, ◷ waiting, ⚠ not printed. Omit for the plain "sent" mark. */
   printStatus?: "printed" | "waiting" | "late" | null;
+  /** A sent line the kitchen display has bumped: "ready" in place of the print status. */
+  ready?: boolean;
   /** A small source chip after the name, for example "QR" on guest lines. */
   chip?: string | null;
   onPress?: () => void;
@@ -38,11 +40,12 @@ const PRINT_STATUS = {
   waiting: { icon: Clock, text: "waiting", cls: "text-ink-2" },
   late: { icon: AlertTriangle, text: "not printed", cls: "text-status-alert" },
 } as const;
+const READY = { icon: Check, text: "ready", cls: "text-status-paid" } as const;
 
 /** An order line: quantity, name, modifiers, notes, seat chip, amount in tabular figures. */
-export function LineRow({ quantity, name, modifiers = [], notes, seat, amountCents, status, voidReason, flash, entering, printStatus, chip, onPress, className }: LineRowProps) {
+export function LineRow({ quantity, name, modifiers = [], notes, seat, amountCents, status, voidReason, flash, entering, printStatus, ready, chip, onPress, className }: LineRowProps) {
   const voided = status === "voided";
-  const print = status === "sent" && printStatus ? PRINT_STATUS[printStatus] : null;
+  const print = status === "sent" && ready ? READY : status === "sent" && printStatus ? PRINT_STATUS[printStatus] : null;
   const body = (
     <>
       <span className={cx("w-7 shrink-0 pt-px text-line tabular", voided ? "text-ink-2 line-through" : "text-ink")}>{quantity}</span>

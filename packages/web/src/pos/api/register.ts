@@ -8,6 +8,9 @@ import type {
   Customer,
   EventsPage,
   FloorSnapshot,
+  AllDayItem,
+  KitchenTicket,
+  KitchenTicketsPage,
   GuestRound,
   Invoice,
   Layout,
@@ -173,6 +176,23 @@ export async function findCustomers(api: PosApi, mobile: string): Promise<Custom
 
 export async function listEvents(api: PosApi, outletId: string, after: number, limit = 500): Promise<EventsPage> {
   return (await req(api.GET("/v1/outlets/{id}/events", { params: { path: { id: outletId }, query: { after, limit } } }))) as unknown as EventsPage;
+}
+
+/* ---- Kitchen display ------------------------------------------------------ */
+
+/** Open tickets for the caller's destinations (a display station sees only its own), or every ticket of one order. */
+export async function listKitchenTickets(api: PosApi, outletId: string, query: { order_id?: string } = {}): Promise<KitchenTicketsPage> {
+  return req(api.GET("/v1/outlets/{id}/kitchen-tickets", { params: { path: { id: outletId }, query } }));
+}
+
+export async function kitchenAllDay(api: PosApi, outletId: string): Promise<AllDayItem[]> {
+  return (await req(api.GET("/v1/outlets/{id}/kitchen-tickets/all-day", { params: { path: { id: outletId } } }))).data;
+}
+
+/** Bump (ready) or recall a ticket. A repeat, or the other display getting there first, returns it unchanged. */
+export async function actOnKitchenTicket(api: PosApi, ticketId: string, action: "bump" | "recall", opts: MutationOpts = {}): Promise<KitchenTicket> {
+  const res = action === "bump" ? await req(api.POST("/v1/kitchen-tickets/{id}/bump", { params: { path: { id: ticketId } }, body: {}, headers: headers(opts) })) : await req(api.POST("/v1/kitchen-tickets/{id}/recall", { params: { path: { id: ticketId } }, body: {}, headers: headers(opts) }));
+  return res.data;
 }
 
 /* ---- Orders --------------------------------------------------------------- */

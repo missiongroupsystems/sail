@@ -13,6 +13,7 @@ import { api } from "@/lib/api.browser";
 import type { Outlet, Product, Station } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
 import { useSession } from "@/lib/session-context";
+import { DisplayDestinations } from "./DisplayDestinations";
 import { PrinterSheet, type PrinterSheetState } from "./PrinterSheet";
 
 /** The latest reachability report for a printer across the outlet's relays (relays heartbeat every 30 s). */
@@ -200,6 +201,8 @@ export function PrintersView({ outlets, scope, initialOutletId, initialPrinters,
       )}
       <InlineError error={printers.error ?? relays.error} className="mt-4" />
       {!admin ? <p className="mt-3 text-caption text-ink-2">Printers are read-only for your role. An Admin adds, edits and tests them.</p> : null}
+
+      {outletId ? <DisplayDestinations outletId={outletId} stations={stations.data ?? []} canEdit={admin} /> : null}
 
       {outletId ? <PrinterSheet state={sheet} outletId={outletId} printers={all} stations={stations.data ?? []} canEdit={admin} onClose={() => setSheet(null)} /> : null}
     </>
