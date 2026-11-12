@@ -90,7 +90,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
       if (!check) throw AppError.notFound("bill", id);
       const order = await lockOrder(check.orderId, b.expected_version);
       if (order.status === "cancelled") throw AppError.state("The order is cancelled", []);
-      await requireRoleOrOverride(p, principalRole(p), await paymentRole(order.merchantId, b.tender_type_id), { action: "payments.record", targetId: check.orderId, args: { check_id: id, tender_type_id: b.tender_type_id, amount: b.amount, tip_cents: b.tip_cents ?? 0 }, overrideId: b.override_id, overrideAllowed: PERMISSIONS["payments.record"].overrideAllowed });
+      await requireRoleOrOverride(p, principalRole(p), await paymentRole(order.merchantId, b.tender_type_id), { action: "payments.record", targetId: check.orderId, args: { check_id: id, tender_type_id: b.tender_type_id, amount: b.amount, tip_cents: b.tip_cents ?? 0, reference: b.reference ?? null }, overrideId: b.override_id, overrideAllowed: PERMISSIONS["payments.record"].overrideAllowed });
       const result = await recordPayment(order, { paymentId: b.payment_id, checkId: id, tenderTypeId: b.tender_type_id, amount: b.amount, tendered: b.tendered ?? null, tipCents: b.tip_cents ?? 0, reference: b.reference ?? null, stationId: p.type === "staff" ? (p.stationId ?? null) : null }, p);
       await recordAudit(p, { action: "payments.record", targetKind: "order", targetId: order.id, outletId: order.outletId, details: { payment_id: result.payment.id, tender: result.payment.tenderName, amount: result.payment.amount, rounding_cents: result.payment.roundingCents } });
       const version = await bumpVersion(order.id);

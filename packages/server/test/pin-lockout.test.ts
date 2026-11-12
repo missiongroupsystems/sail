@@ -45,14 +45,16 @@ describe("PIN lockout is shared by every API machine", () => {
     await db.sql`update pin_attempts set locked_until = now() - interval '1 second' where merchant_id = ${w.m.merchantId}`;
     for (let i = 0; i < 4; i++) expect((await signIn(w.station2Token, String(830000 + i))).status).toBe(401);
     expect((await signIn(w.station2Token, "333333")).status).toBe(201);
+    await db.sql`delete from pin_attempts where merchant_id = ${w.m.merchantId}`;
   });
 
   it("concurrent wrong PINs all count", async () => {
     await Promise.all(Array.from({ length: 4 }, (_, i) => signIn(w.station2Token, String(810000 + i))));
     expect(await lockRow(w.ids.station2)).toEqual([{ failures: 4, locked: false }]);
     const right = await signIn(w.station2Token, "333333");
-    expect(right.status).toBe(201);
-    expect(await lockRow(w.ids.station2)).toEqual([]);
+    expect(right.status).toBe(201); // the fifth attempt, right but locking
+    expect(await lockRow(w.ids.station2)).toEqual([{ failures: 0, locked: true }]);
+    await db.sql`delete from pin_attempts where merchant_id = ${w.m.merchantId}`;
   });
 
   it("a burst of concurrent guesses gets five tries, not one per request", async () => {
@@ -80,12 +82,15 @@ describe("manager approval PINs share the station's lockout", () => {
     await db.sql`delete from pin_attempts where merchant_id = ${w.m.merchantId}`;
   });
 
-  it("wrong sign-in PINs and wrong approval PINs add up on one counter; a right approval PIN clears it", async () => {
+  it("wrong sign-in PINs and wrong approval PINs add up on one counter; a right PIN resets the count but not a lock", async () => {
     const orderId = (await orderHelpers(call, w).orderWith(w.pins.cashierStation2, [{ product_id: w.ids.kopi }])).id;
     for (let i = 0; i < 3; i++) expect((await signIn(w.station2Token, String(910000 + i))).status).toBe(401);
     expect((await grant(w.pins.cashierStation2, orderId, "910003")).status).toBe(403);
     expect(await lockRow(w.ids.station2)).toEqual([{ failures: 4, locked: false }]);
-    expect((await grant(w.pins.cashierStation2, orderId, "222222")).status).toBe(201);
+    expect((await grant(w.pins.cashierStation2, orderId, "222222")).status).toBe(201); // the fifth attempt: right, but it locks
+    expect(await lockRow(w.ids.station2)).toEqual([{ failures: 0, locked: true }]);
+    await db.sql`update pin_attempts set locked_until = now() - interval '1 second' where merchant_id = ${w.m.merchantId}`;
+    expect((await signIn(w.station2Token, "333333")).status).toBe(201);
     expect(await lockRow(w.ids.station2)).toEqual([]);
     for (let i = 0; i < 4; i++) expect((await grant(w.pins.cashierStation2, orderId, String(920000 + i))).status).toBe(403);
     expect((await signIn(w.station2Token, "920004")).status).toBe(401);
@@ -95,6 +100,19 @@ describe("manager approval PINs share the station's lockout", () => {
 });
 
 describe("manager approval lockout edge cases", () => {
+  it("signing in with a PIN you know between guesses does not lift the lock", async () => {
+    const orderId = (await orderHelpers(call, w).orderWith(w.pins.cashierStation2, [{ product_id: w.ids.kopi }])).id;
+    const g = (pin: string) => call("POST", "/v1/overrides", { token: w.pins.cashierStation2, body: { action: "orders.reopen", target_kind: "order", target_id: orderId, approver_pin: pin, args: {} } });
+    const statuses: number[] = [];
+    for (let round = 0; round < 3; round++) {
+      for (let i = 0; i < 4; i++) statuses.push((await g(String(950000 + round * 10 + i))).status);
+      statuses.push((await signIn(w.station2Token, "333333")).status);
+    }
+    expect(statuses.filter((s) => s === 403).length).toBeLessThanOrEqual(5);
+    expect(statuses).toContain(429);
+    await db.sql`delete from pin_attempts where merchant_id = ${w.m.merchantId}`;
+  });
+
   const grantAs = (token: string, targetId: string, pin: string, outletId?: string) => call<{ code: string; message: string }>("POST", "/v1/overrides", { token, body: { action: "orders.reopen", target_kind: "order", target_id: targetId, approver_pin: pin, args: {}, outlet_id: outletId } });
 
   it("your own PIN neither counts as a wrong PIN nor resets the count", async () => {

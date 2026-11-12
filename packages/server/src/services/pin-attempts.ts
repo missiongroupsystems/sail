@@ -36,7 +36,13 @@ export async function takePinAttempt(merchantId: string, scope: string): Promise
   if (retry != null) throw locked(Math.max(1, retry));
 }
 
-/** A right PIN clears the count. */
+/**
+ * A right PIN clears the count but never a lock: otherwise anyone who knows one PIN could sign in between guesses and
+ * keep guessing manager PINs for ever.
+ */
 export async function clearPinFailures(merchantId: string, scope: string): Promise<void> {
-  await withOwnTransaction((sql) => sql`delete from pin_attempts where merchant_id = ${merchantId} and scope = ${scope}`);
+  await withOwnTransaction(
+    (sql) => sql`delete from pin_attempts where merchant_id = ${merchantId} and scope = ${scope} and (locked_until is null or locked_until <= now())`,
+  );
+  await withOwnTransaction((sql) => sql`update pin_attempts set failures = 0 where merchant_id = ${merchantId} and scope = ${scope}`);
 }

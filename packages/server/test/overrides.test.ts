@@ -198,7 +198,9 @@ describe("tenders that nothing else verifies need a Manager and a reference", ()
     const g = await grant(w.pins.cashier, "payments.record", "order", s.id, "222222", { check_id: check.id, ...payment });
     expect(g.status, JSON.stringify(g.body)).toBe(201);
     expect((await h.pay(w.pins.cashier, check.id, { ...payment, override_id: g.body.data.override_id })).body).toMatchObject({ code: "validation", message: "House account needs a reference" });
-    const g2 = await grant(w.pins.cashier, "payments.record", "order", s.id, "222222", { check_id: check.id, ...payment });
+    // The approval names the account charged: another reference is another payment.
+    const g2 = await grant(w.pins.cashier, "payments.record", "order", s.id, "222222", { check_id: check.id, ...payment, reference: "Room 12" });
+    expect((await h.pay(w.pins.cashier, check.id, { ...payment, reference: "Room 99", override_id: g2.body.data.override_id })).body).toMatchObject({ message: DIFFERENT });
     const paid = await h.pay(w.pins.cashier, check.id, { ...payment, reference: "Room 12", override_id: g2.body.data.override_id });
     expect(paid.status, JSON.stringify(paid.body)).toBe(200);
     expect(paid.body.data.balance).toBe(0);

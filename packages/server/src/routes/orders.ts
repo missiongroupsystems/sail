@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
-import { ORDER_STATUSES, OrderTypeSchema, PERMISSIONS, PricingRuleSchema, isFreezable, localParts, price, registerOperations, roleAtLeast, validateManualApplication, type OrderType, type OperationSpec, type Role } from "@sail/shared";
+import { ORDER_STATUSES, OrderTypeSchema, PERMISSIONS, PricingRuleSchema, isFreezable, localParts, operation, price, registerOperations, roleAtLeast, validateManualApplication, type OrderType, type OperationSpec, type Role } from "@sail/shared";
 import { db, markDryRun, settleInvariants, tx } from "../db/client.js";
 import { areas, channelLinks, customerGroupMembers, customers, orderLines, orderManualApplications, orders, stations, tables, voidReasons } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -15,6 +15,7 @@ import { bumpVersion, getOrderRow, loadSnapshot, lockOrder, nextOrderNo, OPEN_ST
 import { orderTaxRates, orderTaxSettings, usedTaxClasses } from "../services/tax.js";
 import { assertAdjustmentUnlocked, assertLineUnlocked } from "../services/checks.js";
 import { requireRoleOrOverride } from "../services/overrides.js";
+import { createProposal, toProposal } from "../services/agents.js";
 import { activeRules, ruleOrLastVersion } from "../services/pricing-rules.js";
 import { releaseDailyCap } from "./catalogue.js";
 import { businessDayInputs } from "./org.js";
@@ -439,6 +440,11 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     const fired = line.status === "fired";
     const qty = Math.min(b.quantity ?? line.quantity, line.quantity);
     let approval: { id: string; name: string | null } | null = null;
+    if (fired && p.type === "agent") {
+      // Voiding food that has gone to the kitchen takes money off the bill: for an agent it is always a person's call (vision 7.3, T3).
+      const proposal = await createProposal({ principal: p, spec: { ...operation("lines.void"), tier: "T3" }, method: "POST", path: c.req.path, body: b, idempotencyKey: c.get("idempotencyKey") ?? null, rationale: c.req.header("x-rationale") ?? null, correlationId: c.get("correlationId") });
+      return c.json({ code: "requires_confirmation", message: "Voiding a line that has been sent to the kitchen needs a person to approve it; a proposal was created", remedy: `Ask a manager to approve proposal ${proposal.id}.`, details: { proposal_id: proposal.id, tier: "T3", ceiling: p.riskCeiling, expires_at: proposal.expiresAt.toISOString() }, data: toProposal(proposal) }, 202) as never;
+    }
     if (fired) {
       const perm = PERMISSIONS["lines.void_fired"];
       approval = await requireRoleOrOverride(p, principalRole(p), perm.minRole, { action: "lines.void_fired", targetId: line_id, args: { quantity: qty }, overrideId: b.override_id, overrideAllowed: perm.overrideAllowed });

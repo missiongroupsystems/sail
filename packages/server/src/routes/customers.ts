@@ -1,6 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, eq, ilike, inArray, isNull, or, type SQL } from "drizzle-orm";
-import { registerOperations } from "@sail/shared";
+import { PERMISSIONS, registerOperations, roleAtLeast } from "@sail/shared";
+import { principalRole } from "../auth/principal.js";
 import { db } from "../db/client.js";
 import { customerGroupMembers, customerGroups, customers } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -63,6 +64,10 @@ export function customerRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "customers.upsert", method: "put", path: "/v1/customers", tags: ["customers"], request: { body: jsonBody(CustomerUpsert) }, responses: { 200: jsonResponse(mutationResponse(CustomerSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const b = c.req.valid("json");
+    // Group membership decides who gets a group's discounts: the same Manager step as customer_groups.set_members.
+    const groupRole = PERMISSIONS["customer_groups.set_members"].minRole;
+    const role = principalRole(p);
+    if (b.group_ids && !(role && roleAtLeast(role, groupRole))) throw AppError.permission(groupRole, false, "customer_groups.set_members");
     const mobile = b.mobile ? b.mobile.replace(/\s+/g, "") : (b.mobile ?? null);
     let row: typeof customers.$inferSelect | undefined;
     if (b.id) {

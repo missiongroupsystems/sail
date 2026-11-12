@@ -85,6 +85,8 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
       rounding = roundCash(balance, settings.cashRoundingIncrement).roundingCents;
     }
     // A cash tip stays in the drawer: it is part of what the guest hands over, never part of the change.
+    const step = settings.cashRoundingIncrement ?? 1;
+    if (tip % step !== 0) throw AppError.validation(`A cash tip must be a multiple of ${formatCents(step)}, the smallest cash amount`, { remedy: `Round the tip to a multiple of ${formatCents(step)}.`, details: { tip_cents: tip, cash_rounding_increment: step } });
     const due = applied + rounding + tip;
     if (tendered != null) {
       if (tendered < due) throw AppError.validation(`Cash tendered (${formatCents(tendered)}) is less than the amount due (${formatCents(due)})`, { remedy: `Take at least ${formatCents(due)}, or record a part payment of ${formatCents(tendered)}.`, details: { due_cents: due, tendered_cents: tendered, balance } });

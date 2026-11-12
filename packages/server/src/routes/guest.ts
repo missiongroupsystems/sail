@@ -70,7 +70,7 @@ function guestOnly(p: Principal): Extract<Principal, { type: "guest" }> {
 }
 
 export function guestRoutes(app: OpenAPIHono<AppEnv>) {
-  defineOp(app, { op: "guest_sessions.create", method: "post", path: "/v1/guest/sessions", tags: ["guest"], request: { body: jsonBody(z.object({ token: z.string().min(10).max(200), device_id: z.string().min(8).max(120), guest_name: untrusted(z.string().max(40).optional()) })) }, responses: { 201: jsonResponse(dataResponse(z.object({ guest_token: z.string(), session_id: z.string(), table: z.object({ id: z.string(), name: z.string() }), outlet: z.object({ id: z.string(), name: z.string() }), brand_id: z.string(), channel_link_id: z.string(), order_open: z.boolean(), can_order: z.boolean(), hold_orders: z.boolean(), service_requests: z.array(z.string()), expires_at: z.string(), settings: LocaleSettingsSchema }))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "guest_sessions.create", method: "post", path: "/v1/guest/sessions", tags: ["guest"], request: { body: jsonBody(z.object({ token: z.string().min(10).max(200), device_id: z.string().min(8).max(120), guest_name: untrusted(z.string().max(40).optional(), "guest_name", "added_by", "opened_by") })) }, responses: { 201: jsonResponse(dataResponse(z.object({ guest_token: z.string(), session_id: z.string(), table: z.object({ id: z.string(), name: z.string() }), outlet: z.object({ id: z.string(), name: z.string() }), brand_id: z.string(), channel_link_id: z.string(), order_open: z.boolean(), can_order: z.boolean(), hold_orders: z.boolean(), service_requests: z.array(z.string()), expires_at: z.string(), settings: LocaleSettingsSchema }))), ...errorResponses } }, async (c) => {
     const b = c.req.valid("json");
     const result = await withTransaction(async (t) => {
       const r = await createGuestSession({ token: b.token, deviceId: b.device_id, guestName: b.guest_name ?? null });
@@ -86,7 +86,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: await guestOrderView(p) }, 200);
   });
 
-  defineOp(app, { op: "rounds.submit", method: "post", path: "/v1/guest/rounds", tags: ["guest"], request: { body: jsonBody(z.object({ round_id: z.uuid(), lines: z.array(LineInputSchema).min(1).max(30), guest_name: untrusted(z.string().max(40).optional()), notes: untrusted(z.string().max(200).optional()) })) }, responses: { 201: jsonResponse(dataResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "rounds.submit", method: "post", path: "/v1/guest/rounds", tags: ["guest"], request: { body: jsonBody(z.object({ round_id: z.uuid(), lines: z.array(LineInputSchema).min(1).max(30), guest_name: untrusted(z.string().max(40).optional(), "guest_name", "added_by", "opened_by"), notes: untrusted(z.string().max(200).optional()) })) }, responses: { 201: jsonResponse(dataResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {
     const p = guestOnly(c.get("principal"));
     const b = c.req.valid("json");
     await checkLimit(p.merchantId, `round:sess:${p.sessionId}`, RATE.roundsPerSession, "orders from this phone");
@@ -137,7 +137,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: { round_id: b.round_id, status: result.hold ? "pending" : "accepted", order_opened: result.openedNow, ...view } }, 201);
   });
 
-  defineOp(app, { op: "service_requests.create", method: "post", path: "/v1/guest/requests", tags: ["guest"], request: { body: jsonBody(z.object({ type: z.string().min(1).max(40), guest_name: untrusted(z.string().max(40).optional()) })) }, responses: { 201: jsonResponse(dataResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "service_requests.create", method: "post", path: "/v1/guest/requests", tags: ["guest"], request: { body: jsonBody(z.object({ type: z.string().min(1).max(40), guest_name: untrusted(z.string().max(40).optional(), "guest_name", "added_by", "opened_by") })) }, responses: { 201: jsonResponse(dataResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {
     const p = guestOnly(c.get("principal"));
     const b = c.req.valid("json");
     const [link] = await db().select().from(channelLinks).where(eq(channelLinks.id, p.channelLinkId)).limit(1);

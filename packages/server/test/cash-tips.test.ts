@@ -80,6 +80,9 @@ describe("cash tips stay in the drawer", () => {
     expect(balance).toBe(1743);
     expect(paid.body).toMatchObject({ code: "validation" });
     expect(paid.body.details!.due_cents).toBe(1745 + 500);
+    // Change in 5-cent coins cannot pay out a 3-cent tip.
+    const odd = await call<{ code: string }>("POST", `/v1/checks/${checkId}/payments`, { token: w.token, body: { payment_id: randomUUID(), tender_type_id: w.ids.cash, amount: balance, tendered: 2250, tip_cents: 503 } });
+    expect(odd.body).toMatchObject({ code: "validation" });
     const again = await call<{ payment: { rounding_cents: number; change_due: number } }>("POST", `/v1/checks/${checkId}/payments`, { token: w.token, body: { payment_id: randomUUID(), tender_type_id: w.ids.cash, amount: balance, tendered: 2250, tip_cents: 500 } });
     expect(again.status, JSON.stringify(again.body)).toBe(200);
     expect(again.body.payment).toMatchObject({ rounding_cents: 2, change_due: 5 });

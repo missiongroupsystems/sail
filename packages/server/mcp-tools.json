@@ -16,6 +16,7 @@
         "order.repriced"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -25,6 +26,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -130,6 +132,7 @@
         "order.repriced"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -139,6 +142,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -214,6 +218,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -223,6 +228,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -258,6 +264,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -267,6 +274,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -307,6 +315,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -316,6 +325,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -376,6 +386,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -385,6 +396,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -413,6 +425,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -422,6 +435,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -457,6 +471,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -466,6 +481,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -510,6 +526,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -519,6 +536,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -556,6 +574,7 @@
         "business_day.closed"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -565,6 +584,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -633,6 +653,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -642,6 +663,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -684,6 +706,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -693,6 +716,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -728,6 +752,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -737,6 +762,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -777,6 +803,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -786,6 +813,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -821,6 +849,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -830,6 +859,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -882,6 +912,7 @@
         "checks.allocated"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -891,6 +922,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -998,6 +1030,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -1007,6 +1040,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -1044,6 +1078,7 @@
         "order.bill_requested"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -1053,6 +1088,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -1123,6 +1159,7 @@
         "checks.split"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -1132,6 +1169,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -1215,6 +1253,7 @@
         "checks.split"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -1224,6 +1263,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -1307,6 +1347,7 @@
         "checks.split"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -1316,6 +1357,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -1389,6 +1431,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -1398,6 +1441,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -1433,6 +1477,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -1442,6 +1487,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -1481,6 +1527,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -1492,6 +1539,7 @@
         "name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -1536,6 +1584,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -1547,6 +1596,7 @@
         "name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -1583,6 +1633,7 @@
         "customer.upserted"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -1594,6 +1645,7 @@
         "name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -1698,6 +1750,7 @@
         "invoice.issued"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -1707,6 +1760,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -1772,6 +1826,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -1781,6 +1836,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -1836,6 +1892,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -1845,6 +1902,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -1881,6 +1939,7 @@
         "import.queued"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -1890,6 +1949,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -2029,6 +2089,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -2038,6 +2099,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -2072,6 +2134,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -2081,6 +2144,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -2109,6 +2173,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -2118,6 +2183,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -2153,6 +2219,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -2162,6 +2229,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -2204,6 +2272,7 @@
         "order.repriced"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -2213,6 +2282,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -2363,6 +2433,7 @@
         "order.repriced"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -2372,6 +2443,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -2493,6 +2565,7 @@
         "print_job.created"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -2502,6 +2575,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -2587,6 +2661,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -2596,6 +2671,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -2631,6 +2707,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -2640,6 +2717,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -2675,6 +2753,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -2684,6 +2763,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -2725,6 +2805,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -2734,6 +2815,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -2762,6 +2844,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -2771,6 +2854,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -2806,6 +2890,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -2815,6 +2900,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -2862,6 +2948,7 @@
         "order.repriced"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -2871,6 +2958,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -2944,6 +3032,7 @@
         "order.cancelled"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -2953,6 +3042,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -3032,6 +3122,7 @@
         "order.repriced"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -3041,6 +3132,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -3164,6 +3256,7 @@
         "order.completed"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -3173,6 +3266,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -3240,6 +3334,7 @@
         "order.repriced"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -3249,6 +3344,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -3317,6 +3413,7 @@
         "print_job.created"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -3326,6 +3423,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -3400,6 +3498,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -3409,6 +3508,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -3448,6 +3548,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -3457,6 +3558,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -3532,6 +3634,7 @@
         "order.status_changed"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -3541,6 +3644,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -3613,6 +3717,7 @@
         "order.status_changed"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -3622,6 +3727,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -3693,6 +3799,7 @@
         "order.moved"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -3702,6 +3809,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -3775,6 +3883,7 @@
         "order.opened"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -3784,6 +3893,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -3921,6 +4031,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -3930,6 +4041,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -4061,6 +4173,7 @@
         "payment.reversed"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -4070,6 +4183,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -4145,6 +4259,7 @@
         "order.details_updated"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -4154,6 +4269,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -4276,6 +4392,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -4285,6 +4402,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -4324,6 +4442,7 @@
         "order.completed"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -4333,6 +4452,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -4435,6 +4555,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -4444,6 +4565,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -4479,6 +4601,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -4488,6 +4611,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -4545,6 +4669,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -4554,6 +4679,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -4889,6 +5015,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -4898,6 +5025,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -4958,6 +5086,7 @@
         "print_job.created"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -4967,6 +5096,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -5020,6 +5150,7 @@
         "print_job.rerouted"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -5029,6 +5160,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -5094,6 +5226,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -5103,6 +5236,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -5138,6 +5272,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -5147,6 +5282,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -5187,6 +5323,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -5196,6 +5333,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -5231,6 +5369,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -5240,6 +5379,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -5310,6 +5450,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -5319,6 +5460,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -5356,6 +5498,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -5365,6 +5508,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -5411,6 +5555,7 @@
         "print_job.created"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -5420,6 +5565,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -5486,6 +5632,7 @@
         "receipt.sent"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -5495,6 +5642,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -5580,6 +5728,7 @@
         "print_job.created"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -5589,6 +5738,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -5773,6 +5923,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -5782,6 +5933,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -5817,6 +5969,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -5826,6 +5979,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -5974,6 +6128,7 @@
         "print_job.created"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -5983,6 +6138,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -6049,6 +6205,7 @@
         "receipt.sent"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -6058,6 +6215,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -6139,6 +6297,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -6148,6 +6307,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -6194,6 +6354,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -6203,6 +6364,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -6287,6 +6449,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -6296,6 +6459,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -6344,6 +6508,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -6353,6 +6518,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -6446,6 +6612,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -6455,6 +6622,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -6543,6 +6711,7 @@
         "print_job.created"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -6552,6 +6721,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -6606,6 +6776,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -6615,6 +6786,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -6661,6 +6833,7 @@
         "line.voided"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -6670,6 +6843,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -6738,6 +6912,7 @@
         "service_request.acknowledged"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -6747,6 +6922,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -6797,6 +6973,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -6806,6 +6983,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -6849,6 +7027,7 @@
         "shift.closed"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -6859,6 +7038,7 @@
         "name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -6949,6 +7129,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -6959,6 +7140,7 @@
         "name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -7009,6 +7191,7 @@
         "shift.opened"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -7019,6 +7202,7 @@
         "name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -7116,6 +7300,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -7125,6 +7310,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -7161,6 +7347,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -7170,6 +7357,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -7206,6 +7394,7 @@
         "stock.sold_out"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -7215,6 +7404,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -7295,6 +7485,7 @@
         "stock.restored"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -7304,6 +7495,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -7363,6 +7555,7 @@
         "stock.cap_set"
       ],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -7372,6 +7565,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -7438,6 +7632,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -7447,6 +7642,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -7482,6 +7678,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -7491,6 +7688,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -7535,6 +7733,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -7544,6 +7743,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -7580,6 +7780,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -7589,6 +7790,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -7624,6 +7826,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -7633,6 +7836,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -7673,6 +7877,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -7682,6 +7887,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",
@@ -7717,6 +7923,7 @@
       ],
       "emits": [],
       "untrusted": [
+        "added_by",
         "cancel_reason",
         "customer_ref",
         "delivery_address",
@@ -7726,6 +7933,7 @@
         "guest_name",
         "note",
         "notes",
+        "opened_by",
         "reason",
         "reference",
         "reject_reason",

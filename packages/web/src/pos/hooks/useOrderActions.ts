@@ -511,7 +511,7 @@ export function useOrderActions(orderId: string) {
       beginMutation(orderId);
       try {
         const res = await withApproval(
-          { action: "payments.record", target_kind: "order", target_id: orderId, args: { check_id: check.id, tender_type_id: input.tender_type_id, amount: input.amount, tip_cents: input.tip_cents ?? 0 } },
+          { action: "payments.record", target_kind: "order", target_id: orderId, args: { check_id: check.id, tender_type_id: input.tender_type_id, amount: input.amount, tip_cents: input.tip_cents ?? 0, reference: input.reference ?? null } },
           `Take ${money(input.amount)} by ${tenderName}`,
           `${check.label} · balance ${money(check.balance)}`,
           (overrideId) => reg.recordPayment(api, check.id, input, { key: input.payment_id, expectedVersion: snapshot()?.version ?? null, overrideId }),

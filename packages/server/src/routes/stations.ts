@@ -33,7 +33,7 @@ const GrantRequest = z.discriminatedUnion("action", [
   z.object({ action: z.literal("lines.add_open_price"), target_kind: z.literal("order"), ...grantBase, args: z.object({ lines: z.array(z.object({ line_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1), open_price: z.number().int().min(0) })).min(1) }) }),
   z.object({ action: z.literal("adjustments.apply_manual"), target_kind: z.literal("order"), ...grantBase, args: z.object({ rule_key: z.string().min(1), entered_value: z.number().int().min(0).nullable(), line_ids: z.array(z.uuid()).min(1).nullable() }) }),
   z.object({ action: z.literal("adjustments.remove"), target_kind: z.literal("order"), ...grantBase, args: z.object({ application_id: z.uuid() }) }),
-  z.object({ action: z.literal("payments.record"), target_kind: z.literal("order"), ...grantBase, args: z.object({ check_id: z.uuid(), tender_type_id: z.uuid(), amount: z.number().int().min(1), tip_cents: z.number().int().min(0) }) }),
+  z.object({ action: z.literal("payments.record"), target_kind: z.literal("order"), ...grantBase, args: z.object({ check_id: z.uuid(), tender_type_id: z.uuid(), amount: z.number().int().min(1), tip_cents: z.number().int().min(0), reference: untrusted(z.string().max(80).nullable().default(null)) }) }),
   z.object({ action: z.literal("refunds.create"), target_kind: z.literal("check"), ...grantBase, args: z.object({ request: RefundRequestSchema, tender_split: TenderSplit, total: z.number().int().min(0) }) }),
   z.object({ action: z.literal("orders.reopen"), target_kind: z.literal("order"), ...grantBase, args: z.object({}) }),
 ]);

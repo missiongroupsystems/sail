@@ -155,7 +155,7 @@ describe("catalogue", () => {
     expect((await call("POST", "/v1/void-reasons", { token: A.admin.token, body: { name: "Customer changed mind" } })).status).toBe(201);
     const group = await call<{ data: { id: string } }>("POST", "/v1/customer-groups", { token: A.manager.token, body: { name: "VIP" } });
     expect(group.status).toBe(201);
-    const cust = await call<{ data: { id: string; mobile: string; group_ids: string[] } }>("PUT", "/v1/customers", { token: A.cashier.token, body: { name: "Lim Wei", mobile: "+65 9123 4567", group_ids: [group.body.data.id] } });
+    const cust = await call<{ data: { id: string; mobile: string; group_ids: string[] } }>("PUT", "/v1/customers", { token: A.manager.token, body: { name: "Lim Wei", mobile: "+65 9123 4567", group_ids: [group.body.data.id] } });
     expect(cust.status).toBe(200);
     expect(cust.body.data.mobile).toBe("+6591234567");
     expect(cust.body.data.group_ids).toEqual([group.body.data.id]);

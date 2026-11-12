@@ -44500,6 +44500,15 @@
                           "tip_cents": {
                             "type": "integer",
                             "minimum": 0
+                          },
+                          "reference": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "maxLength": 80,
+                            "default": null,
+                            "x-sail-untrusted": true
                           }
                         },
                         "required": [
@@ -71957,7 +71966,11 @@
                   "guest_name": {
                     "type": "string",
                     "maxLength": 40,
-                    "x-sail-untrusted": true
+                    "x-sail-untrusted": [
+                      "guest_name",
+                      "added_by",
+                      "opened_by"
+                    ]
                   }
                 },
                 "required": [
@@ -72794,7 +72807,11 @@
                   "guest_name": {
                     "type": "string",
                     "maxLength": 40,
-                    "x-sail-untrusted": true
+                    "x-sail-untrusted": [
+                      "guest_name",
+                      "added_by",
+                      "opened_by"
+                    ]
                   },
                   "notes": {
                     "type": "string",
@@ -73148,7 +73165,11 @@
                   "guest_name": {
                     "type": "string",
                     "maxLength": 40,
-                    "x-sail-untrusted": true
+                    "x-sail-untrusted": [
+                      "guest_name",
+                      "added_by",
+                      "opened_by"
+                    ]
                   }
                 },
                 "required": [

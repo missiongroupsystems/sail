@@ -18227,6 +18227,8 @@ export interface operations {
                         tender_type_id: string;
                         amount: number;
                         tip_cents: number;
+                        /** @default null */
+                        reference?: string | null;
                     };
                 } | {
                     /** @enum {string} */
