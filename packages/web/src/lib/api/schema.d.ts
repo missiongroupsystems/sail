@@ -4521,8 +4521,8 @@ export interface operations {
             content: {
                 "application/json": {
                     business_name: string;
-                    /** @enum {string} */
-                    preset: "sg" | "us" | "eu-vat" | "jp" | "blank";
+                    /** @description A key of REGION_PRESETS in packages/shared/src/presets.ts */
+                    preset: string;
                     time_zone: string;
                     currency?: string;
                     locale?: string;

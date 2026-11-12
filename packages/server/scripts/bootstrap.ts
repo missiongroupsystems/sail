@@ -10,7 +10,7 @@
  * identity provider and linked on the Admin's first sign-in there. The password is read from the environment so it
  * stays out of the shell history and the process list.
  */
-import { RegionPresetKeySchema } from "@sail/shared";
+import { REGION_PRESET_KEYS, RegionPresetKeySchema } from "@sail/shared";
 import { bootstrapMerchant } from "../src/bootstrap.js";
 
 const url = process.env.MIGRATE_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -20,7 +20,7 @@ const [merchantName, adminName, email, pin] = args.filter((a) => !a.startsWith("
 const preset = RegionPresetKeySchema.safeParse(flag("preset"));
 const timeZone = flag("time-zone");
 if (!url || !merchantName || !adminName || !email || !preset.success || !timeZone) {
-  console.error('usage: MIGRATE_DATABASE_URL=... [SAIL_ADMIN_PASSWORD=...] bootstrap "Merchant" "Admin Name" admin@example.com [pin] --preset=sg|us|eu-vat|jp|blank --time-zone=<IANA zone> [--currency=XXX] [--locale=xx-XX]');
+  console.error(`usage: MIGRATE_DATABASE_URL=... [SAIL_ADMIN_PASSWORD=...] bootstrap "Merchant" "Admin Name" admin@example.com [pin] --preset=${REGION_PRESET_KEYS.join("|")} --time-zone=<IANA zone> [--currency=XXX] [--locale=xx-XX]`);
   process.exit(1);
 }
 const password = process.env.SAIL_ADMIN_PASSWORD || undefined;

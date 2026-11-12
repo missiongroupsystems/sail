@@ -49,6 +49,12 @@ export type RegionPreset = {
 export const REGION_PRESET_KEYS = ["sg", "us", "eu-vat", "jp", "blank"] as const;
 export type RegionPresetKey = (typeof REGION_PRESET_KEYS)[number];
 export const RegionPresetKeySchema = z.enum(REGION_PRESET_KEYS);
+export const isRegionPresetKey = (k: string): k is RegionPresetKey => (REGION_PRESET_KEYS as readonly string[]).includes(k);
+/**
+ * A preset key in an API request: checked against the presets when parsed, but published as a plain string, so adding
+ * a preset changes no API contract (openapi.json, the generated client types) and needs no regeneration.
+ */
+export const RegionPresetKeyInput = z.string().min(1).max(40).refine(isRegionPresetKey, { message: "Unknown region preset" });
 
 const CASH_AND_CARD = [
   { name: "Cash", is_cash: true, is_terminal: false },

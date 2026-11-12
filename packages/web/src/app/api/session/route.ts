@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { z } from "zod";
+import { REGION_PRESET_KEYS } from "@sail/shared";
 import { ApiError, createApi, req } from "@/lib/api";
 import { API_URL } from "@/lib/api.server";
 import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS } from "@/lib/cookies";
@@ -13,7 +14,7 @@ const SignIn = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("setup"),
     business_name: z.string(),
-    preset: z.enum(["sg", "us", "eu-vat", "jp", "blank"]),
+    preset: z.enum(REGION_PRESET_KEYS),
     time_zone: z.string(),
     currency: z.string().optional(),
     locale: z.string().optional(),

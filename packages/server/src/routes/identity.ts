@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, eq, gt, isNull } from "drizzle-orm";
-import { RegionPresetKeySchema, REGION_PRESETS, registerOperations, RoleSchema, type OperationSpec } from "@sail/shared";
+import { RegionPresetKeyInput, REGION_PRESETS, type RegionPresetKey, registerOperations, RoleSchema, type OperationSpec } from "@sail/shared";
 import { config, identityProviderKind } from "../config.js";
 import { db, sessionConnection, tx, withOwnTransaction, withTransaction } from "../db/client.js";
 import { backofficeLinks, backofficeLogins, backofficeSessions, staff } from "../db/schema/index.js";
@@ -194,7 +194,7 @@ export function identityRoutes(app: OpenAPIHono<AppEnv>) {
 
   const SetupIn = z.object({
     business_name: z.string().trim().min(1).max(120),
-    preset: RegionPresetKeySchema,
+    preset: RegionPresetKeyInput.describe("A key of REGION_PRESETS in packages/shared/src/presets.ts"),
     time_zone: z.string().min(1).max(64),
     currency: z.string().length(3).optional(),
     locale: z.string().min(2).max(35).optional(),
@@ -208,9 +208,9 @@ export function identityRoutes(app: OpenAPIHono<AppEnv>) {
       if (!b.admin.password) throw AppError.validation("The first Admin needs a password", { remedy: "Choose a password of at least 12 characters." });
       checkPassword(b.admin.password);
     }
-    const input = { merchantName: b.business_name, outletName: b.outlet_name, preset: b.preset, timeZone: b.time_zone, currency: b.currency, locale: b.locale, admin: { name: b.admin.name, email: b.admin.email, password: local ? b.admin.password : undefined } };
+    const input = { merchantName: b.business_name, outletName: b.outlet_name, preset: b.preset as RegionPresetKey, timeZone: b.time_zone, currency: b.currency, locale: b.locale, admin: { name: b.admin.name, email: b.admin.email, password: local ? b.admin.password : undefined } };
     try {
-      presetSettings(REGION_PRESETS[b.preset], input);
+      presetSettings(REGION_PRESETS[b.preset as RegionPresetKey], input);
     } catch (e) {
       throw AppError.validation((e as Error).message, { remedy: "Pick a valid time zone; the blank preset also needs a currency and locale." });
     }

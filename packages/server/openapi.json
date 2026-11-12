@@ -2444,13 +2444,9 @@
                   },
                   "preset": {
                     "type": "string",
-                    "enum": [
-                      "sg",
-                      "us",
-                      "eu-vat",
-                      "jp",
-                      "blank"
-                    ]
+                    "minLength": 1,
+                    "maxLength": 40,
+                    "description": "A key of REGION_PRESETS in packages/shared/src/presets.ts"
                   },
                   "time_zone": {
                     "type": "string",

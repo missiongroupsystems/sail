@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { REGION_PRESETS } from "@sail/shared";
+import { REGION_PRESET_KEYS, REGION_PRESETS } from "@sail/shared";
 import { Button, deviceTimeZone, InlineError } from "@sail/ui";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -15,7 +15,7 @@ const PRESETS = Object.values(REGION_PRESETS);
 const Schema = z
   .object({
     business_name: z.string().trim().min(1, "Enter the business name"),
-    preset: z.enum(["sg", "us", "eu-vat", "jp", "blank"]),
+    preset: z.enum(REGION_PRESET_KEYS),
     time_zone: z.string().trim().min(1, "Enter a time zone, for example Europe/London"),
     currency: z.string().trim(),
     locale: z.string().trim(),
