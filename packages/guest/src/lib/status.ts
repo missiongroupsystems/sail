@@ -16,10 +16,10 @@ export function roundStage(round: Pick<GuestRound, "status">, order: Pick<GuestO
 }
 
 /** A word for each line on the "Our table" list (never colour alone, design 7.3). */
-export function lineStatusLabel(line: Pick<GuestLine, "status">, order: Pick<GuestOrder, "status"> | null | undefined, holdOrders: boolean): string {
+export function lineStatusLabel(line: Pick<GuestLine, "status">, order: Pick<GuestOrder, "status"> | null | undefined): string {
   switch (line.status) {
     case "held":
-      return holdOrders ? "Waiting for staff" : "Held";
+      return "Waiting for staff";
     case "pending":
       return "Accepted";
     case "fired":

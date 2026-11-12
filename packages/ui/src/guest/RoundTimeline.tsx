@@ -17,7 +17,7 @@ export type RoundTimelineProps = {
   stage: RoundStage;
   /** Staff's reason when the round was not accepted. */
   rejectReason?: string | null;
-  /** With hold orders off the register accepts at once, so "Accepted" reads as "Received". */
+  /** With hold orders off the register accepts at once, so "Accepted" reads as "Received"; a round still waiting is this phone's first, held for staff. */
   holdOrders?: boolean;
   className?: string;
 };
@@ -49,7 +49,7 @@ export function RoundTimeline({ stage, rejectReason, holdOrders = true, classNam
             <span className="flex min-w-0 flex-col pt-0.5">
               <span className={cx("text-line", future ? "text-ink-2" : "text-ink", isRejectedStep && "text-status-alert")}>{label}</span>
               {isRejectedStep && rejectReason ? <span className="text-body text-ink-2">{rejectReason}</span> : null}
-              {current && !isRejectedStep && stage === "sent" ? <span className="text-body text-ink-2">{holdOrders ? "Waiting for staff to accept it" : "On its way to the kitchen"}</span> : null}
+              {current && !isRejectedStep && stage === "sent" ? <span className="text-body text-ink-2">{holdOrders ? "Waiting for staff to accept it" : "Staff accept the first order from each phone. After that, this phone's orders go straight to the kitchen."}</span> : null}
             </span>
           </li>
         );

@@ -160,6 +160,20 @@ export async function revokeSessionsForOrder(orderId: string) {
   await db().update(guestSessions).set({ revokedAt: new Date() }).where(and(eq(guestSessions.orderId, orderId), isNull(guestSessions.revokedAt)));
 }
 
+/**
+ * With hold orders off, whether a phone's round goes straight to the kitchen: it is the first phone to order at this
+ * seating, or staff have accepted a round from it. Keyed on the order and the device, so it follows the order to another
+ * table, outlasts the session (a fresh scan from the same phone), and ends when the order closes. A rejected round counts
+ * for nobody. Call with the order locked, so two first phones cannot both be first.
+ */
+export async function phoneAdmitted(orderId: string, deviceHash: string): Promise<boolean> {
+  const [r] = await tx()<{ any: boolean; mine: boolean }[]>`
+    select count(*) > 0 as any, coalesce(bool_or(s.device_hash = ${deviceHash}), false) as mine
+    from guest_rounds r join guest_sessions s on s.id = r.guest_session_id
+    where r.order_id = ${orderId} and r.status in ('accepted', 'fired')`;
+  return !r!.any || r!.mine;
+}
+
 /** Worker safety net: revoke sessions whose order has closed, and expired ones. */
 export async function revokeStaleSessions(): Promise<number> {
   const rows = await tx()<{ id: string }[]>`

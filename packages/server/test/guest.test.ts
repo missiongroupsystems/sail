@@ -257,7 +257,7 @@ describe("Scan to Order", () => {
   it("a second phone at the table sees the first phone's accepted round as a guest round, not as staff additions", async () => {
     await resetGuestRateLimitsForTests();
     const open = async (device: string) => (await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl13), device_id: device }, idempotencyKey: null })).body.data.guest_token;
-    const a = await open("device-ffff-0006");
+    const a = await open("device-eeee-0005"); // the phone that opened the order: its rounds go straight through
     const b = await open("device-gggg-0007");
     const roundId = randomUUID();
     const lineId = randomUUID();
@@ -271,5 +271,56 @@ describe("Scan to Order", () => {
     expect(viewB.rounds.find((r) => r.id === roundId)).toMatchObject({ line_ids: [lineId], mine: false });
     expect(viewB.lines.find((l) => l.id === lineId)).toMatchObject({ round_id: roundId, mine: false });
     expect(viewB.rounds.map((r) => r.id).sort()).toEqual(viewA.rounds.map((r) => r.id).sort());
+  });
+});
+
+describe("with hold orders off, a phone is admitted to its seating", () => {
+  it("the first phone and phones staff accepted go straight to the kitchen; others wait, admission follows the order and ends with it", async () => {
+    const t = A.admin.token;
+    await call("PATCH", `/v1/channel-links/${ids.qrLink}`, { token: t, body: { open_on_first_scan: false, hold_orders: false } });
+    const [t14, t15] = [randomUUID(), randomUUID()];
+    for (const [id, name] of [[t14, "14"], [t15, "15"]] as const) await call("POST", "/v1/tables", { token: t, body: { id, outlet_id: A.outletId, area_id: ids.area, name } });
+    const code = async (id: string) => tokenFrom((await call<{ data: { url: string } }>("POST", `/v1/tables/${id}/qr/rotate`, { token: t, body: {} })).body.data.url);
+    const [code14, code15] = [await code(t14), await code(t15)];
+    const seat = async (tableId: string) => (await call<{ data: Snap }>("POST", "/v1/orders", { token: serverPin, body: { order_id: randomUUID(), order_type: "dine_in", table_id: tableId, pax: 4, outlet_id: A.outletId, brand_id: A.brandId } })).body.data.id;
+    const scan = async (tableCode: string, device: string) => (await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tableCode, device_id: device }, idempotencyKey: null })).body.data.guest_token;
+    const send = async (g: string) => {
+      await resetGuestRateLimitsForTests();
+      const r = await guestCall<{ data: { round_id: string; status: string } }>("POST", "/v1/guest/rounds", g, { round_id: randomUUID(), lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] });
+      expect(r.status, JSON.stringify(r.body)).toBe(201);
+      return r.body.data;
+    };
+    const roundOf = async (roundId: string) => (await call<{ data: { id: string; status: string; table_id: string }[] }>("GET", `/v1/outlets/${A.outletId}/rounds`, { token: serverPin })).body.data.find((r) => r.id === roundId)!;
+
+    const order = await seat(t14);
+    const a = await scan(code14, "phone-aaaa-0001");
+    expect((await send(a)).status).toBe("accepted"); // the seating's first phone
+    const b = await scan(code14, "phone-bbbb-0002");
+    const fromB = await send(b);
+    expect(fromB.status).toBe("pending"); // a second phone waits for one staff tap
+    expect((await roundOf(fromB.round_id)).status).toBe("pending");
+    expect((await send(a)).status).toBe("accepted");
+    // A rejected round admits nobody; an accepted one admits that phone.
+    expect((await call("POST", `/v1/rounds/${fromB.round_id}/reject`, { token: serverPin, body: { reason: "Not this table" } })).status).toBe(200);
+    const again = await send(b);
+    expect(again.status).toBe("pending");
+    expect((await call("POST", `/v1/rounds/${again.round_id}/accept`, { token: serverPin, body: {} })).status).toBe(200);
+    expect((await send(b)).status).toBe("accepted");
+
+    // The party moves to table 15: admission goes with the order, a phone new to it still waits.
+    expect((await call("POST", `/v1/orders/${order}/move-table`, { token: serverPin, body: { table_id: t15 } })).status).toBe(200);
+    const moved = await send(a);
+    expect(moved.status).toBe("accepted");
+    expect((await roundOf(moved.round_id)).table_id).toBe(t15);
+    expect((await send(await scan(code15, "phone-cccc-0003"))).status).toBe("pending");
+    // Phone A's session runs out; scanning again from the same phone keeps its admission.
+    await db.sql`update guest_sessions set expires_at = now() - interval '1 minute' where device_hash = encode(sha256(${`${A.merchantId}:phone-aaaa-0001`}::bytea), 'hex')`;
+    expect((await guestCall("GET", "/v1/guest/order", a)).status).toBe(401);
+    expect((await send(await scan(code15, "phone-aaaa-0001"))).status).toBe("accepted");
+
+    // A new party at table 14 is a new seating: its own first phone goes through, phone A starts again.
+    await seat(t14);
+    expect((await send(await scan(code14, "phone-dddd-0004"))).status).toBe("accepted");
+    expect((await send(await scan(code14, "phone-aaaa-0001"))).status).toBe("pending");
   });
 });

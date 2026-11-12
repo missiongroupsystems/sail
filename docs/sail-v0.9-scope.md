@@ -202,7 +202,7 @@ Scan to Order is a shortcut that lets guests send orders to their own table inst
 - **Ordering:**
   - Guests can order only while the table has an open order. By default a server opens it when seating the table, which stops prank orders from a photographed QR code. An outlet can turn on "open on first scan" per channel.
   - Each guest submission is a **round** that is added to the table's open order.
-  - With "hold orders" on, the round waits on the POS for staff to accept it before it fires and prints. With it off, the round fires and prints straight away.
+  - With "hold orders" on, the round waits on the POS for staff to accept it before it fires and prints. With it off, the round fires and prints straight away from the seating's first phone and from any phone staff have accepted a round from; another phone's first round waits for acceptance like a held one (one tap per extra phone), so a photo of the table's code cannot send food to the kitchen on its own. A phone's admission belongs to the order (by device): it follows the order to another table, survives scanning again after the session expires, and ends when the order closes. A rejected round admits nobody.
   - When the order is paid and closed at the POS, every guest session for it expires.
 - **Guest features:**
   - Browse the channel's menu, with prices, availability and 86 applied.

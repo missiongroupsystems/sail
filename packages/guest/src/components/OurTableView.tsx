@@ -33,7 +33,7 @@ export function OurTableView({ session, orderView, loading, error, onBack, onCal
     <li key={l.id} className="flex flex-col gap-1 py-3 hairline-b">
       <LineText line={l} />
       <span className="flex items-center gap-2 text-caption">
-        <span className={cx(toneClass[lineStatusTone(l, order)])}>{lineStatusLabel(l, order, session.hold_orders)}</span>
+        <span className={cx(toneClass[lineStatusTone(l, order)])}>{lineStatusLabel(l, order)}</span>
         {l.mine ? <span className="rounded-chip bg-brand-accent px-2 py-0.5 text-on-brand-accent">Yours</span> : null}
       </span>
     </li>

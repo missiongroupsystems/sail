@@ -2707,7 +2707,7 @@ export interface paths {
         put?: never;
         /**
          * Send a round to the table's order
-         * @description Lines in the same shape as lines.add, validated against the channel menu, availability and caps. With hold orders on, the round waits for staff acceptance; otherwise it fires and prints straight away. Never takes payment.
+         * @description Lines in the same shape as lines.add, validated against the channel menu, availability and caps. With hold orders on, the round waits for staff acceptance. With it off, it fires and prints straight away from the seating's first phone and from a phone staff have accepted a round from; another phone's round waits for staff acceptance first. Never takes payment.
          */
         post: operations["rounds.submit"];
         delete?: never;

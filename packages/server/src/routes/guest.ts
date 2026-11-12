@@ -23,14 +23,14 @@ import { registerFloorExtra } from "./orders.js";
 import { LocaleSettingsSchema, localeSettingsFor } from "./org.js";
 import { businessDayInputs, printLocale } from "../services/business-day.js";
 import { businessDateFor } from "../lib/time.js";
-import { asSystem, bindSessionToTableOrder, checkLimit, createGuestSession, enforceLimit, guestOrderView, openOrderIdForTable, qrSheetPdf, RATE, recordHit, revokeSessionsForOrder, rotateTableToken, toRequest, toRound } from "../services/guest.js";
+import { asSystem, bindSessionToTableOrder, checkLimit, createGuestSession, enforceLimit, guestOrderView, openOrderIdForTable, phoneAdmitted, qrSheetPdf, RATE, recordHit, revokeSessionsForOrder, rotateTableToken, toRequest, toRound } from "../services/guest.js";
 
 const op = (o: Partial<OperationSpec> & { op: string; summary: string; description: string }): OperationSpec => ({ tier: "T1", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["guest"], emits: [], mcp: { expose: true, toolsets: ["guest"] }, ...o });
 
 registerOperations({
   "guest_sessions.create": op({ op: "guest_sessions.create", summary: "Start a guest session from a table QR code", description: "Exchanges the table token for a short-lived guest token scoped to the table and its open order. Rate-limited per device and per table. Ordering is possible only while the table has an open order, unless the channel allows opening on first scan.", tier: "T0", principals: [], mcp: { expose: false, toolsets: [] } }),
   "guest.order": op({ op: "guest.order", summary: "What the table has ordered", description: "The table's lines (menu prices only, no fees or totals), round statuses, the guest's requests, and whether ordering is possible (`can_order`). A session started before the table was seated is bound to the table's order here, so no new session is needed.", tier: "T0" }),
-  "rounds.submit": op({ op: "rounds.submit", summary: "Send a round to the table's order", description: "Lines in the same shape as lines.add, validated against the channel menu, availability and caps. With hold orders on, the round waits for staff acceptance; otherwise it fires and prints straight away. Never takes payment.", emits: ["round.submitted", "line.added", "order.repriced", "order.fired"] }),
+  "rounds.submit": op({ op: "rounds.submit", summary: "Send a round to the table's order", description: "Lines in the same shape as lines.add, validated against the channel menu, availability and caps. With hold orders on, the round waits for staff acceptance. With it off, it fires and prints straight away from the seating's first phone and from a phone staff have accepted a round from; another phone's round waits for staff acceptance first. Never takes payment.", emits: ["round.submitted", "line.added", "order.repriced", "order.fired"] }),
   "service_requests.create": op({ op: "service_requests.create", summary: "Call staff", description: "One of the channel's configured requests or `call_for_bill`, which also marks the table as bill requested. Rate-limited.", emits: ["service_request.created", "order.bill_requested"] }),
   "guest.stream": op({ op: "guest.stream", summary: "Guest live-update stream (SSE)", description: "Signals changes to the table's order (round accepted, order ready). Poll guest.order when there is no order yet.", tier: "T0", mcp: { expose: false, toolsets: [] } }),
   "rounds.list": op({ op: "rounds.list", summary: "QR rounds of an outlet", description: "Pending rounds waiting for acceptance, and recent decided ones.", tier: "T0", minRole: "server", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read"] } }),
@@ -115,9 +115,10 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
       if (!["open", "fired", "ready"].includes(order.status)) throw new AppError("state_conflict", "This table's order is closed", { remedy: "Ask a member of staff." });
       const [maxRow] = await db().select({ max: sql<number>`coalesce(max(${orderLines.sort}), -1)` }).from(orderLines).where(eq(orderLines.orderId, orderId));
       const built = await buildLines(menu, b.lines as LineInput[], { orderType: order.orderType, outletId: p.outletId, today, source: "guest", addedBy: null, addedByName: b.guest_name ?? session!.guestName ?? "Guest", allowOpenPrice: false, startSort: Number(maxRow?.max ?? -1) + 1 });
-      const hold = link.holdOrders;
+      // Hold orders off: a new phone's first round still waits for staff, so a photo of the table's code cannot order on its own.
+      const hold = link.holdOrders || !(await phoneAdmitted(orderId, session!.deviceHash));
       await db().insert(orderLines).values(built.map((l) => ({ ...l, orderId, merchantId: p.merchantId, outletId: p.outletId, roundId: b.round_id, status: (hold ? "held" : "pending") as "held" | "pending" })));
-      await db().insert(guestRounds).values({ id: b.round_id, merchantId: p.merchantId, outletId: p.outletId, orderId, guestSessionId: p.sessionId, tableId: p.tableId, status: hold ? "pending" : "accepted", lineIds: built.map((l) => l.id!), guestName: b.guest_name ?? session!.guestName ?? null, notes: b.notes ?? null });
+      await db().insert(guestRounds).values({ id: b.round_id, merchantId: p.merchantId, outletId: p.outletId, orderId, guestSessionId: p.sessionId, tableId: order.tableId ?? p.tableId, status: hold ? "pending" : "accepted", lineIds: built.map((l) => l.id!), guestName: b.guest_name ?? session!.guestName ?? null, notes: b.notes ?? null });
       // Price first, append events last (the first append locks the outlet's sequence counter until commit).
       await repriceOrder(orderId);
       const version = await bumpVersion(orderId);
