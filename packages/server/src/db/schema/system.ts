@@ -112,7 +112,11 @@ export const idempotencyKeys = pgTable(
   (t) => [primaryKey({ columns: [t.principalId, t.key] }), index("idempotency_created_idx").on(t.createdAt)],
 );
 
-/** Wrong-PIN counter per station. It lives in Postgres so the lockout holds when more than one API machine serves the station. */
+/**
+ * Wrong-PIN counter per station (or per staff member when an approval is asked
+ * for off a station). Sign-in and manager approval share it. It lives in
+ * Postgres so the lockout holds when more than one API machine serves the station.
+ */
 export const pinAttempts = pgTable(
   "pin_attempts",
   {

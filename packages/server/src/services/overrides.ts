@@ -5,6 +5,7 @@ import { overrides, staff } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { verifySecret } from "../auth/tokens.js";
 import type { Principal } from "../auth/principal.js";
+import { assertPinNotLocked, clearPinFailures, pinScope, recordPinFailure } from "./pin-attempts.js";
 
 export const OVERRIDE_TTL_SECONDS = 120;
 
@@ -35,13 +36,20 @@ const stationOf = (p: Principal) => (p.type === "staff" ? (p.stationId ?? null) 
  * saw and the requesting staff session and station; it is used once and expires.
  */
 export async function grantOverride(requester: Extract<Principal, { type: "staff" }>, input: { action: string; targetKind: string; targetId: string; approverPin: string; outletId: string; requiredRole: Role; args: OverrideArgs }) {
+  const scope = pinScope(requester);
+  await assertPinNotLocked(requester.merchantId, scope);
   const candidates = await db()
     .select()
     .from(staff)
     .where(and(eq(staff.merchantId, requester.merchantId), eq(staff.active, true)));
   const approver = candidates.find((s) => roleAtLeast(s.role, input.requiredRole) && (s.outletIds.length === 0 || s.outletIds.includes(input.outletId)) && verifySecret(input.approverPin, s.pinHash));
-  if (!approver) throw new AppError("permission_denied", "PIN not recognised for a manager at this outlet", { remedy: `Ask a ${input.requiredRole} or above to enter their PIN.`, details: { required_role: input.requiredRole } });
-  if (approver.id === requester.id) throw new AppError("permission_denied", "You cannot approve your own action", { remedy: "Ask another manager to approve it." });
+  // Your own PIN neither counts as wrong nor clears the count, so it cannot reset a guessing run.
+  if (approver?.id === requester.id) throw new AppError("permission_denied", "You cannot approve your own action", { remedy: "Ask another manager to approve it." });
+  if (!approver) {
+    await recordPinFailure(requester.merchantId, scope);
+    throw new AppError("permission_denied", "PIN not recognised for a manager at this outlet", { remedy: `Ask a ${input.requiredRole} or above to enter their PIN.`, details: { required_role: input.requiredRole } });
+  }
+  await clearPinFailures(requester.merchantId, scope);
   const [row] = await db()
     .insert(overrides)
     .values({

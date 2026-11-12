@@ -2,15 +2,17 @@ import { withOwnTransaction } from "../db/client.js";
 import { AppError } from "../lib/errors.js";
 
 /**
- * Wrong-PIN lockout (scope doc 4.1): 5 wrong PINs on a station lock it for
- * 30 seconds. The counter is in Postgres and every write commits on its own, so it holds
+ * Wrong-PIN lockout (scope doc 4.1): 5 wrong PINs lock the scope for 30
+ * seconds. The scope is the station, so wrong sign-in PINs and wrong manager
+ * approval PINs on one iPad add up on one counter; off a station (a back-office
+ * approval request) it is the requesting staff member. The counter is in Postgres and every write commits on its own, so it holds
  * across API machines and survives the refused request's rollback.
  */
 export const PIN_MAX_FAILURES = 5;
 export const PIN_LOCK_SECONDS = 30;
 
-export function pinScope(p: { stationId: string }): string {
-  return `station:${p.stationId}`;
+export function pinScope(p: { stationId?: string; id: string }): string {
+  return p.stationId ? `station:${p.stationId}` : `staff:${p.id}`;
 }
 
 function locked(retry: number): AppError {

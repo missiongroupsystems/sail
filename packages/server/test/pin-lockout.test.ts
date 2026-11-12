@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { checkLimit, enforceLimit, pruneGuestRateHits, recordHit } from "../src/services/guest.js";
 import type { TestDb } from "./helpers.js";
-import { bootWorld, type Call, type World } from "./world.js";
+import { bootWorld, orderHelpers, type Call, type World } from "./world.js";
 
 let db: TestDb;
 let call: Call;
@@ -53,6 +53,63 @@ describe("PIN lockout is shared by every API machine", () => {
     const right = await signIn(w.station2Token, "333333");
     expect(right.status).toBe(201);
     expect(await lockRow(w.ids.station2)).toEqual([]);
+  });
+});
+
+describe("manager approval PINs share the station's lockout", () => {
+  const grant = (token: string, targetId: string, pin: string) => call<{ code: string; details?: { retry_after_seconds: number } }>("POST", "/v1/overrides", { token, body: { action: "orders.reopen", target_kind: "order", target_id: targetId, approver_pin: pin, args: {} } });
+
+  it("5 wrong approval PINs lock the station for approvals and sign-in alike, and the right PIN is refused while locked", async () => {
+    const orderId = (await orderHelpers(call, w).orderWith(w.pins.cashierStation2, [{ product_id: w.ids.kopi }])).id;
+    for (let i = 0; i < 4; i++) expect((await grant(w.pins.cashierStation2, orderId, String(900000 + i))).status).toBe(403);
+    expect(await lockRow(w.ids.station2)).toEqual([{ failures: 4, locked: false }]);
+    expect((await grant(w.pins.cashierStation2, orderId, "900004")).status).toBe(403);
+    const locked = await grant(w.pins.cashierStation2, orderId, "222222");
+    expect(locked.status).toBe(429);
+    expect(locked.body.details!.retry_after_seconds).toBeGreaterThan(0);
+    expect((await signIn(w.station2Token, "333333")).status).toBe(429);
+    // The other station is unaffected.
+    expect((await grant(w.pins.cashier, orderId, "222222")).status).toBe(201);
+    await db.sql`delete from pin_attempts where merchant_id = ${w.m.merchantId}`;
+  });
+
+  it("wrong sign-in PINs and wrong approval PINs add up on one counter; a right approval PIN clears it", async () => {
+    const orderId = (await orderHelpers(call, w).orderWith(w.pins.cashierStation2, [{ product_id: w.ids.kopi }])).id;
+    for (let i = 0; i < 3; i++) expect((await signIn(w.station2Token, String(910000 + i))).status).toBe(401);
+    expect((await grant(w.pins.cashierStation2, orderId, "910003")).status).toBe(403);
+    expect(await lockRow(w.ids.station2)).toEqual([{ failures: 4, locked: false }]);
+    expect((await grant(w.pins.cashierStation2, orderId, "222222")).status).toBe(201);
+    expect(await lockRow(w.ids.station2)).toEqual([]);
+    for (let i = 0; i < 4; i++) expect((await grant(w.pins.cashierStation2, orderId, String(920000 + i))).status).toBe(403);
+    expect((await signIn(w.station2Token, "920004")).status).toBe(401);
+    expect((await signIn(w.station2Token, "333333")).status).toBe(429);
+    await db.sql`delete from pin_attempts where merchant_id = ${w.m.merchantId}`;
+  });
+});
+
+describe("manager approval lockout edge cases", () => {
+  const grantAs = (token: string, targetId: string, pin: string, outletId?: string) => call<{ code: string; message: string }>("POST", "/v1/overrides", { token, body: { action: "orders.reopen", target_kind: "order", target_id: targetId, approver_pin: pin, args: {}, outlet_id: outletId } });
+
+  it("your own PIN neither counts as a wrong PIN nor resets the count", async () => {
+    const orderId = (await orderHelpers(call, w).orderWith(w.pins.manager, [{ product_id: w.ids.kopi }])).id;
+    for (let i = 0; i < 4; i++) expect((await grantAs(w.pins.manager, orderId, String(930000 + i))).status).toBe(403);
+    const own = await grantAs(w.pins.manager, orderId, "222222");
+    expect(own.body.message).toBe("You cannot approve your own action");
+    expect(await lockRow(w.ids.station)).toEqual([{ failures: 4, locked: false }]);
+    expect((await grantAs(w.pins.manager, orderId, "930004")).status).toBe(403);
+    expect((await grantAs(w.pins.manager, orderId, "111111")).status).toBe(429);
+    await db.sql`delete from pin_attempts where merchant_id = ${w.m.merchantId}`;
+  });
+
+  it("off a station the count is per requesting staff member", async () => {
+    const orderId = (await orderHelpers(call, w).orderWith(w.pins.cashier, [{ product_id: w.ids.kopi }])).id;
+    for (let i = 0; i < 5; i++) expect((await grantAs(w.m.cashier.token, orderId, String(940000 + i), w.m.outletId)).status).toBe(403);
+    expect((await grantAs(w.m.cashier.token, orderId, "222222", w.m.outletId)).status).toBe(429);
+    const [row] = await db.sql<{ scope: string }[]>`select scope from pin_attempts where merchant_id = ${w.m.merchantId}`;
+    expect(row!.scope).toBe(`staff:${w.m.cashier.id}`);
+    // The stations are not locked by it.
+    expect((await grantAs(w.pins.cashier, orderId, "222222")).status).toBe(201);
+    await db.sql`delete from pin_attempts where merchant_id = ${w.m.merchantId}`;
   });
 });
 
