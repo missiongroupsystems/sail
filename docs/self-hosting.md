@@ -133,7 +133,7 @@ One email signs in to one staff record on the whole server, so an invite is refu
 
 ### An external identity provider
 
-Set `SUPABASE_URL` or `SUPABASE_JWT_SECRET` on the API, and `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` on the web app. **Invite** then pre-authorises the staff member's email instead of giving a link. On their first sign-in through the identity provider with that email, Sail links the account to the staff record. Emails nobody pre-authorised are refused; Sail never creates staff from a sign-in. Tokens that say `email_verified: false` are not linked, but tokens without the claim are, so configure the issuer to issue tokens only for confirmed emails.
+Set `SUPABASE_URL` or `SUPABASE_JWT_SECRET` on the API, and `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` on the web app. **Invite** then pre-authorises the staff member's email instead of giving a link. On their first sign-in through the identity provider with that email, Sail links the account to the staff record. Emails nobody pre-authorised are refused; Sail never creates staff from a sign-in. Only a token whose top-level `email_verified` claim is `true` is linked; a token without the claim, or with it set to anything else, is refused. Supabase Auth does not put that claim at the top level of its access tokens (it copies it into `user_metadata`, which users can edit themselves, so Sail never reads it there). On Supabase, add it with a [custom access token hook](https://supabase.com/docs/guides/auth/auth-hooks/custom-access-token-hook) that sets `email_verified` to `email_confirmed_at is not null` from `auth.users`. Once linked, later sign-ins match on the subject and need no claim.
 
 ## Devices
 

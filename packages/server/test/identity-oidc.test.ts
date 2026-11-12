@@ -58,20 +58,25 @@ describe("oidc provider", () => {
     expect(invite.body.data).toEqual({ kind: "pre_authorised", email: "joins.later@alpha.test", url: null, expires_at: null });
     expect((await call<{ data: { status: string } }>("GET", `/v1/staff/${id}/access`, { token: adminToken })).body.data.status).toBe("invited");
 
-    // An issuer that says the email is unverified does not link.
+    // Only a token that says the email is verified links: false, absent, or a claim the user can edit themselves
+    // (user_metadata) does not, so an issuer that lets anyone claim any address cannot hand over an invited account.
     expect((await me(await issue({ email: "joins.later@alpha.test", email_verified: false }, "issuer|joins-later"))).status).toBe(401);
-    const first = await me(await issue({ email: "JOINS.LATER@alpha.test" }, "issuer|joins-later"));
+    expect((await me(await issue({ email: "joins.later@alpha.test" }, "issuer|joins-later"))).status).toBe(401);
+    expect((await me(await issue({ email: "joins.later@alpha.test", email_verified: "true" }, "issuer|joins-later"))).status).toBe(401);
+    expect((await me(await issue({ email: "joins.later@alpha.test", user_metadata: { email_verified: true } }, "issuer|joins-later"))).status).toBe(401);
+    expect((await db.sql`select auth_subject from staff where id = ${id}`)[0]!.auth_subject).toBeNull();
+    const first = await me(await issue({ email: "JOINS.LATER@alpha.test", email_verified: true }, "issuer|joins-later"));
     expect(first.status).toBe(200);
     expect(first.body.data.id).toBe(id);
     expect((await db.sql`select auth_subject from staff where id = ${id}`)[0]!.auth_subject).toBe("issuer|joins-later");
     expect((await me(await issue({}, "issuer|joins-later"))).status).toBe(200);
     // Someone else at the issuer with the same email cannot take the linked record.
-    expect((await me(await issue({ email: "joins.later@alpha.test" }, "issuer|someone-else"))).status).toBe(401);
+    expect((await me(await issue({ email: "joins.later@alpha.test", email_verified: true }, "issuer|someone-else"))).status).toBe(401);
     expect((await call<{ data: { status: string } }>("GET", `/v1/staff/${id}/access`, { token: adminToken })).body.data.status).toBe("active");
 
     // Revoking unlinks the subject; the same issuer account is then refused.
     expect((await call("POST", `/v1/staff/${id}/revoke-access`, { token: adminToken, body: {} })).status).toBe(200);
-    expect((await me(await issue({ email: "joins.later@alpha.test" }, "issuer|joins-later"))).status).toBe(401);
+    expect((await me(await issue({ email: "joins.later@alpha.test", email_verified: true }, "issuer|joins-later"))).status).toBe(401);
     // Resets are the issuer's job.
     expect((await call("POST", `/v1/staff/${id}/password-reset`, { token: adminToken, body: {} })).status).toBe(404);
   });

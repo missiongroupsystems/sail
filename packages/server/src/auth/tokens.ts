@@ -79,7 +79,7 @@ export async function verifySailToken(token: string, typ: SailTokenType): Promis
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 
 /** Verify a back-office JWT from the external OIDC issuer: its JWKS, or its HS256 secret. */
-export async function verifyBackOfficeToken(token: string): Promise<{ sub: string; email?: string; emailVerified?: boolean }> {
+export async function verifyBackOfficeToken(token: string): Promise<{ sub: string; email?: string; emailVerified: boolean }> {
   const cfg = config();
   const attempts: (() => Promise<JWTPayload>)[] = [];
   if (cfg.SUPABASE_URL) {
@@ -98,7 +98,9 @@ export async function verifyBackOfficeToken(token: string): Promise<{ sub: strin
     try {
       const payload = await attempt();
       if (!payload.sub) throw new Error("missing sub");
-      return { sub: payload.sub, email: typeof payload.email === "string" ? payload.email : undefined, emailVerified: typeof payload.email_verified === "boolean" ? payload.email_verified : undefined };
+      // The standard top-level OIDC claim only. Supabase Auth also copies it into user_metadata, which the user can edit
+      // themselves, so that copy is never read; a Supabase project adds the claim with a custom access token hook.
+      return { sub: payload.sub, email: typeof payload.email === "string" ? payload.email : undefined, emailVerified: payload.email_verified === true };
     } catch (e) {
       lastError = e;
     }

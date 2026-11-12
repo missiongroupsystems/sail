@@ -65,7 +65,9 @@ const oidcProvider: IdentityProvider = {
       return staffPrincipal(row);
     }
     // First sign-in: link the subject to the staff member an Admin pre-authorised by this email. Unknown emails are refused, never provisioned.
-    const linked = email && emailVerified !== false ? await linkPreAuthorised(t, sub, normaliseEmail(email)) : null;
+    // Only an email the issuer itself says is verified: an absent claim proves nothing, and an issuer that lets anyone
+    // sign up with any address would otherwise hand them an invited person's account.
+    const linked = email && emailVerified === true ? await linkPreAuthorised(t, sub, normaliseEmail(email)) : null;
     if (!linked) throw new AppError("unauthenticated", "No active staff record for this sign-in", { remedy: "Ask an Admin to add you to the team." });
     return staffPrincipal(linked);
   },
