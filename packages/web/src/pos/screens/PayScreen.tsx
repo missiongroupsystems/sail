@@ -365,7 +365,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
           <TenderGrid tenders={list} selectedId={tender.id} onSelect={selectTender} isDisabled={busy} className="mt-4" />
           {watched?.state === "pending" && !onTerminal ? (
             <div className="mt-3 flex flex-wrap items-center gap-3 rounded-tile bg-surface px-4 py-3 hairline" role="status">
-              <p className="min-w-0 flex-1 text-body text-ink">A terminal payment of {money(watched.amount)} is waiting for the guest. Another payment can be taken once it is paid or cancelled.</p>
+              <p className="min-w-0 flex-1 text-body text-ink">A terminal payment of {money(watched.due_cents)} is waiting for the guest. Another payment can be taken once it is paid or cancelled.</p>
               <Button size="md" variant="secondary" onPress={() => selectTender(watched.tender_type_id)}>
                 Show the terminal payment
               </Button>
@@ -404,6 +404,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
               <span className="mr-2 text-caption text-ink-2 uppercase tracking-[0.04em]">Tip</span>
               <Button size="lg" variant={tip.kind === "none" ? "primary" : "secondary"} aria-pressed={tip.kind === "none"} isDisabled={busy} onPress={() => {
                   setTip({ kind: "none" });
+                  setPreview(null);
                   setTipPad(false);
                 }}>
                 No tip
@@ -411,6 +412,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
               {TIP_PERCENTAGES.map((bps) => (
                 <Button key={bps} size="lg" variant={tip.kind === "percent" && tip.bps === bps ? "primary" : "secondary"} aria-pressed={tip.kind === "percent" && tip.bps === bps} aria-label={`Tip ${formatBpsText(bps)}`} isDisabled={busy} onPress={() => {
                     setTip({ kind: "percent", bps });
+                    setPreview(null);
                     setTipPad(false);
                   }} className="tabular">
                   {formatBpsText(bps)}
@@ -435,7 +437,11 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
           ) : null}
           {tipsOffered && tipPad && tip.kind === "amount" ? (
             <div className="mt-3 self-start rounded-tile bg-surface px-4 py-3 hairline">
-              <AmountPad digits={tip.digits} onChange={(d) => setTip({ kind: "amount", digits: d })} mode="cents" hint="The tip. Tap the tip button again to close" />
+              <AmountPad digits={tip.digits} onChange={(d) => {
+                  // A new tip is a new dry run: the old figures must not be paid while it runs.
+                  setTip({ kind: "amount", digits: d });
+                  setPreview(null);
+                }} mode="cents" hint="The tip. Tap the tip button again to close" />
             </div>
           ) : null}
 
@@ -470,7 +476,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
             <div className="mt-5 flex flex-col gap-3">
               {onTerminal && watched?.state === "pending" ? (
                 <div role="status" aria-live="polite" className="flex flex-col gap-3">
-                  <Money cents={watched.amount} size="amount-xl" className="text-ink" />
+                  <Money cents={watched.due_cents} size="amount-xl" className="text-ink" />
                   <p className="text-line text-ink">Waiting for the terminal. Ask the guest to tap or insert their card.</p>
                   <Button size="lg" variant="secondary" className="self-start" onPress={() => void actions.cancelTerminal(watched.id)}>
                     Cancel on terminal

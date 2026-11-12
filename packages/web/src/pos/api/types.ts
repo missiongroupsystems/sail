@@ -332,6 +332,8 @@ export type PaymentIntent = {
   tender_type_id: string;
   amount: number;
   tip_cents: number;
+  /** What the terminal asks for: the amount and the tip, from the register. */
+  due_cents: number;
   state: "pending" | "approved" | "declined" | "cancelled" | "expired";
   outcome_reason: string | null;
   payment_id: string | null;

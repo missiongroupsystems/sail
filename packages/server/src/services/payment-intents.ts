@@ -45,6 +45,8 @@ export const toIntent = (i: PaymentIntent) => ({
   terminal_id: i.terminalId,
   amount: i.amount,
   tip_cents: i.tipCents,
+  /** What the terminal asks the guest for: the amount and the tip. */
+  due_cents: i.amount + i.tipCents,
   currency: i.currency,
   state: i.state,
   outcome_reason: i.outcomeReason,

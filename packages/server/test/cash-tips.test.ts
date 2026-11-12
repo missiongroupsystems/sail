@@ -125,6 +125,9 @@ describe("cash tips stay in the drawer", () => {
     expect(preview.body.data.checks[0]!.paid_total).toBe(1744);
     const both = await call<Paid>("POST", `/v1/checks/${check.id}/payments`, { token: w.token, body: { payment_id: randomUUID(), tender_type_id: w.ids.cash, amount: check.balance, tip_bps: 1800, tip_cents: 315, dry_run: true } });
     expect(both.status).toBe(400);
+    // A percentage is a preview: a real payment carries the cents, so an approval covers the exact tip.
+    const real = await call<Paid>("POST", `/v1/checks/${check.id}/payments`, { token: w.token, body: { payment_id: randomUUID(), tender_type_id: w.ids.cash, amount: check.balance, tip_bps: 1800 } });
+    expect(real.status).toBe(400);
     // Nothing was recorded by the dry runs: the payment the cashier confirms carries the previewed tip.
     const paid = await call<Paid>("POST", `/v1/checks/${check.id}/payments`, { token: w.token, body: { payment_id: randomUUID(), tender_type_id: w.ids.cash, amount: check.balance, tendered: 2100, tip_cents: preview.body.payment.tip_cents } });
     expect(paid.status, JSON.stringify(paid.body)).toBe(200);
