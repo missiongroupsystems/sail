@@ -11,6 +11,7 @@
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
+    "test:e2e": "pnpm --filter @sail/e2e test:e2e",
     "openapi:check": "pnpm --filter @sail/server openapi:check",
     "db:generate": "pnpm --filter @sail/server db:generate",
     "db:migrate": "pnpm --filter @sail/server db:migrate",
