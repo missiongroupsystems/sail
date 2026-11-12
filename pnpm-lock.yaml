@@ -197,6 +197,9 @@ importers:
 
   packages/ui:
     dependencies:
+      '@sail/shared':
+        specifier: workspace:*
+        version: link:../shared
       lucide-react:
         specifier: ^0.577.0
         version: 0.577.0(react@19.3.1)
@@ -222,6 +225,9 @@ importers:
       typescript:
         specifier: ^5.9.0
         version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.15)(yaml@2.9.1)
 
   packages/web:
     dependencies:

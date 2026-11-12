@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { allocateByShares, allocateLargestRemainder, currencyExponent, formatMoney, parseMoney, percentOfCents, roundCash, sumCents } from "./money.js";
+import { allocateByShares, allocateLargestRemainder, currencyExponent, formatMoney, isCurrencyCode, parseMoney, percentOfCents, roundCash, sumCents } from "./money.js";
 
 describe("allocateLargestRemainder", () => {
   it("splits evenly with ties going to earlier parts", () => {
@@ -155,6 +155,41 @@ describe("parseMoney", () => {
   it("property: parsing what formatMoney prints returns the amount", () => {
     const money = fc.constantFrom({ currency: "SGD", locale: "en-SG" }, { currency: "EUR", locale: "de-DE" }, { currency: "JPY", locale: "ja-JP" }, { currency: "KWD", locale: "en-KW" }, { currency: "CHF", locale: "de-CH" }, { currency: "EUR", locale: "fr-FR" }, { currency: "INR", locale: "en-IN" }, { currency: "SEK", locale: "sv-SE" }, { currency: "USD", locale: "en-US" });
     fc.assert(fc.property(fc.integer({ min: -10_000_000, max: 10_000_000 }), money, (amount, m) => parseMoney(formatMoney(amount, m), m) === amount));
+  });
+  it("reads Arabic-Indic and other native digits and separators as the locale writes them, and Latin digits with either set", () => {
+    // 2.125 KWD is 2125 fils, however it is written: the regression was "2٫125" read as 2125 KWD.
+    expect(parseMoney("٢٫١٢٥", { currency: "KWD", locale: "ar-KW" })).toBe(2125);
+    expect(parseMoney("2٫125", { currency: "KWD", locale: "ar-KW" })).toBe(2125);
+    expect(parseMoney("2.125", { currency: "KWD", locale: "ar-KW" })).toBe(2125);
+    expect(parseMoney("١٬٥٠٠٫٠٠٠", { currency: "KWD", locale: "ar-KW" })).toBe(1_500_000);
+    expect(parseMoney("1,500", { currency: "KWD", locale: "ar-KW" })).toBe(1_500_000);
+    expect(parseMoney("‏٢٫١٢٥ د.ك.‏", { currency: "KWD", locale: "ar-KW" })).toBe(2125);
+    expect(parseMoney("۲٫۱۲۵", { currency: "KWD", locale: "fa-IR" })).toBe(2125);
+    expect(parseMoney("२.५०", { currency: "INR", locale: "mr-IN" })).toBe(250);
+    expect(() => parseMoney("2٫125.5", { currency: "KWD", locale: "ar-KW" })).toThrow(RangeError);
+  });
+  it("groups digits only the way the locale does", () => {
+    expect(() => parseMoney("1,00,000", { currency: "USD", locale: "en-US" })).toThrow(RangeError);
+    expect(() => parseMoney("12,34,567", { currency: "USD", locale: "en-US" })).toThrow(RangeError);
+    expect(parseMoney("1,00,000", { currency: "INR", locale: "en-IN" })).toBe(10_000_000);
+  });
+  it("property: parse(format(x)) is x for every locale and currency, native digit systems and 0, 2 and 3 decimals included", () => {
+    const locales = [
+      "en-US", "en-GB", "en-SG", "en-IE", "en-IN", "en-KW", "en-ZA", "en-CH", "de-DE", "de-CH", "de-AT", "fr-FR", "fr-CH", "fr-CA", "it-IT", "es-ES", "es-MX", "pt-BR", "pt-PT", "nl-NL",
+      "sv-SE", "nb-NO", "da-DK", "fi-FI", "pl-PL", "cs-CZ", "ru-RU", "uk-UA", "tr-TR", "el-GR", "he-IL", "id-ID", "ms-MY", "vi-VN", "th-TH", "th-TH-u-nu-thai", "ja-JP", "zh-CN", "zh-TW",
+      "ko-KR", "hi-IN", "hi-IN-u-nu-deva", "mr-IN", "ne-NP", "bn-BD", "my-MM", "ar-KW", "ar-SA", "ar-EG", "ar-AE", "ar-MA", "ar-DZ", "fa-IR", "ps-AF", "ur-PK", "ckb-IQ",
+    ];
+    const currencies = ["SGD", "USD", "EUR", "JPY", "KRW", "VND", "IDR", "KWD", "BHD", "OMR", "JOD", "TND", "INR", "CHF", "SEK", "GBP", "SAR", "AED", "IRR", "THB", "CLP", "CLF"].filter(isCurrencyCode);
+    fc.assert(
+      fc.property(fc.constantFrom(...locales), fc.constantFrom(...currencies), fc.oneof(fc.integer({ min: -10_000_000, max: 10_000_000 }), fc.constantFrom(0, 1, -1, 999, 1000, 2_147_483_648, Number.MAX_SAFE_INTEGER, -Number.MAX_SAFE_INTEGER)), (locale, currency, amount) => {
+        const m = { currency, locale };
+        expect(parseMoney(formatMoney(amount, m), m)).toBe(amount);
+        expect(parseMoney(formatMoney(amount, m, { sign: "always" }), m)).toBe(amount);
+      }),
+      { numRuns: 5000 },
+    );
+    // Every pair at least once, at an amount with every digit and a group.
+    for (const locale of locales) for (const currency of currencies) expect(parseMoney(formatMoney(-123_456_789, { currency, locale }), { currency, locale })).toBe(-123_456_789);
   });
 });
 

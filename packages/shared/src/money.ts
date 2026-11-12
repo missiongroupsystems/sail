@@ -193,35 +193,101 @@ export function formatMoney(amount: Cents, money: MoneyFormat, opts: { sign?: "a
 
 /**
  * Parse what a person typed into minor units, in the given locale: "16,50" in
- * de-DE → 1650 (EUR), "1,600" in ja-JP → 1600 (JPY). Currency symbols, codes and
- * spaces are ignored. Throws a RangeError for text that is not an amount, has
- * more decimal places than the currency allows, or groups digits in a way the
- * locale does not ("16.50" in de-DE is not 1650.00).
+ * de-DE → 1650 (EUR), "1,600" in ja-JP → 1600 (JPY), "٢٫١٢٥" in ar-KW → 2125
+ * (KWD). Currency symbols, codes and spaces are ignored. Throws a RangeError
+ * for text that is not an amount, has more decimal places than the currency
+ * allows, or groups digits in a way the locale does not ("16.50" in de-DE is
+ * not 1650.00, "1,00,000" in en-US is not 100000.00). See `parseAmount`.
  */
 export function parseMoney(text: string, money: MoneyFormat): Cents {
-  const exponent = currencyExponent(money.currency);
-  const parts = new Intl.NumberFormat(money.locale, { useGrouping: true, minimumFractionDigits: 1 }).formatToParts(12345.6);
-  const group = parts.find((p) => p.type === "group")?.value ?? ",";
-  const decimal = parts.find((p) => p.type === "decimal")?.value ?? ".";
-  const symbol = new Intl.NumberFormat(money.locale, { style: "currency", currency: money.currency, currencyDisplay: "narrowSymbol" }).formatToParts(1).find((p) => p.type === "currency")?.value ?? money.currency;
-  // Signs, spaces, currency symbols and the currency's code may stand before or after the number, nowhere else.
-  const affix = `(?:[\\s\\u00a0\\u202f\\p{Sc}]|${escapeRegExp(money.currency)}|${escapeRegExp(symbol)})`;
-  let t = text.trim();
-  const negative = /^[-−(]/.test(t) || /[-−)]$/.test(t);
-  t = t.replace(new RegExp(`^(?:[-−(]|${affix})+`, "u"), "").replace(new RegExp(`(?:[-−)]|${affix})+$`, "u"), "");
-  // Group separators: the locale's own, the apostrophe used in de-CH, and any space where the locale groups with one (fr-FR).
-  t = t.replace(/['’]/g, group);
-  if (/^[\s\u00a0\u202f]$/u.test(group)) t = t.replace(/[\s\u00a0\u202f]/gu, group);
-  const [whole = "", ...fractions] = t.split(decimal);
-  const groups = whole.split(group);
-  // The first group has one to three digits, the others two (en-IN) or three, and the last always three.
-  if (groups.length > 1 && (groups[0]!.length < 1 || groups[0]!.length > 3 || groups.slice(1).some((g) => g.length < 2 || g.length > 3) || groups.at(-1)!.length !== 3)) throw new RangeError(`not an amount in ${money.locale}: ${text}`);
-  t = groups.join("") + (fractions.length ? `.${fractions.join(decimal)}` : "");
-  const m = /^(\d+)(?:\.(\d*))?$/.exec(t);
-  if (!m) throw new RangeError(`not an amount: ${text}`);
-  const fraction = m[2] ?? "";
-  if (fraction.length > exponent) throw new RangeError(`${money.currency} has ${exponent} decimal place${exponent === 1 ? "" : "s"}: ${text}`);
-  const minor = Number(m[1]! + fraction.padEnd(exponent, "0"));
+  return parseAmount(text, { locale: money.locale, exponent: currencyExponent(money.currency), currency: money.currency });
+}
+
+/** Every decimal digit Intl writes (Latin, Arabic-Indic, Persian, Devanagari, Thai and the rest), mapped to its value. */
+const DIGITS: ReadonlyMap<string, string> = (() => {
+  const map = new Map<string, string>();
+  for (const ns of Intl.supportedValuesOf("numberingSystem")) {
+    const f = new Intl.NumberFormat(`en-u-nu-${ns}`, { useGrouping: false });
+    if (f.resolvedOptions().numberingSystem !== ns) continue;
+    const digits = Array.from({ length: 10 }, (_, i) => f.format(i));
+    if (digits.every((d) => /^\p{Nd}$/u.test(d))) digits.forEach((d, i) => map.set(d, String(i)));
+  }
+  return map;
+})();
+
+type Separators = { decimal: string; group: string | null; primary: number; secondary: number };
+
+/**
+ * The decimal and group separators of a locale and the sizes of its digit groups (3 and 3, or 3 and 2 in en-IN),
+ * for plain numbers or for amounts in a currency, which some locales group differently (mr-IN).
+ */
+function separatorsOf(locale: string, currency: string | null): Separators {
+  const parts = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, ...(currency ? { style: "currency", currency } : {}) }).formatToParts(1_234_567_890.5);
+  const integers = parts.filter((p) => p.type === "integer").map((p) => p.value);
+  const group = parts.find((p) => p.type === "group")?.value ?? null;
+  return { decimal: parts.find((p) => p.type === "decimal")?.value ?? ".", group, primary: integers.at(-1)!.length, secondary: integers.length > 2 ? integers.at(-2)!.length : integers.at(-1)!.length };
+}
+
+/** Bidirectional marks Intl puts around numbers in right-to-left locales. */
+const BIDI = /[\u200e\u200f\u061c\u202a-\u202e\u2066-\u2069]/gu;
+const SPACE = /[\s\u00a0\u202f]/u;
+
+/** One way to read the digits and separators left once the sign and symbols are gone; null when this set does not fit. */
+function readDigits(t: string, sep: Separators): { whole: string; fraction: string } | null {
+  let body = t;
+  if (sep.group != null) {
+    if (/^['’]$/.test(sep.group)) body = body.replace(/['’]/g, sep.group);
+    if (SPACE.test(sep.group)) body = body.replace(/[\s\u00a0\u202f]/gu, sep.group);
+  }
+  const pieces = body.split(sep.decimal);
+  if (pieces.length > 2) return null;
+  const [whole = "", fraction = ""] = pieces;
+  if (!/^\d*$/.test(fraction) || (whole === "" && fraction === "")) return null;
+  if (/^\d*$/.test(whole)) return { whole, fraction };
+  if (sep.group == null) return null;
+  // Groups as the locale writes them: the first of one up to the secondary size, the middle ones secondary, the last primary.
+  const groups = whole.split(sep.group);
+  if (groups.length < 2 || groups.some((g) => !/^\d+$/.test(g))) return null;
+  if (groups[0]!.length > sep.secondary || groups.at(-1)!.length !== sep.primary || groups.slice(1, -1).some((g) => g.length !== sep.secondary)) return null;
+  return { whole: groups.join(""), fraction };
+}
+
+/**
+ * Parse an amount into minor units, given the decimal places directly (the
+ * register's exponent) and optionally the currency whose symbols may surround
+ * it. This is the one parser every money field uses.
+ *
+ * - Digits may be the locale's own (Arabic-Indic in ar-KW, Devanagari in mr-IN)
+ *   or Latin, which every keyboard can type. Each digit has one value, so they
+ *   are read the same whatever the system.
+ * - Separators are the locale's own, or, in a locale whose own digits are not
+ *   Latin, those it uses with Latin digits ("2.125" and "٢٫١٢٥" are both 2.125 in
+ *   ar-KW). Text that reads as two different amounts is refused.
+ * - A sign (-, −, + or brackets), spaces, any currency symbol and the currency's
+ *   own symbol and code may stand before or after the number, nowhere else.
+ *
+ * Everything `formatMoney` writes for a currency and locale parses back to the
+ * same amount (property-tested across native digit systems and 0, 2 and 3
+ * decimals).
+ */
+export function parseAmount(text: string, opts: { locale: string; exponent: number; currency: string | null }): Cents {
+  const locales = [opts.locale];
+  if (new Intl.NumberFormat(opts.locale).resolvedOptions().numberingSystem !== "latn") locales.push(new Intl.Locale(opts.locale, { numberingSystem: "latn" }).toString());
+  const sets = [...new Map(locales.flatMap((l) => [separatorsOf(l, null), ...(opts.currency ? [separatorsOf(l, opts.currency)] : [])]).map((x) => [JSON.stringify(x), x])).values()];
+  const symbols = opts.currency ? [...new Set((["narrowSymbol", "symbol", "code"] as const).map((d) => new Intl.NumberFormat(opts.locale, { style: "currency", currency: opts.currency!, currencyDisplay: d }).formatToParts(1).find((p) => p.type === "currency")?.value.replace(BIDI, "") ?? opts.currency!))] : [];
+  const affix = `(?:[\\s\\u00a0\\u202f\\p{Sc}+\\-−()]${symbols.sort((a, b) => b.length - a.length).map((x) => `|${escapeRegExp(x)}`).join("")})+`;
+  let t = [...text.replace(BIDI, "").trim()].map((c) => DIGITS.get(c) ?? c).join("");
+  const lead = new RegExp(`^${affix}`, "u").exec(t)?.[0] ?? "";
+  t = t.slice(lead.length);
+  const trail = new RegExp(`${affix}$`, "u").exec(t)?.[0] ?? "";
+  t = t.slice(0, t.length - trail.length);
+  const negative = /[-−(]/.test(lead) || /[-−)]/.test(trail);
+  const readings = [...new Map(sets.map((sep) => readDigits(t, sep)).filter((r) => r != null).map((r) => [`${r.whole}.${r.fraction}`, r])).values()];
+  if (readings.length === 0) throw new RangeError(`not an amount in ${opts.locale}: ${text}`);
+  if (readings.length > 1) throw new RangeError(`ambiguous amount in ${opts.locale}: ${text}`);
+  const { whole, fraction } = readings[0]!;
+  if (fraction.length > opts.exponent) throw new RangeError(`${opts.currency ?? "the currency"} has ${opts.exponent} decimal place${opts.exponent === 1 ? "" : "s"}: ${text}`);
+  const minor = Number((whole || "0") + fraction.padEnd(opts.exponent, "0"));
   if (!Number.isSafeInteger(minor)) throw new RangeError(`amount too large: ${text}`);
   return negative ? -minor : minor;
 }
