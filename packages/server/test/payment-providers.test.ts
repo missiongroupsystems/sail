@@ -472,6 +472,33 @@ describe("payments.void", () => {
     expect(closed.status, JSON.stringify(closed.body)).toBe(200);
   });
 
+  it("a void the provider made although every call to it failed is found by the poll, and the payment is reversed", async () => {
+    const s = await order(C);
+    const intent = await onTerminal(C, s);
+    await sim.settle(intent.id, "approve");
+    const [payment] = await paymentRows(s.id);
+    expect((await voidIt(C, payment!.id, C.m.manager.token)).body.void.status).toBe("pending_provider");
+    // The provider voids, but the answer never arrives, on every attempt.
+    const original = simulatorProvider.voidPayment;
+    simulatorProvider.voidPayment = async (input) => {
+      await original(input);
+      throw new Error("timed out");
+    };
+    try {
+      await db.sql`update payment_outbox set attempts = ${OUTBOX_MAX_ATTEMPTS - 1}, next_attempt_at = now() where intent_id = ${intent.id} and kind = 'void'`;
+      expect(await drainPaymentOutbox()).toMatchObject({ failed: 1 });
+    } finally {
+      simulatorProvider.voidPayment = original;
+    }
+    expect(simPayment(intent.id)!.status).toBe("voided");
+    expect((await paymentRows(s.id))[0]!.status).toBe("recorded");
+    // The register gave up on the call, but the money went back: the poll asks the provider and applies the void.
+    await pollPendingIntents();
+    expect((await paymentRows(s.id))[0]!.status).toBe("reversed");
+    expect(await snap(C, s.id)).toMatchObject({ balance: s.balance });
+    expect((await intentRow(intent.id)).provider_voided_at).not.toBeNull();
+  });
+
   it("a void and a shift close at the same moment run one after the other: the closed shift counts exactly the payments still recorded", async () => {
     const shift = await call<{ data: { id: string } }>("POST", "/v1/shifts", { token: C.token, body: { outlet_id: C.m.outletId, float_cents: 0 } });
     expect(shift.status, JSON.stringify(shift.body)).toBe(201);
