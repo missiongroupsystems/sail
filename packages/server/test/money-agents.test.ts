@@ -232,6 +232,33 @@ describe("a brand-scoped agent's report figures", () => {
   });
 });
 
+describe("tips and QR codes are a person's call", () => {
+  it("an agent cannot rotate every QR code or switch tips on; a tip an agent adds is a proposal, refused at approval while tips are off", async () => {
+    const tok = await agent({ role: "admin", toolsets: ["pos.order", "pos.read", "pos.payment", "config.author", "guest"] });
+    expect((await call("POST", `/v1/outlets/${w.m.outletId}/qr/rotate`, { token: tok, body: {} })).status).toBe(403);
+    expect((await call("PATCH", "/v1/merchant/settings", { token: tok, body: { tips_enabled: true } })).status).toBe(403);
+    const s = await h.orderWith(w.pins.server, [{ product_id: w.ids.kopi }]);
+    const tipped = () => call<{ data: Proposal }>("POST", `/v1/checks/${s.checks[0]!.id}/payments`, { token: tok, body: { payment_id: randomUUID(), tender_type_id: w.ids.card, amount: s.balance, tip_cents: 50 } });
+    // Recording a payment is T2: an agent's payment, tip and all, always waits for a person.
+    const off = await tipped();
+    expect(off.status, JSON.stringify(off.body)).toBe(202);
+    const refused = await approve(off.body.data.id);
+    expect(refused.body.data.status).toBe("failed");
+    expect(refused.body.data.result!.body.message).toMatch(/Tips are turned off/);
+    expect((await call("PATCH", "/v1/merchant/settings", { token: w.m.admin.token, body: { tips_enabled: true } })).status).toBe(200);
+    try {
+      const on = await tipped();
+      expect(on.status).toBe(202);
+      const ap = await approve(on.body.data.id);
+      expect(ap.body.data.status, JSON.stringify(ap.body.data.result)).toBe("approved");
+      const [pay] = await db.sql<{ tip_cents: number; amount: number }[]>`select tip_cents, amount from payments where check_id = ${s.checks[0]!.id} and status = 'recorded'`;
+      expect(pay).toMatchObject({ tip_cents: 50, amount: s.balance });
+    } finally {
+      await call("PATCH", "/v1/merchant/settings", { token: w.m.admin.token, body: { tips_enabled: false } });
+    }
+  });
+});
+
 describe("request amounts", () => {
   it("every integer amount a request carries is bounded by MAX_AMOUNT, including the agent-safety operations'", async () => {
     const { MAX_AMOUNT } = await import("@sail/shared");

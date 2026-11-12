@@ -36,9 +36,10 @@ type Snap = { id: string; version: number; status: string; pricing_status: strin
 type Intent = { id: string; state: string; outcome_reason: string | null; amount: number; tip_cents: number; payment_id: string | null; provider_ref: string | null; void_requested_at: string | null; provider_voided_at: string | null };
 type Err = { code?: string; message?: string; details?: Record<string, unknown> };
 
-async function merchant(name: string, opts: { currency?: string; rounding?: number | null; price?: number } = {}) {
+async function merchant(name: string, opts: { currency?: string; rounding?: number | null; price?: number; tips?: boolean } = {}) {
   const m = await seedMerchant(db.sql, name, { preset: "blank", timeZone: "Europe/London", currency: opts.currency ?? "GBP", locale: "en-GB", cashRoundingIncrement: opts.rounding ?? null });
   const t = m.admin.token;
+  if (opts.tips ?? true) await db.sql`update merchant_settings set tips_enabled = true where merchant_id = ${m.merchantId}`;
   const ids = { item: randomUUID(), side: randomUUID(), menu: randomUUID(), link: randomUUID(), cash: randomUUID(), card: randomUUID(), terminal: randomUUID() };
   const must = async (method: string, path: string, body: unknown) => {
     const r = await call(method, path, { token: t, body });
@@ -126,6 +127,15 @@ describe("approve and decline", () => {
     await sim.settle(intent.id, "approve");
     expect(await snap(B, s.id)).toMatchObject({ status: "completed", balance: 0 });
     expect((await intents(B, s.id))[0]).toMatchObject({ state: "approved" });
+  });
+
+  it("a terminal tip is refused before the terminal is asked when the merchant has tips off", async () => {
+    const off = await merchant("NoTips", { tips: false });
+    const s = await order(off);
+    const r = await start(off, s.checks[0]!.id, s.checks[0]!.balance, { tip_cents: 100 });
+    expect(r.status).toBe(400);
+    expect(r.body.message).toMatch(/Tips are turned off/);
+    expect(await intents(off, s.id)).toEqual([]);
   });
 
   it("a decline leaves the bill exactly as it was: no payment, pricing not frozen, and the bill can be paid another way", async () => {

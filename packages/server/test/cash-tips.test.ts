@@ -19,9 +19,10 @@ afterAll(async () => db.drop());
 
 type Cash = { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number };
 
-async function merchant(name: string, currency: string, rounding: number | null, price: number) {
+async function merchant(name: string, currency: string, rounding: number | null, price: number, tips = true) {
   const m = await seedMerchant(db.sql, name, { preset: "blank", timeZone: "Europe/London", currency, locale: "en-GB", cashRoundingIncrement: rounding });
   const t = m.admin.token;
+  if (tips) expect((await call("PATCH", "/v1/merchant/settings", { token: t, body: { tips_enabled: true } })).status).toBe(200);
   const ids = { item: randomUUID(), menu: randomUUID(), link: randomUUID(), cash: randomUUID() };
   const must = async (path: string, body: unknown) => {
     const r = await call("POST", path, { token: t, body });
@@ -147,4 +148,40 @@ describe("tipping is a merchant setting", () => {
     expect(on.status, JSON.stringify(on.body)).toBe(200);
     expect(on.body.data.settings.tips_enabled).toBe(true);
   });
+});
+
+describe("the register decides whether a tip is taken", () => {
+  it("with tips off, a tip in cents, a percentage tip and a terminal tip are refused, and a payment without one goes through", async () => {
+    const w = await merchant("Tips off", "EUR", null, 1000, false);
+    const refused = await tippedCashSale(w, { tip: 100, tendered: 1100 });
+    expect(refused.paid.status).toBe(400);
+    expect(refused.paid.body.message).toMatch(/Tips are turned off/);
+    const bps = await call<{ message: string }>("POST", `/v1/checks/${refused.checkId}/payments`, { token: w.token, body: { payment_id: randomUUID(), tender_type_id: w.ids.cash, amount: refused.balance, tip_bps: 1500, dry_run: true } });
+    expect(bps.status).toBe(400);
+    expect(bps.body.message).toMatch(/Tips are turned off/);
+    const ok = await call("POST", `/v1/checks/${refused.checkId}/payments`, { token: w.token, body: { payment_id: randomUUID(), tender_type_id: w.ids.cash, amount: refused.balance, tendered: refused.balance, tip_cents: 0 } });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+  });
+});
+
+describe("tips with refunds and the Z-report, in 0, 2 and 3 decimals", () => {
+  for (const [currency, rounding, price, tip] of [["JPY", 10, 1234, 100], ["CHF", 5, 1743, 50], ["KWD", null, 2750, 250]] as const) {
+    it(`${currency}: a full refund gives back the bill, not the tip, and the drawer and the tenders still reconcile`, async () => {
+      const w = await merchant(`Refund ${currency}`, currency, rounding, price);
+      const sale = await tippedCashSale(w, { tip, tendered: 100_000 });
+      expect(sale.paid.status, JSON.stringify(sale.paid.body)).toBe(200);
+      const p = sale.paid.body.payment;
+      const refund = await call<{ refund: { quote: { cash_out: number } } }>("POST", `/v1/checks/${sale.checkId}/refunds`, { token: w.m.manager.token, body: { refund_id: randomUUID(), request: { kind: "full" }, reason: "returned", print: false } });
+      expect(refund.status, JSON.stringify(refund.body)).toBe(201);
+      const cashOut = refund.body.refund.quote.cash_out;
+      // Cash back is the bill as taken (rounded on the payment's running total), never the tip, never more than was taken.
+      expect(cashOut).toBeLessThanOrEqual(p.amount + p.rounding_cents);
+      expect(cashOut).toBeGreaterThanOrEqual(p.amount + p.rounding_cents - (rounding ?? 1));
+      const z = (await call<{ data: { cash: Cash; reconciliation: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number }; tenders_summary: { tips: number } } }>("GET", `/v1/outlets/${w.m.outletId}/z-report`, { token: w.token })).body.data;
+      expect(z.tenders_summary.tips).toBe(tip);
+      expect(z.cash.expected).toBe(10_000 + p.amount + p.rounding_cents + tip - cashOut);
+      expect(z.reconciliation.tenders).toBe(z.reconciliation.sales_total + z.reconciliation.paid_on_other_orders - z.reconciliation.paid_elsewhere);
+      await closeAgrees(w, sale.shiftId, z.cash.expected);
+    });
+  }
 });

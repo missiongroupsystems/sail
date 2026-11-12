@@ -10,7 +10,7 @@ import { actorOf, type Principal } from "../auth/principal.js";
 import { logger } from "../logger.js";
 import { paymentProvider, WebhookRejected, type PaymentProvider, type ProviderAccount, type ProviderPaymentStatus } from "../payments/provider.js";
 import { bumpVersion, lockOrder } from "./orders.js";
-import { recordPayment, reversePayment } from "./payments.js";
+import { assertTipAllowed, recordPayment, reversePayment } from "./payments.js";
 import { businessDayInputs } from "./business-day.js";
 import { enforceLimit } from "./guest.js";
 
@@ -103,8 +103,9 @@ export async function startIntent(order: Awaited<ReturnType<typeof lockOrder>>, 
   if (existing) throw new AppError("state_conflict", "This payment was already sent to the terminal", { remedy: "Use a new intent_id for a new payment.", details: { intent_id: existing.id, state: existing.state } });
   const [pending] = await db().select({ id: paymentIntents.id }).from(paymentIntents).where(and(eq(paymentIntents.checkId, check.id), eq(paymentIntents.state, "pending"))).limit(1);
   if (pending) throw new AppError("state_conflict", `A payment for ${check.label} is already on the terminal`, { remedy: "Wait for the terminal, or cancel the payment that is waiting.", details: { intent_id: pending.id } });
-  const [settings] = await db().select({ currency: merchantSettings.currency }).from(merchantSettings).where(eq(merchantSettings.merchantId, order.merchantId)).limit(1);
+  const [settings] = await db().select({ currency: merchantSettings.currency, tipsEnabled: merchantSettings.tipsEnabled }).from(merchantSettings).where(eq(merchantSettings.merchantId, order.merchantId)).limit(1);
   if (!settings) throw AppError.notFound("merchant settings", order.merchantId);
+  assertTipAllowed(settings.tipsEnabled, input.tipCents);
   const [intent] = await db()
     .insert(paymentIntents)
     .values({

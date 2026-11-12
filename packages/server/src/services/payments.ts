@@ -101,6 +101,8 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
     if (applied > balance) throw AppError.validation(`${tender.name} payments cannot exceed the balance of ${formatCents(balance)}`, { remedy: `The bill's balance is ${formatCents(balance)}. Enter the balance or a smaller part payment.`, details: { balance, check_id: check.id, check_total: check.total } });
   }
 
+  assertTipAllowed(settings.tipsEnabled, tip);
+
   const [openShift] = await openShiftFor(order.outletId, input.stationId ?? null);
   // Cash goes into a drawer, and a drawer is counted at a shift's close: cash with no shift open would count nowhere.
   if (tender.isCash && !openShift) throw AppError.invariant("no_open_shift", "No shift is open here to take cash into", "Open a shift (with its float) first, or take the payment by card.");
@@ -142,6 +144,11 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
 
   const completed = await maybeComplete(order.id, now);
   return { payment: payment!, check: updatedCheck!, changeDue: change, firstPayment, orderCompleted: completed };
+}
+
+/** A tip is taken only where the merchant has tips on: the register decides, not the pay screen. */
+export function assertTipAllowed(tipsEnabled: boolean, tip: number) {
+  if (tip > 0 && !tipsEnabled) throw AppError.validation("Tips are turned off for this business", { remedy: "Take the payment without a tip, or ask an Admin to turn tips on in Settings.", details: { tip_cents: tip } });
 }
 
 /** The open shift a payment or refund at this station counts in: the station's own, else the outlet's shared drawer. */
