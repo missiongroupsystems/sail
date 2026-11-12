@@ -39,7 +39,8 @@ registerOperations({
   "service_requests.list": op({ op: "service_requests.list", summary: "Table requests of an outlet", description: "Open and recently acknowledged requests.", tier: "T0", minRole: "server", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read"] } }),
   "service_requests.acknowledge": op({ op: "service_requests.acknowledge", summary: "Acknowledge a table request", description: "Marks the request done.", minRole: "server", principals: ["staff", "agent"], emits: ["service_request.acknowledged"], mcp: { expose: true, toolsets: ["pos.order"] } }),
   "tables.rotate_qr_token": op({ op: "tables.rotate_qr_token", summary: "Rotate a table's QR token", description: "Old QR codes for the table stop working. Admin.", tier: "T3", minRole: "admin", principals: ["staff"], emits: ["table.qr_rotated"], mcp: { expose: false, toolsets: [] } }),
-  "tables.qr_sheet": op({ op: "tables.qr_sheet", summary: "Printable QR sheet (PDF)", description: "Rotates every table token at the outlet and returns a PDF of QR cards for ordinary printers. Admin.", tier: "T3", minRole: "admin", principals: ["staff"], emits: ["table.qr_rotated"], mcp: { expose: false, toolsets: [] } }),
+  "tables.qr_sheet": op({ op: "tables.qr_sheet", summary: "Printable QR sheet (PDF)", description: "A PDF of every table's current QR card at the outlet, for ordinary printers. It never rotates a code, so the cards already on the tables keep working; a table with no code gets its first one, and a code from before codes could be reprinted is replaced once. Admin.", tier: "T3", minRole: "admin", principals: ["staff"], emits: [], mcp: { expose: false, toolsets: [] } }),
+  "tables.rotate_all_qr_tokens": op({ op: "tables.rotate_all_qr_tokens", summary: "Rotate every QR code at an outlet", description: "Every table's QR token at the outlet is replaced: the printed cards stop working at once (for example after cards were photographed). Print the sheet again afterwards. Admin.", tier: "T3", minRole: "admin", principals: ["staff"], emits: ["table.qr_rotated"], mcp: { expose: false, toolsets: [] } }),
 });
 
 /* ---- Guest principal ---- */
@@ -254,6 +255,21 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: table.outletId, type: "table.qr_rotated", aggregate: { kind: "table", id }, operationId: "tables.rotate_qr_token", payload: {}, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(p.merchantId, table.outletId) }, p);
     await recordAudit(p, { action: "tables.rotate_qr_token", targetKind: "table", targetId: id, outletId: table.outletId });
     return c.json({ data: { url }, events: [ev], warnings: [] }, 201);
+  });
+
+  defineOp(app, { op: "tables.rotate_all_qr_tokens", method: "post", path: "/v1/outlets/{id}/qr/rotate", tags: ["guest"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 200: jsonResponse(mutationResponse(z.object({ rotated: z.number().int() }))), ...errorResponses } }, async (c) => {
+    const p = c.get("principal");
+    const { id } = c.req.valid("param");
+    if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
+    const rows = await db().select().from(tables).where(and(eq(tables.outletId, id), isNull(tables.archivedAt)));
+    const bd = await businessDayInputs(p.merchantId, id);
+    const events = [];
+    for (const t of rows) {
+      await rotateTableToken({ id: t.id, merchantId: t.merchantId, outletId: t.outletId });
+      events.push(await appendEvent({ merchantId: p.merchantId, outletId: id, type: "table.qr_rotated", aggregate: { kind: "table", id: t.id }, operationId: "tables.rotate_all_qr_tokens", payload: {}, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
+    }
+    await recordAudit(p, { action: "tables.rotate_all_qr_tokens", targetKind: "outlet", targetId: id, outletId: id, details: { tables: rows.length } });
+    return c.json({ data: { rotated: rows.length }, events, warnings: [] }, 200);
   });
 
   defineOp(app, { op: "tables.qr_sheet", method: "get", path: "/v1/outlets/{id}/qr-sheet.pdf", tags: ["guest"], request: { params: z.object({ id: z.uuid() }) }, responses: { 200: { description: "PDF of QR cards", content: { "application/pdf": { schema: z.string() } } }, ...errorResponses } }, async (c) => {

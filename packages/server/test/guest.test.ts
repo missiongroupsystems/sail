@@ -60,15 +60,25 @@ afterAll(async () => {
 });
 
 describe("Scan to Order", () => {
-  it("rotating a token issues a guest-app URL; the QR sheet is a PDF and rotates tokens; only Admin may do either", async () => {
+  it("rotating a token issues a guest-app URL; the QR sheet reprints the live codes and never rotates them; rotating them all is its own action; only Admin may do any of it", async () => {
     expect(qrUrl12).toMatch(/^https:\/\/order\.example\.test\/t\/[A-Za-z0-9_-]+$/);
     expect((await call("POST", `/v1/tables/${ids.table12}/qr/rotate`, { token: A.manager.token, body: {} })).status).toBe(403);
-    const pdf = await app.request(`/v1/outlets/${A.outletId}/qr-sheet.pdf`, { headers: { authorization: `Bearer ${A.admin.token}` } });
-    expect(pdf.status).toBe(200);
-    expect(Buffer.from(await pdf.arrayBuffer()).subarray(0, 4).toString()).toBe("%PDF");
-    // The sheet rotated every table token: the earlier URLs are dead now.
-    const dead = await call<{ code: string }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl12), device_id: "device-dead-0001" }, idempotencyKey: null });
-    expect(dead.status).toBe(404);
+    expect((await call("POST", `/v1/outlets/${A.outletId}/qr/rotate`, { token: A.manager.token, body: {} })).status).toBe(403);
+    const sheet = async () => {
+      const pdf = await app.request(`/v1/outlets/${A.outletId}/qr-sheet.pdf`, { headers: { authorization: `Bearer ${A.admin.token}` } });
+      expect(pdf.status).toBe(200);
+      expect(Buffer.from(await pdf.arrayBuffer()).subarray(0, 4).toString()).toBe("%PDF");
+    };
+    const alive = async (url: string, device: string) => (await call("POST", "/v1/guest/sessions", { body: { token: tokenFrom(url), device_id: device }, idempotencyKey: null })).status;
+    // Downloading the sheet, twice, leaves the codes on the tables working.
+    await sheet();
+    await sheet();
+    expect(await alive(qrUrl12, "device-live-0001")).toBe(201);
+    // Rotating every code is a separate, deliberate action: the earlier URLs are dead after it.
+    const rotated = await call<{ data: { rotated: number } }>("POST", `/v1/outlets/${A.outletId}/qr/rotate`, { token: A.admin.token, body: {} });
+    expect(rotated.status, JSON.stringify(rotated.body)).toBe(200);
+    expect(rotated.body.data.rotated).toBeGreaterThanOrEqual(2);
+    expect(await alive(qrUrl12, "device-dead-0001")).toBe(404);
     qrUrl12 = (await call<{ data: { url: string } }>("POST", `/v1/tables/${ids.table12}/qr/rotate`, { token: A.admin.token, body: {} })).body.data.url;
     qrUrl13 = (await call<{ data: { url: string } }>("POST", `/v1/tables/${ids.table13}/qr/rotate`, { token: A.admin.token, body: {} })).body.data.url;
   });

@@ -1,11 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import QRCode from "qrcode";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, tx, withOwnTransaction } from "../db/client.js";
 import { brands, channelLinks, guestRounds, guestSessions, orderLines, orders, outlets, serviceRequests, tableQrTokens, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
-import { randomToken, sha256, signSailToken } from "../auth/tokens.js";
+import { sha256, signSailToken } from "../auth/tokens.js";
 import { config } from "../config.js";
 import type { Principal } from "../auth/principal.js";
 
@@ -76,10 +76,21 @@ export async function asSystem<T>(fn: () => Promise<T>): Promise<T> {
 
 /* ---- Table QR tokens ---- */
 
+/**
+ * A table's QR token, derived from its row id and the guest secret. The database keeps only the hash, as before, yet a
+ * QR sheet can print the live code again without replacing it.
+ */
+function tableToken(rowId: string): string {
+  const secret = config().GUEST_TOKEN_SECRET;
+  if (!secret) throw new Error("GUEST_TOKEN_SECRET is required for table QR codes");
+  return createHmac("sha256", secret).update(`table-qr:${rowId}`).digest().subarray(0, 24).toString("base64url");
+}
+
 export async function rotateTableToken(table: { id: string; merchantId: string; outletId: string }): Promise<{ token: string; url: string }> {
-  const token = randomToken(24);
+  const id = randomUUID();
+  const token = tableToken(id);
   await db().update(tableQrTokens).set({ rotatedAt: new Date() }).where(and(eq(tableQrTokens.tableId, table.id), isNull(tableQrTokens.rotatedAt)));
-  await db().insert(tableQrTokens).values({ merchantId: table.merchantId, outletId: table.outletId, tableId: table.id, tokenHash: sha256(token) });
+  await db().insert(tableQrTokens).values({ id, merchantId: table.merchantId, outletId: table.outletId, tableId: table.id, tokenHash: sha256(token) });
   return { token, url: guestUrl(token) };
 }
 
@@ -87,13 +98,17 @@ export function guestUrl(token: string) {
   return `${config().GUEST_APP_URL.replace(/\/$/, "")}/t/${token}`;
 }
 
-/** Current tokens for an outlet's tables, creating missing ones. Returns the raw token only when newly created (otherwise the hash is all we have). */
-export async function ensureTableTokens(outletId: string, merchantId: string): Promise<{ table: typeof tables.$inferSelect; token: string }[]> {
+/**
+ * The live code of each table at the outlet, as it is printed on the table now; a table with no code gets its first
+ * one. Only a code made before codes were derived (random, kept as a hash alone) cannot be printed again, and is
+ * replaced, once.
+ */
+export async function currentTableTokens(outletId: string, merchantId: string): Promise<{ table: typeof tables.$inferSelect; token: string }[]> {
   const rows = await db().select().from(tables).where(and(eq(tables.outletId, outletId), isNull(tables.archivedAt))).orderBy(tables.name);
   const out: { table: typeof tables.$inferSelect; token: string }[] = [];
   for (const t of rows) {
-    // Tokens are stored hashed; a sheet always rotates so the printed codes are the live ones.
-    const { token } = await rotateTableToken({ id: t.id, merchantId, outletId });
+    const [live] = await db().select().from(tableQrTokens).where(and(eq(tableQrTokens.tableId, t.id), isNull(tableQrTokens.rotatedAt))).limit(1);
+    const token = live && sha256(tableToken(live.id)) === live.tokenHash ? tableToken(live.id) : (await rotateTableToken({ id: t.id, merchantId, outletId })).token;
     out.push({ table: t, token });
   }
   return out;
@@ -103,7 +118,7 @@ export async function qrSheetPdf(outletId: string, merchantId: string): Promise<
   const [outlet] = await db().select().from(outlets).where(eq(outlets.id, outletId)).limit(1);
   const links = await db().select().from(channelLinks).where(and(eq(channelLinks.outletId, outletId), eq(channelLinks.channel, "scan_to_order"), eq(channelLinks.enabled, true)));
   const brandName = links[0] ? (await db().select({ name: brands.name }).from(brands).where(eq(brands.id, links[0].brandId)).limit(1))[0]?.name : null;
-  const entries = await ensureTableTokens(outletId, merchantId);
+  const entries = await currentTableTokens(outletId, merchantId);
   const pdf = await PDFDocument.create();
   pdf.setTitle(`Scan to order · ${outlet?.name ?? ""}`);
   const font = await pdf.embedFont(StandardFonts.Helvetica);
