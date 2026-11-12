@@ -143,9 +143,10 @@ async function readJson(c: { req: { json(): Promise<unknown> } }): Promise<unkno
   }
 }
 
+type ProposeContext = { get(key: "idempotencyKey"): string | null | undefined; get(key: "correlationId"): string; req: { header(name: string): string | undefined }; json(body: unknown, status: 202): Response };
+
 /** Store the frozen request as a proposal and answer `requires_confirmation` (202). */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function propose(c: any, principal: Principal, spec: OperationSpec, method: string, path: string, body: unknown, effect?: MoneyEffect): Promise<Response> {
+async function propose(c: ProposeContext, principal: Principal, spec: OperationSpec, method: string, path: string, body: unknown, effect?: MoneyEffect): Promise<Response> {
   // A proposal stores the request and, once approved, its result: neither may hold a secret.
   const secrets = secretFieldsOf(spec.op);
   if (secrets.response || carriesSecret(body, secrets.request)) throw new AppError("permission_denied", `${spec.op} carries a secret, so it cannot become a proposal`, { remedy: "Ask someone who may do it directly.", details: { action: spec.op, tier: spec.tier, secret_fields: secrets.request } });
