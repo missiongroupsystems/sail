@@ -5340,26 +5340,31 @@
                           "properties": {
                             "base": {
                               "type": "integer",
-                              "minimum": 0
+                              "minimum": 0,
+                              "maximum": 1000000000000
                             },
                             "by_order_type": {
                               "type": "object",
                               "properties": {
                                 "dine_in": {
                                   "type": "integer",
-                                  "minimum": 0
+                                  "minimum": 0,
+                                  "maximum": 1000000000000
                                 },
                                 "takeaway": {
                                   "type": "integer",
-                                  "minimum": 0
+                                  "minimum": 0,
+                                  "maximum": 1000000000000
                                 },
                                 "pickup": {
                                   "type": "integer",
-                                  "minimum": 0
+                                  "minimum": 0,
+                                  "maximum": 1000000000000
                                 },
                                 "delivery": {
                                   "type": "integer",
-                                  "minimum": 0
+                                  "minimum": 0,
+                                  "maximum": 1000000000000
                                 }
                               }
                             }
@@ -5374,6 +5379,7 @@
                             "null"
                           ],
                           "minimum": 0,
+                          "maximum": 1000000000000,
                           "default": null
                         },
                         "modifiers": {
@@ -5396,7 +5402,8 @@
                               },
                               "price": {
                                 "type": "integer",
-                                "minimum": 0
+                                "minimum": 0,
+                                "maximum": 1000000000000
                               },
                               "name": {
                                 "type": "string"
@@ -5432,6 +5439,7 @@
                         "quantity": {
                           "type": "integer",
                           "minimum": 1,
+                          "maximum": 999,
                           "default": 1
                         },
                         "open_price": {

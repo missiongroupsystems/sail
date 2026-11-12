@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AmountSchema, CentsSchema, ChannelTypeSchema, NonNegativeCentsSchema, OrderTypeSchema, TaxModeSchema, TaxRoundingSchema } from "../domain.js";
+import { AmountSchema, CentsSchema, ChannelTypeSchema, OrderTypeSchema, TaxModeSchema, TaxRoundingSchema } from "../domain.js";
 import { RoleSchema } from "../roles.js";
 
 /**
@@ -156,7 +156,7 @@ export const PricingModifierSchema = z.object({
   product_id: z.string().min(1),
   quantity: z.number().int().min(1).default(1),
   /** Resolved unit price in cents: the modifier group's price override, or the modifier product's price. */
-  price: NonNegativeCentsSchema,
+  price: AmountSchema,
   name: z.string().optional(),
 });
 export type PricingModifier = z.infer<typeof PricingModifierSchema>;
@@ -174,11 +174,11 @@ export const PricingLineSchema = z.object({
   quantity: z.number().int().min(0),
   /** The product's base price and optional prices per order type. */
   prices: z.object({
-    base: NonNegativeCentsSchema,
-    by_order_type: z.partialRecord(OrderTypeSchema, NonNegativeCentsSchema).optional(),
+    base: AmountSchema,
+    by_order_type: z.partialRecord(OrderTypeSchema, AmountSchema).optional(),
   }),
   /** Open-price items: this replaces the product price entirely. */
-  open_price: NonNegativeCentsSchema.nullable().default(null),
+  open_price: AmountSchema.nullable().default(null),
   modifiers: z.array(PricingModifierSchema).default([]),
   name: z.string().optional(),
 });

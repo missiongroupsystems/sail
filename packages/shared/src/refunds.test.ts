@@ -197,6 +197,15 @@ describe("money review: refunds that leak or strand money", () => {
     );
   });
 
+  it("after refunds recorded under the old per-refund rounding, a cash refund pays out nothing rather than taking cash", () => {
+    // Three 0.03 refunds of a 10.00 cash payment each paid out 0.05 under the old rule: 0.09 refunded, 0.15 handed out.
+    const l: RefundableLine = { line_id: "L", quantity: 1, base: 1000, discount: 0, fee: 0, taxes: [], total: 1000, adjustments: {}, refunded: { quantity: 0, base: 9, discount: 0, fee: 0, taxes: [], total: 9 } };
+    const pays: RefundablePayment[] = [{ payment_id: "P", tender: "Cash", is_cash: true, amount: 1000, rounding: 0, refunded: 9, refunded_rounding: 6 }];
+    const q = quoteRefund([l], pays, { kind: "amount", amount: 3 }, { cashRoundingIncrement: 5 });
+    expect(q.cash_out).toBe(0);
+    expect(q.tenders[0]).toMatchObject({ amount: 3, rounding_cents: -3 });
+  });
+
   it("a cash part payment that took an amount the coins cannot give back is refunded rounded down, never up", () => {
     // 10.03 taken in cash as a part payment, no rounding: the whole of it back is 10.00 at 0.05, not 10.05.
     const l: RefundableLine = { line_id: "L", quantity: 1, base: 1003, discount: 0, fee: 0, taxes: [], total: 1003, adjustments: {}, refunded: none };

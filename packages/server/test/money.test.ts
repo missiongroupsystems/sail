@@ -245,6 +245,17 @@ describe("amounts beyond 32 bits", () => {
     expect(ok.status).toBe(200);
     expect(ok.body.data.totals.total).toBe(Math.round(2 ** 31 * 1.09));
   });
+
+  it("pricing.simulate refuses lines above the largest amount with a validation error, as an order does", async () => {
+    const simulate = (lines: unknown[]) => call<Body>("POST", "/v1/pricing/simulate", { token: w.m.admin.token, body: { outlet_id: w.m.outletId, brand_id: w.m.brandId, order_type: "takeaway", lines } });
+    expect((await simulate([{ product_id: w.ids.openItem, quantity: 100_000, open_price: MAX_AMOUNT }])).status).toBe(400);
+    const tooMany = await simulate([{ product_id: w.ids.openItem, quantity: 999, open_price: MAX_AMOUNT }]);
+    expect([tooMany.status, tooMany.body.message]).toEqual([400, expect.stringMatching(/largest/)]);
+    const full = { line_id: "x", product_id: "p", tax_class_id: "t", quantity: 3, prices: { base: MAX_AMOUNT } };
+    expect((await simulate([full])).status).toBe(400);
+    expect((await simulate([{ ...full, prices: { base: MAX_AMOUNT + 1 }, quantity: 1 }])).status).toBe(400);
+    expect((await simulate([{ product_id: w.ids.openItem, quantity: 1, open_price: MAX_AMOUNT }])).status).toBe(200);
+  });
 });
 
 describe("refunds", () => {
@@ -395,6 +406,24 @@ describe("shifts, business days and the Z-report", () => {
     expect(z1.reconciliation.paid_elsewhere).toBeGreaterThanOrEqual(a.body.data.balance);
     const all = (await call<{ data: Z }>("GET", `/v1/outlets/${w.m.outletId}/z-report`, { token: w.m.admin.token })).body.data;
     reconciles(all);
+  });
+
+  it("a payment with no station or no shift still counts as paid elsewhere, so the station's and the shift's Z-reports reconcile", async () => {
+    // Opened on station 1, paid by card by an admin signed in with no station.
+    const o = await h.open(mgr());
+    const a = await h.add(mgr(), o.body.data.id, [{ product_id: w.ids.laksa, quantity: 1 }]);
+    await h.fire(mgr(), o.body.data.id);
+    expect((await call("POST", `/v1/checks/${a.body.data.checks[0]!.id}/payments`, { token: w.m.admin.token, body: { payment_id: randomUUID(), tender_type_id: w.ids.card, amount: a.body.data.balance } })).status).toBe(200);
+    const [row] = await db.sql<{ station_id: string | null }[]>`select station_id from payments where order_id = ${o.body.data.id}`;
+    expect(row!.station_id).toBeNull();
+    reconciles((await call<{ data: Z }>("GET", `/v1/outlets/${w.m.outletId}/z-report?station_id=${w.ids.station}`, { token: w.m.admin.token })).body.data);
+    // Paid by card before any shift opened, then a shift opens and closes.
+    const r = await regionMerchant("NoShiftCard", { preset: "sg", timeZone: "Asia/Singapore" }, [1940]);
+    const s = await r.order([{ p: 0 }]);
+    await r.must("POST", `/v1/checks/${s.checks[0]!.id}/payments`, { payment_id: randomUUID(), tender_type_id: r.ids.card, amount: s.balance });
+    const shift = await r.must<{ data: { id: string } }>("POST", "/v1/shifts", { outlet_id: r.m.outletId, station_id: null, float_cents: 0 });
+    const closed = await r.must<{ data: { report: Z } }>("POST", `/v1/shifts/${shift.data.id}/close`, { counted_cash_cents: 0 });
+    reconciles(closed.data.report);
   });
 
   it("cash needs an open shift; a business day closes once, only with its orders settled, and later activity goes to the next day", async () => {

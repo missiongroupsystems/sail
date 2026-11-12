@@ -1,4 +1,4 @@
-import { and, eq, isNull, not, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { TaxAmount, TaxBreakdown } from "@sail/shared";
 import { db, tx } from "../db/client.js";
 import { businessDayCloses, merchantSettings, orderAdjustments, orderLines, orders, payments, shifts, staff } from "../db/schema/index.js";
@@ -101,7 +101,8 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
     .select({ amount: sql<number>`coalesce(sum(${payments.amount}),0)::bigint` })
     .from(payments)
     .innerJoin(orders, eq(orders.id, payments.orderId))
-    .where(and(completed, eq(payments.status, "recorded"), not(payScope!)));
+    // A payment with no shift or no station makes the scope NULL, not false; it was still paid outside this report.
+    .where(and(completed, eq(payments.status, "recorded"), sql`not coalesce(${payScope}, false)`));
   const cashPayments = tenders.filter((t) => t.is_cash).reduce((s, t) => s + t.amount, 0);
   const rounding = tenders.filter((t) => t.is_cash).reduce((s, t) => s + t.rounding, 0);
   const cashTips = tenders.filter((t) => t.is_cash).reduce((s, t) => s + t.tips, 0);

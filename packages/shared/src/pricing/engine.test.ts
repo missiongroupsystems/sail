@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import { freezeFrom, price, sortRules } from "./engine.js";
 import type { PricingLineInput, PricingOrderInput, PricingRuleInput, TaxRateInput } from "./schemas.js";
-import type { TaxRounding } from "../domain.js";
+import { MAX_AMOUNT, type TaxRounding } from "../domain.js";
 import { SEED_RULE_IDS } from "./seed.js";
 import { SG_SEED_RULES, SG_TAX_RATES } from "./reference/dsl.js";
 import { percentOfCents, sumCents } from "../money.js";
@@ -574,7 +574,7 @@ describe("properties", () => {
     const rates: TaxRateInput[] = [{ tax_class_id: "standard", components: [{ name: "PPN 11%", bps: 1100 }] }];
     const halfOff: PricingRuleInput = { id: "h", kind: "discount", name: "Half", calc: "percent", level: "order", value: { type: "fixed", amount: 3333 }, scope: { type: "all" }, priority: 1, application: "auto", report_class: "promo" };
     fc.assert(
-      fc.property(fc.array(fc.integer({ min: 1, max: 2_000_000_000_000 }), { minLength: 1, maxLength: 4 }), fc.constantFrom("inclusive", "exclusive"), (bases, mode) => {
+      fc.property(fc.array(fc.integer({ min: 1, max: MAX_AMOUNT }), { minLength: 1, maxLength: 4 }), fc.constantFrom("inclusive", "exclusive"), (bases, mode) => {
         const r = price(order(bases.map((b, i) => line(`L${i}`, b))), [halfOff], ctx(mode, "per_line", rates));
         for (const l of r.lines) {
           const n = BigInt(l.net_amount) * 1100n;
@@ -586,6 +586,13 @@ describe("properties", () => {
       }),
       { numRuns: 300 },
     );
+  });
+
+  it("inclusive tax at a high combined rate near the largest amount rounds on the exact remainder", () => {
+    // 999,999,997,501 × 9999 passes 2^53: in floating point the remainder sits on the half and rounds up to …501.
+    const rates: TaxRateInput[] = [{ tax_class_id: "standard", components: [{ name: "Excise", bps: 9999 }] }];
+    const r = price(order([line("L", 999_999_997_501)]), [], ctx("inclusive", "per_line", rates));
+    expect(r.lines[0]!.tax_on_net).toBe(499_974_997_500);
   });
 
   it("sortRules is a total order on (priority, id)", () => {

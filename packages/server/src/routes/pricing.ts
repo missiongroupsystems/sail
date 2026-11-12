@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { AmountSchema, ChannelTypeSchema, OrderTypeSchema, PricingContextSchema, PricingLineSchema, PricingResultSchema, PricingRuleSchema, ManualApplicationSchema, price, registerOperations, validateRuleSet, type PricingRuleInput } from "@sail/shared";
+import { AmountSchema, ChannelTypeSchema, OrderTypeSchema, PricingContextSchema, PricingLineSchema, PricingResultSchema, PricingRuleSchema, ManualApplicationSchema, MAX_AMOUNT, price, registerOperations, sumCents, validateRuleSet, type PricingRuleInput } from "@sail/shared";
 import { db } from "../db/client.js";
 import { products, reportCategories } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -29,7 +29,7 @@ const SimulateBody = z.object({
   channel: ChannelTypeSchema.default("pos"),
   customer_group_ids: z.array(z.string()).default([]),
   /** Either full pricing lines, or product references the server expands from the catalogue. */
-  lines: z.array(z.union([PricingLineSchema, z.object({ product_id: z.uuid(), quantity: z.number().int().min(1).default(1), open_price: AmountSchema.nullable().optional(), line_id: z.string().optional() })])),
+  lines: z.array(z.union([PricingLineSchema, z.object({ product_id: z.uuid(), quantity: z.number().int().min(1).max(999).default(1), open_price: AmountSchema.nullable().optional(), line_id: z.string().optional() })])),
   manual_applications: z.array(ManualApplicationSchema).default([]),
   /** Evaluate the rules active at this time (default now), or supply a rule set to try. */
   at: z.iso.datetime().optional(),
@@ -86,6 +86,13 @@ export function pricingRoutes(app: OpenAPIHono<AppEnv>) {
     const tax = await orderTaxSettings(p.merchantId, b.outlet_id);
     const rules = b.rules ? b.rules.map((r) => PricingRuleSchema.parse(r)) : await activeRules(p.merchantId, at);
     const lines = await expandLines(p.merchantId, b.lines);
+    // The bound an order gets before pricing (assertWithinMaxAmount): each line and the subtotal within MAX_AMOUNT.
+    let subtotal = 0;
+    for (const l of lines) {
+      const base = ((l.open_price ?? l.prices.by_order_type?.[b.order_type] ?? l.prices.base) + sumCents(l.modifiers.map((m) => m.price * m.quantity))) * l.quantity;
+      subtotal += base;
+      if (base > MAX_AMOUNT || subtotal > MAX_AMOUNT) throw AppError.validation("The lines come to more than the largest amount the register accepts", { remedy: "Lower the quantity or the price.", limit: MAX_AMOUNT });
+    }
     const result = price(
       { order_type: b.order_type, channel: b.channel, outlet_id: b.outlet_id, brand_id: b.brand_id, customer_group_ids: b.customer_group_ids, lines, manual_applications: b.manual_applications },
       rules,

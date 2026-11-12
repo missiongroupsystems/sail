@@ -14,7 +14,8 @@ Notable changes to Sail, newest first. Field and operation names are as in `pack
 - Refunds: the last units of a line give back exactly what is left; a tender split naming a payment twice is checked once against it; cash goes back rounded on the payment's running total, never more than it took.
 - PDFs print the euro sign, the yen sign and amounts in Arabic locales (Latin digits, the ISO code where a symbol cannot be drawn).
 - The importer refuses a row whose price or price override is not an amount instead of importing it without its override.
-- A terminal void the provider made although every call to it failed is found by the poll and applied.
+- A terminal void the provider made although every call to it failed is found by the poll and applied; if the bill was refunded, the order cancelled or the shift or day closed in the meantime, the payment stands and `payment_intent.voided_not_applied` says why.
+- `pricing.simulate` refuses lines above `MAX_AMOUNT` with a validation error, and the POS amount pad takes amounts up to it.
 
 ### Payment providers
 - A payment-provider interface (`PaymentProvider`): start a payment on a terminal, read it, cancel it, void it, and verify and parse a webhook. A tender with `provider` and `terminal_id` sends its payments to that terminal; every other tender is recorded by hand as before, and a provider tender can no longer be recorded by hand.

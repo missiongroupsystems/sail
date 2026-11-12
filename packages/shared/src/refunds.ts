@@ -171,7 +171,8 @@ export function quoteRefund(lines: readonly RefundableLine[], payments: readonly
     if (!p) throw new RefundError("tender_mismatch", `payment ${t.payment_id} is not on this bill`);
     if (t.amount < 0 || t.amount > p.remaining) throw new RefundError("exceeds_payment", `${p.tender} can return at most ${p.remaining}`, { payment_id: p.payment_id, remaining: p.remaining });
     // Cash goes back rounded on the payment's running total, not on each refund alone: the drawer pays out the rounded
-    // total refunded so far, less what it already paid out, and the whole payment back is exactly the cash it took.
+    // total refunded so far, less what it already paid out. The whole payment back is the cash it took, rounded down to
+    // what the coins can give (so a 2.49 part payment at a 0.05 step gets 2.45 back).
     let rounding = 0;
     if (p.is_cash && opts.cashRoundingIncrement && opts.cashRoundingIncrement > 1) {
       // A part payment in cash may have taken an amount the coins cannot give back exactly: its last refund is rounded
@@ -180,7 +181,9 @@ export function quoteRefund(lines: readonly RefundableLine[], payments: readonly
       const taken = took - (took % opts.cashRoundingIncrement);
       const after = p.refunded + t.amount;
       const outAfter = after === p.amount ? taken : Math.min(roundCash(after, opts.cashRoundingIncrement).rounded, taken);
-      rounding = outAfter - (p.refunded + (p.refunded_rounding ?? 0)) - t.amount;
+      // Refunds recorded before this rule rounded each one up, so the drawer may already have paid out more than the
+      // running total; a refund then pays out nothing rather than taking cash from the guest.
+      rounding = Math.max(outAfter - (p.refunded + (p.refunded_rounding ?? 0)) - t.amount, -t.amount);
     }
     return { payment_id: p.payment_id, tender: p.tender, is_cash: p.is_cash, amount: t.amount, rounding_cents: rounding };
   });
