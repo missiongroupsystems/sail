@@ -204,6 +204,20 @@
       "when": 1794500975638,
       "tag": "0028_proposal_order_freeze",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794502329730,
+      "tag": "0029_tender_approval_reference",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1794502330323,
+      "tag": "0030_house_tenders_need_approval",
+      "breakpoints": true
     }
   ]
 }

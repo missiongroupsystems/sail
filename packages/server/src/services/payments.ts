@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import { formatMoney, freezeFrom, roundCash } from "@sail/shared";
+import { formatMoney, freezeFrom, PERMISSIONS, roleAtLeast, roundCash, type Role } from "@sail/shared";
 import { db } from "../db/client.js";
 import { checks, merchantSettings, orderLines, orders, payments, refunds, shifts, tenderTypes } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -27,6 +27,13 @@ export type RecordPaymentInput = {
   stationId?: string | null;
 };
 
+/** The role a payment with this tender needs: a Manager for a tender that requires approval, else the operation's own. */
+export async function paymentRole(merchantId: string, tenderTypeId: string): Promise<Role> {
+  const [t] = await db().select({ requiresApproval: tenderTypes.requiresApproval }).from(tenderTypes).where(and(eq(tenderTypes.id, tenderTypeId), eq(tenderTypes.merchantId, merchantId))).limit(1);
+  const base = PERMISSIONS["payments.record"].minRole;
+  return t?.requiresApproval && !roleAtLeast(base, "manager") ? "manager" : base;
+}
+
 export type RecordedPayment = { payment: typeof payments.$inferSelect; check: typeof checks.$inferSelect; changeDue: number; firstPayment: boolean; orderCompleted: boolean };
 
 export async function recordPayment(order: typeof orders.$inferSelect, input: RecordPaymentInput, principal: Principal): Promise<RecordedPayment> {
@@ -38,6 +45,7 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
   let check = await loadCheck();
   const [tender] = await db().select().from(tenderTypes).where(and(eq(tenderTypes.id, input.tenderTypeId), eq(tenderTypes.merchantId, order.merchantId))).limit(1);
   if (!tender || tender.archivedAt) throw AppError.notFound("payment method", input.tenderTypeId);
+  if (tender.requiresReference && !input.reference?.trim()) throw AppError.validation(`${tender.name} needs a reference`, { remedy: `Enter the ${tender.name} reference (an account, a room or a voucher number).`, details: { tender_type_id: tender.id } });
   const [settings] = await db().select().from(merchantSettings).where(eq(merchantSettings.merchantId, order.merchantId)).limit(1);
   if (!settings) throw AppError.notFound("merchant settings", order.merchantId);
   const formatCents = (amount: number) => formatMoney(amount, settings);

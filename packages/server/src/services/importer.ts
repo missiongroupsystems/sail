@@ -282,7 +282,10 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               const lid = get(row, "legacy_id") || get(row, "name");
               const name = get(row, "name");
               if (!name) throw new Error("name is required");
-              const { id } = await upsert("tender_types", lid, { name, is_cash: bool(get(row, "is_cash")), opens_drawer: bool(get(row, "opens_drawer")) || bool(get(row, "is_cash")), is_terminal: bool(get(row, "is_terminal")), sort: num(get(row, "sort"), i) });
+              const isCash = bool(get(row, "is_cash"));
+              const isTerminal = bool(get(row, "is_terminal"));
+              // A house account (neither cash nor a card terminal) needs a Manager's approval, as when created by hand.
+              const { id } = await upsert("tender_types", lid, { name, is_cash: isCash, opens_drawer: bool(get(row, "opens_drawer")) || isCash, is_terminal: isTerminal, requires_approval: !isCash && !isTerminal, sort: num(get(row, "sort"), i) });
               legacy.tender_types!.set(lid, id);
               break;
             }

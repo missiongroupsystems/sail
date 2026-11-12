@@ -180,3 +180,30 @@ describe("a manager approval belongs to the staff session that asked for it", ()
     expect(both.map((r) => r.status).sort()).toEqual([200, 403]);
   });
 });
+
+describe("tenders that nothing else verifies need a Manager and a reference", () => {
+  it("a cashier cannot settle a bill on a house account alone: a Manager's approval for that payment and a reference are needed", async () => {
+    const house = await call<{ data: { id: string; requires_approval: boolean; requires_reference: boolean } }>("POST", "/v1/tender-types", { token: w.m.admin.token, body: { name: "House account", requires_reference: true } });
+    expect(house.status, JSON.stringify(house.body)).toBe(201);
+    expect(house.body.data).toMatchObject({ requires_approval: true, requires_reference: true }); // on by default: neither cash nor a terminal
+    const card = (await call<{ data: { id: string; requires_approval: boolean }[] }>("GET", "/v1/tender-types", { token: w.m.admin.token })).body.data.find((t) => t.id === w.ids.card)!;
+    expect(card.requires_approval).toBe(false);
+    const s = await h.orderWith(w.pins.cashier, [{ product_id: w.ids.wine }]);
+    const check = s.checks[0]!;
+    const payment = { tender_type_id: house.body.data.id, amount: check.balance, tip_cents: 0 };
+    const alone = await h.pay(w.pins.cashier, check.id, { ...payment, reference: "Room 12" });
+    expect(alone.body).toMatchObject({ code: "permission_denied", details: { required_role: "manager" } });
+    // A cashier's own PIN, or a server's, does not approve it; a Manager's approves exactly that payment.
+    expect((await grant(w.pins.cashier, "payments.record", "order", s.id, "444444", { check_id: check.id, ...payment })).body).toMatchObject({ details: { required_role: "manager" } });
+    const g = await grant(w.pins.cashier, "payments.record", "order", s.id, "222222", { check_id: check.id, ...payment });
+    expect(g.status, JSON.stringify(g.body)).toBe(201);
+    expect((await h.pay(w.pins.cashier, check.id, { ...payment, override_id: g.body.data.override_id })).body).toMatchObject({ code: "validation", message: "House account needs a reference" });
+    const g2 = await grant(w.pins.cashier, "payments.record", "order", s.id, "222222", { check_id: check.id, ...payment });
+    const paid = await h.pay(w.pins.cashier, check.id, { ...payment, reference: "Room 12", override_id: g2.body.data.override_id });
+    expect(paid.status, JSON.stringify(paid.body)).toBe(200);
+    expect(paid.body.data.balance).toBe(0);
+    // An Admin can switch the approval off for a method that is verified some other way.
+    const off = await call<{ data: { requires_approval: boolean } }>("PATCH", `/v1/tender-types/${house.body.data.id}`, { token: w.m.admin.token, body: { requires_approval: false } });
+    expect(off.body.data.requires_approval).toBe(false);
+  });
+});

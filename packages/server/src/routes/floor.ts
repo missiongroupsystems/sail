@@ -83,8 +83,9 @@ export function floorRoutes(app: OpenAPIHono<AppEnv>) {
     listWhere: (q) => (q.area_id ? [eq(tables.areaId, q.area_id as string)] : []),
   });
 
-  const TenderSchema = z.object({ id: z.string(), name: z.string(), is_cash: z.boolean(), opens_drawer: z.boolean(), is_terminal: z.boolean(), sort: z.number().int(), legacy_id: z.string().nullable(), archived: z.boolean() });
-  const TenderCreate = z.object({ id: z.uuid().optional(), name: z.string().min(1), is_cash: z.boolean().optional(), opens_drawer: z.boolean().optional(), is_terminal: z.boolean().optional(), sort: z.number().int().optional(), legacy_id: z.string().nullable().optional() });
+  const TenderSchema = z.object({ id: z.string(), name: z.string(), is_cash: z.boolean(), opens_drawer: z.boolean(), is_terminal: z.boolean(), requires_approval: z.boolean(), requires_reference: z.boolean(), sort: z.number().int(), legacy_id: z.string().nullable(), archived: z.boolean() });
+  // requires_approval defaults to on for a tender that is neither cash nor a card terminal (a house account).
+  const TenderCreate = z.object({ id: z.uuid().optional(), name: z.string().min(1), is_cash: z.boolean().optional(), opens_drawer: z.boolean().optional(), is_terminal: z.boolean().optional(), requires_approval: z.boolean().optional(), requires_reference: z.boolean().optional(), sort: z.number().int().optional(), legacy_id: z.string().nullable().optional() });
   defineCrud(app, {
     group: "tender_types",
     path: "/v1/tender-types",
@@ -96,9 +97,9 @@ export function floorRoutes(app: OpenAPIHono<AppEnv>) {
     create: TenderCreate,
     patch: TenderCreate.omit({ id: true }).partial(),
     aggregateKind: "tender_type",
-    toApi: (r) => ({ id: r.id, name: r.name, is_cash: r.isCash, opens_drawer: r.opensDrawer, is_terminal: r.isTerminal, sort: r.sort, legacy_id: r.legacyId, archived: r.archivedAt != null }),
-    fromCreate: (b) => ({ id: b.id, merchantId: "", name: b.name, isCash: b.is_cash ?? false, opensDrawer: b.opens_drawer ?? b.is_cash ?? false, isTerminal: b.is_terminal ?? false, sort: b.sort ?? 0, legacyId: b.legacy_id ?? null }),
-    fromPatch: (b) => compact({ name: b.name, isCash: b.is_cash, opensDrawer: b.opens_drawer, isTerminal: b.is_terminal, sort: b.sort, legacyId: b.legacy_id }),
+    toApi: (r) => ({ id: r.id, name: r.name, is_cash: r.isCash, opens_drawer: r.opensDrawer, is_terminal: r.isTerminal, requires_approval: r.requiresApproval, requires_reference: r.requiresReference, sort: r.sort, legacy_id: r.legacyId, archived: r.archivedAt != null }),
+    fromCreate: (b) => ({ id: b.id, merchantId: "", name: b.name, isCash: b.is_cash ?? false, opensDrawer: b.opens_drawer ?? b.is_cash ?? false, isTerminal: b.is_terminal ?? false, requiresApproval: b.requires_approval ?? (!b.is_cash && !b.is_terminal), requiresReference: b.requires_reference ?? false, sort: b.sort ?? 0, legacyId: b.legacy_id ?? null }),
+    fromPatch: (b) => compact({ name: b.name, isCash: b.is_cash, opensDrawer: b.opens_drawer, isTerminal: b.is_terminal, requiresApproval: b.requires_approval, requiresReference: b.requires_reference, sort: b.sort, legacyId: b.legacy_id }),
   });
 
   const ReasonSchema = z.object({ id: z.string(), name: z.string(), for_refunds: z.boolean(), sort: z.number().int(), legacy_id: z.string().nullable(), archived: z.boolean() });

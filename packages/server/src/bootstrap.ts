@@ -68,7 +68,8 @@ export async function seedPresetRulesAndTenders(tx: TransactionSql, merchantId: 
     const parsed = PricingRuleSchema.parse(rule);
     await tx`insert into pricing_rules (merchant_id, rule_key, version, status, effective_from, body, note, created_by) values (${merchantId}, ${parsed.id}, 1, 'active', ${new Date(0).toISOString()}, ${tx.json({ ...parsed, version: 1 })}, 'seed', 'system')`;
   }
-  for (const [i, t] of preset.tenders.entries()) await tx`insert into tender_types (merchant_id, name, is_cash, opens_drawer, is_terminal, sort) values (${merchantId}, ${t.name}, ${t.is_cash}, ${t.is_cash}, ${t.is_terminal}, ${i})`;
+  // A preset tender that is neither cash nor a card terminal (a house account) needs a Manager's approval.
+  for (const [i, t] of preset.tenders.entries()) await tx`insert into tender_types (merchant_id, name, is_cash, opens_drawer, is_terminal, requires_approval, sort) values (${merchantId}, ${t.name}, ${t.is_cash}, ${t.is_cash}, ${t.is_terminal}, ${!t.is_cash && !t.is_terminal}, ${i})`;
 }
 
 export async function bootstrapMerchant(url: string, input: BootstrapInput): Promise<BootstrapResult> {

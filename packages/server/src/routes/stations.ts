@@ -10,6 +10,7 @@ import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { hashSecret, pinLookup, randomDigits, randomToken, sha256, signSailToken, verifySecret } from "../auth/tokens.js";
 import { grantOverride } from "../services/overrides.js";
+import { paymentRole } from "../services/payments.js";
 import { activeRules, ruleOrLastVersion } from "../services/pricing-rules.js";
 import { quote, refundableFor } from "../services/refunds.js";
 import { RefundRequestSchema, TenderSplit } from "./splits-refunds.js";
@@ -131,6 +132,8 @@ export function stationRoutes(app: OpenAPIHono<AppEnv>) {
         if (!rule.override_allowed) throw new AppError("permission_denied", `${rule.name} cannot be authorised by override`, { remedy: "Only a user with the rule's role can do this.", details: { required_role: rule.min_role ?? "server" } });
         requiredRole = (rule.min_role ?? "server") as Role;
       }
+      // A tender that requires approval needs a Manager's PIN, whatever the operation's own role.
+      if (b.action === "payments.record") requiredRole = await paymentRole(p.merchantId, b.args.tender_type_id);
       if (b.action === "refunds.create") {
         // The approver is shown a total; the register's quote must agree, and the refund must later come to it.
         const total = quote(await refundableFor(b.target_id), b.args.request, b.args.tender_split).totals.total;

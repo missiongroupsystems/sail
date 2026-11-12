@@ -19,11 +19,13 @@ const Schema = z.object({
   is_cash: z.boolean(),
   opens_drawer: z.boolean(),
   is_terminal: z.boolean(),
+  requires_approval: z.boolean(),
+  requires_reference: z.boolean(),
   sort: z.string().regex(/^\d*$/, "A whole number"),
 });
 type Values = z.infer<typeof Schema>;
 
-const defaults = (t: TenderType | null): Values => ({ name: t?.name ?? "", is_cash: t?.is_cash ?? false, opens_drawer: t?.opens_drawer ?? false, is_terminal: t?.is_terminal ?? false, sort: t ? String(t.sort) : "" });
+const defaults = (t: TenderType | null): Values => ({ name: t?.name ?? "", is_cash: t?.is_cash ?? false, opens_drawer: t?.opens_drawer ?? false, is_terminal: t?.is_terminal ?? false, requires_approval: t?.requires_approval ?? true, requires_reference: t?.requires_reference ?? false, sort: t ? String(t.sort) : "" });
 
 /** Payment methods (design 1.1: the API says tender). */
 export function TendersView({ initialTenders }: { initialTenders: TenderType[] }) {
@@ -81,13 +83,18 @@ function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
   useEffect(() => {
     if (state) reset(defaults(state.mode === "edit" ? state.tender : null));
   }, [state, reset]);
+  // A new method that is neither cash nor a card terminal (a house account) needs approval unless the Admin says otherwise.
+  const [isCash, isTerminal] = form.watch(["is_cash", "is_terminal"]);
+  useEffect(() => {
+    if (!tender && !form.getFieldState("requires_approval").isDirty) form.setValue("requires_approval", !isCash && !isTerminal);
+  }, [tender, isCash, isTerminal, form]);
   const settle = async () => {
     await qc.invalidateQueries({ queryKey: keys.tenderTypes });
     onClose();
   };
   const save = useMutation<unknown, ApiError, Values>({
     mutationFn: (v) => {
-      const body = { name: v.name.trim(), is_cash: v.is_cash, opens_drawer: v.opens_drawer, is_terminal: v.is_terminal, sort: v.sort === "" ? nextSort : Number(v.sort) };
+      const body = { name: v.name.trim(), is_cash: v.is_cash, opens_drawer: v.opens_drawer, is_terminal: v.is_terminal, requires_approval: v.requires_approval, requires_reference: v.requires_reference, sort: v.sort === "" ? nextSort : Number(v.sort) };
       return tender ? req(api.PATCH("/v1/tender-types/{id}", { params: { path: { id: tender.id } }, body })) : req(api.POST("/v1/tender-types", { body }));
     },
     onSuccess: settle,
@@ -135,6 +142,12 @@ function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
           </RhfSwitch>
           <RhfSwitch control={form.control} name="is_terminal" description="The amount is shown large for keying into a card terminal.">
             Card terminal
+          </RhfSwitch>
+          <RhfSwitch control={form.control} name="requires_approval" description="A Cashier needs a Manager's PIN to take a payment this way. On by default for methods that are neither cash nor a card terminal, such as a house account.">
+            Needs a manager's approval
+          </RhfSwitch>
+          <RhfSwitch control={form.control} name="requires_reference" description="The payment is refused without a reference, such as an account, a room or a voucher number.">
+            Needs a reference
           </RhfSwitch>
         </FormSection>
         <InlineError error={save.error ?? archive.error} />

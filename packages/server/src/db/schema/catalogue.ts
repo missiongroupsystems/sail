@@ -318,6 +318,10 @@ export const tenderTypes = pgTable(
     opensDrawer: boolean("opens_drawer").notNull().default(false),
     /** Card and wallet payments taken on the standalone terminal. */
     isTerminal: boolean("is_terminal").notNull().default(false),
+    /** A payment with this tender needs a Manager, or a Manager's approval (house accounts and other tenders nothing else verifies). */
+    requiresApproval: boolean("requires_approval").notNull().default(false),
+    /** A payment with this tender needs a reference (an account, a room, a voucher number). */
+    requiresReference: boolean("requires_reference").notNull().default(false),
     sort: integer("sort").notNull().default(0),
     legacyId: text("legacy_id"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),

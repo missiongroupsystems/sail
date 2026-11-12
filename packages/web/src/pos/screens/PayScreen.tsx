@@ -293,7 +293,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
               ) : (
                 <p className="text-line text-ink">Record {money(amount)} to {tender.name}.</p>
               )}
-              <TextField label="Reference (optional)" value={reference} onChange={setReference} inputClassName="min-h-14 text-line" className="max-w-[360px]" maxLength={80} mono />
+              <TextField label={tender.requires_reference ? "Reference" : "Reference (optional)"} isRequired={tender.requires_reference} value={reference} onChange={setReference} inputClassName="min-h-14 text-line" className="max-w-[360px]" maxLength={80} mono />
               {previewError ? (
                 <p className="text-body text-status-alert" role="alert">
                   {previewError}

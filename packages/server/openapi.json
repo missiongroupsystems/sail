@@ -24328,6 +24328,12 @@
                           "is_terminal": {
                             "type": "boolean"
                           },
+                          "requires_approval": {
+                            "type": "boolean"
+                          },
+                          "requires_reference": {
+                            "type": "boolean"
+                          },
                           "sort": {
                             "type": "integer"
                           },
@@ -24347,6 +24353,8 @@
                           "is_cash",
                           "opens_drawer",
                           "is_terminal",
+                          "requires_approval",
+                          "requires_reference",
                           "sort",
                           "legacy_id",
                           "archived"
@@ -24691,6 +24699,12 @@
                   "is_terminal": {
                     "type": "boolean"
                   },
+                  "requires_approval": {
+                    "type": "boolean"
+                  },
+                  "requires_reference": {
+                    "type": "boolean"
+                  },
                   "sort": {
                     "type": "integer"
                   },
@@ -24734,6 +24748,12 @@
                         "is_terminal": {
                           "type": "boolean"
                         },
+                        "requires_approval": {
+                          "type": "boolean"
+                        },
+                        "requires_reference": {
+                          "type": "boolean"
+                        },
                         "sort": {
                           "type": "integer"
                         },
@@ -24753,6 +24773,8 @@
                         "is_cash",
                         "opens_drawer",
                         "is_terminal",
+                        "requires_approval",
+                        "requires_reference",
                         "sort",
                         "legacy_id",
                         "archived"
@@ -25143,6 +25165,12 @@
                         "is_terminal": {
                           "type": "boolean"
                         },
+                        "requires_approval": {
+                          "type": "boolean"
+                        },
+                        "requires_reference": {
+                          "type": "boolean"
+                        },
                         "sort": {
                           "type": "integer"
                         },
@@ -25162,6 +25190,8 @@
                         "is_cash",
                         "opens_drawer",
                         "is_terminal",
+                        "requires_approval",
+                        "requires_reference",
                         "sort",
                         "legacy_id",
                         "archived"
@@ -25505,6 +25535,12 @@
                   "is_terminal": {
                     "type": "boolean"
                   },
+                  "requires_approval": {
+                    "type": "boolean"
+                  },
+                  "requires_reference": {
+                    "type": "boolean"
+                  },
                   "sort": {
                     "type": "integer"
                   },
@@ -25548,6 +25584,12 @@
                         "is_terminal": {
                           "type": "boolean"
                         },
+                        "requires_approval": {
+                          "type": "boolean"
+                        },
+                        "requires_reference": {
+                          "type": "boolean"
+                        },
                         "sort": {
                           "type": "integer"
                         },
@@ -25567,6 +25609,8 @@
                         "is_cash",
                         "opens_drawer",
                         "is_terminal",
+                        "requires_approval",
+                        "requires_reference",
                         "sort",
                         "legacy_id",
                         "archived"

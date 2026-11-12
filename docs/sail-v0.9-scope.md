@@ -136,7 +136,7 @@ The other additions (splits, partial refunds, Scan to Order) each ship their com
 
     Sail never talks to the terminal.
   - PayNow and e-wallets taken on the terminal or on a static QR code at the counter are recorded the same way.
-  - Other tender types come from a configurable list (imported). Each has an "opens cash drawer" flag, which is used only to work out expected cash, and an `is_cash` flag. House accounts (ENT, TAB, Invoice to…) are recorded the same way.
+  - Other tender types come from a configurable list (imported). Each has an "opens cash drawer" flag, which is used only to work out expected cash, and an `is_cash` flag. House accounts (ENT, TAB, Invoice to…) are recorded the same way. Each tender also has "needs a manager's approval" (a Cashier needs a Manager's PIN for that payment) and "needs a reference"; approval is on by default for a tender that is neither cash nor a card terminal, whether it comes from a region preset, an import or the back office.
   - **Cash rounding (a per-merchant setting, off by default):**
     - The increment is configurable, for example 0.05.
     - It applies **only to cash tenders**: tender types with `is_cash`. It never applies to card, PayNow or other tenders.

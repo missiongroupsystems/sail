@@ -11434,6 +11434,8 @@ export interface operations {
                             is_cash: boolean;
                             opens_drawer: boolean;
                             is_terminal: boolean;
+                            requires_approval: boolean;
+                            requires_reference: boolean;
                             sort: number;
                             legacy_id: string | null;
                             archived: boolean;
@@ -11563,6 +11565,8 @@ export interface operations {
                     is_cash?: boolean;
                     opens_drawer?: boolean;
                     is_terminal?: boolean;
+                    requires_approval?: boolean;
+                    requires_reference?: boolean;
                     sort?: number;
                     legacy_id?: string | null;
                 };
@@ -11582,6 +11586,8 @@ export interface operations {
                             is_cash: boolean;
                             opens_drawer: boolean;
                             is_terminal: boolean;
+                            requires_approval: boolean;
+                            requires_reference: boolean;
                             sort: number;
                             legacy_id: string | null;
                             archived: boolean;
@@ -11725,6 +11731,8 @@ export interface operations {
                             is_cash: boolean;
                             opens_drawer: boolean;
                             is_terminal: boolean;
+                            requires_approval: boolean;
+                            requires_reference: boolean;
                             sort: number;
                             legacy_id: string | null;
                             archived: boolean;
@@ -11853,6 +11861,8 @@ export interface operations {
                     is_cash?: boolean;
                     opens_drawer?: boolean;
                     is_terminal?: boolean;
+                    requires_approval?: boolean;
+                    requires_reference?: boolean;
                     sort?: number;
                     legacy_id?: string | null;
                     archived?: boolean;
@@ -11873,6 +11883,8 @@ export interface operations {
                             is_cash: boolean;
                             opens_drawer: boolean;
                             is_terminal: boolean;
+                            requires_approval: boolean;
+                            requires_reference: boolean;
                             sort: number;
                             legacy_id: string | null;
                             archived: boolean;

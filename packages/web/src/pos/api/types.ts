@@ -306,7 +306,7 @@ export type CheckSnapshot = {
   payments: CheckPayment[];
 };
 
-export type TenderType = { id: string; name: string; is_cash: boolean; opens_drawer: boolean; is_terminal: boolean; sort: number; archived: boolean };
+export type TenderType = { id: string; name: string; is_cash: boolean; opens_drawer: boolean; is_terminal: boolean; requires_approval: boolean; requires_reference: boolean; sort: number; archived: boolean };
 
 /** The register's figures for one payment (or a dry run): rounding and change are never computed on the iPad. */
 export type PaymentFigures = Partial<CheckPayment> & { change_due: number };
