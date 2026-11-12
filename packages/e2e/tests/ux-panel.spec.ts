@@ -50,7 +50,7 @@ async function dockFits(page: Page, width: number) {
 
 async function signInBackOffice(page: Page, watch: { allowConsole: (r: RegExp) => void }) {
   // WebKit reports Today's reads that the next navigation cuts short as uncaught "access control checks" errors.
-  watch.allowConsole(/due to access control checks/);
+  watch.allowConsole(/\/api\/v1\/[^ ]* due to access control checks/);
   await page.goto(`${WEB}/login`);
   await expect(async () => {
     await page.getByLabel("Email").fill(SG_ADMIN);
@@ -120,7 +120,8 @@ test.describe("iPad landscape 1180×820", () => {
       await expect(status).toBeVisible();
       const take = page.getByRole("button", { name: /^Take \$[\d.]+ cash/ });
       await expect(take).toBeEnabled();
-      if (/Cash rounding/.test(await status.innerText())) expect(cents(await take.innerText()) % 5).toBe(0);
+      // The demo rounds cash to 5 cents, so the amount to take is always a whole number of steps.
+      expect(cents(await take.innerText()) % 5).toBe(0);
       await take.click();
       await expect(page.getByText(/^Paid · Bill 1 · /)).toBeVisible();
       await page.getByRole("button", { name: "No receipt" }).click();
@@ -153,8 +154,8 @@ test.describe("iPad landscape 1180×820", () => {
         const status = pay.getByRole("status").filter({ hasText: "tip $" });
         await expect(status).toBeVisible();
         const tip = cents((await status.innerText()).match(/tip (\$[\d.]+)/)![1]!);
-        expect(tip % 5).toBe(0);
-        expect(Math.abs(tip - (balance * 15) / 100)).toBeLessThanOrEqual(5);
+        // 15% of the amount, rounded half up to the cent, then to the nearest 5 cents.
+        expect(tip).toBe(Math.round(Math.round((balance * 15) / 100) / 5) * 5);
       });
 
       let shown = 0;

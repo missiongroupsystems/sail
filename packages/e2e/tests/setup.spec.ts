@@ -31,6 +31,9 @@ test("first run: set up the business, sign in, pair the POS and send an order", 
     await page.getByRole("button", { name: "Set up and sign in" }).click();
     await page.waitForURL(`${SETUP_WEB}/today`, { timeout: 120_000 });
     await expect(page.getByRole("button", { name: /^Setup Admin, Admin/ })).toBeVisible();
+    // A new business has nothing to sell yet: Today lists the steps to a first order, none of them done.
+    await expect(page.getByRole("heading", { name: "Get ready for the first order" })).toBeVisible();
+    await expect(page.getByText(/^0 of \d done$/)).toBeVisible();
   });
 
   let stationId = "";
@@ -78,5 +81,11 @@ test("first run: set up the business, sign in, pair the POS and send an order", 
     await expect(page.getByRole("button", { name: "Send 1 to kitchen" })).toBeVisible();
     await page.getByRole("button", { name: "Send 1 to kitchen" }).click();
     await expect(page.getByRole("region", { name: "Order" }).getByText(/^Sent /)).toBeVisible();
+  });
+
+  await test.step("every step is done, so Today no longer shows the checklist", async () => {
+    await page.goto(`${SETUP_WEB}/today`);
+    await expect(page.getByRole("heading", { name: "Service", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Get ready for the first order" })).toHaveCount(0);
   });
 });
