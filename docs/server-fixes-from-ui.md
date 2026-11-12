@@ -2,6 +2,18 @@
 
 Found while working on `packages/ui`, `web` and `guest` on branch `fix/ui-locale`. Each root cause sits in `packages/server` or `packages/shared`, so none is fixed on that branch. Each entry has a reproduction against `dev:local`, the cause and a proposed fix.
 
+**Status (branch `feat/open-core`).** All fixed, each with a test:
+
+| Item | What changed |
+|-|-|
+| 1 | `channel_links` reads open to a bare station. |
+| 2 | Migration 0021: `guest_rounds_guest` also returns rounds on the session's order. |
+| 3 | Net sales = items after discounts, without tax and fees, less the refunds' net, in every report (views in migration 0022). `sales.fees` excludes tax; `sales.refunds` and `sales.total` (collected) are their own figures: `net + refunds + fees + tax = total`. `net_after_refunds` is gone. `gross` and `discounts` stay as charged, so in inclusive mode they include tax. |
+| 4 | `settings` (`currency`, `currency_exponent`, `locale`, `timezone`) on guest sessions and `GET /v1/receipts/{token}`; `currency_exponent` on the bill document; `LocaleProvider` takes `currencyExponent`. |
+| 4, before the PIN | `merchants.get` is open to a bare station; the lock screen uses the merchant's zone and locale. |
+| 4, cash variance | `settings.cash_variance_threshold` (minor units, from the preset); `shifts.close` refuses a larger variance without a reason. |
+| Dates | Rule, simulator and sold-out date inputs convert in `settings.timezone` (`zonedInputToIso`, `isoToZonedInput` in `@sail/shared`). A cutoff in a DST gap ends the day at the first valid instant after it, one in an overlap at its first occurrence. |
+
 ## 1. A station without a PIN is refused its POS channel link (403 on every POS load)
 
 **Reproduce.** Pair a station, then call the endpoint with the station token alone, as the POS lock screen does:
