@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { inflateSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { renderBill, type BillDocument } from "@sail/shared";
 import { withTransaction } from "../src/db/client.js";
@@ -152,6 +153,42 @@ describe("documents of a paid bill", () => {
 });
 
 type ZReport = { sales: { total: number; net: number; tax: number }; tenders: { amount: number }[]; cash: { expected: number; counted: number | null; variance: number | null; cash_payments: number } };
+
+describe("currencies on PDF documents", () => {
+  /** The strings a PDF draws, decoded from its content streams as WinAnsi bytes. */
+  const pdfStrings = (pdf: Uint8Array) => {
+    const raw = Buffer.from(pdf).toString("latin1");
+    const streams = [...raw.matchAll(/stream\r?\n([\s\S]*?)endstream/g)].map((m) => {
+      try {
+        return inflateSync(Buffer.from(m[1]!, "latin1")).toString("latin1");
+      } catch {
+        return m[1]!;
+      }
+    });
+    return (streams.join("\n").match(/<([0-9A-Fa-f]+)> Tj/g) ?? []).map((x) => Buffer.from(x.slice(1, x.indexOf(">")), "hex").toString("latin1"));
+  };
+  const invoice = (currency: string, exponent: number, locale: string): InvoiceDocument => ({
+    header: { outlet_name: "O", brand_name: "B", order_no: "P-0001", order_type: "takeaway", printed_at: "2026-01-01T00:00:00Z", job_id: "j", time_zone: "UTC", locale },
+    kind: "receipt",
+    currency,
+    currency_exponent: exponent,
+    check_label: "Bill 1",
+    lines: [{ quantity: 1, name: "Item", unit_price: 2125, amount: 2125, modifiers: [] }],
+    adjustments: [],
+    totals: { subtotal: 2125, discount_total: 0, fee_total: 0, tax_total: 0, taxes: [], total: 2125, tax_mode: "exclusive" },
+    payments: [],
+    invoice_no: "INV-000001",
+    invoice: { number: "INV-000001", issued_at: "2026-01-01T00:00:00Z", merchant_name: "M", outlet_address: null },
+  });
+  for (const [currency, exponent, locale, shows] of [["EUR", 2, "de-DE", "21,25\u00a0\u0080"], ["EUR", 2, "fr-FR", "21,25\u00a0\u0080"], ["JPY", 0, "ja-JP", "\u00a52,125"], ["KWD", 3, "ar-KW", "2.125"], ["SGD", 2, "en-SG", "$21.25"]] as const) {
+    it(`${currency} in ${locale} prints its amounts and symbol, never a "?"`, async () => {
+      const strings = pdfStrings(await renderInvoicePdf(invoice(currency, exponent, locale)));
+      const amounts = strings.filter((x) => /\d/.test(x) && x.includes("2"));
+      expect(amounts.some((x) => x.includes(shows)), JSON.stringify(strings)).toBe(true);
+      expect(strings.filter((x) => x.includes("?"))).toEqual([]);
+    });
+  }
+});
 
 describe("split bills print rows that add up", () => {
   it("a 0.04 item with two 25% item discounts split three ways: each bill's discount rows add up to its discount", async () => {

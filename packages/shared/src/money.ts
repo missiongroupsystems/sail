@@ -182,10 +182,10 @@ function decimalString(abs: number, exponent: number): string {
  * for example 1600 EUR in de-DE → "16,00 €". Negative amounts take a true
  * minus sign. Formatting only; never arithmetic.
  */
-export function formatMoney(amount: Cents, money: MoneyFormat, opts: { sign?: "auto" | "always" } = {}): string {
+export function formatMoney(amount: Cents, money: MoneyFormat, opts: { sign?: "auto" | "always"; currencyDisplay?: "narrowSymbol" | "code" } = {}): string {
   assertCents(amount);
   const exponent = currencyExponent(money.currency);
-  const fmt = new Intl.NumberFormat(money.locale, { style: "currency", currency: money.currency, currencyDisplay: "narrowSymbol", minimumFractionDigits: exponent, maximumFractionDigits: exponent });
+  const fmt = new Intl.NumberFormat(money.locale, { style: "currency", currency: money.currency, currencyDisplay: opts.currencyDisplay ?? "narrowSymbol", minimumFractionDigits: exponent, maximumFractionDigits: exponent });
   // A decimal string keeps large amounts exact (Intl formats strings without converting to a float).
   const s = fmt.format(decimalString(Math.abs(amount), exponent) as Intl.StringNumericLiteral);
   if (amount < 0) return `−${s}`;

@@ -1,9 +1,10 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { formatMoney, zonedToUtc, type MoneyFormat, type TaxBreakdown } from "@sail/shared";
+import { zonedToUtc, type MoneyFormat, type TaxBreakdown } from "@sail/shared";
 import { tx } from "../db/client.js";
 import { toCsv } from "./csv.js";
 import { businessDayInputs } from "./business-day.js";
 import { shiftDate } from "../lib/time.js";
+import { pdfMoney, winAnsi } from "../lib/pdf-text.js";
 import type { ZReport } from "./shifts.js";
 
 /**
@@ -194,13 +195,13 @@ export function rowsCsv<T extends Record<string, unknown>>(rows: T[]): string {
 /* ---- Daily summary PDF ---- */
 
 export async function dailySummaryPdf(input: { outletName: string; businessDate: string; z: ZReport; summary: SalesSummary; money: MoneyFormat }): Promise<Uint8Array> {
-  const formatCents = (amount: number) => formatMoney(amount, input.money);
+  const formatCents = pdfMoney(input.money);
   const pdf = await PDFDocument.create();
   pdf.setTitle(`Daily summary · ${input.outletName} · ${input.businessDate}`);
   const page = pdf.addPage([595.28, 841.89]);
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-  const safe = (s: string) => s.replace(/−/g, "-").replace(/[^ -~ -ÿ]/g, "?");
+  const safe = winAnsi;
   let y = 790;
   const text = (s: string, x: number, size = 10, f = font) => page.drawText(safe(s), { x, y, size, font: f, color: rgb(0.11, 0.11, 0.12) });
   const right = (s: string, xRight: number, size = 10, f = font) => page.drawText(safe(s), { x: xRight - f.widthOfTextAtSize(safe(s), size), y, size, font: f, color: rgb(0.11, 0.11, 0.12) });
