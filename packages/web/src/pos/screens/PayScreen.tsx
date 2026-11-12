@@ -50,7 +50,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const paymentId = useRef(idempotencyKey());
   /** The terminal payment being waited for; its state comes from the register, refreshed by the event stream. */
   const [waitingId, setWaitingId] = useState<string | null>(null);
-  const [terminalNote, setTerminalNote] = useState<string | null>(null);
+  const [terminalNote, setTerminalNote] = useState<{ text: string; alert: boolean } | null>(null);
   const [voiding, setVoiding] = useState<CheckPayment | null>(null);
   /** The dry run on the wire, if any. A payment waits for it: answered after the payment, a dry run is refused 409. */
   const previewInFlight = useRef<Promise<unknown> | null>(null);
@@ -96,7 +96,9 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
       }
       setDone({ check: after, order: snap, figures: { ...payment, change_due: 0 } });
     } else {
-      setTerminalNote(watched.state === "declined" ? "Declined on the terminal. Try again or take another payment method." : watched.outcome_reason === "bill_changed" ? "The bill changed while the terminal was waiting, so the payment was given back. Send it again." : watched.state === "expired" ? "The terminal did not answer in time. Send it again or take another payment method." : "Cancelled. Nothing was charged.");
+      const text = watched.state === "declined" ? "Declined on the terminal. Try again or take another payment method." : watched.outcome_reason === "bill_changed" ? "The bill changed while the terminal was waiting, so the payment was given back. Send it again." : watched.state === "expired" ? "The terminal did not answer in time. Send it again or take another payment method." : "Cancelled. Nothing was charged.";
+      // A cancel staff asked for is news, not a problem: a decline, an expiry or a changed bill is an alert.
+      setTerminalNote({ text, alert: watched.outcome_reason !== "cancelled" });
     }
     setWaitingId(null);
     paymentId.current = idempotencyKey();
@@ -234,7 +236,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
           ) : null
         }
       >
-        <VoidPaymentSheet label={voiding ? `${money(voiding.amount)} by ${voiding.tender}` : null} isOpen={voiding !== null} onClose={() => setVoiding(null)} onVoid={voidPayment} />
+        <VoidPaymentSheet label={voiding ? `${money(voiding.amount)} by ${voiding.tender}` : null} onTerminal={voiding ? mine.some((i) => i.payment_id === voiding.id) : false} isOpen={voiding !== null} onClose={() => setVoiding(null)} onVoid={voidPayment} />
         <ReceiptChooser
           autoReturnMs={voiding ? 0 : undefined}
           order={done.order}
@@ -308,7 +310,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
                 ))}
             </ul>
           ) : null}
-          <VoidPaymentSheet label={voiding ? `${money(voiding.amount)} by ${voiding.tender}` : null} isOpen={voiding !== null} onClose={() => setVoiding(null)} onVoid={voidPayment} />
+          <VoidPaymentSheet label={voiding ? `${money(voiding.amount)} by ${voiding.tender}` : null} onTerminal={voiding ? mine.some((i) => i.payment_id === voiding.id) : false} isOpen={voiding !== null} onClose={() => setVoiding(null)} onVoid={voidPayment} />
         </section>
 
         <section className="flex min-w-0 flex-1 flex-col px-6 py-4" aria-label="Payment">
@@ -386,8 +388,8 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
                   <Money cents={amount} size="amount-xl" className="text-ink" />
                   <p className="text-line text-ink">The terminal asks the guest for {money(amount)}. The bill updates when they have paid.</p>
                   {terminalNote ? (
-                    <p className="text-body text-status-alert" role="alert">
-                      {terminalNote}
+                    <p className={`text-body ${terminalNote.alert ? "text-status-alert" : "text-ink-2"}`} role={terminalNote.alert ? "alert" : "status"}>
+                      {terminalNote.text}
                     </p>
                   ) : null}
                 </>

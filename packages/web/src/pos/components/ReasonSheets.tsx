@@ -46,10 +46,11 @@ export function RejectRoundSheet({ roundLabel, isOpen, onClose, onReject }: { ro
 }
 
 /** Void a payment taken in error: a reason, then a Manager's PIN for anyone below Manager. A terminal payment is given back on the terminal. */
-export function VoidPaymentSheet({ label, isOpen, onClose, onVoid }: { label: string | null; isOpen: boolean; onClose: () => void; onVoid: (reason: string) => Promise<unknown> }) {
+export function VoidPaymentSheet({ label, onTerminal = false, isOpen, onClose, onVoid }: { label: string | null; onTerminal?: boolean; isOpen: boolean; onClose: () => void; onVoid: (reason: string) => Promise<unknown> }) {
   const [busy, setBusy] = useState(false);
+  const what = `The bill owes it again.${onTerminal ? " The terminal gives the money back to the card." : ""} Needs a Manager.`;
   return (
-    <Sheet isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Void payment" description={label ? `${label} · the bill owes it again. Needs a Manager.` : "The bill owes it again. Needs a Manager."} isDismissable={!busy}>
+    <Sheet isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Void payment" description={label ? `${label} · ${what}` : what} isDismissable={!busy}>
       <ReasonPicker
         reasons={VOID_PAYMENT_REASONS.map((r) => ({ id: r, name: r }))}
         isDisabled={busy}
