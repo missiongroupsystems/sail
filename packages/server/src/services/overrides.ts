@@ -5,7 +5,7 @@ import { overrides, staff } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { verifySecret } from "../auth/tokens.js";
 import type { Principal } from "../auth/principal.js";
-import { assertPinNotLocked, clearPinFailures, pinScope, recordPinFailure } from "./pin-attempts.js";
+import { clearPinFailures, pinScope, takePinAttempt } from "./pin-attempts.js";
 
 export const OVERRIDE_TTL_SECONDS = 120;
 
@@ -37,16 +37,16 @@ const stationOf = (p: Principal) => (p.type === "staff" ? (p.stationId ?? null) 
  */
 export async function grantOverride(requester: Extract<Principal, { type: "staff" }>, input: { action: string; targetKind: string; targetId: string; approverPin: string; outletId: string; requiredRole: Role; args: OverrideArgs }) {
   const scope = pinScope(requester);
-  await assertPinNotLocked(requester.merchantId, scope);
   const candidates = await db()
     .select()
     .from(staff)
     .where(and(eq(staff.merchantId, requester.merchantId), eq(staff.active, true)));
-  const approver = candidates.find((s) => roleAtLeast(s.role, input.requiredRole) && (s.outletIds.length === 0 || s.outletIds.includes(input.outletId)) && verifySecret(input.approverPin, s.pinHash));
-  // Your own PIN neither counts as wrong nor clears the count, so it cannot reset a guessing run.
-  if (approver?.id === requester.id) throw new AppError("permission_denied", "You cannot approve your own action", { remedy: "Ask another manager to approve it." });
+  // Your own PIN neither counts as an attempt nor clears the count, so it cannot reset a guessing run.
+  const self = candidates.find((s) => s.id === requester.id);
+  if (self && verifySecret(input.approverPin, self.pinHash)) throw new AppError("permission_denied", "You cannot approve your own action", { remedy: "Ask another manager to approve it." });
+  await takePinAttempt(requester.merchantId, scope);
+  const approver = candidates.find((s) => s.id !== requester.id && roleAtLeast(s.role, input.requiredRole) && (s.outletIds.length === 0 || s.outletIds.includes(input.outletId)) && verifySecret(input.approverPin, s.pinHash));
   if (!approver) {
-    await recordPinFailure(requester.merchantId, scope);
     throw new AppError("permission_denied", "PIN not recognised for a manager at this outlet", { remedy: `Ask a ${input.requiredRole} or above to enter their PIN.`, details: { required_role: input.requiredRole } });
   }
   await clearPinFailures(requester.merchantId, scope);

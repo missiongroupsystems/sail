@@ -13,7 +13,7 @@ import { grantOverride } from "../services/overrides.js";
 import { activeRules, ruleOrLastVersion } from "../services/pricing-rules.js";
 import { quote, refundableFor } from "../services/refunds.js";
 import { RefundRequestSchema, TenderSplit } from "./splits-refunds.js";
-import { assertPinNotLocked, clearPinFailures, pinScope, recordPinFailure } from "../services/pin-attempts.js";
+import { clearPinFailures, pinScope, takePinAttempt } from "../services/pin-attempts.js";
 import { businessDayInputs, toStation } from "./org.js";
 import { config } from "../config.js";
 
@@ -76,11 +76,10 @@ export function stationRoutes(app: OpenAPIHono<AppEnv>) {
       if (p.type !== "station") throw new AppError("permission_denied", "Sign-in needs a station token", { remedy: "Pair this iPad to a station first." });
       const { pin } = c.req.valid("json");
       const scope = pinScope(p);
-      await assertPinNotLocked(p.merchantId, scope);
+      await takePinAttempt(p.merchantId, scope);
       const [member] = await db().select().from(staff).where(and(eq(staff.merchantId, p.merchantId), eq(staff.pinLookup, pinLookup(p.merchantId, pin)), eq(staff.active, true))).limit(1);
       const ok = member && verifySecret(pin, member.pinHash) && (member.outletIds.length === 0 || member.outletIds.includes(p.outletId));
       if (!ok) {
-        await recordPinFailure(p.merchantId, scope);
         throw new AppError("unauthenticated", "PIN not recognised", { remedy: "Check your PIN. After 5 wrong attempts the station locks for 30 seconds." });
       }
       await clearPinFailures(p.merchantId, scope);

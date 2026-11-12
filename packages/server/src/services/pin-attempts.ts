@@ -19,22 +19,21 @@ function locked(retry: number): AppError {
   return new AppError("rate_limited", "Too many wrong PINs", { remedy: `Try again in ${retry} seconds.`, details: { retry_after_seconds: retry } });
 }
 
-/** Throws `rate_limited` while the scope is locked. */
-export async function assertPinNotLocked(merchantId: string, scope: string): Promise<void> {
-  const [row] = await withOwnTransaction((sql) => sql<{ retry: number }[]>`select ceil(extract(epoch from locked_until - now()))::int as retry from pin_attempts where merchant_id = ${merchantId} and scope = ${scope} and locked_until > now()`);
-  if (row) throw locked(Math.max(1, row.retry));
-}
-
-/** Count a wrong PIN; the fifth locks the scope and starts a fresh count. */
-export async function recordPinFailure(merchantId: string, scope: string): Promise<void> {
-  await withOwnTransaction(
-    (sql) => sql`
-      insert into pin_attempts as a (merchant_id, scope, failures) values (${merchantId}, ${scope}, 1)
-      on conflict (merchant_id, scope) do update set
-        failures = case when a.failures + 1 >= ${PIN_MAX_FAILURES} then 0 else a.failures + 1 end,
-        locked_until = case when a.failures + 1 >= ${PIN_MAX_FAILURES} then now() + make_interval(secs => ${PIN_LOCK_SECONDS}) else a.locked_until end,
-        updated_at = now()`,
-  );
+/**
+ * Count this PIN attempt before the PIN is checked, and throw `rate_limited` while the scope is locked. The fifth
+ * attempt locks the scope and starts a fresh count, so a burst of concurrent guesses gets five tries, not one each.
+ */
+export async function takePinAttempt(merchantId: string, scope: string): Promise<void> {
+  const retry = await withOwnTransaction(async (sql) => {
+    // Make sure the row exists and lock it, so concurrent attempts are counted one after another.
+    await sql`insert into pin_attempts (merchant_id, scope) values (${merchantId}, ${scope}) on conflict do nothing`;
+    const [row] = await sql<{ failures: number; retry: number | null }[]>`select failures, case when locked_until > now() then ceil(extract(epoch from locked_until - now()))::int end as retry from pin_attempts where merchant_id = ${merchantId} and scope = ${scope} for update`;
+    if (row!.retry != null) return row!.retry;
+    const lock = row!.failures + 1 >= PIN_MAX_FAILURES;
+    await sql`update pin_attempts set failures = ${lock ? 0 : row!.failures + 1}, locked_until = ${lock ? sql`now() + make_interval(secs => ${PIN_LOCK_SECONDS})` : sql`locked_until`}, updated_at = now() where merchant_id = ${merchantId} and scope = ${scope}`;
+    return null;
+  });
+  if (retry != null) throw locked(Math.max(1, retry));
 }
 
 /** A right PIN clears the count. */

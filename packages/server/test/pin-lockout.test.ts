@@ -54,6 +54,13 @@ describe("PIN lockout is shared by every API machine", () => {
     expect(right.status).toBe(201);
     expect(await lockRow(w.ids.station2)).toEqual([]);
   });
+
+  it("a burst of concurrent guesses gets five tries, not one per request", async () => {
+    const tries = await Promise.all(Array.from({ length: 12 }, (_, i) => signIn(w.station2Token, String(840000 + i))));
+    expect(tries.filter((t) => t.status === 401).length).toBeLessThanOrEqual(5);
+    expect((await signIn(w.station2Token, "333333")).status).toBe(429);
+    await db.sql`delete from pin_attempts where merchant_id = ${w.m.merchantId}`;
+  });
 });
 
 describe("manager approval PINs share the station's lockout", () => {
