@@ -41,7 +41,7 @@ export function useOrderActions(orderId: string) {
   const role = useSessionStore((s) => s.staff?.role ?? null);
   const { notify, showUndo, beginMutation, endMutation, requestOverride } = useUiStore.getState();
 
-  const key = posKeys.order(orderId);
+  const key = useMemo(() => posKeys.order(orderId), [orderId]);
   const snapshot = useCallback(() => qc.getQueryData<OrderSnapshot>(key), [qc, key]);
 
   const fail = useCallback(

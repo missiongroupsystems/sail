@@ -52,7 +52,6 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<{ check: CheckSnapshot; order: OrderSnapshot; figures: PaymentFigures } | null>(null);
   const paymentId = useRef(idempotencyKey());
-  const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const list: TenderType[] = tenders.data ?? [];
   const tender = list.find((t) => t.id === tenderId) ?? list[0] ?? null;
@@ -74,13 +73,12 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   }, [tenderId, amount, tendered, reference]);
 
   const runPreview = useCallback(
-    (t: TenderType, amt: number, tnd: number | null) => {
+    (t: TenderType, amt: number, tnd: number | null): (() => void) | undefined => {
       if (!check || amt <= 0) {
         setPreview(null);
-        return;
+        return undefined;
       }
-      if (previewTimer.current) clearTimeout(previewTimer.current);
-      previewTimer.current = setTimeout(async () => {
+      const timer = setTimeout(async () => {
         try {
           setPreviewError(null);
           const res = await actions.previewPayment(check.id, { tender_type_id: t.id, amount: amt, ...(tnd != null ? { tendered: tnd } : {}) });
@@ -93,19 +91,20 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
           setPreviewError(err.remedy ? `${err.message}. ${err.remedy}` : err.message);
         }
       }, 200);
+      return () => clearTimeout(timer);
     },
     [actions, check],
   );
 
   // The register previews cash rounding and change, and the balance left after a part payment, on every change (design 4.5).
+  // A dry run still waiting when the inputs change, or when the payment is taken, is dropped with the effect.
   useEffect(() => {
-    if (!tender || !check || done) return;
-    if (tender.is_cash || part) runPreview(tender, amount, tender.is_cash ? tendered : null);
-    else {
-      setPreview(null);
-      setPreviewError(amount > balance ? "Amount above the balance. Enter the balance or a smaller part payment." : null);
-    }
-  }, [tender, check, amount, tendered, part, balance, done, runPreview]);
+    if (!tender || !check || done || busy) return;
+    if (tender.is_cash || part) return runPreview(tender, amount, tender.is_cash ? tendered : null);
+    setPreview(null);
+    setPreviewError(amount > balance ? "Amount above the balance. Enter the balance or a smaller part payment." : null);
+    return undefined;
+  }, [tender, check, amount, tendered, part, balance, done, busy, runPreview]);
 
   const selectTender = (id: string) => {
     setTenderId(id);
