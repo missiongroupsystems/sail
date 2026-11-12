@@ -14,6 +14,7 @@ import {
   type SortDescriptor,
 } from "react-aria-components";
 import { cx } from "../lib/cx";
+import { useLocale } from "../lib/locale";
 import { Icon } from "./Icon";
 import { Skeleton } from "./Skeleton";
 
@@ -60,7 +61,8 @@ export type DataTableProps<RowT> = {
   stickyHeader?: boolean;
 };
 
-function compare(a: SortValue, b: SortValue): number {
+/** Text sorts in the merchant's locale, not the runtime's default, so the server render and the browser agree. */
+function compare(a: SortValue, b: SortValue, locale: string): number {
   const aNil = a === null || a === undefined || a === "";
   const bNil = b === null || b === undefined || b === "";
   if (aNil && bNil) return 0;
@@ -68,13 +70,13 @@ function compare(a: SortValue, b: SortValue): number {
   if (bNil) return -1;
   if (typeof a === "number" && typeof b === "number") return a - b;
   if (typeof a === "boolean" && typeof b === "boolean") return Number(a) - Number(b);
-  return String(a).localeCompare(String(b), undefined, { sensitivity: "base", numeric: true });
+  return String(a).localeCompare(String(b), locale, { sensitivity: "base", numeric: true });
 }
 
 /**
  * A sortable, keyboard-operable table for the back office. Rows are hairline
  * separated; headers are quiet; numbers are tabular. Virtualisation is a
- * follow-up for the 20,000-row cases (TanStack Virtual, design 11.1).
+ * follow-up for the 20,000-row cases (TanStack Virtual).
  */
 export function DataTable<RowT>({
   columns,
@@ -93,6 +95,7 @@ export function DataTable<RowT>({
 }: DataTableProps<RowT>) {
   const [internalSort, setInternalSort] = useState<DataTableSort | undefined>(defaultSort);
   const activeSort = sort ?? internalSort;
+  const { locale } = useLocale();
 
   const sorted = useMemo(() => {
     if (!activeSort) return rows;
@@ -102,9 +105,9 @@ export function DataTable<RowT>({
     const dir = activeSort.direction === "ascending" ? 1 : -1;
     return rows
       .map((row, index) => ({ row, index, value: getter(row) }))
-      .sort((x, y) => compare(x.value, y.value) * dir || x.index - y.index)
+      .sort((x, y) => compare(x.value, y.value, locale) * dir || x.index - y.index)
       .map((x) => x.row);
-  }, [rows, columns, activeSort]);
+  }, [rows, columns, activeSort, locale]);
 
   const byKey = useMemo(() => new Map(sorted.map((row) => [rowKey(row), row] as const)), [sorted, rowKey]);
   const hasRowHeader = columns.some((c) => c.isRowHeader);
