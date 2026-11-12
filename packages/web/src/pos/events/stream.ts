@@ -16,6 +16,18 @@ export type OutletStreamOptions = {
   onJob?: (job: { job_id: string; status: string; printer_id: string | null }) => void;
 };
 
+/** The streams of this page, so a register call that could not reach the API can say so at once. */
+const live = new Set<OutletStream>();
+
+/**
+ * A register call failed without reaching the API. The stream's own silence takes three missed heartbeats (65 s) to
+ * notice, so the station would say "online" meanwhile: drop the stream now, show the connection as lost, and let the
+ * reconnect decide.
+ */
+export function reportUnreachable() {
+  for (const s of live) s.unreachable();
+}
+
 /** Heartbeats arrive every 20 s; three missed means the connection is gone. */
 const STALE_MS = 65_000;
 const BACKOFF_MS = [1000, 2000, 4000, 8000, 15000, 30000];
@@ -43,15 +55,19 @@ export class OutletStream {
 
   start() {
     this.stopped = false;
+    live.add(this);
     document.addEventListener("visibilitychange", this.onVisibility);
     window.addEventListener("online", this.onOnline);
+    window.addEventListener("offline", this.onOffline);
     void this.connect();
   }
 
   stop() {
     this.stopped = true;
+    live.delete(this);
     document.removeEventListener("visibilitychange", this.onVisibility);
     window.removeEventListener("online", this.onOnline);
+    window.removeEventListener("offline", this.onOffline);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.staleTimer) clearTimeout(this.staleTimer);
     this.abort?.abort();
@@ -102,6 +118,19 @@ export class OutletStream {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     void this.connect();
   };
+
+  /** The device says the network is gone: say so now, rather than after the heartbeats go missing. */
+  private onOffline = () => {
+    if (this.stopped) return;
+    this.setStatus("offline");
+    this.abort?.abort();
+  };
+
+  unreachable() {
+    if (this.stopped || this.status !== "online") return;
+    this.setStatus(navigator.onLine === false ? "offline" : "reconnecting");
+    this.abort?.abort();
+  }
 
   private setStatus(status: StreamStatus) {
     if (status === this.status && status !== "online") return;
@@ -198,7 +227,7 @@ export class OutletStream {
     if (this.staleTimer) clearTimeout(this.staleTimer);
     const delay = BACKOFF_MS[Math.min(this.attempts, BACKOFF_MS.length - 1)]!;
     this.attempts++;
-    this.setStatus(this.attempts <= 2 ? "reconnecting" : "offline");
+    this.setStatus(this.attempts <= 2 && navigator.onLine !== false ? "reconnecting" : "offline");
     this.reconnectTimer = setTimeout(() => void this.connect(), delay + Math.random() * 300);
   }
 }
