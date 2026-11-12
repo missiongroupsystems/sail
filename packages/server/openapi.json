@@ -885,12 +885,12 @@
           "organisation"
         ],
         "operationId": "merchants.get",
-        "description": "Currency, locale, time zone, tax mode and rounding, default tax class, cash rounding, cash denominations for the cash counter, registration labels and business-day cutoff for the caller's merchant.",
+        "description": "Currency, locale, time zone, tax mode and rounding, default tax class, cash rounding, cash denominations for the cash counter, registration labels and business-day cutoff for the caller's merchant. A paired station reads it before anyone signs in, so the lock screen shows the outlet's time.",
         "summary": "Get the merchant and its settings",
         "x-sail": {
           "op": "merchants.get",
           "tier": "T0",
-          "min_role": "server",
+          "min_role": null,
           "override_allowed": false,
           "reason_required": false,
           "dry_run": false,

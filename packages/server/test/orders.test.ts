@@ -111,6 +111,12 @@ describe("stations, PIN sessions and pairing", () => {
     expect((await call("GET", `/v1/channel-links/${cat.link}`, { token: stationToken })).status).toBe(200);
     expect((await call("PATCH", `/v1/channel-links/${cat.link}`, { token: stationToken, body: { enabled: false } })).status).toBe(403);
   });
+  it("a station token alone reads the merchant's settings, so the lock screen shows the outlet's time; it cannot change them", async () => {
+    const m = await call<{ data: { settings: { timezone: string; locale: string; currency: string } } }>("GET", "/v1/merchant", { token: stationToken });
+    expect(m.status, JSON.stringify(m.body)).toBe(200);
+    expect(m.body.data.settings).toMatchObject({ timezone: "Asia/Singapore", locale: "en-SG", currency: "SGD" });
+    expect((await call("PATCH", "/v1/merchant/settings", { token: stationToken, body: { locale: "en-GB" } })).status).toBe(403);
+  });
   it("a wrong PIN is rejected; a signed-in server has role server on the station", async () => {
     expect((await call("POST", "/v1/stations/sessions", { token: stationToken, body: { pin: "999999" } })).status).toBe(401);
     const me = await call<{ data: { type: string; role: string; station_id: string; via: string } }>("GET", "/v1/me", { token: serverPin });

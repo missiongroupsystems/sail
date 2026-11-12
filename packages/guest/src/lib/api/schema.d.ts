@@ -73,7 +73,7 @@ export interface paths {
         };
         /**
          * Get the merchant and its settings
-         * @description Currency, locale, time zone, tax mode and rounding, default tax class, cash rounding, cash denominations for the cash counter, registration labels and business-day cutoff for the caller's merchant.
+         * @description Currency, locale, time zone, tax mode and rounding, default tax class, cash rounding, cash denominations for the cash counter, registration labels and business-day cutoff for the caller's merchant. A paired station reads it before anyone signs in, so the lock screen shows the outlet's time.
          */
         get: operations["merchants.get"];
         put?: never;

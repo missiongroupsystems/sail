@@ -2017,14 +2017,14 @@
       "method": "GET",
       "path": "/v1/merchant",
       "tier": "T0",
-      "min_role": "server",
+      "min_role": null,
       "toolsets": [
         "pos.read",
         "config.author",
         "reports"
       ],
       "emits": [],
-      "description": "Get the merchant and its settings\n\nCurrency, locale, time zone, tax mode and rounding, default tax class, cash rounding, cash denominations for the cash counter, registration labels and business-day cutoff for the caller's merchant.\n\nRisk tier T0. Needs role server or above.",
+      "description": "Get the merchant and its settings\n\nCurrency, locale, time zone, tax mode and rounding, default tax class, cash rounding, cash denominations for the cash counter, registration labels and business-day cutoff for the caller's merchant. A paired station reads it before anyone signs in, so the lock screen shows the outlet's time.\n\nRisk tier T0.",
       "inputSchema": {
         "type": "object",
         "properties": {},
