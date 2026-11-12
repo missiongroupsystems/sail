@@ -1,7 +1,9 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { formatMoney, type MoneyFormat, type TaxBreakdown } from "@sail/shared";
+import { formatMoney, zonedToUtc, type MoneyFormat, type TaxBreakdown } from "@sail/shared";
 import { tx } from "../db/client.js";
 import { toCsv } from "./csv.js";
+import { businessDayInputs } from "./business-day.js";
+import { shiftDate } from "../lib/time.js";
 import type { ZReport } from "./shifts.js";
 
 /**
@@ -144,6 +146,10 @@ export type PrintHealthRow = { printer_id: string | null; printer_name: string |
 
 export async function printHealth(f: Pick<ReportFilters, "merchantId" | "outletId" | "from" | "to">): Promise<PrintHealthRow[]> {
   const sql = tx();
+  // Jobs carry no business date: bound them by the business days' cutoff instants, not the calendar date.
+  const bd = await businessDayInputs(f.merchantId, f.outletId);
+  const start = zonedToUtc(f.from, bd.cutoff, bd.timeZone).toISOString();
+  const end = zonedToUtc(shiftDate(f.to, 1), bd.cutoff, bd.timeZone).toISOString();
   return sql<PrintHealthRow[]>`
     select printer_id::text, printer_name, relay_id::text, count(*)::int as jobs,
            count(*) filter (where status = 'printed')::int as printed,
@@ -154,7 +160,7 @@ export async function printHealth(f: Pick<ReportFilters, "merchantId" | "outletI
            percentile_cont(0.5) within group (order by seconds_to_print) as p50_seconds,
            percentile_cont(0.95) within group (order by seconds_to_print) as p95_seconds
     from report_print_jobs r
-    where r.merchant_id = ${f.merchantId} ${f.outletId ? sql`and r.outlet_id = ${f.outletId}` : sql``} and r.created_date between ${f.from} and ${f.to}
+    where r.merchant_id = ${f.merchantId} ${f.outletId ? sql`and r.outlet_id = ${f.outletId}` : sql``} and r.created_at >= ${start} and r.created_at < ${end}
     group by printer_id, printer_name, relay_id order by printer_name`;
 }
 
