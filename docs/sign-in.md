@@ -37,19 +37,20 @@ The sign-in page takes an email and a password. Sessions last 12 hours; **Sign o
 
 An unknown email and a wrong password get the same answer. Five failed attempts lock that email for 15 minutes, and twenty from one address lock the address; the counters live in Postgres, so they hold across API machines and restarts.
 
-The address lock counts the address the API sees. When the API is reached only through the web app or a proxy that sets `X-Forwarded-For`, set `TRUST_PROXY=1` so it counts the browser's address (the last entry) instead of the proxy's. Do not set it when callers can reach the API directly, because they could then choose their own address. The web app passes on the header it receives, so put a proxy in front of it that sets `X-Forwarded-For` itself.
+The address lock counts the address the API sees. When the API is reached only through the web app or a proxy that sets `X-Forwarded-For`, set `TRUST_PROXY=1` so it counts the browser's address (the last entry) instead of the proxy's. Do not set it when callers can reach the API directly, because they could then choose their own address. The web app passes on the header it receives, so put a proxy in front of it that overwrites `X-Forwarded-For` with the real client address. Without one, a caller can send a different address on every attempt and dodge the address lock; the email lock still applies. Without `TRUST_PROXY`, every sign-in through the web app shares the web server's address, so twenty failures from anyone lock web sign-in for everyone for 15 minutes.
 
 ## Adding people
 
-Admins manage access from **Team**: open a staff member and use **Back-office access**. The person needs an email on their staff record; an existing POS PIN is kept.
+Admins manage access from **Team**: open a staff member and use **Back-office access**. It works from a back-office session only, never from an Admin's PIN on the POS. The person needs an email on their staff record; an existing POS PIN is kept.
 
 - **Invite to the back office** gives a link, shown once, that works for 7 days and only once. Send it to the person yourself; they choose a password and are signed in. Generating a new link cancels the old one.
 - **Password reset link** works the same way for someone who already has a password, valid for 24 hours. Using it ends all their earlier sessions. Sail sends no email.
+- Deactivating a staff member also ends their sessions and open links; reactivating does not bring them back.
 - **Revoke access** removes the login, ends every session and cancels open links. The staff record and PIN stay, and they can be invited again. You cannot revoke your own access.
 
 One email signs in to one staff record on the whole server, so an invite is refused if another merchant's staff member already signs in with that email.
 
-With the `oidc` provider, **Invite** pre-authorises the staff member's email instead. On their first sign-in through the identity provider with that email, Sail links the account to the staff record. Emails nobody pre-authorised are refused; Sail never creates staff from a sign-in. Tokens that say `email_verified: false` are not linked.
+With the `oidc` provider, **Invite** pre-authorises the staff member's email instead. On their first sign-in through the identity provider with that email, Sail links the account to the staff record. Emails nobody pre-authorised are refused; Sail never creates staff from a sign-in. Tokens that say `email_verified: false` are not linked, but tokens without the claim are, so configure the issuer to issue tokens only for confirmed emails.
 
 ## Local development
 

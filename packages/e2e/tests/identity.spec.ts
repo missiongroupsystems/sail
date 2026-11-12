@@ -62,7 +62,7 @@ test("back office: an Admin invites a staff member, who sets a password in anoth
   await test.step("the Admin adds the staff member with a POS PIN and copies an invite link", async () => {
     await page.goto(`${WEB}/team`);
     await page.getByRole("button", { name: "Add staff member" }).click();
-    const sheet = page.getByRole("dialog");
+    const sheet = page.getByRole("dialog", { name: "New staff member" });
     await sheet.getByLabel("Name").fill(name);
     await sheet.getByLabel("Email").fill(email);
     await sheet.getByRole("button", { name: /Role/ }).click();

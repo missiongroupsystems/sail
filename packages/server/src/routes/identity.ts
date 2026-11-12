@@ -132,6 +132,8 @@ export function identityRoutes(app: OpenAPIHono<AppEnv>) {
       if (!verifySecret(body.current_password, row?.password_hash ?? noHash()) || !row?.password_hash) return null;
       await sql`update backoffice_logins set password_hash = ${hashSecret(body.new_password)}, password_changed_at = now() where staff_id = ${p.id}`;
       const others = await sql`update backoffice_sessions set ended_at = now() where staff_id = ${p.id} and ended_at is null and id <> ${p.backofficeSessionId!} returning id`;
+      // A reset link issued before the change must not undo it.
+      await sql`update backoffice_links set revoked_at = now() where staff_id = ${p.id} and used_at is null and revoked_at is null`;
       return others.length;
     });
     if (ended == null) throw AppError.validation("Your current password is not right", { remedy: "Type your current password again. After 5 wrong attempts the email is locked for 15 minutes." });
@@ -212,6 +214,8 @@ export function identityRoutes(app: OpenAPIHono<AppEnv>) {
 
   async function memberOf(c: AppContext, id: string) {
     const p = c.get("principal");
+    // From a back-office session only: an Admin's 6-digit POS PIN, seen over a shoulder at a station, must not mint sign-in links.
+    if (p.type !== "staff" || p.via !== "backoffice") throw new AppError("permission_denied", "Manage back-office access from the back office", { remedy: "Sign in to the back office with your email." });
     const [row] = await db().select().from(staff).where(and(eq(staff.id, id), eq(staff.merchantId, p.merchantId))).limit(1);
     if (!row) throw AppError.notFound("staff member", id);
     return row;

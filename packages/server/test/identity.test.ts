@@ -134,7 +134,7 @@ describe("lockout", () => {
     const locked = await signIn(email, PASSWORD, from);
     expect(locked.status).toBe(429);
     expect((await signIn(email, PASSWORD, from, api(buildApp()).call)).status).toBe(429);
-    // The trusted proxy appends the real address last, so a forged first entry does not dodge the lock.
+    // Only the last entry counts (the one the proxy nearest the API wrote), so a forged earlier entry does not dodge the lock.
     expect((await signIn(email, PASSWORD, `198.51.100.1, ${from}`)).status).toBe(429);
     expect((await signIn(email, PASSWORD, "203.0.113.8")).status).toBe(201);
     await db.sql`delete from pin_attempts`;
@@ -193,6 +193,52 @@ describe("sessions", () => {
     await db.sql`update staff set auth_subject = ${`local:${id}`} where id = ${id}`;
     expect((await call("POST", "/v1/auth/password", { token: await backOfficeSession(db.sql, A.merchantId, id), body })).status).toBe(401);
     expect((await signIn(await emailOf(A.admin.id), PASSWORD)).status).toBe(201);
+  });
+});
+
+describe("review fixes", () => {
+  it("changing your password cancels a reset link issued before it", async () => {
+    const id = await newStaff(A, { name: "Changes After Reset", email: "changes.after.reset@alpha.test" });
+    await givePassword(A, id);
+    const reset = tokenOf((await call<Link>("POST", `/v1/staff/${id}/password-reset`, { token: A.admin.token, body: {} })).body.data.url!);
+    const session = (await signIn("changes.after.reset@alpha.test", PASSWORD)).body.data.token;
+    expect((await call("POST", "/v1/auth/password", { token: session, body: { current_password: PASSWORD, new_password: "my own new password" } })).status).toBe(200);
+    expect((await accept(reset, "an attacker's password")).status).toBe(401);
+    expect((await signIn("changes.after.reset@alpha.test", "my own new password")).status).toBe(201);
+  });
+
+  it("deactivating a staff member ends their sessions and links, so reactivating does not bring them back", async () => {
+    const id = await newStaff(A, { name: "Away For A While", email: "away.for.a.while@alpha.test" });
+    await givePassword(A, id);
+    const session = (await signIn("away.for.a.while@alpha.test", PASSWORD)).body.data.token;
+    const reset = tokenOf((await call<Link>("POST", `/v1/staff/${id}/password-reset`, { token: A.admin.token, body: {} })).body.data.url!);
+    await call("PATCH", `/v1/staff/${id}`, { token: A.admin.token, body: { active: false } });
+    await call("PATCH", `/v1/staff/${id}`, { token: A.admin.token, body: { active: true } });
+    expect((await me(session)).status).toBe(401);
+    expect((await accept(reset, "an old link password")).status).toBe(401);
+    expect((await signIn("away.for.a.while@alpha.test", PASSWORD)).status).toBe(201);
+  });
+
+  it("an Admin's POS PIN session cannot read access or mint invite and reset links", async () => {
+    const station = await call<{ data: { id: string } }>("POST", "/v1/stations", { token: A.admin.token, body: { outlet_id: A.outletId, brand_id: A.brandId, name: "Front" } });
+    const code = await call<{ data: { code: string } }>("POST", `/v1/stations/${station.body.data.id}/pairing-code`, { token: A.admin.token, body: {} });
+    const paired = await call<{ data: { station_token: string } }>("POST", "/v1/stations/pair", { body: { code: code.body.data.code, device_label: "iPad" }, idempotencyKey: null });
+    const pin = (await call<{ data: { session_token: string } }>("POST", "/v1/stations/sessions", { token: paired.body.data.station_token, body: { pin: "111111" } })).body.data.session_token;
+    const id = await newStaff(A, { name: "Pin Target", email: "pin.target@alpha.test" });
+    for (const [method, path] of [["POST", `/v1/staff/${id}/invite`], ["POST", `/v1/staff/${A.admin.id}/password-reset`], ["POST", `/v1/staff/${id}/revoke-access`], ["GET", `/v1/staff/${id}/access`]] as const) {
+      expect((await call(method, path, { token: pin, body: method === "GET" ? undefined : {} })).status, path).toBe(403);
+    }
+    expect((await db.sql`select count(*)::int as n from backoffice_links where staff_id = ${id}`)[0]!.n).toBe(0);
+  });
+
+  it("a password change leaves no hash of its body in the idempotency store", async () => {
+    const id = await newStaff(A, { name: "Idempotency Check", email: "idempotency.check@alpha.test" });
+    await givePassword(A, id);
+    const session = (await signIn("idempotency.check@alpha.test", PASSWORD)).body.data.token;
+    const key = randomUUID();
+    expect((await call("POST", "/v1/auth/password", { token: session, body: { current_password: PASSWORD, new_password: "another new password" }, idempotencyKey: key })).status).toBe(200);
+    expect(await db.sql`select 1 from idempotency_keys where key = ${key}`).toHaveLength(0);
+    await db.sql`delete from pin_attempts`;
   });
 });
 

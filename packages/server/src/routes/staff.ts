@@ -1,8 +1,8 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { RoleSchema } from "@sail/shared";
 import { db } from "../db/client.js";
-import { auditLog, staff } from "../db/schema/index.js";
+import { auditLog, backofficeLinks, backofficeSessions, staff } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
@@ -139,6 +139,11 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
       .where(and(eq(staff.id, id), eq(staff.merchantId, p.merchantId)))
       .returning();
     if (!row) throw AppError.notFound("staff member", id);
+    // Deactivating ends back-office sessions and open sign-in links, so reactivating does not bring them back.
+    if (body.active === false) {
+      await db().update(backofficeSessions).set({ endedAt: new Date() }).where(and(eq(backofficeSessions.staffId, id), isNull(backofficeSessions.endedAt)));
+      await db().update(backofficeLinks).set({ revokedAt: new Date() }).where(and(eq(backofficeLinks.staffId, id), isNull(backofficeLinks.usedAt), isNull(backofficeLinks.revokedAt)));
+    }
     const { pin: _pin, ...auditable } = body;
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "staff.updated", aggregate: { kind: "staff", id }, operationId: "staff.update", payload: { ...auditable, pin_changed: body.pin !== undefined }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
     await recordAudit(p, { action: "staff.update", targetKind: "staff", targetId: id, details: { ...auditable, pin_changed: body.pin !== undefined } });

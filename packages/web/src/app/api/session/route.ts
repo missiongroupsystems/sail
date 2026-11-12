@@ -35,6 +35,10 @@ function errorResponse(e: unknown): Response {
 
 /** POST { kind: "password" | "setup" | "link" | "token", ... } -> sets the httpOnly session cookie. */
 export async function POST(request: Request): Promise<Response> {
+  // A cross-site form can post text/plain without a preflight; only same-origin script sends JSON. Stops login CSRF.
+  if (!request.headers.get("content-type")?.startsWith("application/json")) {
+    return Response.json({ code: "validation", message: "Send the sign-in as JSON" }, { status: 415 });
+  }
   const parsed = SignIn.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return Response.json({ code: "validation", message: "Fill in every field", remedy: "Check the form and try again." }, { status: 400 });
