@@ -393,6 +393,7 @@ describe("MCP adapter", () => {
       "setup.outlet_name": "typed by the first Admin, like outlets.create (Admin only)",
       "setup.name": "the first Admin's own name, like staff.create (Admin only)",
       "setup.time_zone": "checked against the IANA zones",
+      "setup.preset": "checked against the region presets",
       "setup.currency": "checked against ISO 4217",
       "setup.locale": "checked as a BCP 47 locale",
       "agent_sessions.task_id": "the agent runner's own task reference",

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { renderTextAsImageUnifont } from "../lib/print-text.js";
 import { renderPrintJob, type KitchenTicket, type PrintJobPayload, type PrinterProfile, type OrderType } from "@sail/shared";
 import { db, isDryRun, tx } from "../db/client.js";
 import { brands, merchantSettings, orderLines, orders, outlets, printJobs, printers, stations, tables } from "../db/schema/index.js";
@@ -107,7 +108,8 @@ export async function insertJob(input: { merchantId: string; outletId: string; p
   const id = input.jobId ?? randomUUID();
   // Stamp the job ID into the ticket header before rendering, so it is printed.
   const payload: PrintJobPayload = { ...input.payload, data: { ...input.payload.data, header: { ...input.payload.data.header, job_id: id } } } as PrintJobPayload;
-  const rendered = renderPrintJob(payload, profileFor(input.printer));
+  // Text the printer's code page cannot carry is rasterised with the bundled font (lib/print-text.ts), not placeholder boxes.
+  const rendered = renderPrintJob(payload, profileFor(input.printer), { renderTextAsImage: renderTextAsImageUnifont });
   const row = {
     id,
     merchantId: input.merchantId,
