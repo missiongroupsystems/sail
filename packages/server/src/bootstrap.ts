@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import postgres, { type TransactionSql } from "postgres";
-import { isCurrencyCode, PricingRuleSchema, presetSeedRules, REGION_PRESETS, type RegionPreset, type RegionPresetKey, type TaxMode } from "@sail/shared";
+import { currencyExponent, isCurrencyCode, PricingRuleSchema, presetSeedRules, REGION_PRESETS, type RegionPreset, type RegionPresetKey, type TaxMode } from "@sail/shared";
 import { hashSecret, pinLookup } from "./auth/tokens.js";
 import { isCashRoundingIncrement, isValidLocale, isValidTimeZone } from "./lib/locale.js";
 
@@ -39,7 +39,8 @@ export function presetSettings(preset: RegionPreset, input: MerchantSettingsInpu
   if (!currency || !isCurrencyCode(currency)) throw new Error(`A merchant needs an ISO 4217 currency (got ${JSON.stringify(currency)}).`);
   if (!locale || !isValidLocale(locale)) throw new Error(`A merchant needs a BCP 47 locale (got ${JSON.stringify(locale)}).`);
   if (cashRounding != null && !isCashRoundingIncrement(cashRounding)) throw new Error(`Cash rounding ${cashRounding} is not 1, 2 or 5 times a power of ten minor units.`);
-  return { timeZone: input.timeZone, currency, locale, taxMode: input.taxMode ?? preset.tax_mode, cashRounding };
+  const varianceThreshold = preset.cash_variance_threshold ?? 5 * 10 ** currencyExponent(currency);
+  return { timeZone: input.timeZone, currency, locale, taxMode: input.taxMode ?? preset.tax_mode, cashRounding, varianceThreshold };
 }
 
 /**
@@ -48,8 +49,8 @@ export function presetSettings(preset: RegionPreset, input: MerchantSettingsInpu
  */
 export async function applyPreset(tx: TransactionSql, merchantId: string, preset: RegionPreset, input: MerchantSettingsInput): Promise<Record<string, string>> {
   const s = presetSettings(preset, input);
-  await tx`insert into merchant_settings (merchant_id, tax_mode, tax_rounding, cash_rounding_increment, cash_denominations, timezone, currency, locale, business_registration_label, tax_registration_label)
-    values (${merchantId}, ${s.taxMode}, ${preset.tax_rounding}, ${s.cashRounding}, ${preset.cash_denominations}, ${s.timeZone}, ${s.currency}, ${s.locale}, ${preset.business_registration_label}, ${preset.tax_registration_label})`;
+  await tx`insert into merchant_settings (merchant_id, tax_mode, tax_rounding, cash_rounding_increment, cash_denominations, cash_variance_threshold, timezone, currency, locale, business_registration_label, tax_registration_label)
+    values (${merchantId}, ${s.taxMode}, ${preset.tax_rounding}, ${s.cashRounding}, ${preset.cash_denominations}, ${s.varianceThreshold}, ${s.timeZone}, ${s.currency}, ${s.locale}, ${preset.business_registration_label}, ${preset.tax_registration_label})`;
   const ids: Record<string, string> = {};
   for (const c of preset.tax_classes) {
     const id = randomUUID();

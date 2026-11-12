@@ -279,6 +279,33 @@ describe("checks and payments", () => {
     expect(day.body.data.report.orders.count).toBeGreaterThan(3);
   });
 
+  it("closing a shift more than the merchant's variance threshold out needs a reason, enforced by the register", async () => {
+    const m = await call<{ data: { settings: { cash_variance_threshold: number } } }>("GET", "/v1/merchant", { token: cashierPin });
+    expect(m.body.data.settings.cash_variance_threshold).toBe(500); // the sg preset: S$5.00 in cents
+    expect((await call("PATCH", "/v1/merchant/settings", { token: A.admin.token, body: { cash_variance_threshold: -1 } })).status).toBe(400);
+    expect((await call("PATCH", "/v1/merchant/settings", { token: A.admin.token, body: { cash_variance_threshold: 1.5 } })).status).toBe(400);
+    expect((await call("PATCH", "/v1/merchant/settings", { token: A.manager.token, body: { cash_variance_threshold: 300 } })).status).toBe(403);
+    const set = await call<{ data: { settings: { cash_variance_threshold: number } } }>("PATCH", "/v1/merchant/settings", { token: A.admin.token, body: { cash_variance_threshold: 300 } });
+    expect(set.status, JSON.stringify(set.body)).toBe(200);
+    expect(set.body.data.settings.cash_variance_threshold).toBe(300);
+
+    const shift = await call<{ data: { id: string } }>("POST", "/v1/shifts", { token: cashierPin, body: { float_cents: 1000 } });
+    expect(shift.status, JSON.stringify(shift.body)).toBe(201);
+    const over = { counted_cash_cents: 1301 };
+    for (const body of [over, { ...over, dry_run: true }, { ...over, variance_reason: "" }]) {
+      const refused = await call<{ code: string; details: Record<string, number> }>("POST", `/v1/shifts/${shift.body.data.id}/close`, { token: cashierPin, body });
+      expect(refused.status, JSON.stringify(refused.body)).toBe(400);
+      expect(refused.body.details).toMatchObject({ expected: 1000, counted: 1301, variance: 301, variance_threshold: 300 });
+    }
+    const closed = await call<{ data: { variance_cents: number; variance_reason: string } }>("POST", `/v1/shifts/${shift.body.data.id}/close`, { token: cashierPin, body: { ...over, variance_reason: "Float was not counted at open" } });
+    expect(closed.status, JSON.stringify(closed.body)).toBe(200);
+    expect(closed.body.data).toMatchObject({ variance_cents: 301, variance_reason: "Float was not counted at open" });
+    // At the threshold itself no reason is needed.
+    const s2 = await call<{ data: { id: string } }>("POST", "/v1/shifts", { token: cashierPin, body: { float_cents: 1000 } });
+    expect((await call("POST", `/v1/shifts/${s2.body.data.id}/close`, { token: cashierPin, body: { counted_cash_cents: 700 } })).status).toBe(200);
+    await call("PATCH", "/v1/merchant/settings", { token: A.admin.token, body: { cash_variance_threshold: 500 } });
+  });
+
   it("reopen on the same business day reverses payments and recharges; a server cannot reopen", async () => {
     const o = await open(cashierPin, { order_type: "takeaway" });
     const added = await addLines(cashierPin, o.body.data.id, [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }]);

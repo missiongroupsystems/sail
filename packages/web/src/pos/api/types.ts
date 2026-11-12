@@ -52,6 +52,8 @@ export type MerchantSettings = {
   cash_rounding_increment: number | null;
   /** Notes and coins in minor units, largest first; may be empty. */
   cash_denominations: number[];
+  /** Closing a shift more than this many minor units out needs a reason. */
+  cash_variance_threshold: number;
 };
 export type Merchant = { id: string; name: string; settings: MerchantSettings };
 

@@ -2407,7 +2407,7 @@ export interface paths {
         put?: never;
         /**
          * Close a shift
-         * @description With the counted cash. Returns expected vs counted cash including rounding, and the shift's Z figures. Cashier+ for own shift; Manager+ for another's.
+         * @description With the counted cash. Returns expected vs counted cash including rounding, and the shift's Z figures. A variance above the merchant's `cash_variance_threshold` needs `variance_reason`; without one the close is refused (400, `details` has expected, counted, variance and variance_threshold). Cashier+ for own shift; Manager+ for another's.
          */
         post: operations["shifts.close"];
         delete?: never;
@@ -3506,6 +3506,7 @@ export interface operations {
                                 tax_rounding: "per_line" | "per_rate";
                                 cash_rounding_increment: number | null;
                                 cash_denominations: number[];
+                                cash_variance_threshold: number;
                                 business_day_cutoff: string;
                                 timezone: string;
                                 currency: string;
@@ -3642,6 +3643,7 @@ export interface operations {
                     tax_rounding?: "per_line" | "per_rate";
                     cash_rounding_increment?: number | null;
                     cash_denominations?: number[];
+                    cash_variance_threshold?: number;
                     business_day_cutoff?: string;
                     timezone?: string;
                     currency?: string;
@@ -3673,6 +3675,7 @@ export interface operations {
                                 tax_rounding: "per_line" | "per_rate";
                                 cash_rounding_increment: number | null;
                                 cash_denominations: number[];
+                                cash_variance_threshold: number;
                                 business_day_cutoff: string;
                                 timezone: string;
                                 currency: string;

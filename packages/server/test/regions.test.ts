@@ -119,9 +119,9 @@ describe("EU VAT: inclusive prices at two rates, rounded once per rate", () => {
   it("the merchant's settings carry the currency, its exponent, the locale and the cash counter's denominations, readable by the POS", async () => {
     const m = await call<{ data: { settings: Record<string, unknown> } }>("GET", "/v1/merchant", { token: cashierPin });
     expect(m.status).toBe(200);
-    expect(m.body.data.settings).toMatchObject({ currency: "EUR", currency_exponent: 2, locale: "de-DE", timezone: "Europe/Berlin", tax_mode: "inclusive", tax_rounding: "per_rate", cash_denominations: REGION_PRESETS["eu-vat"].cash_denominations, tax_registration_label: "VAT no." });
+    expect(m.body.data.settings).toMatchObject({ currency: "EUR", currency_exponent: 2, locale: "de-DE", timezone: "Europe/Berlin", tax_mode: "inclusive", tax_rounding: "per_rate", cash_denominations: REGION_PRESETS["eu-vat"].cash_denominations, tax_registration_label: "VAT no.", cash_variance_threshold: 500 });
     const jp = await call<{ data: { settings: Record<string, unknown> } }>("GET", "/v1/merchant", { token: JP.admin.token });
-    expect(jp.body.data.settings).toMatchObject({ currency: "JPY", currency_exponent: 0, locale: "ja-JP", cash_denominations: [10_000, 5000, 1000, 500, 100, 50, 10, 5, 1] });
+    expect(jp.body.data.settings).toMatchObject({ currency: "JPY", currency_exponent: 0, locale: "ja-JP", cash_denominations: [10_000, 5000, 1000, 500, 100, 50, 10, 5, 1], cash_variance_threshold: 1000 });
   });
 
   it("a mixed bill reports VAT 10% and VAT 20% separately; split in two, the bills add up per rate", async () => {

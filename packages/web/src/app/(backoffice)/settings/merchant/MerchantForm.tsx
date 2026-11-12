@@ -37,6 +37,8 @@ const Schema = z.object({
   tax_rounding: z.enum(["per_line", "per_rate"]),
   cash_rounding_increment: z.string(),
   cash_denominations: z.array(z.number().int().positive()),
+  /** Money text in the merchant's locale; parsed to minor units on save. */
+  cash_variance_threshold: z.string(),
   business_day_cutoff: z.string().regex(TIME_RE, "Use 24-hour time, like 04:00"),
   locale: z.string().trim().refine(isLocale, "Enter a language tag, like en-GB or de-DE"),
   business_registration_label: z.string().trim().min(1, "Enter a label"),
@@ -45,13 +47,14 @@ const Schema = z.object({
 });
 type Values = z.infer<typeof Schema>;
 
-function toValues(m: Merchant): Values {
+function toValues(m: Merchant, moneyText: LocaleFormat["moneyText"]): Values {
   return {
     name: m.name,
     tax_mode: m.settings.tax_mode,
     tax_rounding: m.settings.tax_rounding,
     cash_rounding_increment: m.settings.cash_rounding_increment ? String(m.settings.cash_rounding_increment) : "off",
     cash_denominations: m.settings.cash_denominations,
+    cash_variance_threshold: moneyText(m.settings.cash_variance_threshold),
     business_day_cutoff: m.settings.business_day_cutoff,
     locale: m.settings.locale,
     business_registration_label: m.settings.business_registration_label,
@@ -60,13 +63,14 @@ function toValues(m: Merchant): Values {
   };
 }
 
-function toPatch(v: Values): MerchantSettingsPatch {
+function toPatch(v: Values, varianceThreshold: number): MerchantSettingsPatch {
   return {
     name: v.name.trim(),
     tax_mode: v.tax_mode,
     tax_rounding: v.tax_rounding,
     cash_rounding_increment: v.cash_rounding_increment === "off" ? null : Number(v.cash_rounding_increment),
     cash_denominations: [...v.cash_denominations].sort((a, b) => b - a),
+    cash_variance_threshold: varianceThreshold,
     business_day_cutoff: v.business_day_cutoff,
     locale: v.locale.trim(),
     business_registration_label: v.business_registration_label.trim(),
@@ -81,12 +85,12 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
   const router = useRouter();
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const merchant = useQuery({ queryKey: keys.merchant, queryFn: () => req(api.GET("/v1/merchant")).then((r) => r.data), initialData: initialMerchant });
-  const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: toValues(merchant.data) });
+  const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: toValues(merchant.data, moneyText) });
   const reset = form.reset;
-  useEffect(() => reset(toValues(merchant.data)), [merchant.data, reset]);
+  useEffect(() => reset(toValues(merchant.data, moneyText)), [merchant.data, moneyText, reset]);
 
-  const save = useMutation<Merchant, ApiError, Values>({
-    mutationFn: async (v) => (await req(api.PATCH("/v1/merchant/settings", { body: toPatch(v) }))).data,
+  const save = useMutation<Merchant, ApiError, { values: Values; varianceThreshold: number }>({
+    mutationFn: async ({ values, varianceThreshold }) => (await req(api.PATCH("/v1/merchant/settings", { body: toPatch(values, varianceThreshold) }))).data,
     onSuccess: async (data) => {
       qc.setQueryData(keys.merchant, data);
       setSavedAt(new Date());
@@ -95,7 +99,18 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
   });
 
   return (
-    <form noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex max-w-[640px] flex-col gap-10">
+    <form
+      noValidate
+      onSubmit={form.handleSubmit((v) => {
+        const varianceThreshold = parseMoney(v.cash_variance_threshold);
+        if (typeof varianceThreshold !== "number" || varianceThreshold < 0) {
+          form.setError("cash_variance_threshold", { message: "Enter an amount, like " + moneyText(500) });
+          return;
+        }
+        save.mutate({ values: v, varianceThreshold });
+      })}
+      className="flex max-w-[640px] flex-col gap-10"
+    >
       <FormSection title="Merchant">
         <RhfTextField control={form.control} name="name" label="Name" />
       </FormSection>
@@ -157,6 +172,14 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
               errorMessage={fieldState.error?.message}
             />
           )}
+        />
+        <RhfTextField
+          control={form.control}
+          name="cash_variance_threshold"
+          label="Cash variance needing a reason"
+          numeric
+          description="Closing a shift with the drawer more than this over or short asks for a reason."
+          className="sm:max-w-[240px]"
         />
         <RhfTextField
           control={form.control}

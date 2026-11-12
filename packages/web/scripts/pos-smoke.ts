@@ -465,7 +465,7 @@ if (refundedGrant) {
 
 // 25. Shift: open with a float, close with a blind count. Expected cash = float + cash payments + rounding − cash refunds, from the register.
 const openShifts = await step("shifts.list open (before)", () => reg.listShifts(api, station.outlet_id, { status: "open" }), (ss) => `${ss.length} open`);
-for (const s of openShifts ?? []) if (s.station_id === station.id) await step("shifts.close (stale open shift)", () => reg.closeShift(api, s.id, { counted_cash_cents: s.float_cents }));
+for (const s of openShifts ?? []) if (s.station_id === station.id) await step("shifts.close (stale open shift)", () => reg.closeShift(api, s.id, { counted_cash_cents: s.float_cents, variance_reason: "Smoke: closing a shift left open" }));
 const shift = await step("shifts.open float $200 by denomination", () => reg.openShift(api, { float_cents: 20000, float_counts: { "5000": 2, "1000": 10 } }), (s) => `${s.id.slice(0, 8)} station ${s.station_id?.slice(0, 8)} float ${s.float_cents} ${s.business_date}`);
 if (shift) {
   check("shift station inferred from the PIN session", shift.station_id === station.id);
@@ -475,6 +475,7 @@ if (shift) {
   const ta2Fired = await reg.fireOrder(api, ta2.data.id, {}, { expectedVersion: ta2Lines.data.version });
   const ta2Check = ta2Fired.data.checks[0]!;
   const ta2Paid = await step("payments.record cash (shift sale)", () => reg.recordPayment(api, ta2Check.id, { payment_id: idempotencyKey(), tender_type_id: cashTender.id, amount: ta2Check.balance, tendered: 1000 }, { expectedVersion: ta2Fired.data.version }), (r) => `amount ${r.payment.amount}, rounding ${r.payment.rounding_cents}, change ${r.payment.change_due}, order ${r.data.status}`);
+  await expectError("shifts.close an empty drawer without a variance reason", () => reg.closeShift(api, shift.id, { counted_cash_cents: 0 }), "validation");
   const dryClose = await step("shifts.close dry_run (count before expected)", () => reg.closeShift(api, shift.id, { counted_cash_cents: 20000, dry_run: true }), (r) => `expected ${r.data.report.cash.expected} = float ${r.data.report.cash.float} + cash ${r.data.report.cash.cash_payments} + rounding ${r.data.report.cash.rounding} − refunds ${r.data.report.cash.refunds}; variance ${r.data.report.cash.variance}`);
   if (dryClose && ta2Paid) {
     const c = dryClose.data.report.cash;

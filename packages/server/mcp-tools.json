@@ -5285,7 +5285,7 @@
       "emits": [
         "shift.closed"
       ],
-      "description": "Close a shift\n\nWith the counted cash. Returns expected vs counted cash including rounding, and the shift's Z figures. Cashier+ for own shift; Manager+ for another's.\n\nRisk tier T2. Needs role cashier or above. Emits shift.closed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "description": "Close a shift\n\nWith the counted cash. Returns expected vs counted cash including rounding, and the shift's Z figures. A variance above the merchant's `cash_variance_threshold` needs `variance_reason`; without one the close is refused (400, `details` has expected, counted, variance and variance_threshold). Cashier+ for own shift; Manager+ for another's.\n\nRisk tier T2. Needs role cashier or above. Emits shift.closed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
         "properties": {

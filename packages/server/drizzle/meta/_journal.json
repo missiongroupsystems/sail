@@ -162,6 +162,20 @@
       "when": 1794496114250,
       "tag": "0022_net_sales",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794496850544,
+      "tag": "0023_cash_variance_threshold",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794496855732,
+      "tag": "0024_cash_variance_threshold_required",
+      "breakpoints": true
     }
   ]
 }

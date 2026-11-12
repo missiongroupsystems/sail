@@ -21,6 +21,8 @@ export const merchantSettings = pgTable("merchant_settings", {
   cashRoundingIncrement: integer("cash_rounding_increment"),
   /** Notes and coins the POS cash counter offers, largest first, in minor units. Empty = enter the total only. */
   cashDenominations: integer("cash_denominations").array().notNull().default([]),
+  /** Closing a shift more than this many minor units out needs a reason (design 4.9). */
+  cashVarianceThreshold: integer("cash_variance_threshold").notNull(),
   /** HH:MM local time at which the business day rolls over. */
   businessDayCutoff: text("business_day_cutoff").notNull().default("04:00"),
   /** IANA time zone; required, never defaulted. */

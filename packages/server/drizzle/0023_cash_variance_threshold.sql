@@ -1,0 +1,1 @@
+ALTER TABLE "merchant_settings" ADD COLUMN "cash_variance_threshold" integer DEFAULT 500 NOT NULL;

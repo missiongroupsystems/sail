@@ -956,6 +956,9 @@
                                 "exclusiveMinimum": 0
                               }
                             },
+                            "cash_variance_threshold": {
+                              "type": "integer"
+                            },
                             "business_day_cutoff": {
                               "type": "string"
                             },
@@ -995,6 +998,7 @@
                             "tax_rounding",
                             "cash_rounding_increment",
                             "cash_denominations",
+                            "cash_variance_threshold",
                             "business_day_cutoff",
                             "timezone",
                             "currency",
@@ -1357,6 +1361,9 @@
                       "exclusiveMinimum": 0
                     }
                   },
+                  "cash_variance_threshold": {
+                    "type": "integer"
+                  },
                   "business_day_cutoff": {
                     "type": "string"
                   },
@@ -1443,6 +1450,9 @@
                                 "exclusiveMinimum": 0
                               }
                             },
+                            "cash_variance_threshold": {
+                              "type": "integer"
+                            },
                             "business_day_cutoff": {
                               "type": "string"
                             },
@@ -1482,6 +1492,7 @@
                             "tax_rounding",
                             "cash_rounding_increment",
                             "cash_denominations",
+                            "cash_variance_threshold",
                             "business_day_cutoff",
                             "timezone",
                             "currency",
@@ -66051,7 +66062,7 @@
           "shifts"
         ],
         "operationId": "shifts.close",
-        "description": "With the counted cash. Returns expected vs counted cash including rounding, and the shift's Z figures. Cashier+ for own shift; Manager+ for another's.",
+        "description": "With the counted cash. Returns expected vs counted cash including rounding, and the shift's Z figures. A variance above the merchant's `cash_variance_threshold` needs `variance_reason`; without one the close is refused (400, `details` has expected, counted, variance and variance_threshold). Cashier+ for own shift; Manager+ for another's.",
         "summary": "Close a shift",
         "x-sail": {
           "op": "shifts.close",

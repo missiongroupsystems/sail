@@ -1,7 +1,7 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import type { TaxBreakdown } from "@sail/shared";
 import { db, tx } from "../db/client.js";
-import { businessDayCloses, orderAdjustments, orderLines, orders, payments, shifts } from "../db/schema/index.js";
+import { businessDayCloses, merchantSettings, orderAdjustments, orderLines, orders, payments, shifts } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { Principal } from "../auth/principal.js";
 
@@ -126,6 +126,14 @@ export async function closeShift(principal: Principal, shiftId: string, input: {
   if (shift.status === "closed") throw AppError.state("The shift is already closed", []);
   assertCountsMatch(input.countedCounts, input.countedCashCents, "counted cash");
   const report = await zReport({ outletId: shift.outletId, businessDate: shift.businessDate, stationId: shift.stationId, shiftId: shift.id }, { float: shift.floatCents, counted: input.countedCashCents });
+  const [settings] = await db().select({ threshold: merchantSettings.cashVarianceThreshold }).from(merchantSettings).where(eq(merchantSettings.merchantId, shift.merchantId)).limit(1);
+  if (!settings) throw AppError.notFound("merchant");
+  const variance = report.cash.variance ?? 0;
+  if (Math.abs(variance) > settings.threshold && !input.varianceReason?.trim())
+    throw AppError.validation(`The drawer is ${Math.abs(variance)} minor units ${variance < 0 ? "short" : "over"}, more than the ${settings.threshold} allowed without a reason`, {
+      remedy: "Count again, or close with a variance reason.",
+      details: { expected: report.cash.expected, counted: input.countedCashCents, variance, variance_threshold: settings.threshold },
+    });
   const now = new Date();
   const [row] = await db()
     .update(shifts)

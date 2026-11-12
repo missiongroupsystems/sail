@@ -232,7 +232,7 @@ describe("refunds", () => {
     // The second laksa can still be refunded, the third cannot.
     expect((await call<Body>("POST", `/v1/checks/${check.id}/refunds/quote`, { token: managerPin, body: { request: { kind: "lines", lines: [{ line_id: laksaLine, quantity: 2 }] } } })).status).toBe(422);
     // Shift close: expected cash = float + cash payments + rounding − cash refunds.
-    const closed = await call<{ data: { report: { cash: { float: number; cash_payments: number; rounding: number; refunds: number; expected: number }; refunds: { count: number; amount: number } } } }>("POST", `/v1/shifts/${shift.body.data.id}/close`, { token: cashierPin, body: { counted_cash_cents: 0 } });
+    const closed = await call<{ data: { report: { cash: { float: number; cash_payments: number; rounding: number; refunds: number; expected: number }; refunds: { count: number; amount: number } } } }>("POST", `/v1/shifts/${shift.body.data.id}/close`, { token: cashierPin, body: { counted_cash_cents: 0, variance_reason: "Drawer emptied before the count" } });
     expect(closed.status, JSON.stringify(closed.body)).toBe(200);
     const cash = closed.body.data.report.cash;
     expect(cash.refunds).toBe(cashOut);

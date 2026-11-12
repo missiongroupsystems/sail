@@ -13,8 +13,9 @@ async function setTheme(page: Page, theme: "day" | "service") {
 
 test.use({ viewport: { width: 1180, height: 820 } });
 
-test("POS: pair, sign in, shift, order, split, cash and card, refund with a manager, close the shift", async ({ page }) => {
+test("POS: pair, sign in, shift, order, split, cash and card, refund with a manager, close the shift", async ({ page, watch }) => {
   test.setTimeout(600_000);
+  watch.allow({ status: 400, url: /\/v1\/shifts\/[^/]+\/close$/, why: "the count is short on purpose: the register refuses the close until a variance reason is given" });
   await test.step("pair the iPad and sign in with a cashier PIN", () => pairAndSignIn(page, CASHIER_PIN));
 
   await test.step("open the shift with a $200 float counted in notes", async () => {

@@ -7,7 +7,7 @@ import { toApiError } from "@/lib/api";
 import { closeShift, openShift } from "../../api/register";
 import type { Shift, ZReport } from "../../api/types";
 import { usePos } from "../../components/PosContext";
-import { posKeys, useLateJobs, useOpenOrders, useOpenServiceRequests, usePendingRounds, useShifts } from "../../hooks/queries";
+import { posKeys, useLateJobs, useMerchant, useOpenOrders, useOpenServiceRequests, usePendingRounds, useShifts } from "../../hooks/queries";
 import { useApi } from "../../hooks/useApi";
 import { useCashDenominations } from "../../lib/cash";
 import { roleAtLeast } from "../../hooks/useOrderActions";
@@ -15,10 +15,13 @@ import { useNavStore } from "../../state/nav";
 import { useUiStore } from "../../state/ui";
 
 const VARIANCE_REASONS = ["Change given wrongly", "Cash paid out for a purchase", "Float was not counted at open", "Cash left in the drawer from the last shift"];
-/** Above this the close asks for a reason (design 4.9: the outlet's threshold; $5 until it is configurable). */
-const VARIANCE_THRESHOLD_CENTS = 500;
+/** What the register sends when a close needs a variance reason (shifts.close, design 4.9). */
+type VarianceRefusal = { expected: number; counted: number; variance: number; variance_threshold: number };
+function varianceRefusal(details: Record<string, unknown> | undefined): VarianceRefusal | null {
+  return details && typeof details.variance_threshold === "number" ? (details as VarianceRefusal) : null;
+}
 
-type Phase = { kind: "idle" } | { kind: "checklist" } | { kind: "count" } | { kind: "reason"; report: ZReport } | { kind: "result"; shift: Shift; report: ZReport };
+type Phase = { kind: "idle" } | { kind: "checklist" } | { kind: "count" } | { kind: "reason"; cash: VarianceRefusal } | { kind: "result"; shift: Shift; report: ZReport };
 
 /** Open shift → float; Close shift → checklist, blind count, result with the register's expected, counted and variance (design 4.9). */
 export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
@@ -26,6 +29,7 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
   const api = useApi();
   const qc = useQueryClient();
   const { station, staff, offline } = usePos();
+  const varianceThreshold = useMerchant().data?.settings.cash_variance_threshold;
   const notify = useUiStore((s) => s.notify);
   const go = useNavStore((s) => s.go);
   const open = useShifts(station.outlet_id, "open");
@@ -113,21 +117,18 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
     setBusy(true);
     try {
       const counted = { counted_cash_cents: total, counted_counts: mode === "counts" ? counts : null };
-      if (!varianceReason) {
-        // Count first, then the register's expected figure (a blind count). A dry run tells us the variance before anything closes.
-        const preview = await closeShift(api, mine.id, { ...counted, dry_run: true });
-        const variance = preview.data.report.cash.variance ?? 0;
-        if (Math.abs(variance) > VARIANCE_THRESHOLD_CENTS) {
-          setPhase({ kind: "reason", report: preview.data.report });
-          return;
-        }
-      }
+      // Count first, then the register's expected figure (a blind count). Above the merchant's threshold the register refuses the close without a reason.
       const res = await closeShift(api, mine.id, { ...counted, variance_reason: varianceReason });
       setPhase({ kind: "result", shift: res.data, report: res.data.report });
       refresh();
       void qc.invalidateQueries({ queryKey: posKeys.orders(station.outlet_id) });
     } catch (e) {
       const err = toApiError(e);
+      const refusal = err.code === "validation" && !varianceReason ? varianceRefusal(err.details) : null;
+      if (refusal) {
+        setPhase({ kind: "reason", cash: refusal });
+        return;
+      }
       notify({ text: err.message, remedy: err.remedy ?? null, tone: "alert" }, 8000);
     } finally {
       setBusy(false);
@@ -161,7 +162,7 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
           <Row label="Cash refunds" cents={-c.refunds} />
           <Row label="Expected" cents={c.expected} strong />
           <Row label="Counted" cents={c.counted ?? 0} strong />
-          <Row label="Variance" cents={c.variance ?? 0} strong tone={(c.variance ?? 0) === 0 ? "paid" : Math.abs(c.variance ?? 0) > VARIANCE_THRESHOLD_CENTS ? "alert" : undefined} />
+          <Row label="Variance" cents={c.variance ?? 0} strong tone={(c.variance ?? 0) === 0 ? "paid" : varianceThreshold !== undefined && Math.abs(c.variance ?? 0) > varianceThreshold ? "alert" : undefined} />
           {phase.shift.variance_reason ? <p className="pt-2 text-caption text-ink-2">Reason: {phase.shift.variance_reason}</p> : null}
         </dl>
         <div className="flex gap-2">
@@ -178,13 +179,13 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
 
   /* ---- Variance reason ---- */
   if (phase.kind === "reason") {
-    const c = phase.report.cash;
+    const c = phase.cash;
     return (
       <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-8 py-8">
         <div>
-          <h1 className="text-title text-ink">Variance {money(c.variance ?? 0)}</h1>
+          <h1 className="text-title text-ink">Variance {money(c.variance)}</h1>
           <p className="text-body text-ink-2">
-            The register expected {money(c.expected)} and you counted {money(c.counted ?? total)}. Above {money(VARIANCE_THRESHOLD_CENTS)} a reason is recorded with the close.
+            The register expected {money(c.expected)} and you counted {money(c.counted)}. Above {money(c.variance_threshold)} a reason is recorded with the close.
           </p>
         </div>
         <ReasonPicker reasons={VARIANCE_REASONS.map((r) => ({ id: r, name: r }))} isDisabled={busy} onPick={(r) => void close(r.text)} />

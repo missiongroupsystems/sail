@@ -1,0 +1,1 @@
+ALTER TABLE "merchant_settings" ALTER COLUMN "cash_variance_threshold" DROP DEFAULT;

@@ -20,6 +20,8 @@ export const MerchantSettingsSchema = z.object({
   cash_rounding_increment: z.number().int().nullable(),
   /** Notes and coins for the POS cash counter, largest first, in minor units. */
   cash_denominations: z.array(z.number().int().positive()),
+  /** Closing a shift more than this many minor units out needs a variance reason. */
+  cash_variance_threshold: z.number().int(),
   business_day_cutoff: z.string(),
   timezone: z.string(),
   /** ISO 4217. Fixed once the merchant exists. */
@@ -149,6 +151,7 @@ const toSettings = (s: typeof merchantSettings.$inferSelect) => ({
   tax_rounding: s.taxRounding,
   cash_rounding_increment: s.cashRoundingIncrement,
   cash_denominations: s.cashDenominations,
+  cash_variance_threshold: s.cashVarianceThreshold,
   business_day_cutoff: s.businessDayCutoff,
   timezone: s.timezone,
   currency: s.currency,
@@ -186,6 +189,7 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
       if (!current) throw AppError.notFound("merchant");
       if (patch.cash_rounding_increment != null && !isCashRoundingIncrement(patch.cash_rounding_increment)) throw AppError.validation("cash_rounding_increment must be 1, 2 or 5 times a power of ten, in minor units of the currency, or null to turn rounding off", { remedy: "For example 5 rounds CHF to 0.05; 100 rounds SEK to 1 krona." });
       if (patch.cash_denominations != null && !validDenominations(patch.cash_denominations)) throw AppError.validation("cash_denominations must be distinct positive amounts in minor units, largest first", { remedy: "For example [5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5]." });
+      if (patch.cash_variance_threshold != null && patch.cash_variance_threshold < 0) throw AppError.validation("cash_variance_threshold must be zero or more, in minor units of the currency", { remedy: "For example 500 asks for a reason when the drawer is more than 5.00 out in a 2-decimal currency." });
       if (patch.business_day_cutoff != null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(patch.business_day_cutoff)) throw AppError.validation("business_day_cutoff must be HH:MM (24-hour)", { remedy: "For example 04:00." });
       if (patch.timezone != null && !isValidTimeZone(patch.timezone)) throw AppError.validation(`Unknown time zone ${patch.timezone}`, { remedy: "Use an IANA zone such as Europe/Berlin." });
       if (patch.locale != null && !isValidLocale(patch.locale)) throw AppError.validation(`Unknown locale ${patch.locale}`, { remedy: "Use a BCP 47 tag such as en-GB or de-DE." });
@@ -200,6 +204,7 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
           ...(settings.tax_rounding !== undefined && { taxRounding: settings.tax_rounding }),
           ...(settings.cash_rounding_increment !== undefined && { cashRoundingIncrement: settings.cash_rounding_increment }),
           ...(settings.cash_denominations !== undefined && { cashDenominations: settings.cash_denominations }),
+          ...(settings.cash_variance_threshold !== undefined && { cashVarianceThreshold: settings.cash_variance_threshold }),
           ...(settings.business_day_cutoff !== undefined && { businessDayCutoff: settings.business_day_cutoff }),
           ...(settings.timezone !== undefined && { timezone: settings.timezone }),
           ...(settings.locale !== undefined && { locale: settings.locale }),
