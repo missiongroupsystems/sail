@@ -39,7 +39,7 @@ test("first run: set up the business, sign in, pair the POS and send an order", 
 
   let stationId = "";
   let code = "";
-  await test.step("the Admin adds a dish, a table and a PIN, and issues a pairing code", async () => {
+  await test.step("the Admin adds a dish, a table and a PIN, opens a shift, and issues a pairing code", async () => {
     const token = await signInToken(SETUP_API, ADMIN.email, ADMIN.password);
     const call = async <T>(method: string, path: string, body?: unknown): Promise<T> => {
       const res = await fetch(`${SETUP_API}${path}`, { method, headers: { "content-type": "application/json", "idempotency-key": randomUUID(), authorization: `Bearer ${token}` }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -62,6 +62,8 @@ test("first run: set up the business, sign in, pair the POS and send an order", 
     await call("POST", "/v1/areas", { id: area, outlet_id: outlet!.id, name: "Inside" });
     await call("POST", "/v1/tables", { outlet_id: outlet!.id, area_id: area, name: "1" });
     code = (await call<{ data: { code: string } }>("POST", `/v1/stations/${stationId}/pairing-code`, {})).data.code;
+    // Cash is refused until a shift is open; the checklist says so until one has been.
+    await call("POST", "/v1/shifts", { outlet_id: outlet!.id, station_id: null, float_cents: 0 });
   });
 
   await test.step("pair the iPad and sign in with the Admin's PIN", async () => {

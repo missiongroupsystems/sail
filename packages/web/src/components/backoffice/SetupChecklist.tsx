@@ -13,7 +13,7 @@ type Step = { id: string; title: string; hint: string; href: string; action: str
 /**
  * The steps between first-run setup and a first order, each ticked from what the register already holds: products on
  * a menu in a section, the menu linked to the POS, tables, the Admin's own POS PIN, a paired iPad, and a destination
- * on any kitchen display. Shown to an Admin on Today until every step is done, then gone.
+ * on any kitchen display, and a first shift, since cash is refused until one is open. Shown to an Admin on Today until every step is done, then gone.
  */
 export function SetupChecklist({ outletId, tableCount }: { outletId: string; tableCount: number | null }) {
   const { me } = useSession();
@@ -25,9 +25,10 @@ export function SetupChecklist({ outletId, tableCount }: { outletId: string; tab
   });
   const links = useQuery({ queryKey: ["setup", "links", outletId], queryFn: () => req(api.GET("/v1/channel-links", { params: { query: { outlet_id: outletId, channel: "pos" } } })).then((r) => r.data), enabled });
   const staff = useQuery({ queryKey: ["setup", "staff"], queryFn: () => req(api.GET("/v1/staff")).then((r) => r.data), enabled });
+  const shifts = useQuery({ queryKey: ["setup", "shifts", outletId], queryFn: () => req(api.GET("/v1/outlets/{id}/shifts", { params: { path: { id: outletId } } })).then((r) => r.data), enabled });
   const stations = useQuery({ queryKey: ["setup", "stations", outletId], queryFn: () => req(api.GET("/v1/outlets/{id}/stations", { params: { path: { id: outletId } } })).then((r) => r.data.filter((s) => !s.archived)), enabled });
 
-  const loading = [products, menus, links, staff, stations].some((q) => q.isPending) || menuDetails.some((q) => q.isPending) || tableCount === null;
+  const loading = [products, menus, links, staff, stations, shifts].some((q) => q.isPending) || menuDetails.some((q) => q.isPending) || tableCount === null;
   if (!enabled || loading) return null;
 
   const onMenu = menuDetails.some((q) => q.data?.sections.some((s) => s.items.length > 0));
@@ -39,6 +40,7 @@ export function SetupChecklist({ outletId, tableCount }: { outletId: string; tab
     { id: "tables", title: "Add your tables", hint: "Dine-in orders start from a table on the floor plan.", href: "/floor", action: "Floor & QR", done: (tableCount ?? 0) > 0 },
     { id: "pin", title: "Set your own POS PIN", hint: "You sign in on the iPad with a PIN, not your password.", href: "/team", action: "Team", done: Boolean(staff.data?.find((s) => s.id === me.id)?.has_pin) },
     { id: "pair", title: "Pair an iPad as a POS", hint: "On the station, choose Pair an iPad, then open /pos on the iPad and enter the code.", href: "/settings/stations", action: "Stations", done: (stations.data ?? []).some((s) => s.kind === "pos" && s.paired) },
+    { id: "shift", title: "Open a shift before taking cash", hint: "Cash goes into a drawer that is counted when the shift closes, so the register refuses cash until a shift is open. On the POS, go to Shift and open one with its float. Card payments need no shift.", href: "/pos", action: "POS", done: (shifts.data ?? []).length > 0 },
     ...(displays.length
       ? [{ id: "kds", title: "Choose what each kitchen display shows", hint: "A kitchen display shows nothing until a display destination is ticked on its station.", href: "/settings/stations", action: "Stations", done: displays.every((s) => s.display_destination_ids.length > 0) }]
       : []),
