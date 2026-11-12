@@ -262,6 +262,13 @@ describe("invitations and reset links", () => {
     }
   });
 
+  it("a PIN someone else at the business uses is refused with a message that says so", async () => {
+    await newStaff(A, { name: "Pin Owner", pin: "135791" });
+    const clash = await call<{ code: string; message: string; remedy: string }>("POST", "/v1/staff", { token: A.admin.token, body: { name: "Pin Copier", role: "server", pin: "135791" } });
+    expect(clash.status).toBe(409);
+    expect(clash.body).toMatchObject({ code: "state_conflict", message: "Someone at this business already uses that PIN", remedy: "Choose a different six-digit PIN." });
+  });
+
   it("the server refuses to start in production without WEB_APP_URL", () => {
     const env = { NODE_ENV: "production", DATABASE_URL: "postgres://localhost:5432/sail", ...TEST_SECRETS };
     expect(() => loadConfig(env)).toThrow(/WEB_APP_URL is required in production/);

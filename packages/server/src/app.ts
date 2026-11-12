@@ -47,6 +47,8 @@ export function buildApp() {
     // Drizzle wraps driver errors (DrizzleQueryError.cause); postgres.js throws PostgresError directly.
     const cause = (err as { cause?: { code?: string } }).cause;
     const pg = (cause && typeof cause.code === "string" ? cause : err) as { code?: string; constraint_name?: string; detail?: string; message?: string };
+    // A PIN is how the register knows who is signing in, so two people at a merchant cannot share one.
+    if (pg.code === "23505" && pg.constraint_name === "staff_merchant_pin_uq") return c.json({ code: "state_conflict", message: "Someone at this business already uses that PIN", remedy: "Choose a different six-digit PIN.", details: { constraint: pg.constraint_name, field: "pin" } }, 409);
     if (pg.code === "23505") return c.json({ code: "state_conflict", message: "A record with the same unique value already exists", remedy: "Use a different value or update the existing record.", details: { constraint: pg.constraint_name } }, 409);
     if (pg.code === "23503") return c.json({ code: "validation", message: "A referenced record does not exist", details: { constraint: pg.constraint_name, detail: pg.detail } }, 400);
     if (pg.code === "23514" || pg.code === "P0001") return c.json({ code: "invariant_violation", message: pg.message ?? "An invariant was violated", details: { constraint: pg.constraint_name } }, 422);
