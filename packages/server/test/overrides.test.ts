@@ -121,13 +121,16 @@ describe("removing a discount needs the rule's own role", () => {
 });
 
 describe("a manager approval belongs to the staff session that asked for it", () => {
-  it("another staff member, or the same person signed in on another station, cannot spend it", async () => {
+  it("another staff member, or the same person in another sign-in, cannot spend it", async () => {
     const s = await h.paidOrder(w.pins.cashier, [{ product_id: w.ids.wine }]);
     const check = s.checks[0]!;
     const g = await grant(w.pins.cashier, "refunds.create", "check", check.id, "222222", { request: { kind: "full" }, total: await quoted(check.id, { kind: "full" }) });
     expect(g.status, JSON.stringify(g.body)).toBe(201);
     expect((await refund(w.pins.cashierStation2, check.id, { kind: "full" }, g.body.data.override_id)).body).toMatchObject({ message: SOMEONE_ELSE });
     expect((await refund(w.pins.server, check.id, { kind: "full" }, g.body.data.override_id)).body).toMatchObject({ message: SOMEONE_ELSE });
+    // The same person signed in again at the same station is a different session.
+    const again = await call<{ data: { session_token: string } }>("POST", "/v1/stations/sessions", { token: w.stationToken, body: { pin: "333333" } });
+    expect((await refund(again.body.data.session_token, check.id, { kind: "full" }, g.body.data.override_id)).body).toMatchObject({ message: SOMEONE_ELSE });
     expect((await refund(w.pins.cashier, check.id, { kind: "full" }, g.body.data.override_id)).status).toBe(201);
   });
 
