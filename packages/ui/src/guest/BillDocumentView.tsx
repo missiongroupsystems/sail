@@ -17,6 +17,8 @@ export type BillDocumentLike = {
   header: { outlet_name: string; brand_name: string; order_no: string; table_name?: string; printed_at: string; server_name?: string; pax?: number; time_zone: string; locale: string };
   /** ISO 4217 code every amount is in. */
   currency: string;
+  /** Decimal places of the currency's minor unit, from the register. */
+  currency_exponent: number;
   check_label: string;
   lines: { quantity: number; name: string; unit_price: number; amount: number; modifiers: { name: string; price: number }[]; seat_no?: number; share?: string }[];
   adjustments: { name: string; amount: number; kind: "fee" | "discount" }[];

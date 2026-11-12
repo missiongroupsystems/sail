@@ -4,7 +4,7 @@
  * mirror the server's own TypeScript types (services/menu.ts, services/guest.ts,
  * shared/escpos BillDocument). Amounts are integer cents and are only displayed.
  */
-import type { BillDocumentLike, LocaleSettingsSource } from "@sail/ui";
+import type { BillDocumentLike } from "@sail/ui";
 
 export type OrderType = "dine_in" | "takeaway" | "pickup" | "delivery";
 export type OrderStatus = "open" | "fired" | "ready" | "out_for_delivery" | "completed" | "cancelled";
@@ -54,8 +54,8 @@ export type GuestSession = {
   hold_orders: boolean;
   service_requests: string[];
   expires_at: string;
-  /** The merchant's currency, locale and zone, once the register sends them with the session. */
-  settings?: LocaleSettingsSource;
+  /** The merchant's currency (with its exponent), locale and zone. */
+  settings: { currency: string; currency_exponent: number; locale: string; timezone: string };
 };
 
 export type RoundStatus = "pending" | "accepted" | "fired" | "rejected";

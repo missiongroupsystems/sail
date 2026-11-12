@@ -20,6 +20,7 @@ import { orderTaxSettings } from "../services/tax.js";
 import { createKitchenJobs, insertJob } from "../services/printing.js";
 import { releaseDailyCap } from "./catalogue.js";
 import { registerFloorExtra } from "./orders.js";
+import { LocaleSettingsSchema, localeSettingsFor } from "./org.js";
 import { businessDayInputs, printLocale } from "../services/business-day.js";
 import { businessDateFor } from "../lib/time.js";
 import { asSystem, bindSessionToTableOrder, checkLimit, createGuestSession, enforceLimit, guestOrderView, openOrderIdForTable, qrSheetPdf, RATE, recordHit, revokeSessionsForOrder, rotateTableToken, toRequest, toRound } from "../services/guest.js";
@@ -68,15 +69,15 @@ function guestOnly(p: Principal): Extract<Principal, { type: "guest" }> {
 }
 
 export function guestRoutes(app: OpenAPIHono<AppEnv>) {
-  defineOp(app, { op: "guest_sessions.create", method: "post", path: "/v1/guest/sessions", tags: ["guest"], request: { body: jsonBody(z.object({ token: z.string().min(10).max(200), device_id: z.string().min(8).max(120), guest_name: z.string().max(40).optional() })) }, responses: { 201: jsonResponse(dataResponse(z.object({ guest_token: z.string(), session_id: z.string(), table: z.object({ id: z.string(), name: z.string() }), outlet: z.object({ id: z.string(), name: z.string() }), brand_id: z.string(), channel_link_id: z.string(), order_open: z.boolean(), can_order: z.boolean(), hold_orders: z.boolean(), service_requests: z.array(z.string()), expires_at: z.string() }))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "guest_sessions.create", method: "post", path: "/v1/guest/sessions", tags: ["guest"], request: { body: jsonBody(z.object({ token: z.string().min(10).max(200), device_id: z.string().min(8).max(120), guest_name: z.string().max(40).optional() })) }, responses: { 201: jsonResponse(dataResponse(z.object({ guest_token: z.string(), session_id: z.string(), table: z.object({ id: z.string(), name: z.string() }), outlet: z.object({ id: z.string(), name: z.string() }), brand_id: z.string(), channel_link_id: z.string(), order_open: z.boolean(), can_order: z.boolean(), hold_orders: z.boolean(), service_requests: z.array(z.string()), expires_at: z.string(), settings: LocaleSettingsSchema }))), ...errorResponses } }, async (c) => {
     const b = c.req.valid("json");
     const result = await withTransaction(async (t) => {
       const r = await createGuestSession({ token: b.token, deviceId: b.device_id, guestName: b.guest_name ?? null });
       const [outlet] = await t.db.select({ id: outlets.id, name: outlets.name }).from(outlets).where(eq(outlets.id, r.table.outletId)).limit(1);
       await appendEvent({ merchantId: r.session.merchantId, outletId: r.session.outletId, type: "guest_session.started", aggregate: { kind: "table", id: r.table.id }, operationId: "guest_sessions.create", payload: { session_id: r.session.id, order_id: r.session.orderId }, actor: { principal_type: "guest", principal_id: r.session.id, role: null }, correlationId: c.get("correlationId") });
-      return { ...r, outlet: outlet! };
+      return { ...r, outlet: outlet!, settings: await localeSettingsFor(r.session.merchantId) };
     });
-    return c.json({ data: { guest_token: result.sessionToken, session_id: result.session.id, table: { id: result.table.id, name: result.table.name }, outlet: result.outlet, brand_id: result.link.brandId, channel_link_id: result.link.id, order_open: result.orderOpen, can_order: result.orderOpen || result.link.openOnFirstScan, hold_orders: result.link.holdOrders, service_requests: result.link.serviceRequests, expires_at: result.session.expiresAt.toISOString() } }, 201);
+    return c.json({ data: { guest_token: result.sessionToken, session_id: result.session.id, table: { id: result.table.id, name: result.table.name }, outlet: result.outlet, brand_id: result.link.brandId, channel_link_id: result.link.id, order_open: result.orderOpen, can_order: result.orderOpen || result.link.openOnFirstScan, hold_orders: result.link.holdOrders, service_requests: result.link.serviceRequests, expires_at: result.session.expiresAt.toISOString(), settings: result.settings } }, 201);
   });
 
   defineOp(app, { op: "guest.order", method: "get", path: "/v1/guest/order", tags: ["guest"], responses: { 200: jsonResponse(dataResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {

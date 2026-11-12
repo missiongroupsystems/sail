@@ -25217,7 +25217,17 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: {
-                            [key: string]: unknown;
+                            document: {
+                                [key: string]: unknown;
+                            };
+                            channel: string;
+                            created_at: string;
+                            settings: {
+                                currency: string;
+                                currency_exponent: number;
+                                locale: string;
+                                timezone: string;
+                            };
                         };
                     };
                 };
@@ -27840,6 +27850,12 @@ export interface operations {
                             hold_orders: boolean;
                             service_requests: string[];
                             expires_at: string;
+                            settings: {
+                                currency: string;
+                                currency_exponent: number;
+                                locale: string;
+                                timezone: string;
+                            };
                         };
                     };
                 };

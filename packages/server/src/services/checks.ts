@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
-import { allocateLine, sumTaxes, type BillDocument, type Share, type TaxAmount } from "@sail/shared";
+import { allocateLine, currencyExponent, sumTaxes, type BillDocument, type Share, type TaxAmount } from "@sail/shared";
 import { assertNotSettled, db } from "../db/client.js";
 import { brands, checkAllocations, checks, merchantSettings, orderAdjustmentLines, orderAdjustments, orderLines, orders, outlets, payments, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -239,6 +239,7 @@ export async function billDocumentFor(checkId: string, kind: "prebill" | "receip
     },
     kind,
     currency: settings.currency,
+    currency_exponent: currencyExponent(settings.currency),
     check_label: allChecks.length > 1 ? `${c.label} of ${allChecks.length}` : c.label,
     lines: lines.map((l) => {
       const a = allocs.find((x) => x.orderLineId === l.id)!;

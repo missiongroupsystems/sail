@@ -160,6 +160,8 @@ export const BillDocumentSchema = z.object({
   kind: BillKindSchema,
   /** ISO 4217 code every amount on the document is in. */
   currency: z.string().length(3),
+  /** Decimal places of the currency's minor unit (JPY 0, EUR 2, KWD 3), as the register knows it. */
+  currency_exponent: z.number().int().min(0),
   /** For example "Bill 1" or "Bill 2 of 3". */
   check_label: z.string().min(1),
   lines: z.array(BillLineSchema),

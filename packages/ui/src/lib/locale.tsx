@@ -7,8 +7,8 @@ const LocaleContext = createContext<LocaleFormat | null>(null);
 
 /** One merchant's currency, locale and zone for everything under it. Also sets `<html lang>` to the merchant's locale. */
 export function LocaleProvider({ settings, children }: { settings: LocaleSettings; children: ReactNode }) {
-  const { currency, locale, timeZone } = settings;
-  const value = useMemo(() => makeLocaleFormat({ currency, locale, timeZone }), [currency, locale, timeZone]);
+  const { currency, currencyExponent, locale, timeZone } = settings;
+  const value = useMemo(() => makeLocaleFormat({ currency, currencyExponent, locale, timeZone }), [currency, currencyExponent, locale, timeZone]);
   useEffect(() => {
     document.documentElement.lang = locale;
   }, [locale]);

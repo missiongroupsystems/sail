@@ -44,6 +44,8 @@ export type Outlet = {
 export type MerchantSettings = {
   tax_mode: "inclusive" | "exclusive";
   currency: string;
+  /** Decimal places of the currency's minor unit (JPY 0, EUR 2, KWD 3). */
+  currency_exponent: number;
   timezone: string;
   /** BCP 47. */
   locale: string;

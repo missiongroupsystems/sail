@@ -128,6 +128,7 @@ const receiptExclusive: BillDocument = {
   header: { ...dineInHeader, job_id: "b1110001" },
   kind: "receipt",
   currency: "SGD",
+  currency_exponent: 2,
   check_label: "Bill 2 of 3",
   lines: [
     { quantity: 2, name: "Laksa", unit_price: 1600, amount: 3300, modifiers: [{ name: "Extra chilli", price: 100 }], seat_no: 1 },
@@ -151,6 +152,7 @@ const receiptInclusiveCash: BillDocument = {
   header: { ...dineInHeader, job_id: "b1110002" },
   kind: "receipt",
   currency: "SGD",
+  currency_exponent: 2,
   check_label: "Bill 1",
   lines: [
     { quantity: 2, name: "Laksa", unit_price: 1600, amount: 3300, modifiers: [{ name: "Extra chilli", price: 100 }] },
@@ -176,6 +178,7 @@ const refundReceipt: BillDocument = {
   header: { ...dineInHeader, job_id: "b1110004", round_no: undefined },
   kind: "refund_receipt",
   currency: "SGD",
+  currency_exponent: 2,
   check_label: "Bill 1",
   lines: [{ quantity: 1, name: "Laksa", unit_price: 1600, amount: -1600, modifiers: [] }],
   adjustments: [{ name: "Service charge 10%", amount: -160, kind: "fee" }],

@@ -238,8 +238,10 @@ describe("checks and payments", () => {
     expect(sent.body.data.delivery_status).toBe("link_only");
     const email = await call<{ warnings: string[] }>("POST", `/v1/checks/${checkId}/receipt/send`, { token: cashierPin, body: { channel: "email", destination: "guest@example.com" } });
     expect(email.body.warnings[0]).toMatch(/not configured/);
-    const pub = await call<{ data: { document: { kind: string; totals: { total: number }; payments: unknown[] } } }>("GET", `/v1/receipts/${sent.body.data.token}`);
+    const pub = await call<{ data: { document: { kind: string; currency: string; currency_exponent: number; totals: { total: number }; payments: unknown[] }; settings: Record<string, unknown> } }>("GET", `/v1/receipts/${sent.body.data.token}`);
     expect(pub.status).toBe(200);
+    expect(pub.body.data.settings).toEqual({ currency: "SGD", locale: "en-SG", timezone: "Asia/Singapore", currency_exponent: 2 });
+    expect(pub.body.data.document).toMatchObject({ currency: "SGD", currency_exponent: 2 });
     expect(pub.body.data.document.kind).toBe("receipt");
     expect(pub.body.data.document.totals.total).toBe(added.body.data.totals.total);
     expect(pub.body.data.document.payments).toHaveLength(1);

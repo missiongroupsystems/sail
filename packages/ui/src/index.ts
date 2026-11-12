@@ -22,7 +22,7 @@ export { AttributionChip, initialsOf, type AttributionChipProps, type Attributio
 export { Money, type MoneyProps } from "./components/Money";
 export { LocaleProvider, useLocale } from "./lib/locale";
 export { taxRows, type TaxAmountLike, type TaxRow } from "./lib/tax";
-export { makeLocaleFormat, localeSettings, localeFromAcceptLanguage, deviceLocale, deviceTimeZone, type LocaleFormat, type LocaleSettings, type LocaleSettingsSource, type MoneyFormatOptions } from "./lib/locale-format";
+export { makeLocaleFormat, localeFromAcceptLanguage, deviceLocale, deviceTimeZone, type LocaleFormat, type LocaleSettings, type MoneyFormatOptions } from "./lib/locale-format";
 export { StatusDot, type StatusDotProps, type Status } from "./components/StatusDot";
 export { Badge, type BadgeProps, type BadgeTone } from "./components/Badge";
 export { PageHeader, SectionHeading, type PageHeaderProps, type SectionHeadingProps } from "./components/PageHeader";

@@ -4,14 +4,13 @@
  * surface formats through `useLocale()` under a `LocaleProvider`.
  */
 export type LocaleSettings = {
-  /** ISO 4217 code. Null while the register has not told this surface (the guest app today): amounts show without a symbol. */
+  /** ISO 4217 code. Null while the register has not told this surface (a POS before sign-in): amounts show without a symbol. */
   currency: string | null;
+  /** Decimal places of the currency's minor unit from the register (`settings.currency_exponent`); null takes them from Intl. */
+  currencyExponent: number | null;
   locale: string;
   timeZone: string;
 };
-
-/** The merchant settings fields read here (`GET /v1/merchant` → `data.settings`). `locale` is optional until the register sends it. */
-export type LocaleSettingsSource = { currency?: string | null; timezone?: string | null; locale?: string | null };
 
 /** The first tag of an Accept-Language header ("en-GB,en;q=0.9" → "en-GB"), for server rendering before the merchant's locale is known. */
 export function localeFromAcceptLanguage(header: string | null | undefined): string | null {
@@ -32,15 +31,6 @@ export function deviceTimeZone(): string {
   return new Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
-/** Settings from the merchant record; the locale falls back to `fallbackLocale` (the request's or the device's) until the register has one. */
-export function localeSettings(source: LocaleSettingsSource | null | undefined, fallbackLocale: string): LocaleSettings {
-  return {
-    currency: source?.currency || null,
-    locale: source?.locale || fallbackLocale,
-    timeZone: source?.timezone || deviceTimeZone(),
-  };
-}
-
 export type MoneyFormatOptions = {
   /** Show "+" on positive amounts (deltas). */
   signed?: boolean;
@@ -49,7 +39,7 @@ export type MoneyFormatOptions = {
 };
 
 export type LocaleFormat = LocaleSettings & {
-  /** Minor units of the currency (JPY 0, USD 2, KWD 3), from ISO 4217 via Intl. */
+  /** Minor units of the currency (JPY 0, USD 2, KWD 3): the register's exponent, else Intl's. */
   minorDigits: number;
   /** "$", "¥", "KD" (narrow symbol), or "" without a currency. */
   symbol: string;
@@ -107,8 +97,13 @@ function decimalString(minor: number, digits: number): `${number}` {
 }
 
 export function makeLocaleFormat(settings: LocaleSettings): LocaleFormat {
-  const { currency, locale, timeZone } = settings;
-  const base: Intl.NumberFormatOptions = currency ? { style: "currency", currency, currencyDisplay: "narrowSymbol" } : { style: "decimal", minimumFractionDigits: 2, maximumFractionDigits: 2 };
+  const { currency, currencyExponent, locale, timeZone } = settings;
+  // The register's exponent wins over Intl's table, so amounts in minor units never show with the wrong number of decimals.
+  const digits = currencyExponent ?? (currency ? undefined : 2);
+  const base: Intl.NumberFormatOptions = {
+    ...(currency ? { style: "currency", currency, currencyDisplay: "narrowSymbol" } : { style: "decimal" }),
+    ...(digits === undefined ? {} : { minimumFractionDigits: digits, maximumFractionDigits: digits }),
+  };
   const minorDigits = new Intl.NumberFormat(locale, base).resolvedOptions().maximumFractionDigits ?? 2;
   const fmt = new Intl.NumberFormat(locale, base);
   const fmtSigned = new Intl.NumberFormat(locale, { ...base, signDisplay: "exceptZero" });

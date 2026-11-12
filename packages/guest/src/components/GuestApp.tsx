@@ -1,6 +1,6 @@
 "use client";
 
-import { BrandButton, LocaleProvider, localeSettings } from "@sail/ui";
+import { BrandButton, LocaleProvider } from "@sail/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
@@ -47,16 +47,15 @@ function viewFromHash(hash: string): View {
 const RECHECK_MS = 15_000;
 const RECHECK_MAX_MS = 60_000;
 
-/** `fallbackLocale` is the browser's, from the request, until the register sends the merchant's with the session. */
-export function GuestApp({ token, fallbackLocale }: { token: string; fallbackLocale: string }) {
+export function GuestApp({ token }: { token: string }) {
   return (
     <QueryProvider>
-      <GuestAppInner token={token} fallbackLocale={fallbackLocale} />
+      <GuestAppInner token={token} />
     </QueryProvider>
   );
 }
 
-function GuestAppInner({ token, fallbackLocale }: { token: string; fallbackLocale: string }) {
+function GuestAppInner({ token }: { token: string }) {
   const queryClient = useQueryClient();
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [session, setSession] = useState<GuestSession | null>(null);
@@ -365,7 +364,7 @@ function GuestAppInner({ token, fallbackLocale }: { token: string; fallbackLocal
   const product = itemSheet ? menu.products[itemSheet.productId] : undefined;
 
   return (
-    <LocaleProvider settings={localeSettings(session.settings, fallbackLocale)}>
+    <LocaleProvider settings={{ currency: session.settings.currency, currencyExponent: session.settings.currency_exponent, locale: session.settings.locale, timeZone: session.settings.timezone }}>
       <div className="min-h-dvh bg-bg text-ink">
         {view === "menu" ? (
           <MenuView

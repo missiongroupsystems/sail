@@ -19,7 +19,7 @@ let qrUrl12: string;
 let qrUrl13: string;
 const tokenFrom = (url: string) => url.split("/t/")[1]!;
 
-type Session = { guest_token: string; session_id: string; table: { name: string }; order_open: boolean; can_order: boolean; hold_orders: boolean; service_requests: string[] };
+type Session = { guest_token: string; session_id: string; settings: Record<string, unknown>; table: { name: string }; order_open: boolean; can_order: boolean; hold_orders: boolean; service_requests: string[] };
 type Snap = { id: string; version: number; status: string; lines: { id: string; status: string; source: string; round_id: string | null }[]; totals: { total: number }; checks: { id: string; totals: { total: number } }[] };
 
 const guestCall = <T,>(method: string, path: string, token: string, body?: unknown) => call<T>(method, path, { token, body });
@@ -77,6 +77,8 @@ describe("Scan to Order", () => {
     const s = await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl12), device_id: "device-aaaa-0001" }, idempotencyKey: null });
     expect(s.status, JSON.stringify(s.body)).toBe(201);
     expect(s.body.data).toMatchObject({ order_open: false, can_order: false, hold_orders: true, service_requests: ["Water", "Cutlery"] });
+    // The guest app formats with the merchant's settings, not the phone's.
+    expect(s.body.data.settings).toEqual({ currency: "SGD", locale: "en-SG", timezone: "Asia/Singapore", currency_exponent: 2 });
     expect(s.body.data.table.name).toBe("12");
     const g = s.body.data.guest_token;
     const menu = await guestCall<{ data: { products: Record<string, { price: number }>; channel_link: { channel: string } } }>("GET", `/v1/channel-links/${ids.qrLink}/menu`, g);

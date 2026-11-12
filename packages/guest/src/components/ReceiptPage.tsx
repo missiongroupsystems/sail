@@ -46,7 +46,7 @@ export function ReceiptPage({ token }: { token: string }) {
   if (state.kind === "error") return <Notice title={state.error.message} body={state.error.remedy ?? "Try again in a moment."} />;
 
   return (
-    <LocaleProvider settings={{ currency: state.receipt.document.currency, locale: state.receipt.document.header.locale, timeZone: state.receipt.document.header.time_zone }}>
+    <LocaleProvider settings={{ currency: state.receipt.document.currency, currencyExponent: state.receipt.document.currency_exponent, locale: state.receipt.document.header.locale, timeZone: state.receipt.document.header.time_zone }}>
       <main className="mx-auto w-full max-w-[560px] px-4 py-8">
         <BillDocumentView document={state.receipt.document} />
         <p className="mt-8 text-caption text-ink-2">Thank you for dining with us.</p>

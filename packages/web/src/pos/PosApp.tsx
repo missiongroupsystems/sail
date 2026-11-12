@@ -36,7 +36,7 @@ export default function PosApp() {
   return (
     <QueryClientProvider client={client}>
       {/* Before sign-in the station may not read the merchant's settings: the lock screen's clock uses the iPad's own. */}
-      <LocaleProvider settings={{ currency: null, locale: deviceLocale(), timeZone: deviceTimeZone() }}>
+      <LocaleProvider settings={{ currency: null, currencyExponent: null, locale: deviceLocale(), timeZone: deviceTimeZone() }}>
         {!stationToken ? <PairingScreen /> : !sessionToken ? <LockScreen /> : <PosShell key={sessionToken} />}
       </LocaleProvider>
     </QueryClientProvider>

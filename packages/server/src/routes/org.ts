@@ -35,6 +35,13 @@ export const MerchantSettingsSchema = z.object({
   busy_mode_threshold: z.number().int(),
 });
 export const MerchantSchema = z.object({ id: z.string(), name: z.string(), settings: MerchantSettingsSchema });
+/** What a guest surface (the ordering app, a digital receipt) needs to format amounts, dates and times. */
+export const LocaleSettingsSchema = MerchantSettingsSchema.pick({ currency: true, currency_exponent: true, locale: true, timezone: true });
+export async function localeSettingsFor(merchantId: string): Promise<z.infer<typeof LocaleSettingsSchema>> {
+  const [s] = await db().select({ currency: merchantSettings.currency, locale: merchantSettings.locale, timezone: merchantSettings.timezone }).from(merchantSettings).where(eq(merchantSettings.merchantId, merchantId)).limit(1);
+  if (!s) throw AppError.notFound("merchant");
+  return { currency: s.currency, currency_exponent: currencyExponent(s.currency), locale: s.locale, timezone: s.timezone };
+}
 const SettingsPatch = MerchantSettingsSchema.omit({ currency_exponent: true }).partial().extend({ name: z.string().min(1).optional() });
 
 export const BrandSchema = z.object({

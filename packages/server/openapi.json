@@ -64198,7 +64198,47 @@
                   "properties": {
                     "data": {
                       "type": "object",
-                      "additionalProperties": {}
+                      "properties": {
+                        "document": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "channel": {
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "type": "string"
+                        },
+                        "settings": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string"
+                            },
+                            "currency_exponent": {
+                              "type": "integer"
+                            },
+                            "locale": {
+                              "type": "string"
+                            },
+                            "timezone": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "currency",
+                            "currency_exponent",
+                            "locale",
+                            "timezone"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "document",
+                        "channel",
+                        "created_at",
+                        "settings"
+                      ]
                     }
                   },
                   "required": [
@@ -71416,6 +71456,29 @@
                         },
                         "expires_at": {
                           "type": "string"
+                        },
+                        "settings": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string"
+                            },
+                            "currency_exponent": {
+                              "type": "integer"
+                            },
+                            "locale": {
+                              "type": "string"
+                            },
+                            "timezone": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "currency",
+                            "currency_exponent",
+                            "locale",
+                            "timezone"
+                          ]
                         }
                       },
                       "required": [
@@ -71429,7 +71492,8 @@
                         "can_order",
                         "hold_orders",
                         "service_requests",
-                        "expires_at"
+                        "expires_at",
+                        "settings"
                       ]
                     }
                   },

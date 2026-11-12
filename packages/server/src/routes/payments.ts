@@ -18,6 +18,7 @@ import { closeBusinessDay, closeShift, openShift, zReport } from "../services/sh
 import { insertJob } from "../services/printing.js";
 import { businessDayInputs } from "../services/business-day.js";
 import { businessDateFor } from "../lib/time.js";
+import { LocaleSettingsSchema, localeSettingsFor } from "./org.js";
 
 const op = (o: Partial<OperationSpec> & { op: string; summary: string; description: string }): OperationSpec => ({ tier: "T2", minRole: "cashier", overrideAllowed: false, reasonRequired: false, dryRun: true, principals: ["staff", "agent"], emits: [], mcp: { expose: true, toolsets: ["pos.payment"] }, ...o });
 
@@ -203,10 +204,13 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: receipt, events: [ev], warnings }, 200);
   });
 
-  defineOp(app, { op: "receipts.read", method: "get", path: "/v1/receipts/{token}", tags: ["payments"], request: { params: z.object({ token: z.string().min(10) }) }, responses: { 200: jsonResponse(dataResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "receipts.read", method: "get", path: "/v1/receipts/{token}", tags: ["payments"], request: { params: z.object({ token: z.string().min(10) }) }, responses: { 200: jsonResponse(dataResponse(z.object({ document: z.record(z.string(), z.unknown()), channel: z.string(), created_at: z.string(), settings: LocaleSettingsSchema }))), ...errorResponses } }, async (c) => {
     const { token } = c.req.valid("param");
-    const row = await withTransaction(() => readDigitalReceipt(token));
-    return c.json({ data: { document: row.document, channel: row.channel, created_at: row.createdAt.toISOString() } }, 200);
+    const { row, settings } = await withTransaction(async () => {
+      const row = await readDigitalReceipt(token);
+      return { row, settings: await localeSettingsFor(row.merchantId) };
+    });
+    return c.json({ data: { document: row.document, channel: row.channel, created_at: row.createdAt.toISOString(), settings } }, 200);
   });
 
   defineOp(app, { op: "documents.issue_invoice", method: "post", path: "/v1/checks/{id}/invoice", tags: ["payments"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation) }, responses: { 200: jsonResponse(mutationResponse(z.object({ invoice_no: z.string(), issued_at: z.string(), reused: z.boolean(), pdf_url: z.string() }))), ...errorResponses } }, async (c) => {
