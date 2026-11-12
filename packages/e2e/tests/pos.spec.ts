@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { API, devLocal, expect, keyIn, pairAndSignIn, register, STATION_CHANNEL_LINK_403, test, textContrast } from "./fixtures";
+import { API, devLocal, expect, keyIn, pairAndSignIn, register, test, textContrast } from "./fixtures";
 
 const CASHIER_PIN = "333333"; // Cal Cashier (dev seed): can take payments and run the shift, not refund
 const MANAGER_PIN = "222222"; // Mia Manager approves the refund
@@ -13,9 +13,8 @@ async function setTheme(page: Page, theme: "day" | "service") {
 
 test.use({ viewport: { width: 1180, height: 820 } });
 
-test("POS: pair, sign in, shift, order, split, cash and card, refund with a manager, close the shift", async ({ page, watch }) => {
+test("POS: pair, sign in, shift, order, split, cash and card, refund with a manager, close the shift", async ({ page }) => {
   test.setTimeout(600_000);
-  watch.allow(STATION_CHANNEL_LINK_403);
   await test.step("pair the iPad and sign in with a cashier PIN", () => pairAndSignIn(page, CASHIER_PIN));
 
   await test.step("open the shift with a $200 float counted in notes", async () => {
@@ -153,15 +152,16 @@ test("POS: pair, sign in, shift, order, split, cash and card, refund with a mana
   });
 });
 
-// Pins today's server behaviour (docs/server-fixes-from-ui.md, item 1): a station without a PIN is refused its own POS
-// channel link. When the server fixes it this test fails; then flip it to expect 200 and drop STATION_CHANNEL_LINK_403.
-test("station channel link: a paired station is still refused its POS channel link before a PIN", async () => {
+// The lock screen warms the menu before a PIN, so a paired station must be able to look up its own POS channel link.
+test("station channel link: a paired station reads its POS channel link before a PIN", async () => {
   const { stationId, outletId } = devLocal();
   const { data } = await register<{ data: { code: string } }>("POST", `/v1/stations/${stationId}/pairing-code`, {});
   const paired = await fetch(`${API}/v1/stations/pair`, { method: "POST", headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() }, body: JSON.stringify({ code: data.code, device_label: "e2e probe" }) });
   expect(paired.ok, "pairing the probe").toBe(true);
   const { data: pair } = (await paired.json()) as { data: { station_token: string } };
   const res = await fetch(`${API}/v1/channel-links?channel=pos&outlet_id=${outletId}`, { headers: { authorization: `Bearer ${pair.station_token}` } });
-  expect(res.status).toBe(403);
-  expect(((await res.json()) as { code: string }).code).toBe("permission_denied");
+  expect(res.status).toBe(200);
+  const links = (await res.json()) as { data: { channel: string; outlet_id: string }[] };
+  expect(links.data.length).toBeGreaterThan(0);
+  expect(links.data.every((l) => l.channel === "pos" && l.outlet_id === outletId)).toBe(true);
 });

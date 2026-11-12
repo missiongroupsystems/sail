@@ -27486,7 +27486,7 @@
         "x-sail": {
           "op": "channel_links.list",
           "tier": "T0",
-          "min_role": "server",
+          "min_role": null,
           "override_allowed": false,
           "reason_required": false,
           "dry_run": false,
@@ -28390,7 +28390,7 @@
         "x-sail": {
           "op": "channel_links.get",
           "tier": "T0",
-          "min_role": "server",
+          "min_role": null,
           "override_allowed": false,
           "reason_required": false,
           "dry_run": false,

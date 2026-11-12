@@ -104,6 +104,13 @@ describe("stations, PIN sessions and pairing", () => {
     expect(denied.status).toBe(403);
     expect(denied.body.remedy).toMatch(/PIN/);
   });
+  it("a station token alone reads its POS channel link, so the lock screen can warm the menu", async () => {
+    const list = await call<{ data: { id: string }[] }>("GET", `/v1/channel-links?channel=pos&outlet_id=${A.outletId}&brand_id=${A.brandId}`, { token: stationToken });
+    expect(list.status, JSON.stringify(list.body)).toBe(200);
+    expect(list.body.data.map((l) => l.id)).toEqual([cat.link]);
+    expect((await call("GET", `/v1/channel-links/${cat.link}`, { token: stationToken })).status).toBe(200);
+    expect((await call("PATCH", `/v1/channel-links/${cat.link}`, { token: stationToken, body: { enabled: false } })).status).toBe(403);
+  });
   it("a wrong PIN is rejected; a signed-in server has role server on the station", async () => {
     expect((await call("POST", "/v1/stations/sessions", { token: stationToken, body: { pin: "999999" } })).status).toBe(401);
     const me = await call<{ data: { type: string; role: string; station_id: string; via: string } }>("GET", "/v1/me", { token: serverPin });

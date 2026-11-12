@@ -1,10 +1,9 @@
-import { devLocal, expect, GUEST, pairAndSignIn, register, STATION_CHANNEL_LINK_403, test, textContrast } from "./fixtures";
+import { devLocal, expect, GUEST, pairAndSignIn, register, test, textContrast } from "./fixtures";
 
 const SERVER_PIN = "444444"; // Sam Server accepts QR orders
 
 test("guest: a QR order from the table arrives on the POS, is accepted, and shows on the phone under its round", async ({ browser, page, watch }) => {
   test.setTimeout(300_000);
-  watch.allow(STATION_CHANNEL_LINK_403);
   const { outletId, brandId } = devLocal();
 
   // Staff seat a free table and show its QR code (back-office steps, through the register).

@@ -132,6 +132,8 @@ export function floorRoutes(app: OpenAPIHono<AppEnv>) {
     create: LinkCreate,
     patch: LinkCreate.omit({ id: true, channel: true, outlet_id: true, brand_id: true }).partial(),
     aggregateKind: "channel_link",
+    // A paired station reads its POS link before anyone signs in, to warm the menu on the lock screen.
+    roles: { read: null },
     principals: { read: ["staff", "station", "agent"] },
     listQuery: z.object({ channel: ChannelTypeSchema.optional(), brand_id: z.uuid().optional() }),
     listWhere: (q) => {

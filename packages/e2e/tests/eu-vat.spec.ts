@@ -1,5 +1,5 @@
 import type { Locator } from "@playwright/test";
-import { expect, GUEST, pairAndSignIn, STATION_CHANNEL_LINK_403, test } from "./fixtures";
+import { expect, GUEST, pairAndSignIn, test } from "./fixtures";
 
 const ADMIN_PIN = "123456"; // the EU café's Admin (dev seed)
 
@@ -30,7 +30,6 @@ test.use({ viewport: { width: 1180, height: 820 } });
 // The second demo merchant: inclusive VAT at 10% (food) and 20% (drinks), rounded per rate, EUR in de-DE.
 test("EU VAT café: the POS bill and the guest receipt show both VAT rates in euros", async ({ browser, page, watch }) => {
   test.setTimeout(300_000);
-  watch.allow(STATION_CHANNEL_LINK_403);
   await test.step("pair the iPad to the café's station and sign in", () => pairAndSignIn(page, ADMIN_PIN, "eu"));
 
   await test.step("seat a table, add a food and a drink, send them", async () => {

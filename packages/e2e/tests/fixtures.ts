@@ -41,13 +41,6 @@ async function adminToken(email: string): Promise<string> {
 type Allowed = { status: number; url: RegExp; why: string };
 
 /**
- * The lock screen warms the menu before a PIN, and the register refuses the channel-link lookup to a bare station.
- * The root cause is in the server (docs/server-fixes-from-ui.md, item 1); `station channel link` in pos.spec.ts fails
- * once the server is fixed, and then this allowance goes.
- */
-export const STATION_CHANNEL_LINK_403: Allowed = { status: 403, url: /\/v1\/channel-links\?channel=pos/, why: "server fix 1: channel_links.list needs a PIN" };
-
-/**
  * Every test watches its pages: a console error, or a response of 400 or more from the register or the apps, fails
  * the test unless the test declared it expected (a wrong PIN on purpose, say). This is what catches a refused
  * permission or a duplicate payment call that the screen itself shrugs off.

@@ -547,13 +547,13 @@
       "method": "GET",
       "path": "/v1/channel-links/{id}",
       "tier": "T0",
-      "min_role": "server",
+      "min_role": null,
       "toolsets": [
         "pos.read",
         "config.author"
       ],
       "emits": [],
-      "description": "Get a channel link\n\nGet a channel link\n\nRisk tier T0. Needs role server or above.",
+      "description": "Get a channel link\n\nGet a channel link\n\nRisk tier T0.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -574,13 +574,13 @@
       "method": "GET",
       "path": "/v1/channel-links",
       "tier": "T0",
-      "min_role": "server",
+      "min_role": null,
       "toolsets": [
         "pos.read",
         "config.author"
       ],
       "emits": [],
-      "description": "List channel links\n\nList channel links\n\nRisk tier T0. Needs role server or above.",
+      "description": "List channel links\n\nList channel links\n\nRisk tier T0.",
       "inputSchema": {
         "type": "object",
         "properties": {
