@@ -4440,7 +4440,7 @@
         "variance_reason",
         "void_reason"
       ],
-      "description": "Record a payment on a bill\n\nApplies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.\n\nRisk tier T2. Needs role cashier or above. Emits payment.recorded, check.paid, order.completed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "description": "Record a payment on a bill\n\nApplies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. A tip is `tip_cents`, or, on a dry run only, `tip_bps` (a percentage of the amount applied, which the dry run turns into `tip_cents`; in cash it is rounded to the cash rounding step); the reply's `payment.due_cents` is what the guest hands over (amount, cash rounding and tip). The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.\n\nRisk tier T2. Needs role cashier or above. Emits payment.recorded, check.paid, order.completed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -4486,6 +4486,11 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 1000000000000
+              },
+              "tip_bps": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10000
               },
               "reference": {
                 "type": [

@@ -315,7 +315,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
                             {l.quantity ? <span className="tabular text-ink-2">{l.quantity}× </span> : <span className="text-caption text-ink-2">part of </span>}
                             {lineName(l.line_id)}
                           </span>
-                          <Money cents={-l.total} />
+                          <Money cents={-l.base} />
                         </li>
                       ))}
                     </ul>

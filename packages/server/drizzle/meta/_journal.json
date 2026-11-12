@@ -351,6 +351,13 @@
       "when": 1794523986623,
       "tag": "0049_money_bigint_views",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1794525386550,
+      "tag": "0050_tips_enabled",
+      "breakpoints": true
     }
   ]
 }

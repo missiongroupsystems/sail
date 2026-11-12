@@ -36,6 +36,7 @@ export async function freshDb(overrides: Partial<Record<string, string>> = {}, t
       DB_POOL_MAX: "8",
       TX_MAX: "4",
       QUEUE_MAX: "8",
+      WEB_APP_URL: "https://backoffice.test",
       ...TEST_SECRETS,
       ...overrides,
     }),

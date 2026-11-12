@@ -2367,7 +2367,7 @@ export interface paths {
         put?: never;
         /**
          * Record a payment on a bill
-         * @description Applies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.
+         * @description Applies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. A tip is `tip_cents`, or, on a dry run only, `tip_bps` (a percentage of the amount applied, which the dry run turns into `tip_cents`; in cash it is rounded to the cash rounding step); the reply's `payment.due_cents` is what the guest hands over (amount, cash rounding and tip). The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.
          */
         post: operations["payments.record"];
         delete?: never;
@@ -3056,6 +3056,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/outlets/{id}/qr/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate every QR code at an outlet
+         * @description Every table's QR token at the outlet is replaced: the printed cards stop working at once (for example after cards were photographed). Print the sheet again afterwards. Admin.
+         */
+        post: operations["tables.rotate_all_qr_tokens"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/outlets/{id}/qr-sheet.pdf": {
         parameters: {
             query?: never;
@@ -3067,7 +3087,7 @@ export interface paths {
         put?: never;
         /**
          * Printable QR sheet (PDF)
-         * @description Rotates every table token at the outlet and returns a PDF of QR cards for ordinary printers. Admin.
+         * @description A PDF of every table's current QR card at the outlet, for ordinary printers. It never rotates a code, so the cards already on the tables keep working; a table with no code gets its first one, and a code from before codes could be reprinted is replaced once. Admin.
          */
         post: operations["tables.qr_sheet"];
         delete?: never;
@@ -5279,6 +5299,7 @@ export interface operations {
                                 cash_rounding_increment: number | null;
                                 cash_denominations: number[];
                                 cash_variance_threshold: number;
+                                tips_enabled: boolean;
                                 business_day_cutoff: string;
                                 timezone: string;
                                 currency: string;
@@ -5418,6 +5439,7 @@ export interface operations {
                     cash_rounding_increment?: number | null;
                     cash_denominations?: number[];
                     cash_variance_threshold?: number;
+                    tips_enabled?: boolean;
                     business_day_cutoff?: string;
                     timezone?: string;
                     currency?: string;
@@ -5452,6 +5474,7 @@ export interface operations {
                                 cash_rounding_increment: number | null;
                                 cash_denominations: number[];
                                 cash_variance_threshold: number;
+                                tips_enabled: boolean;
                                 business_day_cutoff: string;
                                 timezone: string;
                                 currency: string;
@@ -26283,6 +26306,7 @@ export interface operations {
                     amount: number;
                     tendered?: number | null;
                     tip_cents?: number;
+                    tip_bps?: number;
                     reference?: string | null;
                 };
             };
@@ -31175,6 +31199,149 @@ export interface operations {
                     "application/json": {
                         data: {
                             url: string;
+                        };
+                        events: {
+                            id: string;
+                            seq: number;
+                            type: string;
+                            occurredAt: string;
+                            businessDate: string;
+                        }[];
+                        warnings: string[];
+                    };
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Permission denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Conflict (state, version or idempotency) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Invariant violation or unavailable */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    "tables.rotate_all_qr_tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Request body */
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            rotated: number;
                         };
                         events: {
                             id: string;

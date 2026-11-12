@@ -90,7 +90,7 @@ export function OrderMenu({ order, actions, onOpen }: { order: OrderSnapshot; ac
               className="justify-between"
             >
               <span>{c.label}{c.seat_no != null ? ` · Seat ${c.seat_no}` : ""}</span>
-              <span className="text-caption text-ink-2">{c.invoice_no ? `Invoice ${c.invoice_no}` : c.payments.map((p) => p.tender).join(", ")}</span>
+              <span className="text-caption text-ink-2">{c.invoice_no ? `Invoice ${c.invoice_no}` : c.payments.filter((p) => p.status === "recorded").map((p) => p.tender).join(", ")}</span>
             </Button>
           ))}
         </div>

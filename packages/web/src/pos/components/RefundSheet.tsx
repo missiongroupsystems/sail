@@ -230,7 +230,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                     <span>
                       <span className="block text-line">{c.label}{c.seat_no != null ? ` · Seat ${c.seat_no}` : ""}</span>
                       <span className="block text-caption opacity-80">
-                        {c.payments.map((p) => `${p.tender} ${money(p.amount)}`).join(" · ")}
+                        {c.payments.filter((p) => p.status === "recorded").map((p) => `${p.tender} ${money(p.amount)}`).join(" · ")}
                         {c.refunded_total > 0 ? ` · refunded ${money(c.refunded_total)}` : ""}
                       </span>
                     </span>
@@ -263,7 +263,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                               {a.share !== "1" ? <span className="ml-2 rounded-chip bg-surface px-1.5 text-caption text-ink-2 tabular">{a.share}</span> : null}
                             </span>
                             <span className="block text-caption text-ink-2 tabular">
-                              {l.quantity} on the order · {money(a.total)} on this bill
+                              {l.quantity} on the order · {money(a.base)} on this bill
                             </span>
                           </span>
                           <QuantityStepper value={n} onChange={(v) => setQty({ ...qty, [a.line_id]: v })} min={0} max={l.quantity} label={`${l.name} quantity to refund`} />
@@ -302,7 +302,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                 <p className="text-body text-ink-2">Prefilled from the register's quote: the refund goes back to the original payments, within what each one took. Tap an amount to change it.</p>
                 {quoteError ? <p className="text-body text-status-alert">{quoteError}</p> : null}
                 <ul className="flex flex-col gap-2">
-                  {(quote?.payments ?? check.payments.map((p) => ({ payment_id: p.id, tender: p.tender, is_cash: p.is_cash, amount: p.amount, refunded: 0 }))).map((p) => {
+                  {(quote?.payments ?? check.payments.filter((p) => p.status === "recorded").map((p) => ({ payment_id: p.id, tender: p.tender, is_cash: p.is_cash, amount: p.amount, refunded: 0 }))).map((p) => {
                     const suggested = quote?.tenders.find((t) => t.payment_id === p.payment_id);
                     const amount = split?.[p.payment_id] ?? suggested?.amount ?? 0;
                     const editing = editingTender === p.payment_id;
@@ -365,7 +365,8 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                       <span className="text-line text-ink">
                         {l.quantity} {linesById.get(l.line_id)?.name ?? "Item"}
                       </span>
-                      <Money cents={-l.total} size="line" className="text-ink" />
+                      {/* The line's menu price; discounts, fees and tax reversed are the rows below, so the column adds up. */}
+                      <Money cents={-l.base} size="line" className="text-ink" />
                     </li>
                   ))}
                   {quote.lines.length === 0 ? (
@@ -410,7 +411,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
             <h3 className="text-caption text-ink-2 uppercase tracking-[0.04em]">Summary</h3>
             <dl className="mt-2 flex flex-col gap-2 text-body">
               <Line label="Bill" value={check ? check.label : "—"} />
-              <Line label="What" value={what === "full" ? "Whole bill" : what === "lines" ? `${Object.values(qty).filter((n) => n > 0).length} items` : digits ? money(Number(digits)) : "An amount"} />
+              <Line label="What" value={what === "full" ? "Whole bill" : what === "lines" ? ((n) => `${n} ${n === 1 ? "item" : "items"}`)(Object.values(qty).filter((n) => n > 0).length) : digits ? money(Number(digits)) : "An amount"} />
               <Line label="Why" value={reasonText || "—"} />
               <Line label="Back to" value={quote ? quote.tenders.map((t) => `${t.tender} ${money(t.amount)}`).join(", ") || "—" : "—"} />
             </dl>

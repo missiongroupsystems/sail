@@ -59,6 +59,8 @@ export type MerchantSettings = {
   cash_denominations: number[];
   /** Closing a shift more than this many minor units out needs a reason. */
   cash_variance_threshold: number;
+  /** The pay screen offers a tip. */
+  tips_enabled: boolean;
   /** Kitchen display: a ticket's elapsed time turns amber, then red, after these many minutes. */
   kitchen_warn_minutes: number;
   kitchen_late_minutes: number;
@@ -330,6 +332,8 @@ export type PaymentIntent = {
   tender_type_id: string;
   amount: number;
   tip_cents: number;
+  /** What the terminal asks for: the amount and the tip, from the register. */
+  due_cents: number;
   state: "pending" | "approved" | "declined" | "cancelled" | "expired";
   outcome_reason: string | null;
   payment_id: string | null;
@@ -339,7 +343,7 @@ export type PaymentIntent = {
 };
 
 /** The register's figures for one payment (or a dry run): rounding and change are never computed on the iPad. */
-export type PaymentFigures = Partial<CheckPayment> & { change_due: number };
+export type PaymentFigures = Partial<CheckPayment> & { change_due: number; /** What the guest hands over for this tender: amount, cash rounding and tip. */ due_cents?: number };
 export type PaymentResult = MutationResult & { payment: PaymentFigures };
 
 export type RefundRequest = { kind: "full" } | { kind: "lines"; lines: { line_id: string; quantity: number }[] } | { kind: "amount"; amount: number };

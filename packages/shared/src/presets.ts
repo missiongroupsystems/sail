@@ -42,6 +42,8 @@ export type RegionPreset = {
   cash_denominations: number[];
   /** Closing a shift more than this many minor units out needs a reason. Null: five units of the currency chosen (the blank preset). */
   cash_variance_threshold: number | null;
+  /** The POS pay screen offers a tip: on where tipping is customary, off elsewhere (a merchant can change it). */
+  tips_enabled: boolean;
   business_registration_label: string;
   tax_registration_label: string;
 };
@@ -81,6 +83,7 @@ export const REGION_PRESETS: Record<RegionPresetKey, RegionPreset> = {
     tenders: [...CASH_AND_CARD, { name: "PayNow", is_cash: false, is_terminal: true }],
     cash_denominations: [10_000, 5000, 1000, 500, 200, 100, 50, 20, 10, 5],
     cash_variance_threshold: 500,
+    tips_enabled: false,
     business_registration_label: "UEN",
     tax_registration_label: "GST Reg No",
   },
@@ -106,6 +109,7 @@ export const REGION_PRESETS: Record<RegionPresetKey, RegionPreset> = {
     tenders: CASH_AND_CARD,
     cash_denominations: [10_000, 5000, 2000, 1000, 500, 100, 25, 10, 5, 1],
     cash_variance_threshold: 500,
+    tips_enabled: true,
     business_registration_label: "EIN",
     tax_registration_label: "Sales tax permit",
   },
@@ -132,6 +136,7 @@ export const REGION_PRESETS: Record<RegionPresetKey, RegionPreset> = {
     tenders: CASH_AND_CARD,
     cash_denominations: [20_000, 10_000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5, 2, 1],
     cash_variance_threshold: 500,
+    tips_enabled: false,
     business_registration_label: "Company reg. no.",
     tax_registration_label: "VAT no.",
   },
@@ -162,6 +167,7 @@ export const REGION_PRESETS: Record<RegionPresetKey, RegionPreset> = {
     tenders: CASH_AND_CARD,
     cash_denominations: [10_000, 5000, 1000, 500, 100, 50, 10, 5, 1],
     cash_variance_threshold: 1000,
+    tips_enabled: false,
     business_registration_label: "Corporate number",
     tax_registration_label: "Registration number",
   },
@@ -184,6 +190,7 @@ export const REGION_PRESETS: Record<RegionPresetKey, RegionPreset> = {
     tenders: [{ name: "Cash", is_cash: true, is_terminal: false }],
     cash_denominations: [],
     cash_variance_threshold: null,
+    tips_enabled: false,
     business_registration_label: "Business reg. no.",
     tax_registration_label: "Tax reg. no.",
   },

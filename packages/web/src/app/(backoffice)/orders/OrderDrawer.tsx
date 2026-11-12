@@ -178,7 +178,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                       </Badge>
                     </span>
                     <span className="inline-flex flex-col items-end">
-                      <Money cents={l.amounts.total} />
+                      <Money cents={l.amounts.base} />
                       {l.amounts.discount ? <Money cents={l.amounts.discount} className="text-caption text-ink-2" /> : null}
                     </span>
                   </div>

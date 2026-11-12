@@ -19,12 +19,33 @@ describe("bill allocation", () => {
     expect(sumAllocations(parts)).toBe(6600 - 600 + 600 + 594);
   });
 
-  it("uneven cents go to earlier checks", () => {
+  it("an odd cent goes to the check furthest under its share, so even bills differ by a cent at most", () => {
     const parts = allocateLine({ base: 1000, discount: 0, fee: 100, taxes: sgTax(99), adjustments: {} }, evenShares(3), { taxAddsToTotal: true });
     expect(parts.map((p) => p.base)).toEqual([334, 333, 333]);
-    expect(parts.map((p) => p.fee)).toEqual([34, 33, 33]);
+    // Check 1 took the base's odd cent, so the fee's goes to check 2.
+    expect(parts.map((p) => p.fee)).toEqual([33, 34, 33]);
     expect(parts.map((p) => p.tax)).toEqual([33, 33, 33]);
-    expect(parts.map((p) => p.total)).toEqual([401, 399, 399]);
+    expect(parts.map((p) => p.total)).toEqual([400, 400, 399]);
+  });
+
+  it("property: an even split of a whole bill, one balance across its lines, gives bills a cent apart at most (two guests sharing a bill pay the same)", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.record({ base: fc.integer({ min: 0, max: 50_000 }), discount: fc.integer({ min: -5_000, max: 0 }), fee: fc.integer({ min: 0, max: 5_000 }), gst: fc.integer({ min: 0, max: 5_000 }), levy: fc.integer({ min: 0, max: 500 }) }), { minLength: 1, maxLength: 15 }),
+        fc.integer({ min: 2, max: 12 }),
+        fc.boolean(),
+        (lines, n, inclusive) => {
+          const balance = Array.from({ length: n }, () => 0);
+          const totals = Array.from({ length: n }, () => 0);
+          for (const l of lines) {
+            const line = { base: l.base, discount: Math.max(l.discount, -l.base), fee: l.fee, taxes: [...sgTax(l.gst), { name: "Levy 1%", bps: 100, amount: l.levy }], adjustments: {} };
+            allocateLine(line, evenShares(n), { taxAddsToTotal: !inclusive, balance }).forEach((p, i) => (totals[i] = totals[i]! + p.total));
+          }
+          expect(Math.max(...totals) - Math.min(...totals)).toBeLessThanOrEqual(1);
+        },
+      ),
+      { numRuns: 1000 },
+    );
   });
 
   it("shared among some checks and whole to one check", () => {

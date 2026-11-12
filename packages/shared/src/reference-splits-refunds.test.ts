@@ -11,9 +11,12 @@ import type { TaxAmount } from "./pricing/schemas.js";
  *
  * Rounding rule used throughout (allocateLargestRemainder): each part is
  * floored, then the leftover cents go one each to the parts with the largest
- * fractional remainder; ties go to the EARLIER part (lower index). Negative
- * amounts (discounts) are allocated by absolute value and the sign re-applied,
- * so the earlier check also gets the extra cent of a discount.
+ * fractional remainder. Ties (every part of an even split) go to the check that
+ * is furthest under its exact share of the components so far (base, discount,
+ * fee, then tax in exclusive mode), then to the EARLIER check. Negative amounts
+ * (discounts) are allocated by absolute value and the sign re-applied, and their
+ * extra cent goes to the check furthest OVER its share, so a discount's odd cent
+ * evens out the base's.
  *
  * The three-line dine-in bill (exclusive GST 9%, service charge 10%):
  *   L1 chicken rice 450 × 2 = 900; SC 90; GST 81 on the net + 8 on the SC = 89; total 1079.
@@ -56,12 +59,12 @@ describe("bill splitting reference (allocateLine)", () => {
     expect(sumAllocations(parts)).toBe(1079);
   });
 
-  it("S03: L1 split in 4: base 225 each; fee 90/4 = 22.5 → 22 × 4 = 88, two leftover cents to checks 1 and 2 → 23/23/22/22; GST 89/4 = 22.25 → 23/22/22/22; totals 271/270/269/269", () => {
+  it("S03: L1 split in 4: base 225 each; fee 90/4 = 22.5 → 22 × 4 = 88, two leftover cents to checks 1 and 2 → 23/23/22/22; GST 89/4 = 22.25 → the one leftover cent to check 3, the first still under its share → 22/22/23/22; totals 270/270/270/269", () => {
     const parts = allocateLine(L1, evenShares(4), EXCL);
     expect(parts.map((p) => p.base)).toEqual([225, 225, 225, 225]);
     expect(parts.map((p) => p.fee)).toEqual([23, 23, 22, 22]);
-    expect(parts.map((p) => p.tax)).toEqual([23, 22, 22, 22]);
-    expect(parts.map((p) => p.total)).toEqual([225 + 23 + 23, 225 + 23 + 22, 225 + 22 + 22, 225 + 22 + 22]);
+    expect(parts.map((p) => p.tax)).toEqual([22, 22, 23, 22]);
+    expect(parts.map((p) => p.total)).toEqual([225 + 23 + 22, 225 + 23 + 22, 225 + 22 + 23, 225 + 22 + 22]);
     expect(parts.map((p) => p.adjustments["sc"]!.tax)).toEqual([2, 2, 2, 2]);
     expect(sumAllocations(parts)).toBe(1079);
   });
@@ -80,17 +83,21 @@ describe("bill splitting reference (allocateLine)", () => {
     expect(sumAllocations(parts)).toBe(1403);
   });
 
-  it("S05: the whole bill split evenly in 3: L1 360/360/359, L2 468/468/467, L3 (400/40/40) → base 134/133/133, fee 14/13/13, GST 14/13/13 = 162/159/159; checks 990/987/985 add to 2962", () => {
-    const l1 = allocateLine(L1, evenShares(3), EXCL);
-    const l2 = allocateLine(L2, evenShares(3), EXCL);
-    const l3 = allocateLine(L3, evenShares(3), EXCL);
+  it("S05: the whole bill split evenly in 3, one balance across the lines: L1 360/360/359 (check 3 is a cent under); L2's odd base cent goes to check 3 (433/433/434), its odd discount cent to check 1, now over (−44/−43/−43), GST 39/39/38 → 467/468/468; L3 base 134/133/133, fee 13/13/14, GST 14/13/13 → 161/159/160; checks 988/987/987 add to 2962, a cent apart at most (one balance per line would give 990/987/985)", () => {
+    const balance = [0, 0, 0];
+    const l1 = allocateLine(L1, evenShares(3), { ...EXCL, balance });
+    const l2 = allocateLine(L2, evenShares(3), { ...EXCL, balance });
+    const l3 = allocateLine(L3, evenShares(3), { ...EXCL, balance });
+    expect(l1.map((p) => p.total)).toEqual([360, 360, 359]);
+    expect(l2.map((p) => p.base)).toEqual([433, 433, 434]);
+    expect(l2.map((p) => p.discount)).toEqual([-44, -43, -43]);
+    expect(l2.map((p) => p.total)).toEqual([467, 468, 468]);
     expect(l3.map((p) => p.base)).toEqual([134, 133, 133]);
-    expect(l3.map((p) => p.fee)).toEqual([14, 13, 13]);
+    expect(l3.map((p) => p.fee)).toEqual([13, 13, 14]);
     expect(l3.map((p) => p.tax)).toEqual([14, 13, 13]);
-    expect(l3.map((p) => p.total)).toEqual([162, 159, 159]);
+    expect(l3.map((p) => p.total)).toEqual([161, 159, 160]);
     const checks = [0, 1, 2].map((i) => l1[i]!.total + l2[i]!.total + l3[i]!.total);
-    expect(checks).toEqual([360 + 468 + 162, 360 + 468 + 159, 359 + 467 + 159]);
-    expect(checks).toEqual([990, 987, 985]);
+    expect(checks).toEqual([988, 987, 987]);
     expect(checks[0]! + checks[1]! + checks[2]!).toBe(2962);
   });
 
@@ -115,14 +122,14 @@ describe("bill splitting reference (allocateLine)", () => {
     expect(sumAllocations(parts)).toBe(1199);
   });
 
-  it("S08: the same components split in 2 under both tax modes: base 545/545, fee 109 → 55/54, GST 99 → 50/49; exclusive totals 650/648 (1298), inclusive 600/599 (1199)", () => {
+  it("S08: the same components split in 2 under both tax modes: base 545/545, fee 109 → 55/54, GST 99 → 49/50 (check 2 is the one under its share); exclusive totals 649/649 (1298), inclusive 600/599 (1199, tax reported, not added)", () => {
     const ex = allocateLine(KOPI_INCL, evenShares(2), EXCL);
     const inc = allocateLine(KOPI_INCL, evenShares(2), INCL);
     expect(ex.map((p) => p.fee)).toEqual([55, 54]);
-    expect(ex.map((p) => p.tax)).toEqual([50, 49]);
-    expect(ex.map((p) => p.total)).toEqual([545 + 55 + 50, 545 + 54 + 49]);
+    expect(ex.map((p) => p.tax)).toEqual([49, 50]);
+    expect(ex.map((p) => p.total)).toEqual([545 + 55 + 49, 545 + 54 + 50]);
     expect(sumAllocations(ex)).toBe(1090 + 109 + 99);
-    expect(inc.map((p) => p.tax)).toEqual([50, 49]);
+    expect(inc.map((p) => p.tax)).toEqual([49, 50]);
     expect(inc.map((p) => p.total)).toEqual([545 + 55, 545 + 54]);
     expect(sumAllocations(inc)).toBe(1090 + 109);
   });

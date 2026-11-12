@@ -1,6 +1,6 @@
 "use client";
 
-import { AmountPad, BackButton, Badge, Button, Money, Skeleton, TenderGrid, TextField, useLocale } from "@sail/ui";
+import { AmountPad, BackButton, Badge, Button, formatBpsText, Money, Skeleton, TenderGrid, TextField, useLocale } from "@sail/ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import { ApiError, idempotencyKey, toApiError } from "@/lib/api";
@@ -9,19 +9,28 @@ import { Frame } from "../components/Frame";
 import { usePos } from "../components/PosContext";
 import { ReceiptChooser } from "../components/ReceiptChooser";
 import { VoidPaymentSheet } from "../components/ReasonSheets";
-import { useOrder, usePaymentIntents, useTenderTypes } from "../hooks/queries";
+import { useMerchant, useOrder, usePaymentIntents, useTenderTypes } from "../hooks/queries";
 import { likelyTendered, useCashDenominations } from "../lib/cash";
 import { roleAtLeast, useOrderActions } from "../hooks/useOrderActions";
 import { useNavStore } from "../state/nav";
+import { useUiStore } from "../state/ui";
 import { billLabel, billRows, shareText } from "./BillScreen";
 
 type Preview = { figures: PaymentFigures; left: number } | null;
+
+/** No tip, a percentage the register works out (basis points), or an amount typed on the keypad (minor units). */
+type Tip = { kind: "none" } | { kind: "percent"; bps: number } | { kind: "amount"; digits: string };
+const TIP_PERCENTAGES = [1500, 1800, 2000];
+/** What the register's dry run and payment are told about the tip. */
+const tipFields = (tip: Tip): { tip_bps?: number; tip_cents?: number } => (tip.kind === "percent" ? { tip_bps: tip.bps } : tip.kind === "amount" ? { tip_cents: Number(tip.digits || "0") } : {});
 
 /**
  * Payment: the bill on the left, methods, the amount prefilled
  * with the balance, cash with a dry run for rounding and change, card with the
  * amount at 34pt and the terminal instruction, then the done screen. A payment method linked to a terminal sends
- * the amount there and waits for the terminal's answer on the event stream; a recorded payment can be voided.
+ * the amount there and waits for the terminal's answer on the event stream; a recorded payment can be voided. Where the
+ * merchant offers tips, a tip is picked as a percentage or typed; the register's dry run turns it into the tip and the
+ * total the guest hands over, and the payment records that figure.
  */
 export function PayScreen({ orderId, checkId }: { orderId: string; checkId: string }) {
   const { money } = useLocale();
@@ -34,6 +43,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const tenders = useTenderTypes(station.outlet_id);
   const intents = usePaymentIntents(orderId);
   const denominations = useCashDenominations();
+  const merchant = useMerchant();
   const actions = useOrderActions(orderId);
   const snap = order.data;
   const check = snap?.checks.find((c) => c.id === checkId) ?? null;
@@ -41,8 +51,12 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const [tenderId, setTenderId] = useState<string | null>(null);
   const [digits, setDigits] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [tipPad, setTipPad] = useState(false);
   const [tendered, setTendered] = useState<number | null>(null);
   const [reference, setReference] = useState("");
+  const [tip, setTip] = useState<Tip>({ kind: "none" });
+  // The last add's Undo belongs to the order screen, not to the payment.
+  useEffect(() => useUiStore.getState().clearUndo(), []);
   const [preview, setPreview] = useState<Preview>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -64,9 +78,13 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const part = amount > 0 && amount < balance;
   const canPay = roleAtLeast(staff.role, "cashier");
   const onTerminal = Boolean(tender?.provider);
+  // Tips go on cash and card payments, never on a house account or a voucher.
+  const tipsOffered = Boolean(merchant.data?.settings.tips_enabled) && Boolean(tender && (tender.is_cash || tender.is_terminal || tender.provider));
+  const tipping = tipsOffered && (tip.kind === "percent" || (tip.kind === "amount" && Number(tip.digits || "0") > 0));
   const mine = useMemo(() => (intents.data ?? []).filter((i) => i.check_id === checkId), [intents.data, checkId]);
   // Resumed after a reload or from another screen: a payment still on the terminal for this bill is waited for here.
-  const pendingId = mine.find((i) => i.state === "pending")?.id ?? null;
+  const pending = mine.find((i) => i.state === "pending") ?? null;
+  const pendingId = pending?.id ?? null;
   const watching = waitingId ?? pendingId;
   const watched: PaymentIntent | null = mine.find((i) => i.id === watching) ?? null;
   const voidWaiting = (paymentRowId: string) => mine.some((i) => i.payment_id === paymentRowId && i.void_requested_at && !i.provider_voided_at);
@@ -78,10 +96,18 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   useEffect(() => {
     if (!tenderId && list[0]) setTenderId(list[0].id);
   }, [list, tenderId]);
+  // Adopt that payment: its method is shown with "Waiting for the terminal", and its outcome (an expiry included) is
+  // still reported here once it is no longer pending.
+  const pendingTenderId = pending?.tender_type_id ?? null;
+  useEffect(() => {
+    if (!pendingId || waitingId) return;
+    setWaitingId(pendingId);
+    if (pendingTenderId) setTenderId(pendingTenderId);
+  }, [pendingId, pendingTenderId, waitingId]);
   // Inputs changed: this is a new attempt, so a new idempotency key.
   useEffect(() => {
     paymentId.current = idempotencyKey();
-  }, [tenderId, amount, tendered, reference]);
+  }, [tenderId, amount, tendered, reference, tip]);
 
   // The terminal answered: approved shows the paid screen once the bill shows the payment; anything else says why.
   const refetchOrder = order.refetch;
@@ -105,7 +131,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   }, [watched, snap, checkId, refetchOrder]);
 
   const runPreview = useCallback(
-    (t: TenderType, amt: number, tnd: number | null): (() => void) | undefined => {
+    (t: TenderType, amt: number, tnd: number | null, tipped: { tip_bps?: number; tip_cents?: number }): (() => void) | undefined => {
       if (!check || amt <= 0) {
         setPreview(null);
         return undefined;
@@ -116,7 +142,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
         if (paying.current) return;
         try {
           setPreviewError(null);
-          const request = actions.previewPayment(check.id, { tender_type_id: t.id, amount: amt, ...(tnd != null ? { tendered: tnd } : {}) });
+          const request = actions.previewPayment(check.id, { tender_type_id: t.id, amount: amt, ...(tnd != null ? { tendered: tnd } : {}), ...tipped });
           previewInFlight.current = request;
           const res = await request.finally(() => {
             if (previewInFlight.current === request) previewInFlight.current = null;
@@ -139,29 +165,37 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
     [actions, check],
   );
 
-  // The register previews cash rounding and change, and the balance left after a part payment, on every change.
+  // The register previews cash rounding and change, the tip, and the balance left after a part payment, on every change.
   // A dry run still waiting when the inputs change, or when the payment is taken, is dropped with the effect.
+  const tipKey = tipping ? JSON.stringify(tipFields(tip)) : "";
   useEffect(() => {
     if (!tender || !check || done || busy) return;
-    if (tender.is_cash || (part && !tender.provider)) return runPreview(tender, amount, tender.is_cash ? tendered : null);
+    const tipped = tipKey ? (JSON.parse(tipKey) as { tip_bps?: number; tip_cents?: number }) : {};
+    if (tender.is_cash || (part && !tender.provider) || tipKey) return runPreview(tender, amount, tender.is_cash ? tendered : null, tipped);
     setPreview(null);
     setPreviewError(amount > balance ? "Amount above the balance. Enter the balance or a smaller part payment." : null);
     return undefined;
-  }, [tender, check, amount, tendered, part, balance, done, busy, runPreview]);
+  }, [tender, check, amount, tendered, part, balance, done, busy, runPreview, tipKey]);
 
   const selectTender = (id: string) => {
+    // Tapping the method already chosen changes nothing; clearing its dry run here left "Checking with the register…" up for good.
+    if (id === tender?.id) return;
     setTenderId(id);
     setTendered(null);
     setPreview(null);
     setTerminalNote(null);
   };
 
+  /** The tip the register worked out in its dry run; a payment with a tip waits for it, so what is recorded is what was shown. */
+  const tipCents = tipping ? (preview?.figures.tip_cents ?? null) : 0;
+
   const sendToTerminal = async () => {
     if (!check || !tender || amount <= 0 || busy) return;
     setBusy(true);
     setTerminalNote(null);
     try {
-      const intent = await actions.startTerminal(check, { intent_id: paymentId.current, tender_type_id: tender.id, amount });
+      if (tipCents === null) return;
+      const intent = await actions.startTerminal(check, { intent_id: paymentId.current, tender_type_id: tender.id, amount, ...(tipCents ? { tip_cents: tipCents } : {}) });
       if (intent) setWaitingId(intent.id);
     } finally {
       setBusy(false);
@@ -185,7 +219,8 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
     const id = paymentId.current;
     try {
       await previewInFlight.current?.catch(() => undefined);
-      const res = await actions.pay(check, { payment_id: id, tender_type_id: tender.id, amount, ...(tender.is_cash && tendered != null ? { tendered } : {}), ...(reference.trim() ? { reference: reference.trim() } : {}) }, tender.name);
+      if (tipCents === null) return;
+      const res = await actions.pay(check, { payment_id: id, tender_type_id: tender.id, amount, ...(tender.is_cash && tendered != null ? { tendered } : {}), ...(tipCents ? { tip_cents: tipCents } : {}), ...(reference.trim() ? { reference: reference.trim() } : {}) }, tender.name);
       if (res) {
         const after = res.data.checks.find((c) => c.id === check.id) ?? check;
         setDone({ check: after, order: res.data, figures: res.payment });
@@ -243,7 +278,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
           check={done.check}
           actions={actions}
           heading={`Paid · ${done.check.label} · ${money(paidAmount)}`}
-          sub={tender.is_cash && change > 0 ? `Change ${money(change)}` : done.figures.rounding_cents ? `Cash rounding ${money(done.figures.rounding_cents)}` : null}
+          sub={[done.figures.tip_cents ? `Tip ${money(done.figures.tip_cents)}` : null, tender.is_cash && change > 0 ? `Change ${money(change)}` : done.figures.rounding_cents ? `Cash rounding ${money(done.figures.rounding_cents)}` : null].filter(Boolean).join(" · ") || null}
           onDone={leave}
           doneLabel={done.order.status === "completed" ? (screen.kind === "pay" && screen.from === "orders" ? "Back to orders" : "Back to floor") : done.order.checks.some((c) => c.status === "open") ? "Next bill" : "Back to the order"}
         />
@@ -256,10 +291,15 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const rounding = tender.is_cash && figures?.rounding_cents ? figures.rounding_cents : 0;
   const change = tender.is_cash && figures && tendered != null ? figures.change_due : null;
   const left = preview?.left ?? null;
-  const verb = tender.is_cash ? `Take ${money(tendered ?? amount)} cash` : onTerminal ? `Send ${money(amount)} to the terminal` : tender.is_terminal ? (part ? `Take ${money(amount)} by ${tender.name}` : `Paid by ${tender.name}`) : `Take ${money(amount)} by ${tender.name}`;
+  // What the guest hands over: the amount, cash rounding and tip, as the register's dry run returned it.
+  const due = figures?.due_cents ?? amount;
+  const verb = tender.is_cash ? `Take ${money(tendered ?? due)} cash` : onTerminal ? `Send ${money(due)} to the terminal` : tender.is_terminal ? (part || tipping ? `Take ${money(due)} by ${tender.name}` : `Paid by ${tender.name}`) : `Take ${money(due)} by ${tender.name}`;
   const label = `${verb}${part && left != null ? ` · ${money(left)} left` : ""} ▸`;
   // Too little cash for the rounded amount comes back from the dry run as a validation error, which blocks the button with its remedy.
-  const blocked = offline || busy || amount <= 0 || Boolean(previewError) || watched?.state === "pending";
+  // Cash and a tip wait for the dry run, so the button never shows a figure the register has not confirmed.
+  const waitingForRegister = (tender.is_cash || tipping) && !figures;
+  const blocked = offline || busy || amount <= 0 || Boolean(previewError) || waitingForRegister || watched?.state === "pending";
+  const tipText = tipping && figures ? money(figures.tip_cents ?? 0) : null;
 
   return (
     <Frame left={<BackButton label={screen.kind === "pay" && screen.returnTo === "bill" ? "Bill" : where} onPress={back} />} title={`${billLabel(check)} · ${where}`}>
@@ -279,7 +319,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
                     </span>
                     {l.modifiers.length ? <span className="block truncate pl-3 text-body text-ink-2">· {l.modifiers.map((m) => m.name).join(", ")}</span> : null}
                   </span>
-                  <Money cents={a.total} size="line" className="text-ink" />
+                  <Money cents={a.base} size="line" className="text-ink" />
                 </div>
               );
             })}
@@ -297,7 +337,10 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
                 .filter((p) => p.status === "recorded")
                 .map((p) => (
                   <li key={p.id} className="flex min-h-11 items-center gap-3">
-                    <span className="min-w-0 flex-1 truncate text-body text-ink">{p.tender}</span>
+                    <span className="min-w-0 flex-1 truncate text-body text-ink">
+                      {p.tender}
+                      {p.tip_cents ? <span className="text-caption text-ink-2"> · tip {money(p.tip_cents)}</span> : null}
+                    </span>
                     <Money cents={p.amount} size="body" className="text-ink" />
                     {voidWaiting(p.id) ? (
                       <Badge tone="bill">Voiding on terminal</Badge>
@@ -320,12 +363,21 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
           </div>
 
           <TenderGrid tenders={list} selectedId={tender.id} onSelect={selectTender} isDisabled={busy} className="mt-4" />
+          {watched?.state === "pending" && !onTerminal ? (
+            <div className="mt-3 flex flex-wrap items-center gap-3 rounded-tile bg-surface px-4 py-3 hairline" role="status">
+              <p className="min-w-0 flex-1 text-body text-ink">A terminal payment of {money(watched.due_cents)} is waiting for the guest. Another payment can be taken once it is paid or cancelled.</p>
+              <Button size="md" variant="secondary" onPress={() => selectTender(watched.tender_type_id)}>
+                Show the terminal payment
+              </Button>
+            </div>
+          ) : null}
 
           <div className="mt-5 flex items-center gap-4">
             <span className="text-line text-ink-2">Amount</span>
             <AriaButton
               onPress={() => {
                 setEditing((e) => !e);
+                setTipPad(false);
                 if (digits === null) setDigits(String(balance));
               }}
               aria-label={`Amount ${money(amount)}, tap to edit`}
@@ -347,6 +399,52 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
             </div>
           ) : null}
 
+          {tipsOffered ? (
+            <div className="mt-4 flex flex-wrap items-center gap-2" role="group" aria-label="Tip">
+              <span className="mr-2 text-caption text-ink-2 uppercase tracking-[0.04em]">Tip</span>
+              <Button size="lg" variant={tip.kind === "none" ? "primary" : "secondary"} aria-pressed={tip.kind === "none"} isDisabled={busy} onPress={() => {
+                  setTip({ kind: "none" });
+                  setPreview(null);
+                  setTipPad(false);
+                }}>
+                No tip
+              </Button>
+              {TIP_PERCENTAGES.map((bps) => (
+                <Button key={bps} size="lg" variant={tip.kind === "percent" && tip.bps === bps ? "primary" : "secondary"} aria-pressed={tip.kind === "percent" && tip.bps === bps} aria-label={`Tip ${formatBpsText(bps)}`} isDisabled={busy} onPress={() => {
+                    setTip({ kind: "percent", bps });
+                    setPreview(null);
+                    setTipPad(false);
+                  }} className="tabular">
+                  {formatBpsText(bps)}
+                </Button>
+              ))}
+              <Button
+                size="lg"
+                variant={tip.kind === "amount" ? "primary" : "secondary"}
+                aria-pressed={tip.kind === "amount"}
+                aria-expanded={tipPad}
+                isDisabled={busy}
+                onPress={() => {
+                  setTip(tip.kind === "amount" ? tip : { kind: "amount", digits: "" });
+                  setTipPad((o) => !o);
+                  setEditing(false);
+                }}
+                className="tabular"
+              >
+                {tip.kind === "amount" && Number(tip.digits || "0") > 0 ? money(Number(tip.digits)) : "Other amount"}
+              </Button>
+            </div>
+          ) : null}
+          {tipsOffered && tipPad && tip.kind === "amount" ? (
+            <div className="mt-3 self-start rounded-tile bg-surface px-4 py-3 hairline">
+              <AmountPad digits={tip.digits} onChange={(d) => {
+                  // A new tip is a new dry run: the old figures must not be paid while it runs.
+                  setTip({ kind: "amount", digits: d });
+                  setPreview(null);
+                }} mode="cents" hint="The tip. Tap the tip button again to close" />
+            </div>
+          ) : null}
+
           {tender.is_cash ? (
             <div className="mt-5 flex flex-col gap-3">
               <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Cash given">
@@ -354,7 +452,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
                 <Button size="lg" variant={tendered === null ? "primary" : "secondary"} onPress={() => setTendered(null)} aria-pressed={tendered === null}>
                   Exact
                 </Button>
-                {likelyTendered(amount, denominations).map((n) => (
+                {likelyTendered(due, denominations).map((n) => (
                   <Button key={n} size="lg" variant={tendered === n ? "primary" : "secondary"} onPress={() => setTendered(n)} aria-pressed={tendered === n} className="tabular">
                     {money(n, { dropZeroFraction: true })}
                   </Button>
@@ -364,6 +462,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
                 {figures ? (
                   <>
                     {rounding !== 0 ? `Cash rounding ${money(rounding)}` : part ? `Part payment of ${money(amount)}` : "No cash rounding"}
+                    {tipText ? ` · tip ${tipText}` : ""}
                     {change != null && tendered != null ? ` · change ${money(change)}` : ""}
                   </>
                 ) : previewError ? (
@@ -377,7 +476,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
             <div className="mt-5 flex flex-col gap-3">
               {onTerminal && watched?.state === "pending" ? (
                 <div role="status" aria-live="polite" className="flex flex-col gap-3">
-                  <Money cents={watched.amount} size="amount-xl" className="text-ink" />
+                  <Money cents={watched.due_cents} size="amount-xl" className="text-ink" />
                   <p className="text-line text-ink">Waiting for the terminal. Ask the guest to tap or insert their card.</p>
                   <Button size="lg" variant="secondary" className="self-start" onPress={() => void actions.cancelTerminal(watched.id)}>
                     Cancel on terminal
@@ -385,8 +484,11 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
                 </div>
               ) : onTerminal ? (
                 <>
-                  <Money cents={amount} size="amount-xl" className="text-ink" />
-                  <p className="text-line text-ink">The terminal asks the guest for {money(amount)}. The bill updates when they have paid.</p>
+                  <Money cents={due} size="amount-xl" className="text-ink" />
+                  <p className="text-line text-ink">
+                    The terminal asks the guest for {money(due)}
+                    {tipText ? `, including a ${tipText} tip` : ""}. The bill updates when they have paid.
+                  </p>
                   {terminalNote ? (
                     <p className={`text-body ${terminalNote.alert ? "text-status-alert" : "text-ink-2"}`} role={terminalNote.alert ? "alert" : "status"}>
                       {terminalNote.text}
@@ -395,12 +497,20 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
                 </>
               ) : tender.is_terminal ? (
                 <>
-                  <Money cents={amount} size="amount-xl" className="text-ink" />
-                  <p className="text-line text-ink">Charge {money(amount)} on the terminal, then tap Paid.</p>
+                  <Money cents={due} size="amount-xl" className="text-ink" />
+                  <p className="text-line text-ink">
+                    Take {money(due)} by {tender.name}
+                    {tipText ? `, including a ${tipText} tip` : ""}, then tap {part || tipping ? "Take" : "Paid"}.
+                  </p>
                 </>
               ) : (
                 <p className="text-line text-ink">Record {money(amount)} to {tender.name}.</p>
               )}
+              {tipping && !figures && !previewError ? (
+                <p className="text-body text-ink-2" role="status" aria-live="polite">
+                  Checking the tip with the register…
+                </p>
+              ) : null}
               {onTerminal ? null : <TextField label={tender.requires_reference ? "Reference" : "Reference (optional)"} isRequired={tender.requires_reference} value={reference} onChange={setReference} inputClassName="min-h-14 text-line" className="max-w-[360px]" maxLength={80} mono />}
               {previewError ? (
                 <p className="text-body text-status-alert" role="alert">

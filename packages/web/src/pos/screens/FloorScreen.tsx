@@ -185,7 +185,7 @@ export function FloorScreen() {
     <Frame title={`${outlet?.name ?? ""}${area ? ` · ${area.name}` : ""}`}>
       <div className="flex min-h-0 flex-1">
         <section className="flex min-w-0 flex-1 flex-col px-5 pt-3 pb-3">
-          <div className="flex items-center gap-2" role="group" aria-label="Areas">
+          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Areas">
             {(snapshot?.areas ?? []).map((a) => (
               <Button key={a.id} size="lg" variant={a.id === area?.id ? "primary" : "secondary"} onPress={() => setAreaId(a.id)} aria-pressed={a.id === area?.id}>
                 {a.name}
@@ -268,10 +268,26 @@ function PaxPicker({ suggested, isPending, onPick }: { suggested: number; isPend
   );
 }
 
-/** Tables on a grid from x/y/w/h; the cell size follows the width so every layout fits. */
+/** Gap to cell, as at the largest cell (12 pt to 76 pt): the gap shrinks with the cell. */
+const GAP_RATIO = 12 / 76;
+/** The smallest table stays at least this big (pt), so it is still a comfortable tap target. */
+const MIN_TABLE = 48;
+
+/**
+ * Tables on a grid from x/y/w/h. The cell (and the gap) shrink with the width so a plan laid across the back office's
+ * 24 columns fits an iPad in landscape. A plan too big for its smallest table to stay tappable scrolls, and says so.
+ */
 function FloorCanvas({ tables, now, receivedAt, disabled, onTable }: { tables: FloorTable[]; now: number; receivedAt: number; disabled: boolean; onTable: (t: FloorTable) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
+  const [overflow, setOverflow] = useState<{ x: boolean; y: boolean }>({ x: false, y: false });
+  const measure = () => {
+    const el = ref.current;
+    if (!el) return;
+    const x = el.scrollWidth > el.clientWidth + 1;
+    const y = el.scrollHeight > el.clientHeight + 1;
+    setOverflow((o) => (o.x === x && o.y === y ? o : { x, y }));
+  };
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -284,30 +300,40 @@ function FloorCanvas({ tables, now, receivedAt, disabled, onTable }: { tables: F
   }, []);
   const cols = Math.max(8, ...tables.map((t) => t.x + t.w));
   const rows = Math.max(4, ...tables.map((t) => t.y + t.h));
-  const gap = 12;
-  const cell = Math.max(44, Math.min(76, Math.floor((width - gap * (cols - 1)) / cols)));
+  const span = Math.min(...tables.map((t) => Math.min(t.w, t.h)));
+  const minCell = tables.length ? Math.ceil(MIN_TABLE / (span + (span - 1) * GAP_RATIO)) : 1;
+  const cell = Math.max(minCell, Math.min(76, Math.floor(width / (cols + (cols - 1) * GAP_RATIO))));
+  const gap = Math.round(cell * GAP_RATIO);
   const height = rows * cell + (rows - 1) * gap;
+  // Re-check after every render: tables added, moved or resized, or a new width, change what fits.
+  useEffect(measure);
   return (
-    <div ref={ref} className="relative mt-4 min-h-0 flex-1 overflow-auto">
-      <div className="relative" style={{ height, minWidth: cols * cell + (cols - 1) * gap }}>
-        {tables.map((t) => {
-          const elapsed = t.order ? t.order.elapsed_seconds + Math.max(0, (now - receivedAt) / 1000) : null;
-          return (
-            <TableShape
-              key={t.id}
-              name={t.name}
-              shape={t.shape}
-              status={t.status}
-              pax={t.order?.pax ?? null}
-              elapsed={elapsed != null ? formatElapsed(elapsed) : null}
-              needsYou={t.requests_waiting > 0 || (t.order?.pending_rounds ?? 0) > 0}
-              isDisabled={disabled}
-              onPress={() => onTable(t)}
-              style={{ left: t.x * (cell + gap), top: t.y * (cell + gap), width: t.w * cell + (t.w - 1) * gap, height: t.h * cell + (t.h - 1) * gap }}
-            />
-          );
-        })}
-        {tables.length === 0 ? <p className="absolute inset-x-0 top-8 text-center text-body text-ink-2">No tables in this area.</p> : null}
+    <div className="relative mt-3 flex min-h-0 flex-1 flex-col">
+      {/* iPad scrollbars stay hidden until a swipe, so a plan bigger than the screen says so (one stable line, no jump while scrolling). */}
+      <p className="min-h-6 pb-1 text-body text-ink-2" role="status">
+        {overflow.x || overflow.y ? `Some tables are off screen. Swipe ${overflow.x && overflow.y ? "across and down" : overflow.x ? "across" : "down"} to see them all.` : ""}
+      </p>
+      <div ref={ref} className="relative min-h-0 flex-1 overflow-auto">
+        <div className="relative" style={{ height, minWidth: cols * cell + (cols - 1) * gap }}>
+          {tables.map((t) => {
+            const elapsed = t.order ? t.order.elapsed_seconds + Math.max(0, (now - receivedAt) / 1000) : null;
+            return (
+              <TableShape
+                key={t.id}
+                name={t.name}
+                shape={t.shape}
+                status={t.status}
+                pax={t.order?.pax ?? null}
+                elapsed={elapsed != null ? formatElapsed(elapsed) : null}
+                needsYou={t.requests_waiting > 0 || (t.order?.pending_rounds ?? 0) > 0}
+                isDisabled={disabled}
+                onPress={() => onTable(t)}
+                style={{ left: t.x * (cell + gap), top: t.y * (cell + gap), width: t.w * cell + (t.w - 1) * gap, height: t.h * cell + (t.h - 1) * gap }}
+              />
+            );
+          })}
+          {tables.length === 0 ? <p className="absolute inset-x-0 top-8 text-center text-body text-ink-2">No tables in this area.</p> : null}
+        </div>
       </div>
     </div>
   );

@@ -137,7 +137,7 @@ export function DiscountSheet({ isOpen, onClose, order, rules, actions }: Discou
                       <span>
                         {l.quantity} {l.name}
                       </span>
-                      <Money cents={l.amounts.total} />
+                      <Money cents={l.amounts.base} />
                     </span>
                   </Checkbox>
                 ))}

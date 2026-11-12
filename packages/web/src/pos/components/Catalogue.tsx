@@ -42,7 +42,8 @@ export function Catalogue({ order, actions, activeSeat }: CatalogueProps) {
     const product = menu.products[tile.product_id];
     if (!product) return notify({ text: `${tile.label} is not on this menu`, remedy: "Add it to the channel's menu in the back office.", tone: "alert", orderId: order.id });
     if (!product.available_now) return notify({ text: `${product.name}: ${product.unavailable_reason ?? "not available"}`, remedy: product.sold_out ? "Choose something else, or restore it from the sold-out list." : "Choose something else.", tone: "info", orderId: order.id });
-    if (offline) return notify({ text: "Offline", remedy: "Adding items needs the register. Reconnecting…", tone: "alert", orderId: order.id });
+    // Offline, an item is kept on the order and sent when the register is back; an open price needs a manager's approval through the register.
+    if (offline && product.open_price) return notify({ text: "Offline", remedy: "An open price needs a manager's approval from the register. Reconnecting…", tone: "alert", orderId: order.id });
     const restricted = tileRestriction(tile.access_level, staff.role);
     if (restricted && !product.open_price) return notify({ text: `${product.name} needs ${restricted} or above`, remedy: "Ask them to add it from their sign-in.", tone: "info", orderId: order.id });
     if (product.open_price) return setPanel({ kind: "open-price", product });

@@ -92,8 +92,8 @@ export function OrdersScreen() {
                     <span className="block truncate text-caption text-ink-2">
                       {o.status === "completed" && o.completed_at ? `Paid ${clock(o.completed_at)}` : o.status === "cancelled" && o.cancelled_at ? `Cancelled ${clock(o.cancelled_at)}` : o.ready_by ? `Ready by ${clock(o.ready_by)}` : `Opened ${clock(o.opened_at)}`}
                       {o.delivery_address ? ` · ${o.delivery_address}` : ""}
-                      {` · ${o.lines.filter((l) => l.status !== "voided").reduce((n, l) => n + l.quantity, 0)} items`}
-                      {o.status === "completed" ? ` · ${o.checks.length} ${o.checks.length === 1 ? "bill" : "bills"} · ${[...new Set(o.checks.flatMap((c) => c.payments.map((p) => p.tender)))].join(", ")}` : ""}
+                      {((n) => ` · ${n} ${n === 1 ? "item" : "items"}`)(o.lines.filter((l) => l.status !== "voided").reduce((n, l) => n + l.quantity, 0))}
+                      {o.status === "completed" ? ` · ${o.checks.length} ${o.checks.length === 1 ? "bill" : "bills"} · ${[...new Set(o.checks.flatMap((c) => c.payments.filter((p) => p.status === "recorded").map((p) => p.tender)))].join(", ")}` : ""}
                       {o.checks.some((c) => c.refunded_total > 0) ? " · refunded" : ""}
                     </span>
                   </span>

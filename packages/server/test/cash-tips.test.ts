@@ -109,4 +109,42 @@ describe("cash tips stay in the drawer", () => {
     expect(r.change).toBeUndefined();
     await closeAgrees(w, shiftId, 10_000 + 2750 + 250);
   });
+
+  it("a percentage tip is worked out by the register on the amount applied, rounded to the cash step in cash; the dry run shows it before anything is taken", async () => {
+    const w = await merchant("Percent tip", "CHF", 5, 1744);
+    const shift = await call<{ data: { id: string } }>("POST", "/v1/shifts", { token: w.token, body: { outlet_id: w.m.outletId, float_cents: 10_000 } });
+    expect(shift.status).toBe(201);
+    const o = await call<{ data: { id: string } }>("POST", "/v1/orders", { token: w.token, body: { order_id: randomUUID(), order_type: "takeaway", takeaway_ref: "T", outlet_id: w.m.outletId, brand_id: w.m.brandId } });
+    const s = await call<{ data: { checks: { id: string; balance: number }[] } }>("POST", `/v1/orders/${o.body.data.id}/lines`, { token: w.token, body: { lines: [{ line_id: randomUUID(), product_id: w.ids.item, quantity: 1 }] } });
+    const check = s.body.data.checks[0]!;
+    type Paid = { payment: { amount: number; rounding_cents: number; tip_cents: number; due_cents: number; change_due: number }; data: { checks: { paid_total: number }[] }; code?: string };
+    // 18% of 17.44 is 3.1392: 3.14, then 3.15 in 5-centime coins. The bill rounds to 17.45, so the guest hands over 20.60.
+    const preview = await call<Paid>("POST", `/v1/checks/${check.id}/payments`, { token: w.token, body: { payment_id: randomUUID(), tender_type_id: w.ids.cash, amount: check.balance, tip_bps: 1800, dry_run: true } });
+    expect(preview.status, JSON.stringify(preview.body)).toBe(200);
+    expect(preview.body.payment).toMatchObject({ amount: 1744, rounding_cents: 1, tip_cents: 315, due_cents: 1745 + 315 });
+    expect(preview.body.data.checks[0]!.paid_total).toBe(1744);
+    const both = await call<Paid>("POST", `/v1/checks/${check.id}/payments`, { token: w.token, body: { payment_id: randomUUID(), tender_type_id: w.ids.cash, amount: check.balance, tip_bps: 1800, tip_cents: 315, dry_run: true } });
+    expect(both.status).toBe(400);
+    // A percentage is a preview: a real payment carries the cents, so an approval covers the exact tip.
+    const real = await call<Paid>("POST", `/v1/checks/${check.id}/payments`, { token: w.token, body: { payment_id: randomUUID(), tender_type_id: w.ids.cash, amount: check.balance, tip_bps: 1800 } });
+    expect(real.status).toBe(400);
+    // Nothing was recorded by the dry runs: the payment the cashier confirms carries the previewed tip.
+    const paid = await call<Paid>("POST", `/v1/checks/${check.id}/payments`, { token: w.token, body: { payment_id: randomUUID(), tender_type_id: w.ids.cash, amount: check.balance, tendered: 2100, tip_cents: preview.body.payment.tip_cents } });
+    expect(paid.status, JSON.stringify(paid.body)).toBe(200);
+    expect(paid.body.payment).toMatchObject({ tip_cents: 315, change_due: 2100 - 1745 - 315 });
+    await closeAgrees(w, shift.body.data.id, 10_000 + 1745 + 315);
+  });
+});
+
+describe("tipping is a merchant setting", () => {
+  it("the us preset offers tips on the POS; the presets where tipping is not customary do not; a merchant can switch it", async () => {
+    const us = await seedMerchant(db.sql, "Tips US", { preset: "us", timeZone: "America/Chicago" });
+    const sg = await seedMerchant(db.sql, "Tips SG", { preset: "sg", timeZone: "Asia/Singapore" });
+    const read = async (token: string) => (await call<{ data: { settings: { tips_enabled: boolean } } }>("GET", "/v1/merchant", { token })).body.data.settings.tips_enabled;
+    expect(await read(us.admin.token)).toBe(true);
+    expect(await read(sg.admin.token)).toBe(false);
+    const on = await call<{ data: { settings: { tips_enabled: boolean } } }>("PATCH", "/v1/merchant/settings", { token: sg.admin.token, body: { tips_enabled: true } });
+    expect(on.status, JSON.stringify(on.body)).toBe(200);
+    expect(on.body.data.settings.tips_enabled).toBe(true);
+  });
 });

@@ -63,6 +63,14 @@ describe("a database at the last migration before the bigint change migrates for
     const journal = JSON.parse(readFileSync(join(folder, "meta/_journal.json"), "utf8")) as { entries: { idx: number; tag: string }[] };
     const first = journal.entries.findIndex((e) => e.tag.endsWith("_money_bigint_drop_views"));
     expect(first).toBeGreaterThan(0);
+    const last = journal.entries.findIndex((e) => e.tag.endsWith("_money_bigint_views"));
+    const later = journal.entries.slice(last + 1).flatMap((e) =>
+      readFileSync(join(folder, `${e.tag}.sql`), "utf8").split("--> statement-breakpoint").map((x) => x.trim()).filter(Boolean).map((stmt) => {
+        const m = /^ALTER TABLE "(\w+)" ADD COLUMN "(\w+)" ([^;]+);?$/.exec(stmt);
+        if (!m) throw new Error(`${e.tag}: this test only knows how to undo ADD COLUMN, not: ${stmt}`);
+        return { table: m[1]!, column: m[2]!, def: m[3]! };
+      }),
+    );
     const before = mkdtempSync(join(tmpdir(), "sail-mig-"));
     try {
       mkdirSync(join(before, "meta"));
@@ -71,6 +79,9 @@ describe("a database at the last migration before the bigint change migrates for
       await admin.unsafe(`create database ${template}`);
       const t = postgres(`postgres://postgres@127.0.0.1:${inject("pgPort")}/${template}`, { max: 1, onnotice: () => {} });
       await migrate(drizzle(t), { migrationsFolder: before });
+      // The data is made by today's code, which reads the columns later migrations add: they are added for the seed and
+      // dropped again before migrating, so the database migrated is the old schema with its rows.
+      for (const c of later) await t.unsafe(`alter table "${c.table}" add column "${c.column}" ${c.def}`);
       await t.end({ timeout: 2 });
     } finally {
       rmSync(before, { recursive: true, force: true });
@@ -100,7 +111,11 @@ describe("a database at the last migration before the bigint change migrates for
     const relations = await db.sql<{ name: string }[]>`select c.relname as name from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('r', 'v') order by 1`;
     const snapshot = async () => {
       const out: Record<string, string | null> = {};
-      for (const { name } of relations) out[name] = (await db!.sql.unsafe<{ h: string | null }[]>(`select md5(string_agg(t::text, '|' order by t::text)) as h from "${name}" t`))[0]!.h;
+      for (const { name } of relations) {
+        const drop = later.filter((c) => c.table === name).map((c) => `'${c.column}'`);
+        const row = drop.length ? `(to_jsonb(t) - array[${drop.join(", ")}])::text` : "to_jsonb(t)::text";
+        out[name] = (await db!.sql.unsafe<{ h: string | null }[]>(`select md5(string_agg(${row}, '|' order by ${row})) as h from "${name}" t`))[0]!.h;
+      }
       return out;
     };
     const was = await snapshot();
@@ -109,6 +124,7 @@ describe("a database at the last migration before the bigint change migrates for
 
     const { closePool } = await import("../src/db/client.js");
     await closePool();
+    for (const c of later) await db.sql.unsafe(`alter table "${c.table}" drop column "${c.column}"`);
     const r = await runMigrations(db.url);
     expect(r.applied).toBe(journal.entries.length - first);
     expect(await snapshot()).toEqual(was);

@@ -5,9 +5,10 @@ import { formatBpsText, useLocale } from "@sail/ui";
 import { useCallback, useMemo } from "react";
 import { ApiError, idempotencyKey, toApiError } from "@/lib/api";
 import * as reg from "../api/register";
+import { reportUnreachable } from "../events/stream";
 import type { CheckPayment, CheckSnapshot, CompiledProduct, ManualRule, MutationResult, OrderSnapshot, OrderType, OverrideAction, OverrideSubject, PaymentIntent, PaymentResult, ReceiptChannel, RefundRequest, RefundResult, Role, SnapshotLine } from "../api/types";
 import { useSessionStore } from "../state/session";
-import { useUiStore } from "../state/ui";
+import { useConnectionStore, useUiStore } from "../state/ui";
 import { applySnapshot, posKeys } from "./queries";
 import { useApi } from "./useApi";
 
@@ -16,6 +17,21 @@ const MIN_ROLE: Record<OverrideAction, Role> = { "lines.void_fired": "manager", 
 
 export function roleAtLeast(role: Role | null | undefined, min: Role): boolean {
   return role ? RANK[role] >= RANK[min] : false;
+}
+
+/** The call never reached the register (no network, or no reply in time), as opposed to the register saying no. */
+const unreachable = (e: unknown) => e instanceof ApiError && e.status === 0 && e.code === "unavailable";
+
+/** Resolves once the station hears from the register again. */
+function whenOnline(): Promise<void> {
+  return new Promise((resolve) => {
+    if (useConnectionStore.getState().status === "online") return resolve();
+    const stop = useConnectionStore.subscribe((s) => {
+      if (s.status !== "online") return;
+      stop();
+      resolve();
+    });
+  });
 }
 
 export type AddLineInput = {
@@ -48,6 +64,7 @@ export function useOrderActions(orderId: string) {
   const fail = useCallback(
     (e: unknown) => {
       const err = toApiError(e);
+      if (unreachable(e)) reportUnreachable();
       notify({ text: err.message, remedy: err.remedy ?? null, tone: "alert", orderId }, 8000);
     },
     [notify, orderId],
@@ -173,7 +190,21 @@ export function useOrderActions(orderId: string) {
             onConflict: "retry-unversioned",
             onRetried: () => notify({ text: "Your 1 new line was kept", tone: "info", orderId }, 4000),
           });
-        const snap = input.openPrice != null ? await withApproval({ action: "lines.add_open_price", target_kind: "order", target_id: orderId, args: { lines: [{ line_id: lineId, product_id: input.product.id, quantity: input.quantity, open_price: input.openPrice }] } }, `Add ${input.product.name} at ${money(input.openPrice)}`, "Open price · needs a manager", exec) : await exec(null);
+        // An add that never reached the register keeps its line on screen and is sent again, with the same line id and
+        // key (so it lands once), as soon as the station is back online.
+        const queued = async (overrideId: string | null): Promise<OrderSnapshot | null> => {
+          for (;;) {
+            try {
+              return await exec(overrideId);
+            } catch (e) {
+              if (!unreachable(e)) throw e;
+              reportUnreachable();
+              notify({ text: `Offline · ${input.product.name} is kept`, remedy: "It goes to the register as soon as the connection is back.", tone: "info", orderId }, 8000);
+              await whenOnline();
+            }
+          }
+        };
+        const snap = input.openPrice != null ? await withApproval({ action: "lines.add_open_price", target_kind: "order", target_id: orderId, args: { lines: [{ line_id: lineId, product_id: input.product.id, quantity: input.quantity, open_price: input.openPrice }] } }, `Add ${input.product.name} at ${money(input.openPrice)}`, "Open price · needs a manager", queued) : await queued(null);
         if (!snap) {
           qc.setQueryData<OrderSnapshot>(key, (s) => (s ? { ...s, lines: s.lines.filter((l) => l.id !== lineId) } : s));
           return null;
@@ -233,7 +264,7 @@ export function useOrderActions(orderId: string) {
           return await withApproval(
             { action: "lines.void_fired", target_kind: "order_line", target_id: line.id, args: { quantity: qty } },
             `Void ${line.name} ×${qty}`,
-            `already sent · ${money(line.amounts.total)}${line.kitchen_name ? " · prints a void ticket" : ""}`,
+            `already sent · ${money(line.amounts.base)}${line.kitchen_name ? " · prints a void ticket" : ""}`,
             (overrideId) => run((expected) => reg.voidLine(api, orderId, line.id, body, { expectedVersion: expected, overrideId })),
           );
         }
@@ -541,7 +572,7 @@ export function useOrderActions(orderId: string) {
    * arrives on the event stream. `intent_id` is kept by the caller for the attempt, so a retry never sends twice.
    */
   const startTerminal = useCallback(
-    async (check: CheckSnapshot, input: { intent_id: string; tender_type_id: string; amount: number }): Promise<PaymentIntent | null> => {
+    async (check: CheckSnapshot, input: { intent_id: string; tender_type_id: string; amount: number; tip_cents?: number }): Promise<PaymentIntent | null> => {
       try {
         const intent = await reg.startTerminalPayment(api, check.id, input, { key: input.intent_id, expectedVersion: snapshot()?.version ?? null });
         void qc.invalidateQueries({ queryKey: posKeys.paymentIntents(orderId) });

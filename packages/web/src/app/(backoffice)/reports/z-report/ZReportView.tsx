@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, EmptyState, InlineError, Select, Skeleton, TextField, useLocale } from "@sail/ui";
+import { Button, Dialog, EmptyState, InlineError, Select, Skeleton, TextField, useLocale } from "@sail/ui";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
@@ -15,7 +15,7 @@ import { useSession } from "@/lib/session-context";
 const ALL = "__all__";
 
 export function ZReportView({ outlets, scope, initialOutletId }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null }) {
-  const { dayClock, isoDate } = useLocale();
+  const { dayClock, isoDate, money } = useLocale();
   const { me } = useSession();
   const qc = useQueryClient();
   const canClose = can(me, "business_days.close");
@@ -23,6 +23,7 @@ export function ZReportView({ outlets, scope, initialOutletId }: { outlets: Outl
   const [date, setDate] = useState(isoDate());
   const [stationId, setStationId] = useState<string | null>(null);
   const [closed, setClosed] = useState<BusinessDayClose | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
   const stations = useQuery({
     queryKey: ["stations", outletId ?? ""],
@@ -42,9 +43,17 @@ export function ZReportView({ outlets, scope, initialOutletId }: { outlets: Outl
     mutationFn: () => req(api.POST("/v1/outlets/{id}/business-days/close", { params: { path: { id: outletId! } }, body: { business_date: date } })).then((r) => r as unknown as { data: BusinessDayClose; warnings: string[] }),
     onSuccess: async (r) => {
       setClosed(r.data);
+      setConfirming(false);
       await qc.invalidateQueries({ queryKey: ["z-report"] });
     },
   });
+  // What is still open on that business day, listed before the day is closed.
+  const stillOpen = useQuery({
+    queryKey: ["z-report", "open-orders", outletId ?? "", date],
+    queryFn: () => req(api.GET("/v1/outlets/{id}/orders", { params: { path: { id: outletId! }, query: { business_date: date, open_only: "true", limit: 500 } } })).then((r) => r.data as unknown as { id: string; order_no: string; totals: { total: number } }[]),
+    enabled: confirming && outletId !== null && validDate,
+  });
+  const closedToday = closed?.business_date === date;
   const stationName = (id: string | null) => (id ? (stations.data ?? []).find((s) => s.id === id)?.name ?? "Station" : "All stations");
 
   return (
@@ -56,8 +65,8 @@ export function ZReportView({ outlets, scope, initialOutletId }: { outlets: Outl
           <Select aria-label="Station" variant="toolbar" selectedKey={stationId ?? ALL} onSelectionChange={(k) => setStationId(k === ALL ? null : k)} items={[{ id: ALL, label: "All stations" }, ...(stations.data ?? []).filter((s) => !s.archived || s.id === stationId).map((s) => ({ id: s.id, label: s.name }))]} />
         </div>
         <div className="flex flex-col items-end gap-1">
-          <Button variant="primary" onPress={() => close.mutate()} isPending={close.isPending} isDisabled={!canClose || !outletId || !validDate || stationId !== null}>
-            Close business day {date}
+          <Button variant="primary" onPress={() => setConfirming(true)} isDisabled={!canClose || !outletId || !validDate || stationId !== null || closedToday}>
+            {closedToday ? `Business day ${date} closed` : `Close business day ${date}…`}
           </Button>
           <p className="text-caption text-ink-2">{!canClose ? rolesFor("business_days.close") : stationId ? "Choose All stations to close the day" : "Snapshots this Z-report once every shift is closed"}</p>
         </div>
@@ -71,6 +80,43 @@ export function ZReportView({ outlets, scope, initialOutletId }: { outlets: Outl
         </div>
       ) : null}
       <InlineError error={close.error} className="mb-6" />
+      <Dialog
+        isOpen={confirming}
+        onOpenChange={(open) => !open && setConfirming(false)}
+        role="alertdialog"
+        title={`Close business day ${date}?`}
+        footer={
+          <>
+            <Button variant="quiet" onPress={() => setConfirming(false)}>
+              Keep the day open
+            </Button>
+            <Button variant="primary" isPending={close.isPending} isDisabled={stillOpen.isPending} onPress={() => close.mutate()}>
+              Close business day
+            </Button>
+          </>
+        }
+      >
+        <p>The register snapshots the Z-report as it stands now. Every shift must be closed first.</p>
+        {stillOpen.isPending ? <p className="pt-2">Checking for open orders…</p> : null}
+        {stillOpen.data && stillOpen.data.length > 0 ? (
+          <div className="pt-3">
+            <p className="text-ink">{stillOpen.data.length === 1 ? "1 order is still open:" : `${stillOpen.data.length} orders are still open:`}</p>
+            <ul className="pt-1">
+              {stillOpen.data.slice(0, 8).map((o) => (
+                <li key={o.id} className="flex justify-between gap-3 tabular">
+                  <span>{o.order_no}</span>
+                  <span>{money(o.totals.total)}</span>
+                </li>
+              ))}
+            </ul>
+            {stillOpen.data.length > 8 ? <p>and {stillOpen.data.length - 8} more, in Orders.</p> : null}
+            <p className="pt-2">Pay or cancel {stillOpen.data.length === 1 ? "it" : "them"} first, unless {stillOpen.data.length === 1 ? "it carries" : "they carry"} over to the next day.</p>
+          </div>
+        ) : stillOpen.data ? (
+          <p className="pt-2">No orders are open.</p>
+        ) : null}
+        <InlineError error={close.error} />
+      </Dialog>
 
       {outlets.length === 0 ? <EmptyState title="No outlets yet" hint="A Z-report belongs to an outlet." /> : null}
       {report.isPending && outletId ? <Skeleton lines={6} /> : null}

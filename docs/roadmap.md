@@ -42,7 +42,7 @@ What is built, what comes next and what Sail will not do. There are no dates. Th
 - Typed responses in the API spec for order snapshots, floor, menu and documents (they are open records today, so clients mirror the types).
 - Back-office screens for agent identities and proposals (both work through the API only).
 - An independent second implementation of pricing, splits and refunds to test the engine against.
-- Pricing conditions: time-of-day and day-of-week windows (happy hour), promo codes, buy N get Y.
+- Pricing conditions: recurring day-of-week and time-of-day windows (a daily happy hour; today a rule has one active-from and active-until range), a party-size condition (an automatic gratuity for six or more), promo codes, buy N get Y.
 - Station tokens that rotate on each PIN sign-in; alerts on PIN lockouts.
 - Email and SMS delivery of digital receipts (links and QR codes work; sending needs a provider).
 

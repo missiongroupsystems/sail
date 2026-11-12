@@ -41,7 +41,7 @@ Read in `packages/server/src/config.ts`; `packages/server/.env.example` has a te
 | `GUEST_TOKEN_SECRET`, `RELAY_TOKEN_SECRET`, `AGENT_TOKEN_SECRET` | Sign guest, relay and agent tokens. At least 16 characters each. | Yes |
 | `PIN_SESSION_IDLE_SECONDS` | A PIN session ends after this much inactivity (default 900). | No |
 | `GUEST_APP_URL` | Base URL of the guest app, used in table QR codes and digital receipt links (`/r/<token>`). | No |
-| `WEB_APP_URL` | Declared but not read by any code today. | No |
+| `WEB_APP_URL` | The back office's address, for example `https://backoffice.example.com`: invite and password-reset links point at it. Required in production: every role refuses to start without it. In development it can be left unset: a link then opens the back office it was made from. | No |
 | `SAIL_VERSION` | Reported by `/health` and the spec. The Dockerfile sets it from a build argument. | No |
 | `SAIL_ROLE` | Alternative to `--role`. | No |
 | `PAYMENT_SIMULATOR_URL` | Development and tests: the terminal simulator behind the `simulator` payment provider. Leave unset in production. | No |

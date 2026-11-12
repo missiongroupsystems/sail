@@ -38,8 +38,9 @@ function shareSummary(totals: number[], money: LocaleFormat["money"]): string {
   return `${distinct.map((t) => money(t)).join(" or ")} each`;
 }
 
+/** The register's label already names the seat of a by-seat bill ("Bill 1 · Seat 1"). */
 export function billLabel(check: CheckSnapshot): string {
-  return check.seat_no != null ? `${check.label} · Seat ${check.seat_no}` : check.label;
+  return check.label;
 }
 
 /** Rows under a bill's lines: every figure as the register returned it. */
@@ -91,7 +92,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
 
   const live = useMemo(() => (snap?.lines ?? []).filter((l) => l.status !== "voided" && !l.optimistic), [snap]);
   const linesById = useMemo(() => new Map(live.map((l) => [l.id, l])), [live]);
-  const paidChecks = useMemo(() => (snap?.checks ?? []).filter((c) => c.locked || c.payments.length > 0 || c.status !== "open"), [snap]);
+  const paidChecks = useMemo(() => (snap?.checks ?? []).filter((c) => c.locked || c.payments.some((p) => p.status === "recorded") || c.status !== "open"), [snap]);
   const lockReason = paidChecks.length ? `${paidChecks[0]!.label} is paid. Refund it to change the split.` : null;
   const lockedLineIds = useMemo(() => new Set(paidChecks.flatMap((c) => c.allocations.map((a) => a.line_id))), [paidChecks]);
   const canPay = roleAtLeast(staff.role, "cashier");
@@ -186,7 +187,8 @@ export function BillScreen({ orderId }: { orderId: string }) {
         name: `${line!.quantity} ${line!.name}`,
         share: shareText(a.share) || null,
         detail: line!.modifiers.length ? line!.modifiers.map((m) => m.name).join(", ") : null,
-        amountCents: a.total,
+        // The line's share of its menu price, as the receipt prints it; discounts, fees and tax are the rows below.
+        amountCents: a.base,
         isSelected: selectedLine === a.line_id,
         isDisabled: check.locked || lockedLineIds.has(a.line_id),
         onPress: canPick && !check.locked ? () => setSelectedLine(selectedLine === a.line_id ? null : a.line_id) : undefined,
@@ -234,7 +236,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
                         </span>
                         <span className="block truncate text-caption text-ink-2">{whereIs(l.id)}</span>
                       </span>
-                      <Money cents={l.amounts.total} size="line" className="text-ink" />
+                      <Money cents={l.amounts.base} size="line" className="text-ink" />
                     </AriaButton>
                   </li>
                 );
@@ -276,7 +278,9 @@ export function BillScreen({ orderId }: { orderId: string }) {
                   status={check.status}
                   lines={cardLines(check)}
                   rows={billRows(check, snap.totals.tax_mode)}
-                  tenders={check.payments.filter((p) => p.status !== "voided").map((p) => ({ id: p.id, label: `${p.tender}${p.reference ? ` · ${p.reference}` : ""}`, cents: p.amount }))}
+                  tenders={check.payments
+                    .filter((p) => p.status === "recorded")
+                    .flatMap((p) => [{ id: p.id, label: `${p.tender}${p.reference ? ` · ${p.reference}` : ""}`, cents: p.amount }, ...(p.tip_cents ? [{ id: `${p.id}:tip`, label: `Tip on ${p.tender}`, cents: p.tip_cents }] : [])])}
                   isTarget={Boolean(selectedLine) && !check.locked}
                   onPress={selectedLine && !check.locked ? () => void moveTo(check) : undefined}
                   actions={

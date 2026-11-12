@@ -23,7 +23,7 @@ import { LocaleSettingsSchema, localeSettingsFor } from "./org.js";
 const op = (o: Partial<OperationSpec> & { op: string; summary: string; description: string }): OperationSpec => ({ tier: "T2", minRole: "cashier", overrideAllowed: false, reasonRequired: false, dryRun: true, principals: ["staff", "agent"], emits: [], mcp: { expose: true, toolsets: ["pos.payment"] }, ...o });
 
 registerOperations({
-  "payments.record": op({ op: "payments.record", summary: "Record a payment on a bill", description: "Applies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.", ...PERMISSIONS["payments.record"], emits: ["payment.recorded", "check.paid", "order.completed"] }),
+  "payments.record": op({ op: "payments.record", summary: "Record a payment on a bill", description: "Applies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. A tip is `tip_cents`, or, on a dry run only, `tip_bps` (a percentage of the amount applied, which the dry run turns into `tip_cents`; in cash it is rounded to the cash rounding step); the reply's `payment.due_cents` is what the guest hands over (amount, cash rounding and tip). The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.", ...PERMISSIONS["payments.record"], emits: ["payment.recorded", "check.paid", "order.completed"] }),
   "orders.complete": op({ op: "orders.complete", summary: "Complete an order", description: "Every bill paid (balance 0) and every item sent or removed.", minRole: "server", tier: "T2", emits: ["order.completed"], mcp: { expose: true, toolsets: ["pos.order"] } }),
   "orders.reopen": op({ op: "orders.reopen", summary: "Reopen a completed order", description: "Same business day, Manager+ (or override). Reverses the order's payments as events and unlocks the bills; the order is then recharged.", tier: "T3", ...PERMISSIONS["orders.reopen"], reasonRequired: true, emits: ["order.reopened", "payment.reversed"], mcp: { expose: true, toolsets: ["pos.order"] } }),
   "checks.print_prebill": op({ op: "checks.print_prebill", summary: "Print a pre-bill", description: "Prints the bill (or every bill of the order) on the station's receipt printer and marks the table as bill requested.", tier: "T1", minRole: "server", emits: ["print_job.created", "order.bill_requested"], mcp: { expose: true, toolsets: ["pos.order"] } }),
@@ -78,7 +78,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
       method: "post",
       path: "/v1/checks/{id}/payments",
       tags: ["payments"],
-      request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ payment_id: z.uuid(), tender_type_id: z.uuid(), amount: AmountSchema.min(1), tendered: AmountSchema.nullable().optional(), tip_cents: AmountSchema.optional(), reference: untrusted(z.string().max(80).nullable().optional()) })) },
+      request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ payment_id: z.uuid(), tender_type_id: z.uuid(), amount: AmountSchema.min(1), tendered: AmountSchema.nullable().optional(), tip_cents: AmountSchema.optional(), tip_bps: z.number().int().min(0).max(10_000).optional(), reference: untrusted(z.string().max(80).nullable().optional()) })) },
       responses: { 200: jsonResponse(OrderMutationResponse.extend({ payment: z.record(z.string(), z.unknown()) })), ...errorResponses },
     },
     async (c) => {
@@ -86,6 +86,8 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
       const { id } = c.req.valid("param");
       const b = c.req.valid("json");
       dryRunFrom(c, b);
+      // A percentage is previewed only: the payment records the tip_cents the dry run returned, so an approval for it covers the exact tip.
+      if (b.tip_bps != null && !b.dry_run) throw AppError.validation("tip_bps is for a dry run", { remedy: "Preview with tip_bps and dry_run, then record the payment with the tip_cents it returned." });
       const [check] = await db().select().from(checks).where(eq(checks.id, id)).limit(1);
       if (!check) throw AppError.notFound("bill", id);
       const order = await lockOrder(check.orderId, b.expected_version);
@@ -94,7 +96,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
       const [linked] = await db().select({ provider: tenderTypes.provider, name: tenderTypes.name }).from(tenderTypes).where(eq(tenderTypes.id, b.tender_type_id)).limit(1);
       if (linked?.provider && !b.dry_run) throw AppError.validation(`${linked.name} payments are taken on the terminal`, { remedy: "Send the payment to the terminal (payments.start) instead of recording it.", details: { tender_type_id: b.tender_type_id } });
       await requireRoleOrOverride(p, principalRole(p), await paymentRole(order.merchantId, b.tender_type_id), { action: "payments.record", targetId: check.orderId, args: { check_id: id, tender_type_id: b.tender_type_id, amount: b.amount, tip_cents: b.tip_cents ?? 0, reference: b.reference ?? null }, overrideId: b.override_id, overrideAllowed: PERMISSIONS["payments.record"].overrideAllowed });
-      const result = await recordPayment(order, { paymentId: b.payment_id, checkId: id, tenderTypeId: b.tender_type_id, amount: b.amount, tendered: b.tendered ?? null, tipCents: b.tip_cents ?? 0, reference: b.reference ?? null, stationId: p.type === "staff" ? (p.stationId ?? null) : null }, p);
+      const result = await recordPayment(order, { paymentId: b.payment_id, checkId: id, tenderTypeId: b.tender_type_id, amount: b.amount, tendered: b.tendered ?? null, tipCents: b.tip_cents, tipBps: b.tip_bps, reference: b.reference ?? null, stationId: p.type === "staff" ? (p.stationId ?? null) : null }, p);
       await recordAudit(p, { action: "payments.record", targetKind: "order", targetId: order.id, outletId: order.outletId, details: { payment_id: result.payment.id, tender: result.payment.tenderName, amount: result.payment.amount, rounding_cents: result.payment.roundingCents } });
       const version = await bumpVersion(order.id);
       const snapshot = { ...(await loadSnapshot(order.id)), version };
@@ -107,8 +109,8 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
       if (result.check.status === "paid") events.push(await ev("check.paid", { check_id: id, total: result.check.total, paid_total: result.check.paidTotal }));
       if (result.orderCompleted) events.push(await ev("order.completed", { order_no: order.orderNo }));
       const payment = snapshot.checks.flatMap((ch) => (ch as { payments: { id: string }[] }).payments).find((x) => x.id === result.payment.id) ?? {};
-      // `due_cents` is what the customer actually hands over for this tender (amount applied plus cash rounding); clients show it, never compute it.
-      return c.json({ data: snapshot, payment: { ...payment, change_due: result.changeDue, due_cents: result.payment.amount + result.payment.roundingCents }, events, warnings: [] }, 200);
+      // `due_cents` is what the customer actually hands over for this tender (amount applied, cash rounding and tip); clients show it, never compute it.
+      return c.json({ data: snapshot, payment: { ...payment, change_due: result.changeDue, due_cents: result.payment.amount + result.payment.roundingCents + result.payment.tipCents }, events, warnings: [] }, 200);
     },
   );
 

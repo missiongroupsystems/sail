@@ -5,7 +5,7 @@ import { loadConfig } from "../src/config.js";
 
 const SECRETS = ["SESSION_TOKEN_SECRET", "STATION_TOKEN_SECRET", "GUEST_TOKEN_SECRET", "RELAY_TOKEN_SECRET", "AGENT_TOKEN_SECRET"] as const;
 const strong = (k: string) => `${k.toLowerCase()}-${"x7Qp2Lm9".repeat(5)}`;
-const base = { NODE_ENV: "production", DATABASE_URL: "postgres://u:p@db:5432/sail", ...Object.fromEntries(SECRETS.map((k) => [k, strong(k)])) };
+const base = { NODE_ENV: "production", DATABASE_URL: "postgres://u:p@db:5432/sail", WEB_APP_URL: "https://backoffice.example.com", ...Object.fromEntries(SECRETS.map((k) => [k, strong(k)])) };
 
 /** The secret values the repository publishes: .env.example and dev:local. A production server must refuse every one. */
 function publishedSecrets(): [string, string][] {

@@ -22,6 +22,8 @@ export const MerchantSettingsSchema = z.object({
   cash_denominations: z.array(AmountSchema.min(1)),
   /** Closing a shift more than this many minor units out needs a variance reason. */
   cash_variance_threshold: AmountSchema,
+  /** The POS pay screen offers a tip (an amount, or a percentage the register works out). */
+  tips_enabled: z.boolean(),
   business_day_cutoff: z.string(),
   timezone: z.string(),
   /** ISO 4217. Fixed once the merchant exists. */
@@ -164,6 +166,7 @@ const toSettings = (s: typeof merchantSettings.$inferSelect) => ({
   cash_rounding_increment: s.cashRoundingIncrement,
   cash_denominations: s.cashDenominations,
   cash_variance_threshold: s.cashVarianceThreshold,
+  tips_enabled: s.tipsEnabled,
   business_day_cutoff: s.businessDayCutoff,
   timezone: s.timezone,
   currency: s.currency,
@@ -234,6 +237,7 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
           ...(settings.cash_rounding_increment !== undefined && { cashRoundingIncrement: settings.cash_rounding_increment }),
           ...(settings.cash_denominations !== undefined && { cashDenominations: settings.cash_denominations }),
           ...(settings.cash_variance_threshold !== undefined && { cashVarianceThreshold: settings.cash_variance_threshold }),
+          ...(settings.tips_enabled !== undefined && { tipsEnabled: settings.tips_enabled }),
           ...(settings.business_day_cutoff !== undefined && { businessDayCutoff: settings.business_day_cutoff }),
           ...(settings.timezone !== undefined && { timezone: settings.timezone }),
           ...(settings.locale !== undefined && { locale: settings.locale }),

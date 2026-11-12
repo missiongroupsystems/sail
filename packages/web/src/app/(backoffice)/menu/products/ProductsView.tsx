@@ -213,7 +213,7 @@ export function ProductsView({ initialPage, categories, brands, scope }: { initi
         className={pages.isPlaceholderData ? "opacity-60" : undefined}
         onRowAction={(p) => (selecting ? toggle(p) : setSheet({ mode: "edit", product: p }))}
         rowClassName={(p) => (p.archived ? "text-ink-2" : undefined)}
-        emptyState={<EmptyState variant="quiet" title="No products match" hint={rows.length === 0 && total === 0 && isInitial ? "Tap Add product, or import a legacy export under Import." : "Widen the filters or clear the search."} />}
+        emptyState={<EmptyState variant="quiet" title="No products match" hint={rows.length === 0 && total === 0 && isInitial ? "Tap Add product, or import a legacy export under Import. A product reaches the POS once it is in a section of a menu (Menu › Menus & sections) and that menu is linked in Settings › Channels." : "Widen the filters or clear the search."} />}
       />
       <InlineError error={pages.error} className="mt-4" />
 

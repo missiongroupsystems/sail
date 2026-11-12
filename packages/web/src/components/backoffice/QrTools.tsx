@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, InlineError } from "@sail/ui";
+import { Button, Dialog, InlineError } from "@sail/ui";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { req, type ApiError } from "@/lib/api";
@@ -8,16 +8,50 @@ import { api } from "@/lib/api.browser";
 import type { Table } from "@/lib/api/types";
 import { openPdf } from "./register";
 
-/** "Download QR sheet (PDF)": the register rotates every table token at the outlet and returns the cards. Admin. */
+/**
+ * "Download QR sheet (PDF)": the cards for the codes on the tables now, as often as needed. Rotating every code is a
+ * separate action behind a confirmation, because the cards on the tables stop working and that cannot be undone. Admin.
+ */
 export function QrSheetButton({ outletId, outletName, canRotate }: { outletId: string; outletName: string; canRotate: boolean }) {
   const sheet = useMutation<void, ApiError>({ mutationFn: () => openPdf(`/v1/outlets/${outletId}/qr-sheet.pdf`, `qr-sheet-${outletName.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.pdf`, "POST") });
+  const [confirming, setConfirming] = useState(false);
+  const rotateAll = useMutation<{ rotated: number }, ApiError>({
+    mutationFn: () => req(api.POST("/v1/outlets/{id}/qr/rotate", { params: { path: { id: outletId } }, body: {} })).then((r) => r.data),
+    onSuccess: () => setConfirming(false),
+  });
   return (
     <div className="flex flex-col items-end gap-1">
-      <Button onPress={() => sheet.mutate()} isPending={sheet.isPending} isDisabled={!canRotate}>
-        Download QR sheet (PDF)
-      </Button>
-      <p className="max-w-[320px] text-right text-caption text-ink-2">{canRotate ? "Rotates every code at this outlet: sheets already on the tables stop working the moment this downloads." : "Admin only. Rotates every code at the outlet."}</p>
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="quiet" onPress={() => setConfirming(true)} isDisabled={!canRotate}>
+          Rotate every code…
+        </Button>
+        <Button onPress={() => sheet.mutate()} isPending={sheet.isPending} isDisabled={!canRotate}>
+          Download QR sheet (PDF)
+        </Button>
+      </div>
+      <p className="max-w-[360px] text-right text-caption text-ink-2" role="status">
+        {!canRotate ? "Admin only." : rotateAll.data ? `${rotateAll.data.rotated} new codes. Download the sheet and replace the cards on the tables.` : "The sheet prints the codes on the tables now. Download it as often as you need."}
+      </p>
       <InlineError error={sheet.error} />
+      <Dialog
+        isOpen={confirming}
+        onOpenChange={(open) => !open && setConfirming(false)}
+        role="alertdialog"
+        title={`Rotate every QR code at ${outletName}?`}
+        footer={
+          <>
+            <Button variant="quiet" onPress={() => setConfirming(false)}>
+              Keep the codes
+            </Button>
+            <Button variant="destructive" isPending={rotateAll.isPending} onPress={() => rotateAll.mutate()}>
+              Rotate every code
+            </Button>
+          </>
+        }
+      >
+        <p>The cards on the tables stop working at once, and guests scanning them cannot order. Do this when codes have been copied or photographed, then print the new sheet and replace every card.</p>
+        <InlineError error={rotateAll.error} />
+      </Dialog>
     </div>
   );
 }

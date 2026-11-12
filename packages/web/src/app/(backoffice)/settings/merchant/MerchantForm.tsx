@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
-import { FormSection, RhfSelect, RhfTextField } from "@/components/forms/fields";
+import { FormSection, RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Merchant, MerchantSettingsPatch } from "@/lib/api/types";
@@ -39,6 +39,7 @@ const Schema = z.object({
   cash_denominations: z.array(z.number().int().positive()),
   /** Money text in the merchant's locale; parsed to minor units on save. */
   cash_variance_threshold: z.string(),
+  tips_enabled: z.boolean(),
   business_day_cutoff: z.string().regex(TIME_RE, "Use 24-hour time, like 04:00"),
   locale: z.string().trim().refine(isLocale, "Enter a language tag, like en-GB or de-DE"),
   business_registration_label: z.string().trim().min(1, "Enter a label"),
@@ -55,6 +56,7 @@ function toValues(m: Merchant, moneyText: LocaleFormat["moneyText"]): Values {
     cash_rounding_increment: m.settings.cash_rounding_increment ? String(m.settings.cash_rounding_increment) : "off",
     cash_denominations: m.settings.cash_denominations,
     cash_variance_threshold: moneyText(m.settings.cash_variance_threshold),
+    tips_enabled: m.settings.tips_enabled,
     business_day_cutoff: m.settings.business_day_cutoff,
     locale: m.settings.locale,
     business_registration_label: m.settings.business_registration_label,
@@ -71,6 +73,7 @@ function toPatch(v: Values, varianceThreshold: number): MerchantSettingsPatch {
     cash_rounding_increment: v.cash_rounding_increment === "off" ? null : Number(v.cash_rounding_increment),
     cash_denominations: [...v.cash_denominations].sort((a, b) => b - a),
     cash_variance_threshold: varianceThreshold,
+    tips_enabled: v.tips_enabled,
     business_day_cutoff: v.business_day_cutoff,
     locale: v.locale.trim(),
     business_registration_label: v.business_registration_label.trim(),
@@ -181,6 +184,9 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
           description="Closing a shift with the drawer more than this over or short asks for a reason."
           className="sm:max-w-[240px]"
         />
+        <RhfSwitch control={form.control} name="tips_enabled" description="The pay screen offers a tip as an amount or a percentage, for cash and card. Tips show on the receipt and in the Z-report.">
+          Offer tips on the POS
+        </RhfSwitch>
         <RhfTextField
           control={form.control}
           name="business_day_cutoff"

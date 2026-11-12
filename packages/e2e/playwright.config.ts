@@ -33,7 +33,11 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  // The usability-review checks also run in WebKit, the engine of the iPad and of the guests' iPhones.
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "webkit", use: { ...devices["Desktop Safari"] }, testMatch: /ux-panel\.spec\.ts$/ },
+  ],
   webServer: [
     { command: "pnpm --filter @sail/server dev:local", env: { PORT: new URL(api).port, GUEST_APP_URL: guest, WEB_APP_URL: web }, url: `${api}/health`, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
     { command: `pnpm --filter @sail/web exec next dev -p ${new URL(web).port}`, env: { NEXT_PUBLIC_API_URL: api }, url: `${web}/login`, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
