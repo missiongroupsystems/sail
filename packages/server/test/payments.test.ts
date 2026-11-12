@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { SEED_RULE_IDS } from "@sail/shared";
 import "../src/modules.js";
@@ -236,6 +236,10 @@ describe("checks and payments", () => {
     const sent = await call<{ data: { token: string; url: string; delivery_status: string }; warnings: string[] }>("POST", `/v1/checks/${checkId}/receipt/send`, { token: cashierPin, body: { channel: "qr" } });
     expect(sent.status).toBe(200);
     expect(sent.body.data.delivery_status).toBe("link_only");
+    // The token is the only guard on the public link, so only its hash is stored, as for table QR tokens.
+    const stored = await db.sql<{ token: string }[]>`select token from digital_receipts where check_id = ${checkId}`;
+    expect(stored.map((r) => r.token)).not.toContain(sent.body.data.token);
+    expect(stored.map((r) => r.token)).toContain(createHash("sha256").update(sent.body.data.token).digest("hex"));
     const email = await call<{ warnings: string[] }>("POST", `/v1/checks/${checkId}/receipt/send`, { token: cashierPin, body: { channel: "email", destination: "guest@example.com" } });
     expect(email.body.warnings[0]).toMatch(/not configured/);
     const pub = await call<{ data: { document: { kind: string; currency: string; currency_exponent: number; totals: { total: number }; payments: unknown[] }; settings: Record<string, unknown> } }>("GET", `/v1/receipts/${sent.body.data.token}`);

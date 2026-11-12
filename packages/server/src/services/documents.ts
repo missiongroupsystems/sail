@@ -4,7 +4,7 @@ import { formatMoney, type BillDocument } from "@sail/shared";
 import { db, tx } from "../db/client.js";
 import { checks, digitalReceipts, merchants, outlets } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
-import { randomToken } from "../auth/tokens.js";
+import { randomToken, sha256 } from "../auth/tokens.js";
 import { config } from "../config.js";
 
 /**
@@ -156,12 +156,13 @@ export async function createDigitalReceipt(input: { merchantId: string; outletId
   const expiresAt = new Date(Date.now() + 90 * 24 * 3600 * 1000);
   // Email and SMS providers are a v0.9 input; until then the link and QR are the delivery.
   const deliveryStatus = input.channel === "email" || input.channel === "sms" ? "provider_not_configured" : "link_only";
-  await db().insert(digitalReceipts).values({ token, merchantId: input.merchantId, outletId: input.outletId, checkId: input.checkId ?? null, refundId: input.refundId ?? null, document: input.document, channel: input.channel, destination: input.destination ?? null, deliveryStatus, expiresAt });
+  // Only the hash is stored: the token is the sole guard on the public link.
+  await db().insert(digitalReceipts).values({ token: sha256(token), merchantId: input.merchantId, outletId: input.outletId, checkId: input.checkId ?? null, refundId: input.refundId ?? null, document: input.document, channel: input.channel, destination: input.destination ?? null, deliveryStatus, expiresAt });
   return { token, url: `${config().GUEST_APP_URL.replace(/\/$/, "")}/r/${token}`, delivery_status: deliveryStatus };
 }
 
 export async function readDigitalReceipt(token: string) {
-  const [row] = await db().select().from(digitalReceipts).where(and(eq(digitalReceipts.token, token))).limit(1);
+  const [row] = await db().select().from(digitalReceipts).where(and(eq(digitalReceipts.token, sha256(token)))).limit(1);
   if (!row || row.expiresAt.getTime() < Date.now()) throw AppError.notFound("receipt");
   return row;
 }

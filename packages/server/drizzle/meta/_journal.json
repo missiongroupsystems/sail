@@ -316,6 +316,13 @@
       "when": 1794515852196,
       "tag": "0044_rls_brand_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1794516336308,
+      "tag": "0045_hash_receipt_tokens",
+      "breakpoints": true
     }
   ]
 }

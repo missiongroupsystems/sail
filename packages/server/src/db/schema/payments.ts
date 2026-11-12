@@ -189,6 +189,7 @@ export const businessDayCloses = pgTable(
 export const digitalReceipts = pgTable(
   "digital_receipts",
   {
+    /** SHA-256 of the link's token; the token itself is shown once and never stored. */
     token: text("token").primaryKey(),
     merchantId: uuid("merchant_id").notNull(),
     outletId: uuid("outlet_id").notNull(),
