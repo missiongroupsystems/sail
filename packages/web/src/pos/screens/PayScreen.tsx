@@ -13,6 +13,7 @@ import { useMerchant, useOrder, usePaymentIntents, useTenderTypes } from "../hoo
 import { likelyTendered, useCashDenominations } from "../lib/cash";
 import { roleAtLeast, useOrderActions } from "../hooks/useOrderActions";
 import { useNavStore } from "../state/nav";
+import { useUiStore } from "../state/ui";
 import { billLabel, billRows, shareText } from "./BillScreen";
 
 type Preview = { figures: PaymentFigures; left: number } | null;
@@ -54,6 +55,8 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const [tendered, setTendered] = useState<number | null>(null);
   const [reference, setReference] = useState("");
   const [tip, setTip] = useState<Tip>({ kind: "none" });
+  // The last add's Undo belongs to the order screen, not to the payment.
+  useEffect(() => useUiStore.getState().clearUndo(), []);
   const [preview, setPreview] = useState<Preview>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

@@ -38,8 +38,9 @@ function shareSummary(totals: number[], money: LocaleFormat["money"]): string {
   return `${distinct.map((t) => money(t)).join(" or ")} each`;
 }
 
+/** The register's label already names the seat of a by-seat bill ("Bill 1 · Seat 1"). */
 export function billLabel(check: CheckSnapshot): string {
-  return check.seat_no != null ? `${check.label} · Seat ${check.seat_no}` : check.label;
+  return check.label;
 }
 
 /** Rows under a bill's lines: every figure as the register returned it. */
