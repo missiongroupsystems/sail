@@ -195,6 +195,15 @@ test("POS: pay on the card terminal (simulator); a declined card then cash", asy
     await page.getByRole("button", { name: "No receipt" }).click();
   });
 
+  await test.step("open a shift, so cash has a drawer to go into", async () => {
+    await page.getByRole("button", { name: "Shift", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Open shift" })).toBeVisible();
+    await page.getByRole("button", { name: "Count notes and coins" }).click();
+    await page.getByRole("button", { name: "More $100" }).click();
+    await page.getByRole("button", { name: "Open shift with $100.00" }).click();
+    await expect(page.getByRole("heading", { name: "Shift open" })).toBeVisible();
+  });
+
   await test.step("the terminal declines: the bill is untouched, then the guest pays cash", async () => {
     const { payment_simulator } = devLocal();
     const next = await fetch(`${payment_simulator}/terminals/sim-1/next`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ outcome: "decline" }) });
