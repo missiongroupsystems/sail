@@ -34,6 +34,9 @@ export function allocateLine(components: LineComponents, shares: readonly Share[
   const taxes = components.taxes.map((t) => allocateByShares(t.amount, shares));
   const adj: Record<string, { amount: Cents[]; tax: Cents[] }> = {};
   for (const [id, a] of Object.entries(components.adjustments)) adj[id] = { amount: allocateByShares(a.amount, shares), tax: allocateByShares(a.tax, shares) };
+  // A receipt prints a bill's adjustment rows under its discount and fee, so on each bill the rows must add up to them.
+  splitRows(adj, components.adjustments, discount, shares, -1);
+  splitRows(adj, components.adjustments, fee, shares, 1);
   return shares.map((share, i) => {
     const adjustments: Record<string, { amount: Cents; tax: Cents }> = {};
     for (const [id, a] of Object.entries(adj)) adjustments[id] = { amount: a.amount[i]!, tax: a.tax[i]! };
@@ -44,6 +47,39 @@ export function allocateLine(components: LineComponents, shares: readonly Share[
     const t = sumCents(mine.map((x) => x.amount));
     return { base: b, discount: d, fee: f, tax: t, taxes: mine, adjustments, total: b + d + f + (opts.taxAddsToTotal ? t : 0), share };
   });
+}
+
+/**
+ * Re-split the adjustments of one sign (discounts −1, fees +1) so that on every bill they add up to the bill's own
+ * discount (or fee) and across bills each adds up to its own amount. Each bill takes the floor of its exact share of each
+ * adjustment, then the leftover cents are filled bill by bill, adjustment by adjustment, so no row changes sign. Only when
+ * the adjustments account for the whole amount, as they always do for a line the engine priced.
+ */
+function splitRows(adj: Record<string, { amount: Cents[]; tax: Cents[] }>, source: LineComponents["adjustments"], perBill: Cents[], shares: readonly Share[], sign: 1 | -1) {
+  const ids = Object.keys(source).filter((id) => Math.sign(source[id]!.amount) === sign);
+  if (ids.length === 0 || sumCents(ids.map((id) => source[id]!.amount)) !== sumCents(perBill)) return;
+  const den = sumCents(shares.map((x) => x.num * (shares.reduce((l, y) => lcm(l, y.den), 1) / x.den)));
+  const lcmDen = shares.reduce((l, y) => lcm(l, y.den), 1);
+  const weight = shares.map((x) => x.num * (lcmDen / x.den));
+  const cells = ids.map((id) => weight.map((w) => (den === 0 ? 0 : Math.floor((Math.abs(source[id]!.amount) * w) / den))));
+  const rowNeed = perBill.map((d, i) => Math.abs(d) - sumCents(cells.map((c) => c[i]!)));
+  const colNeed = ids.map((id, k) => Math.abs(source[id]!.amount) - sumCents(cells[k]!));
+  for (let i = 0, k = 0; i < perBill.length && k < ids.length; ) {
+    const give = Math.min(rowNeed[i]!, colNeed[k]!);
+    cells[k]![i]! += give;
+    rowNeed[i]! -= give;
+    colNeed[k]! -= give;
+    if (rowNeed[i] === 0) i++;
+    else k++;
+  }
+  ids.forEach((id, k) => (adj[id]!.amount = cells[k]!.map((v) => sign * v || 0)));
+}
+
+function lcm(a: number, b: number): number {
+  let x = a;
+  let y = b;
+  while (y) [x, y] = [y, x % y];
+  return (a / x) * b;
 }
 
 /** Add tax amounts up by component (name and rate), in first-seen order. */

@@ -153,6 +153,20 @@ describe("documents of a paid bill", () => {
 
 type ZReport = { sales: { total: number; net: number; tax: number }; tenders: { amount: number }[]; cash: { expected: number; counted: number | null; variance: number | null; cash_payments: number } };
 
+describe("split bills print rows that add up", () => {
+  it("a 0.04 item with two 25% item discounts split three ways: each bill's discount rows add up to its discount", async () => {
+    const s = await h.orderWith(mgr(), [{ product_id: w.ids.openItem, quantity: 1, open_price: 4 }]);
+    for (const v of [2500, 2500]) expect((await call("POST", `/v1/orders/${s.id}/adjustments`, { token: mgr(), body: { application_id: randomUUID(), rule_key: "seed:percent-off-item", entered_value: v, line_ids: [s.lines[0]!.id], reason: "x" } })).status).toBe(200);
+    const split = await call<{ data: Snap }>("POST", `/v1/orders/${s.id}/checks/split-even`, { token: mgr(), body: { n: 3 } });
+    const docs = await withTransaction(() => Promise.all(split.body.data.checks.map((c) => billDocumentFor(c.id, "prebill"))));
+    for (const d of docs) {
+      expect(d.adjustments.filter((a) => a.kind === "discount").reduce((x, a) => x + a.amount, 0)).toBe(d.totals.discount_total);
+      expect(rowsAddUp(d)).toBe(d.totals.total);
+      expect(d.totals.total).toBeGreaterThanOrEqual(0);
+    }
+  });
+});
+
 describe("amounts beyond 32 bits", () => {
   for (const [currency, locale, price, zone] of [["IDR", "id-ID", 1_200_000_000, "Asia/Jakarta"], ["VND", "vi-VN", 1_500_000_000, "Asia/Ho_Chi_Minh"]] as const) {
     it(`${currency}: orders, payments, shift close, Z-report, day close and sales summary past 2^31 minor units`, async () => {

@@ -56,3 +56,33 @@ describe("bill allocation", () => {
     );
   });
 });
+
+describe("money review: a bill's adjustment rows add up to its discount and fee", () => {
+  it("a 0.04 item with two 25% discounts split three ways prints rows that add up to each bill's discount", () => {
+    const parts = allocateLine({ base: 4, discount: -2, fee: 0, taxes: [], adjustments: { a: { amount: -1, tax: 0 }, b: { amount: -1, tax: 0 } } }, evenShares(3), { taxAddsToTotal: true });
+    for (const p of parts) expect(Object.values(p.adjustments).filter((a) => a.amount < 0).reduce((s, a) => s + a.amount, 0)).toBe(p.discount + 0);
+    expect(parts.reduce((s, p) => s + p.discount, 0)).toBe(-2);
+  });
+  it("property: per bill, discount rows sum to the discount and fee rows to the fee; bills still add up to the line", () => {
+    fc.assert(
+      fc.property(fc.array(fc.integer({ min: -500, max: -1 }), { maxLength: 4 }), fc.array(fc.integer({ min: 1, max: 500 }), { maxLength: 3 }), fc.integer({ min: 0, max: 5000 }), fc.integer({ min: 1, max: 6 }), (discs, fees, extra, n) => {
+        const adjustments: Record<string, { amount: number; tax: number }> = {};
+        discs.forEach((d, i) => (adjustments[`d${i}`] = { amount: d, tax: 0 }));
+        fees.forEach((f, i) => (adjustments[`f${i}`] = { amount: f, tax: 0 }));
+        const discount = discs.reduce((a, b) => a + b, 0);
+        const fee = fees.reduce((a, b) => a + b, 0);
+        const parts = allocateLine({ base: -discount + extra, discount, fee, taxes: [], adjustments }, evenShares(n), { taxAddsToTotal: true });
+        for (const p of parts) {
+          const rows = Object.entries(p.adjustments);
+          expect(rows.filter(([k]) => k.startsWith("d")).reduce((s, [, a]) => s + a.amount, 0)).toBe(p.discount + 0);
+          expect(rows.filter(([k]) => k.startsWith("f")).reduce((s, [, a]) => s + a.amount, 0)).toBe(p.fee + 0);
+        }
+        expect(parts.reduce((s, p) => s + p.discount, 0)).toBe(discount);
+        expect(parts.reduce((s, p) => s + p.fee, 0)).toBe(fee);
+        for (const [k, a] of Object.entries(adjustments)) expect(parts.reduce((s, p) => s + p.adjustments[k]!.amount, 0)).toBe(a.amount);
+        for (const p of parts) for (const [k, a] of Object.entries(p.adjustments)) expect(Math.sign(a.amount) * Math.sign(adjustments[k]!.amount)).toBeGreaterThanOrEqual(0);
+        for (const p of parts) expect(p.base + p.discount).toBeGreaterThanOrEqual(0);
+      }),
+    );
+  });
+});
