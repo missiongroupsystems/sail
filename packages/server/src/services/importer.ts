@@ -1,4 +1,4 @@
-import { currencyExponent } from "@sail/shared";
+import { currencyExponent, MAX_AMOUNT } from "@sail/shared";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { ROLES } from "@sail/shared";
@@ -64,7 +64,13 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
   const [settings] = await sql<{ currency: string }[]>`select currency from merchant_settings where merchant_id = ${merchantId}`;
   if (!settings) throw new Error("merchant settings not found");
   const exponent = currencyExponent(settings.currency);
-  const cents = (s: string) => minorUnits(s, exponent);
+  /** A non-empty amount cell, in minor units; a row whose cell is not an amount is refused, never read as "no amount". */
+  const amountCell = (field: string, value: string) => {
+    const c = minorUnits(value, exponent);
+    if (c == null) throw new Error(`${field} "${value}" is not an amount in ${settings.currency}`);
+    if (c > MAX_AMOUNT) throw new Error(`${field} "${value}" is above the largest amount the register accepts`);
+    return c;
+  };
   // Products name their tax class by name; blank is the merchant's default class.
   const taxClasses = new Map((await sql<{ id: string; name: string }[]>`select id, name from tax_classes where merchant_id = ${merchantId} and archived_at is null`).map((c) => [c.name.toLowerCase(), c.id]));
 
@@ -151,8 +157,7 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               const name = get(row, "name");
               if (!name) throw new Error("name is required");
               if (!lid) throw new Error("sku or legacy_id is required");
-              const priceCents = cents(get(row, "price"));
-              if (priceCents == null) throw new Error(`price "${get(row, "price")}" is not an amount in ${settings.currency}`);
+              const priceCents = amountCell("price", get(row, "price"));
               const catKey = get(row, "category_legacy_id");
               const categoryId = (catKey ? ref("categories", catKey) : null) ?? null;
               if (catKey && !categoryId) throw new Error(`category ${catKey} not found`);
@@ -172,8 +177,7 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               for (const ot of ["dine_in", "takeaway", "pickup", "delivery"] as const) {
                 const v = get(row, `price_${ot}`);
                 if (v) {
-                  const c = cents(v);
-                  if (c == null) throw new Error(`price_${ot} "${v}" is not an amount in ${settings.currency}`);
+                  const c = amountCell(`price_${ot}`, v);
                   await sql`insert into product_prices (merchant_id, product_id, order_type, price) values (${merchantId}, ${id}, ${ot}, ${c}) on conflict (product_id, order_type) do update set price = excluded.price`;
                 }
               }
@@ -196,7 +200,8 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               const childKey = get(row, "child_group_legacy_id");
               const childId = (childKey ? ref("modifier_groups", childKey) : null) ?? null;
               if (childKey && !childId) throw new Error(`child group ${childKey} not found`);
-              const override = get(row, "price_override") ? cents(get(row, "price_override")) : null;
+              // A blank override uses the modifier product's own price; one that does not parse refuses the row.
+              const override = get(row, "price_override") ? amountCell("price_override", get(row, "price_override")) : null;
               const [existing] = await sql<{ id: string; price_override: number | null; child_group_id: string | null; sort: number }[]>`select id, price_override, child_group_id, sort from modifier_options where group_id = ${groupId} and product_id = ${productId}`;
               const sort = num(get(row, "sort"), 0);
               if (!existing) {

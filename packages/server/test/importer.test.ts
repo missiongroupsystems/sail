@@ -165,3 +165,23 @@ describe("legacy importer", () => {
     expect((await call("POST", "/v1/imports", { token: A.manager.token, body: { mapping, files } })).status).toBe(403);
   });
 });
+
+describe("money review: importer amounts", () => {
+  it("a modifier price override that is not an amount refuses the row instead of silently using the product's price", async () => {
+    const B = await seedMerchant(db.sql, "Bravo");
+    const f = {
+      "items.csv": "SKU,Item Name,Price,Type\nNOODLE,Noodle,8.00,Item\nEGG,Egg,1.00,Modifier\nHUGE,Banquet,99999999999999999999,Item\n",
+      "modgroups.csv": "Group ID,Group Name,Min,Max\nADD,Add-ons,0,2\n",
+      "modopts.csv": "Group,Modifier SKU,Parent SKU,Price\nADD,EGG,NOODLE,\"0,50\"\n",
+    };
+    const m = { files: [mapping.files[2]!, mapping.files[3]!, mapping.files[4]!].map((x) => ({ ...x, columns: Object.fromEntries(Object.entries(x.columns).filter(([k]) => !["category_legacy_id", "tags", "has_deposit", "tax_class"].includes(k))) })) };
+    const r = await call<{ data: Job }>("POST", "/v1/imports", { token: B.admin.token, body: { mapping: m, files: f, dry_run: true } });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    await runQueuedImports();
+    const job = await call<{ data: Job }>("GET", `/v1/imports/${r.body.data.id}`, { token: B.admin.token });
+    const e = job.body.data.report!.entities;
+    expect(e.modifier_options!.creates).toBe(0);
+    expect(e.modifier_options!.rejected.map((x) => x.reason)).toEqual(['price_override "0,50" is not an amount in SGD']);
+    expect(e.products!.rejected.map((x) => x.reason)).toEqual(['price "99999999999999999999" is above the largest amount the register accepts']);
+  });
+});
