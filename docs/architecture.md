@@ -55,11 +55,11 @@ Each operation has an id of the form `group.verb` (`lines.add`, `refunds.create`
 From there:
 
 - `defineOp` registers the Hono route and writes the entry into the spec as `x-sail`.
-- `packages/server/openapi.json` is generated and committed (172 paths, 213 operations). `pnpm openapi:check` fails when it is stale.
+- `packages/server/openapi.json` is generated and committed (173 paths, 214 operations). `pnpm openapi:check` fails when it is stale.
 - `packages/server/mcp-tools.json` is generated from the spec (112 tools) and checked by `pnpm --filter @sail/server manifest:check`.
 - The front ends generate their API types from the spec (`gen:api`).
 
-Risk tiers: T0 reads, quotes and dry runs; T1 routine and reversible (add a line, split, mark sold out, reroute a ticket); T2 consequential (send to the kitchen, record a payment, apply a discount or comp, close a shift); T3 money out (refunds, reopening), configuration and identities. Today there are 93 T0, 35 T1, 18 T2 and 67 T3 operations.
+Risk tiers: T0 reads, quotes and dry runs; T1 routine and reversible (add a line, split, mark sold out, reroute a ticket); T2 consequential (send to the kitchen, record a payment, apply a discount or comp, close a shift); T3 money out (refunds, reopening), closing a business day, configuration and identities. For agents, any call that lowers what an order owes or changes its tax or fees is a proposal whatever its tier ([mcp.md](mcp.md#money-an-agent-may-not-move-by-itself)). Today there are 93 T0, 36 T1, 17 T2 and 68 T3 operations.
 
 ## Pricing and tax
 
