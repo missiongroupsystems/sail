@@ -3240,6 +3240,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agent-identities/{id}/delegations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delegate to an agent
+         * @description A signed-in person lets one agent identity act for them: returns a single-use grant, valid for five minutes, for the agent runner to pass as `on_behalf_of`. The runner never holds the person's own token. The agent acts for them only while the session they delegated from lasts, and they cannot approve its proposals.
+         */
+        post: operations["agent_delegations.create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agent-sessions": {
         parameters: {
             query?: never;
@@ -3251,7 +3271,7 @@ export interface paths {
         put?: never;
         /**
          * Start an agent session
-         * @description Exchanges an agent credential for a 15-minute agent token bound to a task. With `on_behalf_of` (a staff PIN session or back-office token) the effective role is the lower of the agent's and the person's, and the outlet scope is the intersection, so an agent never does for a Server what the Server could not.
+         * @description Exchanges an agent credential for a 15-minute agent token bound to a task. With `on_behalf_of` (a delegation grant from agent_delegations.create) the effective role is the lower of the agent's and the person's, and the outlet scope is the intersection, so an agent never does for a Server what the Server could not.
          */
         post: operations["agent_sessions.start"];
         delete?: never;
@@ -32598,6 +32618,142 @@ export interface operations {
                             businessDate: string;
                         }[];
                         warnings: string[];
+                    };
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Permission denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Conflict (state, version or idempotency) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Invariant violation or unavailable */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    "agent_delegations.create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Request body */
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            grant: string;
+                            expires_at: string;
+                        };
                     };
                 };
             };

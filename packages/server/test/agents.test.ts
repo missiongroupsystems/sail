@@ -28,6 +28,8 @@ let agentToken: string;
 type Snap = { id: string; version: number; status: string; lines: { id: string; status: string; notes: string | null }[]; checks: { id: string; totals: { total: number } }[] };
 type Proposal = { id: string; status: string; operation_id: string; tier: string; result: { status: number; body: unknown } | null; reject_reason: string | null; rationale: { untrusted_text: string } | null };
 
+/** The person signed in with `token` delegates to an agent identity; the runner gets a single-use grant, never the token. */
+const delegate = async (token: string, identityId: string) => (await call<{ data: { grant: string } }>("POST", `/v1/agent-identities/${identityId}/delegations`, { token, body: {} })).body.data.grant;
 const startSession = (credential: string, extra: Record<string, unknown> = {}) => call<{ data: { agent_token: string; effective_role: string; outlet_ids: string[] } }>("POST", "/v1/agent-sessions", { body: { credential, task_id: "t-1", ...extra }, idempotencyKey: null });
 
 beforeAll(async () => {
@@ -85,12 +87,17 @@ describe("agent identities and sessions", () => {
   it("on behalf of a person: the effective role is the lower of the two and reports stay closed to a cashier", async () => {
     const own = await startSession(managerAgent.credential);
     expect((await call("GET", `/v1/reports/sales-summary?outlet_id=${A.outletId}`, { token: own.body.data.agent_token })).status).toBe(200);
-    const obo = await startSession(managerAgent.credential, { on_behalf_of: cashierPin });
+    // A person's own token is not a delegation: the runner must never hold it.
+    expect((await startSession(managerAgent.credential, { on_behalf_of: cashierPin })).status).toBe(400);
+    const grant = await delegate(cashierPin, managerAgent.id);
+    const obo = await startSession(managerAgent.credential, { on_behalf_of: grant });
     expect(obo.status, JSON.stringify(obo.body)).toBe(201);
     expect(obo.body.data.effective_role).toBe("cashier");
     expect(obo.body.data.outlet_ids).toEqual([A.outletId]);
     expect((await call("GET", `/v1/reports/sales-summary?outlet_id=${A.outletId}`, { token: obo.body.data.agent_token })).status).toBe(403);
-    expect((await startSession(managerAgent.credential, { on_behalf_of: agentToken })).status).toBe(400); // an agent is not a person
+    expect((await startSession(managerAgent.credential, { on_behalf_of: grant })).status).toBe(400); // a grant works once
+    expect((await startSession(cashierAgent.credential, { on_behalf_of: await delegate(cashierPin, managerAgent.id) })).status).toBe(400); // for the identity it names
+    expect((await call("POST", `/v1/agent-identities/${managerAgent.id}/delegations`, { token: agentToken, body: {} })).status).toBe(403); // an agent is not a person
   });
 });
 
@@ -196,7 +203,7 @@ describe("ceilings and proposals", () => {
 
   it("an agent with a T2 ceiling still cannot comp, fire or take a payment by itself: each one is a proposal a person approves", async () => {
     const r = await call<{ data: { credential: string } }>("POST", "/v1/agent-identities", { token: A.admin.token, body: { name: "Attended", role: "manager", outlet_ids: [A.outletId], toolsets: ["pos.read", "pos.order", "pos.payment"], risk_ceiling: "T2" } });
-    const tok = (await startSession(r.body.data.credential, { on_behalf_of: managerPin })).body.data.agent_token;
+    const tok = (await startSession(r.body.data.credential, { on_behalf_of: await delegate(managerPin, r.body.data.id) })).body.data.agent_token;
     const o = await call<{ data: Snap & { totals: { total: number } } }>("POST", "/v1/orders", { token: tok, body: { order_id: randomUUID(), order_type: "takeaway", takeaway_ref: "C", outlet_id: A.outletId, brand_id: A.brandId } });
     const s = (await call<{ data: Snap & { totals: { total: number } } }>("POST", `/v1/orders/${o.body.data.id}/lines`, { token: tok, body: { lines: [{ line_id: randomUUID(), product_id: ids.laksa, quantity: 1 }] } })).body.data;
     const comp = await call<{ code: string; data: Proposal }>("POST", `/v1/orders/${s.id}/adjustments`, { token: tok, body: { application_id: randomUUID(), rule_key: SEED_RULE_IDS.managerComp, reason: "Regular", line_ids: [s.lines[0]!.id] } });
@@ -206,8 +213,9 @@ describe("ceilings and proposals", () => {
     expect((await call("POST", `/v1/checks/${s.checks[0]!.id}/payments`, { token: tok, body: { payment_id: randomUUID(), tender_type_id: ids.cash, amount: 100 } })).status).toBe(202);
     const unchanged = (await call<{ data: Snap & { totals: { total: number }; paid_total: number } }>("GET", `/v1/orders/${s.id}`, { token: tok })).body.data;
     expect(unchanged).toMatchObject({ status: "open", paid_total: 0, totals: { total: s.totals.total } });
-    // The person the agent works for confirms the comp; it runs as them.
-    const done = await call<{ data: Proposal }>("POST", `/v1/proposals/${comp.body.data.id}/approve`, { token: managerPin, body: {} });
+    // The person the agent works for may not confirm it: the runner was given their authority. Another person does, and it runs as them.
+    expect((await call("POST", `/v1/proposals/${comp.body.data.id}/approve`, { token: managerPin, body: {} })).status).toBe(403);
+    const done = await call<{ data: Proposal }>("POST", `/v1/proposals/${comp.body.data.id}/approve`, { token: A.admin.token, body: {} });
     expect(done.body.data).toMatchObject({ status: "approved", result: { status: 200 } });
     expect((await call<{ data: { totals: { total: number } } }>("GET", `/v1/orders/${s.id}`, { token: tok })).body.data.totals.total).toBe(0);
     // T1 still runs directly, and MCP lists the T2 tools as proposal-only.
@@ -393,7 +401,7 @@ describe("MCP adapter", () => {
       "setup.time_zone": "checked against the IANA zones",
       "setup.currency": "checked against ISO 4217",
       "setup.locale": "checked as a BCP 47 locale",
-      "agent_sessions.on_behalf_of": "a token, never stored",
+      "agent_sessions.on_behalf_of": "a delegation grant, stored only as a hash",
       "agent_sessions.task_id": "the agent runner's own task reference",
       "business_days.business_date": "a date, checked by the register",
       "customer_groups.name": "set up by a Manager in the back office",

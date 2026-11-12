@@ -35,6 +35,33 @@ export const agentIdentities = pgTable(
   (t) => [index("agent_identities_merchant_idx").on(t.merchantId)],
 );
 
+/**
+ * The person an attended agent acts for: their role and scope when they delegated, and the session they delegated
+ * from. The agent acts for them only while that session lasts.
+ */
+export type OnBehalfOf = { principal_id: string; principal_type: string; name: string | null; role: string; outlet_ids: string[]; brand_ids: string[]; staff_session_id?: string | null; backoffice_session_id?: string | null };
+
+/**
+ * A single-use grant a signed-in person mints for one agent identity, so an agent runner can start a session on their
+ * behalf without ever holding the person's own token. Only the hash of the grant is stored.
+ */
+export const agentDelegations = pgTable(
+  "agent_delegations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    merchantId: uuid("merchant_id").notNull(),
+    identityId: uuid("identity_id")
+      .notNull()
+      .references(() => agentIdentities.id, { onDelete: "cascade" }),
+    grantHash: text("grant_hash").notNull(),
+    person: jsonb("person").$type<OnBehalfOf>().notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("agent_delegations_identity_idx").on(t.identityId)],
+);
+
 export const agentSessions = pgTable(
   "agent_sessions",
   {
@@ -45,7 +72,7 @@ export const agentSessions = pgTable(
       .references(() => agentIdentities.id, { onDelete: "cascade" }),
     taskId: text("task_id"),
     /** The human the agent acts for, when attended: their principal id, type, role and outlet scope at session start. */
-    onBehalfOf: jsonb("on_behalf_of").$type<{ principal_id: string; principal_type: string; name: string | null; role: string; outlet_ids: string[]; brand_ids: string[] } | null>(),
+    onBehalfOf: jsonb("on_behalf_of").$type<OnBehalfOf | null>(),
     effectiveRole: text("effective_role").notNull(),
     effectiveOutletIds: uuid("effective_outlet_ids").array().notNull().default([]),
     effectiveBrandIds: uuid("effective_brand_ids").array().notNull().default([]),
@@ -88,6 +115,8 @@ export const proposals = pgTable(
     proposedByName: text("proposed_by_name"),
     agentIdentityId: uuid("agent_identity_id"),
     agentSessionId: uuid("agent_session_id"),
+    /** The person the proposing agent acted for: they may not approve it either. */
+    onBehalfOfId: text("on_behalf_of_id"),
     decidedBy: text("decided_by"),
     decidedByName: text("decided_by_name"),
     decidedAt: timestamp("decided_at", { withTimezone: true }),

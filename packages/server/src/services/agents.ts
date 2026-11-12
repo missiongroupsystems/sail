@@ -1,11 +1,12 @@
+import { randomUUID } from "node:crypto";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { roleAtLeast, type OperationSpec, type Role } from "@sail/shared";
 import { db, tx, type RequestTx } from "../db/client.js";
-import { agentIdentities, agentSessions, checks, orders, paymentIntents, payments, proposals, type ProposalStatus } from "../db/schema/index.js";
+import { agentDelegations, agentIdentities, agentSessions, backofficeSessions, checks, orders, paymentIntents, payments, proposals, staff, staffSessions, type OnBehalfOf, type ProposalStatus } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
-import { hashSecret, randomToken, signSailToken, verifySailToken, verifySecret } from "../auth/tokens.js";
-import { resolvePrincipal } from "../auth/resolve.js";
+import { hashSecret, randomToken, sha256, signSailToken, verifySailToken, verifySecret } from "../auth/tokens.js";
 import type { Principal } from "../auth/principal.js";
+import { config } from "../config.js";
 import { appendEvent } from "../lib/events.js";
 
 /**
@@ -18,6 +19,7 @@ export type Tier = (typeof TIERS)[number];
 export const tierRank = (t: string) => TIERS.indexOf(t as Tier);
 export const AGENT_SESSION_SECONDS = 15 * 60;
 export const PROPOSAL_TTL_SECONDS = 10 * 60;
+export const DELEGATION_TTL_SECONDS = 5 * 60;
 
 const lowerRole = (a: Role, b: Role): Role => (roleAtLeast(a, b) ? b : a);
 const intersect = (a: string[], b: string[]) => (a.length === 0 ? b : b.length === 0 ? a : a.filter((x) => b.includes(x)));
@@ -26,6 +28,22 @@ const intersect = (a: string[], b: string[]) => (a.length === 0 ? b : b.length =
 export function issueCredential(identityId: string): { credential: string; hash: string } {
   const secret = randomToken(32);
   return { credential: `${identityId}.${secret}`, hash: hashSecret(secret) };
+}
+
+/**
+ * A signed-in person delegates to one agent identity: a single-use grant, valid for five minutes, that the agent runner
+ * passes as `on_behalf_of`. The runner never holds the person's own token, so it can never act or approve as them.
+ */
+export async function mintDelegation(person: Extract<Principal, { type: "staff" }>, identityId: string): Promise<{ grant: string; expiresAt: Date }> {
+  const [identity] = await db().select({ id: agentIdentities.id }).from(agentIdentities).where(and(eq(agentIdentities.id, identityId), eq(agentIdentities.merchantId, person.merchantId))).limit(1);
+  if (!identity) throw AppError.notFound("agent identity", identityId);
+  const secret = randomToken(32);
+  const expiresAt = new Date(Date.now() + DELEGATION_TTL_SECONDS * 1000);
+  const onBehalfOf: OnBehalfOf = { principal_id: person.id, principal_type: "staff", name: person.name, role: person.role, outlet_ids: person.outletId ? [person.outletId] : person.outletIds, brand_ids: person.brandIds, staff_session_id: person.sessionId ?? null, backoffice_session_id: person.backofficeSessionId ?? null };
+  // The id is made here: the person's role may insert a grant but never read one back.
+  const id = randomUUID();
+  await db().insert(agentDelegations).values({ id, merchantId: person.merchantId, identityId, grantHash: sha256(secret), person: onBehalfOf, expiresAt });
+  return { grant: `${id}.${secret}`, expiresAt };
 }
 
 export async function startAgentSession(input: { credential: string; taskId?: string | null; onBehalfOf?: string | null }, t: RequestTx): Promise<{ token: string; session: typeof agentSessions.$inferSelect; identity: typeof agentIdentities.$inferSelect }> {
@@ -39,22 +57,50 @@ export async function startAgentSession(input: { credential: string; taskId?: st
   let effectiveRole: Role = identity.role;
   let outletIds = identity.outletIds;
   let brandIds = identity.brandIds;
-  let onBehalfOf: typeof agentSessions.$inferInsert["onBehalfOf"] = null;
+  let onBehalfOf: OnBehalfOf | null = null;
   if (input.onBehalfOf) {
-    const human = await resolvePrincipal(input.onBehalfOf, t);
-    if (human.type !== "staff") throw AppError.validation("on_behalf_of must be a staff member's PIN session or back-office token");
-    if (human.merchantId !== identity.merchantId) throw new AppError("permission_denied", "That person belongs to another merchant");
-    effectiveRole = lowerRole(identity.role, human.role);
-    const humanOutlets = human.outletId ? [human.outletId] : human.outletIds;
-    outletIds = intersect(identity.outletIds, humanOutlets);
-    brandIds = intersect(identity.brandIds, human.brandIds);
-    if (identity.outletIds.length && humanOutlets.length && outletIds.length === 0) throw new AppError("permission_denied", "The agent and this person share no outlet");
-    onBehalfOf = { principal_id: human.id, principal_type: "staff", name: human.name, role: human.role, outlet_ids: humanOutlets, brand_ids: human.brandIds };
+    const human = await redeemDelegation(input.onBehalfOf, identity, t);
+    await assertPersonPresent(human, t);
+    effectiveRole = lowerRole(identity.role, human.role as Role);
+    outletIds = intersect(identity.outletIds, human.outlet_ids);
+    brandIds = intersect(identity.brandIds, human.brand_ids);
+    if (identity.outletIds.length && human.outlet_ids.length && outletIds.length === 0) throw new AppError("permission_denied", "The agent and this person share no outlet");
+    onBehalfOf = human;
   }
   const expiresAt = new Date(Date.now() + AGENT_SESSION_SECONDS * 1000);
   const [session] = await t.db.insert(agentSessions).values({ merchantId: identity.merchantId, identityId: identity.id, taskId: input.taskId ?? null, onBehalfOf, effectiveRole, effectiveOutletIds: outletIds, effectiveBrandIds: brandIds, expiresAt }).returning();
   const token = await signSailToken({ typ: "agent", merchant_id: identity.merchantId, identity_id: identity.id, session_id: session!.id, role: effectiveRole, on_behalf_of: onBehalfOf?.principal_id }, AGENT_SESSION_SECONDS);
   return { token, session: session!, identity };
+}
+
+/** Use a delegation grant once, for the identity it was minted for. */
+async function redeemDelegation(grant: string, identity: typeof agentIdentities.$inferSelect, t: RequestTx): Promise<OnBehalfOf> {
+  const dot = grant.indexOf(".");
+  const id = dot > 0 ? grant.slice(0, dot) : "";
+  const refused = () => AppError.validation("on_behalf_of must be a delegation grant the person created for this agent with agent_delegations.create", { remedy: "Ask the person to delegate again; a grant works once, for five minutes." });
+  if (!UUID.test(id)) throw refused();
+  const [row] = await t.db
+    .update(agentDelegations)
+    .set({ usedAt: new Date() })
+    .where(and(eq(agentDelegations.id, id), eq(agentDelegations.grantHash, sha256(grant.slice(dot + 1))), eq(agentDelegations.identityId, identity.id), eq(agentDelegations.merchantId, identity.merchantId), isNull(agentDelegations.usedAt), gt(agentDelegations.expiresAt, new Date())))
+    .returning();
+  if (!row) throw refused();
+  return row.person;
+}
+
+/** The person an agent acts for is still active and still signed in with the session they delegated from. */
+async function assertPersonPresent(person: OnBehalfOf, t: RequestTx): Promise<void> {
+  const gone = () => new AppError("unauthenticated", `${person.name ?? "The person this agent acts for"} is no longer signed in`, { remedy: "Ask them to sign in and delegate again." });
+  const [member] = await t.db.select({ active: staff.active }).from(staff).where(eq(staff.id, person.principal_id)).limit(1);
+  if (!member?.active) throw gone();
+  if (person.staff_session_id) {
+    const [s] = await t.db.select({ endedAt: staffSessions.endedAt, lastSeenAt: staffSessions.lastSeenAt }).from(staffSessions).where(eq(staffSessions.id, person.staff_session_id)).limit(1);
+    if (!s || s.endedAt || (Date.now() - s.lastSeenAt.getTime()) / 1000 > config().PIN_SESSION_IDLE_SECONDS) throw gone();
+  }
+  if (person.backoffice_session_id) {
+    const [s] = await t.db.select({ endedAt: backofficeSessions.endedAt, expiresAt: backofficeSessions.expiresAt }).from(backofficeSessions).where(eq(backofficeSessions.id, person.backoffice_session_id)).limit(1);
+    if (!s || s.endedAt || s.expiresAt.getTime() <= Date.now()) throw gone();
+  }
 }
 
 /** Resolver for agent tokens: session must be live, identity enabled, within its operation budget. */
@@ -68,6 +114,7 @@ export async function resolveAgentPrincipal(token: string, t: RequestTx): Promis
     .limit(1);
   if (!row || row.s.revokedAt || row.s.expiresAt.getTime() < Date.now()) throw new AppError("unauthenticated", "This agent session has ended", { remedy: "Start a new agent session." });
   if (!row.i.enabled) throw new AppError("permission_denied", `Agent "${row.i.name}" is switched off`);
+  if (row.s.onBehalfOf) await assertPersonPresent(row.s.onBehalfOf, t);
   if (row.s.opsCount >= row.i.maxOpsPerHour) throw new AppError("rate_limited", `Agent "${row.i.name}" has used its operation budget for this session`, { remedy: "Wait for the session to expire or raise the identity's limit.", details: { retry_after_seconds: Math.max(1, Math.ceil((row.s.expiresAt.getTime() - Date.now()) / 1000)) } });
   await t.sql`update agent_sessions set last_seen_at = now(), ops_count = ops_count + 1 where id in (select id from agent_sessions where id = ${row.s.id} for update skip locked)`;
   return {
@@ -164,6 +211,7 @@ export async function createProposal(input: { principal: Principal; spec: Operat
       proposedByName: "name" in p ? p.name : null,
       agentIdentityId: p.type === "agent" ? p.identityId : null,
       agentSessionId: p.type === "agent" ? p.sessionId : null,
+      onBehalfOfId: p.type === "agent" ? p.onBehalfOf : null,
       expiresAt: new Date(Date.now() + PROPOSAL_TTL_SECONDS * 1000),
     })
     .returning();
@@ -186,7 +234,7 @@ export const toProposal = (r: typeof proposals.$inferSelect) => ({
   order: r.orderId == null ? null : { id: r.orderId, version: r.expectedVersion, total: r.orderTotal },
   rationale: r.rationale == null ? null : { untrusted_text: r.rationale },
   status: r.status,
-  proposed_by: { type: r.proposedByType, id: r.proposedById, name: r.proposedByName, agent_identity_id: r.agentIdentityId, agent_session_id: r.agentSessionId },
+  proposed_by: { type: r.proposedByType, id: r.proposedById, name: r.proposedByName, agent_identity_id: r.agentIdentityId, agent_session_id: r.agentSessionId, on_behalf_of: r.onBehalfOfId },
   decided_by: r.decidedBy,
   decided_by_name: r.decidedByName,
   decided_at: r.decidedAt?.toISOString() ?? null,

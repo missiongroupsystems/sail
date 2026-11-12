@@ -84109,13 +84109,365 @@
         }
       }
     },
+    "/v1/agent-identities/{id}/delegations": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "operationId": "agent_delegations.create",
+        "description": "A signed-in person lets one agent identity act for them: returns a single-use grant, valid for five minutes, for the agent runner to pass as `on_behalf_of`. The runner never holds the person's own token. The agent acts for them only while the session they delegated from lasts, and they cannot approve its proposals.",
+        "summary": "Delegate to an agent",
+        "x-sail": {
+          "op": "agent_delegations.create",
+          "tier": "T1",
+          "min_role": null,
+          "override_allowed": false,
+          "reason_required": false,
+          "dry_run": false,
+          "principals": [
+            "staff"
+          ],
+          "emits": [],
+          "mcp": {
+            "expose": false,
+            "toolsets": []
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "grant": {
+                          "type": "string"
+                        },
+                        "expires_at": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "grant",
+                        "expires_at"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict (state, version or idempotency)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invariant violation or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agent-sessions": {
       "post": {
         "tags": [
           "agents"
         ],
         "operationId": "agent_sessions.start",
-        "description": "Exchanges an agent credential for a 15-minute agent token bound to a task. With `on_behalf_of` (a staff PIN session or back-office token) the effective role is the lower of the agent's and the person's, and the outlet scope is the intersection, so an agent never does for a Server what the Server could not.",
+        "description": "Exchanges an agent credential for a 15-minute agent token bound to a task. With `on_behalf_of` (a delegation grant from agent_delegations.create) the effective role is the lower of the agent's and the person's, and the outlet scope is the intersection, so an agent never does for a Server what the Server could not.",
         "summary": "Start an agent session",
         "x-sail": {
           "op": "agent_sessions.start",
@@ -84152,7 +84504,7 @@
                   },
                   "on_behalf_of": {
                     "type": "string",
-                    "maxLength": 4000
+                    "maxLength": 200
                   }
                 },
                 "required": [

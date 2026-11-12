@@ -12,7 +12,7 @@ import { recordAudit } from "../lib/audit.js";
 import { outletVisible, principalRole } from "../auth/principal.js";
 import { registerAgentResolver } from "../auth/resolve.js";
 import { registerFloorExtra } from "./orders.js";
-import { issueCredential, lockPendingProposal, resolveAgentPrincipal, revokeAgentSessions, startAgentSession, TIERS, toProposal } from "../services/agents.js";
+import { issueCredential, lockPendingProposal, mintDelegation, resolveAgentPrincipal, revokeAgentSessions, startAgentSession, TIERS, toProposal } from "../services/agents.js";
 
 const op = (o: Partial<OperationSpec> & { op: string; summary: string; description: string }): OperationSpec => ({ tier: "T0", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: [], mcp: { expose: false, toolsets: [] }, ...o });
 
@@ -21,7 +21,8 @@ registerOperations({
   "agent_identities.create": op({ op: "agent_identities.create", summary: "Create an agent identity", description: "Admin. Name, role, outlet and brand scope, toolsets and risk ceiling (T0 to T2; no agent reaches T3). Returns the credential once; store it in the agent runner's secrets.", tier: "T3", minRole: "admin", emits: ["agent_identity.created"], proposable: false }),
   "agent_identities.update": op({ op: "agent_identities.update", summary: "Update an agent identity", description: "Admin. Widening scope, role, toolsets or ceiling is a T3 change; disabling an identity revokes its live sessions at once (kill switch).", tier: "T3", minRole: "admin", emits: ["agent_identity.updated"] }),
   "agent_identities.rotate_credential": op({ op: "agent_identities.rotate_credential", summary: "Rotate an agent credential", description: "Admin. The old credential stops working and live sessions are revoked. Returns the new credential once.", tier: "T3", minRole: "admin", emits: ["agent_identity.credential_rotated"], proposable: false }),
-  "agent_sessions.start": op({ op: "agent_sessions.start", summary: "Start an agent session", description: "Exchanges an agent credential for a 15-minute agent token bound to a task. With `on_behalf_of` (a staff PIN session or back-office token) the effective role is the lower of the agent's and the person's, and the outlet scope is the intersection, so an agent never does for a Server what the Server could not.", principals: [], emits: ["agent_session.started"] }),
+  "agent_delegations.create": op({ op: "agent_delegations.create", summary: "Delegate to an agent", description: "A signed-in person lets one agent identity act for them: returns a single-use grant, valid for five minutes, for the agent runner to pass as `on_behalf_of`. The runner never holds the person's own token. The agent acts for them only while the session they delegated from lasts, and they cannot approve its proposals.", tier: "T1", proposable: false, emits: [] }),
+  "agent_sessions.start": op({ op: "agent_sessions.start", summary: "Start an agent session", description: "Exchanges an agent credential for a 15-minute agent token bound to a task. With `on_behalf_of` (a delegation grant from agent_delegations.create) the effective role is the lower of the agent's and the person's, and the outlet scope is the intersection, so an agent never does for a Server what the Server could not.", principals: [], emits: ["agent_session.started"] }),
   "proposals.list": op({ op: "proposals.list", summary: "Proposals for an outlet", description: "Pending proposals waiting for a human, and recent decided ones. Agents see their own.", minRole: "server", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read", "pos.order", "pos.refund", "watch"] } }),
   "proposals.get": op({ op: "proposals.get", summary: "One proposal", description: "Status, frozen request, decision and the executed result. Agents poll this after a `requires_confirmation` response.", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read", "pos.order", "pos.refund", "pos.payment", "kitchen", "watch"] } }),
   "proposals.approve": op({ op: "proposals.approve", summary: "Approve a proposal", description: "A human with the operation's role approves; the register executes the frozen request exactly, as the approver, with the frozen idempotency key. The approver cannot be the proposer. If the target changed, execution fails with version_conflict and the proposal is marked failed.", tier: "T1", minRole: "server", emits: ["proposal.approved", "proposal.failed"] }),
@@ -83,7 +84,15 @@ export function agentRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: { credential, sessions_revoked: revoked }, events: [ev], warnings: ["Store the credential now; it is not shown again."] }, 201);
   });
 
-  defineOp(app, { op: "agent_sessions.start", method: "post", path: "/v1/agent-sessions", tags: ["agents"], request: { body: jsonBody(z.object({ credential: z.string().min(40).max(200), task_id: z.string().max(120).optional(), on_behalf_of: z.string().max(4000).optional() })) }, responses: { 201: jsonResponse(dataResponse(z.object({ agent_token: z.string(), session_id: z.string(), identity_id: z.string(), name: z.string(), effective_role: z.enum(ROLES), outlet_ids: z.array(z.string()), toolsets: z.array(z.string()), risk_ceiling: z.string(), on_behalf_of: z.string().nullable(), expires_at: z.string() }))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "agent_delegations.create", method: "post", path: "/v1/agent-identities/{id}/delegations", tags: ["agents"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 201: jsonResponse(dataResponse(z.object({ grant: z.string(), expires_at: z.string() }))), ...errorResponses } }, async (c) => {
+    const p = c.get("principal");
+    if (p.type !== "staff") throw new AppError("permission_denied", "Only a signed-in person can delegate to an agent");
+    const { grant, expiresAt } = await mintDelegation(p, c.req.valid("param").id);
+    c.set("secretResult", true);
+    return c.json({ data: { grant, expires_at: expiresAt.toISOString() } }, 201);
+  });
+
+  defineOp(app, { op: "agent_sessions.start", method: "post", path: "/v1/agent-sessions", tags: ["agents"], request: { body: jsonBody(z.object({ credential: z.string().min(40).max(200), task_id: z.string().max(120).optional(), on_behalf_of: z.string().max(200).optional() })) }, responses: { 201: jsonResponse(dataResponse(z.object({ agent_token: z.string(), session_id: z.string(), identity_id: z.string(), name: z.string(), effective_role: z.enum(ROLES), outlet_ids: z.array(z.string()), toolsets: z.array(z.string()), risk_ceiling: z.string(), on_behalf_of: z.string().nullable(), expires_at: z.string() }))), ...errorResponses } }, async (c) => {
     const b = c.req.valid("json");
     const r = await withTransaction(async (t) => {
       const r = await startAgentSession({ credential: b.credential, taskId: b.task_id ?? null, onBehalfOf: b.on_behalf_of ?? null }, t);
@@ -120,8 +129,12 @@ export function agentRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "proposals.approve", method: "post", path: "/v1/proposals/{id}/approve", tags: ["agents"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 200: jsonResponse(mutationResponse(Any)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
+    // Only a person signed in with their own session approves (agents and stations are not staff principals), and
+    // never the proposer or the person the proposing agent acts for: the agent runner may have been given their authority.
+    if (p.type !== "staff") throw new AppError("permission_denied", "Only a signed-in person can approve a proposal");
     const prop = await lockPendingProposal(id);
     if (prop.proposedById === p.id) throw new AppError("permission_denied", "You cannot approve your own proposal", { remedy: "Ask another person with the required role." });
+    if (prop.onBehalfOfId === p.id) throw new AppError("permission_denied", "You cannot approve a proposal from an agent acting for you", { remedy: "Ask another person with the required role." });
     const spec = operation(prop.operationId);
     const role = principalRole(p);
     if (!role || (spec.minRole && !roleAtLeast(role, spec.minRole))) throw AppError.permission(spec.minRole ?? "server", false, spec.op);
