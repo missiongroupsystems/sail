@@ -45,8 +45,12 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<{ check: CheckSnapshot; order: OrderSnapshot; figures: PaymentFigures } | null>(null);
   const paymentId = useRef(idempotencyKey());
+  /** The dry run on the wire, if any. A payment waits for it: answered after the payment, a dry run is refused 409. */
+  const previewInFlight = useRef<Promise<unknown> | null>(null);
+  /** Set the moment Pay is pressed, before React re-renders: a dry-run timer that fires in between sends nothing. */
+  const paying = useRef(false);
 
-  const list: TenderType[] = tenders.data ?? [];
+  const list: TenderType[] = useMemo(() => tenders.data ?? [], [tenders.data]);
   const tender = list.find((t) => t.id === tenderId) ?? list[0] ?? null;
   const balance = check?.balance ?? 0;
   const amount = digits === null ? balance : Number(digits || "0");
@@ -71,20 +75,31 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
         setPreview(null);
         return undefined;
       }
+      // A dry run already sent when the inputs change, or when the payment is taken, still answers; its answer is ignored.
+      let dropped = false;
       const timer = setTimeout(async () => {
+        if (paying.current) return;
         try {
           setPreviewError(null);
-          const res = await actions.previewPayment(check.id, { tender_type_id: t.id, amount: amt, ...(tnd != null ? { tendered: tnd } : {}) });
-          if (!res) return;
+          const request = actions.previewPayment(check.id, { tender_type_id: t.id, amount: amt, ...(tnd != null ? { tendered: tnd } : {}) });
+          previewInFlight.current = request;
+          const res = await request.finally(() => {
+            if (previewInFlight.current === request) previewInFlight.current = null;
+          });
+          if (!res || dropped) return;
           const after = res.data.checks.find((c) => c.id === check.id);
           setPreview({ figures: res.payment, left: after?.balance ?? 0 });
         } catch (e) {
+          if (dropped) return;
           const err = toApiError(e);
           setPreview(null);
           setPreviewError(err.remedy ? `${err.message}. ${err.remedy}` : err.message);
         }
       }, 200);
-      return () => clearTimeout(timer);
+      return () => {
+        dropped = true;
+        clearTimeout(timer);
+      };
     },
     [actions, check],
   );
@@ -108,8 +123,10 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const pay = async () => {
     if (!check || !tender || amount <= 0 || busy) return;
     setBusy(true);
+    paying.current = true;
     const id = paymentId.current;
     try {
+      await previewInFlight.current?.catch(() => undefined);
       const res = await actions.pay(check, { payment_id: id, tender_type_id: tender.id, amount, ...(tender.is_cash && tendered != null ? { tendered } : {}), ...(reference.trim() ? { reference: reference.trim() } : {}) }, tender.name);
       if (res) {
         const after = res.data.checks.find((c) => c.id === check.id) ?? check;
@@ -118,6 +135,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
     } catch (e) {
       if (!(e instanceof ApiError)) throw e;
     } finally {
+      paying.current = false;
       setBusy(false);
     }
   };
