@@ -48,7 +48,9 @@ async function dockFits(page: Page, width: number) {
   }
 }
 
-async function signInBackOffice(page: Page) {
+async function signInBackOffice(page: Page, watch: { allowConsole: (r: RegExp) => void }) {
+  // WebKit reports Today's reads that the next navigation cuts short as uncaught "access control checks" errors.
+  watch.allowConsole(/due to access control checks/);
   await page.goto(`${WEB}/login`);
   await expect(async () => {
     await page.getByLabel("Email").fill(SG_ADMIN);
@@ -56,6 +58,15 @@ async function signInBackOffice(page: Page) {
     await page.getByRole("button", { name: "Sign in" }).click({ timeout: 10_000 });
     await page.waitForURL(`${WEB}/today`, { timeout: 30_000 });
   }).toPass({ timeout: 300_000 });
+  await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
+}
+
+/** A first visit can be cut short by the dev server reloading Today after its first compile: go until it sticks. */
+async function goTo(page: Page, path: string) {
+  await expect(async () => {
+    await page.goto(`${WEB}${path}`);
+    await expect(page).toHaveURL(`${WEB}${path}`, { timeout: 5_000 });
+  }).toPass({ timeout: 120_000 });
 }
 
 test.describe("iPad landscape 1180×820", () => {
@@ -295,14 +306,14 @@ test.describe("guest phone 390×844", () => {
 test.describe("back office 1440×900", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("downloading the QR sheet leaves the codes on the tables working; rotating them all asks first", async ({ page }) => {
+  test("downloading the QR sheet leaves the codes on the tables working; rotating them all asks first", async ({ page, watch }) => {
     test.setTimeout(300_000);
     const { outletId } = devLocal();
     const floor = await register<{ data: { tables: { id: string; order: unknown }[] } }>("GET", `/v1/outlets/${outletId}/floor`);
     const qr = await register<{ data: { url: string } }>("POST", `/v1/tables/${floor.data.tables[0]!.id}/qr/rotate`, {});
     const token = qr.data.url.split("/t/")[1]!;
-    await signInBackOffice(page);
-    await page.goto(`${WEB}/floor`);
+    await signInBackOffice(page, watch);
+    await goTo(page, "/floor");
     const sheet = page.waitForResponse((r) => /qr-sheet\.pdf/.test(r.url()) && r.ok());
     await page.getByRole("button", { name: "Download QR sheet (PDF)" }).click();
     await sheet;
@@ -315,12 +326,12 @@ test.describe("back office 1440×900", () => {
     await expect(confirm).toBeHidden();
   });
 
-  test("closing the business day asks first and lists the orders still open", async ({ page }) => {
+  test("closing the business day asks first and lists the orders still open", async ({ page, watch }) => {
     test.setTimeout(300_000);
     const { outletId, brandId } = devLocal();
     const opened = await register<{ data: { order_no: string } }>("POST", "/v1/orders", { order_id: crypto.randomUUID(), order_type: "takeaway", outlet_id: outletId, brand_id: brandId });
-    await signInBackOffice(page);
-    await page.goto(`${WEB}/reports/z-report`);
+    await signInBackOffice(page, watch);
+    await goTo(page, "/reports/z-report");
     await page.getByRole("button", { name: /^Close business day .*…$/ }).click();
     const confirm = page.getByRole("alertdialog", { name: /^Close business day/ });
     await expect(confirm.getByText(/orders? (is|are) still open/)).toBeVisible();

@@ -55,7 +55,7 @@ type Allowed = { status: number; url: RegExp; why: string };
  * the test unless the test declared it expected (a wrong PIN on purpose, say). This is what catches a refused
  * permission or a duplicate payment call that the screen itself shrugs off.
  */
-export const test = base.extend<{ watch: { allow: (a: Allowed) => void; allowConsole: (text: RegExp) => void; attach: (page: Page) => void } }>({
+export const test = base.extend<{ watch: { allow: (a: Allowed) => void; /** A console error or uncaught error the test expects, by its text. */ allowConsole: (text: RegExp) => void; attach: (page: Page) => void } }>({
   watch: [
     async ({ page }, use, testInfo) => {
       const problems: string[] = [];
@@ -69,7 +69,9 @@ export const test = base.extend<{ watch: { allow: (a: Allowed) => void; allowCon
           if (allowedConsole.some((r) => r.test(m.text()))) return;
           problems.push(`console error on ${p.url()}: ${m.text().slice(0, 400)}`);
         });
-        p.on("pageerror", (e) => problems.push(`uncaught on ${p.url()}: ${e.message}`));
+        p.on("pageerror", (e) => {
+          if (!allowedConsole.some((r) => r.test(e.message))) problems.push(`uncaught on ${p.url()}: ${e.message}`);
+        });
         p.on("response", (r: Response) => {
           if (r.status() < 400) return;
           const url = r.url();
