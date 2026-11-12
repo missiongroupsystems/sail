@@ -35,7 +35,6 @@ describe("production refuses weak secrets (B6)", () => {
 
   it("refuses the test suite's secrets, and a missing STATION_TOKEN_SECRET (it keys PIN lookups)", () => {
     expect(() => loadConfig({ ...base, GUEST_TOKEN_SECRET: "guest-secret-for-tests-0123456789abcd" })).toThrow(/placeholder/);
-    const { STATION_TOKEN_SECRET: _omit, ...noStation } = base;
-    expect(() => loadConfig(noStation)).toThrow(/STATION_TOKEN_SECRET is required/);
+    expect(() => loadConfig({ ...base, STATION_TOKEN_SECRET: undefined })).toThrow(/STATION_TOKEN_SECRET is required/);
   });
 });
