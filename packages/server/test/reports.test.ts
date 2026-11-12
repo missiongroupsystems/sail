@@ -122,6 +122,20 @@ describe("reports", () => {
     expect(csv.body).toMatch(/adjustment,seed:staff-meal/);
   });
 
+  it("filtering by staff narrows every section to the orders that person opened, refunds, voids and discounts included", async () => {
+    type Summary = { data: { totals: { orders: number; net: number }; refunds: { count: number; amount: number }; voids: { count: number }; adjustments_by_rule: unknown[]; by_tender: unknown[] } };
+    const all = await call<Summary>("GET", `/v1/reports/sales-summary?outlet_id=${A.outletId}`, { token: A.manager.token });
+    const cashier = await call<Summary>("GET", `/v1/reports/sales-summary?outlet_id=${A.outletId}&staff_id=${A.cashier.id}`, { token: A.manager.token });
+    expect(cashier.status, JSON.stringify(cashier.body)).toBe(200);
+    expect(cashier.body.data).toMatchObject({ totals: all.body.data.totals, refunds: all.body.data.refunds, voids: all.body.data.voids, adjustments_by_rule: all.body.data.adjustments_by_rule, by_tender: all.body.data.by_tender });
+    const manager = await call<Summary>("GET", `/v1/reports/sales-summary?outlet_id=${A.outletId}&staff_id=${A.manager.id}`, { token: A.manager.token });
+    expect(manager.status, JSON.stringify(manager.body)).toBe(200);
+    expect(manager.body.data).toMatchObject({ totals: { orders: 0, net: 0 }, refunds: { count: 0, amount: 0 }, voids: { count: 0 }, adjustments_by_rule: [], by_tender: [] });
+    const ex = await call<{ data: { voids: unknown[]; discounts: unknown[]; refunds: unknown[] } }>("GET", `/v1/reports/exceptions?outlet_id=${A.outletId}&staff_id=${A.manager.id}`, { token: A.manager.token });
+    expect(ex.status, JSON.stringify(ex.body)).toBe(200);
+    expect(ex.body.data).toEqual({ voids: [], discounts: [], refunds: [] });
+  });
+
   it("product mix by item, category and staff with shares adding up; exceptions report shows who, approver and reason; print health lists late jobs", async () => {
     const items = await call<{ data: { name: string; quantity: number; net: number; share_bps: number }[] }>("GET", `/v1/reports/product-mix?outlet_id=${A.outletId}&group_by=item`, { token: A.manager.token });
     expect(items.body.data.map((r) => r.name).sort()).toEqual(["Kopi", "Laksa"]);

@@ -218,6 +218,13 @@
       "when": 1794502330323,
       "tag": "0030_house_tenders_need_approval",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1794503325880,
+      "tag": "0031_report_views_staff",
+      "breakpoints": true
     }
   ]
 }
