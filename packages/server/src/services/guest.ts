@@ -100,17 +100,19 @@ export function guestUrl(token: string) {
 
 /**
  * The live code of each table at the outlet, as it is printed on the table now; a table with no code gets its first
- * one. Only a code made before codes were derived (random, kept as a hash alone) cannot be printed again, and is
- * replaced, once.
+ * one. A code that cannot be printed again (made before codes were derived, or under another GUEST_TOKEN_SECRET) is
+ * never replaced here: the sheet is refused with those tables named, and rotating them is the Admin's own choice.
  */
 export async function currentTableTokens(outletId: string, merchantId: string): Promise<{ table: typeof tables.$inferSelect; token: string }[]> {
   const rows = await db().select().from(tables).where(and(eq(tables.outletId, outletId), isNull(tables.archivedAt))).orderBy(tables.name);
   const out: { table: typeof tables.$inferSelect; token: string }[] = [];
+  const unprintable: string[] = [];
   for (const t of rows) {
     const [live] = await db().select().from(tableQrTokens).where(and(eq(tableQrTokens.tableId, t.id), isNull(tableQrTokens.rotatedAt))).limit(1);
-    const token = live && sha256(tableToken(live.id)) === live.tokenHash ? tableToken(live.id) : (await rotateTableToken({ id: t.id, merchantId, outletId })).token;
-    out.push({ table: t, token });
+    if (live && sha256(tableToken(live.id)) !== live.tokenHash) unprintable.push(t.name);
+    else out.push({ table: t, token: live ? tableToken(live.id) : (await rotateTableToken({ id: t.id, merchantId, outletId })).token });
   }
+  if (unprintable.length) throw new AppError("state_conflict", `The codes on ${unprintable.join(", ")} cannot be printed again`, { remedy: "They were made before codes could be reprinted. Rotate every code at this outlet, then download the sheet and replace those cards.", details: { tables: unprintable } });
   return out;
 }
 

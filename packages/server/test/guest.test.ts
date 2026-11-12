@@ -74,6 +74,15 @@ describe("Scan to Order", () => {
     await sheet();
     await sheet();
     expect(await alive(qrUrl12, "device-live-0001")).toBe(201);
+    // A code the sheet cannot print again (one made before codes were derived) is never replaced quietly: the sheet is refused and names the table.
+    const [row] = await db.sql<{ id: string }[]>`select id from table_qr_tokens where table_id = ${ids.table13} and rotated_at is null`;
+    await db.sql`update table_qr_tokens set token_hash = 'legacy-random-code' where id = ${row!.id}`;
+    const refused = await app.request(`/v1/outlets/${A.outletId}/qr-sheet.pdf`, { headers: { authorization: `Bearer ${A.admin.token}` } });
+    expect(refused.status).toBe(409);
+    const body = (await refused.json()) as { message: string; remedy: string };
+    expect(body.message).toMatch(/cannot be printed again/);
+    expect(body.remedy).toMatch(/Rotate every code/);
+    expect(await alive(qrUrl12, "device-live-0002")).toBe(201);
     // Rotating every code is a separate, deliberate action: the earlier URLs are dead after it.
     const rotated = await call<{ data: { rotated: number } }>("POST", `/v1/outlets/${A.outletId}/qr/rotate`, { token: A.admin.token, body: {} });
     expect(rotated.status, JSON.stringify(rotated.body)).toBe(200);
