@@ -1,90 +1,81 @@
 # Changelog
 
-All notable changes to Sail. Phases follow `docs/roadmap.md`; each has a completion note in `docs/completions/`.
+Notable changes to Sail, newest first. Field and operation names are as in `packages/server/openapi.json`.
 
-## Unreleased (feat/beta-v1)
+## Unreleased
 
-### Beta v1 review: correctness, security, latency and UI hardening
-Full record in `docs/completions/beta-v1-review.md`.
-- **Money and state.** Daily caps and "sold out for today" now follow the outlet's business-day cutoff everywhere (the stock list and compiled menu used the calendar date, so caps appeared to reset at midnight). A paid bill never changes: lines on a paid bill keep their stored amounts and adjustment shares through every later re-price (new lines, customers attached, scheduled rules, caps), and edits aimed at them are refused with `check_locked_by_payment`. Fixed-per-order fees freeze at the first payment (reference case R153; set now 153). A payment is validated against the bill as re-priced at the first payment, never a stale balance. Reopen is refused once the order has a refund (`order_has_refunds`). Voids are valued with their modifiers in the Z-report and the void report. `checks.allocate` with `add_checks` keeps the new empty bill.
-- **Security and robustness.** Re-pairing a station invalidates the previous station token (the resolver did not compare hashes). In-process replayed requests (proposal approval) no longer take a second admission-gate slot, and a queued request gives up with 503 after `QUEUE_WAIT_MS`. Concurrent requests with the same `Idempotency-Key` all receive the stored result (the replay path aborted the transaction). Merchant settings validate the time zone, cutoff, GST rate and rounding increment. `orders.quote` no longer takes the order's row lock. Validation errors carry their `remedy` at the top level.
-- **Latency.** Events are appended after pricing and the snapshot, `settleInvariants()` fires the deferred sum triggers before the outlet's sequence lock is taken, event append is one statement, re-price and allocation writes are batched, and independent reads are pipelined. Local 20-writer p95 for mutations fell from 593 to 833 ms to 391 to 416 ms (single-process harness; see the note).
-- **API additions (compatible).** `payment.due_cents` on `payments.record`; `tenders_summary` on the Z-report; `refunded_total` on the order snapshot; `round_no` on print jobs; `gate.timed_out` on `/health`; `counted_counts`/`float_counts` must add up to their totals.
-- **Web.** POS auto-lock fixed (never fired); register errors raised from inside sheets were hidden behind the scrim; all client-side money arithmetic removed (payment panel, bill footer, refund sheets, Z-report card total); one idempotency key per logical action for new orders and refunds; search results carry tile access levels; reroute has Undo; totals and alerts have live regions; dead code removed. Guest app and relay: see the completion note.
+### Any country by configuration
+- Tax classes and rates per merchant. A rate is a list of named components (state and local sales tax, VAT, consumption tax) and can be scoped to an outlet, an order type or both; an empty list is exempt. Tax rounds per line or once per rate (`tax_rounding`). New operations `tax_classes.list`, `tax_classes.create`, `tax_classes.update`, `tax_rates.set` and `tax_rates.delete`, and a Settings > Tax classes screen.
+- Region presets (`sg`, `us`, `eu-vat`, `jp`, `blank`) chosen when a merchant is created: currency, locale, tax classes and rates, service charge and deposit rules, tenders, cash denominations and registration labels. `bootstrap` takes `--preset` and `--time-zone`, both required. `dev:local` creates a second demo merchant, a café with inclusive VAT at 20% and 10% in EUR.
+- Currency, locale and time zone come from the merchant's settings everywhere, with no defaults: amounts use the currency's exponent (`currency_exponent`), `formatMoney` and `parseMoney` take the currency and locale, and guest sessions and digital receipts carry both. Pricing-rule and other date inputs use the merchant's time zone.
+- Renamed: `gst_*` fields to `tax_*`, `is_bcrs` to `has_deposit` (and the `bcrs` rule scope to `deposit`), an outlet's `uen` to `business_registration_no` plus a new `tax_registration_no`. Removed: `gst_bps` and the `GST_BPS` environment variable. Every place with a tax figure also has `taxes`, the breakdown by component.
+- `cash_variance_threshold` is a merchant setting, and `shifts.close` refuses a larger variance without a reason (it was a constant in the POS).
+- Net sales exclude tax and fees and subtract the refunds' net in every report.
+- A refund by amount reverses a share of what is left on each line, not of the line as sold.
+- CSV import reads prices with the currency's decimals, refuses a comma that does not group thousands, and takes a `tax_class` column.
+- Back-office Sales, Items and Print-health report views. The guest menu hides open-price items.
+- Reference set at 162 pricing cases, adding US, EU, Japanese, three-decimal and cash-rounding cases.
 
-### v0.9 Reporting, hardening and beta readiness
-- Reports from SQL views (`report_*`, security_invoker): sales summary with every §4.10 filter, product mix by item/category/staff, void/discount/refund exceptions, print health (late counts, p50/p95 fire-to-printed), daily outlet report combining the Z-report with breakdowns; CSV everywhere and a PDF daily summary.
-- Agent principal (vision §7): agent identities with role, scope, toolsets, risk ceiling and budgets; 15-minute task-bound sessions with on-behalf-of intersection; `app_agent` Postgres role with no access to secrets or configuration writes; proposals for operations above the ceiling, approved or rejected by staff and replayed exactly as the approver; kill switch and credential rotation.
-- MCP adapter (`--role=mcp`): tools generated from the OpenAPI x-sail manifest, filtered per identity, every call an in-process API request; floor and menu resources; untrusted text wrapped; committed `mcp-tools.json` checked in CI.
-- Reference set grown to 152 pricing cases plus 24 hand-worked split and refund cases.
-- Hardening documents: release and rollback policy, runbooks (card-terminal mismatch, mid-service outage), token-scope security review, MCP guide; parallel-run reconciliation script; local load-test script. RLS replay covers `app_agent` and `app_guest`.
-- Session last-seen updates skip locked rows so nested register requests cannot deadlock.
+### Security
+- A manager approval (override grant) covers exactly what the manager approved: the void quantity, open price, rule and entered value, payment or refund and its total. It is bound to the requester's PIN session and station, spent once by a conditional update, and its id is returned only to the requester. A manual rule's own minimum role decides who may approve it.
+- Wrong manager-approval PINs count towards the station's lockout with sign-in PINs, and each attempt is counted before it is checked. The PIN lockout and the guest rate limits are stored in Postgres, so they hold across API machines.
+- A proposal stores the order's version and total and executes only on the order the approver saw.
+- An agent never runs a T2 operation (send to the kitchen, record a payment, apply a discount or comp) by itself, whatever its ceiling: each one is a proposal.
+- Free-text fields are marked in the spec (`x-sail-untrusted`), and the MCP adapter wraps every one of them for agents.
 
-### v0.8 Scan to Order
-- Rotatable table QR tokens and a printable QR sheet (PDF); public guest sessions with short-lived tokens, rate-limited per device and table.
-- `app_guest` principal and read-only Postgres role (menu and own order only); guest writes run as the register after validation.
-- Guest rounds held for acceptance or fired immediately per channel link; accept/reject at the POS; table requests with printed slips; call for bill marks the table; guest order view without prices or payments; per-order guest stream; sessions revoked when the order closes.
-- Invariant triggers made SECURITY DEFINER and re-read rows at commit; events filter by aggregate; availability rule delete; dev:local runs the worker.
+### Fixes
+- A paired station reads its merchant settings and POS channel link before anyone signs in.
+- Every phone at a table sees the order's guest rounds.
+- Closing an order ends its guest sessions even when an agent closed it.
+- `events.list` filters by type instead of failing; print health counts a business day's jobs; a business-day cutoff in a daylight-saving gap or overlap ends the day once.
+- Front ends: unreadable text caused by a clashing colour token, a duplicate key on the PIN pad, the pay screen polling dry runs, smaller POS and guest defects.
 
-### Web: guest app (v0.8), POS bills, payments, refunds, shift and print alerts (v0.6 to v0.9), back-office printing, orders actions, Today and reports (v0.9)
-- Guest app `packages/guest`: table landing with brand theming, menu, item sheet, basket and review, send to kitchen with idempotent retry, round status with live updates, call staff and ask for the bill, digital receipt page; never a payment screen.
-- POS: bill screen with every split mode, payment panel with cash dry run, refund stepper with manager approval, shift open and close with blind count and Z-report, sold out and printers, print failure banner, Now rail with QR rounds, requests and pickups.
-- Back office: Printing (printers, relays with pairing, print jobs with preview, reprint and reroute), orders drawer actions (refund stepper, reopen, receipts, invoices, credit notes, reprints), Floor QR sheets and rotation, Today as the service list, Z-report and shifts pages.
+### Tooling and docs
+- ESLint for `ui`, `web` and `guest`; a Playwright end-to-end suite (`pnpm test:e2e`) for the back office, POS and guest app.
+- Documentation rewritten for an outside reader: architecture, configuration, self-hosting, roadmap, contributing and security guides replace the planning papers and build notes.
 
-### Web: iPad POS (v0.4) and back-office catalogue, pricing, floor, orders screens (v0.3)
-- POS at /pos: pairing, lock and PIN, floor with live tables, orders list, order entry with layouts, modifier sheet, order sheet and action dock, manager approval sheet, undo, discounts, event store over SSE with catch-up, Day/Service themes.
-- Back office: products, bulk price, modifier groups, menus with drag-and-drop, categories, availability, sold out, legacy CSV import review; pricing rules with versions and simulator; customers; floor editor; orders drawer; stations pairing; channels, tenders, void reasons.
+## Beta v1 (package version 0.9.0-beta.1, not tagged)
 
-### v0.7 Bill splitting and refunds
-- Split evenly by N, by seat (shared lines even or on a Shared bill) and by item with equal shares; free until the first payment, locked per paid bill; per-bill receipts, invoices and cash rounding.
-- Refunds: full, by lines and quantities, by amount; adjustments and GST reversed in proportion; tenders assigned to original payments within caps; cash rounding on cash refunds; Manager+ or override; reason required.
-- Numbered refund receipts (print or link) and credit notes (PDF) for invoiced bills; refunds dated by business day and included in shift close and the Z-report; daily caps not restored.
-- Database invariants: refund sums, per-line and per-payment caps, immutable refund rows.
-- `@sail/shared` `quoteRefund` pure reversal with property tests.
+### Hardening review
+- Money and state: daily caps and "sold out for today" follow the business-day cutoff everywhere. A paid bill never changes: its lines keep their stored amounts and adjustment shares through every later re-price, and edits aimed at them are refused with `check_locked_by_payment`. Fixed-per-order fees freeze at the first payment. A payment is validated against the bill as re-priced at the first payment. Reopen is refused once the order has a refund (`order_has_refunds`). Voids are valued with their modifiers in the Z-report and the void report.
+- Security and robustness: pairing a station again invalidates its previous token. Replayed requests (proposal approval) no longer take a second admission-gate slot, and a queued request gives up with 503 after `QUEUE_WAIT_MS`. Concurrent requests with the same `Idempotency-Key` all receive the stored result. Merchant settings are validated. Validation errors carry their `remedy`.
+- Latency: events are appended after pricing and the snapshot, deferred sum triggers fire before the outlet's sequence lock, and writes are batched and reads pipelined. With 20 local writers, the p95 of `lines.add` fell from 593 to 416 ms and of `orders.fire` from 833 to 391 ms.
+- API additions: `payment.due_cents`, `tenders_summary` on the Z-report, `refunded_total` on the order snapshot, `round_no` on print jobs, `gate.timed_out` on `/health`.
+- Web: POS auto-lock, errors hidden behind sheets, all client-side money arithmetic removed, one idempotency key per logical action, live regions for totals and alerts.
 
-### v0.6 Payments, shifts and tax documents
-- Checks (bills) with allocations rebuilt after every re-price; database-enforced bill and line sums; bills lock at the first payment and new lines open a new bill.
-- Payments: several tenders and part payments per bill, card/PayNow/house tenders by hand with references, cash rounding only on the settling cash tender, tips, idempotent recording, pricing freeze at first payment, auto-completion, same-day reopen with reversed payments.
-- Pre-bills and receipts printed through the relay; digital receipts by public token (email/SMS pending a provider).
-- Gap-free tax invoice numbering, PDF invoices with UEN (pdf-lib), stored invoice snapshots.
-- Shifts with float and counted cash, expected vs counted including rounding, business-day close, basic Z-report.
-- `@sail/shared` bill allocation helper (`allocateLine`, even/shared/whole shares) with property tests.
+### Reports, agents and MCP
+- Reports from SQL views (`report_*`, `security_invoker`): sales summary, product mix by item, category and staff, void, discount and refund exceptions, print health, daily outlet report; CSV everywhere and a PDF daily summary.
+- Agent identities with role, scope, toolsets, risk ceiling and budgets; 15-minute sessions with on-behalf-of intersection; the `app_agent` Postgres role; proposals for operations above the ceiling, approved or rejected by staff and replayed as the approver; kill switch and credential rotation.
+- MCP adapter (`--role=mcp`): tools generated from the spec, filtered per identity, each call an in-process API request; floor and menu resources; untrusted text wrapped; `mcp-tools.json` checked in CI.
 
-### v0.5 Kitchen printing
-- Printers, relays and one-time relay pairing; `app_relay` principal and narrow Postgres role.
-- ESC/POS renderer in `@sail/shared`: kitchen, void, reprint, pre-bill, receipt, refund receipt and service-slip templates at 80 mm and 58 mm, CJK raster fallback, golden-file tests.
-- Routing by tags, filters, station printers, copies and the default fallback printer; one job per printer per copy in the fire/void transaction.
-- Durable print queue with claim/ack, stale-claim re-queue, late-job query, reroute to backup, reprint, test print, relay heartbeats and offline alerts.
-- `@sail/relay`: Node relay service (SSE + catch-up, TCP 9100 with DLE EOT status, retries, heartbeat), multi-arch Dockerfile; `docs/runbooks/relay.md`.
+### Scan to Order
+- Rotatable table QR tokens and a printable QR sheet; public guest sessions with short-lived tokens, rate-limited per device and table; the read-only `app_guest` role, with guest writes made by the register after validation.
+- Guest rounds held for acceptance or sent straight to the kitchen per channel link; table requests with printed slips; call for the bill; sessions end when the order closes.
 
-### v0.4 Orders and the POS (register)
-- Station pairing codes and tokens, PIN sessions with lockout and inactivity expiry, HMAC PIN lookup unique per merchant.
-- Single-use manager override grants (`POST /v1/overrides`) bound to one action and target, approver recorded on events and audit.
-- One order model for dine-in, takeaway, pickup and delivery with per-type validation, one open order per table, per-outlet order numbers, optimistic concurrency and dry runs.
-- Lines with modifier validation, availability, sold-out and atomic daily caps; fire/hold, partial voids, cancel, change type, move table, attach customer, manual adjustments.
-- Pricing pipeline run on every change; adjustments and per-line amounts persisted under deferred sum invariants.
-- Floor snapshot, order lists, quote with trace, outlet stream in production use.
+### Front ends
+- Guest app: table landing with brand theming, menu, item sheet, basket, rounds with live status, call staff and ask for the bill, digital receipt page. No payment screen.
+- POS: pairing, lock and PIN, floor, orders list, order entry with layouts and modifiers, bills with every split mode, payment panel, refunds with manager approval, shift open and close with a blind count and Z-report, sold out, print alerts, QR rounds and requests, Day and Service themes.
+- Back office: catalogue, menus, availability, sold out, CSV import, pricing rules with versions and a simulator, customers, floor editor, printing, orders with refunds and documents, stations, channels, tenders, void reasons, team, audit, Today, Z-report and shifts.
 
-### v0.3 Catalogue, pricing configuration and legacy import (register)
-- Products with per-order-type prices, tags and BCRS; modifier groups nested to two levels; two-level categories; brand menus with sections and items; availability rules; per-outlet 86 and daily caps.
-- Channel links with Scan to Order settings; areas and tables; tender types; void reasons; POS layouts with 12 curated colours.
-- Customers and customer groups; versioned pricing rules with scheduled activation, simulator on persisted rules, validation warnings.
-- CSV legacy importer with dry-run reports, apply and idempotent re-runs; `docs/csv-mapping.md`; products CSV export.
-- Compiled menu per channel link for the POS and the guest app.
+### Splits and refunds
+- Split evenly, by seat or by item with equal shares; free until the first payment, then locked per paid bill; per-bill receipts, invoices and cash rounding.
+- Refunds in full, by lines and quantities or by amount, with adjustments and tax reversed in proportion, tenders assigned to original payments within caps, Manager+ or a manager approval, and a reason. Numbered refund receipts and credit notes; refunds dated by business day; database invariants on refund sums and caps.
 
-### v0.2 Pricing engine
-- Pure pricing pipeline `price(order, rules, context)` in `@sail/shared` with fixed rule schema, explicit discount levels, exclusive/stackable stacking, caps, both tax modes, freeze-at-first-payment semantics and a step-by-step trace.
-- Largest-remainder allocator, cash rounding and percent helpers shared by pricing, splits and refunds.
-- Seed configuration: service charge 10% (dine-in, GST-applicable), container deposit per unit on BCRS products, six manual presets including the service-charge waiver.
-- Validation warnings: overlapping exclusive rules, products no fee covers, caps below minimum, empty open ranges.
-- 91-case hand-calculated reference set with coverage tracking, plus property tests; `docs/pricing-semantics.md`.
+### Payments, shifts and documents
+- Bills with allocations rebuilt after every re-price and database-enforced sums. Several tenders and part payments per bill, recorded by hand with references; cash rounding only on the cash tender that settles a bill; tips; pricing freeze at the first payment; same-day reopen.
+- Pre-bills and receipts printed through the relay; digital receipts by public token. Gap-free invoice numbers and PDF invoices. Shifts with float and counted cash, business-day close and the Z-report.
 
-### v0.1 Foundations
-- pnpm/Turbo monorepo with `shared`, `server`, `web`, `ui`.
-- Hono API with `@hono/zod-openapi`, committed `openapi.json`, manifest-driven permissions (`x-sail`), shared error shape with remedies.
-- Request pipeline: admission gate, one transaction per request, `set_config('app.current_*')` + `SET LOCAL ROLE`, Idempotency-Key storage and replay, RLS opt-out list under test.
-- Append-only event log with per-outlet sequences, `pg_notify` → LISTEN → SSE fan-out with heartbeats and `resync`, catch-up endpoint.
-- Organisation model (merchant settings, brands, outlets, stations), staff with five fixed roles and outlet/brand scope, audit log with a single writer.
-- Embedded-Postgres test harness (no Docker needed), generic RLS replay test, `dev:local` runner with a bootstrapped merchant.
-- CI: typecheck, tests, OpenAPI check, migration drift check, forbidden-term scan; staging and production deploy jobs gated on secrets.
-- Back-office shell: login, Today, outlets, brands, stations, merchant settings, team, audit; `ui` package with design tokens for the Day and Service themes.
+### Kitchen printing
+- Printers, relays and one-time relay pairing; the `app_relay` role. ESC/POS templates at 80 and 58 mm with CJK raster fallback and golden-file tests. Routing by tags, filters, station printers, copies and a default printer. Durable queue with claim and acknowledge, stale-claim re-queue, late-job alerts, reroute and reprint. The relay service and its multi-arch Dockerfile.
+
+### Orders and the POS register
+- Station pairing and tokens, PIN sessions with lockout and idle expiry, single-use manager approvals. One order model for dine-in, takeaway, pickup and delivery; lines with modifier validation, availability, sold out and daily caps; send and hold, voids, cancel, change type, move table, attach customer, manual adjustments; floor snapshot and the outlet stream.
+
+### Catalogue and pricing configuration
+- Products with prices per order type, tags and a deposit flag; modifier groups two levels deep; categories; brand menus; availability rules; sold out and daily caps; channel links; areas and tables; tenders; void reasons; POS layouts. Customers and groups; versioned pricing rules with scheduled activation and a simulator. CSV importer with dry-run reports and safe re-runs. Compiled menu per channel link.
+
+### Pricing engine
+- The pure pricing function `price(order, rules, context)` with explicit discount levels, exclusive and stackable discounts, caps, inclusive and exclusive tax, freeze at first payment and a step-by-step trace. Largest-remainder allocation, cash rounding and percent helpers. Seed rules: six manual discounts plus the preset's service charge and deposit. Validation warnings. A hand-calculated reference set and property tests.
+
+### Foundations
+- pnpm and Turbo monorepo. Hono API with a committed OpenAPI spec and manifest-driven permissions (`x-sail`). Request pipeline: admission gate, one transaction per request, RLS context and `SET LOCAL ROLE`, idempotency keys. Append-only event log with per-outlet sequences, `pg_notify` to SSE with heartbeats, `resync` and catch-up. Merchants, brands, outlets, stations, staff with five fixed roles, audit log. Embedded-Postgres test harness and the RLS replay test. CI with typecheck, tests, spec and migration drift checks.
