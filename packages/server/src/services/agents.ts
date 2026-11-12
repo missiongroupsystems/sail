@@ -1,7 +1,7 @@
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { roleAtLeast, type OperationSpec, type Role } from "@sail/shared";
 import { db, tx, type RequestTx } from "../db/client.js";
-import { agentIdentities, agentSessions, checks, orders, proposals, type ProposalStatus } from "../db/schema/index.js";
+import { agentIdentities, agentSessions, checks, orders, paymentIntents, payments, proposals, type ProposalStatus } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { hashSecret, randomToken, signSailToken, verifySailToken, verifySecret } from "../auth/tokens.js";
 import { resolvePrincipal } from "../auth/resolve.js";
@@ -115,7 +115,16 @@ export async function inferTarget(path: string, body: unknown): Promise<{ target
   const b = (body ?? {}) as Record<string, unknown>;
   let outletId = typeof b.outlet_id === "string" ? b.outlet_id : null;
   if (!outletId && kind === "outlet" && id) outletId = id;
-  const order = id && kind === "order" ? (await db().select({ o: orders.outletId, id: orders.id }).from(orders).where(eq(orders.id, id)).limit(1))[0] : id && kind === "check" ? (await db().select({ o: checks.outletId, id: checks.orderId }).from(checks).where(eq(checks.id, id)).limit(1))[0] : undefined;
+  const order =
+    id && kind === "order"
+      ? (await db().select({ o: orders.outletId, id: orders.id }).from(orders).where(eq(orders.id, id)).limit(1))[0]
+      : id && kind === "check"
+        ? (await db().select({ o: checks.outletId, id: checks.orderId }).from(checks).where(eq(checks.id, id)).limit(1))[0]
+        : id && kind === "payment"
+          ? (await db().select({ o: payments.outletId, id: payments.orderId }).from(payments).where(eq(payments.id, id)).limit(1))[0]
+          : id && kind === "payment_intent"
+            ? (await db().select({ o: paymentIntents.outletId, id: paymentIntents.orderId }).from(paymentIntents).where(eq(paymentIntents.id, id)).limit(1))[0]
+            : undefined;
   return { targetKind: kind, targetId: id, outletId: outletId ?? order?.o ?? null, orderId: order?.id ?? null };
 }
 

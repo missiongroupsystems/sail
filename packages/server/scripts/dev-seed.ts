@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import postgres from "postgres";
 import type { BootstrapResult } from "../src/bootstrap.js";
 import { PricingRuleSchema } from "@sail/shared";
@@ -7,7 +7,7 @@ import { PricingRuleSchema } from "@sail/shared";
  * Demo data for `dev:local`, on top of what each merchant's region preset
  * already created (tax classes, seed rules, tenders). `devSeed` is the
  * Singapore merchant: a hawker-style catalogue with categories, modifiers, a
- * menu, a POS layout, a floor plan, extra tenders, void reasons and a VIP
+ * menu, a POS layout, a floor plan, extra tenders (one of them sent to the terminal simulator), void reasons and a VIP
  * group. `devSeedEu` is an EU café priced with inclusive VAT at two rates.
  */
 export async function devSeed(url: string, boot: BootstrapResult): Promise<void> {
@@ -114,6 +114,9 @@ export async function devSeed(url: string, boot: BootstrapResult): Promise<void>
 
       // Tenders beyond the preset's, and void reasons.
       for (const [i, name] of ["House account", "Aggregator"].entries()) await tx`insert into tender_types (merchant_id, name, is_cash, opens_drawer, is_terminal, sort) values (${m}, ${name}, false, false, false, ${10 + i})`;
+      // A second card method that sends the payment to the terminal simulator; the preset's Card stays recorded by hand.
+      await tx`insert into tender_types (merchant_id, name, is_cash, opens_drawer, is_terminal, provider, terminal_id, sort) values (${m}, 'Card (terminal)', false, false, true, 'simulator', 'sim-1', 5)`;
+      await tx`insert into payment_provider_accounts (merchant_id, provider, webhook_secret) values (${m}, 'simulator', ${randomBytes(24).toString("hex")})`;
       for (const [i, name] of ["Customer changed mind", "Wrong item keyed", "Kitchen error", "Guest complaint", "Other"].entries()) await tx`insert into void_reasons (merchant_id, name, sort) values (${m}, ${name}, ${i})`;
 
       // Customers and a VIP group.

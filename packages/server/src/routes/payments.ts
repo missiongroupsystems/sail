@@ -2,7 +2,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { PERMISSIONS, registerOperations, type OperationSpec } from "@sail/shared";
 import { db, markDryRun, settleInvariants, withTransaction } from "../db/client.js";
-import { checks, orders, printers, shifts, stations } from "../db/schema/index.js";
+import { checks, orders, paymentIntents, payments, printers, shifts, stations, tenderTypes } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
@@ -90,6 +90,9 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
       if (!check) throw AppError.notFound("bill", id);
       const order = await lockOrder(check.orderId, b.expected_version);
       if (order.status === "cancelled") throw AppError.state("The order is cancelled", []);
+      // A terminal payment is recorded when the provider approves it, never by hand (a dry run still previews it).
+      const [linked] = await db().select({ provider: tenderTypes.provider, name: tenderTypes.name }).from(tenderTypes).where(eq(tenderTypes.id, b.tender_type_id)).limit(1);
+      if (linked?.provider && !b.dry_run) throw AppError.validation(`${linked.name} payments are taken on the terminal`, { remedy: "Send the payment to the terminal (payments.start) instead of recording it.", details: { tender_type_id: b.tender_type_id } });
       await requireRoleOrOverride(p, principalRole(p), await paymentRole(order.merchantId, b.tender_type_id), { action: "payments.record", targetId: check.orderId, args: { check_id: id, tender_type_id: b.tender_type_id, amount: b.amount, tip_cents: b.tip_cents ?? 0, reference: b.reference ?? null }, overrideId: b.override_id, overrideAllowed: PERMISSIONS["payments.record"].overrideAllowed });
       const result = await recordPayment(order, { paymentId: b.payment_id, checkId: id, tenderTypeId: b.tender_type_id, amount: b.amount, tendered: b.tendered ?? null, tipCents: b.tip_cents ?? 0, reference: b.reference ?? null, stationId: p.type === "staff" ? (p.stationId ?? null) : null }, p);
       await recordAudit(p, { action: "payments.record", targetKind: "order", targetId: order.id, outletId: order.outletId, details: { payment_id: result.payment.id, tender: result.payment.tenderName, amount: result.payment.amount, rounding_cents: result.payment.roundingCents } });
@@ -138,6 +141,9 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     const b = c.req.valid("json");
     dryRunFrom(c, b);
     const order = await lockOrder(id, b.expected_version);
+    // Reopening reverses payments in the register only. A terminal payment would stay charged while the order is paid again.
+    const [onTerminal] = await db().select({ id: payments.id }).from(payments).innerJoin(paymentIntents, eq(paymentIntents.paymentId, payments.id)).where(and(eq(payments.orderId, id), eq(payments.status, "recorded"))).limit(1);
+    if (onTerminal) throw AppError.invariant("terminal_payment", "This order was paid on a card terminal", "Void the terminal payment (it is given back at the provider), or refund it in the register and give it back on the terminal by hand.");
     const approval = await requireRoleOrOverride(p, principalRole(p), PERMISSIONS["orders.reopen"].minRole, { action: "orders.reopen", targetId: id, args: {}, overrideId: b.override_id, overrideAllowed: PERMISSIONS["orders.reopen"].overrideAllowed });
     const reversed = await reopenOrder(order, p, b.reason);
     const version = await bumpVersion(id);

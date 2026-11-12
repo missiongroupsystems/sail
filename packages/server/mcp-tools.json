@@ -4427,6 +4427,114 @@
       }
     },
     {
+      "name": "payment_intents_list",
+      "op": "payment_intents.list",
+      "method": "GET",
+      "path": "/v1/orders/{id}/payment-intents",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.payment",
+        "pos.read"
+      ],
+      "emits": [],
+      "untrusted": [
+        "added_by",
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "opened_by",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
+      "description": "Terminal payments of an order\n\nEvery payment sent to a terminal for the order, newest first, with its state (pending, approved, declined, cancelled, expired), the reason when it did not go through, and whether a void is waiting for the provider.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "payments_cancel",
+      "op": "payments.cancel",
+      "method": "POST",
+      "path": "/v1/payment-intents/{id}/cancel",
+      "tier": "T2",
+      "min_role": "cashier",
+      "toolsets": [
+        "pos.payment"
+      ],
+      "emits": [
+        "payment_intent.cancelled"
+      ],
+      "untrusted": [
+        "added_by",
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "opened_by",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
+      "description": "Cancel a payment waiting on the terminal\n\nStops a pending terminal payment. If the guest had already paid, the approval is given back at the provider and never applied. An agent's cancel is a proposal, like the start it undoes.\n\nRisk tier T2. Needs role cashier or above. Emits payment_intent.cancelled.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {}
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "payments_record",
       "op": "payments.record",
       "method": "POST",
@@ -4517,6 +4625,180 @@
               "payment_id",
               "tender_type_id",
               "amount"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate and price without committing; returns what WOULD happen (events have seq -1)."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "payments_start",
+      "op": "payments.start",
+      "method": "POST",
+      "path": "/v1/checks/{id}/payment-intents",
+      "tier": "T2",
+      "min_role": "cashier",
+      "toolsets": [
+        "pos.payment"
+      ],
+      "emits": [
+        "payment_intent.started"
+      ],
+      "untrusted": [
+        "added_by",
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "opened_by",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
+      "description": "Send a payment to the card terminal\n\nFor a payment method linked to a provider and terminal. Pins the bill (its total and what is already paid) and the amount and tip, and returns a pending payment at once; the terminal is asked by the worker, never inside this request. The outcome arrives as `payment_intent.*` events: approved records the payment exactly as payments.record would (with `payment.recorded`, `check.paid`, `order.completed`), declined leaves the bill untouched. If the bill changes or is paid another way before the terminal answers, an approval is given back at the provider and nothing is applied. One payment waits per bill. Never use it for a payment method recorded by hand.\n\nRisk tier T2. Needs role cashier or above. Emits payment_intent.started.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "intent_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "tender_type_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "amount": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "tip_cents": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "intent_id",
+              "tender_type_id",
+              "amount"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Required on every mutation: generate one per planned step and reuse it on retry, so a repeated call never double-applies."
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why you are doing this, shown to staff if the operation becomes a proposal. Plain text."
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "idempotency_key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "payments_void",
+      "op": "payments.void",
+      "method": "POST",
+      "path": "/v1/payments/{id}/void",
+      "tier": "T3",
+      "min_role": "manager",
+      "toolsets": [
+        "pos.refund"
+      ],
+      "emits": [
+        "payment.voided",
+        "payment.void_requested"
+      ],
+      "untrusted": [
+        "added_by",
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "opened_by",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
+      "description": "Void a payment recorded in error\n\nReverses one recorded payment so the bill owes it again (a wrong payment method, a duplicate). Manager+, or a lower role with a manager's approval bound to this payment. Reason required. Only while the payment's shift is open, its business day is not closed and nothing has been refunded from the bill; after that, use a refund. A payment taken on a terminal is voided at the provider first: the response says the void is pending, and the payment is reversed (`payment.voided`) when the provider confirms.\n\nRisk tier T3. Needs role manager or above. A reason is required. Emits payment.voided, payment.void_requested.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "expected_version": {
+                "type": "integer"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "override_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "x-sail-untrusted": true
+              }
+            },
+            "required": [
+              "reason"
             ]
           },
           "idempotency_key": {

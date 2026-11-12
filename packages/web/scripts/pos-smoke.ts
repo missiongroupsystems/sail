@@ -277,9 +277,10 @@ const cashier = await step("staff_sessions.start (Cashier)", () => reg.startSess
 if (!cashier) process.exit(1);
 token = cashier.session_token;
 
-const tenders = await step("tender_types.list", () => reg.listTenderTypes(api, station.outlet_id), (ts) => ts.map((t) => `${t.name}${t.is_cash ? " (cash)" : t.is_terminal ? " (terminal)" : ""}`).join(", "));
+const tenders = await step("tender_types.list", () => reg.listTenderTypes(api, station.outlet_id), (ts) => ts.map((t) => `${t.name}${t.is_cash ? " (cash)" : t.provider ? ` (${t.provider} ${t.terminal_id})` : t.is_terminal ? " (terminal)" : ""}`).join(", "));
 const cashTender = tenders?.find((t) => t.is_cash);
-const cardTender = tenders?.find((t) => !t.is_cash && t.is_terminal);
+// The card recorded by hand: a tender linked to a payment provider is sent to its terminal instead.
+const cardTender = tenders?.find((t) => !t.is_cash && t.is_terminal && !t.provider);
 if (!cashTender || !cardTender) process.exit(1);
 
 // 16. A dine-in order for three, everything sent (kitchen tickets queue on the printers above).

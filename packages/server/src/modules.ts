@@ -12,3 +12,4 @@ import "./modules/v07-splits-refunds.js";
 import "./modules/v08-guest.js";
 import "./modules/v09-reports.js";
 import "./modules/v09-agents.js";
+import "./modules/v10-payment-providers.js";

@@ -13,6 +13,7 @@ import { bumpVersion, getOrderRow, loadSnapshot, lockOrder } from "../services/o
 import { requireRoleOrOverride } from "../services/overrides.js";
 import { allocateLines, splitBySeat, splitEven, unsplit } from "../services/splits.js";
 import { createRefund, quote, refundableFor } from "../services/refunds.js";
+import { voidsPendingOn } from "../services/payment-intents.js";
 import { createDigitalReceipt, renderInvoicePdf, type InvoiceDocument } from "../services/documents.js";
 import { insertJob } from "../services/printing.js";
 import { businessDayInputs } from "../services/business-day.js";
@@ -88,6 +89,8 @@ export function splitRefundRoutes(app: OpenAPIHono<AppEnv>) {
       const [check] = await db().select().from(checks).where(eq(checks.id, id)).limit(1);
       if (!check) throw AppError.notFound("bill", id);
       const order = await lockOrder(check.orderId, b.expected_version);
+      // A void waiting for the provider is already giving money back; a refund on top would give it twice.
+      if ((await voidsPendingOn(order.id)) > 0) throw AppError.state("A void of a payment on this order is waiting for the provider", [], "Wait for the terminal to confirm the void, then refund what is still owed back.");
       // The approval covers this request and the total the approver was quoted.
       const total = quote(await refundableFor(id), b.request, b.tender_split).totals.total;
       const approval = await requireRoleOrOverride(p, principalRole(p), PERMISSIONS["refunds.create"].minRole, { action: "refunds.create", targetId: id, args: { request: b.request, tender_split: b.tender_split, total }, overrideId: b.override_id, overrideAllowed: PERMISSIONS["refunds.create"].overrideAllowed });

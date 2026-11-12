@@ -36,6 +36,7 @@ const GrantRequest = z.discriminatedUnion("action", [
   z.object({ action: z.literal("payments.record"), target_kind: z.literal("order"), ...grantBase, args: z.object({ check_id: z.uuid(), tender_type_id: z.uuid(), amount: z.number().int().min(1), tip_cents: z.number().int().min(0), reference: untrusted(z.string().max(80).nullable().default(null)) }) }),
   z.object({ action: z.literal("refunds.create"), target_kind: z.literal("check"), ...grantBase, args: z.object({ request: RefundRequestSchema, tender_split: TenderSplit, total: z.number().int().min(0) }) }),
   z.object({ action: z.literal("orders.reopen"), target_kind: z.literal("order"), ...grantBase, args: z.object({}) }),
+  z.object({ action: z.literal("payments.void"), target_kind: z.literal("payment"), ...grantBase, args: z.object({ amount: z.number().int().min(1) }) }),
 ]);
 
 export function stationRoutes(app: OpenAPIHono<AppEnv>) {

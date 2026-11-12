@@ -46,6 +46,8 @@ const EnvSchema = z.object({
   GUEST_APP_URL: z.string().default("http://localhost:3001"),
   /** Base URL of the web app, used in digital receipt links. */
   WEB_APP_URL: z.string().default("http://localhost:3000"),
+  /** Development and tests: the terminal simulator the `simulator` payment provider talks to (scripts/payment-simulator.ts). */
+  PAYMENT_SIMULATOR_URL: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
