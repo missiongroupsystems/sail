@@ -6,26 +6,36 @@ export const API = process.env.E2E_API_URL ?? "http://localhost:8080";
 export const WEB = "http://localhost:3000";
 export const GUEST = "http://localhost:3001";
 
-/** What `dev:local` bootstrapped (written by packages/server/scripts/dev-local.ts). */
-export function devLocal(): { merchantId: string; brandId: string; outletId: string; stationId: string } {
+type DemoMerchant = { merchantId: string; brandId: string; outletId: string; stationId: string };
+
+/**
+ * What `dev:local` bootstrapped (written by packages/server/scripts/dev-local.ts): the Singapore demo merchant at the
+ * top level and the EU VAT café (EUR, de-DE) under `eu`.
+ */
+export function devLocal(): DemoMerchant & { eu: DemoMerchant } {
   return JSON.parse(readFileSync(resolve(import.meta.dirname, "../../server/.dev-local.json"), "utf8"));
 }
 
-/** A register call as a back-office Admin would make it (dev sign-in). */
-export async function register<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const token = await adminToken();
+export const SG_ADMIN = "admin@sail.local";
+export const EU_ADMIN = "admin.eu@sail.local";
+
+/** A register call as a back-office Admin would make it (dev sign-in), by default the Singapore demo merchant's. */
+export async function register<T>(method: string, path: string, body?: unknown, adminEmail = SG_ADMIN): Promise<T> {
+  const token = await adminToken(adminEmail);
   const res = await fetch(`${API}${path}`, { method, headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID(), authorization: `Bearer ${token}` }, body: body === undefined ? undefined : JSON.stringify(body) });
   const json = (await res.json()) as T;
   if (!res.ok) throw new Error(`${method} ${path} → ${res.status} ${JSON.stringify(json)}`);
   return json;
 }
 
-let admin: string | null = null;
-async function adminToken(): Promise<string> {
-  if (admin) return admin;
-  const res = await fetch(`${API}/v1/auth/dev-token`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "admin@sail.local" }) });
-  admin = ((await res.json()) as { token: string }).token;
-  return admin;
+const adminTokens = new Map<string, string>();
+async function adminToken(email: string): Promise<string> {
+  const cached = adminTokens.get(email);
+  if (cached) return cached;
+  const res = await fetch(`${API}/v1/auth/dev-token`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email }) });
+  const { token } = (await res.json()) as { token: string };
+  adminTokens.set(email, token);
+  return token;
 }
 
 type Allowed = { status: number; url: RegExp; why: string };
@@ -112,9 +122,10 @@ export async function keyIn(page: Page, group: string, digits: string) {
   for (const d of digits) await pad.getByRole("button", { name: d, exact: true }).click();
 }
 
-/** Pair the POS on this page to the demo station with a fresh code, then sign in with a PIN. */
-export async function pairAndSignIn(page: Page, pin: string) {
-  const { data } = await register<{ data: { code: string } }>("POST", `/v1/stations/${devLocal().stationId}/pairing-code`, {});
+/** Pair the POS on this page to a demo merchant's station with a fresh code, then sign in with a PIN. */
+export async function pairAndSignIn(page: Page, pin: string, merchant: "sg" | "eu" = "sg") {
+  const { stationId } = merchant === "eu" ? devLocal().eu : devLocal();
+  const { data } = await register<{ data: { code: string } }>("POST", `/v1/stations/${stationId}/pairing-code`, {}, merchant === "eu" ? EU_ADMIN : SG_ADMIN);
   await page.goto(`${WEB}/pos`);
   // The first visit compiles the POS bundle in the dev server.
   await expect(page.getByRole("heading", { name: "Pair this iPad to a station" })).toBeVisible({ timeout: 180_000 });
