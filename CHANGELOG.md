@@ -22,11 +22,17 @@ Notable changes to Sail, newest first. Field and operation names are as in `pack
 - A proposal stores the order's version and total and executes only on the order the approver saw.
 - An agent never runs a T2 operation (send to the kitchen, record a payment, apply a discount or comp) by itself, whatever its ceiling: each one is a proposal.
 - Free-text fields are marked in the spec (`x-sail-untrusted`), and the MCP adapter wraps every one of them for agents.
+- Tenders have `requires_approval` (a Cashier needs a Manager or a Manager's PIN for that payment and its reference) and `requires_reference`. Approval is on by default for a tender that is neither cash nor a card terminal, and a migration switches it on for existing ones.
+- With hold orders off, a round fires at once only from the seating's first phone or a phone staff have accepted a round from; another phone's round waits for staff.
+- Another merchant's ids answer 404 on every route; outlet routes no longer accept an outlet of another merchant.
+- An agent voiding a line already sent to the kitchen gets a proposal. A right PIN no longer lifts a lock. Setting a customer's groups through `customers.upsert` needs a Manager.
 
 ### Fixes
 - A paired station reads its merchant settings and POS channel link before anyone signs in.
 - Every phone at a table sees the order's guest rounds.
 - Closing an order ends its guest sessions even when an agent closed it.
+- A cash tip stays in the drawer instead of going back as change: expected cash includes cash tips, and the Z-report, shift screens and receipts show them on their own row.
+- Reports filtered by staff no longer fail. The POS lists today's closed orders by the business day. A dry run that skips an agent's ceiling always rolls back.
 - `events.list` filters by type instead of failing; print health counts a business day's jobs; a business-day cutoff in a daylight-saving gap or overlap ends the day once.
 - Front ends: unreadable text caused by a clashing colour token, a duplicate key on the PIN pad, the pay screen polling dry runs, smaller POS and guest defects.
 

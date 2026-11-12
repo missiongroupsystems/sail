@@ -15,6 +15,15 @@ What is built, what comes next and what Sail will not do. There are no dates. Th
 - Agent identities, risk tiers, proposals and an MCP adapter generated from the API spec.
 - Country-neutral configuration with region presets.
 
+## Known gaps
+
+- No screen shows proposals; staff approve them through the API.
+- Pairing codes (stations and relays) have no attempt lockout.
+- Agents cannot read customer contact columns at all.
+- A few back-office pages name "today" by the calendar date in the merchant's time zone rather than the business date, so between midnight and the cutoff they show the next day.
+- QR admission trusts the seating's first phone: whoever scans first after the table is seated orders without a staff tap.
+- Production back-office sign-in needs a manual SQL step to link the login to a staff member ([self-hosting.md](self-hosting.md)); built-in sign-in will replace it.
+
 ## Next
 
 - Payments interface: a provider abstraction for card terminals and online payments, with signed webhooks and simulators, instead of recording card payments by hand. `payments.void` for a tender recorded in error.

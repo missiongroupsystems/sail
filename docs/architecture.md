@@ -94,9 +94,11 @@ The relay (`packages/relay`) is a small Node service on the outlet network. It p
 
 Sail-issued tokens are HS256 JWTs with a `typ` claim, signed per type (`auth/tokens.ts`): station and PIN-session tokens share `STATION_TOKEN_SECRET`; guest, relay and agent tokens each have their own. A station token alone has no staff role: it reads what the lock screen needs (merchant settings, channel links, menus, layouts, outlet events) and starts PIN sessions. Everything else needs a staff member signed in with a PIN.
 
-**PINs.** Stored as an scrypt hash, found through an HMAC lookup keyed with `STATION_TOKEN_SECRET`. Five wrong PINs on a station lock it for 30 s. Sign-in PINs and manager-approval PINs count on the same counter, and each attempt is counted before it is checked. The counter is in Postgres (`pin_attempts`), so it holds across API machines; guest rate limits are also in Postgres (`guest_rate_hits`).
+**PINs.** Stored as an scrypt hash, found through an HMAC lookup keyed with `STATION_TOKEN_SECRET`. Five wrong PINs on a station lock it for 30 s. Sign-in PINs and manager-approval PINs count on the same counter, and each attempt is counted before it is checked; a right PIN resets the count but does not lift a lock. The counter is in Postgres (`pin_attempts`), so it holds across API machines; guest rate limits are also in Postgres (`guest_rate_hits`).
 
 **Manager approval (override grants).** A manager enters their PIN on the requester's screen; `overrides.grant` (`POST /v1/overrides`) returns a single-use grant valid for 120 s. It is bound to the action, its target, the arguments the manager saw (void quantity, open price, rule and entered value, payment, refund and its quoted total) and the requester's PIN session and station. The protected request must repeat those arguments exactly. A manual pricing rule's own minimum role decides who may approve it. The grant id is returned only to the requester, never on the event log.
+
+**Guest admission.** The table's QR code is a lasting shared secret, so it does not admit a phone on its own. With hold orders off, a round fires at once only from the seating's first phone and from a phone staff have accepted a round from; any other phone's round waits for a staff tap. Admission belongs to the order and the device: it follows the order to another table and ends when the order closes. With hold orders on, every round waits.
 
 **Agents and proposals.** An Admin creates an agent identity (role, outlet and brand scope, toolsets, a risk ceiling of T0 to T2, where T2 currently acts as T1, and operation and proposal budgets). A session may act on behalf of a person, in which case its role is the lower of the two and its outlets the intersection. An agent call above its ceiling, and every T2 or T3 call whatever the ceiling, is stored as a proposal (HTTP 202, `requires_confirmation`) with the frozen request and, for an order, the order's version and total. A person with the operation's role (Manager+ for T3), who is not the proposer, approves it; the register then replays the frozen request as the approver, and only if the order is still at the version the approver saw. Proposals expire after 10 minutes. Details: [mcp.md](mcp.md).
 
@@ -112,7 +114,7 @@ Three rules shape the screens:
 
 ## Worker
 
-`node dist/index.js --role=worker` (`src/worker/index.ts`) runs scheduled pricing-rule activation, queued CSV imports (`services/importer.ts`, contract in [csv-mapping.md](csv-mapping.md)), stale print-claim re-queue, relay heartbeat alerts, guest-session expiry and rate-limit pruning, and proposal expiry. Reports read plain SQL views (`report_*`, `security_invoker`), so RLS applies to them too.
+`node dist/index.js --role=worker` (`src/worker/index.ts`) runs scheduled pricing-rule activation, queued CSV imports (`services/importer.ts`, contract in [csv-mapping.md](csv-mapping.md)), stale print-claim re-queue, relay heartbeat alerts, guest-session expiry and rate-limit pruning, and proposal expiry. Reports read plain SQL views (`report_*`, `security_invoker`), so RLS applies to them too. Gross sales are items as charged (tax included in inclusive mode); net sales are items after discounts, without tax and fees, less the refunds' net, and every report uses that one definition (`report_net_sales`).
 
 ## Not built
 

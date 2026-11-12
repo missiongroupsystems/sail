@@ -105,6 +105,8 @@ Every amount in the API is an integer in minor units. To display one, divide by 
 
 Cash rounding applies only when a tender with `is_cash` settles the rest of a bill: the balance rounds to the nearest increment, halves up, and the difference is stored on the payment as its own figure. It never changes tax or line amounts and never applies to card or other tenders. Cash refunds round the same way. Expected cash at shift close includes the rounding.
 
+A cash tip is part of the cash handed over, never part of the change: change = tendered − bill − rounding − tip. The tip stays in the drawer, so expected cash includes cash tips, and with cash rounding on a cash tip must be a whole number of rounding steps ([pricing-semantics.md](pricing-semantics.md#9-register-rules-around-the-bill-server-not-the-engine)).
+
 `cash_denominations` drives the POS cash counter at shift open and close. When the counted cash differs from the expected cash by more than `cash_variance_threshold`, `shifts.close` refuses to close without a reason.
 
 ## Tenders and approvals
@@ -116,6 +118,8 @@ Tenders are rows in `tender_types` (Settings > Tenders, or `/v1/tender-types`):
 | `is_cash` | Cash rounding applies; counts towards expected cash |
 | `opens_drawer` | Stored and imported, but not used by any logic yet |
 | `is_terminal` | Taken on a standalone card terminal and recorded by hand; Sail never talks to the terminal |
+| `requires_approval` | A Cashier needs a Manager, or a Manager's PIN for that exact payment and reference. On by default for a tender that is neither cash nor a terminal (a house account) |
+| `requires_reference` | A payment without a reference is refused |
 
 Who may do what is the fixed matrix in `packages/shared/src/roles.ts`, not a setting. A few entries: recording a payment needs Cashier+; refunds, reopening an order, open prices and voiding a sent item need Manager+ or a manager approval; editing configuration, staff and pricing rules needs Admin. A manual pricing rule (a discount or waiver staff apply) carries its own `min_role`, whether a manager may approve it for a lower role (`override_allowed`) and whether a reason is required (`reason_required`).
 

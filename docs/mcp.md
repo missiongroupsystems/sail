@@ -43,7 +43,7 @@ Toolsets: `pos.read`, `pos.order`, `pos.payment`, `pos.refund`, `kitchen`, `gues
 | T2 consequential (send to the kitchen, record a payment, apply or remove a discount or comp, close a shift) | Proposal | Proposal |
 | T3 money out, overrides, configuration, identities | Proposal | Proposal |
 
-An agent never runs a T2 or T3 operation by itself, whatever its ceiling: a person confirms each one, and the proposal is that confirmation. A ceiling of T2 is accepted but behaves as T1.
+An agent never runs a T2 or T3 operation by itself, whatever its ceiling: a person confirms each one, and the proposal is that confirmation. A ceiling of T2 is accepted but behaves as T1. Voiding a line already sent to the kitchen is a proposal too.
 
 A proposed call returns HTTP 202 with `code: "requires_confirmation"` and the stored proposal: the frozen method, path, body, idempotency key and expected version. A proposal on an order or one of its bills also stores the order's version and total as it stood (shown as `order`); a stale `expected_version` is refused at once. Staff see pending proposals on the floor (`pending_proposals`) and in `GET /v1/outlets/{id}/proposals`. A person with the operation's role, other than the proposer (Manager+ for T3), approves with `POST /v1/proposals/{id}/approve` or rejects with a reason. On approval the register replays the frozen request as the approver, with the frozen idempotency key, but only while the order is still at that version. If anyone has changed it, the proposer included, nothing runs, the result is `version_conflict` and the proposal is marked failed. Proposals expire after 10 minutes. The agent polls `proposals_get`. No front end shows proposals yet.
 
