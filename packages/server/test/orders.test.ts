@@ -247,9 +247,12 @@ describe("orders of every type with server-authoritative pricing", () => {
     const cancelled = await call<Mut["body"]>("POST", `/v1/orders/${o.body.data.id}/cancel`, { token: serverPin, body: { reason: "Guest left" } });
     expect(cancelled.status).toBe(200);
     expect(cancelled.body.data.status).toBe("cancelled");
-    const floor = await call<{ data: { tables: { id: string; status: string }[] } }>("GET", `/v1/outlets/${A.outletId}/floor`, { token: serverPin });
+    const floor = await call<{ data: { business_date: string; tables: { id: string; status: string }[] } }>("GET", `/v1/outlets/${A.outletId}/floor`, { token: serverPin });
     expect(floor.body.data.tables.find((t) => t.id === cat.table13)!.status).toBe("free");
     expect(floor.body.data.tables.find((t) => t.id === cat.table12)!.status).toBe("seated");
+    // The floor names the register's business day (after the cutoff), the one today's orders are filed under.
+    const [filed] = await db.sql<{ business_date: string }[]>`select business_date from orders where id = ${o.body.data.id}`;
+    expect(floor.body.data.business_date).toBe(filed!.business_date);
   });
 
   it("manual rules: a cashier applies staff meal with a reason; % off bill needs a manager; the waiver removes the service charge", async () => {

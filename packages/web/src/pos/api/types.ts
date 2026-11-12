@@ -121,6 +121,7 @@ export type FloorTable = {
 export type FloorSnapshot = {
   outlet_id: string;
   as_of: string;
+  business_date: string;
   areas: { id: string; name: string; sort: number }[];
   tables: FloorTable[];
   open_orders: number;

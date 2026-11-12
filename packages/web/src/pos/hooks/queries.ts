@@ -1,6 +1,5 @@
 "use client";
 
-import { useLocale } from "@sail/ui";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   findPosChannelLink,
@@ -150,9 +149,9 @@ export function useTenderTypes(outletId: string | null) {
 
 export function useTodaysOrders(outletId: string | null, enabled = true) {
   const api = useApi();
-  // Today in the merchant's zone, for the Orders screen's closed list. The register decides the real cutoff; this only names the day.
-  const date = useLocale().isoDate();
-  return useQuery({ queryKey: posKeys.todaysOrders(outletId ?? "", date), queryFn: () => listTodaysOrders(api, outletId!, date), enabled: Boolean(outletId) && enabled, staleTime: 10_000 });
+  // The register's business day (it rolls over at the outlet's cutoff, not at midnight), from the floor snapshot.
+  const date = useFloor(outletId).data?.snapshot.business_date ?? "";
+  return useQuery({ queryKey: posKeys.todaysOrders(outletId ?? "", date), queryFn: () => listTodaysOrders(api, outletId!, date), enabled: Boolean(outletId) && enabled && date !== "", staleTime: 10_000 });
 }
 
 export function useOrderRefunds(orderId: string | null, enabled = true) {
