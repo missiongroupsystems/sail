@@ -30,6 +30,10 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
     if (value) headers.set(name, value);
   }
   headers.set("authorization", `Bearer ${token}`);
+  // The back office's own address: without WEB_APP_URL (development), invite and reset links are made for it.
+  const host = request.headers.get("host");
+  if (host) headers.set("x-forwarded-host", host);
+  headers.set("x-forwarded-proto", request.nextUrl.protocol.replace(/:$/, ""));
 
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
   const body = hasBody ? await request.arrayBuffer() : undefined;

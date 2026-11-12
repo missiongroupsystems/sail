@@ -63,6 +63,20 @@ function clientAddress(c: AppContext): string {
   return incoming?.socket?.remoteAddress ?? "unknown";
 }
 
+/**
+ * Where invite and reset links point: WEB_APP_URL (required in production), else, in development and tests, the back
+ * office the request came through (its proxy forwards its own host), so a link made at :3232 opens at :3232.
+ */
+function backOfficeOrigin(c: AppContext): string {
+  const configured = config().WEB_APP_URL;
+  if (configured) return configured;
+  const host = c.req.header("x-forwarded-host");
+  if (host) return `${c.req.header("x-forwarded-proto") ?? "http"}://${host}`;
+  const origin = c.req.header("origin");
+  if (origin) return origin;
+  throw AppError.validation("This server does not know the back office's address for the link", { remedy: "Set WEB_APP_URL to the back office's address, or ask for the link from the back office." });
+}
+
 const Password = z.string().max(PASSWORD_MAX_LENGTH);
 const SessionOut = z.object({ token: z.string(), expires_at: z.string(), staff: z.object({ id: z.string(), name: z.string(), role: RoleSchema }) });
 const AccessOut = z.object({
@@ -249,7 +263,7 @@ export function identityRoutes(app: OpenAPIHono<AppEnv>) {
     await db().insert(backofficeLinks).values({ merchantId: row.merchantId, staffId: row.id, kind, tokenHash: sha256(token), createdBy: p.id, expiresAt });
     c.set("secretResult", true);
     // The token travels in the fragment, which browsers never send to a server or put in a Referer header.
-    return { url: `${config().WEB_APP_URL.replace(/\/+$/, "")}/set-password#token=${token}`, expiresAt };
+    return { url: `${backOfficeOrigin(c).replace(/\/+$/, "")}/set-password#token=${token}`, expiresAt };
   }
 
   defineOp(app, { op: "staff.access", method: "get", path: "/v1/staff/{id}/access", tags: ["team"], request: { params: StaffParam }, responses: { 200: jsonResponse(dataResponse(AccessOut)), ...errorResponses } }, async (c) => {

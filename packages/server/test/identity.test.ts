@@ -4,7 +4,8 @@ import "../src/modules.js";
 import { buildApp } from "../src/app.js";
 import { setLocalLogin } from "../src/auth/identity.js";
 import { loadCatalog } from "../src/mcp/index.js";
-import { api, backOfficeSession, freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
+import { config, loadConfig, setConfigForTests } from "../src/config.js";
+import { api, backOfficeSession, freshDb, seedMerchant, TEST_SECRETS, type SeededMerchant, type TestDb } from "./helpers.js";
 
 /**
  * Back-office sign-in with the local identity provider: email and password, sessions, lockout, invitations, reset
@@ -243,6 +244,30 @@ describe("review fixes", () => {
 });
 
 describe("invitations and reset links", () => {
+  it("links open the back office: WEB_APP_URL when set, otherwise the back office the request came through, never a guessed localhost", async () => {
+    const id = await newStaff(A, { name: "Link Origin", email: "link.origin@alpha.test" });
+    const configured = await call<Link>("POST", `/v1/staff/${id}/invite`, { token: A.admin.token, body: {} });
+    expect(configured.body.data.url).toMatch(/^https:\/\/backoffice\.test\/set-password#token=/);
+    const saved = config();
+    setConfigForTests({ ...saved, WEB_APP_URL: undefined });
+    try {
+      // The web app's proxy forwards its own host, so a back office on :3232 hands out :3232 links.
+      const proxied = await call<Link>("POST", `/v1/staff/${id}/invite`, { token: A.admin.token, body: {}, headers: { "x-forwarded-host": "localhost:3232", "x-forwarded-proto": "http" } });
+      expect(proxied.body.data.url).toMatch(/^http:\/\/localhost:3232\/set-password#token=/);
+      const unknown = await call<{ code: string; remedy: string }>("POST", `/v1/staff/${id}/invite`, { token: A.admin.token, body: {} });
+      expect(unknown.status).toBe(400);
+      expect(unknown.body.remedy).toMatch(/WEB_APP_URL/);
+    } finally {
+      setConfigForTests(saved);
+    }
+  });
+
+  it("the server refuses to start in production without WEB_APP_URL", () => {
+    const env = { NODE_ENV: "production", DATABASE_URL: "postgres://localhost:5432/sail", ...TEST_SECRETS };
+    expect(() => loadConfig(env)).toThrow(/WEB_APP_URL is required in production/);
+    expect(loadConfig({ ...env, WEB_APP_URL: "https://backoffice.example.com" }).WEB_APP_URL).toBe("https://backoffice.example.com");
+  });
+
   it("an Admin invites an existing staff member who has a PIN; the link works once, keeps the PIN and signs them in", async () => {
     const id = await newStaff(A, { name: "Has A Pin", email: "Has.A.Pin@alpha.test", pin: "678901" });
     const link = await call<Link>("POST", `/v1/staff/${id}/invite`, { token: A.admin.token, body: {} });

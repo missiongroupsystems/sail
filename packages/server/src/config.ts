@@ -56,8 +56,11 @@ const EnvSchema = z.object({
   PIN_SESSION_IDLE_SECONDS: z.coerce.number().int().default(15 * 60),
   /** Base URL of the guest ordering app, used in QR codes. */
   GUEST_APP_URL: z.string().default("http://localhost:3001"),
-  /** Base URL of the web app, used in digital receipt links. */
-  WEB_APP_URL: z.string().default("http://localhost:3000"),
+  /**
+   * Base URL of the back office, the origin of invite and password-reset links. Required in production; in development
+   * and tests the links take the origin of the back office that asked for them.
+   */
+  WEB_APP_URL: z.string().url().optional(),
   /** Development and tests: the terminal simulator the `simulator` payment provider talks to (scripts/payment-simulator.ts). */
   PAYMENT_SIMULATOR_URL: z.string().url().optional(),
 });
@@ -73,6 +76,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Env {
     throw new Error(`Invalid environment: ${issues}`);
   }
   const cfg = parsed.data;
+  if (cfg.NODE_ENV === "production" && !cfg.WEB_APP_URL) throw new Error("Invalid environment: WEB_APP_URL is required in production; invite and password-reset links point at it (the back office's address, for example https://backoffice.example.com)");
   if (cfg.LISTEN_DATABASE_URL && !cfg.ALLOW_POOLER_LISTEN) {
     const port = safePort(cfg.LISTEN_DATABASE_URL);
     if (port !== 5432) throw new Error(`LISTEN_DATABASE_URL must use the session connection on port 5432, got ${port ?? "unknown"}`);
