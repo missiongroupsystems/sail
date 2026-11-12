@@ -29,10 +29,9 @@ export type OrderSheetProps = {
   lateJobIds: Set<string>;
   /** Sent lines the kitchen display has bumped (ready). */
   readyLineIds?: Set<string>;
-  /** Closed order (Reopen, Refund). */
+  /** Closed order (Reopen, Refund; receipts are per bill on the closed order's summary). */
   onReopen: () => void;
   onRefund: () => void;
-  onReceipt: () => void;
 };
 
 /** "pricing" after 150 ms of waiting for the register. */
@@ -56,7 +55,7 @@ function usePricing(orderId: string): boolean {
  * status per sent round, the totals block with every adjustment by
  * name plus Paid and Balance once money has been taken, and the action dock.
  */
-export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, onDiscount, onBill, onPay, onReprintRound, pendingRounds, onAcceptRound, onRejectRound, jobs, lateJobIds, readyLineIds, onReopen, onRefund, onReceipt }: OrderSheetProps) {
+export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, onDiscount, onBill, onPay, onReprintRound, pendingRounds, onAcceptRound, onRejectRound, jobs, lateJobIds, readyLineIds, onReopen, onRefund }: OrderSheetProps) {
   const { money, clock } = useLocale();
   const { station, offline, staff } = usePos();
   const pricing = usePricing(order.id);
@@ -73,18 +72,20 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
   }, [order.lines]);
   const removed = order.lines.filter((l) => l.status === "voided" && l.fire_round == null);
 
-  // Flash a row whose register amount changed; slide in a row we have not seen.
+  // A line shows its menu price (base, as the receipt prints it): every discount, fee and tax is a totals row below, so
+  // the column adds up to the subtotal instead of counting service and tax twice. Flash a row whose price changed;
+  // slide in a row we have not seen.
   const prevAmounts = useRef(new Map<string, number>());
   const seen = useRef(new Set<string>());
   const flashes = new Set<string>();
   const entering = new Set<string>();
   for (const l of order.lines) {
     const prev = prevAmounts.current.get(l.id);
-    if (prev !== undefined && prev !== l.amounts.total && !l.optimistic) flashes.add(l.id);
+    if (prev !== undefined && prev !== l.amounts.base && !l.optimistic) flashes.add(l.id);
     if (!seen.current.has(l.id)) entering.add(l.id);
   }
   useEffect(() => {
-    prevAmounts.current = new Map(order.lines.map((l) => [l.id, l.amounts.total]));
+    prevAmounts.current = new Map(order.lines.map((l) => [l.id, l.amounts.base]));
     for (const l of order.lines) seen.current.add(l.id);
   });
 
@@ -131,7 +132,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
       modifiers={l.modifiers.map((m) => (m.quantity > 1 ? `${m.name} ×${m.quantity}` : m.name))}
       notes={l.notes}
       seat={station.seats_enabled ? l.seat_no : null}
-      amountCents={l.optimistic ? null : l.amounts.total}
+      amountCents={l.optimistic ? null : l.amounts.base}
       status={l.optimistic ? "pending" : status}
       voidReason={l.void_reason}
       flash={flashes.has(l.id)}
@@ -212,7 +213,6 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
           primary={{ id: "reopen", label: "Reopen", ariaLabel: "Reopen this order", onPress: onReopen, needsApproval: !managerPlus }}
           secondaries={[
             { id: "refund", label: "Refund", onPress: onRefund, isDisabled: !canRefund, needsApproval: !managerPlus },
-            { id: "receipt", label: "Receipt", onPress: onReceipt, isDisabled: !canRefund },
           ]}
         />
       ) : (
@@ -224,7 +224,8 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
               : { id: "pay", label: `Pay ${money(order.balance)} ▸`, ariaLabel: `Pay ${money(order.balance)}`, onPress: onPay, isDisabled: live.length === 0 || order.balance <= 0, needsApproval: !["cashier", "manager", "finance", "admin"].includes(staff.role) }
           }
           secondaries={[
-            { id: "hold", label: "Hold", onPress: () => void actions.holdAllNew(), isDisabled: sendable === 0 },
+            // Hold goes with Send: once nothing new is waiting, Pay takes the space so the dock fits the order column.
+            ...(sendable > 0 ? [{ id: "hold", label: "Hold", onPress: () => void actions.holdAllNew() }] : []),
             { id: "discount", label: "Discount", onPress: onDiscount, isDisabled: live.length === 0 || order.pricing_status === "frozen", needsApproval: rules ? rules.every((r) => !roleOk(staff.role, r.min_role)) : false },
             { id: "bill", label: "Bill", onPress: onBill, mutates: false, isDisabled: live.length === 0 },
           ]}

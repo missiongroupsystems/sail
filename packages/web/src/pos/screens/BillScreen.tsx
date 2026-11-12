@@ -186,7 +186,8 @@ export function BillScreen({ orderId }: { orderId: string }) {
         name: `${line!.quantity} ${line!.name}`,
         share: shareText(a.share) || null,
         detail: line!.modifiers.length ? line!.modifiers.map((m) => m.name).join(", ") : null,
-        amountCents: a.total,
+        // The line's share of its menu price, as the receipt prints it; discounts, fees and tax are the rows below.
+        amountCents: a.base,
         isSelected: selectedLine === a.line_id,
         isDisabled: check.locked || lockedLineIds.has(a.line_id),
         onPress: canPick && !check.locked ? () => setSelectedLine(selectedLine === a.line_id ? null : a.line_id) : undefined,
@@ -234,7 +235,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
                         </span>
                         <span className="block truncate text-caption text-ink-2">{whereIs(l.id)}</span>
                       </span>
-                      <Money cents={l.amounts.total} size="line" className="text-ink" />
+                      <Money cents={l.amounts.base} size="line" className="text-ink" />
                     </AriaButton>
                   </li>
                 );
@@ -276,7 +277,9 @@ export function BillScreen({ orderId }: { orderId: string }) {
                   status={check.status}
                   lines={cardLines(check)}
                   rows={billRows(check, snap.totals.tax_mode)}
-                  tenders={check.payments.filter((p) => p.status !== "voided").map((p) => ({ id: p.id, label: `${p.tender}${p.reference ? ` · ${p.reference}` : ""}`, cents: p.amount }))}
+                  tenders={check.payments
+                    .filter((p) => p.status !== "voided")
+                    .flatMap((p) => [{ id: p.id, label: `${p.tender}${p.reference ? ` · ${p.reference}` : ""}`, cents: p.amount }, ...(p.tip_cents ? [{ id: `${p.id}:tip`, label: `Tip on ${p.tender}`, cents: p.tip_cents }] : [])])}
                   isTarget={Boolean(selectedLine) && !check.locked}
                   onPress={selectedLine && !check.locked ? () => void moveTo(check) : undefined}
                   actions={

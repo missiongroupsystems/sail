@@ -34,22 +34,22 @@ export function ActionDock({ primary, secondaries = [], offline, className }: Ac
       <Button
         key={a.id}
         variant={variant}
-        size="lg"
+        size={variant === "primary" ? "lg" : "md"}
         onPress={a.onPress}
         isDisabled={a.isDisabled || blocked}
         isPending={a.isPending}
         aria-label={blocked ? `${a.ariaLabel ?? a.label} (offline)` : a.ariaLabel}
-        className={cx("min-h-16", variant === "primary" ? "min-w-[180px] flex-1 px-6 text-heading" : "px-4")}
+        className={cx("min-h-16 flex-wrap text-center", variant === "primary" && "flex-1 text-heading")}
       >
-        {blocked ? "Offline" : a.label}
-        {a.needsApproval && !blocked ? <span className="ml-1 rounded-chip bg-[color-mix(in_srgb,var(--status-bill)_14%,transparent)] px-2 text-caption text-status-bill">Manager approval</span> : null}
+        {/* The dock is the order column's width: a long total or the approval badge wraps inside the button instead of pushing it off the screen. */}
+        <span className="whitespace-normal text-balance">{blocked ? "Offline" : a.label}</span>
+        {a.needsApproval && !blocked ? <span className="rounded-chip bg-[color-mix(in_srgb,var(--status-bill)_14%,transparent)] px-2 text-caption text-status-bill">Manager approval</span> : null}
       </Button>
     );
   };
   return (
     <div className={cx("flex h-[72px] shrink-0 items-center gap-2 px-3 hairline-t bg-surface", className)} role="toolbar" aria-label="Order actions">
       {secondaries.map((s) => render(s, "secondary"))}
-      <div className="flex-1" />
       {render(primary, "primary")}
     </div>
   );
