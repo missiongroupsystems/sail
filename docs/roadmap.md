@@ -26,6 +26,7 @@ What is built, what comes next and what Sail will not do. There are no dates. Th
 - A few back-office pages name "today" by the calendar date in the merchant's time zone rather than the business date, so between midnight and the cutoff they show the next day.
 - QR admission trusts the seating's first phone: whoever scans first after the table is seated orders without a staff tap.
 - The per-address sign-in lockout relies on a proxy in front of the web app that overwrites `X-Forwarded-For` ([self-hosting.md](self-hosting.md#signing-in-and-lockout)). Without one, a caller can change address on every attempt; only the per-email pause and cap hold.
+- PDF invoices and credit notes use the PDF standard fonts, so text outside Latin-1 (Japanese item names, say) appears in them as a placeholder. Printed receipts and tickets are not affected.
 - One email signs in to one staff record on the whole server, so a person who works for two merchants on one server needs two emails.
 - Passwords use Node's default scrypt cost, the same as PINs. It has not been tuned or made configurable.
 - The built-in sign-in has no multi-factor step and sends no email: invitation and reset links are passed on by hand.
