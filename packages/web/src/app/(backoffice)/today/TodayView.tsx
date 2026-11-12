@@ -9,6 +9,7 @@ import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletCho
 import { isLate, JobRowActions, RerouteDialog, useJobMutations } from "@/components/backoffice/PrintJobActions";
 import { boKeys, can, formatElapsed, plural, REQUEST_TYPE_LABEL, type FloorSnapshot, type GuestRound, type PrintJob, type ServiceRequest, type Shift, type ZReport } from "@/components/backoffice/register";
 import { RelayStatus } from "@/components/backoffice/RelayPairingPanel";
+import { SetupChecklist } from "@/components/backoffice/SetupChecklist";
 import { Warnings } from "@/components/backoffice/Warnings";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
@@ -119,6 +120,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
         </div>
       ) : null}
 
+      {outlet ? <SetupChecklist outletId={outlet.id} tableCount={floor.data ? floor.data.tables.length : null} /> : null}
       {outlet ? (
         <div className="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
           <div className="flex flex-col gap-10">

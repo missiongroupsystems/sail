@@ -67,7 +67,7 @@ export function StationsView({
     { key: "brand_id", header: "Brand", sortable: true, sortValue: (s) => (s.brand_id ? brandName.get(s.brand_id) : ""), render: (s) => <span className="text-ink-2">{s.brand_id ? brandName.get(s.brand_id) ?? "Unknown brand" : "Any brand"}</span> },
     { key: "pay_before_firing", header: "Pay before sending", sortable: true, render: (s) => (s.pay_before_firing ? "Yes" : "—") },
     { key: "seats_enabled", header: "Seats", sortable: true, render: (s) => (s.seats_enabled ? "On" : "Off") },
-    { key: "home", header: "Home screen", sortable: true, render: (s) => (s.kind === "display" ? "Kitchen display (/kds)" : (HOME_LABEL[s.home] ?? s.home)) },
+    { key: "home", header: "Home screen", sortable: true, render: (s) => (s.kind === "display" ? (s.display_destination_ids.length ? "Kitchen display (/kds)" : <StatusDot status="alert" label="Kitchen display · shows nothing until a destination is ticked" />) : (HOME_LABEL[s.home] ?? s.home)) },
     {
       key: "paired",
       header: "Pairing",
@@ -225,7 +225,7 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
         </FormSection>
         {kind === "display" ? (
           <FormSection title="Kitchen display" hint="The display shows the tickets routed to these destinations. Set their routing in Printing › Printers.">
-            <RhfCheckboxGroup control={form.control} name="display_destination_ids" label="Destinations" options={(destinations.data ?? []).map((d) => ({ id: d.id, label: d.name }))} emptyHint="No display destinations at this outlet yet. Add one in Printing › Printers." />
+            <RhfCheckboxGroup control={form.control} name="display_destination_ids" label="Destinations" options={(destinations.data ?? []).map((d) => ({ id: d.id, label: d.name }))} emptyHint={destinations.isPending ? "Loading the destinations…" : "No display destinations at this outlet yet. Add one in Printing › Printers."} description="Tick at least one: a kitchen display with none shows no tickets." />
           </FormSection>
         ) : (
           <>

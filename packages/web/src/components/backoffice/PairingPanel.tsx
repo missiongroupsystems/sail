@@ -23,9 +23,12 @@ function useCountdown(until: string | null): string | null {
   return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
 }
 
-/** "Pair an iPad": a one-time 6-digit code, shown large with its expiry. */
+/** "Pair an iPad" ("Pair a screen" for a kitchen display): a one-time 6-digit code, shown large with its expiry, and the address to open. */
 export function PairingPanel({ station }: { station: Station }) {
   const { clock } = useLocale();
+  const display = station.kind === "display";
+  const device = display ? "screen" : "iPad";
+  const address = typeof window === "undefined" ? (display ? "/kds" : "/pos") : `${window.location.origin}${display ? "/kds" : "/pos"}`;
   const code = useMutation<PairingCode, ApiError>({
     mutationFn: () => req(api.POST("/v1/stations/{id}/pairing-code", { params: { path: { id: station.id } }, body: {} })).then((r) => r.data),
   });
@@ -37,7 +40,9 @@ export function PairingPanel({ station }: { station: Station }) {
       {station.paired ? <StatusDot status="paid" label={station.device_label ? `Paired · ${station.device_label}` : "Paired"} /> : <StatusDot status="neutral" label="Not paired" muted />}
       {code.data && !expired ? (
         <div className="flex flex-col items-start gap-2 rounded-tile bg-surface-2 px-5 py-4">
-          <p className="text-caption text-ink-2">On the iPad, open Sail and enter this code</p>
+          <p className="text-caption text-ink-2">
+            On the {device}, open <span className="font-mono text-ink">{address}</span> and enter this code
+          </p>
           <p className="font-mono text-display text-ink tabular tracking-[0.18em]" aria-label={`Pairing code ${code.data.code.split("").join(" ")}`}>
             {code.data.code}
           </p>
@@ -49,7 +54,7 @@ export function PairingPanel({ station }: { station: Station }) {
       {expired ? <p className="text-caption text-ink-2">That code expired. Issue a new one.</p> : null}
       <div>
         <Button onPress={() => code.mutate()} isPending={code.isPending} isDisabled={station.archived}>
-          {code.data && !expired ? "Issue a new code" : station.paired ? "Pair another iPad" : "Pair an iPad"}
+          {code.data && !expired ? "Issue a new code" : station.paired ? `Pair another ${device}` : `Pair ${display ? "a screen" : "an iPad"}`}
         </Button>
       </div>
       <InlineError error={code.error} />

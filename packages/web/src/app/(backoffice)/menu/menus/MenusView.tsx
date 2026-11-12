@@ -250,7 +250,7 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
       <InlineError error={save.error ?? patchMenu.error} />
 
       {tops.length === 0 ? (
-        <EmptyState variant="quiet" title="No sections yet" hint="Tap Add section, then search products to add them. Drag the handle to reorder." />
+        <EmptyState variant="quiet" title="No sections yet" hint="Tap Add section, then search products to add them. The POS and the guest app show only products in a section. Drag the handle to reorder, then Save menu order." />
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={tops.map((s) => `sec:${s.id}`)} strategy={verticalListSortingStrategy}>
