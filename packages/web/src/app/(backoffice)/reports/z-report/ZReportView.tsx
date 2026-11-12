@@ -102,13 +102,14 @@ export function ZReportView({ outlets, scope, initialOutletId }: { outlets: Outl
           <div className="pt-3">
             <p className="text-ink">{stillOpen.data.length === 1 ? "1 order is still open:" : `${stillOpen.data.length} orders are still open:`}</p>
             <ul className="pt-1">
-              {stillOpen.data.map((o) => (
+              {stillOpen.data.slice(0, 8).map((o) => (
                 <li key={o.id} className="flex justify-between gap-3 tabular">
                   <span>{o.order_no}</span>
                   <span>{money(o.totals.total)}</span>
                 </li>
               ))}
             </ul>
+            {stillOpen.data.length > 8 ? <p>and {stillOpen.data.length - 8} more, in Orders.</p> : null}
             <p className="pt-2">Pay or cancel {stillOpen.data.length === 1 ? "it" : "them"} first, unless {stillOpen.data.length === 1 ? "it carries" : "they carry"} over to the next day.</p>
           </div>
         ) : stillOpen.data ? (
