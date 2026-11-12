@@ -84,7 +84,7 @@ export const OPERATIONS: Record<string, OperationSpec> = {
   "merchants.update_settings": {
     op: "merchants.update_settings",
     summary: "Update merchant settings",
-    description: "Changes the locale, time zone, tax mode or rounding, default tax class, cash rounding increment, cash denominations, registration labels or the business-day cutoff. Affects every outlet. Orders already priced keep their tax snapshot. The currency cannot change once set.",
+    description: "Changes the locale, time zone, tax mode or rounding, default tax class, cash rounding increment, cash denominations, whether tips are taken, registration labels or the business-day cutoff. Affects every outlet. Orders already priced keep their tax snapshot. The currency cannot change once set.",
     tier: "T3",
     ...fromPermission("config.edit"),
     reasonRequired: false,

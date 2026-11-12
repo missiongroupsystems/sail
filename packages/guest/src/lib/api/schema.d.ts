@@ -279,7 +279,7 @@ export interface paths {
         head?: never;
         /**
          * Update merchant settings
-         * @description Changes the locale, time zone, tax mode or rounding, default tax class, cash rounding increment, cash denominations, registration labels or the business-day cutoff. Affects every outlet. Orders already priced keep their tax snapshot. The currency cannot change once set.
+         * @description Changes the locale, time zone, tax mode or rounding, default tax class, cash rounding increment, cash denominations, whether tips are taken, registration labels or the business-day cutoff. Affects every outlet. Orders already priced keep their tax snapshot. The currency cannot change once set.
          */
         patch: operations["merchants.update_settings"];
         trace?: never;
