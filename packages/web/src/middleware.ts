@@ -10,8 +10,17 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (pathname === "/login") {
+    // The register ended the session (signed out elsewhere, access revoked, password reset): drop the stale cookie,
+    // or the visitor would bounce between /login and /today.
+    if (request.nextUrl.searchParams.has("expired")) {
+      const res = NextResponse.next();
+      res.cookies.delete(SESSION_COOKIE);
+      return res;
+    }
     return signedIn ? NextResponse.redirect(new URL("/today", request.url)) : NextResponse.next();
   }
+  // First-run setup and invitation or reset links are for people who are not signed in yet.
+  if (pathname === "/setup" || pathname === "/set-password") return NextResponse.next();
   if (!signedIn) {
     const login = new URL("/login", request.url);
     if (pathname !== "/") login.searchParams.set("next", pathname);

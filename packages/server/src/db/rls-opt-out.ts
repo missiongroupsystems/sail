@@ -1,9 +1,9 @@
 /**
  * Routes that run with NO per-request RLS transaction (scope doc 7.1 rule 8:
- * `/health` only, plus the spec itself and the development token endpoint,
- * which is disabled in production). Covered by a test.
+ * `/health` only, plus the spec itself and the public sign-in, setup and
+ * pairing endpoints, which run their own transaction). Covered by a test.
  */
-export const RLS_OPT_OUT: RegExp[] = [/^\/health$/, /^\/openapi\.json$/, /^\/v1\/auth\/dev-token$/, /^\/v1\/guest\/sessions$/, /^\/v1\/agent-sessions$/, /^\/v1\/stations\/pair$/, /^\/v1\/relays\/pair$/, /^\/v1\/receipts\/[^/]+$/];
+export const RLS_OPT_OUT: RegExp[] = [/^\/health$/, /^\/openapi\.json$/, /^\/v1\/auth\/status$/, /^\/v1\/auth\/sign-in$/, /^\/v1\/auth\/links\/accept$/, /^\/v1\/setup$/, /^\/v1\/guest\/sessions$/, /^\/v1\/agent-sessions$/, /^\/v1\/stations\/pair$/, /^\/v1\/relays\/pair$/, /^\/v1\/receipts\/[^/]+$/];
 
 /**
  * Long-lived stream routes. They still authenticate and check access under RLS,

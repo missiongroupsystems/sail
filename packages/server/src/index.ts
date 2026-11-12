@@ -16,6 +16,8 @@ async function main() {
   await import("./modules.js");
 
   if (role === "app") {
+    const { assertIdentityConfigured } = await import("./auth/identity.js");
+    assertIdentityConfigured();
     const { buildApp } = await import("./app.js");
     const app = buildApp();
     await startListener();

@@ -6,10 +6,11 @@ import { applyPreset, type MerchantSettingsInput } from "../src/bootstrap.js";
 import { setConfigForTests, loadConfig } from "../src/config.js";
 import { setPoolForTests } from "../src/db/client.js";
 import { resetGateForTests } from "../src/middleware/pipeline.js";
-import { signDevBackOfficeToken, signSailToken, hashSecret, pinLookup } from "../src/auth/tokens.js";
+import { signSailToken, hashSecret, pinLookup } from "../src/auth/tokens.js";
+import { localSubject, SESSION_TTL_SECONDS } from "../src/auth/identity.js";
 
 export const TEST_SECRETS = {
-  DEV_AUTH_SECRET: "dev-secret-for-tests-only-0123456789",
+  SESSION_TOKEN_SECRET: "session-secret-for-tests-0123456789",
   STATION_TOKEN_SECRET: "station-secret-for-tests-0123456789",
   GUEST_TOKEN_SECRET: "guest-secret-for-tests-0123456789ab",
   RELAY_TOKEN_SECRET: "relay-secret-for-tests-0123456789ab",
@@ -95,11 +96,11 @@ export async function seedMerchant(sql: Sql, name = "Test Merchant", region: { p
   await sql`insert into outlets (id, merchant_id, name) values (${outlet2Id}, ${merchantId}, ${name + " Outlet 2"})`;
   const mk = async (role: Role, label: string, outletIds: string[] = [], pin: string) => {
     const id = randomUUID();
-    const sub = `test:${id}`;
+    const sub = localSubject(id);
     const pinHash = hashSecret(pin);
     await sql`insert into staff (id, merchant_id, name, email, auth_subject, role, outlet_ids, pin_hash, pin_lookup)
       values (${id}, ${merchantId}, ${label}, ${`${label.toLowerCase().replace(/\s+/g, ".")}@${merchantId.slice(0, 8)}.test`}, ${sub}, ${role}, ${outletIds}, ${pinHash}, ${pinLookup(merchantId, pin)})`;
-    const token = await signDevBackOfficeToken(sub);
+    const token = await backOfficeSession(sql, merchantId, id);
     return { id, token };
   };
   return {
@@ -117,6 +118,12 @@ export async function seedMerchant(sql: Sql, name = "Test Merchant", region: { p
 }
 
 export { signSailToken };
+
+/** A back-office session for a seeded staff member, as the local identity provider issues one after sign-in. */
+export async function backOfficeSession(sql: Sql, merchantId: string, staffId: string): Promise<string> {
+  const [row] = await sql<{ id: string }[]>`insert into backoffice_sessions (merchant_id, staff_id, expires_at) values (${merchantId}, ${staffId}, now() + make_interval(secs => ${SESSION_TTL_SECONDS})) returning id`;
+  return signSailToken({ typ: "session", merchant_id: merchantId, staff_id: staffId, session_id: row!.id }, SESSION_TTL_SECONDS);
+}
 
 /** Minimal typed fetch against the in-process app. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

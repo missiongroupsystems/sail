@@ -5,6 +5,8 @@ const config: NextConfig = {
   // Both workspace packages export TypeScript source.
   transpilePackages: ["@sail/shared", "@sail/ui"],
   poweredByHeader: false,
+  // The end-to-end run starts a second back office for first-run setup; it builds into its own directory.
+  distDir: process.env.SAIL_WEB_DIST_DIR || ".next",
   webpack: (webpackConfig) => {
     // @sail/shared imports its own modules as "./money.js" (ESM style, resolved by tsc to .ts);
     // webpack needs the same extension alias.

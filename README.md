@@ -16,8 +16,10 @@ A multi-brand, multi-outlet restaurant POS built as a small deterministic regist
 ```bash
 corepack enable && pnpm install
 pnpm --filter @sail/server dev:local     # embedded Postgres + API on :8080, Admin admin@sail.local / PIN 123456
-pnpm --filter @sail/web dev              # back office on :3000
+pnpm --filter @sail/web dev              # back office on :3000: sign in as admin@sail.local, password sail-demo-password
 pnpm test                                # shared + server test suites
 ```
+
+On a real database with no merchant yet, the back office opens on first-run setup: your business, a region preset, the first outlet and your Admin login. `docs/sign-in.md` covers setup, the CLI bootstrap for headless installs, inviting staff and the external identity provider option.
 
 See `docs/how-to.md` for adding routes, tables and migrations, and `docs/completions/` for what each phase delivered and what is blocked.

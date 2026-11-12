@@ -29,6 +29,11 @@ export type OperationSpec = {
   mcp: { expose: boolean; toolsets: Toolset[] };
   /** When the role check comes from a permission key in the fixed matrix. */
   permission?: PermissionKey;
+  /**
+   * False when the request or its result carries a secret (a password, a sign-in link): a caller above its risk
+   * ceiling is refused instead of getting a proposal, because a proposal stores both.
+   */
+  proposable?: boolean;
 };
 
 function fromPermission(key: PermissionKey): Pick<OperationSpec, "minRole" | "overrideAllowed" | "permission"> {
@@ -105,7 +110,6 @@ export const OPERATIONS: Record<string, OperationSpec> = {
   "audit.list": { op: "audit.list", summary: "List audit entries", description: "Who did what, on which target, when, and who approved it. Filter by actor, action, target or time.", tier: "T0", ...fromPermission("audit.list"), reasonRequired: false, dryRun: false, principals: STAFF, emits: [], mcp: { expose: true, toolsets: ["reports", "watch"] } },
   "events.list": { op: "events.list", summary: "Catch up on outlet events", description: "Events for an outlet after a sequence number. This is the source of truth for every live view; the SSE stream only signals that new events exist.", tier: "T0", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff", "station", "agent", "relay"], emits: [], mcp: { expose: true, toolsets: ["watch", "pos.read"] } },
   "outlets.stream": { op: "outlets.stream", summary: "Outlet live-update stream (SSE)", description: "Server-sent events signalling new outlet events and print jobs. Clients catch up with events.list on connect, on a sequence gap, on visibility change and on `resync`.", tier: "T0", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff", "station", "agent"], emits: [], mcp: { expose: false, toolsets: [] } },
-  "auth.dev_token": { op: "auth.dev_token", summary: "Mint a development sign-in token", description: "Development and tests only. Disabled in production.", tier: "T0", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: [], emits: [], mcp: { expose: false, toolsets: [] } },
 };
 
 export function operation(op: string): OperationSpec {

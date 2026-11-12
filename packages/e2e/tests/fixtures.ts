@@ -5,6 +5,9 @@ import { expect, test as base, type Page, type Response } from "@playwright/test
 export const API = process.env.E2E_API_URL ?? "http://localhost:8080";
 export const WEB = "http://localhost:3000";
 export const GUEST = "http://localhost:3001";
+/** The first-run stack: an API on an empty database and its own back office (playwright.config.ts). */
+export const SETUP_API = process.env.E2E_SETUP_API_URL ?? "http://localhost:8091";
+export const SETUP_WEB = "http://localhost:3002";
 
 type DemoMerchant = { merchantId: string; brandId: string; outletId: string; stationId: string };
 
@@ -12,14 +15,14 @@ type DemoMerchant = { merchantId: string; brandId: string; outletId: string; sta
  * What `dev:local` bootstrapped (written by packages/server/scripts/dev-local.ts): the Singapore demo merchant at the
  * top level and the EU VAT café (EUR, de-DE) under `eu`.
  */
-export function devLocal(): DemoMerchant & { eu: DemoMerchant } {
+export function devLocal(): DemoMerchant & { admin_password: string; eu: DemoMerchant } {
   return JSON.parse(readFileSync(resolve(import.meta.dirname, "../../server/.dev-local.json"), "utf8"));
 }
 
 export const SG_ADMIN = "admin@sail.local";
 export const EU_ADMIN = "admin.eu@sail.local";
 
-/** A register call as a back-office Admin would make it (dev sign-in), by default the Singapore demo merchant's. */
+/** A register call as a back-office Admin would make it (signed in with email and password), by default the Singapore demo merchant's. */
 export async function register<T>(method: string, path: string, body?: unknown, adminEmail = SG_ADMIN): Promise<T> {
   const token = await adminToken(adminEmail);
   const res = await fetch(`${API}${path}`, { method, headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID(), authorization: `Bearer ${token}` }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -32,10 +35,17 @@ const adminTokens = new Map<string, string>();
 async function adminToken(email: string): Promise<string> {
   const cached = adminTokens.get(email);
   if (cached) return cached;
-  const res = await fetch(`${API}/v1/auth/dev-token`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email }) });
-  const { token } = (await res.json()) as { token: string };
+  const token = await signInToken(API, email, devLocal().admin_password);
   adminTokens.set(email, token);
   return token;
+}
+
+/** A back-office session token from the register's own sign-in, the path the web app uses. */
+export async function signInToken(api: string, email: string, password: string): Promise<string> {
+  const res = await fetch(`${api}/v1/auth/sign-in`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password }) });
+  const body = (await res.json()) as { data: { token: string } };
+  if (!res.ok) throw new Error(`sign-in ${email} → ${res.status} ${JSON.stringify(body)}`);
+  return body.data.token;
 }
 
 type Allowed = { status: number; url: RegExp; why: string };
@@ -61,7 +71,7 @@ export const test = base.extend<{ watch: { allow: (a: Allowed) => void; attach: 
         p.on("response", (r: Response) => {
           if (r.status() < 400) return;
           const url = r.url();
-          if (!url.startsWith(API) && !url.startsWith(WEB) && !url.startsWith(GUEST)) return;
+          if (![API, WEB, GUEST, SETUP_API, SETUP_WEB].some((origin) => url.startsWith(origin))) return;
           if (allowed.some((a) => a.status === r.status() && a.url.test(url))) return;
           problems.push(`HTTP ${r.status()} ${r.request().method()} ${url}`);
         });

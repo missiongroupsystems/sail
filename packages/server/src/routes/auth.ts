@@ -1,13 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { eq } from "drizzle-orm";
 import { RoleSchema } from "@sail/shared";
-import { config } from "../config.js";
-import { withTransaction } from "../db/client.js";
-import { staff } from "../db/schema/index.js";
-import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
-import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, z } from "../lib/openapi.js";
-import { signDevBackOfficeToken } from "../auth/tokens.js";
+import { dataResponse, defineOp, errorResponses, jsonResponse, z } from "../lib/openapi.js";
 import { outletScopeFor, principalRole } from "../auth/principal.js";
 
 export const MeSchema = z.object({
@@ -46,33 +40,4 @@ export function authRoutes(app: OpenAPIHono<AppEnv>) {
       200,
     );
   });
-
-  defineOp(
-    app,
-    {
-      op: "auth.dev_token",
-      method: "post",
-      path: "/v1/auth/dev-token",
-      tags: ["auth"],
-      request: { body: jsonBody(z.object({ email: z.string().email() })) },
-      responses: { 200: jsonResponse(z.object({ token: z.string(), staff_id: z.string() })), ...errorResponses },
-    },
-    async (c) => {
-      const cfg = config();
-      if (cfg.NODE_ENV === "production" || !cfg.DEV_AUTH_SECRET) throw new AppError("not_found", "Not available");
-      const { email } = c.req.valid("json");
-      const row = await withTransaction(async (t) => {
-        const [s] = await t.db.select().from(staff).where(eq(staff.email, email)).limit(1);
-        if (!s) throw AppError.notFound("staff with email", email);
-        if (!s.authSubject) {
-          const sub = `dev:${s.id}`;
-          await t.db.update(staff).set({ authSubject: sub }).where(eq(staff.id, s.id));
-          return { ...s, authSubject: sub };
-        }
-        return s;
-      });
-      const token = await signDevBackOfficeToken(row.authSubject!, email, 12 * 3600);
-      return c.json({ token, staff_id: row.id }, 200);
-    },
-  );
 }

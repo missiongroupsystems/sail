@@ -10,6 +10,8 @@ export type AppEnv = {
     idempotencyKey: string | null;
     dryRun: boolean;
     operationId: string;
+    /** The response carries a secret shown once (a sign-in link): an idempotent replay must not return it again. */
+    secretResult: boolean;
   };
 };
 

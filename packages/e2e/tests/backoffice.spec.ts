@@ -1,12 +1,13 @@
 import type { Page } from "@playwright/test";
-import { expect, test, textContrast, WEB } from "./fixtures";
+import { devLocal, expect, SG_ADMIN, test, textContrast, WEB } from "./fixtures";
 
-/** Dev sign-in as the seeded Admin; done once the Today page has rendered, so the next navigation is not cut short. */
+/** Sign in as the seeded Admin with the demo password; done once the Today page has rendered, so the next navigation is not cut short. */
 async function signIn(page: Page) {
   await page.goto(`${WEB}/login`);
-  await expect(page.getByLabel("Email")).toHaveValue("admin@sail.local");
   // A click that lands before the dev server's first compile has hydrated the form does nothing, so press until it signs in.
   await expect(async () => {
+    await page.getByLabel("Email").fill(SG_ADMIN);
+    await page.getByLabel("Password").fill(devLocal().admin_password);
     await page.getByRole("button", { name: "Sign in" }).click({ timeout: 10_000 });
     await page.waitForURL(`${WEB}/today`, { timeout: 30_000 });
   }).toPass({ timeout: 300_000 });
@@ -49,6 +50,7 @@ const PAGES = [
   "/settings/void-reasons",
   "/settings/merchant",
   "/audit",
+  "/account/password",
 ];
 
 test("back office: sign in, then every section loads without console errors or failed requests", async ({ page }) => {

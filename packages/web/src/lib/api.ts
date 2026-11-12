@@ -64,6 +64,8 @@ export type ApiClientOptions = {
   baseUrl: string;
   /** Bearer token. The browser never holds one; the proxy adds it from the httpOnly cookie. */
   token?: string | null;
+  /** Extra request headers, such as the browser's address on sign-in. */
+  headers?: Record<string, string>;
   timeoutMs?: number;
 };
 
@@ -73,7 +75,7 @@ export type ApiClientOptions = {
  * when retrying), and errors thrown as `ApiError` so `data` is always present on
  * a resolved call.
  */
-export function createApi({ baseUrl, token, timeoutMs = DEFAULT_TIMEOUT_MS }: ApiClientOptions) {
+export function createApi({ baseUrl, token, headers, timeoutMs = DEFAULT_TIMEOUT_MS }: ApiClientOptions) {
   const timedFetch = async (request: Request): Promise<Response> => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(ApiError.timeout(timeoutMs)), timeoutMs);
@@ -96,6 +98,7 @@ export function createApi({ baseUrl, token, timeoutMs = DEFAULT_TIMEOUT_MS }: Ap
   const conventions: Middleware = {
     onRequest({ request }) {
       if (token) request.headers.set("authorization", `Bearer ${token}`);
+      for (const [name, value] of Object.entries(headers ?? {})) request.headers.set(name, value);
       if (MUTATING.has(request.method) && !request.headers.has("idempotency-key")) {
         request.headers.set("idempotency-key", crypto.randomUUID());
       }

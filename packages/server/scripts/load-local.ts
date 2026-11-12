@@ -29,7 +29,7 @@ process.env.LOG_LEVEL ??= "fatal";
 process.env.DATABASE_URL = url;
 process.env.LISTEN_DATABASE_URL = url;
 process.env.ALLOW_POOLER_LISTEN = "1";
-process.env.DEV_AUTH_SECRET ??= "local-dev-secret-change-me-0123456789";
+process.env.SESSION_TOKEN_SECRET ??= "local-session-secret-0123456789abcdef";
 process.env.STATION_TOKEN_SECRET ??= "local-station-secret-0123456789abcdef";
 process.env.GUEST_TOKEN_SECRET ??= "local-guest-secret-0123456789abcdef";
 process.env.RELAY_TOKEN_SECRET ??= "local-relay-secret-0123456789abcdef";
@@ -38,7 +38,7 @@ process.env.TX_MAX ??= "16";
 process.env.QUEUE_MAX ??= "200";
 process.env.DB_POOL_MAX ??= "20";
 
-const boot = await bootstrapMerchant(url, { merchantName: "Load", brandName: "Load Brand", outletName: "Load Outlet", admin: { name: "Ada", email: "admin@sail.local", pin: "123456" }, preset: "sg", timeZone: "Asia/Singapore", cashRoundingIncrement: 5 });
+const boot = await bootstrapMerchant(url, { merchantName: "Load", brandName: "Load Brand", outletName: "Load Outlet", admin: { name: "Ada", email: "admin@sail.local", pin: "123456", password: "load-test-password" }, preset: "sg", timeZone: "Asia/Singapore", cashRoundingIncrement: 5 });
 await import("../src/modules.js");
 const { buildApp } = await import("../src/app.js");
 const { startListener, stopListener } = await import("../src/sse/listener.js");
@@ -64,7 +64,7 @@ async function call<T = unknown>(name: string, method: string, path: string, tok
   return { status: res.status, body: parsed as T };
 }
 
-const adminTok = (await call<{ token: string }>("dev-token", "POST", "/v1/auth/dev-token", "", { email: "admin@sail.local" })).body.token;
+const adminTok = (await call<{ data: { token: string } }>("sign-in", "POST", "/v1/auth/sign-in", "", { email: "admin@sail.local", password: "load-test-password" })).body.data.token;
 const products = Array.from({ length: 30 }, () => randomUUID());
 for (const [i, id] of products.entries()) await call("setup", "POST", "/v1/products", adminTok, { id, name: `Item ${i}`, price: 500 + i * 35, tags: ["kitchen"] });
 const menu = randomUUID();
@@ -132,7 +132,7 @@ for (const c of controllers) c.abort();
 
 const q = (xs: number[], p: number) => xs.slice().sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor(xs.length * p))]!;
 const rows = Object.entries(lat)
-  .filter(([k]) => k !== "setup" && k !== "dev-token")
+  .filter(([k]) => k !== "setup" && k !== "sign-in")
   .map(([k, v]) => ({ operation: k, calls: v.length, p50_ms: Math.round(q(v, 0.5)), p95_ms: Math.round(q(v, 0.95)), p99_ms: Math.round(q(v, 0.99)), max_ms: Math.round(Math.max(...v)) }));
 const total = rows.reduce((s, r) => s + r.calls, 0);
 console.log(JSON.stringify({ stations: STATIONS, orders_per_station: ORDERS, sse_streams: STREAMS, tx_max: Number(process.env.TX_MAX), queue_max: Number(process.env.QUEUE_MAX), elapsed_s: Number(elapsed.toFixed(1)), requests: total, requests_per_s: Math.round(total / elapsed), gate_rejections_503: rejected, sse_events_seen: streamEvents, operations: rows }, null, 2));

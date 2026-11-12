@@ -4,6 +4,14 @@ All notable changes to Sail. Phases follow `docs/roadmap.md`; each has a complet
 
 ## Unreleased (feat/beta-v1)
 
+### Back-office sign-in and first-run setup
+- **Identity providers.** Back-office sign-in goes through one provider: `local` (email and password, the default) or `oidc` (the external issuer's JWTs, as before, selected by `SUPABASE_URL` or `SUPABASE_JWT_SECRET`). The local provider needs `SESSION_TOKEN_SECRET`.
+- **Local sign-in.** scrypt password hashes, 12 characters minimum and no composition rules; 12-hour sessions ended by sign-out, password change, reset or revocation; the same answer for an unknown email and a wrong password; 5 failures lock an email and 20 lock an address for 15 minutes, counted in Postgres (`TRUST_PROXY` makes the address the last `X-Forwarded-For` entry).
+- **First-run setup.** With no merchant, the back office opens on setup (`setup.create`, refused once a merchant exists and when setups race). `bootstrap` takes `SAIL_ADMIN_PASSWORD`; without it the Admin's email is pre-authorised for the external provider.
+- **Team access.** Admins invite staff (single-use link, 7 days), generate reset links (24 hours) and revoke access from the staff sheet. With `oidc`, inviting pre-authorises the email and the first sign-in links the account, replacing the manual `auth_subject` SQL; unknown emails are refused.
+- **Never for agents.** The ten new operations are hidden from MCP, list no agent principal and cannot become proposals (a caller above its risk ceiling is refused). New tables `backoffice_logins`, `backoffice_sessions` and `backoffice_links` have RLS and no grants for the agent, guest or relay roles; request roles cannot read password hashes.
+- **Removed.** The email-only development login (`POST /v1/auth/dev-token`) and `DEV_AUTH_SECRET`. `dev:local` seeds the demo Admins with the password `sail-demo-password`. See `docs/sign-in.md`.
+
 ### Beta v1 review: correctness, security, latency and UI hardening
 Full record in `docs/completions/beta-v1-review.md`.
 - **Money and state.** Daily caps and "sold out for today" now follow the outlet's business-day cutoff everywhere (the stock list and compiled menu used the calendar date, so caps appeared to reset at midnight). A paid bill never changes: lines on a paid bill keep their stored amounts and adjustment shares through every later re-price (new lines, customers attached, scheduled rules, caps), and edits aimed at them are refused with `check_locked_by_payment`. Fixed-per-order fees freeze at the first payment (reference case R153; set now 153). A payment is validated against the bill as re-priced at the first payment, never a stale balance. Reopen is refused once the order has a refund (`order_has_refunds`). Voids are valued with their modifiers in the Z-report and the void report. `checks.allocate` with `add_checks` keeps the new empty bill.

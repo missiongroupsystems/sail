@@ -4,7 +4,8 @@ import { staff, staffSessions, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { config } from "../config.js";
 import type { Principal } from "./principal.js";
-import { peekTokenType, sha256, verifyBackOfficeToken, verifySailToken } from "./tokens.js";
+import { identityProvider } from "./identity.js";
+import { peekTokenType, sha256, verifySailToken } from "./tokens.js";
 
 /**
  * Turn a bearer token into a Principal. Runs inside the request transaction
@@ -15,12 +16,8 @@ export async function resolvePrincipal(token: string, t: RequestTx): Promise<Pri
   const typ = peekTokenType(token);
   if (typ === null) throw new AppError("unauthenticated", "Malformed token");
 
-  if (typ === "external") {
-    const { sub } = await verifyBackOfficeToken(token);
-    const [row] = await t.db.select().from(staff).where(eq(staff.authSubject, sub)).limit(1);
-    if (!row || !row.active) throw new AppError("unauthenticated", "No active staff record for this sign-in", { remedy: "Ask an Admin to add you to the team." });
-    return { type: "staff", id: row.id, merchantId: row.merchantId, role: row.role, name: row.name, outletIds: row.outletIds, brandIds: row.brandIds, riskCeiling: row.riskCeiling, via: "backoffice" };
-  }
+  // Back-office sign-in goes through the configured identity provider (auth/identity.ts).
+  if (typ === "external" || typ === "session") return identityProvider().authenticate(token, typ, t);
 
   if (typ === "station") {
     const claims = await verifySailToken(token, "station");

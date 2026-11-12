@@ -6,8 +6,8 @@ Status: v0.1, 4 Nov 2026. Every later phase follows these three recipes, so the 
 
 | Task | Command |
 |-|-|
-| Zero-setup API with embedded Postgres, a bootstrapped merchant and the SSE listener | `pnpm --filter @sail/server dev:local` (API on :8080; Admin `admin@sail.local`, PIN `123456`) |
-| Sign-in token for local development | `curl -X POST localhost:8080/v1/auth/dev-token -H 'content-type: application/json' -d '{"email":"admin@sail.local"}'` |
+| Zero-setup API with embedded Postgres, a bootstrapped merchant and the SSE listener | `pnpm --filter @sail/server dev:local` (API on :8080; Admin `admin@sail.local`, password `sail-demo-password`, PIN `123456`; `SAIL_DEV_EMPTY=1` for an empty database and first-run setup) |
+| Sign-in token for local development | `curl -X POST localhost:8080/v1/auth/sign-in -H 'content-type: application/json' -d '{"email":"admin@sail.local","password":"sail-demo-password"}'` |
 | All tests | `pnpm test` (shared: unit, property and reference set; server: embedded Postgres, RLS replay, pipeline, SSE) |
 | Regenerate the committed OpenAPI spec after changing routes | `pnpm --filter @sail/server openapi:generate` (CI fails if it is stale) |
 | Regenerate the web client from the spec | `pnpm --filter @sail/web gen:api` |
@@ -46,8 +46,8 @@ Status: v0.1, 4 Nov 2026. Every later phase follows these three recipes, so the 
 - **Business date, never calendar date:** daily caps, "sold out for today", Z-reports, refund dating and reopen all use `businessToday()`/`businessDayInputs()` from `services/business-day.ts`. Availability time windows are the only wall-clock concept (in the merchant's time zone).
 - **Independent reads are issued together** with `Promise.all`; postgres.js pipelines them on the transaction's connection, which halves the round trips of a snapshot or a compiled menu.
 
-- **Principals** (`auth/principal.ts`): staff (back-office JWT or PIN session), station, guest, relay, agent. Each maps to a Postgres role via `SET LOCAL ROLE`; outlet scope is `'*'` or a comma list in `app.current_outlets`.
-- **RLS opt-outs** (`db/rls-opt-out.ts`) are `/health`, the spec, the dev token and the public pairing endpoints, covered by a test. Stream routes run their access check in a short transaction, then stream outside it.
+- **Principals** (`auth/principal.ts`): staff (back-office session from the identity provider in `auth/identity.ts`, or PIN session), station, guest, relay, agent. Each maps to a Postgres role via `SET LOCAL ROLE`; outlet scope is `'*'` or a comma list in `app.current_outlets`.
+- **RLS opt-outs** (`db/rls-opt-out.ts`) are `/health`, the spec, sign-in status, sign-in, link acceptance, first-run setup and the public pairing endpoints, covered by a test. Stream routes run their access check in a short transaction, then stream outside it.
 - **Idempotency** is per principal and key; the first request stores the response, replays return it with `Idempotent-Replayed: true`, a different body gives `idempotency_conflict`.
 - **Business date** comes from the merchant's (or outlet's) cutoff and time zone (`lib/time.ts`); never from a raw calendar date.
 - **Pricing** is only ever computed by `price()` in `@sail/shared`. Clients format cents; they never add them up.

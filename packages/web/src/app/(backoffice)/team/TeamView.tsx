@@ -13,6 +13,8 @@ import { api } from "@/lib/api.browser";
 import type { Brand, Outlet, Staff, StaffPatch } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
 import { keys } from "@/lib/query";
+import { useSession } from "@/lib/session-context";
+import { AccessSection } from "./AccessSection";
 
 const ROLE_LABEL: Record<Role, string> = { server: "Server", cashier: "Cashier", manager: "Manager", finance: "Finance", admin: "Admin" };
 const ROLE_HINT: Record<Role, string> = {
@@ -132,6 +134,7 @@ export function TeamView({ initialStaff, outlets, brands, scope }: { initialStaf
 
 function StaffSheet({ state, outlets, brands, onClose }: { state: SheetState; outlets: Outlet[]; brands: Brand[]; onClose: () => void }) {
   const qc = useQueryClient();
+  const { me } = useSession();
   const staff = state?.mode === "edit" ? state.staff : null;
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(staff) });
   const reset = form.reset;
@@ -141,6 +144,7 @@ function StaffSheet({ state, outlets, brands, onClose }: { state: SheetState; ou
 
   const pinAction = form.watch("pin_action");
   const name = form.watch("name");
+  const email = form.watch("email");
 
   const save = useMutation<Staff, ApiError, Values>({
     mutationFn: async (v) => {
@@ -226,6 +230,8 @@ function StaffSheet({ state, outlets, brands, onClose }: { state: SheetState; ou
             </RhfSwitch>
           </FormSection>
         ) : null}
+
+        {staff && me.role === "admin" ? <AccessSection staff={staff} emailUnsaved={email.trim() !== (staff.email ?? "")} /> : null}
 
         <InlineError error={save.error} />
       </form>

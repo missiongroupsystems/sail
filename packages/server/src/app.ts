@@ -9,6 +9,7 @@ import { idempotency } from "./middleware/idempotency.js";
 import { logger } from "./logger.js";
 import { healthRoutes } from "./routes/health.js";
 import { authRoutes } from "./routes/auth.js";
+import { identityRoutes } from "./routes/identity.js";
 import { orgRoutes } from "./routes/org.js";
 import { staffRoutes } from "./routes/staff.js";
 import { eventRoutes } from "./routes/events.js";
@@ -63,6 +64,7 @@ export function buildApp() {
 
   healthRoutes(app);
   authRoutes(app);
+  identityRoutes(app);
   orgRoutes(app);
   staffRoutes(app);
   eventRoutes(app);
