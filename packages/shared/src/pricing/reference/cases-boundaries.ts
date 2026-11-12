@@ -1,6 +1,7 @@
-import { SEED_RULES, SEED_RULE_IDS } from "../seed.js";
+import { SEED_RULE_IDS } from "../seed.js";
+import { SG_SEED_RULES } from "./dsl.js";
 import type { PricingRuleInput } from "../schemas.js";
-import { ctx, gstIn, line, order, type RefCase } from "./dsl.js";
+import { ctx, taxIn, line, order, type RefCase } from "./dsl.js";
 
 /**
  * Reference cases R129–R138: minimum spend at exact boundaries in both
@@ -8,7 +9,7 @@ import { ctx, gstIn, line, order, type RefCase } from "./dsl.js";
  * amounts and with fees in play; customer-group conditions with two groups.
  */
 
-const SC = SEED_RULES.find((r) => r.id === SEED_RULE_IDS.serviceCharge)!;
+const SC = SG_SEED_RULES.find((r) => r.id === SEED_RULE_IDS.serviceCharge)!;
 
 /** An automatic 10% line-level discount on everything, priority 10; override what differs. */
 function disc(id: string, over: Partial<PricingRuleInput> = {}): PricingRuleInput {
@@ -42,7 +43,7 @@ export const BOUNDARY_CASES: RefCase[] = [
     expect: {
       adjustments: { "ten-min-50": -500, [SEED_RULE_IDS.serviceCharge]: 450 },
       line_nets: { a: 2700, b: 1800 },
-      gst_total: 243 + 162 + 24 + 16,
+      tax_total: 243 + 162 + 24 + 16,
       total: 2700 + 1800 + 450 + 243 + 162 + 24 + 16,
     },
   },
@@ -63,7 +64,7 @@ export const BOUNDARY_CASES: RefCase[] = [
       adjustments: { "half-a": -1500, "bill-10-min-50": -350 },
       adjustment_lines: { "bill-10-min-50": { a: -150, b: -200 } },
       line_nets: { a: 1350, b: 1800 },
-      gst_total: 122 + 162,
+      tax_total: 122 + 162,
       total: 1350 + 1800 + 122 + 162,
     },
   },
@@ -79,7 +80,7 @@ export const BOUNDARY_CASES: RefCase[] = [
       adjustments: { "wine-10": -1000 },
       adjustment_lines: { "wine-10": { wine: -1000 } },
       line_nets: { wine: 9000, food: 500 },
-      gst_total: 810 + 45,
+      tax_total: 810 + 45,
       total: 9000 + 500 + 810 + 45,
     },
   },
@@ -104,7 +105,7 @@ export const BOUNDARY_CASES: RefCase[] = [
       adjustments: { "drinks-10": -1000 },
       adjustment_lines: { "drinks-10": { beer: -600, juice: -400 } },
       line_nets: { beer: 5400, juice: 3600, food: 2000 },
-      gst_total: 486 + 324 + 180,
+      tax_total: 486 + 324 + 180,
       total: 5400 + 3600 + 2000 + 990,
     },
   },
@@ -116,7 +117,7 @@ export const BOUNDARY_CASES: RefCase[] = [
     order: order([line("a", 2500), line("b", 2500)], { order_type: "takeaway" }),
     rules: [MIN_50_ORDER],
     context: ctx("inclusive"),
-    expect: { adjustments: { "ten-min-50": -500 }, line_nets: { a: 2250, b: 2250 }, line_gst: { a: 186, b: 186 }, gst_total: 372, total: 4500 },
+    expect: { adjustments: { "ten-min-50": -500 }, line_nets: { a: 2250, b: 2250 }, line_tax: { a: 186, b: 186 }, tax_total: 372, total: 4500 },
   },
   {
     id: "R134",
@@ -126,7 +127,7 @@ export const BOUNDARY_CASES: RefCase[] = [
     order: order([line("a", 2500), line("b", 2499)], { order_type: "takeaway" }),
     rules: [MIN_50_ORDER],
     context: ctx("inclusive"),
-    expect: { not_applied: ["ten-min-50"], line_gst: { a: gstIn(2500), b: gstIn(2499) }, gst_total: 206 + 206, total: 4999 },
+    expect: { not_applied: ["ten-min-50"], line_tax: { a: taxIn(2500), b: taxIn(2499) }, tax_total: 206 + 206, total: 4999 },
   },
   {
     id: "R135",
@@ -136,7 +137,7 @@ export const BOUNDARY_CASES: RefCase[] = [
     order: order([line("a", 2000)], { order_type: "takeaway", customer_group_ids: ["vip", "staff"] }),
     rules: [disc("vip-10", { conditions: { customer_group_ids: ["vip"] }, priority: 10 }), disc("staff-20", { value: { type: "fixed", amount: 2000 }, conditions: { customer_group_ids: ["staff"] }, priority: 20 })],
     context: ctx(),
-    expect: { adjustments: { "vip-10": -200, "staff-20": -360 }, line_nets: { a: 1440 }, gst_total: 130, total: 1440 + 130 },
+    expect: { adjustments: { "vip-10": -200, "staff-20": -360 }, line_nets: { a: 1440 }, tax_total: 130, total: 1440 + 130 },
   },
   {
     id: "R136",
@@ -146,7 +147,7 @@ export const BOUNDARY_CASES: RefCase[] = [
     order: order([line("a", 2000)], { order_type: "takeaway", customer_group_ids: ["staff"] }),
     rules: [disc("vip-10", { conditions: { customer_group_ids: ["vip"] }, priority: 10 }), disc("staff-20", { value: { type: "fixed", amount: 2000 }, conditions: { customer_group_ids: ["staff"] }, priority: 20 })],
     context: ctx(),
-    expect: { adjustments: { "staff-20": -400 }, not_applied: ["vip-10"], line_nets: { a: 1600 }, gst_total: 144, total: 1600 + 144 },
+    expect: { adjustments: { "staff-20": -400 }, not_applied: ["vip-10"], line_nets: { a: 1600 }, tax_total: 144, total: 1600 + 144 },
   },
   {
     id: "R137",
@@ -156,7 +157,7 @@ export const BOUNDARY_CASES: RefCase[] = [
     order: order([line("a", 2000)], { order_type: "takeaway", customer_group_ids: ["vip", "corporate"] }),
     rules: [disc("promo", { conditions: { customer_group_ids: ["vip", "corporate"] } })],
     context: ctx(),
-    expect: { adjustments: { promo: -200 }, line_nets: { a: 1800 }, gst_total: 162, total: 1800 + 162 },
+    expect: { adjustments: { promo: -200 }, line_nets: { a: 1800 }, tax_total: 162, total: 1800 + 162 },
   },
   {
     id: "R138",
@@ -172,7 +173,7 @@ export const BOUNDARY_CASES: RefCase[] = [
       adjustments: { "corp-12": -480, [SEED_RULE_IDS.serviceCharge]: 352 },
       adjustment_lines: { "corp-12": { a: -360, b: -120 }, [SEED_RULE_IDS.serviceCharge]: { a: 264, b: 88 } },
       line_nets: { a: 2640, b: 880 },
-      gst_total: 238 + 79 + 24 + 8,
+      tax_total: 238 + 79 + 24 + 8,
       total: 2640 + 880 + 352 + 238 + 79 + 24 + 8,
     },
   },

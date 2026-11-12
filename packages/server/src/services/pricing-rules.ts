@@ -1,5 +1,5 @@
 import { and, desc, eq, isNull, lte, sql } from "drizzle-orm";
-import { PricingRuleSchema, SEED_RULES, type PricingRule, type PricingRuleInput } from "@sail/shared";
+import { PricingRuleSchema, type PricingRule, type PricingRuleInput } from "@sail/shared";
 import { db, tx } from "../db/client.js";
 import { pricingRules } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -64,15 +64,15 @@ export async function archiveRule(merchantId: string, ruleKey: string) {
   return rows.length;
 }
 
-/** Seed the eight default rules for a merchant that has none (scope doc 4.8). */
-export async function seedRulesForMerchant(merchantId: string, effectiveFrom = new Date(0)) {
+/** Seed a merchant that has no rules yet with a preset's rules (`presetSeedRules`, scope doc 4.8). */
+export async function seedRulesForMerchant(merchantId: string, rules: readonly PricingRuleInput[], effectiveFrom = new Date(0)) {
   const [existing] = await db().select({ n: sql<number>`count(*)::int` }).from(pricingRules).where(eq(pricingRules.merchantId, merchantId));
   if (existing && existing.n > 0) return 0;
-  for (const rule of SEED_RULES) {
+  for (const rule of rules) {
     const parsed = PricingRuleSchema.parse(rule);
     await db().insert(pricingRules).values({ merchantId, ruleKey: parsed.id, version: 1, status: "active", effectiveFrom, body: { ...parsed, version: 1 } as unknown as Record<string, unknown>, note: "seed", createdBy: "system" });
   }
-  return SEED_RULES.length;
+  return rules.length;
 }
 
 /** Worker task: flip scheduled versions whose time has come to active, superseding the previous active version. Returns the activated rows. */

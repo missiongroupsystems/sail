@@ -1,4 +1,5 @@
 import { allocateLargestRemainder, percentOfCents, sumCents, type Cents } from "../money.js";
+import type { OrderType } from "../domain.js";
 import {
   PricingContextSchema,
   PricingOrderSchema,
@@ -16,6 +17,9 @@ import {
   type PricingResult,
   type PricingRule,
   type PricingRuleInput,
+  type TaxBreakdown,
+  type TaxComponent,
+  type TaxRate,
   type TraceStep,
 } from "./schemas.js";
 
@@ -26,9 +30,10 @@ import {
  *   price(order, rules, context) → adjustments, per-line amounts, totals, trace
  *
  * It performs no I/O and reads no clock: the evaluation time is `context.now`.
- * Every amount is an integer number of cents. Rounding uses the
+ * Every amount is an integer number of minor units. Rounding uses the
  * largest-remainder method per rule, so each rule's line amounts add up to its
- * total. See docs/pricing-semantics.md for every interpretation decision.
+ * total; tax is rounded per line or once per rate (`context.tax_rounding`).
+ * See docs/pricing-semantics.md for every interpretation decision.
  */
 export function price(orderIn: PricingOrderInput, rulesIn: readonly PricingRuleInput[], contextIn: PricingContextInput): PricingResult {
   const order = PricingOrderSchema.parse(orderIn);
@@ -54,7 +59,6 @@ export function price(orderIn: PricingOrderInput, rulesIn: readonly PricingRuleI
       blocked: false,
       discount: 0,
       fee: 0,
-      feeGst: 0,
     };
   });
   trace.push({
@@ -124,7 +128,7 @@ export function price(orderIn: PricingOrderInput, rulesIn: readonly PricingRuleI
           stepEntries.push({ rule_id: rule.id, rule_name: rule.name, outcome: "skipped", detail: "frozen at first payment: was not applied then" });
           continue;
         }
-        const adj = applyFrozen(rule, app, f, states, context);
+        const adj = applyFrozen(rule, app, f, states);
         adjustments.push(adj);
         stepEntries.push({ rule_id: rule.id, rule_name: rule.name, outcome: "frozen", detail: "frozen at first payment", amount: adj.total });
         continue;
@@ -154,8 +158,8 @@ export function price(orderIn: PricingOrderInput, rulesIn: readonly PricingRuleI
         stepEntries.push({ rule_id: rule.id, rule_name: rule.name, outcome: "skipped", detail: "amount is zero" });
         continue;
       }
-      const adj = buildAdjustment(rule, app, discountEligible, amounts, capped, context, false);
-      applyToStates(rule, discountEligible, amounts, adj);
+      const adj = buildAdjustment(rule, app, discountEligible, amounts, capped, false);
+      applyToStates(rule, discountEligible, amounts);
       adjustments.push(adj);
       stepEntries.push({
         rule_id: rule.id,
@@ -184,10 +188,11 @@ export function price(orderIn: PricingOrderInput, rulesIn: readonly PricingRuleI
   for (const rule of rules) if (rule.kind === "fee") evalRule(rule, s4.entries);
   trace.push(s4);
 
-  /* ---- Step 5: GST -------------------------------------------------------- */
-  const lines: PricedLine[] = states.map((s) => {
-    const gstOnNet = gstOn(s.running, context);
-    const total = context.tax_mode === "exclusive" ? s.running + s.fee + gstOnNet + s.feeGst : s.running + s.fee;
+  /* ---- Step 5: tax -------------------------------------------------------- */
+  const tax = computeTax(order, states, adjustments, context);
+  const lines: PricedLine[] = states.map((s, i) => {
+    const t = tax.lines[i]!;
+    const total = context.tax_mode === "exclusive" ? s.running + s.fee + t.onNet + t.onFees : s.running + s.fee;
     return {
       line_id: s.line.line_id,
       quantity: s.line.quantity,
@@ -197,22 +202,26 @@ export function price(orderIn: PricingOrderInput, rulesIn: readonly PricingRuleI
       discount_amount: s.discount,
       net_amount: s.running,
       fee_amount: s.fee,
-      gst_on_net: gstOnNet,
-      gst_on_fees: s.feeGst,
+      tax_on_net: t.onNet,
+      tax_on_fees: t.onFees,
+      taxes: t.taxes,
       total,
     };
   });
   trace.push({
     step: 5,
-    title: `GST ${context.gst_bps / 100}% (${context.tax_mode})`,
-    entries: lines.map((l) => ({ outcome: "info", detail: `${l.line_id}: on net ${l.net_amount} → ${l.gst_on_net}; on fees ${l.fee_amount} → ${l.gst_on_fees}`, amount: l.gst_on_net + l.gst_on_fees })),
+    title: `Tax (${context.tax_mode}, rounded ${context.tax_rounding === "per_line" ? "per line" : "once per rate"})`,
+    entries: [
+      ...lines.map((l) => ({ outcome: "info" as const, detail: `${l.line_id}: on net ${l.net_amount} → ${l.tax_on_net}; on fees ${l.fee_amount} → ${l.tax_on_fees}`, amount: l.tax_on_net + l.tax_on_fees })),
+      ...tax.breakdown.map((b) => ({ outcome: "info" as const, detail: `${b.name}: ${b.bps / 100}% on ${b.taxable}`, amount: b.amount })),
+    ],
   });
 
   const subtotal = sumCents(lines.map((l) => l.base_amount));
   const discountTotal = sumCents(lines.map((l) => l.discount_amount));
   const netSubtotal = sumCents(lines.map((l) => l.net_amount));
   const feeTotal = sumCents(lines.map((l) => l.fee_amount));
-  const gstTotal = sumCents(lines.map((l) => l.gst_on_net + l.gst_on_fees));
+  const taxTotal = sumCents(lines.map((l) => l.tax_on_net + l.tax_on_fees));
   const total = sumCents(lines.map((l) => l.total));
 
   trace.push({
@@ -224,7 +233,7 @@ export function price(orderIn: PricingOrderInput, rulesIn: readonly PricingRuleI
   return {
     lines,
     adjustments,
-    totals: { tax_mode: context.tax_mode, subtotal, discount_total: discountTotal, net_subtotal: netSubtotal, fee_total: feeTotal, gst_total: gstTotal, total },
+    totals: { tax_mode: context.tax_mode, subtotal, discount_total: discountTotal, net_subtotal: netSubtotal, fee_total: feeTotal, tax_total: taxTotal, taxes: tax.breakdown, total },
     trace,
     warnings,
     pricing_status: frozen ? "frozen" : "live",
@@ -242,7 +251,6 @@ type LineState = {
   blocked: boolean;
   discount: Cents;
   fee: Cents;
-  feeGst: Cents;
 };
 
 export function sortRules<T extends { priority: number; id: string }>(rules: readonly T[]): T[] {
@@ -286,8 +294,8 @@ export function inScope(rule: PricingRule, line: PricingLine): boolean {
       return s.product_ids.includes(line.product_id);
     case "tags":
       return line.tags.some((t) => s.tags.includes(t));
-    case "bcrs":
-      return line.is_bcrs;
+    case "deposit":
+      return line.has_deposit;
   }
 }
 
@@ -361,25 +369,137 @@ function computeAmounts(rule: PricingRule, value: number, eligible: readonly Lin
   return { amounts, capped };
 }
 
-function gstOn(amount: Cents, context: PricingContext): Cents {
-  if (context.gst_bps === 0) return 0;
-  if (context.tax_mode === "exclusive") return percentOfCents(amount, context.gst_bps);
-  // Inclusive: GST portion of a GST-inclusive amount, rounded half up.
-  const sign = amount < 0 ? -1 : 1;
-  const abs = Math.abs(amount);
-  const num = abs * context.gst_bps;
-  const den = 10_000 + context.gst_bps;
-  const q = Math.floor(num / den);
-  const r = num - q * den;
-  return sign * (r * 2 >= den ? q + 1 : q);
+/**
+ * The rate for a tax class at this outlet and order type. The most specific
+ * match wins: outlet and order type, then outlet, then order type, then the
+ * class's default (neither). Throws when the class has no rate at all, because
+ * the caller must pass every class its lines and fees use.
+ */
+export function resolveTaxRate(rates: readonly TaxRate[], taxClassId: string, outletId: string, orderType: OrderType): TaxRate {
+  let best: TaxRate | undefined;
+  let bestScore = -1;
+  for (const r of rates) {
+    if (r.tax_class_id !== taxClassId) continue;
+    if (r.outlet_id != null && r.outlet_id !== outletId) continue;
+    if (r.order_type != null && r.order_type !== orderType) continue;
+    const score = (r.outlet_id != null ? 2 : 0) + (r.order_type != null ? 1 : 0);
+    if (score > bestScore) {
+      best = r;
+      bestScore = score;
+    }
+  }
+  if (!best) throw new RangeError(`no tax rate for tax class ${taxClassId} at outlet ${outletId} (${orderType})`);
+  return best;
 }
 
-function buildAdjustment(rule: PricingRule, app: ManualApplication | null, eligible: readonly LineState[], magnitudes: readonly Cents[], capped: boolean, context: PricingContext, frozen: boolean): Adjustment {
+/**
+ * Tax on an amount at a rate, by component. The rate is rounded once, half up,
+ * at its combined bps (exclusive: a share of the amount; inclusive: the part of
+ * a tax-inclusive amount), then split across the components by largest
+ * remainder weighted by their bps, so a two-part rate never rounds twice.
+ */
+function rateTax(amount: Cents, components: readonly TaxComponent[], context: PricingContext): Cents[] {
+  const combined = sumCents(components.map((c) => c.bps));
+  if (combined === 0) return components.map(() => 0);
+  let total: Cents;
+  if (context.tax_mode === "exclusive") total = percentOfCents(amount, combined);
+  else {
+    const sign = amount < 0 ? -1 : 1;
+    const num = Math.abs(amount) * combined;
+    const den = 10_000 + combined;
+    const q = Math.floor(num / den);
+    const r = num - q * den;
+    total = sign * (r * 2 >= den ? q + 1 : q);
+  }
+  return components.length === 1 ? [total] : allocateLargestRemainder(total, components.map((c) => c.bps));
+}
+
+/** One amount that carries tax: a line's net amount, or one fee's amount on one line. */
+type TaxItem = { lineIndex: number; adjLine: Adjustment["lines"][number] | null; amount: Cents; components: TaxComponent[]; taxes: Cents[] };
+
+const componentKey = (c: TaxComponent) => `${c.bps}|${c.name}`;
+
+/**
+ * Step 5. Every taxed amount is an item with its resolved rate. In `per_line`
+ * mode each item's tax is rounded on its own. In `per_rate` mode the items are
+ * grouped by their rate (the same list of components), the rate is rounded
+ * once on the group's total, and each component is spread back across the
+ * items by largest remainder.
+ * Fee adjustment lines receive their tax here.
+ */
+function computeTax(order: PricingOrder, states: readonly LineState[], adjustments: Adjustment[], context: PricingContext) {
+  const rate = (classId: string) => resolveTaxRate(context.tax_rates, classId, order.outlet_id, order.order_type).components;
+  const lineIndex = new Map(states.map((s, i) => [s.line.line_id, i]));
+  const items: TaxItem[] = states.map((s, i) => ({ lineIndex: i, adjLine: null, amount: s.running, components: rate(s.line.tax_class_id), taxes: [] }));
+  for (const adj of adjustments) {
+    if (adj.kind !== "fee" || adj.tax_class_id == null) continue;
+    const components = rate(adj.tax_class_id);
+    for (const l of adj.lines) items.push({ lineIndex: lineIndex.get(l.line_id)!, adjLine: l, amount: l.amount, components, taxes: [] });
+  }
+
+  if (context.tax_rounding === "per_line") {
+    for (const item of items) item.taxes = rateTax(item.amount, item.components, context);
+  } else {
+    const groups = new Map<string, TaxItem[]>();
+    for (const item of items) {
+      const key = item.components.map(componentKey).join("+");
+      const g = groups.get(key) ?? [];
+      g.push(item);
+      groups.set(key, g);
+    }
+    for (const group of groups.values()) {
+      const base = sumCents(group.map((i) => i.amount));
+      const weights = group.map((i) => i.amount);
+      const perComponent = rateTax(base, group[0]!.components, context).map((t) => allocateLargestRemainder(t, weights));
+      group.forEach((item, k) => (item.taxes = perComponent.map((parts) => parts[k]!)));
+    }
+  }
+
+  const lines = states.map(() => ({ onNet: 0, onFees: 0, byKey: new Map<string, TaxBreakdown>() }));
+  for (const item of items) {
+    const itemTax = sumCents(item.taxes);
+    const t = lines[item.lineIndex]!;
+    if (item.adjLine) {
+      item.adjLine.tax_amount = itemTax;
+      t.onFees += itemTax;
+    } else {
+      t.onNet += itemTax;
+    }
+    const taxable = context.tax_mode === "exclusive" ? item.amount : item.amount - itemTax;
+    item.components.forEach((c, k) => {
+      const key = componentKey(c);
+      const onLine = t.byKey.get(key) ?? { name: c.name, bps: c.bps, taxable: 0, amount: 0 };
+      onLine.amount += item.taxes[k]!;
+      onLine.taxable += taxable;
+      t.byKey.set(key, onLine);
+    });
+  }
+  for (const adj of adjustments) adj.tax_total = sumCents(adj.lines.map((l) => l.tax_amount));
+  const perLine = lines.map((l) => ({ onNet: l.onNet, onFees: l.onFees, taxes: [...l.byKey.values()] }));
+  return { lines: perLine, breakdown: sumTaxBreakdowns(perLine.map((l) => l.taxes)) };
+}
+
+/** Add tax breakdowns up by component (name and rate), in first-seen order: the order's breakdown is the sum of its lines'. */
+export function sumTaxBreakdowns(lists: readonly (readonly TaxBreakdown[])[]): TaxBreakdown[] {
+  const byKey = new Map<string, TaxBreakdown>();
+  for (const list of lists) {
+    for (const t of list) {
+      const key = componentKey(t);
+      const cur = byKey.get(key) ?? { name: t.name, bps: t.bps, taxable: 0, amount: 0 };
+      cur.taxable += t.taxable;
+      cur.amount += t.amount;
+      byKey.set(key, cur);
+    }
+  }
+  return [...byKey.values()];
+}
+
+/** Tax on fee lines is filled in by step 5 (`computeTax`); until then it is 0. */
+function buildAdjustment(rule: PricingRule, app: ManualApplication | null, eligible: readonly LineState[], magnitudes: readonly Cents[], capped: boolean, frozen: boolean): Adjustment {
   const sign = rule.kind === "discount" ? -1 : 1;
   const lines = eligible.map((s, i) => {
     const amount = sign * magnitudes[i]! || 0; // `|| 0` normalises -0 to 0
-    const gst = rule.kind === "fee" && rule.gst_applicable ? gstOn(amount, context) : 0;
-    return { line_id: s.line.line_id, amount, gst_amount: gst };
+    return { line_id: s.line.line_id, amount, tax_amount: 0 };
   });
   return {
     rule_id: rule.id,
@@ -388,9 +508,9 @@ function buildAdjustment(rule: PricingRule, app: ManualApplication | null, eligi
     kind: rule.kind,
     level: ruleLevel(rule),
     report_class: rule.report_class,
-    gst_applicable: rule.gst_applicable,
+    tax_class_id: rule.kind === "fee" ? (rule.tax_class_id ?? null) : null,
     total: sumCents(lines.map((l) => l.amount)),
-    gst_total: sumCents(lines.map((l) => l.gst_amount)),
+    tax_total: 0,
     lines,
     capped,
     frozen,
@@ -412,9 +532,9 @@ function emptyAdjustment(rule: PricingRule, app: ManualApplication): Adjustment 
     kind: rule.kind,
     level: ruleLevel(rule),
     report_class: rule.report_class,
-    gst_applicable: rule.gst_applicable,
+    tax_class_id: rule.kind === "fee" ? (rule.tax_class_id ?? null) : null,
     total: 0,
-    gst_total: 0,
+    tax_total: 0,
     lines: [],
     capped: false,
     frozen: false,
@@ -428,7 +548,7 @@ function emptyAdjustment(rule: PricingRule, app: ManualApplication): Adjustment 
   };
 }
 
-function applyToStates(rule: PricingRule, eligible: readonly LineState[], magnitudes: readonly Cents[], adj: Adjustment) {
+function applyToStates(rule: PricingRule, eligible: readonly LineState[], magnitudes: readonly Cents[]) {
   eligible.forEach((s, i) => {
     const m = magnitudes[i]!;
     if (rule.kind === "discount") {
@@ -437,18 +557,17 @@ function applyToStates(rule: PricingRule, eligible: readonly LineState[], magnit
       if (rule.stacking === "exclusive") s.blocked = true;
     } else {
       s.fee += m;
-      s.feeGst += adj.lines[i]!.gst_amount;
     }
   });
 }
 
-function applyFrozen(rule: PricingRule, app: ManualApplication | null, f: FrozenAdjustment, states: LineState[], context: PricingContext): Adjustment {
+function applyFrozen(rule: PricingRule, app: ManualApplication | null, f: FrozenAdjustment, states: LineState[]): Adjustment {
   const byLine = new Map(states.map((s) => [s.line.line_id, s]));
   const present = f.lines.filter((l) => byLine.has(l.line_id));
   const eligible = present.map((l) => byLine.get(l.line_id)!);
   const magnitudes = present.map((l) => Math.abs(l.amount));
-  const adj = buildAdjustment(rule, app, eligible, magnitudes, false, context, true);
-  applyToStates(rule, eligible, magnitudes, adj);
+  const adj = buildAdjustment(rule, app, eligible, magnitudes, false, true);
+  applyToStates(rule, eligible, magnitudes);
   return adj;
 }
 

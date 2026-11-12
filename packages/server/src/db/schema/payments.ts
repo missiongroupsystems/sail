@@ -1,4 +1,5 @@
 import { boolean, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import type { TaxAmount } from "@sail/shared";
 import { merchants, outlets, stations } from "./org.js";
 import { orderLines, orders } from "./orders.js";
 import { tenderTypes } from "./catalogue.js";
@@ -25,7 +26,9 @@ export const checks = pgTable(
     subtotal: integer("subtotal").notNull().default(0),
     discountTotal: integer("discount_total").notNull().default(0),
     feeTotal: integer("fee_total").notNull().default(0),
-    gstTotal: integer("gst_total").notNull().default(0),
+    taxTotal: integer("tax_total").notNull().default(0),
+    /** tax_total by component: the sums of the allocations' components. */
+    taxes: jsonb("taxes").$type<TaxAmount[]>().notNull().default([]),
     total: integer("total").notNull().default(0),
     paidTotal: integer("paid_total").notNull().default(0),
     roundingTotal: integer("rounding_total").notNull().default(0),
@@ -64,10 +67,12 @@ export const checkAllocations = pgTable(
     base: integer("base").notNull().default(0),
     discount: integer("discount").notNull().default(0),
     fee: integer("fee").notNull().default(0),
-    gst: integer("gst").notNull().default(0),
+    tax: integer("tax").notNull().default(0),
+    /** tax by component. */
+    taxes: jsonb("taxes").$type<TaxAmount[]>().notNull().default([]),
     total: integer("total").notNull().default(0),
-    /** Per-adjustment allocated cents: { [adjustment_id]: { amount, gst } } */
-    adjustments: jsonb("adjustments").$type<Record<string, { amount: number; gst: number }>>().notNull().default({}),
+    /** Per-adjustment allocated cents: { [adjustment_id]: { amount, tax } } */
+    adjustments: jsonb("adjustments").$type<Record<string, { amount: number; tax: number }>>().notNull().default({}),
   },
   (t) => [primaryKey({ columns: [t.checkId, t.orderLineId] }), index("check_allocations_line_idx").on(t.orderLineId)],
 );

@@ -134,6 +134,20 @@
       "when": 1793821456273,
       "tag": "0018_review_fixes",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794462154974,
+      "tag": "0019_generic_tax",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794462241239,
+      "tag": "0020_rls_generic_tax",
+      "breakpoints": true
     }
   ]
 }

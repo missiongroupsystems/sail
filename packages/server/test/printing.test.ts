@@ -6,7 +6,7 @@ import { withTransaction } from "../src/db/client.js";
 import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
 import { requeueStaleClaims } from "../src/services/printing.js";
 import { startListener, stopListener } from "../src/sse/listener.js";
-import { api, freshDb, readSse, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
+import { api, freshDb, readSse, seedMerchant, type SeededMerchant, type TestDb, sgSeedRules } from "./helpers.js";
 
 let db: TestDb;
 let app: App;
@@ -26,7 +26,7 @@ beforeAll(async () => {
   app = buildApp();
   call = api(app).call;
   A = await seedMerchant(db.sql, "Alpha");
-  await withTransaction(() => seedRulesForMerchant(A.merchantId));
+  await withTransaction(() => seedRulesForMerchant(A.merchantId, sgSeedRules(A)));
   const t = A.admin.token;
   await call("POST", "/v1/products", { token: t, body: { id: ids.laksa, name: "Laksa", kitchen_name: "LAKSA", price: 1600, tags: ["kitchen"] } });
   await call("POST", "/v1/products", { token: t, body: { id: ids.kopi, name: "Kopi", price: 180, tags: ["bar"] } });

@@ -1,6 +1,6 @@
 # Pricing pipeline semantics
 
-Status: v0.2, 4 Nov 2026. This note records every interpretation decision made while building the pricing engine in `packages/shared/src/pricing`. Each decision is encoded as a reference case (`packages/shared/src/pricing/reference`) or a unit test (`engine.test.ts`). The scope doc (§4.8) is the authority on *what* the pipeline does; this note settles the questions the scope doc leaves open. Items marked **business choice** need Phil's or Finance's confirmation; the engine is built so that changing them is a one-line change plus new reference cases.
+Status: v0.2, 4 Nov 2026; tax model generalised 12 Nov 2026 (§2 step 5, §8). This note records every interpretation decision made while building the pricing engine in `packages/shared/src/pricing`. Each decision is encoded as a reference case (`packages/shared/src/pricing/reference`) or a unit test (`engine.test.ts`). The scope doc (§4.8) is the authority on *what* the pipeline does; this note settles the questions the scope doc leaves open. Items marked **business choice** need confirmation from the product owner or finance; the engine is built so that changing them is a one-line change plus new reference cases.
 
 ## 1. The function
 
@@ -9,7 +9,7 @@ price(order, rules, context) → { lines, adjustments, totals, trace, warnings, 
 ```
 
 - Pure: no I/O, no clock. `context.now` is the evaluation time.
-- Integer cents everywhere. Percentages are basis points (1000 = 10%).
+- Integer minor units of the merchant's currency everywhere (cents, yen, fils: the exponent comes from ISO 4217 via `currencyExponent`). Percentages are basis points (1000 = 10%).
 - Inputs are validated with zod; a malformed input throws. A business problem (for example an open value outside its range) never throws: the rule is skipped and a warning is returned, because the server validates manual applications before accepting them (`validateManualApplication`).
 - Deterministic: rules are sorted by `(priority, id)`; manual applications by `application_id`. Shuffling the input order gives a byte-identical result (property-tested).
 
@@ -31,15 +31,24 @@ price(order, rules, context) → { lines, adjustments, totals, trace, warnings, 
 ### Step 4: fees
 - Fees apply in priority order to their scoped lines (exclusions honoured). A percent fee is the percentage of each line's **discounted** amount. `fixed_per_unit` is `value × quantity`. `fixed_per_order` is spread across the scoped lines in proportion to their discounted amounts (evenly if they are all zero).
 - **Fees never compound**: a fee is never calculated on another fee (property-tested).
+- A fee names the tax class it is taxed at (`tax_class_id`), or `null` for an untaxed fee such as a container deposit. A discount never names one: it lowers the taxed amount of the lines it reduces.
 - A manual rule can **switch off** fees for the order (`disables.rule_ids` / `disables.report_classes`). The seeded service-charge waiver disables the `service_charge` reporting class and is recorded as a zero-amount adjustment so the audit trail shows who waived it and why.
 
-### Step 5: GST
-- **Exclusive** mode: GST on each line's net amount, and on each GST-applicable fee amount per line, each rounded half up. The order's GST is the sum of these per-line figures (not GST of the total), so the receipt's GST line equals the sum of its parts.
-- **Inclusive** mode: every amount, including fees, is GST-inclusive. The GST inside an amount is `amount × rate / (1 + rate)`, rounded half up. `totals.total = net_subtotal + fee_total` and GST is reported, not added. **Business choice:** whether the service charge in inclusive mode should be computed on GST-inclusive prices (as built) or on the GST-exclusive portion.
-- Discount adjustments carry `gst_amount = 0`; their tax effect is already in the line's lower net amount. Fee adjustments carry their own GST per line.
+### Step 5: tax
+- Every taxed amount is an item: each line's net amount, taxed at the line's class, and each fee amount on a line, taxed at the fee's class. The rate for a class is resolved from the order's outlet and order type (§8).
+- A rate is rounded once at its combined bps and then split between its components by largest remainder, weighted by their bps, so State 4% + Local 4.5% on 1013 is 86 (40 + 46), never 41 + 46 (R162).
+- **Exclusive** mode: a rate's tax is `amount × combined bps / 10000`, rounded half up. `total = net_subtotal + fee_total + tax_total`.
+- **Inclusive** mode: every amount, including fees, is tax-inclusive. A rate's tax inside an amount is `amount × combined bps / (10000 + combined bps)`, rounded half up. `totals.total = net_subtotal + fee_total` and tax is reported, not added. **Business choice:** whether the service charge in inclusive mode should be computed on tax-inclusive prices (as built) or on the tax-exclusive portion.
+- **Rounding** is a merchant setting (`tax_rounding`):
+  - `per_line`: each item's tax is rounded on its own, and the order's tax is the sum of these per-line figures. This is what Singapore receipts have always shown, and the whole reference set R001–R153 is priced this way.
+  - `per_rate`: items are grouped by their rate (the same list of components), the rate is rounded once on the group's total, and each component is spread back across the group's items with the largest-remainder method, weighted by the items' amounts. EU and Japanese invoices round once per rate; most US states accept rounding on the order. Reference cases R154–R162. A component that appears in two rates (State 4% in both a food rate and an alcohol rate) is rounded with each rate, so its row on the receipt is the sum of two roundings.
+  - The two modes give the same answer for a single item, but not in general: three 5-cent items at 9% are 0 + 0 + 0 per line and round(1.35) = 1 per rate. Rounding per rate therefore cannot reproduce the per-line amounts of R001–R153 (27 of them change by a cent when switched to `per_rate`), which is why the Singapore preset keeps `per_line` and every other preset uses `per_rate`.
+- A bill that is already paid keeps its stored tax (§5.1), so after a partial payment `per_rate` rounds the unpaid lines' groups on their own: the order's tax is then the paid lines' stored tax plus the unpaid lines' rounded groups, not one rounding over the whole order, and can differ from it by a cent per rate. Each half still adds up exactly. For the same reason, bills split from a `per_rate` order carry their lines' share of the order's rounding, so two identical bills can differ by a cent.
+- Discount adjustments carry `tax_amount = 0`; their tax effect is already in the line's lower net amount. Fee adjustments carry their own tax per line.
+- Each priced line reports `tax_on_net`, `tax_on_fees` and `taxes` (its tax by component, with the amount each was charged on). `totals.taxes` is the order's breakdown: the sum of the lines' by component (name and rate), so the receipt's tax lines add up to its parts. An exempt line adds nothing to it; a zero-rated line adds its component with an amount of 0.
 
 ### Step 6: caps
-- A cap limits a rule's total for the order. It is applied inside the rule's own computation (steps 2–4), before GST, with the reduction spread back across that rule's lines by largest remainder using the uncapped line amounts as weights. `capped: true` is set on the adjustment.
+- A cap limits a rule's total for the order. It is applied inside the rule's own computation (steps 2–4), before tax, with the reduction spread back across that rule's lines by largest remainder using the uncapped line amounts as weights. `capped: true` is set on the adjustment.
 
 ### Step 7: rounding
 - Largest remainder per rule; ties go to earlier lines (input order). Every rule's line amounts sum to its total (property-tested).
@@ -72,19 +81,39 @@ price(order, rules, context) → { lines, adjustments, totals, trace, warnings, 
 The engine prices whatever lines it is given. The server (`repriceOrder`) never gives it a line that sits on a **paid bill**: those lines keep their stored amounts and their stored share of every adjustment, the engine runs on the unpaid lines only, and the two halves are merged (a rule that touches both keeps one adjustment row). A capped rule is passed the cap **left** after the paid lines' share, so the cap still holds for the whole order. This is what makes "a paid bill never changes" true whatever happens to the rest of the order (a line added, a customer attached, a scheduled rule switching on), and it is why an item discount aimed at a paid line, a quantity change on a paid line, or removing a manual rule that has an amount on a paid line are refused with `check_locked_by_payment` instead of failing at commit. Covered by `packages/server/test/review.test.ts`.
 
 ## 6. Output invariants (all property-tested)
-1. Every adjustment's line amounts sum to its total; the same for GST.
+1. Every adjustment's line amounts sum to its total; the same for tax.
 2. `|total| ≤ cap` for every capped rule.
 3. `net_amount ≥ 0` for every line; `net = base + discounts`.
 4. An uncapped percent fee equals the percentage of each eligible line's net amount (no compounding).
-5. `Σ line totals = totals.total`; `net_subtotal = subtotal + discount_total`; exclusive: `total = net_subtotal + fee_total + gst_total`; inclusive: `total = net_subtotal + fee_total`.
+5. `Σ line totals = totals.total`; `net_subtotal = subtotal + discount_total`; exclusive: `total = net_subtotal + fee_total + tax_total`; inclusive: `total = net_subtotal + fee_total`.
 6. Rule order and repeated evaluation do not change the result.
 7. Freezing a live result and re-pricing the same lines reproduces the same totals and lines.
+8. Per component, the lines' tax adds up to the order's (`totals.taxes`), and each line's components add up to its tax; split bills add up to the order, in total and per component. With `per_rate` in exclusive mode, each rate's order tax is the combined rate rounded once on its taxable amount.
 
 ## 7. Open business choices to confirm
 | # | Choice | Built as | Alternative |
 |-|-|-|-|
 | 1 | Minimum spend basis | Undiscounted amounts | After higher-priority discounts |
-| 2 | Service charge in inclusive mode | Percent of GST-inclusive discounted prices; fee is GST-inclusive | Percent of the GST-exclusive portion |
+| 2 | Service charge in inclusive mode | Percent of tax-inclusive discounted prices; fee is tax-inclusive | Percent of the tax-exclusive portion |
 | 3 | Exclusive blocking | Blocks everything evaluated after it on its lines | Only lower-priority rules within the same step |
 | 4 | "% off bill" preset level | Order-level (frozen at first payment; new lines excluded) | Line-level (new lines also discounted) |
 | 5 | Zero-amount manual applications | Recorded as zero adjustments (audit) | Dropped |
+| 6 | Outlet against order type when both have a rate | The outlet's rate wins (location decides the jurisdiction) | The order type's rate wins |
+| 7 | A service charge on lines at two VAT rates | The fee has one tax class | The fee follows the rate of the line it sits on |
+
+## 8. Tax model
+
+The smallest model that covers one Singapore rate, US state plus city tax, Japan's 8% takeaway and 10% dine-in, and EU standard and reduced rates.
+
+**Tables** (`packages/server/src/db/schema/tax.ts`)
+- `tax_classes (id, merchant_id, name, is_default, archived_at)`: what a product, open item or fee is ("Standard-rated", "Reduced rate", "Alcohol", "Exempt"). Exactly one class per merchant is the default; a product with `tax_class_id = null` uses it.
+- `tax_rates (id, merchant_id, tax_class_id, outlet_id null, order_type null, components jsonb)`: the tax for a class, for every outlet and order type (both null: the class's default rate, which every class has and which cannot be removed), for one outlet, for one order type, or both. Unique on `(tax_class_id, outlet_id, order_type)` with nulls not distinct.
+- `components` is a list of `{ name, bps }`. The name is printed on receipts and documents exactly as it stands ("GST 9%", "VAT 20%", "State sales tax"). An empty list is **exempt** (nothing printed); a component of 0 bps is a **zero rate** (printed with 0).
+
+**Resolution** (`resolveTaxRate`, in the engine): among the class's rates whose outlet is null or the order's outlet and whose order type is null or the order's, the most specific wins: outlet and order type, then outlet, then order type, then the default.
+
+**Settings**: `merchant_settings.tax_mode` (inclusive or exclusive prices, for the whole merchant) and `merchant_settings.tax_rounding` (`per_line` or `per_rate`). When an order opens it stores `tax_mode`, `tax_rounding` and `tax_rates` (the rates that can apply at its outlet), so later rate changes never re-price an open order, as before with the single rate. If the order later needs a class it did not have (a product moved to a class created since, a new fee taxed at one), that class's current rates are added to the order's table at the next re-price; classes already there keep their rates. Lines store their resolved `tax_class_id`, `tax_amount` and `taxes`; bills, allocations and refunds store `tax` and `taxes` by component, allocated and reversed one component at a time.
+
+**Money and locale**: amounts are integers in the minor unit of `merchant_settings.currency` (ISO 4217, fixed once the merchant exists); `currencyExponent` gives the number of decimals (0 JPY, 2 EUR, 3 KWD). `formatMoney` and `parseMoney` in `money.ts` take the currency and `merchant_settings.locale` (BCP 47) explicitly; nothing has a default. `cash_rounding_increment` is in minor units (5 = CHF 0.05, 100 = SEK 1, 10 = JPY 10) and `cash_denominations` lists the notes and coins for the cash counter, also in minor units.
+
+**Presets** (`packages/shared/src/presets.ts`), chosen when a merchant is created: `sg` (GST 9% exclusive, per line, 10% dine-in service charge, 10-cent container deposit, a PayNow tender), `us` (state 4% + local 4.5% exclusive, per rate, an exempt grocery class), `eu-vat` (VAT 20% and 10% inclusive, per rate), `jp` (consumption tax 10%, 8% for takeaway, pickup and delivery food, inclusive, per rate) and `blank` (one untaxed class). A preset is data: the engine and the server never branch on its key.

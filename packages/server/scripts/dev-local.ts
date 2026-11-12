@@ -2,9 +2,9 @@
  * Local development without Docker or Supabase:
  *   pnpm --filter @sail/server dev:local
  *
- * Starts an embedded Postgres, migrates it, bootstraps one merchant with an
- * Admin (admin@sail.local, PIN 123456), and serves the API on :8080 with the
- * SSE listener. Sign-in tokens come from POST /v1/auth/dev-token {email}.
+ * Starts an embedded Postgres, migrates it, bootstraps two demo merchants
+ * (Singapore: admin@sail.local; EU VAT in EUR: admin.eu@sail.local; PIN
+ * 123456 for both), and serves the API on :8080 with the SSE listener. Sign-in tokens come from POST /v1/auth/dev-token {email}.
  * Set SAIL_DEV_DATA_DIR to keep data between runs (default: fresh each time).
  */
 import { serve } from "@hono/node-server";
@@ -34,22 +34,30 @@ process.env.AGENT_TOKEN_SECRET ??= "local-agent-secret-0123456789abcdef";
 process.env.PORT ??= "8080";
 process.env.CORS_ORIGIN ??= "*";
 
+// Two demo merchants, so both tax paths run locally: Singapore (GST 9% on exclusive prices, rounded per line,
+// service charge and container deposit) and an EU café (inclusive VAT at 20% and 10%, rounded once per rate, EUR).
 const boot = await bootstrapMerchant(url, {
   merchantName: "Harbour Group",
   brandName: "Harbour Kitchen",
   outletName: "Harbour Kitchen · Marina",
   admin: { name: "Ada Admin", email: "admin@sail.local", pin: "123456" },
-  taxMode: "exclusive",
+  preset: "sg",
+  timeZone: "Asia/Singapore",
   cashRoundingIncrement: 5,
 });
+const bootEu = await bootstrapMerchant(url, {
+  merchantName: "Kanal Gruppe",
+  brandName: "Café Kanal",
+  outletName: "Café Kanal · Kreuzberg",
+  admin: { name: "Erika Admin", email: "admin.eu@sail.local", pin: "123456" },
+  preset: "eu-vat",
+  timeZone: "Europe/Berlin",
+  locale: "de-DE",
+});
 
-// Later phases seed a demo catalogue through this hook when present.
-try {
-  const seed = await import("./dev-seed.js");
-  await seed.devSeed(url, boot);
-} catch (e) {
-  if (!(e instanceof Error && /Cannot find module|ERR_MODULE_NOT_FOUND/.test(String(e)))) throw e;
-}
+const seed = await import("./dev-seed.js");
+await seed.devSeed(url, boot);
+await seed.devSeedEu(url, bootEu);
 
 await import("../src/modules.js");
 const { buildApp } = await import("../src/app.js");
@@ -60,7 +68,7 @@ const { runWorker } = await import("../src/worker/index.js");
 await runWorker(); // imports, scheduled rules, stale print claims, guest session expiry
 const port = Number(process.env.PORT);
 serve({ fetch: app.fetch, port }, () => {
-  const info = { api: `http://localhost:${port}`, database_url: url, admin_email: "admin@sail.local", admin_pin: "123456", ...boot };
+  const info = { api: `http://localhost:${port}`, database_url: url, admin_email: "admin@sail.local", admin_pin: "123456", ...boot, eu: { admin_email: "admin.eu@sail.local", admin_pin: "123456", ...bootEu } };
   writeFileSync(join(process.cwd(), ".dev-local.json"), JSON.stringify(info, null, 2));
   console.log("\nSail API (local) ready:\n" + JSON.stringify(info, null, 2) + "\n\nGet a sign-in token: curl -X POST localhost:" + port + "/v1/auth/dev-token -H 'content-type: application/json' -d '{\"email\":\"admin@sail.local\"}'\n");
 });

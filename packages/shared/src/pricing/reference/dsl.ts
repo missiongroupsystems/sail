@@ -1,10 +1,11 @@
-import type { PricingContextInput, PricingLineInput, PricingOrderInput, PricingRuleInput } from "../schemas.js";
+import { presetSeedRules, REGION_PRESETS } from "../../presets.js";
+import type { PricingContextInput, PricingLineInput, PricingOrderInput, PricingRuleInput, TaxRateInput } from "../schemas.js";
 
 /**
  * Readable fixture format for the pricing reference set (scope doc 9; roadmap v0.2).
  *
  * Every expected amount is hand-calculated and written as an arithmetic
- * expression so a second person (Phil or Finance) can check it by reading the
+ * expression so a second person (a product owner or someone in finance) can check it by reading the
  * case, not by running code. Amounts are integer cents; discounts are negative.
  */
 export type RefCase = {
@@ -18,6 +19,10 @@ export type RefCase = {
   order: PricingOrderInput;
   rules: PricingRuleInput[];
   context: PricingContextInput;
+  /** Split every line evenly across `checks` bills (allocateLine) and check each bill's total and tax by component name. */
+  split?: { checks: number; expect: { total: number; taxes: Record<string, number> }[] };
+  /** Settle the total in cash rounded to `increment` minor units (roundCash). */
+  cash?: { increment: number; due: number; rounding: number };
   expect: {
     /** rule_id (or `rule_id#application_id` for manual applications) → signed total */
     adjustments?: Record<string, number>;
@@ -28,13 +33,17 @@ export type RefCase = {
     /** line_id → fee amount attached to the line */
     line_fees?: Record<string, number>;
     /** line_id → GST on the net amount */
-    line_gst?: Record<string, number>;
+    line_tax?: Record<string, number>;
     /** line_id → everything the customer pays for the line */
     line_totals?: Record<string, number>;
     subtotal?: number;
     discount_total?: number;
     fee_total?: number;
-    gst_total?: number;
+    tax_total?: number;
+    /** The order's tax breakdown, exactly and in order. */
+    taxes?: { name: string; bps: number; taxable: number; amount: number }[];
+    /** line_id → component name → tax on that line */
+    line_taxes?: Record<string, Record<string, number>>;
     total: number;
     /** Rule IDs that must NOT appear as adjustments. */
     not_applied?: string[];
@@ -68,13 +77,13 @@ export type Coverage =
   | "scope_categories"
   | "scope_products"
   | "scope_tags"
-  | "scope_bcrs"
+  | "scope_deposit"
   | "exclusions"
   | "fee_percent"
   | "fee_fixed_per_unit"
   | "fee_fixed_per_order"
-  | "fee_gst_applicable"
-  | "fee_not_gst_applicable"
+  | "fee_taxed"
+  | "fee_untaxed"
   | "fee_no_compounding"
   | "tax_inclusive"
   | "tax_exclusive"
@@ -85,16 +94,32 @@ export type Coverage =
   | "freeze"
   | "rounding"
   | "zero_quantity"
-  | "seed_rules";
+  | "seed_rules"
+  | "tax_components"
+  | "tax_per_rate"
+  | "tax_by_order_type"
+  | "tax_exempt"
+  | "zero_decimals"
+  | "three_decimals"
+  | "split"
+  | "cash_rounding";
 
 export const NOW = "2026-11-04T12:00:00.000Z";
 
+/** The Singapore preset's tax table as the reference set uses it: one class, `standard`, at GST 9%. */
+export const SG_TAX_RATES: TaxRateInput[] = [{ tax_class_id: "standard", components: [{ name: "GST 9%", bps: 900 }] }];
+
+/** The Singapore preset's seed rules, with its tax class wired to `standard`. */
+export const SG_SEED_RULES: PricingRuleInput[] = presetSeedRules(REGION_PRESETS.sg, { standard: "standard" });
+
+/** Singapore context (GST 9%, rounded per line) unless `extra` says otherwise. */
 export function ctx(tax_mode: "inclusive" | "exclusive" = "exclusive", extra: Partial<PricingContextInput> = {}): PricingContextInput {
-  return { tax_mode, gst_bps: 900, now: NOW, ...extra };
+  return { tax_mode, tax_rounding: "per_line", tax_rates: SG_TAX_RATES, now: NOW, ...extra };
 }
 
+/** A line in tax class `standard` unless `opts` says otherwise. */
 export function line(id: string, base: number, opts: Partial<PricingLineInput> = {}): PricingLineInput {
-  return { line_id: id, product_id: opts.product_id ?? `prod-${id}`, quantity: 1, prices: { base }, ...opts };
+  return { line_id: id, product_id: opts.product_id ?? `prod-${id}`, tax_class_id: "standard", quantity: 1, prices: { base }, ...opts };
 }
 
 export function order(lines: PricingLineInput[], opts: Partial<PricingOrderInput> = {}): PricingOrderInput {
@@ -102,7 +127,7 @@ export function order(lines: PricingLineInput[], opts: Partial<PricingOrderInput
 }
 
 /** GST at 9% on an exclusive amount, rounded half up (mirrors percentOfCents). */
-export function gstEx(amount: number, bps = 900): number {
+export function taxEx(amount: number, bps = 900): number {
   const num = Math.abs(amount) * bps;
   const q = Math.floor(num / 10_000);
   const r = num - q * 10_000;
@@ -111,7 +136,7 @@ export function gstEx(amount: number, bps = 900): number {
 }
 
 /** GST portion inside a GST-inclusive amount at 9%, rounded half up. */
-export function gstIn(amount: number, bps = 900): number {
+export function taxIn(amount: number, bps = 900): number {
   const num = Math.abs(amount) * bps;
   const den = 10_000 + bps;
   const q = Math.floor(num / den);
@@ -122,5 +147,5 @@ export function gstIn(amount: number, bps = 900): number {
 
 /** Percent (bps) of an amount, rounded half up. */
 export function pct(amount: number, bps: number): number {
-  return gstEx(amount, bps);
+  return taxEx(amount, bps);
 }

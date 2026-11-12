@@ -1,4 +1,5 @@
 import { boolean, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import type { TaxAmount } from "@sail/shared";
 import { orderLines, orders } from "./orders.js";
 import { checks, payments } from "./payments.js";
 
@@ -32,7 +33,8 @@ export const refunds = pgTable(
     base: integer("base").notNull(),
     discount: integer("discount").notNull(),
     fee: integer("fee").notNull(),
-    gst: integer("gst").notNull(),
+    tax: integer("tax").notNull(),
+    taxes: jsonb("taxes").$type<TaxAmount[]>().notNull().default([]),
     total: integer("total").notNull(),
     refundReceiptNo: text("refund_receipt_no").notNull(),
     creditNoteNo: text("credit_note_no"),
@@ -59,9 +61,10 @@ export const refundLines = pgTable(
     base: integer("base").notNull(),
     discount: integer("discount").notNull(),
     fee: integer("fee").notNull(),
-    gst: integer("gst").notNull(),
+    tax: integer("tax").notNull(),
+    taxes: jsonb("taxes").$type<TaxAmount[]>().notNull().default([]),
     total: integer("total").notNull(),
-    adjustments: jsonb("adjustments").$type<Record<string, { amount: number; gst: number }>>().notNull().default({}),
+    adjustments: jsonb("adjustments").$type<Record<string, { amount: number; tax: number }>>().notNull().default({}),
   },
   (t) => [primaryKey({ columns: [t.refundId, t.orderLineId] }), index("refund_lines_line_idx").on(t.orderLineId)],
 );

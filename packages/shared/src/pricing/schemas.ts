@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CentsSchema, ChannelTypeSchema, NonNegativeCentsSchema, OrderTypeSchema, TaxModeSchema } from "../domain.js";
+import { CentsSchema, ChannelTypeSchema, NonNegativeCentsSchema, OrderTypeSchema, TaxModeSchema, TaxRoundingSchema } from "../domain.js";
 import { RoleSchema } from "../roles.js";
 
 /**
@@ -48,8 +48,8 @@ export const RuleScopeSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("categories"), category_ids: z.array(z.string()).min(1) }),
   z.object({ type: z.literal("products"), product_ids: z.array(z.string()).min(1) }),
   z.object({ type: z.literal("tags"), tags: z.array(z.string()).min(1) }),
-  /** Products flagged for the container deposit scheme (BCRS). */
-  z.object({ type: z.literal("bcrs") }),
+  /** Products flagged as carrying a deposit (a returnable container, for example). */
+  z.object({ type: z.literal("deposit") }),
 ]);
 export type RuleScope = z.infer<typeof RuleScopeSchema>;
 
@@ -103,7 +103,11 @@ export const PricingRuleSchema = z
     min_role: RoleSchema.optional(),
     override_allowed: z.boolean().default(false),
     reason_required: z.boolean().default(false),
-    gst_applicable: z.boolean().default(true),
+    /**
+     * Fees only, and required for them: the tax class the fee is taxed at, or
+     * null for a fee that carries no tax (a container deposit, for example).
+     */
+    tax_class_id: z.string().min(1).nullable().optional(),
     report_class: ReportClassSchema,
     /** A manual rule may switch off other rules for the order (the service-charge waiver). */
     disables: z
@@ -128,6 +132,10 @@ export const PricingRuleSchema = z
       const max = r.value.type === "fixed" ? r.value.amount : r.value.max;
       if (max > 10_000) ctx.addIssue({ code: "custom", message: "percent values are basis points and cannot exceed 10000", path: ["value"] });
     }
+    if (r.kind === "fee" && r.tax_class_id === undefined)
+      ctx.addIssue({ code: "custom", message: "fees need a tax_class_id (null when the fee carries no tax)", path: ["tax_class_id"] });
+    if (r.kind === "discount" && r.tax_class_id != null)
+      ctx.addIssue({ code: "custom", message: "discounts take the tax class of the lines they reduce; leave tax_class_id out", path: ["tax_class_id"] });
     if (r.application === "manual" && !r.min_role)
       ctx.addIssue({ code: "custom", message: "manual rules need a min_role", path: ["min_role"] });
   });
@@ -160,7 +168,9 @@ export const PricingLineSchema = z.object({
   /** The two-level category tree: a line matches a category scope on either its category or its parent. */
   parent_category_id: z.string().nullable().default(null),
   tags: z.array(z.string()).default([]),
-  is_bcrs: z.boolean().default(false),
+  /** The tax class the line's net amount is taxed at (the product's class, resolved by the caller). */
+  tax_class_id: z.string().min(1),
+  has_deposit: z.boolean().default(false),
   quantity: z.number().int().min(0),
   /** The product's base price and optional prices per order type. */
   prices: z.object({
@@ -210,10 +220,43 @@ export const FrozenAdjustmentSchema = z.object({
 });
 export type FrozenAdjustment = z.infer<typeof FrozenAdjustmentSchema>;
 
+/** One named part of a tax rate, for example { name: "VAT 20%", bps: 2000 } or { name: "City tax", bps: 225 }. */
+export const TaxComponentSchema = z.object({
+  /** Printed on receipts and documents as it stands. */
+  name: z.string().min(1).max(40),
+  bps: z.number().int().min(0).max(10_000),
+});
+export type TaxComponent = z.infer<typeof TaxComponentSchema>;
+
+/**
+ * The tax for a tax class, optionally only at one outlet and/or for one order
+ * type. A class with no components is tax-exempt; a component of 0 bps is a
+ * zero rate that still prints.
+ */
+export const TaxRateSchema = z.object({
+  tax_class_id: z.string().min(1),
+  outlet_id: z.string().min(1).nullable().default(null),
+  order_type: OrderTypeSchema.nullable().default(null),
+  components: z.array(TaxComponentSchema).max(8),
+});
+export type TaxRateInput = z.input<typeof TaxRateSchema>;
+export type TaxRate = z.infer<typeof TaxRateSchema>;
+
 export const PricingContextSchema = z.object({
   tax_mode: TaxModeSchema,
-  /** GST rate in basis points (900 = 9%). */
-  gst_bps: z.number().int().min(0).max(10_000).default(900),
+  tax_rounding: TaxRoundingSchema,
+  /**
+   * Every rate of every tax class the order can use. The engine picks, for each
+   * line and fee, the most specific match on (class, outlet, order type).
+   */
+  tax_rates: z.array(TaxRateSchema).superRefine((rates, ctx) => {
+    const seen = new Set<string>();
+    for (const r of rates) {
+      const key = `${r.tax_class_id}|${r.outlet_id ?? ""}|${r.order_type ?? ""}`;
+      if (seen.has(key)) ctx.addIssue({ code: "custom", message: `duplicate tax rate for class ${r.tax_class_id}, outlet ${r.outlet_id ?? "any"}, order type ${r.order_type ?? "any"}` });
+      seen.add(key);
+    }
+  }),
   /** Evaluation time, passed in explicitly. The engine never reads the clock. */
   now: z.iso.datetime(),
   /**
@@ -240,8 +283,8 @@ export const AdjustmentLineSchema = z.object({
   line_id: z.string(),
   /** Signed cents: negative for discounts, positive for fees. */
   amount: CentsSchema,
-  /** GST attributable to this amount (0 for discounts; see semantics note). */
-  gst_amount: CentsSchema,
+  /** Tax attributable to this amount (0 for discounts; see semantics note). */
+  tax_amount: CentsSchema,
 });
 export type AdjustmentLine = z.infer<typeof AdjustmentLineSchema>;
 
@@ -252,10 +295,11 @@ export const AdjustmentSchema = z.object({
   kind: RuleKindSchema,
   level: RuleLevelSchema,
   report_class: ReportClassSchema,
-  gst_applicable: z.boolean(),
+  /** Fees: the class the fee is taxed at, null when untaxed. Always null for discounts. */
+  tax_class_id: z.string().nullable(),
   /** Signed total: negative for discounts, positive for fees. */
   total: CentsSchema,
-  gst_total: CentsSchema,
+  tax_total: CentsSchema,
   lines: z.array(AdjustmentLineSchema),
   capped: z.boolean(),
   frozen: z.boolean(),
@@ -270,6 +314,18 @@ export const AdjustmentSchema = z.object({
 });
 export type Adjustment = z.infer<typeof AdjustmentSchema>;
 
+/** A tax component's amount on one line, a bill or a refund. */
+export const TaxAmountSchema = z.object({
+  name: z.string(),
+  bps: z.number().int(),
+  amount: CentsSchema,
+});
+export type TaxAmount = z.infer<typeof TaxAmountSchema>;
+
+/** A tax component's amount on the order and the amount it was charged on (excluding tax, in both modes). */
+export const TaxBreakdownSchema = TaxAmountSchema.extend({ taxable: CentsSchema });
+export type TaxBreakdown = z.infer<typeof TaxBreakdownSchema>;
+
 export const PricedLineSchema = z.object({
   line_id: z.string(),
   quantity: z.number().int(),
@@ -283,11 +339,13 @@ export const PricedLineSchema = z.object({
   net_amount: CentsSchema,
   /** Sum of fee amounts attached to this line. */
   fee_amount: CentsSchema,
-  /** GST on the net amount (both modes). */
-  gst_on_net: CentsSchema,
-  /** GST on GST-applicable fees attached to this line. */
-  gst_on_fees: CentsSchema,
-  /** Everything the customer pays for this line, including GST in both modes. */
+  /** Tax on the net amount (both modes). */
+  tax_on_net: CentsSchema,
+  /** Tax on the taxed fees attached to this line. */
+  tax_on_fees: CentsSchema,
+  /** tax_on_net + tax_on_fees by component, in first-seen order, with the amounts they were charged on. */
+  taxes: z.array(TaxBreakdownSchema),
+  /** Everything the customer pays for this line, including tax in both modes. */
   total: CentsSchema,
 });
 export type PricedLine = z.infer<typeof PricedLineSchema>;
@@ -301,7 +359,9 @@ export const PricingTotalsSchema = z.object({
   /** subtotal + discount_total */
   net_subtotal: CentsSchema,
   fee_total: CentsSchema,
-  gst_total: CentsSchema,
+  tax_total: CentsSchema,
+  /** tax_total by component, in first-seen order; tax-exempt lines add nothing. */
+  taxes: z.array(TaxBreakdownSchema),
   /** Amount payable before any cash rounding. */
   total: CentsSchema,
 });

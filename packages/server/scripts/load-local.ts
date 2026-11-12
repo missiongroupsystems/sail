@@ -38,16 +38,13 @@ process.env.TX_MAX ??= "16";
 process.env.QUEUE_MAX ??= "200";
 process.env.DB_POOL_MAX ??= "20";
 
-const boot = await bootstrapMerchant(url, { merchantName: "Load", brandName: "Load Brand", outletName: "Load Outlet", admin: { name: "Ada", email: "admin@sail.local", pin: "123456" }, taxMode: "exclusive", cashRoundingIncrement: 5 });
+const boot = await bootstrapMerchant(url, { merchantName: "Load", brandName: "Load Brand", outletName: "Load Outlet", admin: { name: "Ada", email: "admin@sail.local", pin: "123456" }, preset: "sg", timeZone: "Asia/Singapore", cashRoundingIncrement: 5 });
 await import("../src/modules.js");
 const { buildApp } = await import("../src/app.js");
 const { startListener, stopListener } = await import("../src/sse/listener.js");
 const { closePool } = await import("../src/db/client.js");
-const { seedRulesForMerchant } = await import("../src/services/pricing-rules.js");
-const { withTransaction } = await import("../src/db/client.js");
 const app = buildApp();
 await startListener();
-await withTransaction(() => seedRulesForMerchant(boot.merchantId));
 
 const lat: Record<string, number[]> = {};
 let rejected = 0;

@@ -12,6 +12,7 @@ import { MANUAL_CASES } from "./cases-manual.js";
 import { ORDER_TYPE_CASES } from "./cases-order-types.js";
 import { PRESET_CASES } from "./cases-presets.js";
 import { QUANTITY_CASES } from "./cases-quantities.js";
+import { REGION_CASES } from "./cases-regions.js";
 import type { RefCase } from "./dsl.js";
 
 export * from "./dsl.js";
@@ -32,4 +33,5 @@ export const ALL_CASES: RefCase[] = [
   ...BOUNDARY_CASES,
   ...PRESET_CASES,
   ...FREEZE_CHANGE_CASES,
+  ...REGION_CASES,
 ];

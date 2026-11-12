@@ -6,7 +6,7 @@ import { withTransaction } from "../src/db/client.js";
 import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
 import { resetGuestRateLimitsForTests, revokeStaleSessions } from "../src/services/guest.js";
 import { startListener, stopListener } from "../src/sse/listener.js";
-import { api, freshDb, readSse, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
+import { api, freshDb, readSse, seedMerchant, type SeededMerchant, type TestDb, sgSeedRules } from "./helpers.js";
 
 let db: TestDb;
 let app: App;
@@ -29,7 +29,7 @@ beforeAll(async () => {
   app = buildApp();
   call = api(app).call;
   A = await seedMerchant(db.sql, "Alpha");
-  await withTransaction(() => seedRulesForMerchant(A.merchantId));
+  await withTransaction(() => seedRulesForMerchant(A.merchantId, sgSeedRules(A)));
   const t = A.admin.token;
   await call("POST", "/v1/products", { token: t, body: { id: ids.prawn, name: "Prawn", price: 200, kind: "component" } });
   await call("POST", "/v1/modifier-groups", { token: t, body: { id: ids.protein, name: "Protein", min_select: 1, max_select: 1, options: [{ product_id: ids.prawn }] } });

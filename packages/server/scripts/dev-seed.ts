@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import type { BootstrapResult } from "../src/bootstrap.js";
-import { SEED_RULES, PricingRuleSchema } from "@sail/shared";
+import { PricingRuleSchema } from "@sail/shared";
 
 /**
- * Demo data for `dev:local`: a small but realistic hawker-style catalogue with
- * categories, modifiers, a menu, a POS layout, a floor plan, tender types,
- * void reasons, a VIP group and the seed pricing rules.
+ * Demo data for `dev:local`, on top of what each merchant's region preset
+ * already created (tax classes, seed rules, tenders). `devSeed` is the
+ * Singapore merchant: a hawker-style catalogue with categories, modifiers, a
+ * menu, a POS layout, a floor plan, extra tenders, void reasons and a VIP
+ * group. `devSeedEu` is an EU café priced with inclusive VAT at two rates.
  */
 export async function devSeed(url: string, boot: BootstrapResult): Promise<void> {
   const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
@@ -27,10 +29,10 @@ export async function devSeed(url: string, boot: BootstrapResult): Promise<void>
       const cold = await cat("Cold drinks", drinks);
       const alcohol = await cat("Alcohol", drinks);
 
-      const prod = async (name: string, price: number, opts: { sku?: string; category?: string | null; tags?: string[]; bcrs?: boolean; kind?: "product" | "component"; kitchen?: string; delivery?: number; open?: boolean } = {}) => {
+      const prod = async (name: string, price: number, opts: { sku?: string; category?: string | null; tags?: string[]; deposit?: boolean; kind?: "product" | "component"; kitchen?: string; delivery?: number; open?: boolean } = {}) => {
         const id = randomUUID();
-        await tx`insert into products (id, merchant_id, name, sku, price, category_id, tags, is_bcrs, kind, kitchen_name, open_price)
-          values (${id}, ${m}, ${name}, ${opts.sku ?? null}, ${price}, ${opts.category ?? null}, ${opts.tags ?? []}, ${opts.bcrs ?? false}, ${opts.kind ?? "product"}, ${opts.kitchen ?? null}, ${opts.open ?? false})`;
+        await tx`insert into products (id, merchant_id, name, sku, price, category_id, tags, has_deposit, kind, kitchen_name, open_price)
+          values (${id}, ${m}, ${name}, ${opts.sku ?? null}, ${price}, ${opts.category ?? null}, ${opts.tags ?? []}, ${opts.deposit ?? false}, ${opts.kind ?? "product"}, ${opts.kitchen ?? null}, ${opts.open ?? false})`;
         if (opts.delivery) await tx`insert into product_prices (merchant_id, product_id, order_type, price) values (${m}, ${id}, 'delivery', ${opts.delivery})`;
         return id;
       };
@@ -46,8 +48,8 @@ export async function devSeed(url: string, boot: BootstrapResult): Promise<void>
       const kopi = await prod("Kopi", 180, { sku: "KOP-001", category: hot, tags: ["bar"] });
       const teh = await prod("Teh Tarik", 380, { sku: "TEH-001", category: hot, tags: ["bar"] });
       const kopiPeng = await prod("Kopi Peng", 380, { sku: "KOP-PENG", category: cold, tags: ["bar"] });
-      const can = await prod("Canned drink", 250, { sku: "CAN-001", category: cold, tags: ["bar"], bcrs: true });
-      const tiger = await prod("Tiger (bottle)", 1200, { sku: "TGR-001", category: alcohol, tags: ["bar", "alcohol"], bcrs: true });
+      const can = await prod("Canned drink", 250, { sku: "CAN-001", category: cold, tags: ["bar"], deposit: true });
+      const tiger = await prod("Tiger (bottle)", 1200, { sku: "TGR-001", category: alcohol, tags: ["bar", "alcohol"], deposit: true });
       const wine = await prod("House wine (bottle)", 6600, { sku: "WIN-001", category: alcohol, tags: ["bar", "alcohol"] });
       const openItem = await prod("Open item", 0, { sku: "OPEN", category: sides, open: true });
 
@@ -110,9 +112,8 @@ export async function devSeed(url: string, boot: BootstrapResult): Promise<void>
       ];
       for (const [name, areaId, seats, shape, x, y] of tables) await tx`insert into tables (merchant_id, outlet_id, area_id, name, seats, shape, x, y, w, h) values (${m}, ${boot.outletId}, ${areaId}, ${name}, ${seats}, ${shape}, ${x}, ${y}, ${seats > 4 ? 3 : 2}, 2)`;
 
-      // Tender types and void reasons.
-      const tenders: [string, boolean, boolean][] = [["Cash", true, false], ["Card", false, true], ["PayNow", false, true], ["House account", false, false], ["Aggregator", false, false]];
-      for (const [i, [name, cash, terminal]] of tenders.entries()) await tx`insert into tender_types (merchant_id, name, is_cash, opens_drawer, is_terminal, sort) values (${m}, ${name}, ${cash}, ${cash}, ${terminal}, ${i})`;
+      // Tenders beyond the preset's, and void reasons.
+      for (const [i, name] of ["House account", "Aggregator"].entries()) await tx`insert into tender_types (merchant_id, name, is_cash, opens_drawer, is_terminal, sort) values (${m}, ${name}, false, false, false, ${10 + i})`;
       for (const [i, name] of ["Customer changed mind", "Wrong item keyed", "Kitchen error", "Guest complaint", "Other"].entries()) await tx`insert into void_reasons (merchant_id, name, sort) values (${m}, ${name}, ${i})`;
 
       // Customers and a VIP group.
@@ -122,15 +123,11 @@ export async function devSeed(url: string, boot: BootstrapResult): Promise<void>
       await tx`insert into customers (id, merchant_id, name, mobile, email, marketing_consent) values (${cust}, ${m}, 'Lim Wei Ling', '+6591234567', 'wei.ling@example.com', true)`;
       await tx`insert into customer_group_members (merchant_id, group_id, customer_id) values (${m}, ${vip}, ${cust})`;
 
-      // Pricing rules: the seed set plus the worked-example rules.
-      for (const rule of SEED_RULES) {
-        const parsed = PricingRuleSchema.parse(rule);
-        await tx`insert into pricing_rules (merchant_id, rule_key, version, status, effective_from, body, note, created_by) values (${m}, ${parsed.id}, 1, 'active', '2026-01-01T00:00:00Z', ${tx.json({ ...parsed, version: 1 })}, 'seed', 'system')`;
-      }
+      // Pricing rules: the preset's seed set is already there; add the worked-example rules.
       const extra = [
         { id: "promo:25-off-food", kind: "discount", name: "25% off food", calc: "percent", value: { type: "fixed", amount: 2500 }, scope: { type: "categories", category_ids: [food] }, priority: 10, application: "auto", report_class: "promo", conditions: { order_types: ["dine_in", "takeaway"] } },
         { id: "promo:vip-alcohol", kind: "discount", name: "10% off alcohol above $100 (VIP)", calc: "percent", value: { type: "fixed", amount: 1000 }, scope: { type: "tags", tags: ["alcohol"] }, conditions: { min_spend: { amount: 10_000, basis: "scoped" }, customer_group_ids: [vip] }, priority: 20, application: "auto", report_class: "promo" },
-        { id: "fee:delivery", kind: "fee", name: "Delivery fee", calc: "fixed_per_order", value: { type: "fixed", amount: 500 }, scope: { type: "all" }, conditions: { order_types: ["delivery"] }, priority: 120, application: "auto", gst_applicable: true, report_class: "delivery_fee" },
+        { id: "fee:delivery", kind: "fee", name: "Delivery fee", calc: "fixed_per_order", value: { type: "fixed", amount: 500 }, scope: { type: "all" }, conditions: { order_types: ["delivery"] }, priority: 120, application: "auto", tax_class_id: boot.taxClassIds.standard, report_class: "delivery_fee" },
       ];
       for (const r of extra) {
         const parsed = PricingRuleSchema.parse(r);
@@ -153,6 +150,59 @@ export async function devSeed(url: string, boot: BootstrapResult): Promise<void>
       for (const [name, role, pin] of [["Mia Manager", "manager", "222222"], ["Cal Cashier", "cashier", "333333"], ["Sam Server", "server", "444444"], ["Fin Finance", "finance", "555555"]] as const) {
         await tx`insert into staff (merchant_id, name, initials, email, role, pin_hash, pin_lookup) values (${m}, ${name}, ${name.split(" ").map((w) => w[0]).join("")}, ${name.toLowerCase().replace(" ", ".") + "@sail.local"}, ${role}, ${hashSecret(pin)}, ${pinLookup(m, pin)})`;
       }
+    });
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
+/**
+ * The EU demo merchant (preset `eu-vat`, EUR, de-DE, Europe/Berlin): food at
+ * the reduced 10% rate, drinks at the standard 20%, prices tax-inclusive and
+ * rounded once per rate, so a mixed bill prints two VAT lines.
+ */
+export async function devSeedEu(url: string, boot: BootstrapResult): Promise<void> {
+  const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
+  const m = boot.merchantId;
+  const reduced = boot.taxClassIds.reduced!;
+  try {
+    await sql.begin(async (tx) => {
+      const cat = async (name: string) => {
+        const id = randomUUID();
+        await tx`insert into report_categories (id, merchant_id, name) values (${id}, ${m}, ${name})`;
+        return id;
+      };
+      const food = await cat("Speisen");
+      const drinks = await cat("Getränke");
+      // Products with no tax class use the default class (standard, VAT 20%).
+      const prod = async (name: string, price: number, category: string, tags: string[], taxClassId: string | null = null) => {
+        const id = randomUUID();
+        await tx`insert into products (id, merchant_id, name, price, category_id, tags, tax_class_id) values (${id}, ${m}, ${name}, ${price}, ${category}, ${tags}, ${taxClassId})`;
+        return id;
+      };
+      const items = [
+        await prod("Schnitzel mit Kartoffelsalat", 1690, food, ["kitchen"], reduced),
+        await prod("Käsespätzle", 1350, food, ["kitchen"], reduced),
+        await prod("Brezel", 350, food, ["kitchen"], reduced),
+        await prod("Apfelstrudel", 650, food, ["kitchen"], reduced),
+        await prod("Pils 0,5 l", 490, drinks, ["bar"]),
+        await prod("Riesling 0,2 l", 720, drinks, ["bar"]),
+        await prod("Apfelschorle", 390, drinks, ["bar"]),
+        await prod("Kaffee", 320, drinks, ["bar"]),
+      ];
+      const menuId = randomUUID();
+      await tx`insert into menus (id, merchant_id, brand_id, name) values (${menuId}, ${m}, ${boot.brandId}, 'Tageskarte')`;
+      const sectionId = randomUUID();
+      await tx`insert into menu_sections (id, merchant_id, menu_id, name, sort) values (${sectionId}, ${m}, ${menuId}, 'Alles', 1)`;
+      for (const [i, pid] of items.entries()) await tx`insert into menu_items (merchant_id, menu_id, section_id, product_id, sort) values (${m}, ${menuId}, ${sectionId}, ${pid}, ${i})`;
+      await tx`insert into channel_links (merchant_id, channel, outlet_id, brand_id, menu_id) values (${m}, 'pos', ${boot.outletId}, ${boot.brandId}, ${menuId})`;
+      const area = randomUUID();
+      await tx`insert into areas (id, merchant_id, outlet_id, name, sort) values (${area}, ${m}, ${boot.outletId}, 'Gastraum', 1)`;
+      for (const [i, name] of ["1", "2", "3", "4"].entries()) await tx`insert into tables (merchant_id, outlet_id, area_id, name, seats, shape, x, y, w, h) values (${m}, ${boot.outletId}, ${area}, ${name}, 4, 'square', ${i * 3}, 0, 2, 2)`;
+      for (const [i, name] of ["Falsch gebucht", "Gast hat storniert", "Küchenfehler"].entries()) await tx`insert into void_reasons (merchant_id, name, sort) values (${m}, ${name}, ${i})`;
+      await tx`update outlets set address = 'Musterstraße 1, 10115 Berlin', business_registration_no = 'HRB 123456 B', tax_registration_no = 'DE123456789' where id = ${boot.outletId}`;
+      const rule = PricingRuleSchema.parse({ id: "promo:happy-hour", kind: "discount", name: "Happy Hour 20% auf Getränke", calc: "percent", value: { type: "fixed", amount: 2000 }, scope: { type: "categories", category_ids: [drinks] }, priority: 10, application: "auto", report_class: "promo" });
+      await tx`insert into pricing_rules (merchant_id, rule_key, version, status, effective_from, body, note, created_by) values (${m}, ${rule.id}, 1, 'active', '2026-01-01T00:00:00Z', ${tx.json({ ...rule, version: 1 })}, 'demo', 'system')`;
     });
   } finally {
     await sql.end({ timeout: 5 });

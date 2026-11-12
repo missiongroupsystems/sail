@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, eq, isNull } from "drizzle-orm";
-import { TaxModeSchema } from "@sail/shared";
+import { currencyExponent, TaxModeSchema, TaxRoundingSchema } from "@sail/shared";
 import { db } from "../db/client.js";
 import { brands, merchantSettings, merchants, outlets, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -9,22 +9,33 @@ import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listRes
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { principalCanSeeOutlet } from "../auth/principal.js";
+import { isCashRoundingIncrement, isValidLocale, isValidTimeZone, validDenominations } from "../lib/locale.js";
 
 /* ---- Schemas ----------------------------------------------------------- */
 
 export const MerchantSettingsSchema = z.object({
   tax_mode: TaxModeSchema,
-  gst_bps: z.number().int(),
+  tax_rounding: TaxRoundingSchema,
+  /** Minor units; null = off. */
   cash_rounding_increment: z.number().int().nullable(),
+  /** Notes and coins for the POS cash counter, largest first, in minor units. */
+  cash_denominations: z.array(z.number().int().positive()),
   business_day_cutoff: z.string(),
   timezone: z.string(),
+  /** ISO 4217. Fixed once the merchant exists. */
   currency: z.string(),
+  /** Decimal places of the currency's minor unit (JPY 0, EUR 2, KWD 3): divide stored amounts by 10^exponent to display them. */
+  currency_exponent: z.number().int(),
+  /** BCP 47. */
+  locale: z.string(),
+  business_registration_label: z.string(),
+  tax_registration_label: z.string(),
   receipt_footer: z.string().nullable(),
   receipt_show_outlet_phone: z.boolean(),
   busy_mode_threshold: z.number().int(),
 });
 export const MerchantSchema = z.object({ id: z.string(), name: z.string(), settings: MerchantSettingsSchema });
-const SettingsPatch = MerchantSettingsSchema.partial().extend({ name: z.string().min(1).optional() });
+const SettingsPatch = MerchantSettingsSchema.omit({ currency_exponent: true }).partial().extend({ name: z.string().min(1).optional() });
 
 export const BrandSchema = z.object({
   id: z.string(),
@@ -44,7 +55,8 @@ export const OutletSchema = z.object({
   name: z.string(),
   address: z.string().nullable(),
   phone: z.string().nullable(),
-  uen: z.string().nullable(),
+  business_registration_no: z.string().nullable(),
+  tax_registration_no: z.string().nullable(),
   business_day_cutoff: z.string().nullable(),
   hours: HoursSchema,
   service_theme_from: z.string().nullable(),
@@ -56,7 +68,8 @@ const OutletInput = z.object({
   name: z.string().min(1),
   address: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
-  uen: z.string().nullable().optional(),
+  business_registration_no: z.string().nullable().optional(),
+  tax_registration_no: z.string().nullable().optional(),
   business_day_cutoff: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
   hours: HoursSchema.optional(),
   service_theme_from: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
@@ -101,7 +114,8 @@ export const toOutlet = (o: typeof outlets.$inferSelect) => ({
   name: o.name,
   address: o.address,
   phone: o.phone,
-  uen: o.uen,
+  business_registration_no: o.businessRegistrationNo,
+  tax_registration_no: o.taxRegistrationNo,
   business_day_cutoff: o.businessDayCutoff,
   hours: o.hours,
   service_theme_from: o.serviceThemeFrom,
@@ -125,11 +139,16 @@ export const toStation = (s: typeof stations.$inferSelect) => ({
 });
 const toSettings = (s: typeof merchantSettings.$inferSelect) => ({
   tax_mode: s.taxMode,
-  gst_bps: s.gstBps,
+  tax_rounding: s.taxRounding,
   cash_rounding_increment: s.cashRoundingIncrement,
+  cash_denominations: s.cashDenominations,
   business_day_cutoff: s.businessDayCutoff,
   timezone: s.timezone,
   currency: s.currency,
+  currency_exponent: currencyExponent(s.currency),
+  locale: s.locale,
+  business_registration_label: s.businessRegistrationLabel,
+  tax_registration_label: s.taxRegistrationLabel,
   receipt_footer: s.receiptFooter,
   receipt_show_outlet_phone: s.receiptShowOutletPhone,
   busy_mode_threshold: s.busyModeThreshold,
@@ -138,17 +157,6 @@ const toSettings = (s: typeof merchantSettings.$inferSelect) => ({
 /** Business-day inputs live in the service layer; re-exported here for the routes that import them from this module. */
 import { businessDayInputs } from "../services/business-day.js";
 export { businessDayInputs };
-
-/** A valid IANA time zone: `Intl` throws on unknown zones, which would otherwise break every request's business-date stamp. */
-function isValidTimeZone(tz: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
-}
-const CASH_ROUNDING_INCREMENTS = [1, 5, 10, 50, 100];
 
 /* ---- Routes -------------------------------------------------------------- */
 
@@ -167,23 +175,29 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
     async (c) => {
       const p = c.get("principal");
       const patch = c.req.valid("json");
-      if (patch.cash_rounding_increment != null && !CASH_ROUNDING_INCREMENTS.includes(patch.cash_rounding_increment)) throw AppError.validation("cash_rounding_increment must be 1, 5, 10, 50 or 100 cents, or null to turn rounding off", { remedy: "Choose 5 for rounding to the nearest 5 cents.", details: { allowed: CASH_ROUNDING_INCREMENTS } });
-      if (patch.gst_bps != null && (patch.gst_bps < 0 || patch.gst_bps > 10_000)) throw AppError.validation("gst_bps must be between 0 and 10000 basis points", { remedy: "900 means 9%." });
+      const [current] = await db().select({ currency: merchantSettings.currency }).from(merchantSettings).where(eq(merchantSettings.merchantId, p.merchantId)).limit(1);
+      if (!current) throw AppError.notFound("merchant");
+      if (patch.cash_rounding_increment != null && !isCashRoundingIncrement(patch.cash_rounding_increment)) throw AppError.validation("cash_rounding_increment must be 1, 2 or 5 times a power of ten, in minor units of the currency, or null to turn rounding off", { remedy: "For example 5 rounds CHF to 0.05; 100 rounds SEK to 1 krona." });
+      if (patch.cash_denominations != null && !validDenominations(patch.cash_denominations)) throw AppError.validation("cash_denominations must be distinct positive amounts in minor units, largest first", { remedy: "For example [5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5]." });
       if (patch.business_day_cutoff != null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(patch.business_day_cutoff)) throw AppError.validation("business_day_cutoff must be HH:MM (24-hour)", { remedy: "For example 04:00." });
-      if (patch.timezone != null && !isValidTimeZone(patch.timezone)) throw AppError.validation(`Unknown time zone ${patch.timezone}`, { remedy: "Use an IANA zone such as Asia/Singapore." });
+      if (patch.timezone != null && !isValidTimeZone(patch.timezone)) throw AppError.validation(`Unknown time zone ${patch.timezone}`, { remedy: "Use an IANA zone such as Europe/Berlin." });
+      if (patch.locale != null && !isValidLocale(patch.locale)) throw AppError.validation(`Unknown locale ${patch.locale}`, { remedy: "Use a BCP 47 tag such as en-GB or de-DE." });
       if (patch.busy_mode_threshold != null && (patch.busy_mode_threshold < 1 || patch.busy_mode_threshold > 999)) throw AppError.validation("busy_mode_threshold must be between 1 and 999 open orders");
-      if (patch.currency != null && !/^[A-Z]{3}$/.test(patch.currency)) throw AppError.validation("currency must be a 3-letter ISO code such as SGD");
+      if (patch.currency != null && patch.currency !== current.currency) throw AppError.validation(`The currency is ${current.currency} and cannot change`, { remedy: "Every stored amount is in this currency's minor units. Create a new merchant for another currency.", details: { currency: current.currency } });
       const { name, ...settings } = patch;
       if (name) await db().update(merchants).set({ name }).where(eq(merchants.id, p.merchantId));
       const [s] = await db()
         .update(merchantSettings)
         .set({
           ...(settings.tax_mode !== undefined && { taxMode: settings.tax_mode }),
-          ...(settings.gst_bps !== undefined && { gstBps: settings.gst_bps }),
+          ...(settings.tax_rounding !== undefined && { taxRounding: settings.tax_rounding }),
           ...(settings.cash_rounding_increment !== undefined && { cashRoundingIncrement: settings.cash_rounding_increment }),
+          ...(settings.cash_denominations !== undefined && { cashDenominations: settings.cash_denominations }),
           ...(settings.business_day_cutoff !== undefined && { businessDayCutoff: settings.business_day_cutoff }),
           ...(settings.timezone !== undefined && { timezone: settings.timezone }),
-          ...(settings.currency !== undefined && { currency: settings.currency }),
+          ...(settings.locale !== undefined && { locale: settings.locale }),
+          ...(settings.business_registration_label !== undefined && { businessRegistrationLabel: settings.business_registration_label }),
+          ...(settings.tax_registration_label !== undefined && { taxRegistrationLabel: settings.tax_registration_label }),
           ...(settings.receipt_footer !== undefined && { receiptFooter: settings.receipt_footer }),
           ...(settings.receipt_show_outlet_phone !== undefined && { receiptShowOutletPhone: settings.receipt_show_outlet_phone }),
           ...(settings.busy_mode_threshold !== undefined && { busyModeThreshold: settings.busy_mode_threshold }),
@@ -254,7 +268,7 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
     const body = c.req.valid("json");
     const [row] = await db()
       .insert(outlets)
-      .values({ id: body.id, merchantId: p.merchantId, name: body.name, address: body.address ?? null, phone: body.phone ?? null, uen: body.uen ?? null, businessDayCutoff: body.business_day_cutoff ?? null, hours: body.hours ?? {}, serviceThemeFrom: body.service_theme_from ?? "18:00", legacyId: body.legacy_id ?? null })
+      .values({ id: body.id, merchantId: p.merchantId, name: body.name, address: body.address ?? null, phone: body.phone ?? null, businessRegistrationNo: body.business_registration_no ?? null, taxRegistrationNo: body.tax_registration_no ?? null, businessDayCutoff: body.business_day_cutoff ?? null, hours: body.hours ?? {}, serviceThemeFrom: body.service_theme_from ?? "18:00", legacyId: body.legacy_id ?? null })
       .returning();
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "outlet.created", aggregate: { kind: "outlet", id: row!.id }, operationId: "outlets.create", payload: toOutlet(row!), correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
     await recordAudit(p, { action: "outlets.create", targetKind: "outlet", targetId: row!.id, details: { name: row!.name } });
@@ -271,7 +285,8 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
         ...(body.name !== undefined && { name: body.name }),
         ...(body.address !== undefined && { address: body.address }),
         ...(body.phone !== undefined && { phone: body.phone }),
-        ...(body.uen !== undefined && { uen: body.uen }),
+        ...(body.business_registration_no !== undefined && { businessRegistrationNo: body.business_registration_no }),
+        ...(body.tax_registration_no !== undefined && { taxRegistrationNo: body.tax_registration_no }),
         ...(body.business_day_cutoff !== undefined && { businessDayCutoff: body.business_day_cutoff }),
         ...(body.hours !== undefined && { hours: body.hours }),
         ...(body.service_theme_from !== undefined && { serviceThemeFrom: body.service_theme_from }),

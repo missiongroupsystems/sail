@@ -6,7 +6,7 @@ import { brands, merchantSettings, orderLines, orders, outlets, printJobs, print
 import { AppError } from "../lib/errors.js";
 import { appendEvent } from "../lib/events.js";
 import type { Principal } from "../auth/principal.js";
-import { businessDayInputs } from "./business-day.js";
+import { businessDayInputs, printLocale } from "./business-day.js";
 
 /**
  * Printing (scope doc 4.7): routing rules, server-side rendering with the
@@ -62,6 +62,7 @@ async function headerFor(order: typeof orders.$inferSelect, extra: { stationId: 
   const [settings] = await db().select().from(merchantSettings).where(eq(merchantSettings.merchantId, order.merchantId)).limit(1);
   const table = order.tableId ? (await db().select({ name: tables.name }).from(tables).where(eq(tables.id, order.tableId)).limit(1))[0] : null;
   const station = extra.stationId ? (await db().select({ name: stations.name }).from(stations).where(eq(stations.id, extra.stationId)).limit(1))[0] : null;
+  if (!settings) throw AppError.notFound("merchant settings", order.merchantId);
   return {
     outlet_name: outlet?.name ?? "Outlet",
     brand_name: brand?.name ?? "Brand",
@@ -78,9 +79,10 @@ async function headerFor(order: typeof orders.$inferSelect, extra: { stationId: 
     ready_by: order.readyBy?.toISOString(),
     delivery_address: order.deliveryAddress ?? undefined,
     delivery_notes: order.deliveryNotes ?? undefined,
-    time_zone: settings?.timezone ?? "Asia/Singapore",
+    time_zone: settings.timezone,
+    locale: settings.locale,
     outlet: outlet ?? null,
-    settings: settings ?? null,
+    settings,
   };
 }
 
@@ -200,7 +202,7 @@ export async function testJob(printer: PrinterRow, principal: Principal, correla
   const payload: PrintJobPayload = {
     template: "kitchen_ticket",
     data: {
-      header: { outlet_name: outlet?.name ?? "Outlet", brand_name: "Sail", order_no: "TEST", order_type: "dine_in", printed_at: new Date().toISOString(), job_id: "pending", station_name: printer.name, server_name: "name" in principal ? principal.name : undefined },
+      header: { outlet_name: outlet?.name ?? "Outlet", brand_name: "Sail", order_no: "TEST", order_type: "dine_in", printed_at: new Date().toISOString(), job_id: "pending", station_name: printer.name, server_name: "name" in principal ? principal.name : undefined, ...(await printLocale(printer.merchantId)) },
       kind: "kitchen",
       banner: "TEST PRINT",
       lines: [{ quantity: 1, name: `Test print on ${printer.name}`, modifiers: [`${printer.ip}:${printer.port}`, `${printer.paperWidth} paper`], notes: "If you can read this, the relay and printer are working." }],

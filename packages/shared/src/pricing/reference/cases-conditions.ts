@@ -1,5 +1,5 @@
 import type { PricingRuleInput } from "../schemas.js";
-import { ctx, gstEx, line, NOW, order, type RefCase } from "./dsl.js";
+import { ctx, taxEx, line, NOW, order, type RefCase } from "./dsl.js";
 
 /**
  * Reference cases R038–R066: conditions, scopes and exclusions.
@@ -24,12 +24,12 @@ function disc(id: string, over: Partial<PricingRuleInput> = {}): PricingRuleInpu
   };
 }
 
-const APPLIED = { adjustments: { promo: -200 }, line_nets: { a: 1800 }, gst_total: 162, total: 1800 + 162 };
-const NOT_APPLIED = { not_applied: ["promo"], line_nets: { a: 2000 }, gst_total: 180, total: 2000 + 180 };
+const APPLIED = { adjustments: { promo: -200 }, line_nets: { a: 1800 }, tax_total: 162, total: 1800 + 162 };
+const NOT_APPLIED = { not_applied: ["promo"], line_nets: { a: 2000 }, tax_total: 180, total: 2000 + 180 };
 const ONE_LINE = [line("a", 2000)];
 
 /** Two $10 lines where only `a` is discounted: 900 + 1000 + GST 81 + 90 = 2071. */
-const ONLY_A = { adjustments: { promo: -100 }, adjustment_lines: { promo: { a: -100 } }, line_nets: { a: 900, b: 1000 }, gst_total: 81 + 90, total: 900 + 1000 + 81 + 90 };
+const ONLY_A = { adjustments: { promo: -100 }, adjustment_lines: { promo: { a: -100 } }, line_nets: { a: 900, b: 1000 }, tax_total: 81 + 90, total: 900 + 1000 + 81 + 90 };
 
 export const CONDITION_CASES: RefCase[] = [
   {
@@ -190,7 +190,7 @@ export const CONDITION_CASES: RefCase[] = [
     order: order([line("a", 3000, { category_id: "food" }), line("b", 2000, { category_id: "drink" })]),
     rules: [disc("promo", { scope: { type: "categories", category_ids: ["food"] }, conditions: { min_spend: { amount: 5000, basis: "order" } } })],
     context: ctx(),
-    expect: { adjustments: { promo: -300 }, line_nets: { a: 2700, b: 2000 }, gst_total: 243 + 180, total: 2700 + 2000 + 243 + 180 },
+    expect: { adjustments: { promo: -300 }, line_nets: { a: 2700, b: 2000 }, tax_total: 243 + 180, total: 2700 + 2000 + 243 + 180 },
   },
   {
     id: "R054",
@@ -200,7 +200,7 @@ export const CONDITION_CASES: RefCase[] = [
     order: order([line("a", 3000, { category_id: "food" }), line("b", 1999, { category_id: "drink" })]),
     rules: [disc("promo", { scope: { type: "categories", category_ids: ["food"] }, conditions: { min_spend: { amount: 5000, basis: "order" } } })],
     context: ctx(),
-    expect: { not_applied: ["promo"], gst_total: 270 + 180, total: 3000 + 1999 + 270 + 180 },
+    expect: { not_applied: ["promo"], tax_total: 270 + 180, total: 3000 + 1999 + 270 + 180 },
   },
   {
     id: "R055",
@@ -212,7 +212,7 @@ export const CONDITION_CASES: RefCase[] = [
     order: order([line("wine1", 6000, { tags: ["alcohol"] }), line("wine2", 4000, { tags: ["alcohol", "house"] })]),
     rules: [disc("promo", { scope: { type: "tags", tags: ["alcohol"] }, exclusions: { tags: ["house"] }, conditions: { min_spend: { amount: 6000, basis: "scoped" } } })],
     context: ctx(),
-    expect: { adjustments: { promo: -600 }, adjustment_lines: { promo: { wine1: -600 } }, line_nets: { wine1: 5400, wine2: 4000 }, gst_total: 486 + 360, total: 5400 + 4000 + 486 + 360 },
+    expect: { adjustments: { promo: -600 }, adjustment_lines: { promo: { wine1: -600 } }, line_nets: { wine1: 5400, wine2: 4000 }, tax_total: 486 + 360, total: 5400 + 4000 + 486 + 360 },
   },
   {
     id: "R056",
@@ -222,7 +222,7 @@ export const CONDITION_CASES: RefCase[] = [
     order: order([line("wine1", 5999, { tags: ["alcohol"] }), line("wine2", 4000, { tags: ["alcohol", "house"] })]),
     rules: [disc("promo", { scope: { type: "tags", tags: ["alcohol"] }, exclusions: { tags: ["house"] }, conditions: { min_spend: { amount: 6000, basis: "scoped" } } })],
     context: ctx(),
-    expect: { not_applied: ["promo"], gst_total: 540 + 360, total: 5999 + 4000 + 540 + 360 },
+    expect: { not_applied: ["promo"], tax_total: 540 + 360, total: 5999 + 4000 + 540 + 360 },
   },
   {
     id: "R057",
@@ -237,7 +237,7 @@ export const CONDITION_CASES: RefCase[] = [
       disc("promo", { scope: { type: "tags", tags: ["alcohol"] }, conditions: { min_spend: { amount: 10_000, basis: "scoped" } }, priority: 20 }),
     ],
     context: ctx(),
-    expect: { adjustments: { "half-wine": -5000, promo: -500 }, line_nets: { wine: 4500 }, gst_total: 405, total: 4500 + 405 },
+    expect: { adjustments: { "half-wine": -5000, promo: -500 }, line_nets: { wine: 4500 }, tax_total: 405, total: 4500 + 405 },
   },
   {
     id: "R058",
@@ -272,10 +272,10 @@ export const CONDITION_CASES: RefCase[] = [
   {
     id: "R061",
     title: "Scope bcrs: a discount on container-deposit products only",
-    covers: ["scope_bcrs", "line_percent", "quantity", "tax_exclusive"],
+    covers: ["scope_deposit", "line_percent", "quantity", "tax_exclusive"],
     working: "a 250 × 4 = 1000 is BCRS → 100 off → 900. b 1000 is not. Total 2071.",
-    order: order([line("a", 250, { quantity: 4, is_bcrs: true }), line("b", 1000)]),
-    rules: [disc("promo", { scope: { type: "bcrs" } })],
+    order: order([line("a", 250, { quantity: 4, has_deposit: true }), line("b", 1000)]),
+    rules: [disc("promo", { scope: { type: "deposit" } })],
     context: ctx(),
     expect: ONLY_A,
   },
@@ -329,6 +329,7 @@ export const CONDITION_CASES: RefCase[] = [
         scope: { type: "all" },
         priority: 100,
         application: "auto",
+        tax_class_id: "standard",
         report_class: "packaging_fee",
       },
     ],
@@ -341,7 +342,7 @@ export const CONDITION_CASES: RefCase[] = [
       line_nets: { a: 1800, z: 0 },
       line_fees: { a: 300, z: 0 },
       line_totals: { z: 0 },
-      gst_total: gstEx(1800) + gstEx(300),
+      tax_total: taxEx(1800) + taxEx(300),
       total: 1800 + 300 + 162 + 27,
     },
   },

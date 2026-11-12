@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { allocateByShares, allocateLargestRemainder, formatCents, percentOfCents, roundCash, sumCents } from "./money.js";
+import { allocateByShares, allocateLargestRemainder, currencyExponent, formatMoney, parseMoney, percentOfCents, roundCash, sumCents } from "./money.js";
 
 describe("allocateLargestRemainder", () => {
   it("splits evenly with ties going to earlier parts", () => {
@@ -100,10 +100,71 @@ describe("roundCash", () => {
   });
 });
 
-describe("formatCents", () => {
-  it("formats en-SG with a true minus sign", () => {
-    expect(formatCents(1600)).toBe("$16.00");
-    expect(formatCents(-160)).toBe("−$1.60");
-    expect(formatCents(0)).toBe("$0.00");
+describe("currencyExponent", () => {
+  it("follows ISO 4217", () => {
+    expect(currencyExponent("SGD")).toBe(2);
+    expect(currencyExponent("EUR")).toBe(2);
+    expect(currencyExponent("JPY")).toBe(0);
+    expect(currencyExponent("KWD")).toBe(3);
+    expect(currencyExponent("IQD")).toBe(3);
+  });
+  it("rejects unknown codes", () => {
+    expect(() => currencyExponent("XYZ")).toThrow(RangeError);
+    expect(() => currencyExponent("eur")).toThrow(RangeError);
+  });
+});
+
+describe("formatMoney", () => {
+  it("formats in the given currency and locale with a true minus sign", () => {
+    expect(formatMoney(1600, { currency: "SGD", locale: "en-SG" })).toBe("$16.00");
+    expect(formatMoney(-160, { currency: "SGD", locale: "en-SG" })).toBe("−$1.60");
+    expect(formatMoney(0, { currency: "SGD", locale: "en-SG" })).toBe("$0.00");
+    expect(formatMoney(1650, { currency: "EUR", locale: "de-DE" })).toBe("16,50\u00a0€");
+    expect(formatMoney(1600, { currency: "JPY", locale: "ja-JP" })).toBe("￥1,600");
+    expect(formatMoney(1234, { currency: "KWD", locale: "en-KW" })).toBe("KWD\u00a01.234");
+    expect(formatMoney(5, { currency: "USD", locale: "en-US" }, { sign: "always" })).toBe("+$0.05");
+  });
+  it("keeps large amounts exact", () => {
+    expect(formatMoney(9_007_199_254_740_991, { currency: "USD", locale: "en-US" })).toBe("$90,071,992,547,409.91");
+  });
+});
+
+describe("parseMoney", () => {
+  it("reads the locale's separators into minor units", () => {
+    expect(parseMoney("16.50", { currency: "SGD", locale: "en-SG" })).toBe(1650);
+    expect(parseMoney("$1,234.5", { currency: "USD", locale: "en-US" })).toBe(123450);
+    expect(parseMoney("1.234,56 €", { currency: "EUR", locale: "de-DE" })).toBe(123456);
+    expect(parseMoney("CHF 1’234.05", { currency: "CHF", locale: "de-CH" })).toBe(123405);
+    expect(parseMoney("￥1,600", { currency: "JPY", locale: "ja-JP" })).toBe(1600);
+    expect(parseMoney("1.234", { currency: "KWD", locale: "en-KW" })).toBe(1234);
+    expect(parseMoney("−2.00", { currency: "SGD", locale: "en-SG" })).toBe(-200);
+  });
+  it("refuses more decimals than the currency has, and text that is not an amount", () => {
+    expect(() => parseMoney("16.5", { currency: "JPY", locale: "ja-JP" })).toThrow(RangeError);
+    expect(() => parseMoney("1.2345", { currency: "KWD", locale: "en-KW" })).toThrow(RangeError);
+    expect(() => parseMoney("abc", { currency: "EUR", locale: "de-DE" })).toThrow(RangeError);
+    // "." groups thousands in de-DE: 16.50 typed out of habit must not become 1650 euros.
+    expect(() => parseMoney("16.50", { currency: "EUR", locale: "de-DE" })).toThrow(RangeError);
+    expect(() => parseMoney("1,2345.00", { currency: "USD", locale: "en-US" })).toThrow(RangeError);
+    expect(parseMoney("12,34,567.00", { currency: "INR", locale: "en-IN" })).toBe(123_456_700);
+    // Only a sign, spaces, the currency's symbol or its code may surround the number.
+    for (const junk of ["1-2", "5e2", "12abc", "1 2 3", "12 EUR"]) expect(() => parseMoney(junk, { currency: "USD", locale: "en-US" })).toThrow(RangeError);
+    expect(parseMoney("12 USD", { currency: "USD", locale: "en-US" })).toBe(1200);
+    expect(parseMoney("1 234,50 kr", { currency: "SEK", locale: "sv-SE" })).toBe(123_450);
+  });
+  it("property: parsing what formatMoney prints returns the amount", () => {
+    const money = fc.constantFrom({ currency: "SGD", locale: "en-SG" }, { currency: "EUR", locale: "de-DE" }, { currency: "JPY", locale: "ja-JP" }, { currency: "KWD", locale: "en-KW" }, { currency: "CHF", locale: "de-CH" }, { currency: "EUR", locale: "fr-FR" }, { currency: "INR", locale: "en-IN" }, { currency: "SEK", locale: "sv-SE" }, { currency: "USD", locale: "en-US" });
+    fc.assert(fc.property(fc.integer({ min: -10_000_000, max: 10_000_000 }), money, (amount, m) => parseMoney(formatMoney(amount, m), m) === amount));
+  });
+});
+
+describe("roundCash in minor units", () => {
+  it("rounds CHF to 0.05, SEK to 1 krona, JPY to 10 yen and KWD to 5 fils", () => {
+    expect(roundCash(1234, 5)).toEqual({ rounded: 1235, roundingCents: 1 });
+    expect(roundCash(1232, 5)).toEqual({ rounded: 1230, roundingCents: -2 });
+    expect(roundCash(12_349, 100)).toEqual({ rounded: 12_300, roundingCents: -49 });
+    expect(roundCash(12_350, 100)).toEqual({ rounded: 12_400, roundingCents: 50 });
+    expect(roundCash(1234, 10)).toEqual({ rounded: 1230, roundingCents: -4 });
+    expect(roundCash(1_002, 5)).toEqual({ rounded: 1_000, roundingCents: -2 });
   });
 });

@@ -1,9 +1,11 @@
+import type { OrderType } from "../domain.js";
 import type { PricingRuleInput } from "./schemas.js";
 
 /**
- * Seed configuration (scope doc 4.8): every new merchant starts with these, all
- * editable. IDs are stable `seed:` keys so the database seed and the reference
- * set agree. The service-charge waiver switches off every fee in the
+ * Seed rules (scope doc 4.8): every new merchant starts with the manual
+ * discounts below, plus the service charge and deposit its region preset
+ * names, all editable. IDs are stable `seed:` keys so the database seed and the
+ * reference set agree. The service-charge waiver switches off every fee in the
  * `service_charge` reporting class for the order.
  */
 export const SEED_RULE_IDS = {
@@ -17,35 +19,54 @@ export const SEED_RULE_IDS = {
   serviceChargeWaiver: "seed:service-charge-waiver",
 } as const;
 
-export const SEED_RULES: PricingRuleInput[] = [
-  {
-    id: SEED_RULE_IDS.serviceCharge,
-    kind: "fee",
-    name: "Service charge 10%",
-    calc: "percent",
-    value: { type: "fixed", amount: 1000 },
-    scope: { type: "all" },
-    conditions: { order_types: ["dine_in"] },
-    priority: 100,
-    application: "auto",
-    gst_applicable: true,
-    report_class: "service_charge",
-    seeded: true,
-  },
-  {
-    id: SEED_RULE_IDS.containerDeposit,
-    kind: "fee",
-    name: "Container deposit",
-    calc: "fixed_per_unit",
-    value: { type: "fixed", amount: 10 },
-    scope: { type: "bcrs" },
-    conditions: {},
-    priority: 110,
-    application: "auto",
-    gst_applicable: false,
-    report_class: "deposit",
-    seeded: true,
-  },
+/** What a region preset contributes to the seed rules. Amounts are in the currency's minor units. */
+export type SeedRuleOptions = {
+  service_charge: { name: string; bps: number; order_types: OrderType[]; tax_class_id: string | null } | null;
+  deposit: { name: string; amount: number; tax_class_id: string | null } | null;
+  /** Upper bound of the open "Amount off bill" value. */
+  amount_off_bill_max: number;
+  /** Cap of "% off item" on one order. */
+  item_discount_cap: number;
+};
+
+export function seedRules(opts: SeedRuleOptions): PricingRuleInput[] {
+  const fees: PricingRuleInput[] = [];
+  if (opts.service_charge) {
+    fees.push({
+      id: SEED_RULE_IDS.serviceCharge,
+      kind: "fee",
+      name: opts.service_charge.name,
+      calc: "percent",
+      value: { type: "fixed", amount: opts.service_charge.bps },
+      scope: { type: "all" },
+      conditions: { order_types: opts.service_charge.order_types },
+      priority: 100,
+      application: "auto",
+      tax_class_id: opts.service_charge.tax_class_id,
+      report_class: "service_charge",
+      seeded: true,
+    });
+  }
+  if (opts.deposit) {
+    fees.push({
+      id: SEED_RULE_IDS.containerDeposit,
+      kind: "fee",
+      name: opts.deposit.name,
+      calc: "fixed_per_unit",
+      value: { type: "fixed", amount: opts.deposit.amount },
+      scope: { type: "deposit" },
+      conditions: {},
+      priority: 110,
+      application: "auto",
+      tax_class_id: opts.deposit.tax_class_id,
+      report_class: "deposit",
+      seeded: true,
+    });
+  }
+  return [...fees, ...DISCOUNTS(opts)];
+}
+
+const DISCOUNTS = (opts: SeedRuleOptions): PricingRuleInput[] => [
   {
     id: SEED_RULE_IDS.percentOffBill,
     kind: "discount",
@@ -65,10 +86,10 @@ export const SEED_RULES: PricingRuleInput[] = [
   {
     id: SEED_RULE_IDS.amountOffBill,
     kind: "discount",
-    name: "$ off bill",
+    name: "Amount off bill",
     calc: "fixed_per_order",
     level: "order",
-    value: { type: "open", min: 1, max: 100_000 },
+    value: { type: "open", min: 1, max: opts.amount_off_bill_max },
     scope: { type: "all" },
     priority: 60,
     application: "manual",
@@ -86,7 +107,7 @@ export const SEED_RULES: PricingRuleInput[] = [
     level: "line",
     value: { type: "open", min: 1, max: 5000 },
     scope: { type: "all" },
-    cap: 5000,
+    cap: opts.item_discount_cap,
     priority: 20,
     application: "manual",
     min_role: "cashier",

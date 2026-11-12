@@ -1,6 +1,7 @@
-import { SEED_RULES, SEED_RULE_IDS } from "../seed.js";
+import { SEED_RULE_IDS } from "../seed.js";
+import { SG_SEED_RULES } from "./dsl.js";
 import type { PricingRuleInput } from "../schemas.js";
-import { ctx, gstEx, line, order, type RefCase } from "./dsl.js";
+import { ctx, taxEx, line, order, type RefCase } from "./dsl.js";
 
 /**
  * Reference cases R067–R080: manual rules, using the seeded presets.
@@ -38,9 +39,9 @@ export const MANUAL_CASES: RefCase[] = [
       order_type: "takeaway",
       manual_applications: [{ application_id: "sm-1", rule_id: S.staffMeal, line_ids: ["a"], applied_by: "user-1", reason: "staff lunch" }],
     }),
-    rules: SEED_RULES,
+    rules: SG_SEED_RULES,
     context: ctx(),
-    expect: { adjustments: { [`${S.staffMeal}#sm-1`]: -800 }, line_nets: { a: 800, b: 800 }, gst_total: 72 + 72, total: 800 + 800 + 72 + 72 },
+    expect: { adjustments: { [`${S.staffMeal}#sm-1`]: -800 }, line_nets: { a: 800, b: 800 }, tax_total: 72 + 72, total: 800 + 800 + 72 + 72 },
   },
   {
     id: "R068",
@@ -48,9 +49,9 @@ export const MANUAL_CASES: RefCase[] = [
     covers: ["manual_open", "manual_lines", "line_percent", "seed_rules", "tax_exclusive"],
     working: "Entered 2000 bps = 20%: 1250 × 20% = 250 → a 1000; b 500. GST 90 + 45. Total = 1000 + 500 + 135 = 1635.",
     order: order([line("a", 1250), line("b", 500)], { order_type: "takeaway", manual_applications: [{ application_id: "pi-1", rule_id: S.percentOffItem, entered_value: 2000, line_ids: ["a"] }] }),
-    rules: SEED_RULES,
+    rules: SG_SEED_RULES,
     context: ctx(),
-    expect: { adjustments: { [`${S.percentOffItem}#pi-1`]: -250 }, line_nets: { a: 1000, b: 500 }, gst_total: 90 + 45, total: 1000 + 500 + 90 + 45 },
+    expect: { adjustments: { [`${S.percentOffItem}#pi-1`]: -250 }, line_nets: { a: 1000, b: 500 }, tax_total: 90 + 45, total: 1000 + 500 + 90 + 45 },
   },
   {
     id: "R069",
@@ -60,13 +61,13 @@ export const MANUAL_CASES: RefCase[] = [
       "Entered 1000 cents. Pool 4500; shares 666.67/222.22/111.11 → 667/222/111 (leftover cent to the largest remainder, a). Nets 2333/778/389. GST 210 + 70 + 35. " +
       "Total = 3500 + 315 = 3815.",
     order: order([line("a", 3000), line("b", 1000), line("c", 500)], { order_type: "takeaway", manual_applications: [{ application_id: "ab-1", rule_id: S.amountOffBill, entered_value: 1000 }] }),
-    rules: SEED_RULES,
+    rules: SG_SEED_RULES,
     context: ctx(),
     expect: {
       adjustments: { [`${S.amountOffBill}#ab-1`]: -1000 },
       adjustment_lines: { [`${S.amountOffBill}#ab-1`]: { a: -667, b: -222, c: -111 } },
       line_nets: { a: 2333, b: 778, c: 389 },
-      gst_total: 210 + 70 + 35,
+      tax_total: 210 + 70 + 35,
       total: 2333 + 778 + 389 + 210 + 70 + 35,
     },
   },
@@ -82,12 +83,12 @@ export const MANUAL_CASES: RefCase[] = [
         { application_id: "pi-2", rule_id: S.percentOffItem, entered_value: 2500, line_ids: ["b"] },
       ],
     }),
-    rules: SEED_RULES,
+    rules: SG_SEED_RULES,
     context: ctx(),
     expect: {
       adjustments: { [`${S.percentOffItem}#pi-1`]: -100, [`${S.percentOffItem}#pi-2`]: -500 },
       line_nets: { a: 900, b: 1500 },
-      gst_total: 81 + 135,
+      tax_total: 81 + 135,
       total: 900 + 1500 + 81 + 135,
     },
   },
@@ -97,9 +98,9 @@ export const MANUAL_CASES: RefCase[] = [
     covers: ["manual_open", "seed_rules", "tax_exclusive"],
     working: "Entered 6000 bps > max 5000. The rule is skipped and a warning returned; no adjustment. GST 90. Total 1090.",
     order: order([line("a", 1000)], { order_type: "takeaway", manual_applications: [{ application_id: "pi-1", rule_id: S.percentOffItem, entered_value: 6000 }] }),
-    rules: SEED_RULES,
+    rules: SG_SEED_RULES,
     context: ctx(),
-    expect: { not_applied: [`${S.percentOffItem}#pi-1`], warnings: 1, gst_total: 90, total: 1000 + 90 },
+    expect: { not_applied: [`${S.percentOffItem}#pi-1`], warnings: 1, tax_total: 90, total: 1000 + 90 },
   },
   {
     id: "R072",
@@ -107,9 +108,9 @@ export const MANUAL_CASES: RefCase[] = [
     covers: ["manual_open", "seed_rules", "tax_exclusive"],
     working: "No entered value for an open-value rule → skipped, one warning. GST 90. Total 1090.",
     order: order([line("a", 1000)], { order_type: "takeaway", manual_applications: [{ application_id: "ab-1", rule_id: S.amountOffBill }] }),
-    rules: SEED_RULES,
+    rules: SG_SEED_RULES,
     context: ctx(),
-    expect: { not_applied: [`${S.amountOffBill}#ab-1`], warnings: 1, gst_total: 90, total: 1000 + 90 },
+    expect: { not_applied: [`${S.amountOffBill}#ab-1`], warnings: 1, tax_total: 90, total: 1000 + 90 },
   },
   {
     id: "R073",
@@ -119,13 +120,13 @@ export const MANUAL_CASES: RefCase[] = [
       "Dine-in would carry a 10% service charge of 300. The waiver disables the service_charge class, so the fee is skipped; the waiver itself is recorded with amount 0 for the audit trail. " +
       "GST 180 + 90 = 270. Total = 2000 + 1000 + 270 = 3270.",
     order: order([line("a", 2000), line("b", 1000)], { manual_applications: [{ application_id: "w-1", rule_id: S.serviceChargeWaiver, applied_by: "mgr-1", reason: "slow service" }] }),
-    rules: SEED_RULES,
+    rules: SG_SEED_RULES,
     context: ctx(),
     expect: {
       adjustments: { [`${S.serviceChargeWaiver}#w-1`]: 0 },
       not_applied: [S.serviceCharge],
       fee_total: 0,
-      gst_total: 180 + 90,
+      tax_total: 180 + 90,
       total: 2000 + 1000 + 180 + 90,
     },
   },
@@ -142,14 +143,14 @@ export const MANUAL_CASES: RefCase[] = [
         { application_id: "pb-1", rule_id: S.percentOffBill, entered_value: 1000, applied_by: "mgr-1" },
       ],
     }),
-    rules: SEED_RULES,
+    rules: SG_SEED_RULES,
     context: ctx(),
     expect: {
       adjustments: { [`${S.managerComp}#mc-1`]: -2000, [`${S.percentOffBill}#pb-1`]: -150, [S.serviceCharge]: 135 },
       adjustment_lines: { [`${S.percentOffBill}#pb-1`]: { b: -100, c: -50 }, [S.serviceCharge]: { a: 0, b: 90, c: 45 } },
       line_nets: { a: 0, b: 900, c: 450 },
       fee_total: 135,
-      gst_total: 0 + 81 + 41 + 0 + 8 + 4,
+      tax_total: 0 + 81 + 41 + 0 + 8 + 4,
       total: 0 + 900 + 450 + 135 + 81 + 41 + 8 + 4,
     },
   },
@@ -159,9 +160,9 @@ export const MANUAL_CASES: RefCase[] = [
     covers: ["manual_fixed", "order_type_condition", "scope_categories", "tax_exclusive"],
     working: "The application is present but the order is takeaway, not dine-in, so the rule is skipped (no adjustment, no warning: the server rejects it before it gets here). GST 135. Total 1635.",
     order: order([line("a", 1500, { category_id: "food" })], { order_type: "takeaway", manual_applications: [{ application_id: "ls-1", rule_id: "lunch-set" }] }),
-    rules: [...SEED_RULES, LUNCH_SET],
+    rules: [...SG_SEED_RULES, LUNCH_SET],
     context: ctx(),
-    expect: { not_applied: ["lunch-set#ls-1"], warnings: 0, gst_total: 135, total: 1500 + 135 },
+    expect: { not_applied: ["lunch-set#ls-1"], warnings: 0, tax_total: 135, total: 1500 + 135 },
   },
   {
     id: "R076",
@@ -171,13 +172,13 @@ export const MANUAL_CASES: RefCase[] = [
       "Pool 4000 × 15% = 600, spread 450/150 → nets 2550, 850. SC 10%: 255 + 85 = 340. GST on nets 229.5 → 230, 76.5 → 77; on SC 22.95 → 23, 7.65 → 8. " +
       "Total = 2550 + 850 + 340 + 230 + 77 + 23 + 8 = 4078.",
     order: order([line("a", 3000), line("b", 1000)], { manual_applications: [{ application_id: "pb-1", rule_id: S.percentOffBill, entered_value: 1500 }] }),
-    rules: SEED_RULES,
+    rules: SG_SEED_RULES,
     context: ctx(),
     expect: {
       adjustments: { [`${S.percentOffBill}#pb-1`]: -600, [S.serviceCharge]: 340 },
       adjustment_lines: { [`${S.percentOffBill}#pb-1`]: { a: -450, b: -150 } },
       line_nets: { a: 2550, b: 850 },
-      gst_total: 230 + 77 + 23 + 8,
+      tax_total: 230 + 77 + 23 + 8,
       total: 2550 + 850 + 340 + 230 + 77 + 23 + 8,
     },
   },
@@ -187,12 +188,12 @@ export const MANUAL_CASES: RefCase[] = [
     covers: ["manual_fixed", "line_percent", "seed_rules", "tax_exclusive"],
     working: "50% of 1600 = 800 and 50% of 800 = 400 → nets 800, 400. GST 72 + 36. Total = 1200 + 108 = 1308.",
     order: order([line("a", 1600), line("b", 800)], { order_type: "takeaway", manual_applications: [{ application_id: "sm-1", rule_id: S.staffMeal, reason: "staff dinner" }] }),
-    rules: SEED_RULES,
+    rules: SG_SEED_RULES,
     context: ctx(),
     expect: {
       adjustments: { [`${S.staffMeal}#sm-1`]: -(800 + 400) },
       adjustment_lines: { [`${S.staffMeal}#sm-1`]: { a: -800, b: -400 } },
-      gst_total: 72 + 36,
+      tax_total: 72 + 36,
       total: 800 + 400 + 72 + 36,
     },
   },
@@ -202,9 +203,9 @@ export const MANUAL_CASES: RefCase[] = [
     covers: ["manual_open", "cap", "seed_rules", "tax_exclusive"],
     working: "50% of 20000 = 10000 > cap 5000 → 5000 off → net 15000. GST 1350. Total = 15000 + 1350 = 16350.",
     order: order([line("a", 20_000)], { order_type: "takeaway", manual_applications: [{ application_id: "pi-1", rule_id: S.percentOffItem, entered_value: 5000 }] }),
-    rules: SEED_RULES,
+    rules: SG_SEED_RULES,
     context: ctx(),
-    expect: { adjustments: { [`${S.percentOffItem}#pi-1`]: -5000 }, line_nets: { a: 15_000 }, gst_total: 1350, total: 15_000 + 1350 },
+    expect: { adjustments: { [`${S.percentOffItem}#pi-1`]: -5000 }, line_nets: { a: 15_000 }, tax_total: 1350, total: 15_000 + 1350 },
   },
   {
     id: "R079",
@@ -214,7 +215,7 @@ export const MANUAL_CASES: RefCase[] = [
     order: order([line("food", 1000, { category_id: "food" }), line("drink", 500, { category_id: "drink" })], { manual_applications: [{ application_id: "ls-1", rule_id: "lunch-set", line_ids: ["drink"] }] }),
     rules: [LUNCH_SET],
     context: ctx(),
-    expect: { adjustments: { "lunch-set#ls-1": 0 }, line_nets: { food: 1000, drink: 500 }, gst_total: 90 + 45, total: 1000 + 500 + 90 + 45 },
+    expect: { adjustments: { "lunch-set#ls-1": 0 }, line_nets: { food: 1000, drink: 500 }, tax_total: 90 + 45, total: 1000 + 500 + 90 + 45 },
   },
   {
     id: "R080",
@@ -228,12 +229,12 @@ export const MANUAL_CASES: RefCase[] = [
         { application_id: "sm-1", rule_id: S.staffMeal, reason: "staff" },
       ],
     }),
-    rules: SEED_RULES,
+    rules: SG_SEED_RULES,
     context: ctx(),
     expect: {
       adjustments: { [`${S.percentOffItem}#pi-1`]: -100, [`${S.staffMeal}#sm-1`]: -450 },
       line_nets: { a: 450 },
-      gst_total: gstEx(450),
+      tax_total: taxEx(450),
       total: 450 + 41,
     },
   },

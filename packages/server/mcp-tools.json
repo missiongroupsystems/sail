@@ -1240,7 +1240,7 @@
       "emits": [
         "invoice.issued"
       ],
-      "description": "Issue a tax invoice\n\nNumbered PDF tax invoice for a paid bill, including the outlet UEN. Gap-free numbering per merchant. Issued once; later calls return the same number.\n\nRisk tier T2. Needs role cashier or above. Emits invoice.issued.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "description": "Issue a tax invoice\n\nNumbered PDF tax invoice for a paid bill, including the outlet's business and tax registration numbers. Gap-free numbering per merchant. Issued once; later calls return the same number.\n\nRisk tier T2. Needs role cashier or above. Emits invoice.issued.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2024,7 +2024,7 @@
         "reports"
       ],
       "emits": [],
-      "description": "Get the merchant and its settings\n\nTax mode, GST rate, cash rounding and business-day cutoff for the caller's merchant.\n\nRisk tier T0. Needs role server or above.",
+      "description": "Get the merchant and its settings\n\nCurrency, locale, time zone, tax mode and rounding, default tax class, cash rounding, cash denominations for the cash counter, registration labels and business-day cutoff for the caller's merchant.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
         "properties": {},
@@ -3523,7 +3523,11 @@
                           },
                           "default": []
                         },
-                        "is_bcrs": {
+                        "tax_class_id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "has_deposit": {
                           "type": "boolean",
                           "default": false
                         },
@@ -3613,6 +3617,7 @@
                       "required": [
                         "line_id",
                         "product_id",
+                        "tax_class_id",
                         "quantity",
                         "prices"
                       ]
@@ -4474,7 +4479,7 @@
         "pos.read"
       ],
       "emits": [],
-      "description": "Quote a refund\n\nReversal per line, adjustment and GST, plus the split across the original payments with per-payment caps and cash rounding. Pure: writes nothing. Agents must show these figures, never their own.\n\nRisk tier T0. Needs role server or above.",
+      "description": "Quote a refund\n\nReversal per line, adjustment and tax component, plus the split across the original payments with per-payment caps and cash rounding. Pure: writes nothing. Agents must show these figures, never their own.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -5771,6 +5776,34 @@
           "area_id": {
             "type": "string",
             "format": "uuid"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "tax_classes_list",
+      "op": "tax_classes.list",
+      "method": "GET",
+      "path": "/v1/tax-classes",
+      "tier": "T0",
+      "min_role": "server",
+      "toolsets": [
+        "pos.read",
+        "config.author"
+      ],
+      "emits": [],
+      "description": "List tax classes and their rates\n\nEvery tax class of the merchant with its rates: the default rate (no outlet, no order type) and any outlet or order-type rate. A rate is a list of named components in basis points; an empty list is tax-exempt.\n\nRisk tier T0. Needs role server or above.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_archived": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
           }
         },
         "required": [],

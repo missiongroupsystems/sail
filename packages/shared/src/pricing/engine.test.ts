@@ -1,16 +1,35 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import { freezeFrom, price, sortRules } from "./engine.js";
-import type { PricingLineInput, PricingOrderInput, PricingRuleInput } from "./schemas.js";
-import { SEED_RULES, SEED_RULE_IDS } from "./seed.js";
+import type { PricingLineInput, PricingOrderInput, PricingRuleInput, TaxRateInput } from "./schemas.js";
+import type { TaxRounding } from "../domain.js";
+import { SEED_RULE_IDS } from "./seed.js";
+import { SG_SEED_RULES, SG_TAX_RATES } from "./reference/dsl.js";
 import { percentOfCents, sumCents } from "../money.js";
+import { allocateLine, evenShares, sumTaxes } from "../splits.js";
 
 const NOW = "2026-11-04T12:00:00.000Z";
-const ctx = (tax_mode: "inclusive" | "exclusive" = "exclusive") => ({ tax_mode, gst_bps: 900, now: NOW });
+const ctx = (tax_mode: "inclusive" | "exclusive" = "exclusive", tax_rounding: TaxRounding = "per_line", tax_rates: TaxRateInput[] = SG_TAX_RATES) => ({ tax_mode, tax_rounding, tax_rates, now: NOW });
 
 export function line(id: string, base: number, opts: Partial<PricingLineInput> = {}): PricingLineInput {
-  return { line_id: id, product_id: opts.product_id ?? `prod-${id}`, quantity: 1, prices: { base }, ...opts };
+  return { line_id: id, product_id: opts.product_id ?? `prod-${id}`, tax_class_id: "standard", quantity: 1, prices: { base }, ...opts };
 }
+
+/**
+ * A tax table for the property tests: a single rate, a two-component rate
+ * (state + city), a rate that depends on the order type (Japan), a zero rate
+ * and an exempt class.
+ */
+const MIXED_TAX_RATES: TaxRateInput[] = [
+  { tax_class_id: "standard", components: [{ name: "VAT 20%", bps: 2000 }] },
+  { tax_class_id: "reduced", components: [{ name: "VAT 10%", bps: 1000 }] },
+  { tax_class_id: "us", components: [{ name: "State tax", bps: 625 }, { name: "City tax", bps: 225 }] },
+  { tax_class_id: "jp", components: [{ name: "Consumption tax 10%", bps: 1000 }] },
+  { tax_class_id: "jp", order_type: "takeaway", components: [{ name: "Consumption tax 8%", bps: 800 }] },
+  { tax_class_id: "zero", components: [{ name: "VAT 0%", bps: 0 }] },
+  { tax_class_id: "exempt", components: [] },
+];
+const TAX_CLASSES = ["standard", "reduced", "us", "jp", "zero", "exempt"] as const;
 
 export function order(lines: PricingLineInput[], opts: Partial<PricingOrderInput> = {}): PricingOrderInput {
   return { order_type: "dine_in", channel: "pos", outlet_id: "outlet-1", brand_id: "brand-1", lines, ...opts };
@@ -39,7 +58,7 @@ const ruleB: PricingRuleInput = {
   application: "auto",
   report_class: "promo",
 };
-const serviceCharge = SEED_RULES.find((r) => r.id === SEED_RULE_IDS.serviceCharge)!;
+const serviceCharge = SG_SEED_RULES.find((r) => r.id === SEED_RULE_IDS.serviceCharge)!;
 
 describe("worked example from the scope doc (4.8)", () => {
   const o = order([line("food", 8000, { category_id: "food" }), line("wine", 12_000, { tags: ["alcohol"] })], { customer_group_ids: ["vip"] });
@@ -55,13 +74,13 @@ describe("worked example from the scope doc (4.8)", () => {
     const wine = r.lines.find((l) => l.line_id === "wine")!;
     expect(food.net_amount).toBe(6000);
     expect(wine.net_amount).toBe(10_800);
-    expect(food.gst_on_net).toBe(540);
-    expect(wine.gst_on_net).toBe(972);
+    expect(food.tax_on_net).toBe(540);
+    expect(wine.tax_on_net).toBe(972);
     expect(food.fee_amount).toBe(600);
     expect(wine.fee_amount).toBe(1080);
-    expect(food.gst_on_fees).toBe(54);
-    expect(wine.gst_on_fees).toBe(97); // 97.2 → 97
-    expect(r.totals.gst_total).toBe(540 + 972 + 54 + 97);
+    expect(food.tax_on_fees).toBe(54);
+    expect(wine.tax_on_fees).toBe(97); // 97.2 → 97
+    expect(r.totals.tax_total).toBe(540 + 972 + 54 + 97);
     expect(r.totals.total).toBe(6000 + 10_800 + 1680 + 540 + 972 + 54 + 97);
     expect(r.totals.total).toBe(sumCents(r.lines.map((l) => l.total)));
   });
@@ -145,7 +164,7 @@ describe("semantics", () => {
   });
 
   it("fees never compound: a percent fee is calculated on discounted line amounts only", () => {
-    const delivery: PricingRuleInput = { id: "del", kind: "fee", name: "Delivery fee", calc: "fixed_per_order", value: { type: "fixed", amount: 500 }, scope: { type: "all" }, conditions: { order_types: ["delivery"] }, priority: 90, application: "auto", gst_applicable: true, report_class: "delivery_fee" };
+    const delivery: PricingRuleInput = { id: "del", kind: "fee", name: "Delivery fee", calc: "fixed_per_order", value: { type: "fixed", amount: 500 }, scope: { type: "all" }, conditions: { order_types: ["delivery"] }, priority: 90, application: "auto", tax_class_id: "standard", report_class: "delivery_fee" };
     const scAll: PricingRuleInput = { ...serviceCharge, id: "sc-any", conditions: {} };
     const r = price(order([line("a", 2000), line("b", 2000)], { order_type: "delivery" }), [delivery, scAll, ruleA], ctx());
     const sc = r.adjustments.find((a) => a.rule_id === "sc-any")!;
@@ -153,29 +172,29 @@ describe("semantics", () => {
     expect(r.adjustments.find((a) => a.rule_id === "del")!.lines.map((l) => l.amount)).toEqual([250, 250]);
   });
 
-  it("container deposit is per unit on BCRS products, not GST-applicable, with outlet exclusions", () => {
-    const deposit = { ...SEED_RULES.find((r) => r.id === SEED_RULE_IDS.containerDeposit)!, conditions: { excluded_outlet_ids: ["outlet-9"] } };
-    const o = order([line("can", 250, { is_bcrs: true, quantity: 6 }), line("plate", 1000)]);
+  it("container deposit is per unit on deposit products, untaxed, with outlet exclusions", () => {
+    const deposit = { ...SG_SEED_RULES.find((r) => r.id === SEED_RULE_IDS.containerDeposit)!, conditions: { excluded_outlet_ids: ["outlet-9"] } };
+    const o = order([line("can", 250, { has_deposit: true, quantity: 6 }), line("plate", 1000)]);
     const r = price(o, [deposit], ctx());
     const d = r.adjustments[0]!;
     expect(d.total).toBe(60);
-    expect(d.gst_total).toBe(0);
+    expect(d.tax_total).toBe(0);
     expect(r.lines[0]!.fee_amount).toBe(60);
     expect(price({ ...o, outlet_id: "outlet-9" }, [deposit], ctx()).adjustments).toEqual([]);
   });
 
   it("inclusive tax mode reports the GST inside the amounts and does not add it", () => {
     const r = price(order([line("a", 1090)]), [serviceCharge], ctx("inclusive"));
-    expect(r.lines[0]!.gst_on_net).toBe(90);
+    expect(r.lines[0]!.tax_on_net).toBe(90);
     expect(r.lines[0]!.fee_amount).toBe(109);
-    expect(r.lines[0]!.gst_on_fees).toBe(9); // 109 × 9/109 = 9
+    expect(r.lines[0]!.tax_on_fees).toBe(9); // 109 × 9/109 = 9
     expect(r.totals.total).toBe(1090 + 109);
-    expect(r.totals.gst_total).toBe(99);
+    expect(r.totals.tax_total).toBe(99);
   });
 
   it("exclusive tax mode adds GST per line, rounded half up", () => {
     const r = price(order([line("a", 1005), line("b", 1004)], { order_type: "takeaway" }), [], ctx());
-    expect(r.lines.map((l) => l.gst_on_net)).toEqual([90, 90]); // 90.45 → 90; 90.36 → 90
+    expect(r.lines.map((l) => l.tax_on_net)).toEqual([90, 90]); // 90.45 → 90; 90.36 → 90
     expect(r.totals.total).toBe(2009 + 180);
   });
 
@@ -183,26 +202,26 @@ describe("semantics", () => {
     const o = order([line("a", 2000), line("b", 1000)], {
       manual_applications: [{ application_id: "app-1", rule_id: SEED_RULE_IDS.percentOffItem, entered_value: 2000, line_ids: ["a"], applied_by: "staff-1" }],
     });
-    const r = price(o, SEED_RULES, ctx());
+    const r = price(o, SG_SEED_RULES, ctx());
     const adj = r.adjustments.find((a) => a.rule_id === SEED_RULE_IDS.percentOffItem)!;
     expect(adj.total).toBe(-400);
-    expect(adj.lines).toEqual([{ line_id: "a", amount: -400, gst_amount: 0 }]);
+    expect(adj.lines).toEqual([{ line_id: "a", amount: -400, tax_amount: 0 }]);
     expect(adj.manual_application_id).toBe("app-1");
     expect(adj.applied_by).toBe("staff-1");
-    const none = price(order([line("a", 2000)]), SEED_RULES, ctx());
+    const none = price(order([line("a", 2000)]), SG_SEED_RULES, ctx());
     expect(none.adjustments.map((a) => a.rule_id)).toEqual([SEED_RULE_IDS.serviceCharge]);
   });
 
   it("an open value outside the range is skipped with a warning", () => {
     const o = order([line("a", 2000)], { manual_applications: [{ application_id: "app-1", rule_id: SEED_RULE_IDS.percentOffItem, entered_value: 9000 }] });
-    const r = price(o, SEED_RULES, ctx());
+    const r = price(o, SG_SEED_RULES, ctx());
     expect(r.adjustments.find((a) => a.rule_id === SEED_RULE_IDS.percentOffItem)).toBeUndefined();
     expect(r.warnings).toHaveLength(1);
   });
 
   it("the service-charge waiver switches off the service charge and is recorded as a zero adjustment", () => {
     const o = order([line("a", 2000)], { manual_applications: [{ application_id: "w", rule_id: SEED_RULE_IDS.serviceChargeWaiver, reason: "kitchen 40 min late", applied_by: "m1" }] });
-    const r = price(o, SEED_RULES, ctx());
+    const r = price(o, SG_SEED_RULES, ctx());
     expect(r.adjustments.find((a) => a.rule_id === SEED_RULE_IDS.serviceCharge)).toBeUndefined();
     const waiver = r.adjustments.find((a) => a.rule_id === SEED_RULE_IDS.serviceChargeWaiver)!;
     expect(waiver.total).toBe(0);
@@ -217,9 +236,9 @@ describe("semantics", () => {
         { application_id: "pct", rule_id: SEED_RULE_IDS.percentOffItem, entered_value: 1000, line_ids: ["a", "b"] },
       ],
     });
-    const r = price(o, SEED_RULES, ctx());
+    const r = price(o, SG_SEED_RULES, ctx());
     expect(r.adjustments.find((a) => a.rule_id === SEED_RULE_IDS.managerComp)!.total).toBe(-2000);
-    expect(r.adjustments.find((a) => a.rule_id === SEED_RULE_IDS.percentOffItem)!.lines).toEqual([{ line_id: "b", amount: -100, gst_amount: 0 }]);
+    expect(r.adjustments.find((a) => a.rule_id === SEED_RULE_IDS.percentOffItem)!.lines).toEqual([{ line_id: "b", amount: -100, tax_amount: 0 }]);
     expect(r.lines[0]!.fee_amount).toBe(0); // service charge on a $0 line
   });
 
@@ -286,8 +305,9 @@ const arbLine = (i: number) =>
     base: fc.integer({ min: 0, max: 50_000 }),
     quantity: fc.integer({ min: 1, max: 6 }),
     category: fc.constantFrom("food", "drink", "alcohol", null),
-    tag: fc.constantFrom("alcohol", "promo", "bcrs", null),
-    bcrs: fc.boolean(),
+    tag: fc.constantFrom("alcohol", "promo", "deposit", null),
+    deposit: fc.boolean(),
+    taxClass: fc.constantFrom(...TAX_CLASSES),
     mods: fc.array(fc.integer({ min: 0, max: 500 }), { maxLength: 3 }),
   }).map(
     (l): PricingLineInput => ({
@@ -295,7 +315,8 @@ const arbLine = (i: number) =>
       product_id: `P${i % 7}`,
       category_id: l.category,
       tags: l.tag ? [l.tag] : [],
-      is_bcrs: l.bcrs,
+      tax_class_id: l.taxClass,
+      has_deposit: l.deposit,
       quantity: l.quantity,
       prices: { base: l.base },
       modifiers: l.mods.map((p, k) => ({ modifier_id: `M${i}-${k}`, product_id: `PM${k}`, quantity: 1, price: p })),
@@ -306,8 +327,8 @@ type Scope = PricingRuleInput["scope"];
 const arbScope: fc.Arbitrary<Scope> = fc.oneof(
   fc.constant<Scope>({ type: "all" }),
   fc.constantFrom("food", "drink", "alcohol").map((c): Scope => ({ type: "categories", category_ids: [c] })),
-  fc.constantFrom("alcohol", "promo", "bcrs").map((t): Scope => ({ type: "tags", tags: [t] })),
-  fc.constant<Scope>({ type: "bcrs" }),
+  fc.constantFrom("alcohol", "promo", "deposit").map((t): Scope => ({ type: "tags", tags: [t] })),
+  fc.constant<Scope>({ type: "deposit" }),
   fc.integer({ min: 0, max: 6 }).map((n): Scope => ({ type: "products", product_ids: [`P${n}`] })),
 );
 
@@ -323,7 +344,7 @@ const arbRule = (i: number) =>
       cap: fc.option(fc.integer({ min: 0, max: 3000 }), { nil: null }),
       priority: fc.integer({ min: 0, max: 200 }),
       stacking: fc.constantFrom("exclusive", "stackable"),
-      gst: fc.boolean(),
+      taxClass: fc.constantFrom(...TAX_CLASSES, null),
       minSpend: fc.option(fc.integer({ min: 0, max: 20_000 }), { nil: null }),
     })
     .map((r): PricingRuleInput => {
@@ -340,7 +361,7 @@ const arbRule = (i: number) =>
         priority: r.priority,
         stacking: r.stacking,
         application: "auto",
-        gst_applicable: r.gst,
+        tax_class_id: r.kind === "fee" ? r.taxClass : undefined,
         report_class: r.kind === "fee" ? "service_charge" : "promo",
         conditions: r.minSpend != null ? { min_spend: { amount: r.minSpend, basis: "order" } } : {},
       };
@@ -351,12 +372,13 @@ const arbScenario = fc
     lines: fc.integer({ min: 1, max: 8 }).chain((n) => fc.tuple(...Array.from({ length: n }, (_, i) => arbLine(i)))),
     rules: fc.integer({ min: 0, max: 8 }).chain((n) => fc.tuple(...Array.from({ length: n }, (_, i) => arbRule(i)))),
     taxMode: fc.constantFrom("inclusive", "exclusive"),
+    rounding: fc.constantFrom<TaxRounding>("per_line", "per_rate"),
     orderType: fc.constantFrom("dine_in", "takeaway", "pickup", "delivery"),
   })
   .map((s) => ({
     order: order([...s.lines], { order_type: s.orderType }),
     rules: [...s.rules] as PricingRuleInput[],
-    context: ctx(s.taxMode),
+    context: ctx(s.taxMode, s.rounding, MIXED_TAX_RATES),
   }));
 
 describe("properties", () => {
@@ -366,12 +388,12 @@ describe("properties", () => {
         const r = price(o, rules, context);
         for (const a of r.adjustments) {
           expect(sumCents(a.lines.map((l) => l.amount))).toBe(a.total);
-          expect(sumCents(a.lines.map((l) => l.gst_amount))).toBe(a.gst_total);
+          expect(sumCents(a.lines.map((l) => l.tax_amount))).toBe(a.tax_total);
           const rule = rules.find((x) => x.id === a.rule_id)!;
           if (rule.cap != null) expect(Math.abs(a.total)).toBeLessThanOrEqual(rule.cap);
           if (a.kind === "discount") expect(a.total).toBeLessThanOrEqual(0);
           else expect(a.total).toBeGreaterThanOrEqual(0);
-          if (a.kind === "discount") for (const l of a.lines) expect(l.gst_amount).toBe(0);
+          if (a.kind === "discount") for (const l of a.lines) expect(l.tax_amount).toBe(0);
         }
         for (const l of r.lines) {
           expect(l.net_amount).toBeGreaterThanOrEqual(0);
@@ -382,9 +404,65 @@ describe("properties", () => {
         expect(sumCents(r.lines.map((l) => l.total))).toBe(r.totals.total);
         expect(r.totals.net_subtotal).toBe(r.totals.subtotal + r.totals.discount_total);
         if (context.tax_mode === "inclusive") expect(r.totals.total).toBe(r.totals.net_subtotal + r.totals.fee_total);
-        else expect(r.totals.total).toBe(r.totals.net_subtotal + r.totals.fee_total + r.totals.gst_total);
+        else expect(r.totals.total).toBe(r.totals.net_subtotal + r.totals.fee_total + r.totals.tax_total);
       }),
       { numRuns: 400 },
+    );
+  });
+
+  it("per component, the lines' tax adds up to the order's tax; every line's components add up to its tax", () => {
+    fc.assert(
+      fc.property(arbScenario, ({ order: o, rules, context }) => {
+        const r = price(o, rules, context);
+        const key = (t: { name: string; bps: number }) => `${t.bps}|${t.name}`;
+        const fromLines = new Map<string, number>();
+        for (const l of r.lines) {
+          expect(sumCents(l.taxes.map((t) => t.amount))).toBe(l.tax_on_net + l.tax_on_fees);
+          for (const t of l.taxes) fromLines.set(key(t), (fromLines.get(key(t)) ?? 0) + t.amount);
+        }
+        expect(Object.fromEntries(fromLines)).toEqual(Object.fromEntries(r.totals.taxes.map((t) => [key(t), t.amount])));
+        expect(sumCents(r.totals.taxes.map((t) => t.amount))).toBe(r.totals.tax_total);
+        // Exempt lines carry no component at all; zero-rated lines carry one of 0.
+        for (const l of r.lines) {
+          const cls = o.lines.find((x) => x.line_id === l.line_id)!.tax_class_id;
+          if (cls === "zero") expect(l.taxes.find((t) => t.name === "VAT 0%")?.amount).toBe(0);
+        }
+        // Fee tax on each adjustment line is part of the line's tax_on_fees.
+        for (const l of r.lines) expect(l.tax_on_fees).toBe(sumCents(r.adjustments.flatMap((a) => a.lines.filter((x) => x.line_id === l.line_id).map((x) => x.tax_amount))));
+      }),
+      { numRuns: 400 },
+    );
+  });
+
+  it("split bills add up to the order: totals, and tax per component", () => {
+    fc.assert(
+      fc.property(arbScenario, fc.integer({ min: 1, max: 5 }), ({ order: o, rules, context }, n) => {
+        const r = price(o, rules, context);
+        const parts = r.lines.map((l) => allocateLine({ base: l.base_amount, discount: l.discount_amount, fee: l.fee_amount, taxes: l.taxes, adjustments: {} }, evenShares(n), { taxAddsToTotal: context.tax_mode === "exclusive" }));
+        const bills = Array.from({ length: n }, (_, i) => parts.map((p) => p[i]!));
+        expect(sumCents(bills.map((b) => sumCents(b.map((x) => x.total))))).toBe(r.totals.total);
+        const billTaxes = sumTaxes(bills.map((b) => sumTaxes(b.map((x) => x.taxes))));
+        expect(Object.fromEntries(billTaxes.map((t) => [`${t.bps}|${t.name}`, t.amount]))).toEqual(Object.fromEntries(r.totals.taxes.map((t) => [`${t.bps}|${t.name}`, t.amount])));
+        for (const b of bills) for (const x of b) expect(x.tax).toBe(sumCents(x.taxes.map((t) => t.amount)));
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  it("per-rate rounding: each rate's order tax is the whole rate rounded once on its taxed amounts, split across its components", () => {
+    fc.assert(
+      fc.property(arbScenario, ({ order: o, rules, context }) => {
+        const r = price(o, rules, { ...context, tax_rounding: "per_rate", tax_mode: "exclusive" });
+        // Every rate in the table has component names of its own, so the order's rows can be grouped back by rate.
+        for (const rate of MIXED_TAX_RATES) {
+          const rows = r.totals.taxes.filter((t) => rate.components.some((c) => c.name === t.name && c.bps === t.bps));
+          if (rows.length === 0) continue;
+          expect(rows).toHaveLength(rate.components.length);
+          expect(new Set(rows.map((t) => t.taxable)).size).toBe(1);
+          expect(sumCents(rows.map((t) => t.amount))).toBe(percentOfCents(rows[0]!.taxable, sumCents(rate.components.map((c) => c.bps))));
+        }
+      }),
+      { numRuns: 300 },
     );
   });
 

@@ -1,9 +1,10 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { price, PricingContextSchema, sumCents, type Adjustment, type ManualApplication, type OrderType, type PricedLine, type PricingLineInput, type PricingResult, type PricingRule, ORDER_NUMBER_PREFIX, type ChannelType } from "@sail/shared";
+import { price, PricingContextSchema, sumCents, sumTaxBreakdowns, type Adjustment, type ManualApplication, type OrderType, type PricedLine, type PricingContext, type PricingLineInput, type PricingResult, type PricingRule, type TaxBreakdown, type TaxRate, ORDER_NUMBER_PREFIX, type ChannelType } from "@sail/shared";
 import { assertNotSettled, db, tx } from "../db/client.js";
 import { checkAllocations, checks, customerGroupMembers, orderAdjustmentLines, orderAdjustments, orderLines, orderManualApplications, orders, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { activeRules } from "./pricing-rules.js";
+import { orderTaxRates, usedTaxClasses } from "./tax.js";
 
 /**
  * Order services: the register's own view of an order. Every mutation ends
@@ -41,7 +42,7 @@ export type OrderSnapshot = {
   bill_requested_at: string | null;
   round_count: number;
   pricing_status: "live" | "frozen";
-  totals: { tax_mode: string; gst_bps: number; subtotal: number; discount_total: number; fee_total: number; gst_total: number; total: number };
+  totals: { tax_mode: string; tax_rounding: string; subtotal: number; discount_total: number; fee_total: number; tax_total: number; taxes: TaxBreakdown[]; total: number };
   lines: SnapshotLine[];
   adjustments: SnapshotAdjustment[];
   manual_applications: { id: string; rule_key: string; entered_value: number | null; line_ids: string[] | null; applied_by: string | null; reason: string | null }[];
@@ -71,7 +72,10 @@ export type SnapshotLine = {
   fired_at: string | null;
   voided_at: string | null;
   void_reason: string | null;
-  amounts: { base: number; discount: number; net: number; fee: number; gst: number; total: number };
+  amounts: { base: number; discount: number; net: number; fee: number; tax: number; total: number };
+  /** amounts.tax by component. */
+  taxes: TaxBreakdown[];
+  tax_class_id: string;
   tags: string[];
   category_id: string | null;
   sort: number;
@@ -86,8 +90,9 @@ export type SnapshotAdjustment = {
   kind: string;
   level: string;
   report_class: string;
+  tax_class_id: string | null;
   total: number;
-  gst_total: number;
+  tax_total: number;
   capped: boolean;
   frozen: boolean;
   manual_application_id: string | null;
@@ -95,7 +100,7 @@ export type SnapshotAdjustment = {
   applied_by: string | null;
   approved_by: string | null;
   reason: string | null;
-  lines: { line_id: string; amount: number; gst_amount: number }[];
+  lines: { line_id: string; amount: number; tax_amount: number }[];
 };
 
 export const OPEN_STATUSES = ["open", "fired", "ready", "out_for_delivery"] as const;
@@ -193,31 +198,15 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
     lockedUseByRule.set(adj.ruleKey, (lockedUseByRule.get(adj.ruleKey) ?? 0) + Math.abs(al.amount));
   }
   const effectiveRules: PricingRule[] = rules.map((r) => (r.cap != null && lockedUseByRule.has(r.id) ? { ...r, cap: Math.max(0, r.cap - lockedUseByRule.get(r.id)!) } : r));
+  const taxRates = await orderTaxRates(order, usedTaxClasses(liveLines, effectiveRules));
 
-  const pricingLines: PricingLineInput[] = liveLines.map((l) => ({
-    line_id: l.id,
-    product_id: l.productId,
-    category_id: l.categoryId,
-    parent_category_id: l.parentCategoryId,
-    tags: l.tags,
-    is_bcrs: l.isBcrs,
-    quantity: l.quantity,
-    prices: { base: l.basePrice, by_order_type: l.pricesByOrderType as Partial<Record<OrderType, number>> },
-    open_price: l.openPrice,
-    modifiers: l.modifiers.map((m) => ({ modifier_id: m.modifier_id, product_id: m.product_id, quantity: m.quantity, price: m.price, name: m.name })),
-    name: l.name,
-  }));
+  const pricingLines: PricingLineInput[] = liveLines.map(pricingLineOf);
   const manual: ManualApplication[] = apps.map((a) => ({ application_id: a.id, rule_id: a.ruleKey, entered_value: a.enteredValue, line_ids: a.lineIds, applied_by: a.appliedBy, approved_by: a.approvedBy, override_id: a.overrideId, reason: a.reason }));
 
   const engine = price(
     { order_type: order.orderType as OrderType, channel: order.channel as ChannelType, outlet_id: order.outletId, brand_id: order.brandId, customer_group_ids: groupIds, lines: pricingLines, manual_applications: manual },
     effectiveRules,
-    PricingContextSchema.parse({
-      tax_mode: order.taxMode,
-      gst_bps: order.gstBps,
-      now: at.toISOString(),
-      frozen: order.pricingFrozenAt ? { frozen_at: order.pricingFrozenAt.toISOString(), adjustments: order.frozenAdjustments ?? [] } : null,
-    }),
+    pricingContextOf(order, at, taxRates),
   );
 
   // Merge the paid lines back in: their stored amounts and their stored share of every adjustment.
@@ -229,12 +218,12 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
       const mine = storedAdjLines.filter((al) => al.adjustmentId === s.id);
       if (mine.length === 0) continue;
       const k = adjKey(s.ruleKey, s.ruleVersion, s.manualApplicationId);
-      const extra = mine.map((al) => ({ line_id: al.orderLineId, amount: al.amount, gst_amount: al.gstAmount }));
+      const extra = mine.map((al) => ({ line_id: al.orderLineId, amount: al.amount, tax_amount: al.taxAmount }));
       const target = byKey.get(k);
       if (target) {
         target.lines.push(...extra);
         target.total += sumCents(extra.map((x) => x.amount));
-        target.gst_total += sumCents(extra.map((x) => x.gst_amount));
+        target.tax_total += sumCents(extra.map((x) => x.tax_amount));
       } else {
         const carried: Adjustment = {
           rule_id: s.ruleKey,
@@ -243,9 +232,9 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
           kind: s.kind as Adjustment["kind"],
           level: s.level as Adjustment["level"],
           report_class: s.reportClass as Adjustment["report_class"],
-          gst_applicable: s.gstApplicable,
+          tax_class_id: s.taxClassId,
           total: sumCents(extra.map((x) => x.amount)),
-          gst_total: sumCents(extra.map((x) => x.gst_amount)),
+          tax_total: sumCents(extra.map((x) => x.tax_amount)),
           lines: extra,
           capped: s.capped,
           frozen: s.frozen,
@@ -262,8 +251,8 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
       }
     }
     for (const l of lockedLines) {
-      const gstOnFees = sumCents(storedAdjLines.filter((al) => al.orderLineId === l.id).map((al) => al.gstAmount));
-      lockedPriced.push({ line_id: l.id, quantity: l.quantity, unit_price: l.unitPrice, modifiers_per_unit: sumCents(l.modifiers.map((m) => m.price * m.quantity)), base_amount: l.baseAmount, discount_amount: l.discountAmount, net_amount: l.netAmount, fee_amount: l.feeAmount, gst_on_net: l.gstAmount - gstOnFees, gst_on_fees: gstOnFees, total: l.total });
+      const taxOnFees = sumCents(storedAdjLines.filter((al) => al.orderLineId === l.id).map((al) => al.taxAmount));
+      lockedPriced.push({ line_id: l.id, quantity: l.quantity, unit_price: l.unitPrice, modifiers_per_unit: sumCents(l.modifiers.map((m) => m.price * m.quantity)), base_amount: l.baseAmount, discount_amount: l.discountAmount, net_amount: l.netAmount, fee_amount: l.feeAmount, tax_on_net: l.taxAmount - taxOnFees, tax_on_fees: taxOnFees, taxes: l.taxes, total: l.total });
     }
   }
   const allLines = [...engine.lines, ...lockedPriced];
@@ -273,7 +262,8 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
     discount_total: sumCents(allLines.map((l) => l.discount_amount)),
     net_subtotal: sumCents(allLines.map((l) => l.net_amount)),
     fee_total: sumCents(allLines.map((l) => l.fee_amount)),
-    gst_total: sumCents(allLines.map((l) => l.gst_on_net + l.gst_on_fees)),
+    tax_total: sumCents(allLines.map((l) => l.tax_on_net + l.tax_on_fees)),
+    taxes: sumTaxBreakdowns(allLines.map((l) => l.taxes)),
     total: sumCents(allLines.map((l) => l.total)),
   };
   const result: PricingResult = {
@@ -290,9 +280,9 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
     const ls = engine.lines;
     await tx()`
       update order_lines as l
-      set unit_price = v.unit_price, base_amount = v.base_amount, discount_amount = v.discount_amount, net_amount = v.net_amount, fee_amount = v.fee_amount, gst_amount = v.gst_amount, total = v.total, updated_at = ${at.toISOString()}::timestamptz
-      from unnest(${ls.map((l) => l.line_id)}::uuid[], ${ls.map((l) => l.unit_price)}::int[], ${ls.map((l) => l.base_amount)}::int[], ${ls.map((l) => l.discount_amount)}::int[], ${ls.map((l) => l.net_amount)}::int[], ${ls.map((l) => l.fee_amount)}::int[], ${ls.map((l) => l.gst_on_net + l.gst_on_fees)}::int[], ${ls.map((l) => l.total)}::int[])
-        as v(id, unit_price, base_amount, discount_amount, net_amount, fee_amount, gst_amount, total)
+      set unit_price = v.unit_price, base_amount = v.base_amount, discount_amount = v.discount_amount, net_amount = v.net_amount, fee_amount = v.fee_amount, tax_amount = v.tax_amount, taxes = v.taxes, total = v.total, updated_at = ${at.toISOString()}::timestamptz
+      from unnest(${ls.map((l) => l.line_id)}::uuid[], ${ls.map((l) => l.unit_price)}::int[], ${ls.map((l) => l.base_amount)}::int[], ${ls.map((l) => l.discount_amount)}::int[], ${ls.map((l) => l.net_amount)}::int[], ${ls.map((l) => l.fee_amount)}::int[], ${ls.map((l) => l.tax_on_net + l.tax_on_fees)}::int[], ${ls.map((l) => JSON.stringify(l.taxes))}::jsonb[], ${ls.map((l) => l.total)}::int[])
+        as v(id, unit_price, base_amount, discount_amount, net_amount, fee_amount, tax_amount, taxes, total)
       where l.id = v.id`;
   }
   await db().delete(orderAdjustments).where(eq(orderAdjustments.orderId, orderId));
@@ -311,9 +301,9 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
           level: a.level,
           name: a.rule_name,
           reportClass: a.report_class,
-          gstApplicable: a.gst_applicable,
+          taxClassId: a.tax_class_id,
           total: a.total,
-          gstTotal: a.gst_total,
+          taxTotal: a.tax_total,
           capped: a.capped,
           frozen: a.frozen,
           manualApplicationId: a.manual_application_id,
@@ -327,15 +317,44 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
       )
       .returning({ id: orderAdjustments.id, sort: orderAdjustments.sort });
     const idBySort = new Map(inserted.map((r) => [r.sort, r.id]));
-    const lineRows = adjustments.flatMap((a, sort) => a.lines.map((l) => ({ merchantId: order.merchantId, adjustmentId: idBySort.get(sort)!, orderLineId: l.line_id, amount: l.amount, gstAmount: l.gst_amount })));
+    const lineRows = adjustments.flatMap((a, sort) => a.lines.map((l) => ({ merchantId: order.merchantId, adjustmentId: idBySort.get(sort)!, orderLineId: l.line_id, amount: l.amount, taxAmount: l.tax_amount })));
     if (lineRows.length) await db().insert(orderAdjustmentLines).values(lineRows);
   }
   await db()
     .update(orders)
-    .set({ subtotal: totals.subtotal, discountTotal: totals.discount_total, feeTotal: totals.fee_total, gstTotal: totals.gst_total, total: totals.total, updatedAt: at })
+    .set({ subtotal: totals.subtotal, discountTotal: totals.discount_total, feeTotal: totals.fee_total, taxTotal: totals.tax_total, taxes: totals.taxes, total: totals.total, taxRates, updatedAt: at })
     .where(eq(orders.id, orderId));
   for (const hook of repriceHooks) await hook(orderId, result);
   return result;
+}
+
+/** A stored line as the pricing engine sees it (the catalogue snapshot taken when the line was added). */
+export function pricingLineOf(l: Pick<typeof orderLines.$inferSelect, "id" | "productId" | "categoryId" | "parentCategoryId" | "tags" | "hasDeposit" | "taxClassId" | "quantity" | "basePrice" | "pricesByOrderType" | "openPrice" | "modifiers" | "name">): PricingLineInput {
+  return {
+    line_id: l.id,
+    product_id: l.productId,
+    category_id: l.categoryId,
+    parent_category_id: l.parentCategoryId,
+    tags: l.tags,
+    has_deposit: l.hasDeposit,
+    tax_class_id: l.taxClassId,
+    quantity: l.quantity,
+    prices: { base: l.basePrice, by_order_type: l.pricesByOrderType as Partial<Record<OrderType, number>> },
+    open_price: l.openPrice,
+    modifiers: l.modifiers.map((m) => ({ modifier_id: m.modifier_id, product_id: m.product_id, quantity: m.quantity, price: m.price, name: m.name })),
+    name: l.name,
+  };
+}
+
+/** The pricing context of an order: the tax mode and rounding it was opened with, its tax table (`orderTaxRates`) and its freeze. */
+export function pricingContextOf(o: typeof orders.$inferSelect, at: Date, taxRates: TaxRate[]): PricingContext {
+  return PricingContextSchema.parse({
+    tax_mode: o.taxMode,
+    tax_rounding: o.taxRounding,
+    tax_rates: taxRates,
+    now: at.toISOString(),
+    frozen: o.pricingFrozenAt ? { frozen_at: o.pricingFrozenAt.toISOString(), adjustments: o.frozenAdjustments ?? [] } : null,
+  });
 }
 
 /** Later phases (checks/allocations) run after every re-price. */
@@ -349,7 +368,7 @@ export async function loadSnapshot(orderId: string): Promise<OrderSnapshot> {
   const [lines, adjs, adjLines, apps, extra] = await Promise.all([
     db().select().from(orderLines).where(eq(orderLines.orderId, orderId)).orderBy(asc(orderLines.sort), asc(orderLines.createdAt)),
     db().select().from(orderAdjustments).where(eq(orderAdjustments.orderId, orderId)).orderBy(asc(orderAdjustments.sort)),
-    db().select({ adjustmentId: orderAdjustmentLines.adjustmentId, orderLineId: orderAdjustmentLines.orderLineId, amount: orderAdjustmentLines.amount, gstAmount: orderAdjustmentLines.gstAmount }).from(orderAdjustmentLines).innerJoin(orderAdjustments, eq(orderAdjustments.id, orderAdjustmentLines.adjustmentId)).where(eq(orderAdjustments.orderId, orderId)),
+    db().select({ adjustmentId: orderAdjustmentLines.adjustmentId, orderLineId: orderAdjustmentLines.orderLineId, amount: orderAdjustmentLines.amount, taxAmount: orderAdjustmentLines.taxAmount }).from(orderAdjustmentLines).innerJoin(orderAdjustments, eq(orderAdjustments.id, orderAdjustmentLines.adjustmentId)).where(eq(orderAdjustments.orderId, orderId)),
     db().select().from(orderManualApplications).where(and(eq(orderManualApplications.orderId, orderId), isNull(orderManualApplications.removedAt))),
     snapshotExtras(o),
   ]);
@@ -382,7 +401,7 @@ export async function loadSnapshot(orderId: string): Promise<OrderSnapshot> {
     bill_requested_at: o.billRequestedAt?.toISOString() ?? null,
     round_count: o.roundCount,
     pricing_status: o.pricingFrozenAt ? "frozen" : "live",
-    totals: { tax_mode: o.taxMode, gst_bps: o.gstBps, subtotal: o.subtotal, discount_total: o.discountTotal, fee_total: o.feeTotal, gst_total: o.gstTotal, total: o.total },
+    totals: { tax_mode: o.taxMode, tax_rounding: o.taxRounding, subtotal: o.subtotal, discount_total: o.discountTotal, fee_total: o.feeTotal, tax_total: o.taxTotal, taxes: o.taxes, total: o.total },
     lines: lines.map((l) => ({
       id: l.id,
       product_id: l.productId,
@@ -402,7 +421,9 @@ export async function loadSnapshot(orderId: string): Promise<OrderSnapshot> {
       fired_at: l.firedAt?.toISOString() ?? null,
       voided_at: l.voidedAt?.toISOString() ?? null,
       void_reason: l.voidReason,
-      amounts: { base: l.baseAmount, discount: l.discountAmount, net: l.netAmount, fee: l.feeAmount, gst: l.gstAmount, total: l.total },
+      amounts: { base: l.baseAmount, discount: l.discountAmount, net: l.netAmount, fee: l.feeAmount, tax: l.taxAmount, total: l.total },
+      taxes: l.taxes,
+      tax_class_id: l.taxClassId,
       tags: l.tags,
       category_id: l.categoryId,
       sort: l.sort,
@@ -417,8 +438,9 @@ export async function loadSnapshot(orderId: string): Promise<OrderSnapshot> {
       kind: a.kind,
       level: a.level,
       report_class: a.reportClass,
+      tax_class_id: a.taxClassId,
       total: a.total,
-      gst_total: a.gstTotal,
+      tax_total: a.taxTotal,
       capped: a.capped,
       frozen: a.frozen,
       manual_application_id: a.manualApplicationId,
@@ -426,7 +448,7 @@ export async function loadSnapshot(orderId: string): Promise<OrderSnapshot> {
       applied_by: a.appliedBy,
       approved_by: a.approvedBy,
       reason: a.reason,
-      lines: adjLines.filter((x) => x.adjustmentId === a.id).map((x) => ({ line_id: x.orderLineId, amount: x.amount, gst_amount: x.gstAmount })),
+      lines: adjLines.filter((x) => x.adjustmentId === a.id).map((x) => ({ line_id: x.orderLineId, amount: x.amount, tax_amount: x.taxAmount })),
     })),
     manual_applications: apps.map((a) => ({ id: a.id, rule_key: a.ruleKey, entered_value: a.enteredValue, line_ids: a.lineIds, applied_by: a.appliedByName, reason: a.reason })),
     ...extra,

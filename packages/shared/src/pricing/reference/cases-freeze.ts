@@ -1,7 +1,8 @@
 import { freezeFrom, price } from "../engine.js";
-import { SEED_RULES, SEED_RULE_IDS } from "../seed.js";
+import { SEED_RULE_IDS } from "../seed.js";
+import { SG_SEED_RULES } from "./dsl.js";
 import type { PricingContextInput, PricingOrderInput, PricingRuleInput } from "../schemas.js";
-import { ctx, gstEx, line, NOW, order, type RefCase } from "./dsl.js";
+import { ctx, taxEx, line, NOW, order, type RefCase } from "./dsl.js";
 
 /**
  * Reference cases R081–R087: freeze at first payment.
@@ -11,8 +12,8 @@ import { ctx, gstEx, line, NOW, order, type RefCase } from "./dsl.js";
  * by hand in `working`, so the reviewer can check what `freezeFrom` stored.
  */
 
-const SC = SEED_RULES.find((r) => r.id === SEED_RULE_IDS.serviceCharge)!;
-const PCT_BILL = SEED_RULES.find((r) => r.id === SEED_RULE_IDS.percentOffBill)!;
+const SC = SG_SEED_RULES.find((r) => r.id === SEED_RULE_IDS.serviceCharge)!;
+const PCT_BILL = SG_SEED_RULES.find((r) => r.id === SEED_RULE_IDS.percentOffBill)!;
 
 function disc(id: string, over: Partial<PricingRuleInput> = {}): PricingRuleInput {
   return {
@@ -67,7 +68,7 @@ const r087Rules = [PCT_BILL];
 const r087Live = order([line("a", 3000), line("b", 1000)], { order_type: "takeaway", manual_applications: [PB] });
 
 /* R153: a fixed-per-order delivery fee is frozen at the first payment; a line added afterwards takes no share of it. */
-const r153Rules: PricingRuleInput[] = [{ id: "delivery", kind: "fee", name: "Delivery fee", calc: "fixed_per_order", value: { type: "fixed", amount: 500 }, scope: { type: "all" }, priority: 100, application: "auto", report_class: "delivery_fee", gst_applicable: true }];
+const r153Rules: PricingRuleInput[] = [{ id: "delivery", kind: "fee", name: "Delivery fee", calc: "fixed_per_order", value: { type: "fixed", amount: 500 }, scope: { type: "all" }, priority: 100, application: "auto", report_class: "delivery_fee", tax_class_id: "standard" }];
 const r153Live = order([line("a", 3000), line("b", 1000)], { order_type: "delivery" });
 
 export const FREEZE_CASES: RefCase[] = [
@@ -86,7 +87,7 @@ export const FREEZE_CASES: RefCase[] = [
       adjustments: { "line-10": -(300 + 100 + 200), [PB_KEY]: -(270 + 90) },
       adjustment_lines: { "line-10": { a: -300, b: -100, c: -200 }, [PB_KEY]: { a: -270, b: -90 } },
       line_nets: { a: 2700 - 270, b: 900 - 90, c: 1800 },
-      gst_total: 219 + 73 + 162,
+      tax_total: 219 + 73 + 162,
       total: 2430 + 810 + 1800 + 219 + 73 + 162,
       pricing_status: "frozen",
     },
@@ -101,7 +102,7 @@ export const FREEZE_CASES: RefCase[] = [
     order: order([line("wine1", 6000, { tags: ["alcohol"] }), line("wine2", 6000, { tags: ["alcohol"] })], { order_type: "takeaway" }),
     rules: r082Rules,
     context: frozenAfter(r082Live, r082Rules),
-    expect: { not_applied: ["wine-10"], line_nets: { wine1: 6000, wine2: 6000 }, gst_total: 540 + 540, total: 12_000 + 1080, pricing_status: "frozen" },
+    expect: { not_applied: ["wine-10"], line_nets: { wine1: 6000, wine2: 6000 }, tax_total: 540 + 540, total: 12_000 + 1080, pricing_status: "frozen" },
   },
   {
     id: "R083",
@@ -117,7 +118,7 @@ export const FREEZE_CASES: RefCase[] = [
       adjustments: { "bill-1000": -750 },
       adjustment_lines: { "bill-1000": { a: -750 } },
       line_nets: { a: 3000 - 750 },
-      gst_total: 203,
+      tax_total: 203,
       total: 2250 + 203,
       pricing_status: "frozen",
     },
@@ -138,7 +139,7 @@ export const FREEZE_CASES: RefCase[] = [
       adjustment_lines: { [PB_KEY]: { a: -300, b: -100 }, [SEED_RULE_IDS.serviceCharge]: { a: 270, b: 90, c: 200 } },
       line_nets: { a: 2700, b: 900, c: 2000 },
       fee_total: 560,
-      gst_total: 243 + 81 + 180 + 24 + 8 + 18,
+      tax_total: 243 + 81 + 180 + 24 + 8 + 18,
       total: 2700 + 900 + 2000 + 560 + 504 + 50,
       pricing_status: "frozen",
     },
@@ -157,7 +158,7 @@ export const FREEZE_CASES: RefCase[] = [
       adjustments: { "line-5": -300 },
       not_applied: ["bill-10-min-50"],
       line_nets: { a: 2850, b: 2850 },
-      gst_total: 257 + 257,
+      tax_total: 257 + 257,
       total: 2850 + 2850 + 257 + 257,
       pricing_status: "frozen",
     },
@@ -176,7 +177,7 @@ export const FREEZE_CASES: RefCase[] = [
       adjustments: { "wine-10": -1200 },
       adjustment_lines: { "wine-10": { wine1: -1200 } },
       line_nets: { wine1: 10_800, wine2: 5000 },
-      gst_total: gstEx(10_800) + gstEx(5000),
+      tax_total: taxEx(10_800) + taxEx(5000),
       total: 10_800 + 5000 + 972 + 450,
       pricing_status: "frozen",
     },
@@ -193,7 +194,7 @@ export const FREEZE_CASES: RefCase[] = [
       adjustments: { [PB_KEY]: -400 },
       adjustment_lines: { [PB_KEY]: { a: -300, b: -100 } },
       line_nets: { a: 2700, b: 900 },
-      gst_total: 243 + 81,
+      tax_total: 243 + 81,
       total: 2700 + 900 + 243 + 81,
       pricing_status: "frozen",
     },
@@ -201,7 +202,7 @@ export const FREEZE_CASES: RefCase[] = [
   {
     id: "R153",
     title: "Freeze: a fixed-per-order fee keeps its per-line spread; a line added after the first payment takes no share of it",
-    covers: ["freeze", "fee_fixed_per_order", "fee_gst_applicable", "rounding", "tax_exclusive"],
+    covers: ["freeze", "fee_fixed_per_order", "fee_taxed", "rounding", "tax_exclusive"],
     working:
       "Live delivery order: $5 delivery fee spread by the nets 3000/1000 → 375/125. Frozen set: {delivery: a 375, b 125}. Re-price with c 2000 added: the fee is re-emitted as frozen " +
       "(a 375, b 125, nothing on c), so the paid lines never move and the customer is not charged a second delivery fee. GST on nets 270 + 90 + 180 = 540; on the fee 33.75 → 34 and 11.25 → 11. " +
@@ -215,7 +216,7 @@ export const FREEZE_CASES: RefCase[] = [
       line_nets: { a: 3000, b: 1000, c: 2000 },
       line_fees: { a: 375, b: 125, c: 0 },
       fee_total: 500,
-      gst_total: 270 + 90 + 180 + 34 + 11,
+      tax_total: 270 + 90 + 180 + 34 + 11,
       total: 6000 + 500 + 540 + 45,
       pricing_status: "frozen",
     },

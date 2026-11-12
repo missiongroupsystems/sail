@@ -1,6 +1,7 @@
-import { SEED_RULES, SEED_RULE_IDS } from "../seed.js";
+import { SEED_RULE_IDS } from "../seed.js";
+import { SG_SEED_RULES } from "./dsl.js";
 import type { PricingRuleInput } from "../schemas.js";
-import { ctx, gstIn, line, order, type RefCase } from "./dsl.js";
+import { ctx, taxIn, line, order, type RefCase } from "./dsl.js";
 
 /**
  * Reference cases R092–R101: inclusive GST with discounts, fees and caps.
@@ -10,8 +11,8 @@ import { ctx, gstIn, line, order, type RefCase } from "./dsl.js";
  * Every expected amount is a hand calculation written as arithmetic.
  */
 
-const SC = SEED_RULES.find((r) => r.id === SEED_RULE_IDS.serviceCharge)!;
-const DEPOSIT = SEED_RULES.find((r) => r.id === SEED_RULE_IDS.containerDeposit)!;
+const SC = SG_SEED_RULES.find((r) => r.id === SEED_RULE_IDS.serviceCharge)!;
+const DEPOSIT = SG_SEED_RULES.find((r) => r.id === SEED_RULE_IDS.containerDeposit)!;
 
 /** An automatic 10% line-level discount on everything, priority 10; override what differs. */
 function disc(id: string, over: Partial<PricingRuleInput> = {}): PricingRuleInput {
@@ -40,7 +41,7 @@ function fee(id: string, over: Partial<PricingRuleInput> = {}): PricingRuleInput
     scope: { type: "all" },
     priority: 100,
     application: "auto",
-    gst_applicable: true,
+    tax_class_id: "standard",
     report_class: "other",
     ...over,
   };
@@ -61,8 +62,8 @@ export const INCLUSIVE_CASES: RefCase[] = [
       adjustments: { "ten-off": -(150 + 100) },
       adjustment_lines: { "ten-off": { a: -150, b: -100 } },
       line_nets: { a: 1350, b: 899 },
-      line_gst: { a: 111, b: 74 },
-      gst_total: 111 + 74,
+      line_tax: { a: 111, b: 74 },
+      tax_total: 111 + 74,
       total: 1350 + 899,
     },
   },
@@ -80,8 +81,8 @@ export const INCLUSIVE_CASES: RefCase[] = [
       adjustments: { "bill-10": -450 },
       adjustment_lines: { "bill-10": { a: -300, b: -100, c: -50 } },
       line_nets: { a: 2700, b: 900, c: 450 },
-      line_gst: { a: 223, b: 74, c: 37 },
-      gst_total: 223 + 74 + 37,
+      line_tax: { a: 223, b: 74, c: 37 },
+      tax_total: 223 + 74 + 37,
       total: 2700 + 900 + 450,
     },
   },
@@ -99,8 +100,8 @@ export const INCLUSIVE_CASES: RefCase[] = [
       adjustments: { "ten-dollars": -1000 },
       adjustment_lines: { "ten-dollars": { a: -667, b: -222, c: -111 } },
       line_nets: { a: 2333, b: 778, c: 389 },
-      line_gst: { a: 193, b: 64, c: 32 },
-      gst_total: 193 + 64 + 32,
+      line_tax: { a: 193, b: 64, c: 32 },
+      tax_total: 193 + 64 + 32,
       total: 2333 + 778 + 389,
     },
   },
@@ -118,15 +119,15 @@ export const INCLUSIVE_CASES: RefCase[] = [
       adjustments: { "quarter-capped": -1000 },
       adjustment_lines: { "quarter-capped": { a: -667, b: -333 } },
       line_nets: { a: 7333, b: 3667 },
-      line_gst: { a: 605, b: 303 },
-      gst_total: 605 + 303,
+      line_tax: { a: 605, b: 303 },
+      tax_total: 605 + 303,
       total: 7333 + 3667,
     },
   },
   {
     id: "R096",
     title: "Inclusive: fixed per unit discount with quantities, then the seeded service charge on the discounted GST-inclusive nets",
-    covers: ["tax_inclusive", "line_fixed_per_unit", "quantity", "fee_percent", "fee_gst_applicable", "seed_rules", "rounding"],
+    covers: ["tax_inclusive", "line_fixed_per_unit", "quantity", "fee_percent", "fee_taxed", "seed_rules", "rounding"],
     working:
       "a 1200 × 3 = 3600, $3 × 3 = 900 off → 2700. b 500 × 2 = 1000, 300 × 2 = 600 off → 400. Service charge 10%: 270 + 40 = 310. " +
       "GST inside nets: 2700 → 223; 400 × 9/109 = 33.03 → 33. GST inside SC: 270 × 9/109 = 22.29 → 22; 40 × 9/109 = 3.30 → 3. " +
@@ -138,16 +139,16 @@ export const INCLUSIVE_CASES: RefCase[] = [
       adjustments: { "three-per-unit": -(900 + 600), [SEED_RULE_IDS.serviceCharge]: 270 + 40 },
       adjustment_lines: { [SEED_RULE_IDS.serviceCharge]: { a: 270, b: 40 } },
       line_nets: { a: 2700, b: 400 },
-      line_gst: { a: 223, b: 33 },
+      line_tax: { a: 223, b: 33 },
       fee_total: 310,
-      gst_total: 223 + 33 + 22 + 3,
+      tax_total: 223 + 33 + 22 + 3,
       total: 2700 + 400 + 310,
     },
   },
   {
     id: "R097",
     title: "Inclusive: fixed per order delivery fee spread by discounted nets (365/135), each fee line carrying its own GST inside",
-    covers: ["tax_inclusive", "fee_fixed_per_order", "line_percent", "scope_products", "order_type_condition", "fee_gst_applicable", "rounding"],
+    covers: ["tax_inclusive", "fee_fixed_per_order", "line_percent", "scope_products", "order_type_condition", "fee_taxed", "rounding"],
     working:
       "10% off product a: 3000 → 2700; b 1000. Delivery fee 500 by nets 2700/1000: 364.86/135.14 → 365/135. GST inside nets: 2700 → 223; 1000 × 9/109 = 82.57 → 83. " +
       "GST inside the fee lines: 365 × 9/109 = 30.14 → 30; 135 × 9/109 = 11.15 → 11. Total payable = 2700 + 1000 + 500 = 4200; GST reported 223 + 83 + 30 + 11 = 347.",
@@ -162,36 +163,36 @@ export const INCLUSIVE_CASES: RefCase[] = [
       adjustment_lines: { delivery: { a: 365, b: 135 } },
       line_nets: { a: 2700, b: 1000 },
       line_fees: { a: 365, b: 135 },
-      line_gst: { a: 223, b: 83 },
+      line_tax: { a: 223, b: 83 },
       fee_total: 500,
-      gst_total: 223 + 83 + 30 + 11,
+      tax_total: 223 + 83 + 30 + 11,
       total: 2700 + 1000 + 500,
     },
   },
   {
     id: "R098",
     title: "Inclusive: discounted BCRS cans keep the full per-unit deposit (no GST), service charge on the discounted net",
-    covers: ["tax_inclusive", "scope_bcrs", "fee_fixed_per_unit", "fee_not_gst_applicable", "fee_percent", "line_percent", "quantity", "seed_rules"],
+    covers: ["tax_inclusive", "scope_deposit", "fee_fixed_per_unit", "fee_untaxed", "fee_percent", "line_percent", "quantity", "seed_rules"],
     working:
       "6 cans × 250 = 1500; 10% off = 150 → 1350. Deposit is per unit and never discounted: 6 × 10 = 60, no GST. Service charge 10% of 1350 = 135. " +
       "GST inside 1350 = 111; inside 135: 135 × 9/109 = 11.15 → 11. Total payable = 1350 + 135 + 60 = 1545; GST reported 122.",
-    order: order([line("can", 250, { quantity: 6, is_bcrs: true })]),
+    order: order([line("can", 250, { quantity: 6, has_deposit: true })]),
     rules: [disc("ten-off"), SC, DEPOSIT],
     context: ctx("inclusive"),
     expect: {
       adjustments: { "ten-off": -150, [SEED_RULE_IDS.serviceCharge]: 135, [SEED_RULE_IDS.containerDeposit]: 60 },
       line_nets: { can: 1350 },
       line_fees: { can: 135 + 60 },
-      line_gst: { can: 111 },
+      line_tax: { can: 111 },
       fee_total: 195,
-      gst_total: 111 + 11,
+      tax_total: 111 + 11,
       total: 1350 + 135 + 60,
     },
   },
   {
     id: "R099",
     title: "Inclusive: capped percent fee (15% of two $20 lines = 600, cap 500 → 250/250) with GST inside each fee line",
-    covers: ["tax_inclusive", "cap", "fee_percent", "fee_gst_applicable", "rounding"],
+    covers: ["tax_inclusive", "cap", "fee_percent", "fee_taxed", "rounding"],
     working:
       "15% of 2000 = 300 per line; 600 > cap 500; spread 500 by 300/300 → 250/250. GST inside nets: 2000 × 9/109 = 165.14 → 165 each. " +
       "GST inside each fee line: 250 × 9/109 = 20.64 → 21. Total payable = 4000 + 500 = 4500; GST reported 165 + 165 + 21 + 21 = 372.",
@@ -201,9 +202,9 @@ export const INCLUSIVE_CASES: RefCase[] = [
     expect: {
       adjustments: { surcharge: 500 },
       adjustment_lines: { surcharge: { a: 250, b: 250 } },
-      line_gst: { a: 165, b: 165 },
+      line_tax: { a: 165, b: 165 },
       fee_total: 500,
-      gst_total: 165 + 165 + 21 + 21,
+      tax_total: 165 + 165 + 21 + 21,
       total: 4000 + 500,
     },
   },
@@ -217,7 +218,7 @@ export const INCLUSIVE_CASES: RefCase[] = [
     order: order([line("a", 1193), line("b", 1193)], { order_type: "takeaway" }),
     rules: [],
     context: ctx("inclusive"),
-    expect: { line_gst: { a: 99, b: 99 }, gst_total: 198, total: 2386 },
+    expect: { line_tax: { a: 99, b: 99 }, tax_total: 198, total: 2386 },
   },
   {
     id: "R101",
@@ -233,8 +234,8 @@ export const INCLUSIVE_CASES: RefCase[] = [
       adjustments: { "bill-10": -201 },
       adjustment_lines: { "bill-10": { a: -101, b: -100 } },
       line_nets: { a: 904, b: 905 },
-      line_gst: { a: gstIn(904), b: gstIn(905) },
-      gst_total: 75 + 75,
+      line_tax: { a: taxIn(904), b: taxIn(905) },
+      tax_total: 75 + 75,
       total: 904 + 905,
     },
   },

@@ -4,6 +4,7 @@ import { ORDER_TYPES, OrderTypeSchema, registerOperations, type OperationSpec } 
 import { db, tx } from "../db/client.js";
 import { availabilityRules, menuItems, menuSections, menus, modifierGroups, modifierOptions, productModifierGroups, productPrices, products, reportCategories, stockStatus } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
+import { assertTaxClass } from "../services/tax.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
@@ -26,8 +27,8 @@ ops({
   "products.list": { op: "products.list", summary: "Search products", description: "Products and components of the merchant, searchable by name, SKU or tag; paginated. Use menu.get for what a station or guest may order.", tier: "T0", minRole: "server", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read", "config.author"] } },
   "products.get": { op: "products.get", summary: "Get a product", tier: "T0", minRole: "server", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read", "config.author"] } },
   "products.create": { op: "products.create", summary: "Create a product", emits: ["product.created"] },
-  "products.update": { op: "products.update", summary: "Update a product", description: "Changes a product, its prices per order type, tags, BCRS flag or attached modifier groups; archive by setting archived.", emits: ["product.updated"] },
-  "products.bulk_price": { op: "products.bulk_price", summary: "Bulk price edit", description: "Sets base prices for many products at once. Prices are integer cents.", emits: ["product.updated"] },
+  "products.update": { op: "products.update", summary: "Update a product", description: "Changes a product, its prices per order type, tags, tax class, deposit flag or attached modifier groups; archive by setting archived.", emits: ["product.updated"] },
+  "products.bulk_price": { op: "products.bulk_price", summary: "Bulk price edit", description: "Sets base prices for many products at once. Prices are integers in the currency's minor units.", emits: ["product.updated"] },
   "modifier_groups.list": { op: "modifier_groups.list", summary: "List modifier groups", tier: "T0", minRole: "server", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read", "config.author"] } },
   "modifier_groups.get": { op: "modifier_groups.get", summary: "Get a modifier group with its options", tier: "T0", minRole: "server", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read", "config.author"] } },
   "modifier_groups.create": { op: "modifier_groups.create", summary: "Create a modifier group", emits: ["modifier_group.created"] },
@@ -61,7 +62,10 @@ export const ProductSchema = z.object({
   prices_by_order_type: z.partialRecord(OrderTypeSchema, z.number().int()),
   category_id: z.string().nullable(),
   tags: z.array(z.string()),
-  is_bcrs: z.boolean(),
+  /** The product carries a deposit (the scope of deposit fees). */
+  has_deposit: z.boolean(),
+  /** Null = the merchant's default tax class. */
+  tax_class_id: z.string().nullable(),
   open_price: z.boolean(),
   modifier_group_ids: z.array(z.string()),
   legacy_id: z.string().nullable(),
@@ -80,7 +84,8 @@ const ProductCreate = z.object({
   prices_by_order_type: z.partialRecord(OrderTypeSchema, z.number().int().min(0)).optional(),
   category_id: z.uuid().nullable().optional(),
   tags: z.array(z.string().min(1)).optional(),
-  is_bcrs: z.boolean().optional(),
+  has_deposit: z.boolean().optional(),
+  tax_class_id: z.uuid().nullable().optional(),
   open_price: z.boolean().optional(),
   modifier_group_ids: z.array(z.uuid()).optional(),
   legacy_id: z.string().nullable().optional(),
@@ -119,7 +124,8 @@ const toProduct = (p: typeof products.$inferSelect, prices: (typeof productPrice
   prices_by_order_type: Object.fromEntries(prices.filter((x) => x.productId === p.id).map((x) => [x.orderType, x.price])),
   category_id: p.categoryId,
   tags: p.tags,
-  is_bcrs: p.isBcrs,
+  has_deposit: p.hasDeposit,
+  tax_class_id: p.taxClassId,
   open_price: p.openPrice,
   modifier_group_ids: groups.filter((g) => g.productId === p.id).sort((a, b) => a.sort - b.sort).map((g) => g.groupId),
   legacy_id: p.legacyId,
@@ -273,9 +279,10 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "products.create", method: "post", path: "/v1/products", tags: ["catalogue"], request: { body: jsonBody(ProductCreate) }, responses: { 201: jsonResponse(mutationResponse(ProductSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const b = c.req.valid("json");
+    if (b.tax_class_id) await assertTaxClass(p.merchantId, b.tax_class_id, "tax_class_id");
     const [row] = await db()
       .insert(products)
-      .values({ id: b.id, merchantId: p.merchantId, brandId: b.brand_id ?? null, kind: b.kind ?? "product", name: b.name, kitchenName: b.kitchen_name ?? null, sku: b.sku ?? null, description: b.description ?? null, price: b.price, categoryId: b.category_id ?? null, tags: b.tags ?? [], isBcrs: b.is_bcrs ?? false, openPrice: b.open_price ?? false, legacyId: b.legacy_id ?? null })
+      .values({ id: b.id, merchantId: p.merchantId, brandId: b.brand_id ?? null, kind: b.kind ?? "product", name: b.name, kitchenName: b.kitchen_name ?? null, sku: b.sku ?? null, description: b.description ?? null, price: b.price, categoryId: b.category_id ?? null, tags: b.tags ?? [], hasDeposit: b.has_deposit ?? false, taxClassId: b.tax_class_id ?? null, openPrice: b.open_price ?? false, legacyId: b.legacy_id ?? null })
       .returning();
     await writePricesAndGroups(p.merchantId, row!.id, b.prices_by_order_type, b.modifier_group_ids);
     const data = (await loadProducts([row!]))[0]!;
@@ -288,7 +295,13 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const b = c.req.valid("json");
-    const set = compact({ brandId: b.brand_id, kind: b.kind, name: b.name, kitchenName: b.kitchen_name, sku: b.sku, description: b.description, price: b.price, categoryId: b.category_id, tags: b.tags, isBcrs: b.is_bcrs, openPrice: b.open_price, legacyId: b.legacy_id, archivedAt: b.archived === undefined ? undefined : b.archived ? new Date() : null });
+    if (b.tax_class_id) await assertTaxClass(p.merchantId, b.tax_class_id, "tax_class_id");
+    if (b.archived === false && b.tax_class_id === undefined) {
+      // A product restored onto a class archived since would make every order with it fail to price.
+      const [cur] = await db().select({ taxClassId: products.taxClassId }).from(products).where(and(eq(products.id, id), eq(products.merchantId, p.merchantId))).limit(1);
+      if (cur?.taxClassId) await assertTaxClass(p.merchantId, cur.taxClassId, "tax_class_id");
+    }
+    const set = compact({ brandId: b.brand_id, kind: b.kind, name: b.name, kitchenName: b.kitchen_name, sku: b.sku, description: b.description, price: b.price, categoryId: b.category_id, tags: b.tags, hasDeposit: b.has_deposit, taxClassId: b.tax_class_id, openPrice: b.open_price, legacyId: b.legacy_id, archivedAt: b.archived === undefined ? undefined : b.archived ? new Date() : null });
     const [row] = await db()
       .update(products)
       .set({ ...set, updatedAt: new Date() })

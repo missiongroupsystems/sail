@@ -1,4 +1,5 @@
-import { SEED_RULES, SEED_RULE_IDS } from "../seed.js";
+import { SEED_RULE_IDS } from "../seed.js";
+import { SG_SEED_RULES } from "./dsl.js";
 import type { PricingRuleInput } from "../schemas.js";
 import { ctx, line, order, type RefCase } from "./dsl.js";
 
@@ -11,8 +12,8 @@ import { ctx, line, order, type RefCase } from "./dsl.js";
  * are never blocked by an exclusive discount.
  */
 
-const SC = SEED_RULES.find((r) => r.id === SEED_RULE_IDS.serviceCharge)!;
-const DEPOSIT = SEED_RULES.find((r) => r.id === SEED_RULE_IDS.containerDeposit)!;
+const SC = SG_SEED_RULES.find((r) => r.id === SEED_RULE_IDS.serviceCharge)!;
+const DEPOSIT = SG_SEED_RULES.find((r) => r.id === SEED_RULE_IDS.containerDeposit)!;
 
 /** An automatic 10% line-level discount on everything, priority 10; override what differs. */
 function disc(id: string, over: Partial<PricingRuleInput> = {}): PricingRuleInput {
@@ -42,7 +43,7 @@ export const QUANTITY_CASES: RefCase[] = [
     order: order([line("a", 1000, { quantity: 4 })], { order_type: "takeaway" }),
     rules: [disc("two-per-unit", { calc: "fixed_per_unit", value: { type: "fixed", amount: 200 }, cap: 500 })],
     context: ctx(),
-    expect: { adjustments: { "two-per-unit": -500 }, line_nets: { a: 3500 }, gst_total: 315, total: 3500 + 315 },
+    expect: { adjustments: { "two-per-unit": -500 }, line_nets: { a: 3500 }, tax_total: 315, total: 3500 + 315 },
   },
   {
     id: "R114",
@@ -58,7 +59,7 @@ export const QUANTITY_CASES: RefCase[] = [
       adjustments: { "three-per-unit": -1000 },
       adjustment_lines: { "three-per-unit": { a: -750, b: -250 } },
       line_nets: { a: 2850, b: 250 },
-      gst_total: 257 + 23,
+      tax_total: 257 + 23,
       total: 2850 + 250 + 257 + 23,
     },
   },
@@ -76,7 +77,7 @@ export const QUANTITY_CASES: RefCase[] = [
       adjustments: { "three-per-unit": -1000 },
       adjustment_lines: { "three-per-unit": { a: -118, b: -882 } },
       line_nets: { a: 82, b: 4118 },
-      gst_total: 7 + 371,
+      tax_total: 7 + 371,
       total: 82 + 4118 + 7 + 371,
     },
   },
@@ -92,7 +93,7 @@ export const QUANTITY_CASES: RefCase[] = [
       adjustments: { "line-10": -303 },
       adjustment_lines: { "line-10": { a: -101, b: -101, c: -101 } },
       line_nets: { a: 904, b: 904, c: 904 },
-      gst_total: 243,
+      tax_total: 243,
       total: 2712 + 243,
     },
   },
@@ -110,7 +111,7 @@ export const QUANTITY_CASES: RefCase[] = [
       adjustments: { "bill-10": -302 },
       adjustment_lines: { "bill-10": { a: -101, b: -101, c: -100 } },
       line_nets: { a: 904, b: 904, c: 905 },
-      gst_total: 243,
+      tax_total: 243,
       total: 2713 + 243,
     },
   },
@@ -133,7 +134,7 @@ export const QUANTITY_CASES: RefCase[] = [
       adjustments: { "early-bird": -(400 + 120), member: -(160 + 80 + 48), "bill-5": -130 },
       adjustment_lines: { "early-bird": { main: -400, dessert: -120 }, member: { main: -160, drink: -80, dessert: -48 }, "bill-5": { main: -72, drink: -36, dessert: -22 } },
       line_nets: { main: 1368, drink: 684, dessert: 410 },
-      gst_total: 123 + 62 + 37,
+      tax_total: 123 + 62 + 37,
       total: 1368 + 684 + 410 + 123 + 62 + 37,
     },
   },
@@ -147,7 +148,7 @@ export const QUANTITY_CASES: RefCase[] = [
     order: order([line("a", 1005)], { order_type: "takeaway" }),
     rules: [disc("b-ten", { priority: 10 }), disc("a-fifteen", { value: { type: "fixed", amount: 1500 }, priority: 10 })],
     context: ctx(),
-    expect: { adjustments: { "a-fifteen": -151, "b-ten": -85 }, line_nets: { a: 769 }, gst_total: 69, total: 769 + 69 },
+    expect: { adjustments: { "a-fifteen": -151, "b-ten": -85 }, line_nets: { a: 769 }, tax_total: 69, total: 769 + 69 },
   },
   {
     id: "R120",
@@ -169,7 +170,7 @@ export const QUANTITY_CASES: RefCase[] = [
       adjustment_lines: { [SEED_RULE_IDS.serviceCharge]: { food: 100, drink: 81 } },
       line_nets: { food: 1000, drink: 810 },
       line_fees: { food: 100, drink: 81 },
-      gst_total: 90 + 73 + 9 + 7,
+      tax_total: 90 + 73 + 9 + 7,
       total: 1000 + 810 + 181 + 90 + 73 + 9 + 7,
     },
   },
@@ -192,18 +193,18 @@ export const QUANTITY_CASES: RefCase[] = [
       adjustments: { member: -(200 + 100), "half-food": -900, "bill-10": -90, [SEED_RULE_IDS.serviceCharge]: 171 },
       adjustment_lines: { "bill-10": { drink: -90 }, [SEED_RULE_IDS.serviceCharge]: { food: 90, drink: 81 } },
       line_nets: { food: 900, drink: 810 },
-      gst_total: 81 + 73 + 8 + 7,
+      tax_total: 81 + 73 + 8 + 7,
       total: 900 + 810 + 171 + 81 + 73 + 8 + 7,
     },
   },
   {
     id: "R122",
     title: "Quantity 6 with a per-unit discount, a per-unit deposit and the service charge on the same line",
-    covers: ["line_fixed_per_unit", "fee_fixed_per_unit", "fee_percent", "fee_not_gst_applicable", "scope_bcrs", "quantity", "seed_rules", "tax_exclusive"],
+    covers: ["line_fixed_per_unit", "fee_fixed_per_unit", "fee_percent", "fee_untaxed", "scope_deposit", "quantity", "seed_rules", "tax_exclusive"],
     working:
       "6 cans × 250 = 1500. $0.50 × 6 = 300 off → 1200. Service charge 10% of 1200 = 120. Deposit 6 × 10 = 60 (no GST, not discounted). " +
       "GST 108 on the net, 10.8 → 11 on the SC. Total = 1200 + 120 + 60 + 108 + 11 = 1499.",
-    order: order([line("can", 250, { quantity: 6, is_bcrs: true })]),
+    order: order([line("can", 250, { quantity: 6, has_deposit: true })]),
     rules: [disc("fifty-per-unit", { calc: "fixed_per_unit", value: { type: "fixed", amount: 50 } }), SC, DEPOSIT],
     context: ctx(),
     expect: {
@@ -211,7 +212,7 @@ export const QUANTITY_CASES: RefCase[] = [
       line_nets: { can: 1200 },
       line_fees: { can: 180 },
       fee_total: 180,
-      gst_total: 108 + 11,
+      tax_total: 108 + 11,
       total: 1200 + 120 + 60 + 108 + 11,
     },
   },

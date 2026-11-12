@@ -68,7 +68,7 @@ export const OPERATIONS: Record<string, OperationSpec> = {
   "merchants.get": {
     op: "merchants.get",
     summary: "Get the merchant and its settings",
-    description: "Tax mode, GST rate, cash rounding and business-day cutoff for the caller's merchant.",
+    description: "Currency, locale, time zone, tax mode and rounding, default tax class, cash rounding, cash denominations for the cash counter, registration labels and business-day cutoff for the caller's merchant.",
     tier: "T0",
     minRole: "server",
     overrideAllowed: false,
@@ -81,7 +81,7 @@ export const OPERATIONS: Record<string, OperationSpec> = {
   "merchants.update_settings": {
     op: "merchants.update_settings",
     summary: "Update merchant settings",
-    description: "Changes tax mode, GST rate, cash rounding increment or the business-day cutoff. Affects every outlet. Orders already priced keep their snapshot.",
+    description: "Changes the locale, time zone, tax mode or rounding, default tax class, cash rounding increment, cash denominations, registration labels or the business-day cutoff. Affects every outlet. Orders already priced keep their tax snapshot. The currency cannot change once set.",
     tier: "T3",
     ...fromPermission("config.edit"),
     reasonRequired: false,
@@ -94,8 +94,8 @@ export const OPERATIONS: Record<string, OperationSpec> = {
   "brands.create": { op: "brands.create", summary: "Create a brand", description: "Creates a brand under the merchant.", tier: "T3", ...fromPermission("config.edit"), reasonRequired: false, dryRun: false, principals: STAFF, emits: ["brand.created"], mcp: { expose: false, toolsets: [] } },
   "brands.update": { op: "brands.update", summary: "Update a brand", description: "Renames a brand or changes its accent colour; archive by setting archived.", tier: "T3", ...fromPermission("config.edit"), reasonRequired: false, dryRun: false, principals: STAFF, emits: ["brand.updated"], mcp: { expose: false, toolsets: [] } },
   "outlets.list": { op: "outlets.list", summary: "List outlets", description: "Outlets the caller can see (their outlet scope).", tier: "T0", minRole: "server", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: STAFF_AND_STATION.concat("agent"), emits: [], mcp: { expose: true, toolsets: ["pos.read", "config.author", "reports"] } },
-  "outlets.create": { op: "outlets.create", summary: "Create an outlet", description: "Creates an outlet with its hours, UEN and business-day cutoff.", tier: "T3", ...fromPermission("config.edit"), reasonRequired: false, dryRun: false, principals: STAFF, emits: ["outlet.created"], mcp: { expose: false, toolsets: [] } },
-  "outlets.update": { op: "outlets.update", summary: "Update an outlet", description: "Changes an outlet's details, hours, UEN or cutoff.", tier: "T3", ...fromPermission("config.edit"), reasonRequired: false, dryRun: false, principals: STAFF, emits: ["outlet.updated"], mcp: { expose: false, toolsets: [] } },
+  "outlets.create": { op: "outlets.create", summary: "Create an outlet", description: "Creates an outlet with its hours, business and tax registration numbers, and optional time zone, tax mode and business-day cutoff overrides.", tier: "T3", ...fromPermission("config.edit"), reasonRequired: false, dryRun: false, principals: STAFF, emits: ["outlet.created"], mcp: { expose: false, toolsets: [] } },
+  "outlets.update": { op: "outlets.update", summary: "Update an outlet", description: "Changes an outlet's details, hours, registration numbers or its time zone, tax mode and cutoff overrides.", tier: "T3", ...fromPermission("config.edit"), reasonRequired: false, dryRun: false, principals: STAFF, emits: ["outlet.updated"], mcp: { expose: false, toolsets: [] } },
   "stations.list": { op: "stations.list", summary: "List stations", description: "POS stations of an outlet with their settings and pairing state.", tier: "T0", minRole: "server", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: STAFF_AND_STATION, emits: [], mcp: { expose: false, toolsets: [] } },
   "stations.create": { op: "stations.create", summary: "Create a station", description: "Creates a station record for an outlet. Pair an iPad to it with stations.pair.", tier: "T3", ...fromPermission("config.edit"), reasonRequired: false, dryRun: false, principals: STAFF, emits: ["station.created"], mcp: { expose: false, toolsets: [] } },
   "stations.update": { op: "stations.update", summary: "Update a station", description: "Changes a station's layout, printers, pay-before-firing or seat settings.", tier: "T3", ...fromPermission("config.edit"), reasonRequired: false, dryRun: false, principals: STAFF, emits: ["station.updated"], mcp: { expose: false, toolsets: [] } },
