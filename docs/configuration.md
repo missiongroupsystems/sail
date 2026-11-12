@@ -43,7 +43,7 @@ A preset is plain data in `packages/shared/src/presets.ts`. The engine and the s
 
 The rates in `us` and `eu-vat` are examples, not the law of any one state or country. Check them against your own before you trade.
 
-Receipts and kitchen tickets print any script the presets need. On a printer without a CJK code page, a line with text outside Latin-1 (Japanese, Chinese, Korean, Greek, Cyrillic, Polish or Czech letters, Arabic, Hebrew) is printed as an image drawn with a bundled font; turn on **CJK code page** for a printer that has one to send Japanese or Chinese as text instead. Thai, Devanagari and other scripts that stack marks on a letter are not supported yet: their marks print beside the letter.
+Receipts and kitchen tickets print any script the presets need. On a printer without a CJK code page, a line with text outside Latin-1 (Japanese, Chinese, Korean, Greek, Cyrillic, Polish or Czech letters, Arabic, Hebrew) is printed as an image drawn with a bundled font; turn on **CJK code page** for a printer that has one to send Japanese or Chinese as text instead. With it on, every line outside Latin-1 is sent as UTF-8 text, so turn it on only for printers whose code page covers every script you print. Thai, Devanagari and other scripts that stack marks on a letter are not supported yet: their marks print beside the letter.
 
 The preset is chosen when the merchant is created (in first-run setup, or `bootstrap --preset=<key>`; see [self-hosting.md](self-hosting.md#sign-in)). In `bootstrap`, `--time-zone` is always required (a preset only suggests one); `--currency` and `--locale` override the preset, and `blank` needs both.
 

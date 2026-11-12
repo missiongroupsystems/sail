@@ -285,6 +285,9 @@ describe("operations whose tier was too low", () => {
     const tok = await session((await identity({ role: "server", toolsets: ["kitchen"], risk_ceiling: "T1" })).credential);
     expect((await call("POST", `/v1/print-jobs/${kitchen.id}/reprint`, { token: tok, body: {} })).status).toBe(403);
     expect((await call("POST", `/v1/print-jobs/${kitchen.id}/reprint`, { token: w.pins.server, body: {} })).status).toBe(201);
+    // Rerouting it once the relay has picked it up could print it twice too.
+    await db.sql`update print_jobs set status = 'claimed' where id = ${kitchen.id}`;
+    expect((await call("POST", "/v1/print-jobs/reroute", { token: tok, body: { job_ids: [kitchen.id], printer_id: w.ids.kitchen } })).status).toBe(403);
   });
 
   it("customers.upsert with group_ids is the same approval step as customer_groups.set_members for a person with a ceiling", async () => {

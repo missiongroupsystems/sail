@@ -120,10 +120,12 @@ Sessions last 12 hours. **Sign out** in the user menu ends the session on the se
 
 | Counter | Limit | Effect |
 |-|-|-|
-| One address and one email | 5 failures | That pair is locked for 15 minutes, the right password included. The owner signing in from their own address is not affected. |
+| One address and one email | 5 failures | That pair is locked for 15 minutes, the right password included. The owner signing in from another address is not affected, as long as the API can tell addresses apart (see `TRUST_PROXY` below): without it every sign-in through the web app has the web server's address, and the pair is in effect the email alone. |
 | One address, any emails | 20 failures | The address is locked for 15 minutes (password spraying). |
 | One email, all addresses together | after 5 failures | Each further failure pauses that email for 2, 4, 8 ... seconds, up to 3 minutes, which keeps guesses from many addresses near 20 an hour. During an attack the owner waits at most 3 minutes, not 15. |
-| One email, all addresses together | 50 failures | The email is locked for 15 minutes, and an `auth.sign_in_locked` entry in the merchant's audit log tells the Admins. |
+| One email, all addresses together | 50 failures | The email is locked for 15 minutes, and an `auth.sign_in_locked` entry in the merchant's audit log tells the Admins. An hour without failures resets this count. |
+
+An attacker who keeps guessing can keep an email paused (never more than 3 minutes at a time) for as long as the attack lasts; that is the price of bounding guesses on one account.
 
 A right password clears the email's and the pair's counts but never a lock or a pause, and never the address's count. The counters are in Postgres, so they hold across API machines and restarts. Changing your password has its own limit: 5 wrong current passwords lock password changes for that person for 15 minutes.
 

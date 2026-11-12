@@ -41,11 +41,11 @@ const NO_MERCHANT = "00000000-0000-0000-0000-000000000000";
  * - an address locks after 20 failures for 15 minutes, whatever the emails (password spraying);
  * - an email, from all addresses together, pauses after its 5th failure for 2, 4, 8 ... seconds up to 3 minutes, which
  *   keeps distributed guessing near 20 an hour, and locks for 15 minutes after 50, which also tells the merchant's
- *   Admins through the audit log.
+ *   Admins through the audit log. An hour without failures forgets them.
  */
 const PAIR_LIMITS: AttemptLimits = { maxFailures: 5, lockSeconds: 15 * 60, what: "sign-in attempts for this email from this address" };
 const ADDRESS_LIMITS: AttemptLimits = { maxFailures: 20, lockSeconds: 15 * 60, what: "sign-in attempts from this address" };
-const EMAIL_LIMITS: AttemptLimits = { maxFailures: 50, lockSeconds: 15 * 60, what: "sign-in attempts for this email", delay: { after: 5, maxSeconds: 180 } };
+const EMAIL_LIMITS: AttemptLimits = { maxFailures: 50, lockSeconds: 15 * 60, what: "sign-in attempts for this email", delay: { after: 5, maxSeconds: 180 }, forgetAfterSeconds: 60 * 60 };
 const PASSWORD_CHANGE_LIMITS: AttemptLimits = { maxFailures: 5, lockSeconds: 15 * 60, what: "wrong current passwords" };
 const emailScope = (email: string) => `signin-email:${sha256(email)}`;
 const pairScope = (address: string, email: string) => `signin-pair:${sha256(`${address}\n${email}`)}`;

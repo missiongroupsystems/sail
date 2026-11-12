@@ -325,6 +325,8 @@ export function printingRoutes(app: OpenAPIHono<AppEnv>) {
     const b = c.req.valid("json");
     const jobs = await db().select().from(printJobs).where(inArray(printJobs.id, b.job_ids));
     if (jobs.length !== b.job_ids.length) throw AppError.notFound("print job");
+    // A kitchen ticket the relay has claimed may still print; a second copy elsewhere can mean food cooked twice.
+    if (p.type === "agent" && jobs.some((j) => j.status === "claimed" && (j.document as PrintJobPayload).template === "kitchen_ticket")) throw new AppError("permission_denied", "Only staff reroute a kitchen ticket the printer has already picked up", { remedy: "Ask the kitchen whether it printed, then reroute it on the POS." });
     const created = await rerouteJobs(jobs, b.printer_id ?? null, p, c.get("correlationId"));
     for (const j of jobs) await appendEvent({ merchantId: p.merchantId, outletId: j.outletId, type: "print_job.rerouted", aggregate: { kind: "print_job", id: j.id }, operationId: "print_jobs.reroute", payload: { to: created.find((x) => true)?.printer_id ?? null }, correlationId: c.get("correlationId"), businessDay: await businessDayInputs(p.merchantId, j.outletId) }, p);
     await recordAudit(p, { action: "print_jobs.reroute", targetKind: "print_job", targetId: b.job_ids.join(","), outletId: jobs[0]?.outletId ?? null, details: { count: created.length, printer_id: b.printer_id ?? "backup" } });

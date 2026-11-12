@@ -151,6 +151,15 @@ describe("lockout", () => {
     await db.sql`delete from pin_attempts`;
   });
 
+  it("an hour without failures forgets an email's count, so old failures never add up to the cap", async () => {
+    const email = await givePassword(A, A.cashier.id);
+    for (let i = 0; i < 5; i++) await signIn(email, `old guess ${i}`);
+    await db.sql`update pin_attempts set updated_at = now() - interval '61 minutes', locked_until = null where scope like 'signin-email:%'`;
+    expect((await signIn(email, "new guess")).status).toBe(401);
+    expect((await db.sql<{ failures: number }[]>`select failures from pin_attempts where scope like 'signin-email:%'`)[0]!.failures).toBe(1);
+    await db.sql`delete from pin_attempts`;
+  });
+
   it("20 failures from one address lock that address for every email, even with the right password, and a right password does not reset it", async () => {
     const email = await givePassword(A, A.outlet2Cashier.id);
     const from = "203.0.113.7";

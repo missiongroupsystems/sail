@@ -84,11 +84,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Env {
 /** Secrets that sign tokens or verify them. */
 const SECRET_KEYS = ["SESSION_TOKEN_SECRET", "STATION_TOKEN_SECRET", "GUEST_TOKEN_SECRET", "RELAY_TOKEN_SECRET", "AGENT_TOKEN_SECRET", "SUPABASE_JWT_SECRET"] as const;
 export const PRODUCTION_SECRET_MIN_LENGTH = 32;
-/** The values the repository publishes (.env.example uses `change-me-`, dev:local uses `local-`): anyone could sign tokens with them. */
-const PLACEHOLDER = /^(change-me|local-)/i;
+/** The values the repository publishes (.env.example uses `change-me-`, dev:local `local-`, the tests `...-for-tests-...`): anyone could sign tokens with them. */
+const PLACEHOLDER = /^(change-me|local-)|for-tests/i;
 
 /** A production server refuses to start with a published placeholder or a short secret. */
 function assertProductionSecrets(cfg: Env): void {
+  // PIN lookups and stored request hashes are keyed with it; without it they would use a public key.
+  if (!cfg.STATION_TOKEN_SECRET) throw new Error("Invalid environment: STATION_TOKEN_SECRET is required in production");
   for (const key of SECRET_KEYS) {
     const value = cfg[key];
     if (value === undefined) continue;
