@@ -29,7 +29,7 @@ Open http://localhost:3000 and sign in with `admin@sail.local` (a Singapore demo
 
 On a database with no merchant yet, the back office opens on first-run setup instead: your business, a region preset, the first outlet and your Admin login. [Self-hosting](docs/self-hosting.md#sign-in) covers setup, inviting staff and the external identity provider option.
 
-To use the POS, go to Settings > Stations, open Station 1 and press Pair an iPad. Open http://localhost:3000/pos (best in a window about 1180 by 820), enter the code, then the PIN. For guest ordering, seat a table on the POS (guests can only order on an open table), then in the back office open Floor & QR, select that table, press Rotate code and open the link it shows.
+To use the POS, go to Settings > Stations, open Station 1 and press Pair an iPad. Open http://localhost:3000/pos (best in a window about 1180 by 820), enter the code, then the PIN. Cash goes into a drawer, so open a shift (Shift > Open shift, with its float) before taking a cash payment; card payments need no shift. For guest ordering, seat a table on the POS (guests can only order on an open table), then in the back office open Floor & QR, select that table, press Rotate code and open the link it shows.
 
 `dev:local` also starts a card-terminal simulator: pay with Card (terminal) on the POS and it approves after a moment ([configuration.md](docs/configuration.md#payment-providers) shows how to make it decline).
 
