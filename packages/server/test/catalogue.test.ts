@@ -155,16 +155,16 @@ describe("catalogue", () => {
     expect((await call("POST", "/v1/void-reasons", { token: A.admin.token, body: { name: "Customer changed mind" } })).status).toBe(201);
     const group = await call<{ data: { id: string } }>("POST", "/v1/customer-groups", { token: A.manager.token, body: { name: "VIP" } });
     expect(group.status).toBe(201);
-    const cust = await call<{ data: { id: string; mobile: string; group_ids: string[] } }>("PUT", "/v1/customers", { token: A.manager.token, body: { name: "Lim Wei", mobile: "+65 9123 4567", group_ids: [group.body.data.id] } });
+    const cust = await call<{ data: { id: string; mobile: string; group_ids: string[] } }>("PUT", "/v1/customers", { token: A.manager.token, body: { name: "Lim Wei", mobile: "+65 0000 4567", group_ids: [group.body.data.id] } });
     expect(cust.status).toBe(200);
-    expect(cust.body.data.mobile).toBe("+6591234567");
+    expect(cust.body.data.mobile).toBe("+6500004567");
     expect(cust.body.data.group_ids).toEqual([group.body.data.id]);
     // Same mobile again updates the same customer.
-    const again = await call<{ data: { id: string } }>("PUT", "/v1/customers", { token: A.cashier.token, body: { name: "Lim Wei Ling", mobile: "+6591234567" } });
+    const again = await call<{ data: { id: string } }>("PUT", "/v1/customers", { token: A.cashier.token, body: { name: "Lim Wei Ling", mobile: "+6500004567" } });
     expect(again.body.data.id).toBe(cust.body.data.id);
-    const found = await call<{ data: { name: string }[] }>("GET", "/v1/customers?mobile=9123", { token: A.server.token });
+    const found = await call<{ data: { name: string }[] }>("GET", "/v1/customers?mobile=0000", { token: A.server.token });
     expect(found.body.data.map((c) => c.name)).toEqual([]);
-    const found2 = await call<{ data: { name: string }[] }>("GET", "/v1/customers?mobile=%2B6591", { token: A.server.token });
+    const found2 = await call<{ data: { name: string }[] }>("GET", "/v1/customers?mobile=%2B6500", { token: A.server.token });
     expect(found2.body.data.map((c) => c.name)).toEqual(["Lim Wei Ling"]);
     const members = await call<{ data: { member_count: number } }>("POST", `/v1/customer-groups/${group.body.data.id}/members`, { token: A.manager.token, body: { remove: [cust.body.data.id] } });
     expect(members.body.data.member_count).toBe(0);

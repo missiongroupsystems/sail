@@ -123,7 +123,7 @@ export async function devSeed(url: string, boot: BootstrapResult): Promise<void>
       const vip = randomUUID();
       await tx`insert into customer_groups (id, merchant_id, name, description) values (${vip}, ${m}, 'VIP', 'Regulars with 10% off alcohol above $100')`;
       const cust = randomUUID();
-      await tx`insert into customers (id, merchant_id, name, mobile, email, marketing_consent) values (${cust}, ${m}, 'Lim Wei Ling', '+6591234567', 'wei.ling@example.com', true)`;
+      await tx`insert into customers (id, merchant_id, name, mobile, email, marketing_consent) values (${cust}, ${m}, 'Lim Wei Ling', '+6500004567', 'wei.ling@example.com', true)`;
       await tx`insert into customer_group_members (merchant_id, group_id, customer_id) values (${m}, ${vip}, ${cust})`;
 
       // Pricing rules: the preset's seed set is already there; add the worked-example rules.

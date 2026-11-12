@@ -62,7 +62,7 @@ beforeAll(async () => {
   await call("POST", "/v1/printers", { token: t, body: { id: ids.printer, outlet_id: A.outletId, name: "Receipt", ip: "10.0.0.9", role: "receipt" } });
   await call("POST", "/v1/stations", { token: t, body: { id: ids.station, outlet_id: A.outletId, brand_id: A.brandId, name: "Floor", receipt_printer_id: ids.printer } });
   await call("POST", "/v1/customer-groups", { token: A.manager.token, body: { id: ids.vipGroup, name: "VIP" } });
-  await call("PUT", "/v1/customers", { token: A.manager.token, body: { id: ids.customer, name: "Lim", mobile: "+6591234567", group_ids: [ids.vipGroup] } });
+  await call("PUT", "/v1/customers", { token: A.manager.token, body: { id: ids.customer, name: "Lim", mobile: "+6500004567", group_ids: [ids.vipGroup] } });
   stationToken = await pairStation(ids.station);
   serverPin = (await signIn(stationToken, "444444")).body.data.session_token;
   cashierPin = (await signIn(stationToken, "333333")).body.data.session_token;

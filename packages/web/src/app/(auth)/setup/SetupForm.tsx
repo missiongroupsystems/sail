@@ -37,7 +37,8 @@ export function SetupForm({ withPassword }: { withPassword: boolean }) {
   const [error, setError] = useState<ApiError | null>(null);
   const form = useForm<Values>({
     resolver: zodResolver(Schema),
-    defaultValues: { business_name: "", preset: "sg", time_zone: REGION_PRESETS.sg.time_zone_suggestion ?? deviceTimeZone(), currency: "", locale: "", outlet_name: "", name: "", email: "", password: "", withPassword },
+    // The region whose suggested time zone is the device's, otherwise blank: no country is the default.
+    defaultValues: { business_name: "", preset: PRESETS.find((p) => p.time_zone_suggestion === deviceTimeZone())?.key ?? "blank", time_zone: deviceTimeZone(), currency: "", locale: "", outlet_name: "", name: "", email: "", password: "", withPassword },
   });
   const preset = form.watch("preset");
   const setValue = form.setValue;

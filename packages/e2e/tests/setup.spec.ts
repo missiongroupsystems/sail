@@ -8,7 +8,8 @@ import { expect, keyIn, SETUP_API, SETUP_WEB, signInToken, test } from "./fixtur
 const ADMIN = { name: "Setup Admin", email: "setup.admin@first-run.test", password: "first run admin password" };
 const PIN = "246802";
 
-test.use({ viewport: { width: 1180, height: 820 } });
+// The setup form suggests the region whose time zone is the device's: this device is in Singapore.
+test.use({ viewport: { width: 1180, height: 820 }, timezoneId: "Asia/Singapore" });
 
 test("first run: set up the business, sign in, pair the POS and send an order", async ({ page }) => {
   test.setTimeout(900_000);

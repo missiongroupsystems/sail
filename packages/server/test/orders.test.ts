@@ -71,7 +71,7 @@ beforeAll(async () => {
   await call("POST", "/v1/tables", { token: t, body: { id: cat.table13, outlet_id: A.outletId, area_id: cat.area, name: "13", seats: 2 } });
   await call("POST", "/v1/void-reasons", { token: t, body: { id: cat.voidReason, name: "Changed mind" } });
   await call("POST", "/v1/customer-groups", { token: A.manager.token, body: { id: cat.vipGroup, name: "VIP" } });
-  await call("PUT", "/v1/customers", { token: A.manager.token, body: { id: cat.customer, name: "Lim", mobile: "+6591234567", group_ids: [cat.vipGroup] } });
+  await call("PUT", "/v1/customers", { token: A.manager.token, body: { id: cat.customer, name: "Lim", mobile: "+6500004567", group_ids: [cat.vipGroup] } });
   await call("POST", "/v1/pricing-rules", { token: t, body: { rule_key: "promo:food25", body: { kind: "discount", name: "25% off food", calc: "percent", value: { type: "fixed", amount: 2500 }, scope: { type: "categories", category_ids: [cat.food] }, priority: 10, application: "auto", report_class: "promo" }, effective_from: "2026-01-01T00:00:00Z" } });
   await call("POST", "/v1/pricing-rules", { token: t, body: { rule_key: "promo:vip-alcohol", body: { kind: "discount", name: "10% off alcohol above $100 (VIP)", calc: "percent", value: { type: "fixed", amount: 1000 }, scope: { type: "tags", tags: ["alcohol"] }, conditions: { min_spend: { amount: 10_000, basis: "scoped" }, customer_group_ids: [cat.vipGroup] }, priority: 20, application: "auto", report_class: "promo" }, effective_from: "2026-01-01T00:00:00Z" } });
   await call("POST", "/v1/stations", { token: t, body: { id: cat.station, outlet_id: A.outletId, brand_id: A.brandId, name: "Station 1", seats_enabled: true } });

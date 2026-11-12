@@ -35,7 +35,7 @@ beforeAll(async () => {
   await must("POST", "/v1/tables", { id: table, outlet_id: w.m.outletId, area_id: area, name: "1" });
   await must("POST", "/v1/categories", { name: "Food" });
   await must("POST", "/v1/customer-groups", { name: "Regulars" });
-  await must("PUT", "/v1/customers", { name: "A customer", mobile: "91234567" });
+  await must("PUT", "/v1/customers", { name: "A customer", mobile: "00004567" });
   await must("POST", "/v1/availability-rules", { target_kind: "product", target_id: w.ids.wine, days_of_week: [], start_time: "00:00", end_time: "00:01" });
   await must("POST", "/v1/layouts", { brand_id: w.m.brandId, name: "Main", pages: [] });
   await must("POST", "/v1/modifier-groups", { name: "Size", min_select: 0, options: [{ product_id: w.ids.kopi }] });
