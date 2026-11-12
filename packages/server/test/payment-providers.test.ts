@@ -118,6 +118,16 @@ describe("approve and decline", () => {
     expect(mine).toEqual(["payment_intent.started", "payment.recorded", "payment_intent.approved"]);
   });
 
+  it("the worker records a terminal payment where no shift is open: only cash needs a drawer", async () => {
+    const [{ n }] = await db.sql<[{ n: number }]>`select count(*)::int as n from shifts where outlet_id = ${B.m.outletId} and status = 'open'`;
+    expect(n).toBe(0);
+    const s = await order(B);
+    const intent = await onTerminal(B, s);
+    await sim.settle(intent.id, "approve");
+    expect(await snap(B, s.id)).toMatchObject({ status: "completed", balance: 0 });
+    expect((await intents(B, s.id))[0]).toMatchObject({ state: "approved" });
+  });
+
   it("a decline leaves the bill exactly as it was: no payment, pricing not frozen, and the bill can be paid another way", async () => {
     const s = await order(A);
     const intent = await onTerminal(A, s);

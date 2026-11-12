@@ -3,6 +3,7 @@ import postgres, { type Sql, type TransactionSql } from "postgres";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { config } from "../config.js";
 import * as schema from "./schema/index.js";
+import type { MoneyEffect } from "./schema/index.js";
 
 export type Db = PostgresJsDatabase<typeof schema>;
 
@@ -15,8 +16,11 @@ export type RequestTx = {
   dryRun: boolean;
   /** Set once `settleInvariants` has run: the money tables must not be written again in this transaction. */
   settled: boolean;
-  /** A proposal being executed: its order must still be at the version the approver saw (checked by `lockOrder`). */
-  pinnedOrder: { orderId: string; version: number } | null;
+  /**
+   * A proposal being executed: its order must still be at the version the approver saw (checked by `lockOrder`), and
+   * its money effect, when it has one, must still be what the approver was shown (checked by `defineOp`).
+   */
+  pinnedOrder: { orderId: string; version: number; effect: MoneyEffect | null } | null;
 };
 
 const als = new AsyncLocalStorage<RequestTx>();

@@ -2,8 +2,8 @@ import { createRoute, OpenAPIHono, z, type RouteConfig, type RouteHandler } from
 import type { Next } from "hono";
 import { ApiErrorSchema, operation, roleAtLeast, type OperationSpec } from "@sail/shared";
 import { AppError } from "./errors.js";
-import { markDryRun, tx } from "../db/client.js";
-import { aboveCeiling, createProposal, currentOrderMoney, directCeiling, moneyEffect, orderMoney, requestOrderId, takeAgentBudget, toProposal } from "../services/agents.js";
+import { markDryRun, maybeTx, tx } from "../db/client.js";
+import { aboveCeiling, createProposal, currentOrderMoney, directCeiling, moneyEffect, orderMoney, requestOrderId, sameOrderMoney, takeAgentBudget, toProposal } from "../services/agents.js";
 import type { MoneyEffect } from "../db/schema/index.js";
 import type { Principal } from "../auth/principal.js";
 import type { AppEnv } from "./context.js";
@@ -106,6 +106,10 @@ export function defineOp<R extends OpRoute>(app: OpenAPIHono<AppEnv>, route: R, 
     const principal = c.get("principal") as AppEnv["Variables"]["principal"] | undefined;
     if (principal?.type === "agent" && spec.agentPerHour) await takeAgentBudget({ id: principal.identityId, merchantId: principal.merchantId, name: principal.name }, { kind: `op:${spec.op}`, window: "hour", max: spec.agentPerHour, what: `${spec.op} calls this hour` });
     const method = String(c.req.method).toUpperCase();
+    // An approved proposal with a money effect runs only at the figures its approver was shown. A rule starting or
+    // ending, a tax rate or a customer's groups can move them without touching the order's version, so re-quote.
+    const pinned = maybeTx()?.pinnedOrder;
+    if (pinned?.effect && method !== "GET") return requote(pinned.orderId, pinned.effect, () => handler(c, next));
     // Reads, quotes and dry runs are T0 by nature; anything else above the caller's ceiling becomes a proposal.
     const aboveTier = principal && method !== "GET" && spec.principals.length > 0 && aboveCeiling(principal, spec);
     if (!principal || method === "GET" || (!aboveTier && principal.type !== "agent")) return handler(c, next);
@@ -133,6 +137,15 @@ export function defineOp<R extends OpRoute>(app: OpenAPIHono<AppEnv>, route: R, 
     return propose(c, principal, spec, method, path, body, { reason, before, after });
   }) as never);
   return full;
+}
+
+async function requote(orderId: string, shown: MoneyEffect, run: () => Promise<Response> | Response): Promise<Response> {
+  const before = await currentOrderMoney(orderId);
+  const res = await run();
+  if (res.status >= 400) return res;
+  const after = await orderMoney(orderId);
+  if (sameOrderMoney(before, shown.before) && sameOrderMoney(after, shown.after)) return res;
+  throw new AppError("version_conflict", "The amounts have changed since this proposal was made, so it was not run", { remedy: "Reject it, and ask for it again at today's prices.", details: { order_id: orderId, shown: { before: shown.before, after: shown.after }, now: { before, after } } });
 }
 
 async function readJson(c: { req: { json(): Promise<unknown> } }): Promise<unknown> {

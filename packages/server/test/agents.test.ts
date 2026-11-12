@@ -197,7 +197,7 @@ describe("ceilings and proposals", () => {
     // And the replay itself refuses an order that moved after the approval's check.
     await expect(
       withTransaction(async (t) => {
-        t.pinnedOrder = { orderId: seen.id, version: seen.version };
+        t.pinnedOrder = { orderId: seen.id, version: seen.version, effect: null };
         await lockOrder(seen.id);
       }),
     ).rejects.toMatchObject({ code: "version_conflict" });

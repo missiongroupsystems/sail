@@ -67,6 +67,30 @@ describe("first-run setup", () => {
     expect(me.body.data).toMatchObject({ role: "admin", merchant_id: merchant!.id, via: "backoffice" });
   });
 
+  it("the first cash sale after setup is refused until a shift is open, and the refusal tells the owner to open one", async () => {
+    const [merchant] = await db.sql<{ id: string; name: string }[]>`select id, name from merchants`;
+    const n = Number(merchant!.name.split(" ").pop());
+    const token = (await call<{ data: { token: string } }>("POST", "/v1/auth/sign-in", { body: { email: `first.admin.${n}@setup.test`, password: "a long enough password" }, idempotencyKey: null })).body.data.token;
+    const [{ outlet, brand, cash }] = await db.sql<[{ outlet: string; brand: string; cash: string }]>`select (select id from outlets where merchant_id = ${merchant!.id}) as outlet, (select id from brands where merchant_id = ${merchant!.id}) as brand, (select id from tender_types where merchant_id = ${merchant!.id} and is_cash) as cash`;
+    const must = async (method: string, path: string, body: unknown) => {
+      const r = await call<{ data: { id: string; checks: { id: string; balance: number }[] } }>(method, path, { token, body });
+      if (r.status >= 300) throw new Error(`${path} ${r.status} ${JSON.stringify(r.body)}`);
+      return r.body.data;
+    };
+    const product = (await must("POST", "/v1/products", { name: "Coffee", price: 300 })).id;
+    const menu = (await must("POST", "/v1/menus", { brand_id: brand, name: "All day", sections: [{ name: "Drinks", items: [{ product_id: product }] }] })).id;
+    await must("POST", "/v1/channel-links", { channel: "pos", outlet_id: outlet, brand_id: brand, menu_id: menu });
+    const order = await must("POST", "/v1/orders", { order_id: crypto.randomUUID(), order_type: "takeaway", takeaway_ref: "1", outlet_id: outlet, brand_id: brand });
+    const s = await must("POST", `/v1/orders/${order.id}/lines`, { lines: [{ line_id: crypto.randomUUID(), product_id: product, quantity: 1 }] });
+    const pay = () => call<{ code: string; message: string; remedy: string; details: { invariant: string } }>("POST", `/v1/checks/${s.checks[0]!.id}/payments`, { token, body: { payment_id: crypto.randomUUID(), tender_type_id: cash, amount: s.checks[0]!.balance, tendered: s.checks[0]!.balance } });
+    const refused = await pay();
+    expect(refused.status).toBe(422);
+    expect(refused.body.details.invariant).toBe("no_open_shift");
+    expect(refused.body.remedy).toMatch(/Open a shift/);
+    await must("POST", "/v1/shifts", { outlet_id: outlet, station_id: null, float_cents: 0 });
+    expect((await pay()).status).toBe(200);
+  });
+
   it("once a merchant exists, setup is refused and the server no longer asks for it", async () => {
     const again = await call<{ code: string }>("POST", "/v1/setup", { body: setupBody(9), idempotencyKey: null });
     expect(again.status).toBe(409);

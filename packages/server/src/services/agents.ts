@@ -378,10 +378,18 @@ export async function lockPendingProposal(id: string): Promise<typeof proposals.
   return row!;
 }
 
-/** The order a proposal was pinned to, for the replayed request's `lockOrder`. */
-export async function proposalOrderPin(proposalId: string): Promise<{ orderId: string; version: number } | null> {
-  const [row] = await db().select({ orderId: proposals.orderId, version: proposals.expectedVersion }).from(proposals).where(eq(proposals.id, proposalId)).limit(1);
-  return row?.orderId && row.version != null ? { orderId: row.orderId, version: row.version } : null;
+/** The order a proposal was pinned to, and the money effect its approver was shown, for the replayed request. */
+export async function proposalOrderPin(proposalId: string): Promise<{ orderId: string; version: number; effect: MoneyEffect | null } | null> {
+  const [row] = await db().select({ orderId: proposals.orderId, version: proposals.expectedVersion, effect: proposals.effect }).from(proposals).where(eq(proposals.id, proposalId)).limit(1);
+  return row?.orderId && row.version != null ? { orderId: row.orderId, version: row.version, effect: row.effect } : null;
+}
+
+const MONEY_FIELDS = ["subtotal", "discount_total", "fee_total", "tax_total", "total", "customer_id", "order_type", "pax"] as const;
+
+/** Do two readings of an order's money agree on every figure the approver is shown? */
+export function sameOrderMoney(a: OrderMoney | null, b: OrderMoney | null): boolean {
+  if (!a || !b) return a === b;
+  return MONEY_FIELDS.every((k) => a[k] === b[k]);
 }
 
 export async function expireProposals(): Promise<number> {
