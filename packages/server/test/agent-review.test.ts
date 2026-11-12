@@ -286,3 +286,77 @@ describe("operations whose tier was too low", () => {
     }
   });
 });
+
+describe("A5, A6: no proposal or idempotency record holds a secret", () => {
+  type Doc = { paths: Record<string, Record<string, { operationId: string; requestBody?: { content?: Record<string, { schema?: S }> }; responses?: Record<string, { content?: Record<string, { schema?: S }> }> }>>; components?: { schemas?: Record<string, S> } };
+  type S = Record<string, unknown>;
+
+  it("every secret-looking field in a request or response is marked secret(), or is listed here with the reason it is not a secret", async () => {
+    const NOT_SECRET: Record<string, string> = {
+      has_pin: "a boolean",
+      code_page_cjk: "a printer setting",
+      logo_url: "a public image address",
+      pdf_url: "a path the caller fetches with its own token",
+      credential_rotated_at: "a timestamp",
+      channel_link_id: "an id",
+      "pricing_rules.validate code": "a validation issue code",
+      "staff.access link": "the state of the open link, never its token",
+      "staff.revoke_access link": "the state of the open link, never its token",
+      "receipts.read token": "a path parameter, compared with the stored hash",
+    };
+    const doc = (await (await (await import("../src/app.js")).buildApp().request("/openapi.json")).json()) as Doc;
+    const deref = (s: S | undefined): S | undefined => (s && typeof s.$ref === "string" ? deref(doc.components!.schemas![s.$ref.split("/").pop()!]) : s);
+    const LOOKS_SECRET = /(^|_)(pin|password|secret|credential|token|code|grant|link|url)($|_)/;
+    const unmarked: string[] = [];
+    const walk = (raw: S | undefined, op: string, marked: boolean, depth = 0) => {
+      const s = deref(raw);
+      if (!s || depth > 30) return;
+      const m = marked || s["x-sail-secret"] === true;
+      for (const k of ["anyOf", "oneOf", "allOf"]) for (const x of (s[k] as S[] | undefined) ?? []) walk(x, op, m, depth + 1);
+      if (s.items) walk(s.items as S, op, m, depth + 1);
+      for (const [k, v] of Object.entries((s.properties as Record<string, S> | undefined) ?? {})) {
+        const vs = deref(v)!;
+        const isMarked = m || vs["x-sail-secret"] === true || ((vs.anyOf ?? vs.oneOf) as S[] | undefined)?.some((x) => deref(x)?.["x-sail-secret"] === true);
+        if (LOOKS_SECRET.test(k) && !isMarked && !(k in NOT_SECRET) && !(`${op} ${k}` in NOT_SECRET)) unmarked.push(`${op} ${k}`);
+        walk(v, op, m, depth + 1);
+      }
+    };
+    for (const methods of Object.values(doc.paths))
+      for (const o of Object.values(methods)) {
+        for (const c of Object.values(o.requestBody?.content ?? {})) walk(c.schema, o.operationId, false);
+        for (const [st, r] of Object.entries(o.responses ?? {})) if (st.startsWith("2")) for (const c of Object.values(r.content ?? {})) walk(c.schema, o.operationId, false);
+      }
+    expect(unmarked, "mark these with secret() in their route, or list them in NOT_SECRET with a reason").toEqual([]);
+  });
+
+  it("a staff.update carrying a PIN (the R1.9 proposal) is refused, not stored, for anyone above their ceiling", async () => {
+    await db.sql`update staff set risk_ceiling = 'T1' where id = ${w.m.admin.id}`;
+    try {
+      const before = (await db.sql<{ n: number }[]>`select count(*)::int as n from proposals`)[0]!.n;
+      const r = await call<{ code: string }>("PATCH", `/v1/staff/${w.m.server.id}`, { token: w.m.admin.token, body: { pin: "135790" } });
+      expect(r.status, JSON.stringify(r.body)).toBe(403);
+      expect((await db.sql<{ n: number }[]>`select count(*)::int as n from proposals`)[0]!.n).toBe(before);
+      // Without the PIN the same change is an ordinary proposal.
+      expect((await call("PATCH", `/v1/staff/${w.m.server.id}`, { token: w.m.admin.token, body: { name: "Sam S" } })).status).toBe(202);
+      const leaked = await db.sql`select id from proposals where body::text like '%135790%'`;
+      expect(leaked).toEqual([]);
+    } finally {
+      await db.sql`update staff set risk_ceiling = null where id = ${w.m.admin.id}`;
+    }
+  });
+
+  it("an agent credential, a delegation grant and a pairing code are shown once: a retry is refused and the database never holds them (R1.12)", async () => {
+    const key = randomUUID();
+    const body = { name: "replay-me", role: "server", toolsets: ["pos.read"] };
+    const r1 = await call<{ data: { id: string; credential: string } }>("POST", "/v1/agent-identities", { token: w.m.admin.token, body, idempotencyKey: key });
+    expect(r1.status).toBe(201);
+    const r2 = await call<{ code: string }>("POST", "/v1/agent-identities", { token: w.m.admin.token, body, idempotencyKey: key });
+    expect(r2.status).toBe(409);
+    const grantKey = randomUUID();
+    const g = await call<{ data: { grant: string } }>("POST", `/v1/agent-identities/${r1.body.data.id}/delegations`, { token: w.pins.manager, body: {}, idempotencyKey: grantKey });
+    expect((await call("POST", `/v1/agent-identities/${r1.body.data.id}/delegations`, { token: w.pins.manager, body: {}, idempotencyKey: grantKey })).status).toBe(409);
+    const code = await call<{ data: { code: string } }>("POST", `/v1/stations/${w.ids.station2}/pairing-code`, { token: w.m.admin.token, body: {} });
+    const stored = (await db.sql<{ b: string }[]>`select coalesce(body::text, '') || request_hash as b from idempotency_keys`).map((r) => r.b).join("\n");
+    for (const s of [r1.body.data.credential, r1.body.data.credential.split(".")[1]!, g.body.data.grant.split(".")[1]!, code.body.data.code]) expect(stored).not.toContain(s);
+  });
+});

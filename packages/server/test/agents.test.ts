@@ -388,27 +388,19 @@ describe("MCP adapter", () => {
     const REGISTER_DATA: Record<string, string> = {
       "adjustments.rule_key": "checked against the merchant's pricing rules",
       "overrides.rule_key": "checked against the merchant's pricing rules",
-      "agent_sessions.credential": "a secret, stored only as a hash",
       "auth.email": "matched against back-office logins, never returned",
-      "auth.password": "a secret, stored only as a hash",
-      "auth.current_password": "a secret, compared with the stored hash",
-      "auth.new_password": "a secret, stored only as a hash",
-      "auth.token": "a secret, compared with the stored hash",
       "setup.business_name": "typed by the first Admin, like outlets.create (Admin only)",
       "setup.outlet_name": "typed by the first Admin, like outlets.create (Admin only)",
       "setup.name": "the first Admin's own name, like staff.create (Admin only)",
-      "setup.password": "a secret, stored only as a hash",
       "setup.time_zone": "checked against the IANA zones",
       "setup.currency": "checked against ISO 4217",
       "setup.locale": "checked as a BCP 47 locale",
-      "agent_sessions.on_behalf_of": "a delegation grant, stored only as a hash",
       "agent_sessions.task_id": "the agent runner's own task reference",
       "business_days.business_date": "a date, checked by the register",
       "customer_groups.name": "set up by a Manager in the back office",
       "customer_groups.description": "set up by a Manager in the back office",
       "customers.legacy_id": "the id in the system the merchant imports from",
       "guest_sessions.device_id": "stored only as a hash",
-      "guest_sessions.token": "a secret, stored only as a hash",
       "print_jobs.error": "reported by the merchant's own print relay",
       "relays.error": "reported by the merchant's own print relay",
       "relays.version": "reported by the merchant's own print relay",
@@ -422,7 +414,7 @@ describe("MCP adapter", () => {
     const unmarked: string[] = [];
     const walk = (raw: S, key: string, op: string, marked: boolean) => {
       const s = deref(raw);
-      const m = marked || "x-sail-untrusted" in s;
+      const m = marked || "x-sail-untrusted" in s || "x-sail-secret" in s; // a secret is never shown to a model
       for (const k of ["anyOf", "oneOf", "allOf"]) for (const x of (s[k] as S[] | undefined) ?? []) walk(x, key, op, m);
       const type = s.type;
       const freeText = (type === "string" || (Array.isArray(type) && type.includes("string"))) && !["enum", "format", "pattern", "const"].some((k) => k in s);

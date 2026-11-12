@@ -5,7 +5,7 @@ import { db, markDryRun, settleInvariants, withTransaction } from "../db/client.
 import { checks, orders, paymentIntents, payments, printers, shifts, stations, tenderTypes } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
-import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
+import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted, secret } from "../lib/openapi.js";
 import { appendEvent, type AppendedEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { outletVisible, principalRole, type Principal } from "../auth/principal.js";
@@ -195,7 +195,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: jobs, events: [], warnings: [] }, 200);
   });
 
-  defineOp(app, { op: "receipts.send", method: "post", path: "/v1/checks/{id}/receipt/send", tags: ["payments"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ channel: z.enum(["qr", "link", "email", "sms"]), destination: untrusted(z.string().max(120).optional()) })) }, responses: { 200: jsonResponse(mutationResponse(z.object({ token: z.string(), url: z.string(), delivery_status: z.string() }))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "receipts.send", method: "post", path: "/v1/checks/{id}/receipt/send", tags: ["payments"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ channel: z.enum(["qr", "link", "email", "sms"]), destination: untrusted(z.string().max(120).optional()) })) }, responses: { 200: jsonResponse(mutationResponse(z.object({ token: secret(z.string()), url: secret(z.string()), delivery_status: z.string() }))), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const b = c.req.valid("json");

@@ -138,9 +138,14 @@ export function randomDigits(n: number): string {
   return s.slice(0, n);
 }
 
-/** Indexed PIN lookup value: HMAC(secret, merchant:pin). A database leak alone cannot brute-force PINs without the server secret. */
-export function pinLookup(merchantId: string, pin: string): string {
+/** HMAC with the server secret: a database leak alone cannot brute-force what went in (a PIN, a request holding one). */
+export function keyedDigest(value: string): string {
   const cfg = config();
   const secret = cfg.STATION_TOKEN_SECRET ?? "sail-pin-lookup";
-  return createHmac("sha256", secret).update(`${merchantId}:${pin}`).digest("hex");
+  return createHmac("sha256", secret).update(value).digest("hex");
+}
+
+/** Indexed PIN lookup value: HMAC(secret, merchant:pin). */
+export function pinLookup(merchantId: string, pin: string): string {
+  return keyedDigest(`${merchantId}:${pin}`);
 }

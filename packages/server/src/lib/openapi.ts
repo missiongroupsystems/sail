@@ -8,6 +8,7 @@ import type { MoneyEffect } from "../db/schema/index.js";
 import type { Principal } from "../auth/principal.js";
 import type { AppEnv } from "./context.js";
 import { principalRole } from "../auth/principal.js";
+import { carriesSecret, secretFieldsOf } from "./secrets.js";
 
 export { z };
 
@@ -19,6 +20,16 @@ export { z };
  */
 export function untrusted<T extends z.ZodType>(schema: T, ...returnedAs: string[]): T {
   return schema.openapi({ "x-sail-untrusted": returnedAs.length ? returnedAs : true }) as T;
+}
+
+/**
+ * Marks a field as a secret: a PIN, password, credential, pairing code, grant, token or signed link. A request carrying
+ * one is never frozen into a proposal (a caller above its ceiling is refused instead), and a response holding one is
+ * never stored for an idempotent replay. Marking a response body itself (a PDF of QR codes) covers the whole response.
+ * A secret-looking field left unmarked fails the secrets test.
+ */
+export function secret<T extends z.ZodType>(schema: T): T {
+  return schema.openapi({ "x-sail-secret": true }) as T;
 }
 
 /** Shared response envelopes. */
@@ -97,7 +108,6 @@ export function defineOp<R extends OpRoute>(app: OpenAPIHono<AppEnv>, route: R, 
     const method = String(c.req.method).toUpperCase();
     // Reads, quotes and dry runs are T0 by nature; anything else above the caller's ceiling becomes a proposal.
     const aboveTier = principal && method !== "GET" && spec.principals.length > 0 && aboveCeiling(principal, spec);
-    if (aboveTier && spec.proposable === false) throw new AppError("permission_denied", `${spec.op} is above this caller's risk ceiling and cannot be proposed`, { remedy: "Ask someone without a risk ceiling to do it.", details: { action: spec.op, tier: spec.tier } });
     if (!principal || method === "GET" || (!aboveTier && principal.type !== "agent")) return handler(c, next);
     const body = await readJson(c);
     if (spec.dryRun && (body as { dry_run?: unknown } | null)?.dry_run === true) {
@@ -136,6 +146,9 @@ async function readJson(c: { req: { json(): Promise<unknown> } }): Promise<unkno
 /** Store the frozen request as a proposal and answer `requires_confirmation` (202). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function propose(c: any, principal: Principal, spec: OperationSpec, method: string, path: string, body: unknown, effect?: MoneyEffect): Promise<Response> {
+  // A proposal stores the request and, once approved, its result: neither may hold a secret.
+  const secrets = secretFieldsOf(spec.op);
+  if (secrets.response || carriesSecret(body, secrets.request)) throw new AppError("permission_denied", `${spec.op} carries a secret, so it cannot become a proposal`, { remedy: "Ask someone who may do it directly.", details: { action: spec.op, tier: spec.tier, secret_fields: secrets.request } });
   const proposal = await createProposal({ principal, spec, method, path, body, idempotencyKey: c.get("idempotencyKey") ?? null, rationale: c.req.header("x-rationale") ?? null, correlationId: c.get("correlationId"), effect });
   const ceiling = principal.type === "agent" || principal.type === "staff" ? directCeiling(principal.type, principal.riskCeiling) : null;
   const who = principal.type === "agent" ? "agent" : "person";

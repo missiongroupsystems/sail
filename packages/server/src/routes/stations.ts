@@ -5,7 +5,7 @@ import { db, withTransaction } from "../db/client.js";
 import { auditLog, orderManualApplications, staff, staffSessions, stationPairingCodes, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
-import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
+import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, mutationResponse, z, untrusted, secret } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { hashSecret, pinLookup, randomDigits, randomToken, sha256, signSailToken, verifySecret } from "../auth/tokens.js";
@@ -19,7 +19,7 @@ import { businessDayInputs, toStation } from "./org.js";
 import { config } from "../config.js";
 
 registerOperations({
-  "stations.pairing_code": { op: "stations.pairing_code", summary: "Issue a one-time pairing code for a station", description: "Admin only. The 6-digit code is shown once and expires in 10 minutes. The iPad enters it in stations.pair.", tier: "T3", minRole: "admin", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: ["station.pairing_code_issued"], mcp: { expose: false, toolsets: [] }, proposable: false },
+  "stations.pairing_code": { op: "stations.pairing_code", summary: "Issue a one-time pairing code for a station", description: "Admin only. The 6-digit code is shown once and expires in 10 minutes. The iPad enters it in stations.pair.", tier: "T3", minRole: "admin", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: ["station.pairing_code_issued"], mcp: { expose: false, toolsets: [] } },
   "stations.pair": { op: "stations.pair", summary: "Pair an iPad to a station", description: "Exchanges a one-time pairing code for a long-lived station token. No authentication; the code is single-use. Pairing again replaces the previous token.", tier: "T3", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: [], emits: ["station.paired"], mcp: { expose: false, toolsets: [] } },
   "staff_sessions.start": { op: "staff_sessions.start", summary: "Sign in on a station with a PIN", description: "Station token plus 6-digit PIN → a short-lived PIN session token for the staff member. Lockout after repeated failures. The session ends after inactivity.", tier: "T0", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["station"], emits: ["staff_session.started"], mcp: { expose: false, toolsets: [] } },
   "staff_sessions.end": { op: "staff_sessions.end", summary: "Sign out of a station", description: "Ends the current PIN session.", tier: "T1", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: ["staff_session.ended"], mcp: { expose: false, toolsets: [] } },
@@ -27,7 +27,7 @@ registerOperations({
 });
 
 /** One variant per action a manager may approve: its target kind and the arguments the approver sees, which the protected request must repeat exactly. */
-const grantBase = { target_id: z.uuid(), approver_pin: z.string().regex(/^\d{6}$/), outlet_id: z.uuid().optional() };
+const grantBase = { target_id: z.uuid(), approver_pin: secret(z.string().regex(/^\d{6}$/)), outlet_id: z.uuid().optional() };
 const GrantRequest = z.discriminatedUnion("action", [
   z.object({ action: z.literal("lines.void_fired"), target_kind: z.literal("order_line"), ...grantBase, args: z.object({ quantity: z.number().int().min(1) }) }),
   z.object({ action: z.literal("lines.add_open_price"), target_kind: z.literal("order"), ...grantBase, args: z.object({ lines: z.array(z.object({ line_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1), open_price: z.number().int().min(0) })).min(1) }) }),
@@ -40,7 +40,7 @@ const GrantRequest = z.discriminatedUnion("action", [
 ]);
 
 export function stationRoutes(app: OpenAPIHono<AppEnv>) {
-  defineOp(app, { op: "stations.pairing_code", method: "post", path: "/v1/stations/{id}/pairing-code", tags: ["stations"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 201: jsonResponse(mutationResponse(z.object({ code: z.string(), expires_at: z.string() }))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "stations.pairing_code", method: "post", path: "/v1/stations/{id}/pairing-code", tags: ["stations"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 201: jsonResponse(mutationResponse(z.object({ code: secret(z.string()), expires_at: z.string() }))), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const [st] = await db().select().from(stations).where(and(eq(stations.id, id), eq(stations.merchantId, p.merchantId), isNull(stations.archivedAt))).limit(1);
@@ -53,7 +53,7 @@ export function stationRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: { code, expires_at: expiresAt.toISOString() }, events: [ev], warnings: [] }, 201);
   });
 
-  defineOp(app, { op: "stations.pair", method: "post", path: "/v1/stations/pair", tags: ["stations"], request: { body: jsonBody(z.object({ code: z.string().regex(/^\d{6}$/), device_label: untrusted(z.string().min(1).max(80)), kind: z.enum(["pos", "display"]).optional().describe("The kind of station this device expects (the kitchen display sends display). Another kind is refused before the code is used, so the station's current device stays paired.") })) }, responses: { 200: jsonResponse(dataResponse(z.object({ station_token: z.string(), station: z.record(z.string(), z.unknown()) }))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "stations.pair", method: "post", path: "/v1/stations/pair", tags: ["stations"], request: { body: jsonBody(z.object({ code: secret(z.string().regex(/^\d{6}$/)), device_label: untrusted(z.string().min(1).max(80)), kind: z.enum(["pos", "display"]).optional().describe("The kind of station this device expects (the kitchen display sends display). Another kind is refused before the code is used, so the station's current device stays paired.") })) }, responses: { 200: jsonResponse(dataResponse(z.object({ station_token: secret(z.string()), station: z.record(z.string(), z.unknown()) }))), ...errorResponses } }, async (c) => {
     const { code, device_label, kind } = c.req.valid("json");
     // Public route: runs its own transaction as the connection owner (no principal yet).
     const result = await withTransaction(async (t) => {
@@ -76,7 +76,7 @@ export function stationRoutes(app: OpenAPIHono<AppEnv>) {
 
   defineOp(
     app,
-    { op: "staff_sessions.start", method: "post", path: "/v1/stations/sessions", tags: ["stations"], request: { body: jsonBody(z.object({ pin: z.string().regex(/^\d{6}$/) })) }, responses: { 201: jsonResponse(dataResponse(z.object({ session_token: z.string(), staff: z.object({ id: z.string(), name: z.string(), initials: z.string().nullable(), role: RoleSchema }), station: z.record(z.string(), z.unknown()), expires_in_seconds: z.number().int() }))), ...errorResponses } },
+    { op: "staff_sessions.start", method: "post", path: "/v1/stations/sessions", tags: ["stations"], request: { body: jsonBody(z.object({ pin: secret(z.string().regex(/^\d{6}$/)) })) }, responses: { 201: jsonResponse(dataResponse(z.object({ session_token: secret(z.string()), staff: z.object({ id: z.string(), name: z.string(), initials: z.string().nullable(), role: RoleSchema }), station: z.record(z.string(), z.unknown()), expires_in_seconds: z.number().int() }))), ...errorResponses } },
     async (c) => {
       const p = c.get("principal");
       if (p.type !== "station") throw new AppError("permission_denied", "Sign-in needs a station token", { remedy: "Pair this iPad to a station first." });

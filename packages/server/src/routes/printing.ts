@@ -5,7 +5,7 @@ import { db, withTransaction, type RequestTx } from "../db/client.js";
 import { auditLog, printJobs, printRelays, printers, relayPairingCodes } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
-import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
+import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted, secret } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { compact, defineCrud } from "../lib/crud.js";
@@ -18,7 +18,7 @@ import { lateJobs, reprintJob, rerouteJobs, testJob } from "../services/printing
 import { businessDayInputs } from "./org.js";
 
 registerOperations({
-  "relays.pairing_code": { op: "relays.pairing_code", summary: "Issue a one-time pairing code for a print relay", description: "Admin only; expires in 15 minutes. The relay device exchanges it for a relay token with relays.pair.", tier: "T3", minRole: "admin", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: ["relay.pairing_code_issued"], mcp: { expose: false, toolsets: [] }, proposable: false },
+  "relays.pairing_code": { op: "relays.pairing_code", summary: "Issue a one-time pairing code for a print relay", description: "Admin only; expires in 15 minutes. The relay device exchanges it for a relay token with relays.pair.", tier: "T3", minRole: "admin", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: ["relay.pairing_code_issued"], mcp: { expose: false, toolsets: [] } },
   "relays.pair": { op: "relays.pair", summary: "Pair a print relay", description: "Exchanges a pairing code for a relay token. No authentication; single-use code. Pairing a spare replaces the previous token.", tier: "T3", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: [], emits: ["relay.paired"], mcp: { expose: false, toolsets: [] } },
   "relays.heartbeat": { op: "relays.heartbeat", summary: "Relay heartbeat", description: "Every 30 s: version and printer reachability. Relay principal only.", tier: "T0", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["relay"], emits: [], mcp: { expose: false, toolsets: [] } },
   "relays.printers": { op: "relays.printers", summary: "Printers for a relay's outlet", description: "Relay principal only.", tier: "T0", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["relay"], emits: [], mcp: { expose: false, toolsets: [] } },
@@ -181,7 +181,7 @@ export function printingRoutes(app: OpenAPIHono<AppEnv>) {
     fromPatch: (b) => compact({ name: b.name }),
   });
 
-  defineOp(app, { op: "relays.pairing_code", method: "post", path: "/v1/relays/{id}/pairing-code", tags: ["printing"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 201: jsonResponse(mutationResponse(z.object({ code: z.string(), expires_at: z.string() }))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "relays.pairing_code", method: "post", path: "/v1/relays/{id}/pairing-code", tags: ["printing"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 201: jsonResponse(mutationResponse(z.object({ code: secret(z.string()), expires_at: z.string() }))), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const [relay] = await db().select().from(printRelays).where(and(eq(printRelays.id, id), isNull(printRelays.archivedAt))).limit(1);
@@ -194,7 +194,7 @@ export function printingRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: { code, expires_at: expiresAt.toISOString() }, events: [ev], warnings: [] }, 201);
   });
 
-  defineOp(app, { op: "relays.pair", method: "post", path: "/v1/relays/pair", tags: ["printing"], request: { body: jsonBody(z.object({ code: z.string().regex(/^\d{6}$/), version: z.string().max(40).optional() })) }, responses: { 200: jsonResponse(dataResponse(z.object({ relay_token: z.string(), relay: RelaySchema }))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "relays.pair", method: "post", path: "/v1/relays/pair", tags: ["printing"], request: { body: jsonBody(z.object({ code: secret(z.string().regex(/^\d{6}$/)), version: z.string().max(40).optional() })) }, responses: { 200: jsonResponse(dataResponse(z.object({ relay_token: secret(z.string()), relay: RelaySchema }))), ...errorResponses } }, async (c) => {
     const { code, version } = c.req.valid("json");
     const result = await withTransaction(async (t) => {
       const candidates = await t.db.select().from(relayPairingCodes).where(and(isNull(relayPairingCodes.usedAt), gt(relayPairingCodes.expiresAt, new Date())));

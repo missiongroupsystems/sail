@@ -5,7 +5,7 @@ import { db, settleInvariants, tx, withTransaction, type RequestTx } from "../db
 import { channelLinks, guestRounds, guestSessions, orderLines, orders, outlets, printers, serviceRequests, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
-import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
+import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted, secret } from "../lib/openapi.js";
 import { appendEvent, type AppendedEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { outletVisible, type Principal } from "../auth/principal.js";
@@ -70,7 +70,7 @@ function guestOnly(p: Principal): Extract<Principal, { type: "guest" }> {
 }
 
 export function guestRoutes(app: OpenAPIHono<AppEnv>) {
-  defineOp(app, { op: "guest_sessions.create", method: "post", path: "/v1/guest/sessions", tags: ["guest"], request: { body: jsonBody(z.object({ token: z.string().min(10).max(200), device_id: z.string().min(8).max(120), guest_name: untrusted(z.string().max(40).optional(), "guest_name", "added_by", "opened_by") })) }, responses: { 201: jsonResponse(dataResponse(z.object({ guest_token: z.string(), session_id: z.string(), table: z.object({ id: z.string(), name: z.string() }), outlet: z.object({ id: z.string(), name: z.string() }), brand_id: z.string(), channel_link_id: z.string(), order_open: z.boolean(), can_order: z.boolean(), hold_orders: z.boolean(), service_requests: z.array(z.string()), expires_at: z.string(), settings: LocaleSettingsSchema }))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "guest_sessions.create", method: "post", path: "/v1/guest/sessions", tags: ["guest"], request: { body: jsonBody(z.object({ token: secret(z.string().min(10).max(200)), device_id: z.string().min(8).max(120), guest_name: untrusted(z.string().max(40).optional(), "guest_name", "added_by", "opened_by") })) }, responses: { 201: jsonResponse(dataResponse(z.object({ guest_token: secret(z.string()), session_id: z.string(), table: z.object({ id: z.string(), name: z.string() }), outlet: z.object({ id: z.string(), name: z.string() }), brand_id: z.string(), channel_link_id: z.string(), order_open: z.boolean(), can_order: z.boolean(), hold_orders: z.boolean(), service_requests: z.array(z.string()), expires_at: z.string(), settings: LocaleSettingsSchema }))), ...errorResponses } }, async (c) => {
     const b = c.req.valid("json");
     const result = await withTransaction(async (t) => {
       const r = await createGuestSession({ token: b.token, deviceId: b.device_id, guestName: b.guest_name ?? null });
@@ -245,7 +245,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: toRequest(row), events: [ev], warnings: [] }, 200);
   });
 
-  defineOp(app, { op: "tables.rotate_qr_token", method: "post", path: "/v1/tables/{id}/qr/rotate", tags: ["guest"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 201: jsonResponse(mutationResponse(z.object({ url: z.string() }))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "tables.rotate_qr_token", method: "post", path: "/v1/tables/{id}/qr/rotate", tags: ["guest"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 201: jsonResponse(mutationResponse(z.object({ url: secret(z.string()) }))), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const [table] = await db().select().from(tables).where(and(eq(tables.id, id), isNull(tables.archivedAt))).limit(1);
@@ -257,13 +257,12 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
   });
 
   // A POST: it rotates every token (a GET would skip the ceiling check), and the PDF holds them, so it is never stored for a replay.
-  defineOp(app, { op: "tables.qr_sheet", method: "post", path: "/v1/outlets/{id}/qr-sheet.pdf", tags: ["guest"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 200: { description: "PDF of QR cards", content: { "application/pdf": { schema: z.string() } } }, ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "tables.qr_sheet", method: "post", path: "/v1/outlets/{id}/qr-sheet.pdf", tags: ["guest"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 200: { description: "PDF of QR cards", content: { "application/pdf": { schema: secret(z.string()) } } }, ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
     const pdf = await qrSheetPdf(id, p.merchantId);
     await recordAudit(p, { action: "tables.qr_sheet", targetKind: "outlet", targetId: id, outletId: id });
-    c.set("secretResult", true);
     return c.body(pdf as unknown as ArrayBuffer, 200, { "content-type": "application/pdf", "content-disposition": 'inline; filename="qr-sheet.pdf"' });
   });
 }

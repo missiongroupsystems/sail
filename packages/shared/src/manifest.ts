@@ -30,11 +30,6 @@ export type OperationSpec = {
   mcp: { expose: boolean; toolsets: Toolset[] };
   /** When the role check comes from a permission key in the fixed matrix. */
   permission?: PermissionKey;
-  /**
-   * False when the request or its result carries a secret (a password, a sign-in link): a caller above its risk
-   * ceiling is refused instead of getting a proposal, because a proposal stores both.
-   */
-  proposable?: boolean;
   /** At most this many calls an hour by one agent identity: for cheap operations a loop could turn into a stoppage (sold out, silenced requests). */
   agentPerHour?: number;
 };

@@ -1,11 +1,12 @@
 import type { MiddlewareHandler } from "hono";
-import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db, tx } from "../db/client.js";
 import { idempotencyKeys } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { RLS_OPT_OUT, SHORT_TX_ROUTES } from "../db/rls-opt-out.js";
+import { secretFieldsOf } from "../lib/secrets.js";
+import { keyedDigest } from "../auth/tokens.js";
 
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 /** The request body holds passwords, and the stored request hash is a fast unsalted SHA-256 of it. Retrying is safe: the old password no longer matches. */
@@ -33,7 +34,8 @@ export const idempotency: MiddlewareHandler<AppEnv> = async (c, next) => {
 
   const principal = c.get("principal");
   const body = await c.req.raw.clone().text();
-  const hash = createHash("sha256").update(`${c.req.method}\n${path}\n${body}`).digest("hex");
+  // Keyed, so the stored hash of a request carrying a PIN or a code cannot be brute-forced back to it.
+  const hash = keyedDigest(`${c.req.method}\n${path}\n${body}`);
 
   const [existing] = await db()
     .select()
@@ -65,9 +67,9 @@ export const idempotency: MiddlewareHandler<AppEnv> = async (c, next) => {
   await next();
 
   const res = c.res;
-  if (res.status < 400 && c.get("secretResult")) {
-    // Store a refusal instead of the secret, so the database never holds it and a retry asks for a new one.
-    const refusal = { code: "state_conflict", message: "This request already succeeded and its result was shown once", remedy: "Generate a new link; the earlier one still works until it expires or a newer one replaces it." };
+  if (res.status < 400 && secretFieldsOf(c.get("operationId")).response) {
+    // The result holds a secret (marked secret() in its schema): store a refusal instead, so the database never holds it and a retry asks for a new one.
+    const refusal = { code: "state_conflict", message: "This request already succeeded and its result was shown once", remedy: "Send the request again with a new Idempotency-Key; the earlier result keeps working until it expires or a newer one replaces it." };
     await tx()`update idempotency_keys set status = 409, body = ${JSON.stringify(refusal)}::jsonb where principal_id = ${principal.id} and key = ${key}`;
   } else if (res.status < 400) {
     const text = await res.clone().text();

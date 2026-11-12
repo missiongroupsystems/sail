@@ -4,6 +4,7 @@ import { ApiErrorSchema } from "@sail/shared";
 import { config } from "./config.js";
 import { AppError } from "./lib/errors.js";
 import { createApp } from "./lib/openapi.js";
+import { loadSecretMarkers } from "./lib/secrets.js";
 import { requestPipeline } from "./middleware/pipeline.js";
 import { idempotency } from "./middleware/idempotency.js";
 import { logger } from "./logger.js";
@@ -76,6 +77,7 @@ export function buildApp() {
     servers: [{ url: "/" }],
   });
   app.openAPIRegistry.registerComponent("securitySchemes", "bearer", { type: "http", scheme: "bearer", bearerFormat: "JWT" });
+  loadSecretMarkers(app.getOpenAPI31Document({ openapi: "3.1.0", info: { title: "Sail API", version: "markers" } }) as never);
 
   return app;
 }

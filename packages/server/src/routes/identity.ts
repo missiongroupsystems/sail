@@ -6,7 +6,7 @@ import { db, sessionConnection, tx, withOwnTransaction, withTransaction } from "
 import { backofficeLinks, backofficeLogins, backofficeSessions, staff } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppContext, AppEnv } from "../lib/context.js";
-import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, mutationResponse, z } from "../lib/openapi.js";
+import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, mutationResponse, z, secret } from "../lib/openapi.js";
 import { recordAudit } from "../lib/audit.js";
 import { createMerchant, presetSettings } from "../bootstrap.js";
 import { checkPassword, endSessions, issueSession, localSubject, normaliseEmail, PASSWORD_MAX_LENGTH, preAuthoriseLogin, setLocalLogin } from "../auth/identity.js";
@@ -18,7 +18,7 @@ import { clearPinFailures, takePinAttempt, type AttemptLimits } from "../service
  * revocation. None of it is reachable by agents: no operation lists the agent principal, none is exposed over MCP, and
  * none can become a proposal (a proposal stores the request and its result, and these carry passwords and links).
  */
-const op = (s: Pick<OperationSpec, "op" | "summary" | "description" | "tier" | "minRole" | "principals">): OperationSpec => ({ ...s, overrideAllowed: false, reasonRequired: false, dryRun: false, emits: [], mcp: { expose: false, toolsets: [] }, proposable: false });
+const op = (s: Pick<OperationSpec, "op" | "summary" | "description" | "tier" | "minRole" | "principals">): OperationSpec => ({ ...s, overrideAllowed: false, reasonRequired: false, dryRun: false, emits: [], mcp: { expose: false, toolsets: [] } });
 
 registerOperations({
   "auth.status": op({ op: "auth.status", summary: "How this server signs people in", description: "No authentication. Which identity provider the back office uses (`local`: email and password; `oidc`: an external issuer) and whether first-run setup is still needed (no merchant exists yet).", tier: "T0", minRole: null, principals: [] }),
@@ -63,15 +63,15 @@ function clientAddress(c: AppContext): string {
   return incoming?.socket?.remoteAddress ?? "unknown";
 }
 
-const Password = z.string().max(PASSWORD_MAX_LENGTH);
-const SessionOut = z.object({ token: z.string(), expires_at: z.string(), staff: z.object({ id: z.string(), name: z.string(), role: RoleSchema }) });
+const Password = secret(z.string().max(PASSWORD_MAX_LENGTH));
+const SessionOut = z.object({ token: secret(z.string()), expires_at: z.string(), staff: z.object({ id: z.string(), name: z.string(), role: RoleSchema }) });
 const AccessOut = z.object({
   provider: z.enum(["local", "oidc"]),
   status: z.enum(["none", "invited", "active"]),
   email: z.string().nullable(),
   link: z.object({ kind: z.enum(["invite", "reset"]), expires_at: z.string() }).nullable(),
 });
-const LinkOut = z.object({ kind: z.enum(["link", "pre_authorised"]), email: z.string(), url: z.string().nullable(), expires_at: z.string().nullable() });
+const LinkOut = z.object({ kind: z.enum(["link", "pre_authorised"]), email: z.string(), url: secret(z.string()).nullable(), expires_at: z.string().nullable() });
 const StaffParam = z.object({ id: z.uuid() });
 
 function audit(sql: Parameters<typeof issueSession>[0], member: { id: string; merchantId: string; name: string; role: string }, action: string, details: Record<string, string | number | boolean> = {}) {
@@ -142,7 +142,7 @@ export function identityRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: { changed: true, sessions_ended: ended }, events: [], warnings: [] }, 200);
   });
 
-  defineOp(app, { op: "auth.accept_link", method: "post", path: "/v1/auth/links/accept", tags: ["auth"], request: { body: jsonBody(z.object({ token: z.string().min(1).max(200), password: Password })) }, responses: { 201: jsonResponse(dataResponse(SessionOut)), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "auth.accept_link", method: "post", path: "/v1/auth/links/accept", tags: ["auth"], request: { body: jsonBody(z.object({ token: secret(z.string().min(1).max(200)), password: Password })) }, responses: { 201: jsonResponse(dataResponse(SessionOut)), ...errorResponses } }, async (c) => {
     requireLocal("Password links");
     const body = c.req.valid("json");
     checkPassword(body.password);
@@ -247,7 +247,6 @@ export function identityRoutes(app: OpenAPIHono<AppEnv>) {
     const token = randomToken(32);
     const expiresAt = new Date(Date.now() + (kind === "invite" ? INVITE_DAYS * 24 : RESET_HOURS) * 3600 * 1000);
     await db().insert(backofficeLinks).values({ merchantId: row.merchantId, staffId: row.id, kind, tokenHash: sha256(token), createdBy: p.id, expiresAt });
-    c.set("secretResult", true);
     // The token travels in the fragment, which browsers never send to a server or put in a Referer header.
     return { url: `${config().WEB_APP_URL.replace(/\/+$/, "")}/set-password#token=${token}`, expiresAt };
   }

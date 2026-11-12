@@ -913,7 +913,8 @@
                   },
                   "password": {
                     "type": "string",
-                    "maxLength": 256
+                    "maxLength": 256,
+                    "x-sail-secret": true
                   }
                 },
                 "required": [
@@ -936,7 +937,8 @@
                       "type": "object",
                       "properties": {
                         "token": {
-                          "type": "string"
+                          "type": "string",
+                          "x-sail-secret": true
                         },
                         "expires_at": {
                           "type": "string"
@@ -1664,11 +1666,13 @@
                 "properties": {
                   "current_password": {
                     "type": "string",
-                    "maxLength": 256
+                    "maxLength": 256,
+                    "x-sail-secret": true
                   },
                   "new_password": {
                     "type": "string",
-                    "maxLength": 256
+                    "maxLength": 256,
+                    "x-sail-secret": true
                   }
                 },
                 "required": [
@@ -2054,11 +2058,13 @@
                   "token": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 200
+                    "maxLength": 200,
+                    "x-sail-secret": true
                   },
                   "password": {
                     "type": "string",
-                    "maxLength": 256
+                    "maxLength": 256,
+                    "x-sail-secret": true
                   }
                 },
                 "required": [
@@ -2081,7 +2087,8 @@
                       "type": "object",
                       "properties": {
                         "token": {
-                          "type": "string"
+                          "type": "string",
+                          "x-sail-secret": true
                         },
                         "expires_at": {
                           "type": "string"
@@ -2480,7 +2487,8 @@
                       },
                       "password": {
                         "type": "string",
-                        "maxLength": 256
+                        "maxLength": 256,
+                        "x-sail-secret": true
                       }
                     },
                     "required": [
@@ -2537,7 +2545,8 @@
                           ],
                           "properties": {
                             "token": {
-                              "type": "string"
+                              "type": "string",
+                              "x-sail-secret": true
                             },
                             "expires_at": {
                               "type": "string"
@@ -3317,7 +3326,8 @@
                           "type": [
                             "string",
                             "null"
-                          ]
+                          ],
+                          "x-sail-secret": true
                         },
                         "expires_at": {
                           "type": [
@@ -3725,7 +3735,8 @@
                           "type": [
                             "string",
                             "null"
-                          ]
+                          ],
+                          "x-sail-secret": true
                         },
                         "expires_at": {
                           "type": [
@@ -10215,7 +10226,8 @@
                       "string",
                       "null"
                     ],
-                    "pattern": "^\\d{6}$"
+                    "pattern": "^\\d{6}$",
+                    "x-sail-secret": true
                   },
                   "legacy_id": {
                     "type": [
@@ -10744,7 +10756,8 @@
                       "string",
                       "null"
                     ],
-                    "pattern": "^\\d{6}$"
+                    "pattern": "^\\d{6}$",
+                    "x-sail-secret": true
                   },
                   "legacy_id": {
                     "type": [
@@ -46454,7 +46467,8 @@
                       "type": "object",
                       "properties": {
                         "code": {
-                          "type": "string"
+                          "type": "string",
+                          "x-sail-secret": true
                         },
                         "expires_at": {
                           "type": "string"
@@ -46818,7 +46832,8 @@
                 "properties": {
                   "code": {
                     "type": "string",
-                    "pattern": "^\\d{6}$"
+                    "pattern": "^\\d{6}$",
+                    "x-sail-secret": true
                   },
                   "device_label": {
                     "type": "string",
@@ -46855,7 +46870,8 @@
                       "type": "object",
                       "properties": {
                         "station_token": {
-                          "type": "string"
+                          "type": "string",
+                          "x-sail-secret": true
                         },
                         "station": {
                           "type": "object",
@@ -47184,7 +47200,8 @@
                 "properties": {
                   "pin": {
                     "type": "string",
-                    "pattern": "^\\d{6}$"
+                    "pattern": "^\\d{6}$",
+                    "x-sail-secret": true
                   }
                 },
                 "required": [
@@ -47206,7 +47223,8 @@
                       "type": "object",
                       "properties": {
                         "session_token": {
-                          "type": "string"
+                          "type": "string",
+                          "x-sail-secret": true
                         },
                         "staff": {
                           "type": "object",
@@ -47970,7 +47988,8 @@
                       },
                       "approver_pin": {
                         "type": "string",
-                        "pattern": "^\\d{6}$"
+                        "pattern": "^\\d{6}$",
+                        "x-sail-secret": true
                       },
                       "outlet_id": {
                         "type": "string",
@@ -48018,7 +48037,8 @@
                       },
                       "approver_pin": {
                         "type": "string",
-                        "pattern": "^\\d{6}$"
+                        "pattern": "^\\d{6}$",
+                        "x-sail-secret": true
                       },
                       "outlet_id": {
                         "type": "string",
@@ -48093,7 +48113,8 @@
                       },
                       "approver_pin": {
                         "type": "string",
-                        "pattern": "^\\d{6}$"
+                        "pattern": "^\\d{6}$",
+                        "x-sail-secret": true
                       },
                       "outlet_id": {
                         "type": "string",
@@ -48161,7 +48182,8 @@
                       },
                       "approver_pin": {
                         "type": "string",
-                        "pattern": "^\\d{6}$"
+                        "pattern": "^\\d{6}$",
+                        "x-sail-secret": true
                       },
                       "outlet_id": {
                         "type": "string",
@@ -48209,7 +48231,8 @@
                       },
                       "approver_pin": {
                         "type": "string",
-                        "pattern": "^\\d{6}$"
+                        "pattern": "^\\d{6}$",
+                        "x-sail-secret": true
                       },
                       "outlet_id": {
                         "type": "string",
@@ -48281,7 +48304,8 @@
                       },
                       "approver_pin": {
                         "type": "string",
-                        "pattern": "^\\d{6}$"
+                        "pattern": "^\\d{6}$",
+                        "x-sail-secret": true
                       },
                       "outlet_id": {
                         "type": "string",
@@ -48423,7 +48447,8 @@
                       },
                       "approver_pin": {
                         "type": "string",
-                        "pattern": "^\\d{6}$"
+                        "pattern": "^\\d{6}$",
+                        "x-sail-secret": true
                       },
                       "outlet_id": {
                         "type": "string",
@@ -48463,7 +48488,8 @@
                       },
                       "approver_pin": {
                         "type": "string",
-                        "pattern": "^\\d{6}$"
+                        "pattern": "^\\d{6}$",
+                        "x-sail-secret": true
                       },
                       "outlet_id": {
                         "type": "string",
@@ -60617,7 +60643,8 @@
                       "type": "object",
                       "properties": {
                         "code": {
-                          "type": "string"
+                          "type": "string",
+                          "x-sail-secret": true
                         },
                         "expires_at": {
                           "type": "string"
@@ -60981,7 +61008,8 @@
                 "properties": {
                   "code": {
                     "type": "string",
-                    "pattern": "^\\d{6}$"
+                    "pattern": "^\\d{6}$",
+                    "x-sail-secret": true
                   },
                   "version": {
                     "type": "string",
@@ -61007,7 +61035,8 @@
                       "type": "object",
                       "properties": {
                         "relay_token": {
-                          "type": "string"
+                          "type": "string",
+                          "x-sail-secret": true
                         },
                         "relay": {
                           "type": "object",
@@ -68179,10 +68208,12 @@
                       "type": "object",
                       "properties": {
                         "token": {
-                          "type": "string"
+                          "type": "string",
+                          "x-sail-secret": true
                         },
                         "url": {
-                          "type": "string"
+                          "type": "string",
+                          "x-sail-secret": true
                         },
                         "delivery_status": {
                           "type": "string"
@@ -75362,10 +75393,12 @@
                       "type": "object",
                       "properties": {
                         "token": {
-                          "type": "string"
+                          "type": "string",
+                          "x-sail-secret": true
                         },
                         "url": {
-                          "type": "string"
+                          "type": "string",
+                          "x-sail-secret": true
                         },
                         "delivery_status": {
                           "type": "string"
@@ -75729,7 +75762,8 @@
                   "token": {
                     "type": "string",
                     "minLength": 10,
-                    "maxLength": 200
+                    "maxLength": 200,
+                    "x-sail-secret": true
                   },
                   "device_id": {
                     "type": "string",
@@ -75766,7 +75800,8 @@
                       "type": "object",
                       "properties": {
                         "guest_token": {
-                          "type": "string"
+                          "type": "string",
+                          "x-sail-secret": true
                         },
                         "session_id": {
                           "type": "string"
@@ -79492,7 +79527,8 @@
                       "type": "object",
                       "properties": {
                         "url": {
-                          "type": "string"
+                          "type": "string",
+                          "x-sail-secret": true
                         }
                       },
                       "required": [
@@ -79874,7 +79910,8 @@
             "content": {
               "application/pdf": {
                 "schema": {
-                  "type": "string"
+                  "type": "string",
+                  "x-sail-secret": true
                 }
               }
             }
@@ -82799,7 +82836,8 @@
                           "type": "string"
                         },
                         "credential": {
-                          "type": "string"
+                          "type": "string",
+                          "x-sail-secret": true
                         }
                       },
                       "required": [
@@ -83730,7 +83768,8 @@
                       "type": "object",
                       "properties": {
                         "credential": {
-                          "type": "string"
+                          "type": "string",
+                          "x-sail-secret": true
                         },
                         "sessions_revoked": {
                           "type": "number"
@@ -84120,7 +84159,8 @@
                       "type": "object",
                       "properties": {
                         "grant": {
-                          "type": "string"
+                          "type": "string",
+                          "x-sail-secret": true
                         },
                         "expires_at": {
                           "type": "string"
@@ -84447,7 +84487,8 @@
                   "credential": {
                     "type": "string",
                     "minLength": 40,
-                    "maxLength": 200
+                    "maxLength": 200,
+                    "x-sail-secret": true
                   },
                   "task_id": {
                     "type": "string",
@@ -84455,7 +84496,8 @@
                   },
                   "on_behalf_of": {
                     "type": "string",
-                    "maxLength": 200
+                    "maxLength": 200,
+                    "x-sail-secret": true
                   }
                 },
                 "required": [
@@ -84477,7 +84519,8 @@
                       "type": "object",
                       "properties": {
                         "agent_token": {
-                          "type": "string"
+                          "type": "string",
+                          "x-sail-secret": true
                         },
                         "session_id": {
                           "type": "string"
@@ -92717,7 +92760,8 @@
                   "webhook_secret": {
                     "type": "string",
                     "minLength": 24,
-                    "maxLength": 200
+                    "maxLength": 200,
+                    "x-sail-secret": true
                   }
                 },
                 "required": [

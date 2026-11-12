@@ -5,7 +5,7 @@ import { db } from "../db/client.js";
 import { auditLog, backofficeLinks, backofficeSessions, staff } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
-import { defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
+import { defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted, secret } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { hashSecret, pinLookup } from "../auth/tokens.js";
@@ -33,7 +33,7 @@ const StaffInput = z.object({
   outlet_ids: z.array(z.uuid()).optional(),
   brand_ids: z.array(z.uuid()).optional(),
   /** 6-digit POS PIN. Stored hashed. */
-  pin: z.string().regex(/^\d{6}$/).nullable().optional(),
+  pin: secret(z.string().regex(/^\d{6}$/)).nullable().optional(),
   legacy_id: z.string().nullable().optional(),
   risk_ceiling: z.enum(["T0", "T1", "T2", "T3"]).nullable().optional(),
 });
