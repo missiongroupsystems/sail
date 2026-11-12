@@ -38,7 +38,9 @@ function allocateInOrder(total: Cents, shares: readonly Share[], order: readonly
 
 /** Who takes an odd cent first: of a positive amount the check that is furthest under its share, of a negative amount the one furthest over; then check order. */
 function tieOrder(balance: SplitBalance, amount: Cents): number[] {
-  return balance.map((_, i) => i).sort((a, b) => (amount < 0 ? balance[b]! - balance[a]! : balance[a]! - balance[b]!) || a - b);
+  // Balances are sums of fractions of a cent: a gap below a millionth is rounding noise, and check order decides.
+  const gap = (x: number) => (Math.abs(x) < 1e-6 ? 0 : x);
+  return balance.map((_, i) => i).sort((a, b) => gap(amount < 0 ? balance[b]! - balance[a]! : balance[a]! - balance[b]!) || a - b);
 }
 
 /**

@@ -30,7 +30,7 @@ type LineComp = { id: string; base: number; discount: number; fee: number; taxes
 
 async function lineComponents(orderId: string): Promise<LineComp[]> {
   const [lines, adjLines] = await Promise.all([
-    db().select().from(orderLines).where(and(eq(orderLines.orderId, orderId), sql`${orderLines.status} <> 'voided'`)).orderBy(asc(orderLines.sort), asc(orderLines.createdAt)),
+    db().select().from(orderLines).where(and(eq(orderLines.orderId, orderId), sql`${orderLines.status} <> 'voided'`)).orderBy(asc(orderLines.sort), asc(orderLines.createdAt), asc(orderLines.id)),
     db().select({ adjustmentId: orderAdjustmentLines.adjustmentId, orderLineId: orderAdjustmentLines.orderLineId, amount: orderAdjustmentLines.amount, taxAmount: orderAdjustmentLines.taxAmount }).from(orderAdjustmentLines).innerJoin(orderAdjustments, eq(orderAdjustments.id, orderAdjustmentLines.adjustmentId)).where(eq(orderAdjustments.orderId, orderId)),
   ]);
   return lines.map((l) => ({
