@@ -307,6 +307,27 @@ describe("ceilings and proposals", () => {
     await expect(as("select mobile from customers")).rejects.toMatchObject({ code: "42501" });
     await expect(as(`update products set name = 'x'`)).rejects.toMatchObject({ code: "42501" }); // no configuration writes
   });
+
+  it("a pairing code or an agent credential is never stored in a proposal: a caller above its ceiling is refused", async () => {
+    const relay = await call<{ data: { id: string } }>("POST", "/v1/relays", { token: A.admin.token, body: { outlet_id: A.outletId, name: "Relay" } });
+    expect(relay.status, JSON.stringify(relay.body)).toBe(201);
+    const proposals = async () => (await db.sql<{ n: number }[]>`select count(*)::int as n from proposals`)[0]!.n;
+    const before = await proposals();
+    await db.sql`update staff set risk_ceiling = 'T1' where id = ${A.admin.id}`;
+    try {
+      for (const path of [`/v1/stations/${ids.station}/pairing-code`, `/v1/relays/${relay.body.data.id}/pairing-code`, `/v1/agent-identities/${cashierAgent.id}/credential`, "/v1/agent-identities"]) {
+        const body = path === "/v1/agent-identities" ? { name: "Ceiling agent", role: "server", toolsets: ["pos.read"], risk_ceiling: "T1" } : {};
+        const r = await call<{ code: string }>("POST", path, { token: A.admin.token, body });
+        expect(r.status, `${path} ${JSON.stringify(r.body)}`).toBe(403);
+        expect(r.body.code).toBe("permission_denied");
+      }
+    } finally {
+      await db.sql`update staff set risk_ceiling = null where id = ${A.admin.id}`;
+    }
+    expect(await proposals()).toBe(before);
+    // The refused rotation left the credential working.
+    expect((await startSession(cashierAgent.credential)).status).toBe(201);
+  });
 });
 
 describe("MCP adapter", () => {
