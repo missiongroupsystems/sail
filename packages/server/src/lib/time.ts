@@ -5,10 +5,13 @@ import { localParts, zonedToUtc } from "@sail/shared";
  * (for example 04:00), so an order at 01:30 belongs to the previous calendar
  * date. All inputs are explicit; no hidden clock reads in services.
  */
+/**
+ * The business date of `at`: its local date once that date's cutoff instant has passed, else the day before. Compared
+ * as instants (from `zonedToUtc`, as `nextCutoff` does), so a cutoff in a DST gap or overlap ends the day exactly once.
+ */
 export function businessDateFor(at: Date, cutoff: string, timeZone: string): string {
-  const { date, time } = localParts(at, timeZone);
-  if (time < cutoff) return shiftDate(date, -1);
-  return date;
+  const { date } = localParts(at, timeZone);
+  return at.getTime() < zonedToUtc(date, cutoff, timeZone).getTime() ? shiftDate(date, -1) : date;
 }
 
 export function shiftDate(isoDate: string, days: number): string {

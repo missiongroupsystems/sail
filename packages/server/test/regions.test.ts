@@ -93,6 +93,27 @@ describe("business days in zones with daylight saving time", () => {
     expect(businessDateFor(new Date("2026-03-29T02:00:00Z"), "04:00", "Europe/Berlin")).toBe("2026-03-29");
   });
 
+  it("a cutoff inside the spring-forward gap ends the day at the first valid instant after it, and both helpers agree", () => {
+    // Berlin 29 Mar 2026: 02:00 CET jumps to 03:00 CEST (01:00Z), so 02:30 never happens; the day ends at 03:00 CEST.
+    expect(zonedToUtc("2026-03-29", "02:30", "Europe/Berlin").toISOString()).toBe("2026-03-29T01:00:00.000Z");
+    expect(nextCutoff(new Date("2026-03-28T12:00:00Z"), "02:30", "Europe/Berlin").toISOString()).toBe("2026-03-29T01:00:00.000Z");
+    expect(businessDateFor(new Date("2026-03-29T00:59:00Z"), "02:30", "Europe/Berlin")).toBe("2026-03-28");
+    expect(businessDateFor(new Date("2026-03-29T01:00:00Z"), "02:30", "Europe/Berlin")).toBe("2026-03-29");
+    // New York 8 Mar 2026: 02:00 EST jumps to 03:00 EDT (07:00Z). 01:30 EST (06:30Z) is still the old day.
+    expect(nextCutoff(new Date("2026-03-07T12:00:00Z"), "02:30", "America/New_York").toISOString()).toBe("2026-03-08T07:00:00.000Z");
+    expect(businessDateFor(new Date("2026-03-08T06:30:00Z"), "02:30", "America/New_York")).toBe("2026-03-07");
+    expect(businessDateFor(new Date("2026-03-08T07:00:00Z"), "02:30", "America/New_York")).toBe("2026-03-08");
+  });
+
+  it("a cutoff inside the fall-back overlap ends the day at its first occurrence, and the day never flips back", () => {
+    // Berlin 25 Oct 2026: 03:00 CEST goes back to 02:00 CET, so 02:30 happens at 00:30Z (CEST) and again at 01:30Z (CET).
+    expect(nextCutoff(new Date("2026-10-24T12:00:00Z"), "02:30", "Europe/Berlin").toISOString()).toBe("2026-10-25T00:30:00.000Z");
+    expect(businessDateFor(new Date("2026-10-25T00:29:00Z"), "02:30", "Europe/Berlin")).toBe("2026-10-24");
+    for (const at of ["2026-10-25T00:30:00Z", "2026-10-25T01:00:00Z", "2026-10-25T01:29:00Z", "2026-10-25T01:30:00Z"]) expect(businessDateFor(new Date(at), "02:30", "Europe/Berlin"), at).toBe("2026-10-25");
+    // The next cutoff after the first 02:30 is the next day's, not the repeated 02:30.
+    expect(nextCutoff(new Date("2026-10-25T00:45:00Z"), "02:30", "Europe/Berlin").toISOString()).toBe("2026-10-26T01:30:00.000Z");
+  });
+
   it("orders take their business date from the merchant's zone", async () => {
     const o = await open({ order_type: "takeaway" });
     expect(o.status).toBe(201);

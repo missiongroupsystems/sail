@@ -17,20 +17,43 @@ export function localParts(at: Date, timeZone: string): { date: string; time: st
   return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` };
 }
 
-/** Convert a local date and time in `timeZone` to a UTC instant (handles any fixed or DST offset by iteration). */
+const offsetFormats = new Map<string, Intl.DateTimeFormat>();
+
+/** How far `timeZone` is ahead of UTC at the instant `t` (ms since the epoch, whole seconds), in ms. */
+function offsetAt(t: number, timeZone: string): number {
+  let fmt = offsetFormats.get(timeZone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+    offsetFormats.set(timeZone, fmt);
+  }
+  const p = Object.fromEntries(fmt.formatToParts(new Date(t)).map((x) => [x.type, Number(x.value)]));
+  return Date.UTC(p.year!, p.month! - 1, p.day!, p.hour!, p.minute!, p.second!) - t;
+}
+
+/**
+ * Convert a local date and time in `timeZone` to a UTC instant. A time the
+ * clocks skip (the spring-forward gap) maps to the first valid instant after
+ * the gap, the moment the clocks change; a time that happens twice (the
+ * fall-back overlap) maps to its first occurrence.
+ */
 export function zonedToUtc(isoDate: string, time: string, timeZone: string): Date {
   const [y, mo, d] = isoDate.split("-").map(Number) as [number, number, number];
   const [h, mi] = time.split(":").map(Number) as [number, number];
-  let guess = Date.UTC(y, mo - 1, d, h, mi, 0, 0);
-  for (let i = 0; i < 2; i++) {
-    const local = localParts(new Date(guess), timeZone);
-    const [ly, lmo, ld] = local.date.split("-").map(Number) as [number, number, number];
-    const [lh, lmi] = local.time.split(":").map(Number) as [number, number];
-    const asIfUtc = Date.UTC(ly, lmo - 1, ld, lh, lmi, 0, 0);
-    const diff = asIfUtc - guess; // how far the zone is ahead of UTC at this instant
-    guess = Date.UTC(y, mo - 1, d, h, mi, 0, 0) - diff;
+  const wall = Date.UTC(y, mo - 1, d, h, mi, 0, 0);
+  // The offsets a day either side; a zone changes at most once in that window.
+  const before = offsetAt(wall - 86_400_000, timeZone);
+  const after = offsetAt(wall + 86_400_000, timeZone);
+  const valid = [wall - before, wall - after].filter((t) => t + offsetAt(t, timeZone) === wall);
+  if (valid.length) return new Date(Math.min(...valid));
+  // In the gap: wall − after is still on the old offset and wall − before already on the new one; find the change.
+  let lo = wall - after;
+  let hi = wall - before;
+  while (hi - lo > 1000) {
+    const mid = lo + Math.floor((hi - lo) / 2000) * 1000;
+    if (offsetAt(mid, timeZone) === before) lo = mid;
+    else hi = mid;
   }
-  return new Date(guess);
+  return new Date(hi);
 }
 
 const INPUT_RE = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})$/;
