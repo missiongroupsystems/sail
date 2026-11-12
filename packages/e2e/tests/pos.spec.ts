@@ -199,7 +199,8 @@ test("POS: pay on the card terminal (simulator); a declined card then cash", asy
     await page.getByRole("button", { name: "Shift", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Open shift" })).toBeVisible();
     await page.getByRole("button", { name: "Count notes and coins" }).click();
-    await page.getByRole("button", { name: "More $100" }).click();
+    // The count starts from the last close's float, so set it rather than add to it.
+    await page.getByRole("textbox", { name: "$100 count" }).fill("1");
     await page.getByRole("button", { name: "Open shift with $100.00" }).click();
     await expect(page.getByRole("heading", { name: "Shift open" })).toBeVisible();
   });
