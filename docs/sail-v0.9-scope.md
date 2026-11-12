@@ -136,13 +136,13 @@ The other additions (splits, partial refunds, Scan to Order) each ship their com
 
     Sail never talks to the terminal.
   - PayNow and e-wallets taken on the terminal or on a static QR code at the counter are recorded the same way.
-  - Other tender types come from a configurable list (imported). Each has an "opens cash drawer" flag, which is used only to work out expected cash, and an `is_cash` flag. House accounts (ENT, TAB, Invoice to…) are recorded the same way. Each tender also has "needs a manager's approval" (a Cashier needs a Manager's PIN for that payment) and "needs a reference"; approval is on by default for a tender that is neither cash nor a card terminal, whether it comes from a region preset, an import or the back office.
+  - Other tender types come from a configurable list (imported). Each has an "opens cash drawer" flag, which is used only to work out expected cash, and an `is_cash` flag. House accounts (ENT, TAB, Invoice to…) are recorded the same way.
   - **Cash rounding (a per-merchant setting, off by default):**
     - The increment is configurable, for example 0.05.
     - It applies **only to cash tenders**: tender types with `is_cash`. It never applies to card, PayNow or other tenders.
     - It applies when a cash tender settles the remaining balance of a check. That balance is rounded to the nearest increment, with halves rounded up. The difference is recorded on the payment as `rounding_cents`.
     - Rounding never changes the bill's tax or line amounts, and it is reported on its own line.
-  - Cash tips are recorded on the order. Card tips are not supported, because the terminal is not integrated. A cash tip is part of the cash the guest hands over, never part of the change (change = tendered − bill − rounding − tip); it stays in the drawer, so expected cash includes cash tips, and the receipt prints it on its own row.
+  - Cash tips are recorded on the order. Card tips are not supported, because the terminal is not integrated.
   - There are no online or in-app payments in v0.9. Every payment is recorded at the POS.
 - **Voids:** item void before payment, with a required reason from the configured list. A void after firing needs Manager+ and prints a **void ticket** to the printers that received the item. Cancel an order.
 - **Refunds:** full and partial, with refund receipts and credit notes (section 4.5).
@@ -202,7 +202,7 @@ Scan to Order is a shortcut that lets guests send orders to their own table inst
 - **Ordering:**
   - Guests can order only while the table has an open order. By default a server opens it when seating the table, which stops prank orders from a photographed QR code. An outlet can turn on "open on first scan" per channel.
   - Each guest submission is a **round** that is added to the table's open order.
-  - With "hold orders" on, the round waits on the POS for staff to accept it before it fires and prints. With it off, the round fires and prints straight away from the seating's first phone and from any phone staff have accepted a round from; another phone's first round waits for acceptance like a held one (one tap per extra phone), so a photo of the table's code cannot send food to the kitchen on its own. A phone's admission belongs to the order (by device): it follows the order to another table, survives scanning again after the session expires, and ends when the order closes. A rejected round admits nobody.
+  - With "hold orders" on, the round waits on the POS for staff to accept it before it fires and prints. With it off, the round fires and prints straight away.
   - When the order is paid and closed at the POS, every guest session for it expires.
 - **Guest features:**
   - Browse the channel's menu, with prices, availability and 86 applied.
