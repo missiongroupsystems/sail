@@ -146,6 +146,8 @@ export const BillPaymentSchema = z.object({
   /** Cash rounding applied with this tender (rounded minus exact); printed when non-zero. */
   rounding_cents: CentsSchema.optional(),
   reference: z.string().optional(),
+  /** Tip taken with this tender, on top of the amount; printed when non-zero. */
+  tip: CentsSchema.optional(),
   /** Change handed back; printed when non-zero. */
   change: CentsSchema.optional(),
 });

@@ -481,7 +481,7 @@ if (shift) {
   const dryClose = await step("shifts.close dry_run (count before expected)", () => reg.closeShift(api, shift.id, { counted_cash_cents: 20000, dry_run: true }), (r) => `expected ${r.data.report.cash.expected} = float ${r.data.report.cash.float} + cash ${r.data.report.cash.cash_payments} + rounding ${r.data.report.cash.rounding} − refunds ${r.data.report.cash.refunds}; variance ${r.data.report.cash.variance}`);
   if (dryClose && ta2Paid) {
     const c = dryClose.data.report.cash;
-    check("expected cash includes the sale and its rounding", c.expected === c.float + c.cash_payments + c.rounding - c.refunds && c.cash_payments >= (ta2Paid.payment.amount ?? 0));
+    check("expected cash includes the sale and its rounding", c.expected === c.float + c.cash_payments + c.rounding + c.tips - c.refunds && c.cash_payments >= (ta2Paid.payment.amount ?? 0));
     const still = await reg.listShifts(api, station.outlet_id, { status: "open" });
     check("dry run left the shift open", still.some((s) => s.id === shift.id));
     const closed = await step("shifts.close counted = expected", () => reg.closeShift(api, shift.id, { counted_cash_cents: c.expected, counted_counts: null }), (r) => `status ${r.data.status}, expected ${r.data.expected_cash_cents}, counted ${r.data.counted_cash_cents}, variance ${r.data.variance_cents}; tenders ${r.data.report.tenders.map((t) => `${t.tender}=${t.amount}`).join(" ")}`);

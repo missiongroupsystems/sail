@@ -142,7 +142,7 @@ The other additions (splits, partial refunds, Scan to Order) each ship their com
     - It applies **only to cash tenders**: tender types with `is_cash`. It never applies to card, PayNow or other tenders.
     - It applies when a cash tender settles the remaining balance of a check. That balance is rounded to the nearest increment, with halves rounded up. The difference is recorded on the payment as `rounding_cents`.
     - Rounding never changes the bill's tax or line amounts, and it is reported on its own line.
-  - Cash tips are recorded on the order. Card tips are not supported, because the terminal is not integrated.
+  - Cash tips are recorded on the order. Card tips are not supported, because the terminal is not integrated. A cash tip is part of the cash the guest hands over, never part of the change (change = tendered − bill − rounding − tip); it stays in the drawer, so expected cash includes cash tips, and the receipt prints it on its own row.
   - There are no online or in-app payments in v0.9. Every payment is recorded at the POS.
 - **Voids:** item void before payment, with a required reason from the configured list. A void after firing needs Manager+ and prints a **void ticket** to the printers that received the item. Cancel an order.
 - **Refunds:** full and partial, with refund receipts and credit notes (section 4.5).

@@ -159,6 +159,7 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
           <Row label="Float" cents={c.float} />
           <Row label="Cash payments" cents={c.cash_payments} />
           <Row label="Cash rounding" cents={c.rounding} />
+          <Row label="Cash tips" cents={c.tips} />
           <Row label="Cash refunds" cents={-c.refunds} />
           <Row label="Expected" cents={c.expected} strong />
           <Row label="Counted" cents={c.counted ?? 0} strong />

@@ -114,6 +114,7 @@ export function ZReportView() {
               <Row label="Float" cents={r.cash.float} />
               <Row label="Cash payments" cents={r.cash.cash_payments} />
               <Row label="Cash rounding" cents={r.cash.rounding} />
+              <Row label="Cash tips" cents={r.cash.tips} />
               <Row label="Cash refunds" cents={-r.cash.refunds} />
               <Row label="Expected" cents={r.cash.expected} strong />
               {r.cash.counted != null ? <Row label="Counted" cents={r.cash.counted} strong /> : null}

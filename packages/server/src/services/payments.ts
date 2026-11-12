@@ -67,6 +67,7 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
   let tendered: number | null = input.tendered ?? null;
   let rounding = 0;
   let change = 0;
+  const tip = input.tipCents ?? 0;
   if (tender.isCash) {
     if (applied > balance) {
       tendered = tendered ?? applied;
@@ -75,7 +76,8 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
     if (applied === balance && settings.cashRoundingIncrement && settings.cashRoundingIncrement > 1) {
       rounding = roundCash(balance, settings.cashRoundingIncrement).roundingCents;
     }
-    const due = applied + rounding;
+    // A cash tip stays in the drawer: it is part of what the guest hands over, never part of the change.
+    const due = applied + rounding + tip;
     if (tendered != null) {
       if (tendered < due) throw AppError.validation(`Cash tendered (${formatCents(tendered)}) is less than the amount due (${formatCents(due)})`, { remedy: `Take at least ${formatCents(due)}, or record a part payment of ${formatCents(tendered)}.`, details: { due_cents: due, tendered_cents: tendered, balance } });
       change = tendered - due;
@@ -107,7 +109,7 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
       roundingCents: rounding,
       tendered,
       changeCents: change,
-      tipCents: input.tipCents ?? 0,
+      tipCents: tip,
       reference: input.reference ?? null,
       recordedBy: principal.type === "staff" ? principal.id : null,
       recordedByName: "name" in principal ? principal.name : null,

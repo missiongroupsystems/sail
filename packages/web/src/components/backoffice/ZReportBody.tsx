@@ -88,6 +88,7 @@ export function ZReportBody({ report, stationName }: { report: ZReport; stationN
               { term: "Float", detail: <Money cents={r.cash.float} />, numeric: true },
               { term: "Cash payments", detail: <Money cents={r.cash.cash_payments} />, numeric: true },
               { term: "Rounding", detail: <Money cents={r.cash.rounding} signed />, numeric: true },
+              { term: "Cash tips", detail: <Money cents={r.cash.tips} />, numeric: true },
               { term: "Cash refunds", detail: <Money cents={-r.cash.refunds} />, numeric: true },
               { term: <span className="text-ink">Expected in drawer</span>, detail: <Money cents={r.cash.expected} size="heading" />, numeric: true },
               { term: "Counted", detail: r.cash.counted === null ? <span className="text-ink-2">Not counted yet</span> : <Money cents={r.cash.counted} />, numeric: true },

@@ -24,7 +24,8 @@ export type ZReport = {
   tenders: { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number }[];
   /** Register-computed totals across tenders, so clients never add rows up: `non_cash` is the figure to compare with the terminal's end-of-day total. */
   tenders_summary: { cash: number; non_cash: number; tips: number; count: number };
-  cash: { float: number; cash_payments: number; rounding: number; refunds: number; expected: number; counted: number | null; variance: number | null };
+  /** `expected = float + cash_payments + rounding + tips - refunds`: cash tips stay in the drawer until they are paid out. */
+  cash: { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number; counted: number | null; variance: number | null };
   voids: { count: number; quantity: number; value: number };
   refunds: { count: number; amount: number };
   generated_at: string;
@@ -74,7 +75,8 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
   const refunds = await refundProvider(scope);
   const cashPayments = tenders.filter((t) => t.is_cash).reduce((s, t) => s + t.amount, 0);
   const rounding = tenders.filter((t) => t.is_cash).reduce((s, t) => s + t.rounding, 0);
-  const expected = cashCounts.float + cashPayments + rounding - refunds.cash_amount;
+  const cashTips = tenders.filter((t) => t.is_cash).reduce((s, t) => s + t.tips, 0);
+  const expected = cashCounts.float + cashPayments + rounding + cashTips - refunds.cash_amount;
   return {
     scope: { outlet_id: scope.outletId, station_id: scope.stationId ?? null, business_date: scope.businessDate, shift_id: scope.shiftId ?? null },
     orders: { count: o?.count ?? 0, by_type: Object.fromEntries(byType.map((b) => [b.t, b.n])), covers: o?.covers ?? 0, open_count: open?.n ?? 0 },
@@ -82,7 +84,7 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
     adjustments: adj,
     tenders,
     tenders_summary: { cash: cashPayments, non_cash: tenders.filter((t) => !t.is_cash).reduce((s, t) => s + t.amount, 0), tips: tenders.reduce((s, t) => s + t.tips, 0), count: tenders.reduce((s, t) => s + t.count, 0) },
-    cash: { float: cashCounts.float, cash_payments: cashPayments, rounding, refunds: refunds.cash_amount, expected, counted: cashCounts.counted, variance: cashCounts.counted == null ? null : cashCounts.counted - expected },
+    cash: { float: cashCounts.float, cash_payments: cashPayments, rounding, tips: cashTips, refunds: refunds.cash_amount, expected, counted: cashCounts.counted, variance: cashCounts.counted == null ? null : cashCounts.counted - expected },
     voids: voidRows[0] ?? { count: 0, quantity: 0, value: 0 },
     refunds: { count: refunds.count, amount: refunds.amount },
     generated_at: new Date().toISOString(),

@@ -23,7 +23,7 @@ export type BillDocumentLike = {
   lines: { quantity: number; name: string; unit_price: number; amount: number; modifiers: { name: string; price: number }[]; seat_no?: number; share?: string }[];
   adjustments: { name: string; amount: number; kind: "fee" | "discount" }[];
   totals: { subtotal: number; discount_total: number; fee_total: number; tax_total: number; total: number; tax_mode: "inclusive" | "exclusive"; taxes: { name: string; bps: number; amount: number }[] };
-  payments?: { tender: string; amount: number; rounding_cents?: number; reference?: string; change?: number }[];
+  payments?: { tender: string; amount: number; rounding_cents?: number; reference?: string; tip?: number; change?: number }[];
   balance?: number;
   invoice_no?: string;
   credit_note_no?: string;
@@ -55,7 +55,7 @@ function Row({ label, cents, strong, muted, signed }: { label: string; cents: nu
 /**
  * One bill grammar on every surface (design principle 10): the lines, the
  * adjustments, a row per tax component in the outlet's tax mode, the total, then the
- * payments with cash rounding and change, and the document numbers.
+ * payments with cash rounding, tip and change, and the document numbers.
  */
 export function BillDocumentView({ document: doc, className }: BillDocumentViewProps) {
   const t = doc.totals;
@@ -136,6 +136,7 @@ export function BillDocumentView({ document: doc, className }: BillDocumentViewP
               <Row label={p.tender} cents={p.amount} />
               {p.reference ? <p className="font-mono text-caption text-ink-2">Ref {p.reference}</p> : null}
               {p.rounding_cents ? <Row label="Cash rounding" cents={p.rounding_cents} muted signed /> : null}
+              {p.tip ? <Row label="Tip" cents={p.tip} muted /> : null}
               {p.change ? <Row label="Change" cents={p.change} muted /> : null}
             </div>
           ))}

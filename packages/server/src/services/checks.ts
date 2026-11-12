@@ -247,7 +247,7 @@ export async function billDocumentFor(checkId: string, kind: "prebill" | "receip
     }),
     adjustments: adjs.filter((a) => (adjustmentTotals.get(a.id) ?? 0) !== 0).map((a) => ({ name: a.name, amount: adjustmentTotals.get(a.id)!, kind: a.kind as "fee" | "discount" })),
     totals: { subtotal: c.subtotal, discount_total: c.discountTotal, fee_total: c.feeTotal, tax_total: c.taxTotal, taxes: c.taxes, total: c.total, tax_mode: o.taxMode as "inclusive" | "exclusive" },
-    payments: kind === "receipt" ? pays.map((p) => ({ tender: p.tenderName, amount: p.amount, rounding_cents: p.roundingCents || undefined, reference: p.reference ?? undefined, change: p.changeCents || undefined })) : undefined,
+    payments: kind === "receipt" ? pays.map((p) => ({ tender: p.tenderName, amount: p.amount, rounding_cents: p.roundingCents || undefined, reference: p.reference ?? undefined, tip: p.tipCents || undefined, change: p.changeCents || undefined })) : undefined,
     balance: c.total - c.paidTotal > 0 ? c.total - c.paidTotal : undefined,
     invoice_no: c.invoiceNo ?? undefined,
     footer_lines: settings.receiptFooter ? settings.receiptFooter.split("\n") : undefined,

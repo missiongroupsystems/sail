@@ -230,6 +230,7 @@ export async function dailySummaryPdf(input: { outletName: string; businessDate:
   row("Float", formatCents(input.z.cash.float));
   row("Cash payments", formatCents(input.z.cash.cash_payments));
   row("Cash rounding", formatCents(input.z.cash.rounding));
+  row("Cash tips", formatCents(input.z.cash.tips));
   row("Cash refunds", formatCents(-input.z.cash.refunds));
   row("Expected", formatCents(input.z.cash.expected), bold);
   if (input.z.cash.counted != null) {

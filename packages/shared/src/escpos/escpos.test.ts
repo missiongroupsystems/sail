@@ -349,6 +349,15 @@ describe("templates (golden text at both widths)", () => {
     expect(containsBytes(out.bytes, new TextEncoder().encode("−"))).toBe(false);
   });
 
+  it("prints a cash tip between the rounding and the change, so the cash rows add up to what was handed over", () => {
+    const out = renderBill({ ...receiptInclusiveCash, payments: [{ tender: "Cash", amount: 5368, rounding_cents: 2, tip: 500, change: 130 }] }, PROFILES["80mm"]).text;
+    const at = (label: string) => out.search(new RegExp(`^${label} `, "m"));
+    expect(out).toMatch(/^Tip +\$5\.00$/m);
+    expect(at("Cash rounding")).toBeLessThan(at("Tip"));
+    expect(at("Tip")).toBeLessThan(at("Change"));
+    expect(renderBill(receiptInclusiveCash, PROFILES["80mm"]).text).not.toMatch(/^Tip /m);
+  });
+
   it("labels each tax row with its component name and formats money in the document's currency and locale", () => {
     const vat: BillDocument = {
       ...receiptInclusiveCash,
