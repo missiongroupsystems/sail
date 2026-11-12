@@ -20,7 +20,7 @@ export type OrderMenuAction = "refund" | "reopen" | "reprint";
 
 const CANCEL_REASONS = ["Customer changed mind", "Opened by mistake", "Duplicate order", "Walked out"];
 
-/** The order menu (design 3.1): Change type · Move table · Customer · Refund · Reopen · Get invoice · Reprint ticket · Cancel. */
+/** The order menu: Change type · Move table · Customer · Refund · Reopen · Get invoice · Reprint ticket · Cancel. */
 export function OrderMenu({ order, actions, onOpen }: { order: OrderSnapshot; actions: ReturnType<typeof useOrderActions>; onOpen: (action: OrderMenuAction) => void }) {
   const { offline } = usePos();
   const [open, setOpen] = useState<Open>(null);
@@ -101,7 +101,7 @@ export function OrderMenu({ order, actions, onOpen }: { order: OrderSnapshot; ac
 
 type SheetProps = { isOpen: boolean; onClose: () => void; order: OrderSnapshot; actions: ReturnType<typeof useOrderActions> };
 
-/** Change type (design 4.12): pick the type; the fields the new type needs appear before the button. */
+/** Change type: pick the type; the fields the new type needs appear before the button. */
 function ChangeTypeSheet({ isOpen, onClose, order, actions }: SheetProps) {
   const { floor } = usePos();
   const [type, setType] = useState<OrderType>(order.order_type);
@@ -192,7 +192,7 @@ function ChangeTypeSheet({ isOpen, onClose, order, actions }: SheetProps) {
   );
 }
 
-/** Move table (design 4.2): tap the target; free tables are highlighted, the rest are disabled. */
+/** Move table: tap the target; free tables are highlighted, the rest are disabled. */
 function MoveTableSheet({ isOpen, onClose, order, actions }: SheetProps) {
   const { station } = usePos();
   const floor = useFloor(station.outlet_id);
@@ -242,7 +242,7 @@ function MoveTableSheet({ isOpen, onClose, order, actions }: SheetProps) {
   );
 }
 
-/** Customer (design 4.12): type a mobile number, tap the match; Remove detaches. */
+/** Customer: type a mobile number, tap the match; Remove detaches. */
 function CustomerSheet({ isOpen, onClose, order, actions }: SheetProps) {
   const api = useApi();
   const [mobile, setMobile] = useState("");
@@ -286,7 +286,7 @@ function CustomerSheet({ isOpen, onClose, order, actions }: SheetProps) {
             </Button>
           </div>
         ) : null}
-        <TextField label="Mobile number" value={mobile} onChange={setMobile} type="tel" placeholder="9123 4567" autoFocus inputClassName="min-h-14 text-line tabular" />
+        <TextField label="Mobile number" value={mobile} onChange={setMobile} type="tel" placeholder="+ country code and number" autoFocus inputClassName="min-h-14 text-line tabular" />
         {digits.length >= 3 ? (
           search.data?.length ? (
             <ul className="flex flex-col gap-2">

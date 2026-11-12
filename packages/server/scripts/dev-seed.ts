@@ -142,7 +142,7 @@ export async function devSeed(url: string, boot: BootstrapResult): Promise<void>
         { id: "drinks", name: "Drinks", tiles: [{ id: "hot", kind: "folder", label: "Hot", color: "teal", access_level: "everyone", tiles: [tile("d1", "Kopi", kopi, "teal"), tile("d2", "Teh Tarik", teh, "teal")] }, tile("d3", "Kopi Peng", kopiPeng, "sky"), tile("d4", "Canned drink", can, "sky"), tile("d5", "Tiger", tiger, "indigo", "cashier"), tile("d6", "House wine", wine, "plum", "cashier")] },
       ];
       const layoutId = randomUUID();
-      await tx`insert into pos_layouts (id, merchant_id, brand_id, name, pages) values (${layoutId}, ${m}, ${boot.brandId}, 'Harbour Kitchen main', ${tx.json(pages)})`;
+      await tx`insert into pos_layouts (id, merchant_id, brand_id, name, pages) values (${layoutId}, ${m}, ${boot.brandId}, 'Sample Kitchen main', ${tx.json(pages)})`;
       await tx`update stations set layout_id = ${layoutId} where id = ${boot.stationId}`;
 
       // More staff for PIN sign-in.

@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import "../src/modules.js";
 import { buildApp, type App } from "../src/app.js";
@@ -213,7 +215,7 @@ describe("kitchen printing through the relay", () => {
     await call("POST", "/v1/relays", { token: A.admin.token, body: { id: relay3, outlet_id: A.outletId, name: "Relay 3" } });
     const code = (await call<{ data: { code: string } }>("POST", `/v1/relays/${relay3}/pairing-code`, { token: A.admin.token, body: {} })).body.data.code;
     const { Relay } = await import("../../relay/src/relay.js");
-    const stateFile = `/tmp/claude-1003/-home-mission-dev-missionsystems-sail/db18c92c-b4d7-4c0e-a7d9-a9c5864feb4c/scratchpad/relay-${randomUUID()}.json`;
+    const stateFile = join(tmpdir(), `sail-relay-${randomUUID()}.json`);
     const fetchImpl: typeof fetch = async (input, init) => app.request(typeof input === "string" ? input.replace("http://sail", "") : (input as Request), init);
     const relay = new Relay({ apiUrl: "http://sail", stateFile, pairingCode: code, version: "test", log: () => {}, fetchImpl, maxAttempts: 1 });
     await relay.start();

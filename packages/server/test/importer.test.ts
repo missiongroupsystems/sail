@@ -22,7 +22,7 @@ afterAll(async () => {
 });
 
 const files = {
-  "brands.csv": 'Brand ID,Brand Name\nB1,Harbour Kitchen\n',
+  "brands.csv": 'Brand ID,Brand Name\nB1,Sample Kitchen\n',
   "categories.csv": 'Cat ID,Cat Name,Parent\nFOOD,Food,\nNOOD,Noodles,FOOD\nDRK,Drinks,\n',
   "items.csv": 'SKU,Item Name,Price,Category,Tags,Type,Deposit,Tax class\nLAK-001,Laksa,"16.00",NOOD,kitchen;spicy,Item,,standard-rated\nKOPI-01,Kopi,3.80,DRK,bar,Item,,\nCAN-01,Canned drink,2.50,DRK,bar,Item,Y,\nPRAWN,Extra prawn,2.00,,,Modifier,,\nBADPRICE,Broken,abc,DRK,,Item,,\nBADCLASS,Caviar,99.00,FOOD,,Item,,Luxury\n',
   "modgroups.csv": 'Group ID,Group Name,Min,Max\nPROT,Protein,1,1\n',

@@ -5,7 +5,6 @@
  * Starts an embedded Postgres, migrates it, bootstraps two demo merchants
  * (Singapore: admin@sail.local; EU VAT in EUR: admin.eu@sail.local; PIN
  * 123456 for both), and serves the API on :8080 with the SSE listener. Sign-in tokens come from POST /v1/auth/dev-token {email}.
- * Set SAIL_DEV_DATA_DIR to keep data between runs (default: fresh each time).
  */
 import { serve } from "@hono/node-server";
 import { writeFileSync } from "node:fs";
@@ -37,9 +36,9 @@ process.env.CORS_ORIGIN ??= "*";
 // Two demo merchants, so both tax paths run locally: Singapore (GST 9% on exclusive prices, rounded per line,
 // service charge and container deposit) and an EU café (inclusive VAT at 20% and 10%, rounded once per rate, EUR).
 const boot = await bootstrapMerchant(url, {
-  merchantName: "Harbour Group",
-  brandName: "Harbour Kitchen",
-  outletName: "Harbour Kitchen · Marina",
+  merchantName: "Sample Group",
+  brandName: "Sample Kitchen",
+  outletName: "Sample Kitchen · Main",
   admin: { name: "Ada Admin", email: "admin@sail.local", pin: "123456" },
   preset: "sg",
   timeZone: "Asia/Singapore",

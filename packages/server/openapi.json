@@ -3558,7 +3558,7 @@
           "organisation"
         ],
         "operationId": "outlets.create",
-        "description": "Creates an outlet with its hours, business and tax registration numbers, and optional time zone, tax mode and business-day cutoff overrides.",
+        "description": "Creates an outlet with its hours, business and tax registration numbers, and an optional business-day cutoff override.",
         "summary": "Create an outlet",
         "x-sail": {
           "op": "outlets.create",
@@ -4083,7 +4083,7 @@
           "organisation"
         ],
         "operationId": "outlets.update",
-        "description": "Changes an outlet's details, hours, registration numbers or its time zone, tax mode and cutoff overrides.",
+        "description": "Changes an outlet's details, hours, registration numbers or its business-day cutoff override.",
         "summary": "Update an outlet",
         "x-sail": {
           "op": "outlets.update",

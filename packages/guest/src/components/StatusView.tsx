@@ -10,7 +10,7 @@ export type StatusViewProps = {
   session: GuestSession;
   orderView: OrderView | null;
   loading: boolean;
-  /** The register's error when the order view could not be read (shown with its remedy, design 7.8). */
+  /** The register's error when the order view could not be read (shown with its remedy). */
   error: ApiError | null;
   lastRoundId: string | null;
   streamStatus: GuestStreamStatus | null;
@@ -19,7 +19,7 @@ export type StatusViewProps = {
   onOurTable: () => void;
 };
 
-/** "Laksa (Chicken, Less spicy) ×1" from a guest line. */
+/** "Noodle soup (Chicken, Less spicy) ×1" from a guest line. */
 export function LineText({ line }: { line: GuestLine }) {
   return (
     <span className="flex items-baseline justify-between gap-3">
@@ -33,7 +33,7 @@ export function LineText({ line }: { line: GuestLine }) {
   );
 }
 
-/** The order status page (design 4.11): the round's timeline, live, its items, and what happens next. */
+/** The order status page: the round's timeline, live, its items, and what happens next. */
 export function StatusView({ session, orderView, loading, error, lastRoundId, streamStatus, onOrderMore, onCallStaff, onOurTable }: StatusViewProps) {
   const { clock } = useLocale();
   const order = orderView?.order ?? null;

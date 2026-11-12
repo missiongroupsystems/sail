@@ -163,7 +163,7 @@ export interface paths {
         put?: never;
         /**
          * Create an outlet
-         * @description Creates an outlet with its hours, business and tax registration numbers, and optional time zone, tax mode and business-day cutoff overrides.
+         * @description Creates an outlet with its hours, business and tax registration numbers, and an optional business-day cutoff override.
          */
         post: operations["outlets.create"];
         delete?: never;
@@ -187,7 +187,7 @@ export interface paths {
         head?: never;
         /**
          * Update an outlet
-         * @description Changes an outlet's details, hours, registration numbers or its time zone, tax mode and cutoff overrides.
+         * @description Changes an outlet's details, hours, registration numbers or its business-day cutoff override.
          */
         patch: operations["outlets.update"];
         trace?: never;

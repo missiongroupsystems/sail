@@ -181,7 +181,7 @@ export function block(firstPrefix: string, contPrefix: string, body: string, col
 
 /**
  * A left-justified label with a right-justified value on the same line,
- * `Laksa                    $16.00`. Long labels wrap (indented on
+ * `Soup                     $16.00`. Long labels wrap (indented on
  * continuation lines) and the value sits on the last line.
  */
 export function justify(left: string, rightText: string, cols: number, opts: { indent?: number } = {}): string[] {

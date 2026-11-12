@@ -5,10 +5,10 @@ import { cx } from "../lib/cx";
 import { Button } from "../components/Button";
 
 export type UndoToastProps = {
-  /** "Added Kopi Peng ×2". */
+  /** "Added Iced coffee ×2". */
   label: string;
   onUndo: () => void;
-  /** Lifetime; design 2.5 says 8 s. */
+  /** Lifetime. */
   durationMs?: number;
   /** Called when the toast expires or Undo was pressed. */
   onDone: () => void;
@@ -18,7 +18,7 @@ export type UndoToastProps = {
   className?: string;
 };
 
-/** The Undo toast (design 2.5): bottom left, 8 s, the opposite corner from the primary action. */
+/** The Undo toast: bottom left, 8 s, the opposite corner from the primary action. */
 export function UndoToast({ label, onUndo, durationMs = 8000, onDone, nonce, isPending, className }: UndoToastProps) {
   const [remaining, setRemaining] = useState(durationMs);
   useEffect(() => {
