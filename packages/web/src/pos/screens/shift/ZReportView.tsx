@@ -19,14 +19,16 @@ export function ZReportView() {
   const { money, clock } = useLocale();
   const api = useApi();
   const qc = useQueryClient();
-  const { station, staff, offline, tablesById } = usePos();
+  const { station, staff, offline, tablesById, floor } = usePos();
   const notify = useUiStore((s) => s.notify);
   const [scope, setScope] = useState<"station" | "outlet">("station");
   const report = useZReport(station.outlet_id, scope === "station" ? station.id : null, null);
   const [busy, setBusy] = useState(false);
   const [closedAt, setClosedAt] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
-  const open = useOpenOrders(station.outlet_id);
+  const openOrders = useOpenOrders(station.outlet_id);
+  // Today's business day only, as the back office lists them.
+  const stillOpen = (openOrders.data ?? []).filter((o) => o.business_date === floor?.business_date);
   const r = report.data;
   const taxMode = useMerchant().data?.settings.tax_mode ?? "exclusive";
   const tax = taxRows(r?.sales.taxes ?? [], taxMode);
@@ -164,17 +166,17 @@ export function ZReportView() {
             <Button size="lg" variant="quiet" isDisabled={busy} onPress={() => setConfirming(false)} className="mr-auto">
               Keep the day open
             </Button>
-            <Button size="lg" variant="primary" isDisabled={offline || busy || open.isPending} isPending={busy} onPress={closeDay}>
+            <Button size="lg" variant="primary" isDisabled={offline || busy || openOrders.isPending} isPending={busy} onPress={closeDay}>
               Close business day
             </Button>
           </>
         }
       >
-        {open.data && open.data.length > 0 ? (
+        {stillOpen.length > 0 ? (
           <div className="flex flex-col gap-2">
-            <p className="text-line text-ink">{open.data.length === 1 ? "1 order is still open:" : `${open.data.length} orders are still open:`}</p>
+            <p className="text-line text-ink">{stillOpen.length === 1 ? "1 order is still open:" : `${stillOpen.length} orders are still open:`}</p>
             <ul className="flex flex-col">
-              {open.data.map((o) => (
+              {stillOpen.slice(0, 8).map((o) => (
                 <li key={o.id} className="flex min-h-11 items-center justify-between gap-3 hairline-b text-body text-ink">
                   <span>
                     {o.order_no}
@@ -184,10 +186,11 @@ export function ZReportView() {
                 </li>
               ))}
             </ul>
-            <p className="text-body text-ink-2">Pay or cancel {open.data.length === 1 ? "it" : "them"} first, unless {open.data.length === 1 ? "it carries" : "they carry"} over to the next day.</p>
+            {stillOpen.length > 8 ? <p className="text-body text-ink-2">and {stillOpen.length - 8} more, in Orders.</p> : null}
+            <p className="text-body text-ink-2">Pay or cancel {stillOpen.length === 1 ? "it" : "them"} first, unless {stillOpen.length === 1 ? "it carries" : "they carry"} over to the next day.</p>
           </div>
         ) : (
-          <p className="text-body text-ink-2">{open.isPending ? "Checking for open orders…" : "No orders are open."}</p>
+          <p className="text-body text-ink-2">{openOrders.isPending ? "Checking for open orders…" : "No orders are open."}</p>
         )}
       </Sheet>
     </div>

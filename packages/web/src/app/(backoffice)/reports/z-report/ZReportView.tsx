@@ -50,7 +50,7 @@ export function ZReportView({ outlets, scope, initialOutletId }: { outlets: Outl
   // What is still open on that business day, listed before the day is closed.
   const stillOpen = useQuery({
     queryKey: ["z-report", "open-orders", outletId ?? "", date],
-    queryFn: () => req(api.GET("/v1/outlets/{id}/orders", { params: { path: { id: outletId! }, query: { business_date: date, open_only: "true", limit: 50 } } })).then((r) => r.data as unknown as { id: string; order_no: string; totals: { total: number } }[]),
+    queryFn: () => req(api.GET("/v1/outlets/{id}/orders", { params: { path: { id: outletId! }, query: { business_date: date, open_only: "true", limit: 500 } } })).then((r) => r.data as unknown as { id: string; order_no: string; totals: { total: number } }[]),
     enabled: confirming && outletId !== null && validDate,
   });
   const closedToday = closed?.business_date === date;

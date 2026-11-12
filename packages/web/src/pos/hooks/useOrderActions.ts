@@ -264,7 +264,7 @@ export function useOrderActions(orderId: string) {
           return await withApproval(
             { action: "lines.void_fired", target_kind: "order_line", target_id: line.id, args: { quantity: qty } },
             `Void ${line.name} ×${qty}`,
-            `already sent · ${money(line.amounts.total)}${line.kitchen_name ? " · prints a void ticket" : ""}`,
+            `already sent · ${money(line.amounts.base)}${line.kitchen_name ? " · prints a void ticket" : ""}`,
             (overrideId) => run((expected) => reg.voidLine(api, orderId, line.id, body, { expectedVersion: expected, overrideId })),
           );
         }

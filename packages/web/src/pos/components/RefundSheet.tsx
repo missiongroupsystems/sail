@@ -263,7 +263,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                               {a.share !== "1" ? <span className="ml-2 rounded-chip bg-surface px-1.5 text-caption text-ink-2 tabular">{a.share}</span> : null}
                             </span>
                             <span className="block text-caption text-ink-2 tabular">
-                              {l.quantity} on the order · {money(a.total)} on this bill
+                              {l.quantity} on the order · {money(a.base)} on this bill
                             </span>
                           </span>
                           <QuantityStepper value={n} onChange={(v) => setQty({ ...qty, [a.line_id]: v })} min={0} max={l.quantity} label={`${l.name} quantity to refund`} />
