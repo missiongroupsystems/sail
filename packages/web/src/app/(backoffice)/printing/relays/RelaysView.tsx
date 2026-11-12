@@ -123,7 +123,7 @@ export function RelaysView({ outlets, scope, initialOutletId, initialRelays, ini
         }
       >
         <div className="flex flex-col gap-3 pt-2">
-          <TextField label="Name" value={newName} onChange={setNewName} placeholder="Relay · Marina" autoFocus />
+          <TextField label="Name" value={newName} onChange={setNewName} placeholder="Relay · Front counter" autoFocus />
           <InlineError error={create.error} />
         </div>
       </Dialog>

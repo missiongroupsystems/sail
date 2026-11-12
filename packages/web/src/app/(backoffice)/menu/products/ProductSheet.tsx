@@ -151,7 +151,7 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
       <form id="product-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
         <FormSection>
           <div className="grid gap-4 sm:grid-cols-[1fr_180px]">
-            <RhfTextField control={form.control} name="name" label="Name" placeholder="Kopi" autoFocus={!product} />
+            <RhfTextField control={form.control} name="name" label="Name" placeholder="Iced tea" autoFocus={!product} />
             <RhfTextField control={form.control} name="sku" label="SKU" mono description="Matches rows on import." />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
