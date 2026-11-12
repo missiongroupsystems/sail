@@ -36100,7 +36100,8 @@
                     "type": "string",
                     "minLength": 1,
                     "x-sail-untrusted": [
-                      "name@customers"
+                      "name@customers",
+                      "customer_name"
                     ]
                   },
                   "mobile": {
@@ -70080,7 +70081,8 @@
                     ],
                     "maxLength": 40,
                     "x-sail-untrusted": [
-                      "name@shifts"
+                      "name@shifts",
+                      "shift_name"
                     ]
                   },
                   "float_cents": {

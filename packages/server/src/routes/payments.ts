@@ -260,7 +260,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: rows.map(toShift), next_cursor: null }, 200);
   });
 
-  defineOp(app, { op: "shifts.open", method: "post", path: "/v1/shifts", tags: ["shifts"], request: { body: jsonBody(Mutation.extend({ outlet_id: z.uuid().optional(), station_id: z.uuid().nullable().optional(), name: untrusted(z.string().max(40).nullable().optional(), "name@shifts"), float_cents: z.number().int().min(0), float_counts: z.record(z.string(), z.number().int().min(0)).nullable().optional() })) }, responses: { 201: jsonResponse(mutationResponse(ShiftSchema)), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "shifts.open", method: "post", path: "/v1/shifts", tags: ["shifts"], request: { body: jsonBody(Mutation.extend({ outlet_id: z.uuid().optional(), station_id: z.uuid().nullable().optional(), name: untrusted(z.string().max(40).nullable().optional(), "name@shifts", "shift_name"), float_cents: z.number().int().min(0), float_counts: z.record(z.string(), z.number().int().min(0)).nullable().optional() })) }, responses: { 201: jsonResponse(mutationResponse(ShiftSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const b = c.req.valid("json");
     dryRunFrom(c, b);
@@ -269,7 +269,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     const stationId = b.station_id === undefined ? (p.type === "staff" ? (p.stationId ?? null) : null) : b.station_id;
     const bd = await businessDayInputs(p.merchantId, outletId);
     const shift = await openShift(p, { outletId, stationId, name: b.name ?? null, floatCents: b.float_cents, floatCounts: b.float_counts ?? null, businessDate: businessDateFor(new Date(), bd.cutoff, bd.timeZone) });
-    const ev = await appendEvent({ merchantId: p.merchantId, outletId, type: "shift.opened", aggregate: { kind: "shift", id: shift.id }, operationId: "shifts.open", payload: { station_id: stationId, float_cents: b.float_cents, name: b.name ?? null }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p);
+    const ev = await appendEvent({ merchantId: p.merchantId, outletId, type: "shift.opened", aggregate: { kind: "shift", id: shift.id }, operationId: "shifts.open", payload: { station_id: stationId, float_cents: b.float_cents, shift_name: b.name ?? null }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p);
     await recordAudit(p, { action: "shifts.open", targetKind: "shift", targetId: shift.id, outletId, details: { float_cents: b.float_cents } });
     return c.json({ data: toShift(shift), events: [ev], warnings: [] }, 201);
   });

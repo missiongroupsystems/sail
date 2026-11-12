@@ -20,7 +20,7 @@ registerOperations({
 });
 
 export const CustomerSchema = z.object({ id: z.string(), name: z.string(), mobile: z.string().nullable(), email: z.string().nullable(), marketing_consent: z.boolean(), notes: untrusted(z.string().nullable()), group_ids: z.array(z.string()), legacy_id: z.string().nullable(), archived: z.boolean() });
-const CustomerUpsert = z.object({ id: z.uuid().optional(), name: untrusted(z.string().min(1), "name@customers"), mobile: untrusted(z.string().min(3).nullable().optional(), "mobile@customers"), email: z.string().email().nullable().optional(), marketing_consent: z.boolean().optional(), notes: untrusted(z.string().nullable().optional()), legacy_id: z.string().nullable().optional(), group_ids: z.array(z.uuid()).optional(), archived: z.boolean().optional() });
+const CustomerUpsert = z.object({ id: z.uuid().optional(), name: untrusted(z.string().min(1), "name@customers", "customer_name"), mobile: untrusted(z.string().min(3).nullable().optional(), "mobile@customers"), email: z.string().email().nullable().optional(), marketing_consent: z.boolean().optional(), notes: untrusted(z.string().nullable().optional()), legacy_id: z.string().nullable().optional(), group_ids: z.array(z.uuid()).optional(), archived: z.boolean().optional() });
 
 async function toCustomer(rows: (typeof customers.$inferSelect)[]) {
   const ids = rows.map((r) => r.id);
@@ -90,7 +90,7 @@ export function customerRoutes(app: OpenAPIHono<AppEnv>) {
       if (b.group_ids.length) await db().insert(customerGroupMembers).values(b.group_ids.map((groupId) => ({ merchantId: p.merchantId, groupId, customerId: row!.id })));
     }
     const data = (await toCustomer([row!]))[0]!;
-    const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "customer.upserted", aggregate: { kind: "customer", id: row!.id }, operationId: "customers.upsert", payload: { name: data.name, consent: data.marketing_consent, group_ids: data.group_ids }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
+    const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "customer.upserted", aggregate: { kind: "customer", id: row!.id }, operationId: "customers.upsert", payload: { customer_name: data.name, consent: data.marketing_consent, group_ids: data.group_ids }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
     await recordAudit(p, { action: "customers.upsert", targetKind: "customer", targetId: row!.id, details: { consent: data.marketing_consent } });
     return c.json({ data: (await toCustomer([row!]))[0]!, events: [ev], warnings: [] }, 200);
   });
