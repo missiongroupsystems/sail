@@ -205,16 +205,18 @@ describe("orders of every type with server-authoritative pricing", () => {
     const denied = await call<Mut["body"]>("POST", `/v1/orders/${o.body.data.id}/lines`, { token: serverPin, body: { lines: [{ line_id: randomUUID(), product_id: cat.openItem, quantity: 1, open_price: 2500 }] } });
     expect(denied.status).toBe(403);
     expect(denied.body.details).toMatchObject({ required_role: "manager", override_allowed: true });
-    const wrongPin = await call("POST", "/v1/overrides", { token: serverPin, body: { action: "lines.add_open_price", target_kind: "order", target_id: o.body.data.id, approver_pin: "444444" } });
+    const openLine = { line_id: randomUUID(), product_id: cat.openItem, quantity: 1, open_price: 2500 };
+    const wrongPin = await call("POST", "/v1/overrides", { token: serverPin, body: { action: "lines.add_open_price", target_kind: "order", target_id: o.body.data.id, approver_pin: "444444", args: { lines: [openLine] } } });
     expect(wrongPin.status).toBe(403); // a server's own PIN is not a manager's
-    const grant = await call<{ data: { override_id: string; approver: { name: string } } }>("POST", "/v1/overrides", { token: serverPin, body: { action: "lines.add_open_price", target_kind: "order", target_id: o.body.data.id, approver_pin: "222222" } });
+    const grant = await call<{ data: { override_id: string; approver: { name: string } } }>("POST", "/v1/overrides", { token: serverPin, body: { action: "lines.add_open_price", target_kind: "order", target_id: o.body.data.id, approver_pin: "222222", args: { lines: [openLine] } } });
     expect(grant.status).toBe(201);
     expect(grant.body.data.approver.name).toBe("Mia Manager");
-    const ok = await call<Mut["body"]>("POST", `/v1/orders/${o.body.data.id}/lines`, { token: serverPin, body: { override_id: grant.body.data.override_id, lines: [{ line_id: randomUUID(), product_id: cat.openItem, quantity: 1, open_price: 2500 }] } });
+    const ok = await call<Mut["body"]>("POST", `/v1/orders/${o.body.data.id}/lines`, { token: serverPin, body: { override_id: grant.body.data.override_id, lines: [openLine] } });
     expect(ok.status, JSON.stringify(ok.body)).toBe(200);
     expect(ok.body.data.lines[0]!.unit_price).toBe(2500);
-    const reuse = await call<Mut["body"]>("POST", `/v1/orders/${o.body.data.id}/lines`, { token: serverPin, body: { override_id: grant.body.data.override_id, lines: [{ line_id: randomUUID(), product_id: cat.openItem, quantity: 1, open_price: 100 }] } });
+    const reuse = await call<Mut["body"]>("POST", `/v1/orders/${o.body.data.id}/lines`, { token: serverPin, body: { override_id: grant.body.data.override_id, lines: [openLine] } });
     expect(reuse.status).toBe(403);
+    expect(reuse.body).toMatchObject({ message: "Manager approval is missing, used or expired" });
     const audit = await call<{ data: { action: string; approver_name: string }[] }>("GET", `/v1/audit?action=lines.add_open_price`, { token: A.admin.token });
     expect(audit.body.data[0]!.approver_name).toBe("Mia Manager");
   });

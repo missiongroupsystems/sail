@@ -5,7 +5,7 @@ import { formatBpsText, useLocale } from "@sail/ui";
 import { useCallback, useMemo } from "react";
 import { ApiError, idempotencyKey, toApiError } from "@/lib/api";
 import * as reg from "../api/register";
-import type { CheckSnapshot, CompiledProduct, ManualRule, MutationResult, OrderSnapshot, OrderType, OverrideAction, OverrideTargetKind, PaymentResult, ReceiptChannel, RefundRequest, RefundResult, Role, SnapshotLine } from "../api/types";
+import type { CheckSnapshot, CompiledProduct, ManualRule, MutationResult, OrderSnapshot, OrderType, OverrideAction, OverrideSubject, PaymentResult, ReceiptChannel, RefundRequest, RefundResult, Role, SnapshotLine } from "../api/types";
 import { useSessionStore } from "../state/session";
 import { useUiStore } from "../state/ui";
 import { applySnapshot, posKeys } from "./queries";
@@ -96,9 +96,9 @@ export function useOrderActions(orderId: string) {
    * override_allowed, ask then. Returns null when the approval was declined.
    */
   const withApproval = useCallback(
-    async <T,>(action: OverrideAction, target: { kind: OverrideTargetKind; id: string }, title: string, quote: string | null, exec: (overrideId: string | null) => Promise<T>, minRole: Role = MIN_ROLE[action]): Promise<T | null> => {
+    async <T,>(subject: OverrideSubject, title: string, quote: string | null, exec: (overrideId: string | null) => Promise<T>, minRole: Role = MIN_ROLE[subject.action]): Promise<T | null> => {
       const ask = async () => {
-        const grant = await requestOverride({ action, targetKind: target.kind, targetId: target.id, title, quote });
+        const grant = await requestOverride({ subject, title, quote });
         return grant;
       };
       if (!roleAtLeast(role, minRole)) {
@@ -173,7 +173,7 @@ export function useOrderActions(orderId: string) {
             onConflict: "retry-unversioned",
             onRetried: () => notify({ text: "Your 1 new line was kept", tone: "info", orderId }, 4000),
           });
-        const snap = input.openPrice != null ? await withApproval("lines.add_open_price", { kind: "order", id: orderId }, `Add ${input.product.name} at ${money(input.openPrice)}`, "Open price · needs a manager", exec) : await exec(null);
+        const snap = input.openPrice != null ? await withApproval({ action: "lines.add_open_price", target_kind: "order", target_id: orderId, args: { lines: [{ line_id: lineId, product_id: input.product.id, quantity: input.quantity, open_price: input.openPrice }] } }, `Add ${input.product.name} at ${money(input.openPrice)}`, "Open price · needs a manager", exec) : await exec(null);
         if (!snap) {
           qc.setQueryData<OrderSnapshot>(key, (s) => (s ? { ...s, lines: s.lines.filter((l) => l.id !== lineId) } : s));
           return null;
@@ -231,8 +231,7 @@ export function useOrderActions(orderId: string) {
         if (line.status === "fired") {
           const qty = quantity ?? line.quantity;
           return await withApproval(
-            "lines.void_fired",
-            { kind: "order_line", id: line.id },
+            { action: "lines.void_fired", target_kind: "order_line", target_id: line.id, args: { quantity: qty } },
             `Void ${line.name} ×${qty}`,
             `already sent · ${money(line.amounts.total)}${line.kitchen_name ? " · prints a void ticket" : ""}`,
             (overrideId) => run((expected) => reg.voidLine(api, orderId, line.id, body, { expectedVersion: expected, overrideId })),
@@ -380,8 +379,7 @@ export function useOrderActions(orderId: string) {
       const valueText = rule.value.type === "open" && enteredValue != null ? (rule.calc === "percent" ? formatBpsText(enteredValue) : money(enteredValue)) : null;
       try {
         return await withApproval(
-          "adjustments.apply_manual",
-          { kind: "order", id: orderId },
+          { action: "adjustments.apply_manual", target_kind: "order", target_id: orderId, args: { rule_key: rule.rule_key, entered_value: enteredValue, line_ids: lineIds } },
           `Apply ${rule.name}${valueText ? ` · ${valueText}` : ""}`,
           reason ? `Reason: ${reason}` : null,
           (overrideId) => run((expected) => reg.applyAdjustment(api, orderId, input, { expectedVersion: expected, overrideId })),
@@ -399,8 +397,7 @@ export function useOrderActions(orderId: string) {
     async (applicationId: string, ruleName: string, minRole: Role) => {
       try {
         return await withApproval(
-          "adjustments.remove",
-          { kind: "order", id: orderId },
+          { action: "adjustments.remove", target_kind: "order", target_id: orderId, args: { application_id: applicationId } },
           `Remove ${ruleName}`,
           null,
           (overrideId) => run((expected) => reg.removeAdjustment(api, orderId, applicationId, { expectedVersion: expected, overrideId })),
@@ -514,8 +511,7 @@ export function useOrderActions(orderId: string) {
       beginMutation(orderId);
       try {
         const res = await withApproval(
-          "payments.record",
-          { kind: "order", id: orderId },
+          { action: "payments.record", target_kind: "order", target_id: orderId, args: { check_id: check.id, tender_type_id: input.tender_type_id, amount: input.amount, tip_cents: input.tip_cents ?? 0 } },
           `Take ${money(input.amount)} by ${tenderName}`,
           `${check.label} · balance ${money(check.balance)}`,
           (overrideId) => reg.recordPayment(api, check.id, input, { key: input.payment_id, expectedVersion: snapshot()?.version ?? null, overrideId }),
@@ -553,7 +549,7 @@ export function useOrderActions(orderId: string) {
   const reopen = useCallback(
     async (reason: string) => {
       try {
-        return await withApproval("orders.reopen", { kind: "order", id: orderId }, "Reopen this order", `Reason: ${reason}`, (overrideId) => run((expected) => reg.reopenOrder(api, orderId, reason, { expectedVersion: expected, overrideId })));
+        return await withApproval({ action: "orders.reopen", target_kind: "order", target_id: orderId, args: {} }, "Reopen this order", `Reason: ${reason}`, (overrideId) => run((expected) => reg.reopenOrder(api, orderId, reason, { expectedVersion: expected, overrideId })));
       } catch (e) {
         fail(e);
         return null;
@@ -622,7 +618,7 @@ export function useOrderActions(orderId: string) {
       const refundId = input.refund_id ?? idempotencyKey();
       beginMutation(orderId);
       try {
-        const res = await withApproval("refunds.create", { kind: "check", id: check.id }, `Refund ${money(total)}`, `${check.label} · ${input.reason}`, (overrideId) => reg.createRefund(api, check.id, { ...input, refund_id: refundId }, { key: refundId, expectedVersion: snapshot()?.version ?? null, overrideId }));
+        const res = await withApproval({ action: "refunds.create", target_kind: "check", target_id: check.id, args: { request: input.request, tender_split: input.tender_split, total } }, `Refund ${money(total)}`, `${check.label} · ${input.reason}`, (overrideId) => reg.createRefund(api, check.id, { ...input, refund_id: refundId }, { key: refundId, expectedVersion: snapshot()?.version ?? null, overrideId }));
         if (!res) return null;
         applySnapshot(qc, res.data);
         void qc.invalidateQueries({ queryKey: posKeys.refunds(orderId) });

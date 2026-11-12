@@ -238,11 +238,16 @@ export const overrides = pgTable(
     action: text("action").notNull(),
     targetKind: text("target_kind").notNull(),
     targetId: text("target_id").notNull(),
+    /** The protected request's arguments the approver saw; the request must match them exactly. */
+    args: jsonb("args").$type<Record<string, unknown>>().notNull().default({}),
     approverId: uuid("approver_id").notNull(),
     approverName: text("approver_name"),
     approverRole: text("approver_role").notNull(),
     requesterId: text("requester_id").notNull(),
     requesterName: text("requester_name"),
+    /** The PIN session and station that asked; only they can spend the grant. */
+    requesterSessionId: uuid("requester_session_id"),
+    stationId: uuid("station_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     usedAt: timestamp("used_at", { withTimezone: true }),

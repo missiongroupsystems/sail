@@ -34,7 +34,7 @@ export function OverrideSheet() {
     setPending(true);
     setError(null);
     try {
-      const grant = await grantOverride(api, { action: request.action, target_kind: request.targetKind, target_id: request.targetId, approver_pin: value });
+      const grant = await grantOverride(api, { ...request.subject, approver_pin: value });
       const name = grant.approver.name ?? "a manager";
       setApproved(`${name} (${ROLE_LABEL[grant.approver.role] ?? grant.approver.role})`);
       setTimeout(() => settle({ override_id: grant.override_id, approverName: name }), 700);

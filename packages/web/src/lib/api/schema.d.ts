@@ -1463,7 +1463,7 @@ export interface paths {
         put?: never;
         /**
          * Manager override: approve one restricted action
-         * @description A Manager+ enters their PIN to authorise a single action (for example a void after firing or a refund) for the signed-in staff member, without switching users. Returns a single-use grant bound to that action and target, valid for 2 minutes. Pass it as `override_id` on the protected request.
+         * @description A Manager+ (or, for a manual pricing rule, a user of the rule's own minimum role) enters their PIN to authorise one action for the signed-in staff member, without switching users. Send the action, its target and `args`: the arguments the approver is shown (the void quantity, the open-price lines, the rule, entered value and lines, the payment, the refund request and its total, nothing for a reopen). For a refund, `args.total` is the quoted total shown to the approver; the register refuses the grant when its own quote differs. Returns a single-use grant valid for 2 minutes, bound to all of that and to the requesting PIN session and station. Pass it as `override_id` on the protected request, whose arguments must match exactly. The grant id is returned only here: it is not on the event log or the audit trail.
          */
         post: operations["overrides.grant"];
         delete?: never;
@@ -18137,12 +18137,130 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    action: string;
-                    target_kind: string;
+                    /** @enum {string} */
+                    action: "lines.void_fired";
+                    /** @enum {string} */
+                    target_kind: "order_line";
+                    /** Format: uuid */
                     target_id: string;
                     approver_pin: string;
                     /** Format: uuid */
                     outlet_id?: string;
+                    args: {
+                        quantity: number;
+                    };
+                } | {
+                    /** @enum {string} */
+                    action: "lines.add_open_price";
+                    /** @enum {string} */
+                    target_kind: "order";
+                    /** Format: uuid */
+                    target_id: string;
+                    approver_pin: string;
+                    /** Format: uuid */
+                    outlet_id?: string;
+                    args: {
+                        lines: {
+                            /** Format: uuid */
+                            line_id: string;
+                            /** Format: uuid */
+                            product_id: string;
+                            quantity: number;
+                            open_price: number;
+                        }[];
+                    };
+                } | {
+                    /** @enum {string} */
+                    action: "adjustments.apply_manual";
+                    /** @enum {string} */
+                    target_kind: "order";
+                    /** Format: uuid */
+                    target_id: string;
+                    approver_pin: string;
+                    /** Format: uuid */
+                    outlet_id?: string;
+                    args: {
+                        rule_key: string;
+                        entered_value: number | null;
+                        line_ids: string[] | null;
+                    };
+                } | {
+                    /** @enum {string} */
+                    action: "adjustments.remove";
+                    /** @enum {string} */
+                    target_kind: "order";
+                    /** Format: uuid */
+                    target_id: string;
+                    approver_pin: string;
+                    /** Format: uuid */
+                    outlet_id?: string;
+                    args: {
+                        /** Format: uuid */
+                        application_id: string;
+                    };
+                } | {
+                    /** @enum {string} */
+                    action: "payments.record";
+                    /** @enum {string} */
+                    target_kind: "order";
+                    /** Format: uuid */
+                    target_id: string;
+                    approver_pin: string;
+                    /** Format: uuid */
+                    outlet_id?: string;
+                    args: {
+                        /** Format: uuid */
+                        check_id: string;
+                        /** Format: uuid */
+                        tender_type_id: string;
+                        amount: number;
+                        tip_cents: number;
+                    };
+                } | {
+                    /** @enum {string} */
+                    action: "refunds.create";
+                    /** @enum {string} */
+                    target_kind: "check";
+                    /** Format: uuid */
+                    target_id: string;
+                    approver_pin: string;
+                    /** Format: uuid */
+                    outlet_id?: string;
+                    args: {
+                        request: {
+                            /** @enum {string} */
+                            kind: "full";
+                        } | {
+                            /** @enum {string} */
+                            kind: "lines";
+                            lines: {
+                                /** Format: uuid */
+                                line_id: string;
+                                quantity: number;
+                            }[];
+                        } | {
+                            /** @enum {string} */
+                            kind: "amount";
+                            amount: number;
+                        };
+                        tender_split?: {
+                            /** Format: uuid */
+                            payment_id: string;
+                            amount: number;
+                        }[];
+                        total: number;
+                    };
+                } | {
+                    /** @enum {string} */
+                    action: "orders.reopen";
+                    /** @enum {string} */
+                    target_kind: "order";
+                    /** Format: uuid */
+                    target_id: string;
+                    approver_pin: string;
+                    /** Format: uuid */
+                    outlet_id?: string;
+                    args: Record<string, never>;
                 };
             };
         };
@@ -18158,6 +18276,9 @@ export interface operations {
                             override_id: string;
                             action: string;
                             target_id: string;
+                            args: {
+                                [key: string]: unknown;
+                            };
                             approver: {
                                 id: string;
                                 name: string | null;

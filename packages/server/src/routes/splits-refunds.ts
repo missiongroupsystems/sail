@@ -35,8 +35,8 @@ registerOperations({
 const Mutation = z.object({ expected_version: z.number().int().optional(), dry_run: z.boolean().optional(), override_id: z.uuid().optional() });
 const Snapshot = z.record(z.string(), z.unknown());
 const OrderMutationResponse = z.object({ data: Snapshot, events: z.array(z.object({ id: z.string(), seq: z.number().int(), type: z.string(), occurredAt: z.string(), businessDate: z.string() })), warnings: z.array(z.string()) });
-const RefundRequestSchema = z.discriminatedUnion("kind", [z.object({ kind: z.literal("full") }), z.object({ kind: z.literal("lines"), lines: z.array(z.object({ line_id: z.uuid(), quantity: z.number().int().min(1) })).min(1) }), z.object({ kind: z.literal("amount"), amount: z.number().int().min(1) })]);
-const TenderSplit = z.array(z.object({ payment_id: z.uuid(), amount: z.number().int().min(0) })).optional();
+export const RefundRequestSchema = z.discriminatedUnion("kind", [z.object({ kind: z.literal("full") }), z.object({ kind: z.literal("lines"), lines: z.array(z.object({ line_id: z.uuid(), quantity: z.number().int().min(1) })).min(1) }), z.object({ kind: z.literal("amount"), amount: z.number().int().min(1) })]);
+export const TenderSplit = z.array(z.object({ payment_id: z.uuid(), amount: z.number().int().min(0) })).optional();
 
 function dryRunFrom(c: { set(k: "dryRun", v: boolean): void }, body: { dry_run?: boolean }) {
   if (body.dry_run) {
@@ -88,7 +88,9 @@ export function splitRefundRoutes(app: OpenAPIHono<AppEnv>) {
       const [check] = await db().select().from(checks).where(eq(checks.id, id)).limit(1);
       if (!check) throw AppError.notFound("bill", id);
       const order = await lockOrder(check.orderId, b.expected_version);
-      const approval = await requireRoleOrOverride(p, principalRole(p), PERMISSIONS["refunds.create"].minRole, { action: "refunds.create", targetId: id, overrideId: b.override_id, overrideAllowed: PERMISSIONS["refunds.create"].overrideAllowed });
+      // The approval covers this request and the total the approver was quoted.
+      const total = quote(await refundableFor(id), b.request, b.tender_split).totals.total;
+      const approval = await requireRoleOrOverride(p, principalRole(p), PERMISSIONS["refunds.create"].minRole, { action: "refunds.create", targetId: id, args: { request: b.request, tender_split: b.tender_split, total }, overrideId: b.override_id, overrideAllowed: PERMISSIONS["refunds.create"].overrideAllowed });
       const created = await createRefund({ refundId: b.refund_id, checkId: id, request: b.request, tenderSplit: b.tender_split, reason: b.reason, reference: b.reference ?? null, principal: p, approver: approval, overrideId: b.override_id ?? null, stationId: p.type === "staff" ? (p.stationId ?? null) : null });
       const version = await bumpVersion(order.id);
       const snapshot = await loadSnapshot(order.id);

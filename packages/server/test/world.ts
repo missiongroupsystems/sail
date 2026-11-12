@@ -10,7 +10,7 @@ export type Call = ReturnType<typeof api>["call"];
 /** A seeded merchant with a small menu, tenders, printers and two paired stations at outlet 1, with every role signed in. */
 export type World = {
   m: SeededMerchant;
-  ids: Record<"laksa" | "kopi" | "wine" | "menu" | "posLink" | "station" | "station2" | "cash" | "card" | "kitchen" | "receipt" | "voidReason", string>;
+  ids: Record<"laksa" | "kopi" | "wine" | "menu" | "posLink" | "station" | "station2" | "cash" | "card" | "kitchen" | "receipt" | "voidReason" | "openItem", string>;
   stationToken: string;
   station2Token: string;
   /** PIN session tokens on station 1, plus a cashier on station 2. */
@@ -25,7 +25,7 @@ export async function bootWorld(): Promise<{ db: TestDb; call: Call; w: World }>
   const m = await seedMerchant(db.sql, "Alpha");
   await withTransaction(() => seedRulesForMerchant(m.merchantId, sgSeedRules(m)));
   const t = m.admin.token;
-  const ids = Object.fromEntries(["laksa", "kopi", "wine", "menu", "posLink", "station", "station2", "cash", "card", "kitchen", "receipt", "voidReason"].map((k) => [k, randomUUID()])) as World["ids"];
+  const ids = Object.fromEntries(["laksa", "kopi", "wine", "menu", "posLink", "station", "station2", "cash", "card", "kitchen", "receipt", "voidReason", "openItem"].map((k) => [k, randomUUID()])) as World["ids"];
   const must = async (method: string, path: string, body: unknown) => {
     const r = await call(method, path, { token: t, body });
     if (r.status >= 300) throw new Error(`${method} ${path} -> ${r.status} ${JSON.stringify(r.body)}`);
@@ -34,7 +34,8 @@ export async function bootWorld(): Promise<{ db: TestDb; call: Call; w: World }>
   await must("POST", "/v1/products", { id: ids.laksa, name: "Laksa", price: 1600, tags: ["kitchen"] });
   await must("POST", "/v1/products", { id: ids.kopi, name: "Kopi", price: 180, tags: ["kitchen"] });
   await must("POST", "/v1/products", { id: ids.wine, name: "Shiraz bottle", price: 12000, tags: ["kitchen"] });
-  await must("POST", "/v1/menus", { id: ids.menu, brand_id: m.brandId, name: "M", sections: [{ name: "All", items: [{ product_id: ids.laksa }, { product_id: ids.kopi }, { product_id: ids.wine }] }] });
+  await must("POST", "/v1/products", { id: ids.openItem, name: "Open item", price: 0, open_price: true });
+  await must("POST", "/v1/menus", { id: ids.menu, brand_id: m.brandId, name: "M", sections: [{ name: "All", items: [{ product_id: ids.laksa }, { product_id: ids.kopi }, { product_id: ids.wine }, { product_id: ids.openItem }] }] });
   await must("POST", "/v1/channel-links", { id: ids.posLink, channel: "pos", outlet_id: m.outletId, brand_id: m.brandId, menu_id: ids.menu });
   await must("POST", "/v1/printers", { id: ids.kitchen, outlet_id: m.outletId, name: "Kitchen", ip: "10.0.0.1", is_default_kitchen: true });
   await must("POST", "/v1/printers", { id: ids.receipt, outlet_id: m.outletId, name: "Receipt", ip: "10.0.0.9", role: "receipt" });

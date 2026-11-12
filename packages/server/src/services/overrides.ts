@@ -8,12 +8,33 @@ import type { Principal } from "../auth/principal.js";
 
 export const OVERRIDE_TTL_SECONDS = 120;
 
+/** The arguments of the protected request that the approver saw (the void quantity, the refund and its quoted total, ...). */
+export type OverrideArgs = Record<string, unknown>;
+
+/** JSON with sorted keys and without undefined members, so equal arguments compare equal however they were built or stored. */
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`;
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    return `{${Object.keys(o)
+      .filter((k) => o[k] !== undefined)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${canonical(o[k])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(v ?? null);
+}
+
+const sessionOf = (p: Principal) => (p.type === "staff" ? (p.sessionId ?? null) : null);
+const stationOf = (p: Principal) => (p.type === "staff" ? (p.stationId ?? null) : null);
+
 /**
- * Manager override (scope doc 4.1, 7.1 rule 9): a Manager+ PIN authorises a
- * single restricted action without switching the signed-in user. The grant is
- * bound to one action and target, used once, and expires.
+ * Manager override (scope doc 4.1, 7.1 rule 9): a PIN of the required role
+ * authorises a single restricted action without switching the signed-in user.
+ * The grant is bound to the action, its target, the arguments the approver
+ * saw and the requesting staff session and station; it is used once and expires.
  */
-export async function grantOverride(requester: Principal, input: { action: string; targetKind: string; targetId: string; approverPin: string; outletId: string; requiredRole: Role }) {
+export async function grantOverride(requester: Extract<Principal, { type: "staff" }>, input: { action: string; targetKind: string; targetId: string; approverPin: string; outletId: string; requiredRole: Role; args: OverrideArgs }) {
   const candidates = await db()
     .select()
     .from(staff)
@@ -29,29 +50,45 @@ export async function grantOverride(requester: Principal, input: { action: strin
       action: input.action,
       targetKind: input.targetKind,
       targetId: input.targetId,
+      args: input.args,
       approverId: approver.id,
       approverName: approver.name,
       approverRole: approver.role,
       requesterId: requester.id,
-      requesterName: "name" in requester ? requester.name : null,
+      requesterName: requester.name,
+      requesterSessionId: requester.sessionId ?? null,
+      stationId: requester.stationId ?? null,
       expiresAt: new Date(Date.now() + OVERRIDE_TTL_SECONDS * 1000),
     })
     .returning();
   return { grant: row!, approver };
 }
 
-/** Consume a grant for `action` on `target`. Returns the approver for the audit trail. */
-export async function consumeOverride(overrideId: string, action: string, targetId: string, principal: Principal): Promise<{ id: string; name: string | null; role: string }> {
+/** Consume a grant for exactly this action, target and arguments, by the session that asked, with an approver of at least `required`. Returns the approver for the audit trail. */
+export async function consumeOverride(overrideId: string, want: { action: string; targetId: string; required: Role; args: OverrideArgs }, principal: Principal): Promise<{ id: string; name: string | null; role: string }> {
   const [row] = await db()
     .select()
     .from(overrides)
     .where(and(eq(overrides.id, overrideId), eq(overrides.merchantId, principal.merchantId), isNull(overrides.usedAt), gt(overrides.expiresAt, new Date())))
     .limit(1);
-  if (!row) throw new AppError("permission_denied", "Manager approval is missing, used or expired", { remedy: "Ask a manager to approve the action again.", details: { override_id: overrideId } });
-  if (row.action !== action || row.targetId !== targetId) {
-    throw new AppError("permission_denied", "Manager approval was for a different action", { remedy: "Ask a manager to approve this action.", details: { approved_action: row.action, approved_target: row.targetId, action, target: targetId } });
+  const missing = () => new AppError("permission_denied", "Manager approval is missing, used or expired", { remedy: "Ask a manager to approve the action again.", details: { override_id: overrideId } });
+  if (!row) throw missing();
+  if (row.requesterId !== principal.id || row.requesterSessionId !== sessionOf(principal) || row.stationId !== stationOf(principal)) {
+    throw new AppError("permission_denied", "Manager approval was given to someone else", { remedy: "Ask a manager to approve the action for you." });
   }
-  await db().update(overrides).set({ usedAt: new Date(), usedBy: principal.id }).where(eq(overrides.id, overrideId));
+  if (row.action !== want.action || row.targetId !== want.targetId || canonical(row.args) !== canonical(want.args)) {
+    throw new AppError("permission_denied", "Manager approval was for a different action", { remedy: "Ask a manager to approve exactly this action.", details: { approved_action: row.action, approved_target: row.targetId, approved_args: row.args, action: want.action, target: want.targetId, args: want.args } });
+  }
+  if (!roleAtLeast(row.approverRole as Role, want.required)) {
+    throw new AppError("permission_denied", `Manager approval needs a ${want.required} or above`, { remedy: `Ask a ${want.required} or above to approve it.`, details: { required_role: want.required } });
+  }
+  // Conditional on still being unused: of two requests racing on one grant, only one gets the row.
+  const used = await db()
+    .update(overrides)
+    .set({ usedAt: new Date(), usedBy: principal.id })
+    .where(and(eq(overrides.id, overrideId), isNull(overrides.usedAt), gt(overrides.expiresAt, new Date())))
+    .returning({ id: overrides.id });
+  if (used.length === 0) throw missing();
   return { id: row.approverId, name: row.approverName, role: row.approverRole };
 }
 
@@ -59,8 +96,8 @@ export async function consumeOverride(overrideId: string, action: string, target
  * Role check with optional override: returns the approver when an override
  * grant was used, null when the role sufficed, and throws otherwise.
  */
-export async function requireRoleOrOverride(principal: Principal, role: Role | null, required: Role, opts: { action: string; targetId: string; overrideId?: string | null; overrideAllowed: boolean }) {
+export async function requireRoleOrOverride(principal: Principal, role: Role | null, required: Role, opts: { action: string; targetId: string; args: OverrideArgs; overrideId?: string | null; overrideAllowed: boolean }) {
   if (role && roleAtLeast(role, required)) return null;
   if (!opts.overrideAllowed || !opts.overrideId) throw AppError.permission(required, opts.overrideAllowed, opts.action);
-  return consumeOverride(opts.overrideId, opts.action, opts.targetId, principal);
+  return consumeOverride(opts.overrideId, { action: opts.action, targetId: opts.targetId, required, args: opts.args }, principal);
 }

@@ -1,8 +1,8 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, eq, gt, isNull } from "drizzle-orm";
-import { PERMISSIONS, RoleSchema, registerOperations, type PermissionKey } from "@sail/shared";
+import { PERMISSIONS, RoleSchema, registerOperations, type Role } from "@sail/shared";
 import { db, withTransaction } from "../db/client.js";
-import { auditLog, staff, staffSessions, stationPairingCodes, stations } from "../db/schema/index.js";
+import { auditLog, orderManualApplications, staff, staffSessions, stationPairingCodes, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, mutationResponse, z } from "../lib/openapi.js";
@@ -10,6 +10,9 @@ import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { hashSecret, pinLookup, randomDigits, randomToken, sha256, signSailToken, verifySecret } from "../auth/tokens.js";
 import { grantOverride } from "../services/overrides.js";
+import { activeRules, ruleOrLastVersion } from "../services/pricing-rules.js";
+import { quote, refundableFor } from "../services/refunds.js";
+import { RefundRequestSchema, TenderSplit } from "./splits-refunds.js";
 import { assertPinNotLocked, clearPinFailures, pinScope, recordPinFailure } from "../services/pin-attempts.js";
 import { businessDayInputs, toStation } from "./org.js";
 import { config } from "../config.js";
@@ -19,8 +22,20 @@ registerOperations({
   "stations.pair": { op: "stations.pair", summary: "Pair an iPad to a station", description: "Exchanges a one-time pairing code for a long-lived station token. No authentication; the code is single-use. Pairing again replaces the previous token.", tier: "T3", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: [], emits: ["station.paired"], mcp: { expose: false, toolsets: [] } },
   "staff_sessions.start": { op: "staff_sessions.start", summary: "Sign in on a station with a PIN", description: "Station token plus 6-digit PIN → a short-lived PIN session token for the staff member. Lockout after repeated failures. The session ends after inactivity.", tier: "T0", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["station"], emits: ["staff_session.started"], mcp: { expose: false, toolsets: [] } },
   "staff_sessions.end": { op: "staff_sessions.end", summary: "Sign out of a station", description: "Ends the current PIN session.", tier: "T1", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: ["staff_session.ended"], mcp: { expose: false, toolsets: [] } },
-  "overrides.grant": { op: "overrides.grant", summary: "Manager override: approve one restricted action", description: "A Manager+ enters their PIN to authorise a single action (for example a void after firing or a refund) for the signed-in staff member, without switching users. Returns a single-use grant bound to that action and target, valid for 2 minutes. Pass it as `override_id` on the protected request.", tier: "T0", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: ["override.granted"], mcp: { expose: true, toolsets: ["pos.order"] } },
+  "overrides.grant": { op: "overrides.grant", summary: "Manager override: approve one restricted action", description: "A Manager+ (or, for a manual pricing rule, a user of the rule's own minimum role) enters their PIN to authorise one action for the signed-in staff member, without switching users. Send the action, its target and `args`: the arguments the approver is shown (the void quantity, the open-price lines, the rule, entered value and lines, the payment, the refund request and its total, nothing for a reopen). For a refund, `args.total` is the quoted total shown to the approver; the register refuses the grant when its own quote differs. Returns a single-use grant valid for 2 minutes, bound to all of that and to the requesting PIN session and station. Pass it as `override_id` on the protected request, whose arguments must match exactly. The grant id is returned only here: it is not on the event log or the audit trail.", tier: "T0", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: ["override.granted"], mcp: { expose: true, toolsets: ["pos.order"] } },
 });
+
+/** One variant per action a manager may approve: its target kind and the arguments the approver sees, which the protected request must repeat exactly. */
+const grantBase = { target_id: z.uuid(), approver_pin: z.string().regex(/^\d{6}$/), outlet_id: z.uuid().optional() };
+const GrantRequest = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("lines.void_fired"), target_kind: z.literal("order_line"), ...grantBase, args: z.object({ quantity: z.number().int().min(1) }) }),
+  z.object({ action: z.literal("lines.add_open_price"), target_kind: z.literal("order"), ...grantBase, args: z.object({ lines: z.array(z.object({ line_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1), open_price: z.number().int().min(0) })).min(1) }) }),
+  z.object({ action: z.literal("adjustments.apply_manual"), target_kind: z.literal("order"), ...grantBase, args: z.object({ rule_key: z.string().min(1), entered_value: z.number().int().min(0).nullable(), line_ids: z.array(z.uuid()).min(1).nullable() }) }),
+  z.object({ action: z.literal("adjustments.remove"), target_kind: z.literal("order"), ...grantBase, args: z.object({ application_id: z.uuid() }) }),
+  z.object({ action: z.literal("payments.record"), target_kind: z.literal("order"), ...grantBase, args: z.object({ check_id: z.uuid(), tender_type_id: z.uuid(), amount: z.number().int().min(1), tip_cents: z.number().int().min(0) }) }),
+  z.object({ action: z.literal("refunds.create"), target_kind: z.literal("check"), ...grantBase, args: z.object({ request: RefundRequestSchema, tender_split: TenderSplit, total: z.number().int().min(0) }) }),
+  z.object({ action: z.literal("orders.reopen"), target_kind: z.literal("order"), ...grantBase, args: z.object({}) }),
+]);
 
 export function stationRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "stations.pairing_code", method: "post", path: "/v1/stations/{id}/pairing-code", tags: ["stations"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 201: jsonResponse(mutationResponse(z.object({ code: z.string(), expires_at: z.string() }))), ...errorResponses } }, async (c) => {
@@ -93,26 +108,40 @@ export function stationRoutes(app: OpenAPIHono<AppEnv>) {
       method: "post",
       path: "/v1/overrides",
       tags: ["stations"],
-      request: { body: jsonBody(z.object({ action: z.string().min(1), target_kind: z.string().min(1), target_id: z.string().min(1), approver_pin: z.string().regex(/^\d{6}$/), outlet_id: z.uuid().optional() })) },
-      responses: { 201: jsonResponse(mutationResponse(z.object({ override_id: z.string(), action: z.string(), target_id: z.string(), approver: z.object({ id: z.string(), name: z.string().nullable(), role: z.string() }), expires_at: z.string() }))), ...errorResponses },
+      request: { body: jsonBody(GrantRequest) },
+      responses: { 201: jsonResponse(mutationResponse(z.object({ override_id: z.string(), action: z.string(), target_id: z.string(), args: z.record(z.string(), z.unknown()), approver: z.object({ id: z.string(), name: z.string().nullable(), role: z.string() }), expires_at: z.string() }))), ...errorResponses },
     },
     async (c) => {
       const p = c.get("principal");
       if (p.type !== "staff") throw new AppError("permission_denied", "Overrides are requested by signed-in staff");
       const b = c.req.valid("json");
-      const perm = PERMISSIONS[b.action as PermissionKey];
-      if (!perm) throw AppError.validation(`Unknown action ${b.action}`, { remedy: "Use a permission key such as lines.void_fired or refunds.create." });
-      if (!perm.overrideAllowed) throw new AppError("permission_denied", `${b.action} cannot be authorised by override`, { remedy: "Only a user with the required role can do this.", details: { required_role: perm.minRole } });
       const outletId = p.outletId ?? b.outlet_id;
       if (!outletId) throw AppError.validation("outlet_id is required when not on a station");
-      const { grant, approver } = await grantOverride(p, { action: b.action, targetKind: b.target_kind, targetId: b.target_id, approverPin: b.approver_pin, outletId, requiredRole: perm.minRole });
-      const ev = await appendEvent({ merchantId: p.merchantId, outletId, type: "override.granted", aggregate: { kind: b.target_kind, id: isUuid(b.target_id) ? b.target_id : p.id }, operationId: "overrides.grant", payload: { action: b.action, target_id: b.target_id, override_id: grant.id }, approval: { override_id: grant.id, approver_id: approver.id, approver_name: approver.name }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(p.merchantId, outletId) }, p);
-      await recordAudit(p, { action: "overrides.grant", targetKind: b.target_kind, targetId: b.target_id, outletId, approver: { id: approver.id, name: approver.name }, overrideId: grant.id, details: { action: b.action } });
-      return c.json({ data: { override_id: grant.id, action: grant.action, target_id: grant.targetId, approver: { id: approver.id, name: approver.name, role: approver.role }, expires_at: grant.expiresAt.toISOString() }, events: [ev], warnings: [] }, 201);
+      let requiredRole: Role = PERMISSIONS[b.action].minRole;
+      const args: Record<string, unknown> = b.args;
+      if (b.action === "adjustments.apply_manual" || b.action === "adjustments.remove") {
+        // The rule's own minimum role and override setting apply, not the operation's.
+        let rule;
+        if (b.action === "adjustments.apply_manual") rule = (await activeRules(p.merchantId, new Date())).find((r) => r.id === b.args.rule_key);
+        else {
+          const [app] = await db().select({ ruleKey: orderManualApplications.ruleKey }).from(orderManualApplications).where(and(eq(orderManualApplications.id, b.args.application_id), eq(orderManualApplications.orderId, b.target_id), isNull(orderManualApplications.removedAt))).limit(1);
+          if (!app) throw AppError.notFound("adjustment", b.args.application_id);
+          rule = await ruleOrLastVersion(p.merchantId, app.ruleKey, new Date());
+        }
+        if (!rule) throw AppError.notFound("pricing rule");
+        if (!rule.override_allowed) throw new AppError("permission_denied", `${rule.name} cannot be authorised by override`, { remedy: "Only a user with the rule's role can do this.", details: { required_role: rule.min_role ?? "server" } });
+        requiredRole = (rule.min_role ?? "server") as Role;
+      }
+      if (b.action === "refunds.create") {
+        // The approver is shown a total; the register's quote must agree, and the refund must later come to it.
+        const total = quote(await refundableFor(b.target_id), b.args.request, b.args.tender_split).totals.total;
+        if (total !== b.args.total) throw new AppError("state_conflict", "The refund total has changed since it was quoted", { remedy: "Quote the refund again and ask for approval with the new total.", details: { quoted_total: total, shown_total: b.args.total } });
+      }
+      const { grant, approver } = await grantOverride(p, { action: b.action, targetKind: b.target_kind, targetId: b.target_id, approverPin: b.approver_pin, outletId, requiredRole, args });
+      // The grant id goes only to the requester: the event log and audit trail are readable by others, and the id is the bearer secret.
+      const ev = await appendEvent({ merchantId: p.merchantId, outletId, type: "override.granted", aggregate: { kind: b.target_kind, id: b.target_id }, operationId: "overrides.grant", payload: { action: b.action, target_id: b.target_id }, approval: { approver_id: approver.id, approver_name: approver.name }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(p.merchantId, outletId) }, p);
+      await recordAudit(p, { action: "overrides.grant", targetKind: b.target_kind, targetId: b.target_id, outletId, approver: { id: approver.id, name: approver.name }, details: { action: b.action, args } });
+      return c.json({ data: { override_id: grant.id, action: grant.action, target_id: grant.targetId, args: grant.args, approver: { id: approver.id, name: approver.name, role: approver.role }, expires_at: grant.expiresAt.toISOString() }, events: [ev], warnings: [] }, 201);
     },
   );
-}
-
-function isUuid(s: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 }

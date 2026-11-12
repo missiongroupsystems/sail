@@ -19,6 +19,14 @@ export async function activeRules(merchantId: string, at: Date): Promise<Pricing
   return rows.map((r) => PricingRuleSchema.parse({ ...r.body, id: r.rule_key, version: r.version }));
 }
 
+/** The rule a manual adjustment came from: the active version, or the newest one once the rule is archived, so its roles still apply to removing it. */
+export async function ruleOrLastVersion(merchantId: string, ruleKey: string, at: Date): Promise<PricingRule | null> {
+  const active = (await activeRules(merchantId, at)).find((r) => r.id === ruleKey);
+  if (active) return active;
+  const [last] = await ruleVersions(merchantId, ruleKey);
+  return last ? PricingRuleSchema.parse({ ...(last.body as Record<string, unknown>), id: last.ruleKey, version: last.version }) : null;
+}
+
 export async function ruleVersions(merchantId: string, ruleKey?: string) {
   const conds = [eq(pricingRules.merchantId, merchantId)];
   if (ruleKey) conds.push(eq(pricingRules.ruleKey, ruleKey));

@@ -177,8 +177,8 @@ version = fired.data.version;
 const reason = reasons[0]!;
 const denied = await expectError("lines.void sent line as Server", () => reg.voidLine(api, orderId, laksaLine, { reason_id: reason.id }, { expectedVersion: version }), "permission_denied");
 if (denied) ok("permission_denied details", `required_role ${String(denied.details?.required_role)}, override_allowed ${String(denied.details?.override_allowed)}`);
-await expectError("overrides.grant with a Server PIN", () => reg.grantOverride(api, { action: "lines.void_fired", target_kind: "order_line", target_id: laksaLine, approver_pin: "333333" }), "permission_denied");
-const grant = await step("overrides.grant (Mia Manager 222222)", () => reg.grantOverride(api, { action: "lines.void_fired", target_kind: "order_line", target_id: laksaLine, approver_pin: "222222" }), (g) => `approved by ${g.approver.name} (${g.approver.role}), expires ${g.expires_at}`);
+await expectError("overrides.grant with a Server PIN", () => reg.grantOverride(api, { action: "lines.void_fired", target_kind: "order_line", target_id: laksaLine, args: { quantity: 1 }, approver_pin: "333333" }), "permission_denied");
+const grant = await step("overrides.grant (Mia Manager 222222)", () => reg.grantOverride(api, { action: "lines.void_fired", target_kind: "order_line", target_id: laksaLine, args: { quantity: 1 }, approver_pin: "222222" }), (g) => `approved by ${g.approver.name} (${g.approver.role}), expires ${g.expires_at}`);
 if (grant) {
   const voided = await step("lines.void with override_id", () => reg.voidLine(api, orderId, laksaLine, { reason_id: reason.id }, { expectedVersion: version, overrideId: grant.override_id }), (r) => `line ${r.data.lines.find((l) => l.id === laksaLine)!.status}, reason "${r.data.lines.find((l) => l.id === laksaLine)!.void_reason}", total ${r.data.totals.total}`);
   if (voided) version = voided.data.version;
@@ -189,7 +189,7 @@ const staffMeal = rules.find((r) => r.name === "Staff meal")!;
 await expectError("adjustments.apply_manual Staff meal without reason", () => reg.applyAdjustment(api, orderId, { application_id: idempotencyKey(), rule_key: staffMeal.rule_key, reason: null }, { expectedVersion: version }), "validation");
 const smDenied = await expectError("adjustments.apply_manual Staff meal as Server", () => reg.applyAdjustment(api, orderId, { application_id: idempotencyKey(), rule_key: staffMeal.rule_key, reason: "Staff" }, { expectedVersion: version }), "permission_denied");
 if (smDenied) ok("permission_denied details", `override_allowed ${String(smDenied.details?.override_allowed)}`);
-const smGrant = await step("overrides.grant adjustments.apply_manual", () => reg.grantOverride(api, { action: "adjustments.apply_manual", target_kind: "order", target_id: orderId, approver_pin: "222222" }));
+const smGrant = await step("overrides.grant adjustments.apply_manual", () => reg.grantOverride(api, { action: "adjustments.apply_manual", target_kind: "order", target_id: orderId, args: { rule_key: staffMeal.rule_key, entered_value: null, line_ids: null }, approver_pin: "222222" }));
 const appId = idempotencyKey();
 if (smGrant) {
   const applied = await step("adjustments.apply_manual Staff meal with override", () => reg.applyAdjustment(api, orderId, { application_id: appId, rule_key: staffMeal.rule_key, reason: "Staff" }, { expectedVersion: version, overrideId: smGrant.override_id }), (r) => `adjustments: ${r.data.adjustments.map((a) => `${a.name}=${a.kind === "discount" ? "-" : ""}${a.total}`).join(", ")}; total ${r.data.totals.total}`);
@@ -201,7 +201,7 @@ if (percentOff) {
 }
 
 // 10. Remove the manual adjustment (needs the rule's role again → override).
-const rmGrant = await step("overrides.grant adjustments.remove", () => reg.grantOverride(api, { action: "adjustments.remove", target_kind: "order", target_id: orderId, approver_pin: "222222" }));
+const rmGrant = await step("overrides.grant adjustments.remove", () => reg.grantOverride(api, { action: "adjustments.remove", target_kind: "order", target_id: orderId, args: { application_id: appId }, approver_pin: "222222" }));
 if (rmGrant) {
   const removed = await step("adjustments.remove Staff meal", () => reg.removeAdjustment(api, orderId, appId, { expectedVersion: version, overrideId: rmGrant.override_id }), (r) => `adjustments now ${r.data.adjustments.map((a) => a.name).join(", ") || "none"}; total ${r.data.totals.total}`);
   if (removed) version = removed.data.version;
@@ -414,8 +414,10 @@ const b2Line = bill.checks.find((x) => x.id === b2.id)!.allocations[0]!;
 const quote = await step("refunds.quote lines", () => reg.quoteRefund(api, b2.id, { kind: "lines", lines: [{ line_id: b2Line.line_id, quantity: 1 }] }), (q) => `total ${q.totals.total} (tax ${q.totals.tax}), tenders ${q.tenders.map((t) => `${t.tender}=${t.amount}${t.rounding_cents ? `±${t.rounding_cents}` : ""}`).join(" ")}, cash_out ${q.cash_out}`);
 if (quote) {
   await expectError("refunds.create as Cashier", () => reg.createRefund(api, b2.id, { refund_id: idempotencyKey(), request: { kind: "lines", lines: [{ line_id: b2Line.line_id, quantity: 1 }] }, reason: "Guest complaint" }), "permission_denied");
-  const rGrant = await step("overrides.grant refunds.create (check)", () => reg.grantOverride(api, { action: "refunds.create", target_kind: "check", target_id: b2.id, approver_pin: "222222" }), (g) => `by ${g.approver.name}`);
+  const rGrant = await step("overrides.grant refunds.create (check)", () => reg.grantOverride(api, { action: "refunds.create", target_kind: "check", target_id: b2.id, args: { request: { kind: "lines", lines: [{ line_id: b2Line.line_id, quantity: 1 }] }, total: quote.totals.total }, approver_pin: "222222" }), (g) => `by ${g.approver.name}, quoted ${String(g.args.total)}`);
   if (rGrant) {
+    check("the approval carries the register's quote", rGrant.args.total === quote.totals.total, `${String(rGrant.args.total)} vs ${quote.totals.total}`);
+    await expectError("refunds.create full under a one-line approval", () => reg.createRefund(api, b2.id, { refund_id: idempotencyKey(), request: { kind: "full" }, reason: "Guest complaint" }, { overrideId: rGrant.override_id }), "permission_denied");
     const refunded = await step("refunds.create with override", () => reg.createRefund(api, b2.id, { refund_id: idempotencyKey(), request: { kind: "lines", lines: [{ line_id: b2Line.line_id, quantity: 1 }] }, reason: "Guest complaint", print: true }, { overrideId: rGrant.override_id }), (r) => `${r.refund.refund_receipt_no} credit note ${r.refund.credit_note_no ?? "—"} total ${r.refund.totals.total}; bill ${r.data.checks.find((x) => x.id === b2.id)!.status}`);
     if (refunded) {
       bill = refunded.data;
@@ -431,7 +433,7 @@ if (quote) {
 // reopened (reversing its payments would double-count the refund), so the refunded order is refused and a fresh
 // takeaway order exercises the reopen flow.
 await expectError("orders.reopen as Cashier", () => reg.reopenOrder(api, billOrderId, "Closed by mistake"), "permission_denied");
-const refundedGrant = await step("overrides.grant orders.reopen (refunded order)", () => reg.grantOverride(api, { action: "orders.reopen", target_kind: "order", target_id: billOrderId, approver_pin: "222222" }));
+const refundedGrant = await step("overrides.grant orders.reopen (refunded order)", () => reg.grantOverride(api, { action: "orders.reopen", target_kind: "order", target_id: billOrderId, args: {}, approver_pin: "222222" }));
 if (refundedGrant) {
   const refused = await expectError("orders.reopen of a refunded order", () => reg.reopenOrder(api, billOrderId, "Closed by mistake", { overrideId: refundedGrant.override_id }), "invariant_violation");
   if (refused) check("refusal names the refund", (refused.details as { invariant?: string } | undefined)?.invariant === "order_has_refunds", JSON.stringify(refused.details));
@@ -445,7 +447,7 @@ if (refundedGrant) {
     const roBill = ro.checks[0]!;
     const roPaid = await step("payments.record card (for reopen)", () => reg.recordPayment(api, roBill.id, { payment_id: idempotencyKey(), tender_type_id: cardTender.id, amount: roBill.balance }), (r) => `order ${r.data.status}`);
     if (roPaid) ro = roPaid.data;
-    const reopenGrant = await step("overrides.grant orders.reopen", () => reg.grantOverride(api, { action: "orders.reopen", target_kind: "order", target_id: reopenOrderId, approver_pin: "222222" }));
+    const reopenGrant = await step("overrides.grant orders.reopen", () => reg.grantOverride(api, { action: "orders.reopen", target_kind: "order", target_id: reopenOrderId, args: {}, approver_pin: "222222" }));
     if (reopenGrant) {
       const reopened = await step("orders.reopen with override", () => reg.reopenOrder(api, reopenOrderId, "Closed by mistake", { overrideId: reopenGrant.override_id }), (r) => `status ${r.data.status}, balance ${r.data.balance}, bills ${r.data.checks.map((c) => `${c.label}=${c.status}`).join(" ")}`);
       if (reopened) {

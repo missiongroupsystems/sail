@@ -5,6 +5,8 @@
  * routes/orders.ts). Amounts are integer cents and are only ever displayed.
  */
 
+import type { operations } from "@/lib/api/schema";
+
 export type Role = "server" | "cashier" | "manager" | "finance" | "admin";
 export type OrderType = "dine_in" | "takeaway" | "pickup" | "delivery";
 export type OrderStatus = "open" | "fired" | "ready" | "out_for_delivery" | "completed" | "cancelled";
@@ -258,11 +260,14 @@ export type ManualRule = {
 
 export type VoidReason = { id: string; name: string; for_refunds: boolean; sort: number; archived: boolean };
 export type Customer = { id: string; name: string; mobile: string | null; email: string | null; group_ids: string[]; archived: boolean };
-export type OverrideGrant = { override_id: string; action: string; target_id: string; approver: { id: string; name: string | null; role: string }; expires_at: string };
+export type OverrideGrant = { override_id: string; action: string; target_id: string; args: Record<string, unknown>; approver: { id: string; name: string | null; role: string }; expires_at: string };
 
+type GrantBody = operations["overrides.grant"]["requestBody"]["content"]["application/json"];
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+/** What a manager approves: the action, its target and the arguments shown to them, which the protected request repeats exactly. */
+export type OverrideSubject = DistributiveOmit<GrantBody, "approver_pin" | "outlet_id">;
 /** Permission keys the POS asks managers to approve (shared PERMISSIONS). */
-export type OverrideAction = "lines.void_fired" | "lines.add_open_price" | "adjustments.apply_manual" | "adjustments.remove" | "payments.record" | "refunds.create" | "orders.reopen";
-export type OverrideTargetKind = "order" | "order_line" | "check";
+export type OverrideAction = OverrideSubject["action"];
 
 /* ---- v0.7 bills, payments, refunds (design 4.4 to 4.6) --------------------- */
 

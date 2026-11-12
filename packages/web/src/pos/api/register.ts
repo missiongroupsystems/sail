@@ -17,9 +17,8 @@ import type {
   OrderSnapshot,
   OrderType,
   Outlet,
-  OverrideAction,
   OverrideGrant,
-  OverrideTargetKind,
+  OverrideSubject,
   PaymentResult,
   Printer,
   PrintJob,
@@ -268,7 +267,7 @@ export async function removeAdjustment(api: PosApi, orderId: string, application
 
 /* ---- Manager approval ------------------------------------------------------ */
 
-export async function grantOverride(api: PosApi, input: { action: OverrideAction; target_kind: OverrideTargetKind; target_id: string; approver_pin: string }): Promise<OverrideGrant> {
+export async function grantOverride(api: PosApi, input: OverrideSubject & { approver_pin: string }): Promise<OverrideGrant> {
   const res = await req(api.POST("/v1/overrides", { body: input, headers: headers() }));
   return res.data as unknown as OverrideGrant;
 }

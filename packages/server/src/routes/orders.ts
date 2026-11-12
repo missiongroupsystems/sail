@@ -15,7 +15,7 @@ import { bumpVersion, getOrderRow, loadSnapshot, lockOrder, nextOrderNo, OPEN_ST
 import { orderTaxRates, orderTaxSettings, usedTaxClasses } from "../services/tax.js";
 import { assertAdjustmentUnlocked, assertLineUnlocked } from "../services/checks.js";
 import { requireRoleOrOverride } from "../services/overrides.js";
-import { activeRules } from "../services/pricing-rules.js";
+import { activeRules, ruleOrLastVersion } from "../services/pricing-rules.js";
 import { releaseDailyCap } from "./catalogue.js";
 import { businessDayInputs } from "./org.js";
 import { businessDateFor } from "../lib/time.js";
@@ -373,7 +373,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     let approval: { id: string; name: string | null } | null = null;
     if (wantsOpenPrice) {
       const perm = PERMISSIONS["lines.add_open_price"];
-      approval = await requireRoleOrOverride(p, role, perm.minRole, { action: "lines.add_open_price", targetId: id, overrideId: b.override_id, overrideAllowed: perm.overrideAllowed });
+      approval = await requireRoleOrOverride(p, role, perm.minRole, { action: "lines.add_open_price", targetId: id, args: { lines: b.lines.filter((l) => l.open_price != null).map((l) => ({ line_id: l.line_id, product_id: l.product_id, quantity: l.quantity, open_price: l.open_price })) }, overrideId: b.override_id, overrideAllowed: perm.overrideAllowed });
     }
     const menu = await compileMenu(o.channelLinkId, new Date());
     const [maxRow] = await db().select({ max: sql<number>`coalesce(max(${orderLines.sort}), -1)` }).from(orderLines).where(eq(orderLines.orderId, id));
@@ -437,13 +437,13 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     }
     if (!reasonText) throw AppError.validation("A reason is required to remove a line", { remedy: "Pick a reason from the list." });
     const fired = line.status === "fired";
+    const qty = Math.min(b.quantity ?? line.quantity, line.quantity);
     let approval: { id: string; name: string | null } | null = null;
     if (fired) {
       const perm = PERMISSIONS["lines.void_fired"];
-      approval = await requireRoleOrOverride(p, principalRole(p), perm.minRole, { action: "lines.void_fired", targetId: line_id, overrideId: b.override_id, overrideAllowed: perm.overrideAllowed });
+      approval = await requireRoleOrOverride(p, principalRole(p), perm.minRole, { action: "lines.void_fired", targetId: line_id, args: { quantity: qty }, overrideId: b.override_id, overrideAllowed: perm.overrideAllowed });
     }
     await assertLineUnlocked(line_id);
-    const qty = Math.min(b.quantity ?? line.quantity, line.quantity);
     const now = new Date();
     if (qty < line.quantity) {
       // Partial void: keep the remainder on the original line; record the voided quantity on a new line.
@@ -553,7 +553,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     if (!check.ok) throw new AppError("validation", check.message, { remedy: check.remedy });
     if (rule.reason_required && !b.reason) throw AppError.validation(`${rule.name} needs a reason`, { remedy: "Pick a reason." });
     if (o.pricingFrozenAt && isFreezable(rule)) throw AppError.invariant("pricing_frozen", `${rule.name} is an order-level rule and the order already has a payment`, "Order-level discounts are frozen once a bill is paid. Refund the payment first, or apply an item-level discount to the unpaid items.");
-    const approval = await requireRoleOrOverride(p, principalRole(p), (rule.min_role ?? "server") as Role, { action: "adjustments.apply_manual", targetId: id, overrideId: b.override_id, overrideAllowed: rule.override_allowed });
+    const approval = await requireRoleOrOverride(p, principalRole(p), (rule.min_role ?? "server") as Role, { action: "adjustments.apply_manual", targetId: id, args: { rule_key: rule.id, entered_value: b.entered_value ?? null, line_ids: b.line_ids ?? null }, overrideId: b.override_id, overrideAllowed: rule.override_allowed });
     if (b.line_ids) {
       const found = await db().select({ id: orderLines.id }).from(orderLines).where(and(eq(orderLines.orderId, id), inArray(orderLines.id, b.line_ids), sql`${orderLines.status} <> 'voided'`));
       if (found.length !== b.line_ids.length) throw AppError.notFound("line on this order");
@@ -576,9 +576,9 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     if (!appRow) throw AppError.notFound("adjustment", application_id);
     if (o.pricingFrozenAt && (o.frozenAdjustments ?? []).some((f) => (f as { manual_application_id?: string }).manual_application_id === application_id)) throw AppError.invariant("adjustment_frozen", "This discount is frozen by a payment", "Refund the payment to change it.");
     await assertAdjustmentUnlocked(id, application_id);
-    const rules = await activeRules(o.merchantId, new Date());
-    const rule = rules.find((r) => r.id === appRow.ruleKey);
-    if (rule) await requireRoleOrOverride(p, principalRole(p), (rule.min_role ?? "server") as Role, { action: "adjustments.remove", targetId: id, overrideId: b.override_id, overrideAllowed: rule.override_allowed });
+    const rule = await ruleOrLastVersion(o.merchantId, appRow.ruleKey, new Date());
+    if (!rule) throw AppError.notFound("pricing rule", appRow.ruleKey);
+    await requireRoleOrOverride(p, principalRole(p), (rule.min_role ?? "server") as Role, { action: "adjustments.remove", targetId: id, args: { application_id }, overrideId: b.override_id, overrideAllowed: rule.override_allowed });
     await db().update(orderManualApplications).set({ removedAt: new Date(), removedBy: p.id }).where(eq(orderManualApplications.id, application_id));
     await recordAudit(p, { action: "adjustments.remove", targetKind: "order", targetId: id, outletId: o.outletId, reason: b.reason ?? null, details: { rule_key: appRow.ruleKey } });
     return finish(c, p, id, [() => emit(c, p, o, "adjustment.removed", { application_id, rule_key: appRow.ruleKey }, { reason: b.reason ? { text: b.reason } : null })]);

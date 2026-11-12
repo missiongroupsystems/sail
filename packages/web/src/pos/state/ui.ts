@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { ConnectionStatus } from "@sail/ui";
-import type { OverrideAction, OverrideTargetKind } from "../api/types";
+import type { OverrideSubject } from "../api/types";
 
 /* ---- Theme (design 7.3): schedule from the outlet, or a manual choice -------- */
 
@@ -48,9 +48,7 @@ export type UndoEntry = { id: number; label: string; undo: () => Promise<void> |
 export type Notice = { id: number; text: string; remedy?: string | null; tone: "info" | "alert" | "success"; orderId?: string | null };
 
 export type OverrideRequest = {
-  action: OverrideAction;
-  targetKind: OverrideTargetKind;
-  targetId: string;
+  subject: OverrideSubject;
   /** "Void Satay ×10", the verb and object. */
   title: string;
   /** The register's figures for the effect: "already sent · $18.00". */

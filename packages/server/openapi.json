@@ -44120,7 +44120,7 @@
           "stations"
         ],
         "operationId": "overrides.grant",
-        "description": "A Manager+ enters their PIN to authorise a single action (for example a void after firing or a refund) for the signed-in staff member, without switching users. Returns a single-use grant bound to that action and target, valid for 2 minutes. Pass it as `override_id` on the protected request.",
+        "description": "A Manager+ (or, for a manual pricing rule, a user of the rule's own minimum role) enters their PIN to authorise one action for the signed-in staff member, without switching users. Send the action, its target and `args`: the arguments the approver is shown (the void quantity, the open-price lines, the rule, entered value and lines, the payment, the refund request and its total, nothing for a reopen). For a refund, `args.total` is the quoted total shown to the approver; the register refuses the grant when its own quote differs. Returns a single-use grant valid for 2 minutes, bound to all of that and to the requesting PIN session and station. Pass it as `override_id` on the protected request, whose arguments must match exactly. The grant id is returned only here: it is not on the event log or the audit trail.",
         "summary": "Manager override: approve one restricted action",
         "x-sail": {
           "op": "overrides.grant",
@@ -44148,34 +44148,491 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "action": {
-                    "type": "string",
-                    "minLength": 1
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "lines.void_fired"
+                        ]
+                      },
+                      "target_kind": {
+                        "type": "string",
+                        "enum": [
+                          "order_line"
+                        ]
+                      },
+                      "target_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "approver_pin": {
+                        "type": "string",
+                        "pattern": "^\\d{6}$"
+                      },
+                      "outlet_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "args": {
+                        "type": "object",
+                        "properties": {
+                          "quantity": {
+                            "type": "integer",
+                            "minimum": 1
+                          }
+                        },
+                        "required": [
+                          "quantity"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "target_kind",
+                      "target_id",
+                      "approver_pin",
+                      "args"
+                    ]
                   },
-                  "target_kind": {
-                    "type": "string",
-                    "minLength": 1
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "lines.add_open_price"
+                        ]
+                      },
+                      "target_kind": {
+                        "type": "string",
+                        "enum": [
+                          "order"
+                        ]
+                      },
+                      "target_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "approver_pin": {
+                        "type": "string",
+                        "pattern": "^\\d{6}$"
+                      },
+                      "outlet_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "args": {
+                        "type": "object",
+                        "properties": {
+                          "lines": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "line_id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "product_id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "quantity": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "open_price": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                }
+                              },
+                              "required": [
+                                "line_id",
+                                "product_id",
+                                "quantity",
+                                "open_price"
+                              ]
+                            },
+                            "minItems": 1
+                          }
+                        },
+                        "required": [
+                          "lines"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "target_kind",
+                      "target_id",
+                      "approver_pin",
+                      "args"
+                    ]
                   },
-                  "target_id": {
-                    "type": "string",
-                    "minLength": 1
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "adjustments.apply_manual"
+                        ]
+                      },
+                      "target_kind": {
+                        "type": "string",
+                        "enum": [
+                          "order"
+                        ]
+                      },
+                      "target_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "approver_pin": {
+                        "type": "string",
+                        "pattern": "^\\d{6}$"
+                      },
+                      "outlet_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "args": {
+                        "type": "object",
+                        "properties": {
+                          "rule_key": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "entered_value": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "minimum": 0
+                          },
+                          "line_ids": {
+                            "type": [
+                              "array",
+                              "null"
+                            ],
+                            "items": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "minItems": 1
+                          }
+                        },
+                        "required": [
+                          "rule_key",
+                          "entered_value",
+                          "line_ids"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "target_kind",
+                      "target_id",
+                      "approver_pin",
+                      "args"
+                    ]
                   },
-                  "approver_pin": {
-                    "type": "string",
-                    "pattern": "^\\d{6}$"
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "adjustments.remove"
+                        ]
+                      },
+                      "target_kind": {
+                        "type": "string",
+                        "enum": [
+                          "order"
+                        ]
+                      },
+                      "target_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "approver_pin": {
+                        "type": "string",
+                        "pattern": "^\\d{6}$"
+                      },
+                      "outlet_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "args": {
+                        "type": "object",
+                        "properties": {
+                          "application_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          }
+                        },
+                        "required": [
+                          "application_id"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "target_kind",
+                      "target_id",
+                      "approver_pin",
+                      "args"
+                    ]
                   },
-                  "outlet_id": {
-                    "type": "string",
-                    "format": "uuid"
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "payments.record"
+                        ]
+                      },
+                      "target_kind": {
+                        "type": "string",
+                        "enum": [
+                          "order"
+                        ]
+                      },
+                      "target_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "approver_pin": {
+                        "type": "string",
+                        "pattern": "^\\d{6}$"
+                      },
+                      "outlet_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "args": {
+                        "type": "object",
+                        "properties": {
+                          "check_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "tender_type_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "amount": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "tip_cents": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "check_id",
+                          "tender_type_id",
+                          "amount",
+                          "tip_cents"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "target_kind",
+                      "target_id",
+                      "approver_pin",
+                      "args"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "refunds.create"
+                        ]
+                      },
+                      "target_kind": {
+                        "type": "string",
+                        "enum": [
+                          "check"
+                        ]
+                      },
+                      "target_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "approver_pin": {
+                        "type": "string",
+                        "pattern": "^\\d{6}$"
+                      },
+                      "outlet_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "args": {
+                        "type": "object",
+                        "properties": {
+                          "request": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "full"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "lines"
+                                    ]
+                                  },
+                                  "lines": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "line_id": {
+                                          "type": "string",
+                                          "format": "uuid"
+                                        },
+                                        "quantity": {
+                                          "type": "integer",
+                                          "minimum": 1
+                                        }
+                                      },
+                                      "required": [
+                                        "line_id",
+                                        "quantity"
+                                      ]
+                                    },
+                                    "minItems": 1
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "lines"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "amount"
+                                    ]
+                                  },
+                                  "amount": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "amount"
+                                ]
+                              }
+                            ]
+                          },
+                          "tender_split": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "payment_id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "amount": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                }
+                              },
+                              "required": [
+                                "payment_id",
+                                "amount"
+                              ]
+                            }
+                          },
+                          "total": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "request",
+                          "total"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "target_kind",
+                      "target_id",
+                      "approver_pin",
+                      "args"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "orders.reopen"
+                        ]
+                      },
+                      "target_kind": {
+                        "type": "string",
+                        "enum": [
+                          "order"
+                        ]
+                      },
+                      "target_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "approver_pin": {
+                        "type": "string",
+                        "pattern": "^\\d{6}$"
+                      },
+                      "outlet_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "args": {
+                        "type": "object",
+                        "properties": {}
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "target_kind",
+                      "target_id",
+                      "approver_pin",
+                      "args"
+                    ]
                   }
-                },
-                "required": [
-                  "action",
-                  "target_kind",
-                  "target_id",
-                  "approver_pin"
                 ]
               }
             }
@@ -44200,6 +44657,10 @@
                         },
                         "target_id": {
                           "type": "string"
+                        },
+                        "args": {
+                          "type": "object",
+                          "additionalProperties": {}
                         },
                         "approver": {
                           "type": "object",
@@ -44231,6 +44692,7 @@
                         "override_id",
                         "action",
                         "target_id",
+                        "args",
                         "approver",
                         "expires_at"
                       ]

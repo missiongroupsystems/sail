@@ -219,7 +219,7 @@ describe("refunds", () => {
     expect(l.fee).toBe(120);
     expect(l.base + l.discount + l.fee + l.tax).toBe(l.total);
     expect(Math.abs(l.total * 2 - laksaTotal)).toBeLessThanOrEqual(1);
-    const grant = await call<{ data: { override_id: string } }>("POST", "/v1/overrides", { token: cashierPin, body: { action: "refunds.create", target_kind: "check", target_id: check.id, approver_pin: "222222" } });
+    const grant = await call<{ data: { override_id: string } }>("POST", "/v1/overrides", { token: cashierPin, body: { action: "refunds.create", target_kind: "check", target_id: check.id, approver_pin: "222222", args: { request: { kind: "lines", lines: [{ line_id: laksaLine, quantity: 1 }] }, total: l.total } } });
     expect(grant.status).toBe(201);
     const refund = await call<Body>("POST", `/v1/checks/${check.id}/refunds`, { token: cashierPin, body: { refund_id: randomUUID(), request: { kind: "lines", lines: [{ line_id: laksaLine, quantity: 1 }] }, reason: "Dish was cold", override_id: grant.body.data.override_id } });
     expect(refund.status, JSON.stringify(refund.body)).toBe(201);
