@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { CentsSchema, OrderTypeSchema, TaxModeSchema } from "../domain.js";
+import { TaxAmountSchema } from "../pricing/schemas.js";
 
 /**
  * Data contracts for the ESC/POS templates (scope doc 4.7).
  *
  * The server builds these from the order, check and payment records and
  * stores them on the print job. They are printer-agnostic: every amount is an
- * integer number of cents, times are ISO strings, and nothing here knows
+ * integer number of minor units of the document's currency, times are ISO strings, and nothing here knows
  * about columns or control bytes. The renderer never does arithmetic: the
  * figures are printed exactly as the server supplies them.
  *
@@ -60,8 +61,10 @@ export const TicketHeaderSchema = z.object({
   ready_by: IsoDateTime.optional(),
   delivery_address: z.string().optional(),
   delivery_notes: z.string().optional(),
-  /** IANA time zone used to print clock times. Defaults to Asia/Singapore. */
-  time_zone: z.string().optional(),
+  /** IANA time zone used to print clock times (the outlet's, else the merchant's). */
+  time_zone: z.string().min(1),
+  /** BCP 47 locale for dates, times and money, for example "en-GB" or "de-DE". */
+  locale: z.string().min(1),
 });
 export type TicketHeader = z.infer<typeof TicketHeaderSchema>;
 
@@ -127,16 +130,16 @@ export const BillTotalsSchema = z.object({
   subtotal: CentsSchema,
   discount_total: CentsSchema,
   fee_total: CentsSchema,
-  gst_total: CentsSchema,
+  tax_total: CentsSchema,
   total: CentsSchema,
   tax_mode: TaxModeSchema,
-  /** GST rate in basis points (900 = 9%). */
-  gst_bps: z.number().int().min(0),
+  /** One printed row per tax component, labelled with its name ("VAT 20%", "Sales tax"); empty when every line is exempt. */
+  taxes: z.array(TaxAmountSchema),
 });
 export type BillTotals = z.infer<typeof BillTotalsSchema>;
 
 export const BillPaymentSchema = z.object({
-  /** Tender display name, for example "Cash", "Card", "PayNow". */
+  /** Tender display name as configured, for example "Cash" or "Card". */
   tender: z.string().min(1),
   /** Amount applied to the check. */
   amount: CentsSchema,
@@ -148,9 +151,15 @@ export const BillPaymentSchema = z.object({
 });
 export type BillPayment = z.infer<typeof BillPaymentSchema>;
 
+/** A registration number as printed: the merchant's label and the outlet's value, for example "VAT no." and "GB123456789". */
+export const RegistrationSchema = z.object({ label: z.string().min(1), value: z.string().min(1) });
+export type Registration = z.infer<typeof RegistrationSchema>;
+
 export const BillDocumentSchema = z.object({
   header: TicketHeaderSchema,
   kind: BillKindSchema,
+  /** ISO 4217 code every amount on the document is in. */
+  currency: z.string().length(3),
   /** For example "Bill 1" or "Bill 2 of 3". */
   check_label: z.string().min(1),
   lines: z.array(BillLineSchema),
@@ -167,7 +176,8 @@ export const BillDocumentSchema = z.object({
   refund_reason: z.string().optional(),
   footer_lines: z.array(z.string()).optional(),
   outlet_phone: z.string().optional(),
-  uen: z.string().optional(),
+  business_registration: RegistrationSchema.optional(),
+  tax_registration: RegistrationSchema.optional(),
   digital_receipt_url: z.string().optional(),
 });
 export type BillDocument = z.infer<typeof BillDocumentSchema>;

@@ -15,7 +15,6 @@ import {
   modifierLine,
   money,
   moneyRow,
-  percentLabel,
   rule,
   seatChip,
   text,
@@ -73,14 +72,12 @@ function outletBlock(h: TicketHeader, opts: { largeName: boolean }): DocLine[] {
 }
 
 function timeAndJob(h: TicketHeader, cols: number): DocLine[] {
-  const tz = h.time_zone;
-  return columns(formatDateTime(h.printed_at, tz), `Job ${h.job_id}`, cols).map((t) => text(t));
+  return columns(formatDateTime(h.printed_at, h.time_zone, h.locale), `Job ${h.job_id}`, cols).map((t) => text(t));
 }
 
 function customerOrderDetails(h: TicketHeader, cols: number): DocLine[] {
   const out: DocLine[] = [];
-  const tz = h.time_zone;
-  if (h.ready_by) out.push(text(`Ready by ${formatTime(h.ready_by, tz)}`, { bold: true }));
+  if (h.ready_by) out.push(text(`Ready by ${formatTime(h.ready_by, h.time_zone, h.locale)}`, { bold: true }));
   if (h.order_type === "delivery") {
     if (h.delivery_address) for (const t of wrap(`Deliver to: ${h.delivery_address}`, cols, { indent: 2 })) out.push(text(t));
     if (h.delivery_notes) for (const t of wrap(`Notes: ${h.delivery_notes}`, cols, { indent: 2 })) out.push(text(t));
@@ -138,12 +135,12 @@ export function buildKitchenTicketDocument(data: KitchenTicket, cols: number): D
 
 export function buildBillDocument(data: BillDocument, cols: number): DocLine[] {
   const h = data.header;
-  const tz = h.time_zone;
+  const fmt = { currency: data.currency, locale: h.locale };
   const doc: DocLine[] = [];
 
   doc.push(...outletBlock(h, { largeName: true }));
   if (data.outlet_phone) doc.push(text(`Tel ${data.outlet_phone}`, { align: "center" }));
-  if (data.uen) doc.push(text(`UEN ${data.uen}`, { align: "center" }));
+  for (const reg of [data.business_registration, data.tax_registration]) if (reg) doc.push(text(`${reg.label} ${reg.value}`, { align: "center" }));
   doc.push(text(rule(cols)));
 
   doc.push(text(BILL_TITLE[data.kind], { align: "center", bold: true, height: 2 }));
@@ -153,11 +150,11 @@ export function buildBillDocument(data: BillDocument, cols: number): DocLine[] {
   if (reference !== ORDER_TYPE_LABELS[h.order_type]) doc.push(text(reference));
   doc.push(...customerOrderDetails(h, cols));
   const server = h.server_name ? `Server: ${h.server_name}` : "";
-  for (const t of columns(formatDateTime(h.printed_at, tz), server, cols)) doc.push(text(t));
+  for (const t of columns(formatDateTime(h.printed_at, h.time_zone, h.locale), server, cols)) doc.push(text(t));
   if (data.invoice_no) doc.push(text(`Invoice ${data.invoice_no}`, { bold: true }));
   if (data.kind === "refund_receipt") {
     if (data.original_check_no) {
-      const dated = data.original_date ? `Bill date ${formatDate(data.original_date, tz)}` : "";
+      const dated = data.original_date ? `Bill date ${formatDate(data.original_date, h.time_zone, h.locale)}` : "";
       for (const t of columns(`Refund of bill ${data.original_check_no}`, dated, cols)) doc.push(text(t));
     }
     if (data.credit_note_no) doc.push(text(`Credit note ${data.credit_note_no}`, { bold: true }));
@@ -167,9 +164,9 @@ export function buildBillDocument(data: BillDocument, cols: number): DocLine[] {
 
   // Lines.
   for (const line of data.lines) {
-    for (const t of itemLine(line.quantity, line.name, cols, money(line.amount))) doc.push(text(t));
-    if (line.quantity !== 1) for (const t of detailLine(`${line.quantity} @ ${money(line.unit_price)}`, cols)) doc.push(text(t));
-    for (const m of line.modifiers) for (const t of modifierLine(m.name, cols, m.price)) doc.push(text(t));
+    for (const t of itemLine(line.quantity, line.name, cols, money(line.amount, fmt))) doc.push(text(t));
+    if (line.quantity !== 1) for (const t of detailLine(`${line.quantity} @ ${money(line.unit_price, fmt)}`, cols)) doc.push(text(t));
+    for (const m of line.modifiers) for (const t of modifierLine(m.name, cols, { price: m.price, fmt })) doc.push(text(t));
     const chips: string[] = [];
     if (line.seat_no !== undefined) chips.push(seatChip(line.seat_no));
     if (line.share) chips.push(`share ${line.share}`);
@@ -178,28 +175,28 @@ export function buildBillDocument(data: BillDocument, cols: number): DocLine[] {
   doc.push(text(rule(cols)));
 
   // Totals.
+  // Tax rows are labelled with the component's own name ("VAT 20%", "State sales tax").
   const totals = data.totals;
-  const gst = `GST ${percentLabel(totals.gst_bps)}`;
-  for (const t of moneyRow("Subtotal", totals.subtotal, cols)) doc.push(text(t));
-  for (const adj of data.adjustments) for (const t of moneyRow(adj.name, adj.amount, cols)) doc.push(text(t));
-  if (totals.tax_mode === "exclusive") for (const t of moneyRow(gst, totals.gst_total, cols)) doc.push(text(t));
+  for (const t of moneyRow("Subtotal", totals.subtotal, cols, fmt)) doc.push(text(t));
+  for (const adj of data.adjustments) for (const t of moneyRow(adj.name, adj.amount, cols, fmt)) doc.push(text(t));
+  if (totals.tax_mode === "exclusive") for (const tax of totals.taxes) for (const t of moneyRow(tax.name, tax.amount, cols, fmt)) doc.push(text(t));
   const totalLabel = data.kind === "refund_receipt" ? "Refund total" : "Total";
-  for (const t of justify(totalLabel, money(totals.total), cols)) doc.push(large(t, { bold: true }));
-  if (totals.tax_mode === "inclusive") for (const t of moneyRow(`${gst} (included)`, totals.gst_total, cols)) doc.push(text(t));
+  for (const t of justify(totalLabel, money(totals.total, fmt), cols)) doc.push(large(t, { bold: true }));
+  if (totals.tax_mode === "inclusive") for (const tax of totals.taxes) for (const t of moneyRow(`${tax.name} (included)`, tax.amount, cols, fmt)) doc.push(text(t));
 
   // Payments.
   if (data.payments && data.payments.length > 0) {
     doc.push(text(rule(cols)));
     for (const p of data.payments) {
       const label = p.reference ? `${p.tender} ${p.reference}` : p.tender;
-      for (const t of moneyRow(label, p.amount, cols)) doc.push(text(t));
-      if (p.rounding_cents !== undefined && p.rounding_cents !== 0) for (const t of moneyRow("Cash rounding", p.rounding_cents, cols)) doc.push(text(t));
-      if (p.change !== undefined && p.change !== 0) for (const t of moneyRow("Change", p.change, cols)) doc.push(text(t));
+      for (const t of moneyRow(label, p.amount, cols, fmt)) doc.push(text(t));
+      if (p.rounding_cents !== undefined && p.rounding_cents !== 0) for (const t of moneyRow("Cash rounding", p.rounding_cents, cols, fmt)) doc.push(text(t));
+      if (p.change !== undefined && p.change !== 0) for (const t of moneyRow("Change", p.change, cols, fmt)) doc.push(text(t));
     }
   }
   if (data.balance !== undefined) {
     if (!data.payments || data.payments.length === 0) doc.push(text(rule(cols)));
-    for (const t of moneyRow("Balance due", data.balance, cols)) doc.push(text(t, { bold: true }));
+    for (const t of moneyRow("Balance due", data.balance, cols, fmt)) doc.push(text(t, { bold: true }));
   }
 
   // Footer.

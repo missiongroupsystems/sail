@@ -1,4 +1,4 @@
-import { formatCents, type Cents } from "../money.js";
+import { formatMoney, type Cents, type MoneyFormat } from "../money.js";
 import type { Align, SizeMultiplier } from "./encoder.js";
 import type { PaperWidth } from "./types.js";
 
@@ -201,20 +201,14 @@ export function columns(left: string, rightText: string, cols: number): string[]
   return [...wrap(left, cols), ...wrap(rightText, cols).map((l) => right(l, cols))];
 }
 
-/** Money text for receipts: en-SG, true minus sign for negatives. */
-export function money(cents: Cents): string {
-  return formatCents(cents);
+/** Money text for receipts in the merchant's currency and locale, true minus sign for negatives. */
+export function money(cents: Cents, fmt: MoneyFormat): string {
+  return formatMoney(cents, fmt);
 }
 
 /** `Subtotal                                $34.80`. */
-export function moneyRow(label: string, cents: Cents, cols: number, opts: { indent?: number } = {}): string[] {
-  return justify(label, money(cents), cols, opts);
-}
-
-/** Percent label from basis points: 900 -> "9%", 850 -> "8.5%". */
-export function percentLabel(bps: number): string {
-  const pct = bps / 100;
-  return `${Number.isInteger(pct) ? pct.toFixed(0) : String(pct)}%`;
+export function moneyRow(label: string, cents: Cents, cols: number, fmt: MoneyFormat, opts: { indent?: number } = {}): string[] {
+  return justify(label, money(cents, fmt), cols, opts);
 }
 
 /** Seat chip, `S1`. */
@@ -239,8 +233,8 @@ const INDENT = " ".repeat(ITEM_INDENT);
 const INDENT_UNDER_MARKER = " ".repeat(ITEM_INDENT + 2);
 
 /** Modifier under an item: `   + Extra chilli`, with a price on the right when non-zero. */
-export function modifierLine(name: string, cols: number, price?: Cents): string[] {
-  return block(INDENT + "+ ", INDENT_UNDER_MARKER, name, cols, price === undefined || price === 0 ? "" : money(price));
+export function modifierLine(name: string, cols: number, priced?: { price: Cents; fmt: MoneyFormat }): string[] {
+  return block(INDENT + "+ ", INDENT_UNDER_MARKER, name, cols, priced === undefined || priced.price === 0 ? "" : money(priced.price, priced.fmt));
 }
 
 /** Note under an item, upper-cased after a star: `   * LESS SPICY`. */

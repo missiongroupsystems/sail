@@ -1,5 +1,7 @@
 /**
- * Money helpers. Every amount in Sail is an integer number of cents.
+ * Money helpers. Every amount in Sail is an integer number of minor units of
+ * the merchant's currency (cents for EUR, yen for JPY, fils for KWD). The type
+ * and helper names say "cents" for brevity; nothing here assumes two decimals.
  *
  * The largest-remainder allocator is the single place where an amount is
  * split across parts. The pricing pipeline uses it to spread a rule's total
@@ -118,8 +120,8 @@ export function percentOfCents(amount: Cents, bps: number): Cents {
 }
 
 /**
- * Round `amount` to the nearest `increment` cents, halves rounded up (away
- * from zero). Used only for cash tenders (scope doc 4.3). Returns the rounded
+ * Round `amount` to the nearest `increment` minor units, halves rounded up
+ * (away from zero): 5 for CHF (0.05), 100 for SEK (1 krona), 10 for JPY. Used only for cash tenders (scope doc 4.3). Returns the rounded
  * amount and the difference `rounded - amount`.
  */
 export function roundCash(amount: Cents, increment: number): { rounded: Cents; roundingCents: Cents } {
@@ -141,12 +143,89 @@ export function sumCents(values: readonly Cents[]): Cents {
   return s;
 }
 
-/** Format integer cents as an en-SG currency string, for example 1600 → "$16.00". Formatting only; never arithmetic. */
-export function formatCents(cents: Cents, opts: { currency?: string; sign?: "auto" | "always" } = {}): string {
-  const currency = opts.currency ?? "SGD";
-  const fmt = new Intl.NumberFormat("en-SG", { style: "currency", currency, currencyDisplay: "narrowSymbol" });
-  const s = fmt.format(Math.abs(cents) / 100);
-  if (cents < 0) return `−${s}`;
+/**
+ * ISO 4217 minor-unit exponents that are not 2. Every other active code has
+ * two decimal places. Intl's CLDR data disagrees with ISO for a few codes
+ * (for example IQD), so the stored amount follows this table, not Intl.
+ */
+const MINOR_UNIT_EXPONENTS: Record<string, number> = {
+  BIF: 0, CLP: 0, DJF: 0, GNF: 0, ISK: 0, JPY: 0, KMF: 0, KRW: 0, PYG: 0, RWF: 0, UGX: 0, UYI: 0, VND: 0, VUV: 0, XAF: 0, XOF: 0, XPF: 0,
+  BHD: 3, IQD: 3, JOD: 3, KWD: 3, LYD: 3, OMR: 3, TND: 3,
+  CLF: 4, UYW: 4,
+};
+
+/** True for an ISO 4217 code this runtime knows, for example "EUR". */
+export function isCurrencyCode(code: string): boolean {
+  return /^[A-Z]{3}$/.test(code) && Intl.supportedValuesOf("currency").includes(code);
+}
+
+/** Number of decimal places of the currency's minor unit: 0 for JPY, 2 for EUR, 3 for KWD. */
+export function currencyExponent(currency: string): number {
+  if (!isCurrencyCode(currency)) throw new RangeError(`unknown currency ${currency}`);
+  return MINOR_UNIT_EXPONENTS[currency] ?? 2;
+}
+
+/** The currency and locale every formatter and parser needs. There is no default. */
+export type MoneyFormat = { currency: string; locale: string };
+
+/** Decimal string for an amount in minor units: 1600 EUR → "16.00", 1600 JPY → "1600", 1234 KWD → "1.234". */
+function decimalString(abs: number, exponent: number): string {
+  if (exponent === 0) return String(abs);
+  const digits = String(abs).padStart(exponent + 1, "0");
+  return `${digits.slice(0, -exponent)}.${digits.slice(-exponent)}`;
+}
+
+/**
+ * Format an amount in minor units as a currency string in the given locale,
+ * for example 1600 EUR in de-DE → "16,00 €". Negative amounts take a true
+ * minus sign. Formatting only; never arithmetic.
+ */
+export function formatMoney(amount: Cents, money: MoneyFormat, opts: { sign?: "auto" | "always" } = {}): string {
+  assertCents(amount);
+  const exponent = currencyExponent(money.currency);
+  const fmt = new Intl.NumberFormat(money.locale, { style: "currency", currency: money.currency, currencyDisplay: "narrowSymbol", minimumFractionDigits: exponent, maximumFractionDigits: exponent });
+  // A decimal string keeps large amounts exact (Intl formats strings without converting to a float).
+  const s = fmt.format(decimalString(Math.abs(amount), exponent) as Intl.StringNumericLiteral);
+  if (amount < 0) return `−${s}`;
   if (opts.sign === "always") return `+${s}`;
   return s;
+}
+
+/**
+ * Parse what a person typed into minor units, in the given locale: "16,50" in
+ * de-DE → 1650 (EUR), "1,600" in ja-JP → 1600 (JPY). Currency symbols, codes and
+ * spaces are ignored. Throws a RangeError for text that is not an amount, has
+ * more decimal places than the currency allows, or groups digits in a way the
+ * locale does not ("16.50" in de-DE is not 1650.00).
+ */
+export function parseMoney(text: string, money: MoneyFormat): Cents {
+  const exponent = currencyExponent(money.currency);
+  const parts = new Intl.NumberFormat(money.locale, { useGrouping: true, minimumFractionDigits: 1 }).formatToParts(12345.6);
+  const group = parts.find((p) => p.type === "group")?.value ?? ",";
+  const decimal = parts.find((p) => p.type === "decimal")?.value ?? ".";
+  const symbol = new Intl.NumberFormat(money.locale, { style: "currency", currency: money.currency, currencyDisplay: "narrowSymbol" }).formatToParts(1).find((p) => p.type === "currency")?.value ?? money.currency;
+  // Signs, spaces, currency symbols and the currency's code may stand before or after the number, nowhere else.
+  const affix = `(?:[\\s\\u00a0\\u202f\\p{Sc}]|${escapeRegExp(money.currency)}|${escapeRegExp(symbol)})`;
+  let t = text.trim();
+  const negative = /^[-−(]/.test(t) || /[-−)]$/.test(t);
+  t = t.replace(new RegExp(`^(?:[-−(]|${affix})+`, "u"), "").replace(new RegExp(`(?:[-−)]|${affix})+$`, "u"), "");
+  // Group separators: the locale's own, the apostrophe used in de-CH, and any space where the locale groups with one (fr-FR).
+  t = t.replace(/['’]/g, group);
+  if (/^[\s\u00a0\u202f]$/u.test(group)) t = t.replace(/[\s\u00a0\u202f]/gu, group);
+  const [whole = "", ...fractions] = t.split(decimal);
+  const groups = whole.split(group);
+  // The first group has one to three digits, the others two (en-IN) or three, and the last always three.
+  if (groups.length > 1 && (groups[0]!.length < 1 || groups[0]!.length > 3 || groups.slice(1).some((g) => g.length < 2 || g.length > 3) || groups.at(-1)!.length !== 3)) throw new RangeError(`not an amount in ${money.locale}: ${text}`);
+  t = groups.join("") + (fractions.length ? `.${fractions.join(decimal)}` : "");
+  const m = /^(\d+)(?:\.(\d*))?$/.exec(t);
+  if (!m) throw new RangeError(`not an amount: ${text}`);
+  const fraction = m[2] ?? "";
+  if (fraction.length > exponent) throw new RangeError(`${money.currency} has ${exponent} decimal place${exponent === 1 ? "" : "s"}: ${text}`);
+  const minor = Number(m[1]! + fraction.padEnd(exponent, "0"));
+  if (!Number.isSafeInteger(minor)) throw new RangeError(`amount too large: ${text}`);
+  return negative ? -minor : minor;
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

@@ -1,5 +1,6 @@
 import { freezeFrom, price } from "../engine.js";
-import { SEED_RULES, SEED_RULE_IDS } from "../seed.js";
+import { SEED_RULE_IDS } from "../seed.js";
+import { SG_SEED_RULES } from "./dsl.js";
 import type { PricingContextInput, PricingOrderInput, PricingRuleInput } from "../schemas.js";
 import { ctx, line, NOW, order, type RefCase } from "./dsl.js";
 
@@ -11,9 +12,9 @@ import { ctx, line, NOW, order, type RefCase } from "./dsl.js";
  * re-prices the changed order with `context.frozen` set.
  */
 
-const SC = SEED_RULES.find((r) => r.id === SEED_RULE_IDS.serviceCharge)!;
-const PCT_BILL = SEED_RULES.find((r) => r.id === SEED_RULE_IDS.percentOffBill)!;
-const AMT_BILL = SEED_RULES.find((r) => r.id === SEED_RULE_IDS.amountOffBill)!;
+const SC = SG_SEED_RULES.find((r) => r.id === SEED_RULE_IDS.serviceCharge)!;
+const PCT_BILL = SG_SEED_RULES.find((r) => r.id === SEED_RULE_IDS.percentOffBill)!;
+const AMT_BILL = SG_SEED_RULES.find((r) => r.id === SEED_RULE_IDS.amountOffBill)!;
 
 function disc(id: string, over: Partial<PricingRuleInput> = {}): PricingRuleInput {
   return {
@@ -77,7 +78,7 @@ export const FREEZE_CHANGE_CASES: RefCase[] = [
       adjustments: { [PB_KEY]: -(300 + 50) },
       adjustment_lines: { [PB_KEY]: { a: -300, c: -50 } },
       line_nets: { a: 2700, c: 450, d: 2000 },
-      gst_total: 243 + 41 + 180,
+      tax_total: 243 + 41 + 180,
       total: 2700 + 450 + 2000 + 243 + 41 + 180,
       pricing_status: "frozen",
     },
@@ -97,7 +98,7 @@ export const FREEZE_CHANGE_CASES: RefCase[] = [
       adjustment_lines: { [PB_KEY]: { a: -300, c: -50 }, [SEED_RULE_IDS.serviceCharge]: { a: 270, c: 45, d: 200 } },
       line_nets: { a: 2700, c: 450, d: 2000 },
       fee_total: 515,
-      gst_total: 464 + 46,
+      tax_total: 464 + 46,
       total: 5150 + 515 + 464 + 46,
       pricing_status: "frozen",
     },
@@ -116,7 +117,7 @@ export const FREEZE_CHANGE_CASES: RefCase[] = [
       adjustments: { "line-10": -(100 + 400), [AB_KEY]: -250 },
       adjustment_lines: { "line-10": { b: -100, c: -400 }, [AB_KEY]: { b: -250 } },
       line_nets: { b: 650, c: 3600 },
-      gst_total: 59 + 324,
+      tax_total: 59 + 324,
       total: 650 + 3600 + 59 + 324,
       pricing_status: "frozen",
     },
@@ -135,7 +136,7 @@ export const FREEZE_CHANGE_CASES: RefCase[] = [
       adjustments: { "wine-10": -700 },
       adjustment_lines: { "wine-10": { wine1: -700 } },
       line_nets: { wine1: 6300, wine3: 8000 },
-      gst_total: 567 + 720,
+      tax_total: 567 + 720,
       total: 6300 + 8000 + 567 + 720,
       pricing_status: "frozen",
     },
@@ -154,7 +155,7 @@ export const FREEZE_CHANGE_CASES: RefCase[] = [
       adjustments: { "wine-10": 0 },
       line_nets: { wine2: 11_000 },
       discount_total: 0,
-      gst_total: 990,
+      tax_total: 990,
       total: 11_000 + 990,
       pricing_status: "frozen",
     },
@@ -173,9 +174,9 @@ export const FREEZE_CHANGE_CASES: RefCase[] = [
       adjustments: { [PB_KEY]: -218, [SEED_RULE_IDS.serviceCharge]: 196 + 55 },
       adjustment_lines: { [PB_KEY]: { a: -218 }, [SEED_RULE_IDS.serviceCharge]: { a: 196, c: 55 } },
       line_nets: { a: 1962, c: 545 },
-      line_gst: { a: 162, c: 45 },
+      line_tax: { a: 162, c: 45 },
       fee_total: 251,
-      gst_total: 162 + 45 + 16 + 5,
+      tax_total: 162 + 45 + 16 + 5,
       total: 1962 + 545 + 251,
       pricing_status: "frozen",
     },

@@ -1,4 +1,5 @@
-import { SEED_RULES, SEED_RULE_IDS } from "../seed.js";
+import { SEED_RULE_IDS } from "../seed.js";
+import { SG_SEED_RULES } from "./dsl.js";
 import type { PricingRuleInput } from "../schemas.js";
 import { ctx, line, order, type RefCase } from "./dsl.js";
 
@@ -11,8 +12,8 @@ import { ctx, line, order, type RefCase } from "./dsl.js";
  * deposit next to discounts, and open-price items with fees.
  */
 
-const SC = SEED_RULES.find((r) => r.id === SEED_RULE_IDS.serviceCharge)!;
-const DEPOSIT = SEED_RULES.find((r) => r.id === SEED_RULE_IDS.containerDeposit)!;
+const SC = SG_SEED_RULES.find((r) => r.id === SEED_RULE_IDS.serviceCharge)!;
+const DEPOSIT = SG_SEED_RULES.find((r) => r.id === SEED_RULE_IDS.containerDeposit)!;
 
 /** $5 delivery fee per order, delivery orders only, GST applicable (defined here, like cases-fees.ts; it is not a seed rule). */
 const DELIVERY_FEE: PricingRuleInput = {
@@ -25,7 +26,7 @@ const DELIVERY_FEE: PricingRuleInput = {
   conditions: { order_types: ["delivery"] },
   priority: 120,
   application: "auto",
-  gst_applicable: true,
+  tax_class_id: "standard",
   report_class: "delivery_fee",
 };
 
@@ -40,7 +41,7 @@ const PACKAGING: PricingRuleInput = {
   conditions: { order_types: ["takeaway", "pickup", "delivery"] },
   priority: 115,
   application: "auto",
-  gst_applicable: true,
+  tax_class_id: "standard",
   report_class: "packaging_fee",
 };
 
@@ -73,7 +74,7 @@ export const ORDER_TYPE_CASES: RefCase[] = [
     order: order([line("laksa", 1600, { prices: PRICES })]),
     rules: OFF_PREMISES_RULES,
     context: ctx(),
-    expect: { subtotal: 1600, adjustments: { [SEED_RULE_IDS.serviceCharge]: 160 }, not_applied: ["delivery-fee", "packaging"], gst_total: 144 + 14, total: 1600 + 160 + 144 + 14 },
+    expect: { subtotal: 1600, adjustments: { [SEED_RULE_IDS.serviceCharge]: 160 }, not_applied: ["delivery-fee", "packaging"], tax_total: 144 + 14, total: 1600 + 160 + 144 + 14 },
   },
   {
     id: "R103",
@@ -83,7 +84,7 @@ export const ORDER_TYPE_CASES: RefCase[] = [
     order: order([line("laksa", 1600, { prices: PRICES })], { order_type: "takeaway" }),
     rules: OFF_PREMISES_RULES,
     context: ctx(),
-    expect: { subtotal: 1500, adjustments: { packaging: 20 }, not_applied: [SEED_RULE_IDS.serviceCharge, "delivery-fee"], gst_total: 135 + 2, total: 1500 + 20 + 135 + 2 },
+    expect: { subtotal: 1500, adjustments: { packaging: 20 }, not_applied: [SEED_RULE_IDS.serviceCharge, "delivery-fee"], tax_total: 135 + 2, total: 1500 + 20 + 135 + 2 },
   },
   {
     id: "R104",
@@ -93,7 +94,7 @@ export const ORDER_TYPE_CASES: RefCase[] = [
     order: order([line("laksa", 1600, { prices: PRICES })], { order_type: "pickup" }),
     rules: OFF_PREMISES_RULES,
     context: ctx(),
-    expect: { subtotal: 1600, adjustments: { packaging: 20 }, not_applied: [SEED_RULE_IDS.serviceCharge, "delivery-fee"], gst_total: 144 + 2, total: 1600 + 20 + 144 + 2 },
+    expect: { subtotal: 1600, adjustments: { packaging: 20 }, not_applied: [SEED_RULE_IDS.serviceCharge, "delivery-fee"], tax_total: 144 + 2, total: 1600 + 20 + 144 + 2 },
   },
   {
     id: "R105",
@@ -110,7 +111,7 @@ export const ORDER_TYPE_CASES: RefCase[] = [
       adjustments: { "delivery-fee": 500, packaging: 40 },
       not_applied: [SEED_RULE_IDS.serviceCharge],
       fee_total: 540,
-      gst_total: 324 + 45 + 4,
+      tax_total: 324 + 45 + 4,
       total: 3600 + 540 + 324 + 45 + 4,
     },
   },
@@ -132,7 +133,7 @@ export const ORDER_TYPE_CASES: RefCase[] = [
       line_nets: { laksa: 1620, drink: 540 },
       line_fees: { laksa: 375 + 20, drink: 125 + 40 },
       fee_total: 560,
-      gst_total: 146 + 49 + 34 + 11 + 2 + 4,
+      tax_total: 146 + 49 + 34 + 11 + 2 + 4,
       total: 2160 + 560 + 246,
     },
   },
@@ -148,7 +149,7 @@ export const ORDER_TYPE_CASES: RefCase[] = [
       subtotal: 2200,
       adjustments: { [SEED_RULE_IDS.serviceCharge]: 220 },
       not_applied: ["delivery-10", "delivery-fee", "packaging"],
-      gst_total: 144 + 54 + 14 + 5,
+      tax_total: 144 + 54 + 14 + 5,
       total: 2200 + 220 + 144 + 54 + 14 + 5,
     },
   },
@@ -165,18 +166,18 @@ export const ORDER_TYPE_CASES: RefCase[] = [
       adjustments: { "takeaway-5": -150, packaging: 40 },
       not_applied: [SEED_RULE_IDS.serviceCharge, "delivery-fee"],
       line_nets: { laksa: 2850 },
-      gst_total: 257 + 4,
+      tax_total: 257 + 4,
       total: 2850 + 40 + 257 + 4,
     },
   },
   {
     id: "R109",
     title: "Container deposit next to a 20% discount: the deposit is per unit and never discounted",
-    covers: ["scope_bcrs", "fee_fixed_per_unit", "fee_not_gst_applicable", "line_percent", "quantity", "seed_rules", "tax_exclusive"],
+    covers: ["scope_deposit", "fee_fixed_per_unit", "fee_untaxed", "line_percent", "quantity", "seed_rules", "tax_exclusive"],
     working:
       "4 cans × 250 = 1000; 20% = 200 → 800. Plate 1200; 20% = 240 → 960. Deposit 4 × 10 = 40 regardless of the discount, no GST. Takeaway, no service charge. " +
       "GST on nets 72 + 86.4 → 86. Total = 800 + 960 + 40 + 72 + 86 = 1958.",
-    order: order([line("can", 250, { quantity: 4, is_bcrs: true }), line("plate", 1200)], { order_type: "takeaway" }),
+    order: order([line("can", 250, { quantity: 4, has_deposit: true }), line("plate", 1200)], { order_type: "takeaway" }),
     rules: [disc("twenty-off", { value: { type: "fixed", amount: 2000 } }), DEPOSIT],
     context: ctx(),
     expect: {
@@ -184,28 +185,28 @@ export const ORDER_TYPE_CASES: RefCase[] = [
       adjustment_lines: { [SEED_RULE_IDS.containerDeposit]: { can: 40 } },
       line_nets: { can: 800, plate: 960 },
       line_fees: { can: 40, plate: 0 },
-      gst_total: 72 + 86,
+      tax_total: 72 + 86,
       total: 800 + 960 + 40 + 72 + 86,
     },
   },
   {
     id: "R110",
     title: "Container deposit on a comped line: Manager comp takes the cans to zero, the deposit is still charged",
-    covers: ["scope_bcrs", "fee_fixed_per_unit", "fee_not_gst_applicable", "manual_fixed", "manual_lines", "exclusive", "fee_percent", "seed_rules", "tax_exclusive"],
+    covers: ["scope_deposit", "fee_fixed_per_unit", "fee_untaxed", "manual_fixed", "manual_lines", "exclusive", "fee_percent", "seed_rules", "tax_exclusive"],
     working:
       "3 cans × 250 = 750, comped 100% → 0 (line blocked). Rice 1200. Service charge on nets: 0 + 120. Deposit 3 × 10 = 30 (fees are never blocked). " +
       "GST on nets 0 + 108; on SC 0 + 10.8 → 11. Total = 0 + 1200 + 120 + 30 + 108 + 11 = 1469.",
-    order: order([line("can", 250, { quantity: 3, is_bcrs: true }), line("rice", 1200)], {
+    order: order([line("can", 250, { quantity: 3, has_deposit: true }), line("rice", 1200)], {
       manual_applications: [{ application_id: "mc-1", rule_id: SEED_RULE_IDS.managerComp, line_ids: ["can"], applied_by: "mgr-1", reason: "warm cans" }],
     }),
-    rules: SEED_RULES,
+    rules: SG_SEED_RULES,
     context: ctx(),
     expect: {
       adjustments: { [`${SEED_RULE_IDS.managerComp}#mc-1`]: -750, [SEED_RULE_IDS.serviceCharge]: 120, [SEED_RULE_IDS.containerDeposit]: 30 },
       adjustment_lines: { [SEED_RULE_IDS.serviceCharge]: { can: 0, rice: 120 }, [SEED_RULE_IDS.containerDeposit]: { can: 30 } },
       line_nets: { can: 0, rice: 1200 },
       line_fees: { can: 30, rice: 120 },
-      gst_total: 108 + 11,
+      tax_total: 108 + 11,
       total: 1200 + 120 + 30 + 108 + 11,
     },
   },
@@ -220,7 +221,7 @@ export const ORDER_TYPE_CASES: RefCase[] = [
     rules: [
       disc("ten-off"),
       SC,
-      { id: "pack-50", kind: "fee", name: "Packaging", calc: "fixed_per_unit", value: { type: "fixed", amount: 50 }, scope: { type: "all" }, priority: 110, application: "auto", report_class: "packaging_fee" },
+      { id: "pack-50", kind: "fee", name: "Packaging", calc: "fixed_per_unit", value: { type: "fixed", amount: 50 }, scope: { type: "all" }, priority: 110, application: "auto", tax_class_id: "standard", report_class: "packaging_fee" },
     ],
     context: ctx(),
     expect: {
@@ -229,7 +230,7 @@ export const ORDER_TYPE_CASES: RefCase[] = [
       line_nets: { misc: 4590 },
       line_fees: { misc: 459 + 100 },
       fee_total: 559,
-      gst_total: 413 + 41 + 9,
+      tax_total: 413 + 41 + 9,
       total: 4590 + 559 + 413 + 41 + 9,
     },
   },
@@ -249,7 +250,7 @@ export const ORDER_TYPE_CASES: RefCase[] = [
       adjustment_lines: { [SEED_RULE_IDS.serviceCharge]: { sample: 0, rice: 120 }, packaging: { sample: 40 } },
       line_nets: { sample: 0, rice: 1200 },
       line_fees: { sample: 40, rice: 120 },
-      gst_total: 108 + 11 + 4,
+      tax_total: 108 + 11 + 4,
       total: 1200 + 120 + 40 + 108 + 11 + 4,
     },
   },

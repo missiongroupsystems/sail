@@ -1,4 +1,6 @@
 import { allocateLargestRemainder, percentOfCents, roundCash, sumCents, type Cents } from "./money.js";
+import type { TaxAmount } from "./pricing/schemas.js";
+import { sumTaxes } from "./splits.js";
 
 /**
  * Refund reversal (scope doc 4.5). A refund reverses a share of each line's
@@ -15,22 +17,23 @@ export type RefundableLine = {
   base: Cents;
   discount: Cents;
   fee: Cents;
-  gst: Cents;
+  /** The allocation's tax by component. */
+  taxes: TaxAmount[];
   total: Cents;
-  adjustments: Record<string, { amount: Cents; gst: Cents }>;
+  adjustments: Record<string, { amount: Cents; tax: Cents }>;
   /** Already refunded on this check for this line. */
-  refunded: { quantity: number; base: Cents; discount: Cents; fee: Cents; gst: Cents; total: Cents };
+  refunded: { quantity: number; base: Cents; discount: Cents; fee: Cents; taxes: TaxAmount[]; total: Cents };
 };
 
 export type RefundablePayment = { payment_id: string; tender: string; is_cash: boolean; amount: Cents; refunded: Cents };
 
 export type RefundRequest = { kind: "full" } | { kind: "lines"; lines: { line_id: string; quantity: number }[] } | { kind: "amount"; amount: Cents };
 
-export type RefundLineResult = { line_id: string; quantity: number; base: Cents; discount: Cents; fee: Cents; gst: Cents; total: Cents; adjustments: Record<string, { amount: Cents; gst: Cents }> };
+export type RefundLineResult = { line_id: string; quantity: number; base: Cents; discount: Cents; fee: Cents; tax: Cents; taxes: TaxAmount[]; total: Cents; adjustments: Record<string, { amount: Cents; tax: Cents }> };
 export type RefundTenderResult = { payment_id: string; tender: string; is_cash: boolean; amount: Cents; rounding_cents: Cents };
 export type RefundQuote = {
   lines: RefundLineResult[];
-  totals: { base: Cents; discount: Cents; fee: Cents; gst: Cents; total: Cents };
+  totals: { base: Cents; discount: Cents; fee: Cents; tax: Cents; taxes: TaxAmount[]; total: Cents };
   tenders: RefundTenderResult[];
   /** Cash actually handed back = Σ cash tender amounts + rounding. */
   cash_out: Cents;
@@ -48,42 +51,48 @@ export class RefundError extends Error {
 
 /**
  * Reverse a line's components in proportion `num/den` (or to an exact `targetTotal`).
- * Discount, fee and GST are allocated proportionally; the base takes the rounding
- * residue so the parts add up exactly and the base is never negative. Every part
- * is clamped to what is still refundable on the line.
+ * Discount, fee and each tax component are allocated proportionally; the base
+ * takes the rounding residue so the parts add up exactly and the base is never
+ * negative. Every part is clamped to what is still refundable on the line.
  */
-function reverseLine(l: RefundableLine, num: number, den: number, remaining: { base: Cents; discount: Cents; fee: Cents; gst: Cents; total: Cents }, targetTotal?: Cents): Omit<RefundLineResult, "line_id" | "quantity"> {
+function reverseLine(l: RefundableLine, num: number, den: number, remaining: Remaining, targetTotal?: Cents): Omit<RefundLineResult, "line_id" | "quantity"> {
   const part = (v: Cents) => (den === 0 ? 0 : allocateLargestRemainder(v, [num, den - num])[0]!);
-  const discount = clampMag(part(l.discount), remaining.discount);
-  const fee = clampMag(part(l.fee), remaining.fee);
-  const gstInTotal = l.total === l.base + l.discount + l.fee + l.gst;
-  const gst = clampMag(part(l.gst), remaining.gst);
+  // A refund to an exact amount is a share of what is left on the line; a quantity refund is a share of the line as sold.
+  const of = targetTotal === undefined ? { discount: l.discount, fee: l.fee, taxes: l.taxes.map((t) => t.amount) } : remaining;
+  const discount = clampMag(part(of.discount), remaining.discount);
+  const fee = clampMag(part(of.fee), remaining.fee);
+  const taxInTotal = l.total === l.base + l.discount + l.fee + sumCents(l.taxes.map((t) => t.amount));
+  const taxes = l.taxes.map((t, k) => ({ name: t.name, bps: t.bps, amount: clampMag(part(of.taxes[k]!), remaining.taxes[k]!) }));
+  const tax = sumCents(taxes.map((t) => t.amount));
   const target = targetTotal ?? clampMag(part(l.total), remaining.total);
-  const base = clampMag(target - discount - fee - (gstInTotal ? gst : 0), remaining.base);
-  const total = base + discount + fee + (gstInTotal ? gst : 0);
-  const adjustments: Record<string, { amount: Cents; gst: Cents }> = {};
+  const base = clampMag(target - discount - fee - (taxInTotal ? tax : 0), remaining.base);
+  const total = base + discount + fee + (taxInTotal ? tax : 0);
+  const adjustments: Record<string, { amount: Cents; tax: Cents }> = {};
   const fees = Object.entries(l.adjustments).filter(([, a]) => a.amount > 0);
   const discounts = Object.entries(l.adjustments).filter(([, a]) => a.amount < 0);
   if (fees.length) {
     const feeParts = allocateLargestRemainder(fee, fees.map(([, a]) => a.amount));
-    const feeGst = clampMag(sumCents(fees.map(([, a]) => part(a.gst))), gst);
-    const feeGstParts = allocateLargestRemainder(feeGst, fees.map(([, a]) => Math.max(0, a.gst)));
-    fees.forEach(([id], i) => (adjustments[id] = { amount: feeParts[i]!, gst: feeGstParts[i]! }));
+    const feeTax = clampMag(sumCents(fees.map(([, a]) => part(a.tax))), tax);
+    const feeTaxParts = allocateLargestRemainder(feeTax, fees.map(([, a]) => Math.max(0, a.tax)));
+    fees.forEach(([id], i) => (adjustments[id] = { amount: feeParts[i]!, tax: feeTaxParts[i]! }));
   }
   if (discounts.length) {
     const discParts = allocateLargestRemainder(discount, discounts.map(([, a]) => -a.amount));
-    discounts.forEach(([id], i) => (adjustments[id] = { amount: discParts[i]!, gst: 0 }));
+    discounts.forEach(([id], i) => (adjustments[id] = { amount: discParts[i]!, tax: 0 }));
   }
-  return { base, discount, fee, gst, total, adjustments };
+  return { base, discount, fee, tax, taxes, total, adjustments };
 }
+
+type Remaining = { base: Cents; discount: Cents; fee: Cents; taxes: Cents[]; total: Cents; quantity: number };
 
 function clampMag(v: Cents, limit: Cents): Cents {
   if (limit >= 0) return Math.min(Math.max(v, 0), limit);
   return Math.max(Math.min(v, 0), limit);
 }
 
-function remainingOf(l: RefundableLine) {
-  return { base: l.base - l.refunded.base, discount: l.discount - l.refunded.discount, fee: l.fee - l.refunded.fee, gst: l.gst - l.refunded.gst, total: l.total - l.refunded.total, quantity: l.quantity - l.refunded.quantity };
+function remainingOf(l: RefundableLine): Remaining {
+  const refundedTax = (t: TaxAmount) => sumCents(l.refunded.taxes.filter((r) => r.name === t.name && r.bps === t.bps).map((r) => r.amount));
+  return { base: l.base - l.refunded.base, discount: l.discount - l.refunded.discount, fee: l.fee - l.refunded.fee, taxes: l.taxes.map((t) => t.amount - refundedTax(t)), total: l.total - l.refunded.total, quantity: l.quantity - l.refunded.quantity };
 }
 
 /**
@@ -125,7 +134,7 @@ export function quoteRefund(lines: readonly RefundableLine[], payments: readonly
     });
   }
 
-  const totals = { base: sumCents(out.map((x) => x.base)), discount: sumCents(out.map((x) => x.discount)), fee: sumCents(out.map((x) => x.fee)), gst: sumCents(out.map((x) => x.gst)), total: sumCents(out.map((x) => x.total)) };
+  const totals = { base: sumCents(out.map((x) => x.base)), discount: sumCents(out.map((x) => x.discount)), fee: sumCents(out.map((x) => x.fee)), tax: sumCents(out.map((x) => x.tax)), taxes: sumTaxes(out.map((x) => x.taxes)), total: sumCents(out.map((x) => x.total)) };
   if (totals.total <= 0) throw new RefundError("nothing_to_refund", "Nothing left to refund on this bill");
 
   // Tenders.

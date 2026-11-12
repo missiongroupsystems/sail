@@ -30,6 +30,16 @@ export const TAX_MODES = ["inclusive", "exclusive"] as const;
 export type TaxMode = (typeof TAX_MODES)[number];
 export const TaxModeSchema = z.enum(TAX_MODES);
 
+/**
+ * Where tax is rounded. `per_line`: on each line's amount (and each fee amount
+ * on a line), the order's tax is the sum of the rounded parts. `per_rate`: once
+ * per tax rate across the whole order, then spread back across the lines by
+ * largest remainder (EU, US and Japanese invoices).
+ */
+export const TAX_ROUNDINGS = ["per_line", "per_rate"] as const;
+export type TaxRounding = (typeof TAX_ROUNDINGS)[number];
+export const TaxRoundingSchema = z.enum(TAX_ROUNDINGS);
+
 export const ORDER_NUMBER_PREFIX: Record<ChannelType, string> = { pos: "P", scan_to_order: "QR" };
 
 export const UuidSchema = z.uuid();

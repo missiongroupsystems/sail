@@ -1,5 +1,5 @@
 import type { PricingRuleInput } from "../schemas.js";
-import { ctx, gstEx, line, order, type RefCase } from "./dsl.js";
+import { ctx, taxEx, line, order, type RefCase } from "./dsl.js";
 
 /**
  * Reference cases R012–R027: discount mechanics.
@@ -42,8 +42,8 @@ export const DISCOUNT_CASES: RefCase[] = [
       adjustments: { "ten-off": -(250 + 180) },
       adjustment_lines: { "ten-off": { a: -250, b: -180 } },
       line_nets: { a: 2250, b: 1620 },
-      line_gst: { a: 203, b: 146 },
-      gst_total: 203 + 146,
+      line_tax: { a: 203, b: 146 },
+      tax_total: 203 + 146,
       total: 2250 + 1620 + 203 + 146,
     },
   },
@@ -62,7 +62,7 @@ export const DISCOUNT_CASES: RefCase[] = [
       adjustment_lines: { "three-per-unit": { a: -900, b: -200 } },
       line_nets: { a: 2700, b: 0 },
       subtotal: 3600 + 200,
-      gst_total: 243,
+      tax_total: 243,
       total: 2700 + 243,
     },
   },
@@ -80,7 +80,7 @@ export const DISCOUNT_CASES: RefCase[] = [
       adjustments: { "bill-10": -450 },
       adjustment_lines: { "bill-10": { a: -300, b: -100, c: -50 } },
       line_nets: { a: 2700, b: 900, c: 450 },
-      line_gst: { a: 243, b: 81, c: 41 },
+      line_tax: { a: 243, b: 81, c: 41 },
       total: 2700 + 900 + 450 + 243 + 81 + 41,
     },
   },
@@ -98,7 +98,7 @@ export const DISCOUNT_CASES: RefCase[] = [
       adjustments: { "ten-dollars": -1000 },
       adjustment_lines: { "ten-dollars": { a: -667, b: -222, c: -111 } },
       line_nets: { a: 3000 - 667, b: 1000 - 222, c: 500 - 111 },
-      line_gst: { a: 210, b: 70, c: 35 },
+      line_tax: { a: 210, b: 70, c: 35 },
       total: 2333 + 778 + 389 + 210 + 70 + 35,
     },
   },
@@ -115,7 +115,7 @@ export const DISCOUNT_CASES: RefCase[] = [
       adjustment_lines: { "fifty-dollars": { a: -1200, b: -800 } },
       line_nets: { a: 0, b: 0 },
       discount_total: -2000,
-      gst_total: 0,
+      tax_total: 0,
       total: 0,
     },
   },
@@ -138,7 +138,7 @@ export const DISCOUNT_CASES: RefCase[] = [
       adjustments: { "x-half-food": -1000, "y-ten-all": -100, "z-bill-ten": -90 },
       adjustment_lines: { "y-ten-all": { drink: -100 }, "z-bill-ten": { drink: -90 } },
       line_nets: { food: 1000, drink: 810 },
-      gst_total: 90 + 73,
+      tax_total: 90 + 73,
       total: 1000 + 810 + 90 + 73,
     },
   },
@@ -150,7 +150,7 @@ export const DISCOUNT_CASES: RefCase[] = [
     order: order([line("a", 5000)]),
     rules: [disc("twenty", { value: { type: "fixed", amount: 2000 }, priority: 10 }), disc("ten", { priority: 20 })],
     context: ctx(),
-    expect: { adjustments: { twenty: -1000, ten: -400 }, line_nets: { a: 3600 }, gst_total: 324, total: 3600 + 324 },
+    expect: { adjustments: { twenty: -1000, ten: -400 }, line_nets: { a: 3600 }, tax_total: 324, total: 3600 + 324 },
   },
   {
     id: "R019",
@@ -163,7 +163,7 @@ export const DISCOUNT_CASES: RefCase[] = [
       disc("q-half", { value: { type: "fixed", amount: 5000 }, stacking: "exclusive", priority: 15 }),
     ],
     context: ctx(),
-    expect: { adjustments: { "p-thirty": -600 }, not_applied: ["q-half"], line_nets: { a: 1400 }, gst_total: 126, total: 1400 + 126 },
+    expect: { adjustments: { "p-thirty": -600 }, not_applied: ["q-half"], line_nets: { a: 1400 }, tax_total: 126, total: 1400 + 126 },
   },
   {
     id: "R020",
@@ -179,7 +179,7 @@ export const DISCOUNT_CASES: RefCase[] = [
       adjustments: { "quarter-capped": -1000 },
       adjustment_lines: { "quarter-capped": { a: -667, b: -333 } },
       line_nets: { a: 8000 - 667, b: 4000 - 333 },
-      gst_total: 660 + 330,
+      tax_total: 660 + 330,
       total: 7333 + 3667 + 660 + 330,
     },
   },
@@ -191,7 +191,7 @@ export const DISCOUNT_CASES: RefCase[] = [
     order: order([line("a", 4000)]),
     rules: [disc("quarter-cap-1000", { value: { type: "fixed", amount: 2500 }, cap: 1000 })],
     context: ctx(),
-    expect: { adjustments: { "quarter-cap-1000": -1000 }, line_nets: { a: 3000 }, gst_total: 270, total: 3000 + 270 },
+    expect: { adjustments: { "quarter-cap-1000": -1000 }, line_nets: { a: 3000 }, tax_total: 270, total: 3000 + 270 },
   },
   {
     id: "R022",
@@ -207,7 +207,7 @@ export const DISCOUNT_CASES: RefCase[] = [
       adjustments: { "bill-ten-cap": -700 },
       adjustment_lines: { "bill-ten-cap": { a: -420, b: -280 } },
       line_nets: { a: 5580, b: 3720 },
-      gst_total: 502 + 335,
+      tax_total: 502 + 335,
       total: 5580 + 3720 + 502 + 335,
     },
   },
@@ -224,7 +224,7 @@ export const DISCOUNT_CASES: RefCase[] = [
     expect: {
       adjustment_lines: { "ten-off": { a: -101, b: -105 } },
       line_nets: { a: 1005 - 101, b: 1050 - 105 },
-      line_gst: { a: 81, b: 85 },
+      line_tax: { a: 81, b: 85 },
       total: 904 + 945 + 81 + 85,
     },
   },
@@ -236,7 +236,7 @@ export const DISCOUNT_CASES: RefCase[] = [
     order: order([line("a", 1005), line("b", 1050)]),
     rules: [],
     context: ctx(),
-    expect: { line_gst: { a: 90, b: 95 }, gst_total: 90 + 95, total: 1005 + 1050 + 90 + 95 },
+    expect: { line_tax: { a: 90, b: 95 }, tax_total: 90 + 95, total: 1005 + 1050 + 90 + 95 },
   },
   {
     id: "R025",
@@ -248,7 +248,7 @@ export const DISCOUNT_CASES: RefCase[] = [
     order: order([line("a", 1005), line("b", 1005)]),
     rules: [],
     context: ctx(),
-    expect: { line_gst: { a: 90, b: 90 }, gst_total: 180, total: 2010 + 180 },
+    expect: { line_tax: { a: 90, b: 90 }, tax_total: 180, total: 2010 + 180 },
   },
   {
     id: "R026",
@@ -262,7 +262,7 @@ export const DISCOUNT_CASES: RefCase[] = [
       disc("three-per-unit", { calc: "fixed_per_unit", value: { type: "fixed", amount: 300 }, priority: 20 }),
     ],
     context: ctx(),
-    expect: { adjustments: { half: -750, "three-per-unit": -750 }, line_nets: { a: 0 }, discount_total: -1500, gst_total: 0, total: 0 },
+    expect: { adjustments: { half: -750, "three-per-unit": -750 }, line_nets: { a: 0 }, discount_total: -1500, tax_total: 0, total: 0 },
   },
   {
     id: "R027",
@@ -280,7 +280,7 @@ export const DISCOUNT_CASES: RefCase[] = [
       adjustment_lines: { "x-excl": { a: -300 } },
       not_applied: ["z-bill"],
       line_nets: { a: 2700, b: 4 },
-      gst_total: gstEx(2700) + gstEx(4),
+      tax_total: taxEx(2700) + taxEx(4),
       total: 2700 + 4 + 243 + 0,
     },
   },

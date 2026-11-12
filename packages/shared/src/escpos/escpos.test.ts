@@ -15,6 +15,7 @@ import {
   encodeSingleByte,
   endsWithBytes,
   formatDateTime,
+  formatTime,
   glyph5x7,
   isWideChar,
   itemLine,
@@ -22,7 +23,6 @@ import {
   modifierLine,
   moneyRow,
   noteLine,
-  percentLabel,
   qtyColumn,
   renderBill,
   renderKitchenTicket,
@@ -66,6 +66,8 @@ const dineInHeader: TicketHeader = {
   printed_at: "2026-11-04T19:42:00+08:00",
   job_id: "8f3a2c1d",
   round_no: 2,
+  time_zone: "Asia/Singapore",
+  locale: "en-SG",
 };
 
 const pickupHeader: TicketHeader = {
@@ -78,6 +80,8 @@ const pickupHeader: TicketHeader = {
   printed_at: "2026-11-04T19:45:00+08:00",
   job_id: "c0ffee01",
   ready_by: "2026-11-04T20:05:00+08:00",
+  time_zone: "Asia/Singapore",
+  locale: "en-SG",
 };
 
 const deliveryHeader: TicketHeader = {
@@ -123,6 +127,7 @@ const reprintTicket: KitchenTicket = {
 const receiptExclusive: BillDocument = {
   header: { ...dineInHeader, job_id: "b1110001" },
   kind: "receipt",
+  currency: "SGD",
   check_label: "Bill 2 of 3",
   lines: [
     { quantity: 2, name: "Laksa", unit_price: 1600, amount: 3300, modifiers: [{ name: "Extra chilli", price: 100 }], seat_no: 1 },
@@ -133,18 +138,19 @@ const receiptExclusive: BillDocument = {
     { name: "Member 10% off", amount: -488, kind: "discount" },
     { name: "Service charge 10%", amount: 439, kind: "fee" },
   ],
-  totals: { subtotal: 4880, discount_total: -488, fee_total: 439, gst_total: 435, total: 5266, tax_mode: "exclusive", gst_bps: 900 },
+  totals: { subtotal: 4880, discount_total: -488, fee_total: 439, tax_total: 435, total: 5266, tax_mode: "exclusive", taxes: [{ name: "GST 9%", bps: 900, amount: 435 }] },
   payments: [{ tender: "Card", amount: 5266, reference: "A1B2" }],
   invoice_no: "INV-000123",
   footer_lines: ["Thank you for dining with us", "GST registered. Prices exclude GST where shown."],
   outlet_phone: "6123 4567",
-  uen: "201234567A",
+  business_registration: { label: "UEN", value: "201234567A" },
   digital_receipt_url: "https://r.sail.example/8f3a2c1d",
 };
 
 const receiptInclusiveCash: BillDocument = {
   header: { ...dineInHeader, job_id: "b1110002" },
   kind: "receipt",
+  currency: "SGD",
   check_label: "Bill 1",
   lines: [
     { quantity: 2, name: "Laksa", unit_price: 1600, amount: 3300, modifiers: [{ name: "Extra chilli", price: 100 }] },
@@ -152,7 +158,7 @@ const receiptInclusiveCash: BillDocument = {
     { quantity: 1, name: "Tiger beer tower 3L", unit_price: 1400, amount: 1400, modifiers: [] },
   ],
   adjustments: [{ name: "Service charge 10%", amount: 488, kind: "fee" }],
-  totals: { subtotal: 4880, discount_total: 0, fee_total: 488, gst_total: 443, total: 5368, tax_mode: "inclusive", gst_bps: 900 },
+  totals: { subtotal: 4880, discount_total: 0, fee_total: 488, tax_total: 443, total: 5368, tax_mode: "inclusive", taxes: [{ name: "GST 9%", bps: 900, amount: 443 }] },
   payments: [{ tender: "Cash", amount: 5370, rounding_cents: 2, change: 630 }],
   footer_lines: ["Thank you for dining with us"],
 };
@@ -169,10 +175,11 @@ const prebill: BillDocument = {
 const refundReceipt: BillDocument = {
   header: { ...dineInHeader, job_id: "b1110004", round_no: undefined },
   kind: "refund_receipt",
+  currency: "SGD",
   check_label: "Bill 1",
   lines: [{ quantity: 1, name: "Laksa", unit_price: 1600, amount: -1600, modifiers: [] }],
   adjustments: [{ name: "Service charge 10%", amount: -160, kind: "fee" }],
-  totals: { subtotal: -1600, discount_total: 0, fee_total: -160, gst_total: -158, total: -1918, tax_mode: "exclusive", gst_bps: 900 },
+  totals: { subtotal: -1600, discount_total: 0, fee_total: -160, tax_total: -158, total: -1918, tax_mode: "exclusive", taxes: [{ name: "GST 9%", bps: 900, amount: -158 }] },
   payments: [{ tender: "Card", amount: -1918, reference: "R-77" }],
   invoice_no: "INV-000120",
   credit_note_no: "CN-000045",
@@ -180,7 +187,7 @@ const refundReceipt: BillDocument = {
   original_date: "2026-11-03",
   refund_reason: "Late dish",
   outlet_phone: "6123 4567",
-  uen: "201234567A",
+  business_registration: { label: "UEN", value: "201234567A" },
 };
 
 const serviceSlip: ServiceSlip = {
@@ -339,10 +346,37 @@ describe("templates (golden text at both widths)", () => {
     expect(containsBytes(out.bytes, new TextEncoder().encode("−"))).toBe(false);
   });
 
+  it("labels each tax row with its component name and formats money in the document's currency and locale", () => {
+    const vat: BillDocument = {
+      ...receiptInclusiveCash,
+      header: { ...dineInHeader, time_zone: "Europe/Berlin", locale: "de-DE" },
+      currency: "EUR",
+      adjustments: [],
+      totals: { subtotal: 4880, discount_total: 0, fee_total: 0, tax_total: 643, total: 4880, tax_mode: "inclusive", taxes: [{ name: "VAT 19%", bps: 1900, amount: 543 }, { name: "VAT 7%", bps: 700, amount: 100 }] },
+      payments: [{ tender: "Karte", amount: 4880 }],
+      business_registration: { label: "HRB", value: "12345" },
+      tax_registration: { label: "USt-IdNr.", value: "DE123456789" },
+    };
+    const out = renderBill(vat, PROFILES["80mm"]).text;
+    expect(out).toContain("VAT 19% (included)");
+    expect(out).toContain("VAT 7% (included)");
+    expect(out).toContain("5,43\u00a0€");
+    expect(out).toContain("48,80\u00a0€");
+    expect(out).toContain("USt-IdNr. DE123456789");
+    expect(out).toContain("HRB 12345");
+    expect(out).not.toContain("GST");
+    const sales: BillDocument = { ...vat, currency: "USD", header: { ...vat.header, locale: "en-US", time_zone: "America/New_York" }, totals: { ...vat.totals, tax_mode: "exclusive", total: 5523, taxes: [{ name: "State sales tax", bps: 400, amount: 195 }, { name: "Local sales tax", bps: 450, amount: 220 }] } };
+    const us = renderBill(sales, PROFILES["58mm"]).text;
+    expect(us).toMatch(/State sales tax +\$1\.95/);
+    expect(us).toMatch(/Local sales tax +\$2\.20/);
+  });
+
   it("prints a time zone other than Singapore when the header says so", () => {
-    expect(formatDateTime("2026-11-04T19:42:00+08:00")).toBe("4 Nov 2026, 7:42 pm");
-    expect(formatDateTime("2026-11-04T19:42:00+08:00", "Asia/Kuala_Lumpur")).toBe("4 Nov 2026, 7:42 pm");
-    expect(formatDateTime("2026-11-04T19:42:00+08:00", "UTC")).toBe("4 Nov 2026, 11:42 am");
+    expect(formatDateTime("2026-11-04T19:42:00+08:00", "Asia/Singapore", "en-SG")).toBe("4 Nov 2026, 7:42 pm");
+    expect(formatDateTime("2026-11-04T19:42:00+08:00", "Asia/Kuala_Lumpur", "en-SG")).toBe("4 Nov 2026, 7:42 pm");
+    expect(formatDateTime("2026-11-04T19:42:00+08:00", "UTC", "en-SG")).toBe("4 Nov 2026, 11:42 am");
+    expect(formatDateTime("2026-11-04T19:42:00+08:00", "Europe/Berlin", "de-DE")).toBe("4. Nov. 2026, 12:42");
+    expect(formatTime("2026-11-04T19:42:00+08:00", "America/New_York", "en-US")).toBe("6:42 AM");
   });
 });
 
@@ -486,9 +520,12 @@ describe("layout", () => {
     expect(columns("only left", "", 48)).toEqual(["only left"]);
   });
 
-  it("money rows use en-SG formatting and the true minus sign", () => {
-    expect(moneyRow("Member 10% off", -488, 48)).toEqual(["Member 10% off" + " ".repeat(28) + "−$4.88"]);
-    expect(moneyRow("Total", 123456789, 32)).toEqual(["Total" + " ".repeat(14) + "$1,234,567.89"]);
+  it("money rows use the given currency and locale and the true minus sign", () => {
+    const sgd = { currency: "SGD", locale: "en-SG" };
+    expect(moneyRow("Member 10% off", -488, 48, sgd)).toEqual(["Member 10% off" + " ".repeat(28) + "−$4.88"]);
+    expect(moneyRow("Total", 123456789, 32, sgd)).toEqual(["Total" + " ".repeat(14) + "$1,234,567.89"]);
+    // The full-width yen sign takes two columns.
+    expect(moneyRow("Total", 1600, 32, { currency: "JPY", locale: "ja-JP" })).toEqual(["Total" + " ".repeat(20) + "￥1,600"]);
   });
 
   it("item, modifier and note lines", () => {
@@ -502,18 +539,12 @@ describe("layout", () => {
       "   and achar                  S1",
     ]);
     expect(modifierLine("Extra chilli", 48)).toEqual(["   + Extra chilli"]);
-    expect(modifierLine("Extra chilli", 48, 100)).toEqual(["   + Extra chilli" + " ".repeat(26) + "$1.00"]);
+    expect(modifierLine("Extra chilli", 48, { price: 100, fmt: { currency: "SGD", locale: "en-SG" } })).toEqual(["   + Extra chilli" + " ".repeat(26) + "$1.00"]);
     expect(noteLine("less spicy please", 48)).toEqual(["   * LESS SPICY PLEASE"]);
     expect(noteLine("a very long note that needs to wrap on narrow paper", 32)).toEqual([
       "   * A VERY LONG NOTE THAT NEEDS",
       "     TO WRAP ON NARROW PAPER",
     ]);
-  });
-
-  it("percent labels from basis points", () => {
-    expect(percentLabel(900)).toBe("9%");
-    expect(percentLabel(850)).toBe("8.5%");
-    expect(percentLabel(0)).toBe("0%");
   });
 
   it("documentToText applies alignment by padding and skips feeds", () => {

@@ -11,7 +11,7 @@ export type CatalogueProduct = {
   category_id: string | null;
   parent_category_id?: string | null;
   tags: string[];
-  is_bcrs?: boolean;
+  has_deposit?: boolean;
   archived?: boolean;
 };
 
@@ -103,8 +103,8 @@ export function productInScope(rule: PricingRule, p: CatalogueProduct): boolean 
     case "tags":
       inScope = p.tags.some((t) => s.tags.includes(t));
       break;
-    case "bcrs":
-      inScope = p.is_bcrs === true;
+    case "deposit":
+      inScope = p.has_deposit === true;
       break;
   }
   if (!inScope) return false;
@@ -128,7 +128,7 @@ function scopesMayOverlap(a: PricingRule, b: PricingRule, catalogue: readonly Ca
       return a.scope.product_ids.some((id) => (b.scope as { product_ids: string[] }).product_ids.includes(id));
     case "tags":
       return a.scope.tags.some((t) => (b.scope as { tags: string[] }).tags.includes(t));
-    case "bcrs":
+    case "deposit":
       return true;
   }
 }
