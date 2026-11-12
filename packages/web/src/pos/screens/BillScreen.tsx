@@ -92,7 +92,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
 
   const live = useMemo(() => (snap?.lines ?? []).filter((l) => l.status !== "voided" && !l.optimistic), [snap]);
   const linesById = useMemo(() => new Map(live.map((l) => [l.id, l])), [live]);
-  const paidChecks = useMemo(() => (snap?.checks ?? []).filter((c) => c.locked || c.payments.length > 0 || c.status !== "open"), [snap]);
+  const paidChecks = useMemo(() => (snap?.checks ?? []).filter((c) => c.locked || c.payments.some((p) => p.status === "recorded") || c.status !== "open"), [snap]);
   const lockReason = paidChecks.length ? `${paidChecks[0]!.label} is paid. Refund it to change the split.` : null;
   const lockedLineIds = useMemo(() => new Set(paidChecks.flatMap((c) => c.allocations.map((a) => a.line_id))), [paidChecks]);
   const canPay = roleAtLeast(staff.role, "cashier");
@@ -279,7 +279,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
                   lines={cardLines(check)}
                   rows={billRows(check, snap.totals.tax_mode)}
                   tenders={check.payments
-                    .filter((p) => p.status !== "voided")
+                    .filter((p) => p.status === "recorded")
                     .flatMap((p) => [{ id: p.id, label: `${p.tender}${p.reference ? ` · ${p.reference}` : ""}`, cents: p.amount }, ...(p.tip_cents ? [{ id: `${p.id}:tip`, label: `Tip on ${p.tender}`, cents: p.tip_cents }] : [])])}
                   isTarget={Boolean(selectedLine) && !check.locked}
                   onPress={selectedLine && !check.locked ? () => void moveTo(check) : undefined}

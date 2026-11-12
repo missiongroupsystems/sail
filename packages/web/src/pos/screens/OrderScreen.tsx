@@ -102,7 +102,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
                       {c.label}
                       <span className="text-caption text-ink-2">
                         {" · "}
-                        {c.payments.map((p) => `${p.tender} ${money(p.amount)}${p.tip_cents ? ` + tip ${money(p.tip_cents)}` : ""}`).join(", ")}
+                        {c.payments.filter((p) => p.status === "recorded").map((p) => `${p.tender} ${money(p.amount)}${p.tip_cents ? ` + tip ${money(p.tip_cents)}` : ""}`).join(", ")}
                         {c.refunded_total > 0 ? ` · refunded ${money(c.refunded_total)}` : ""}
                         {c.invoice_no ? ` · Invoice ${c.invoice_no}` : ""}
                       </span>
