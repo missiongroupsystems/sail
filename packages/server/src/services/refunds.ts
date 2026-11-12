@@ -34,7 +34,10 @@ export async function refundableFor(checkId: string): Promise<{ check: typeof ch
     return { line_id: a.orderLineId, quantity: l.quantity, base: a.base, discount: a.discount, fee: a.fee, taxes: a.taxes, total: a.total, adjustments: a.adjustments, refunded: { quantity: sum("quantity"), base: sum("base"), discount: sum("discount"), fee: sum("fee"), taxes: sumTaxes(mine.map((p) => p.taxes)), total: sum("total") } };
   });
   const pays = await db().select().from(payments).where(and(eq(payments.checkId, checkId), eq(payments.status, "recorded")));
-  const paymentsList: RefundablePayment[] = pays.map((p) => ({ payment_id: p.id, tender: p.tenderName, is_cash: p.isCash, amount: p.amount, refunded: priorTenders.filter((t) => t.paymentId === p.id).reduce((s, t) => s + t.amount, 0) }));
+  const paymentsList: RefundablePayment[] = pays.map((p) => {
+    const prior = priorTenders.filter((t) => t.paymentId === p.id);
+    return { payment_id: p.id, tender: p.tenderName, is_cash: p.isCash, amount: p.amount, rounding: p.roundingCents, refunded: prior.reduce((s, t) => s + t.amount, 0), refunded_rounding: prior.reduce((s, t) => s + t.roundingCents, 0) };
+  });
   const [settings] = await db().select().from(merchantSettings).where(eq(merchantSettings.merchantId, check.merchantId)).limit(1);
   return { check, order, lines, paymentsList, increment: settings?.cashRoundingIncrement ?? null };
 }

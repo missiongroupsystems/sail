@@ -195,3 +195,48 @@ describe("amounts beyond 32 bits", () => {
     expect(ok.body.data.totals.total).toBe(Math.round(2 ** 31 * 1.09));
   });
 });
+
+describe("refunds", () => {
+  const refund = (checkId: string, request: unknown, tender_split?: unknown) => call<Body & { refund: { totals: { total: number }; quote: { cash_out: number; tenders: { payment_id: string; amount: number }[] } } }>("POST", `/v1/checks/${checkId}/refunds`, { token: mgr(), body: { refund_id: randomUUID(), request, tender_split, reason: "returned", print: false } });
+
+  it("refunding the units of a line one at a time gives back the whole line and refunds the bill", async () => {
+    const s = await h.orderWith(mgr(), [{ product_id: w.ids.openItem, quantity: 3, open_price: 1004 }]);
+    await h.fire(mgr(), s.id);
+    expect((await h.pay(mgr(), s.checks[0]!.id, { tender_type_id: w.ids.card, amount: s.balance })).status).toBe(200);
+    for (let i = 0; i < 3; i++) expect((await refund(s.checks[0]!.id, { kind: "lines", lines: [{ line_id: s.lines[0]!.id, quantity: 1 }] })).status).toBe(201);
+    const [chk] = await db.sql<{ total: number; refunded_total: number; status: string }[]>`select total, refunded_total, status from checks where id = ${s.checks[0]!.id}`;
+    expect(chk).toEqual({ total: 3283, refunded_total: 3283, status: "refunded" });
+  });
+
+  it("a tender split naming one payment twice is refused as more than that payment took, in the quote and the refund", async () => {
+    const s = await h.orderWith(mgr(), [{ product_id: w.ids.laksa, quantity: 1 }]);
+    await h.fire(mgr(), s.id);
+    const half = Math.floor(s.balance / 2);
+    const card = randomUUID();
+    await h.pay(mgr(), s.checks[0]!.id, { payment_id: card, tender_type_id: w.ids.card, amount: half });
+    await h.pay(mgr(), s.checks[0]!.id, { tender_type_id: w.ids.card, amount: s.balance - half });
+    const split = [{ payment_id: card, amount: half }, { payment_id: card, amount: s.balance - half }];
+    const quote = await call<Body>("POST", `/v1/checks/${s.checks[0]!.id}/refunds/quote`, { token: mgr(), body: { request: { kind: "full" }, tender_split: split } });
+    expect(quote.status).toBe(422);
+    const r = await refund(s.checks[0]!.id, { kind: "full" }, split);
+    expect(r.status).toBe(422);
+    expect(r.body.message).toMatch(/at most/);
+  });
+
+  it("repeated small cash refunds never hand out more cash than was taken (eu-vat, 0.05 rounding)", async () => {
+    const r = await regionMerchant("Euro5", { preset: "eu-vat", timeZone: "Europe/Amsterdam", cashRoundingIncrement: 5 }, [1002]);
+    await r.must("POST", "/v1/shifts", { outlet_id: r.m.outletId, station_id: null, float_cents: 0 });
+    const s = await r.order([{ p: 0 }]);
+    await r.must("POST", `/v1/checks/${s.checks[0]!.id}/payments`, { payment_id: randomUUID(), tender_type_id: r.ids.cash, amount: 1002, tendered: 1000 });
+    let cashOut = 0;
+    for (let n = 0; n < 40; n++) {
+      const res = await call<{ refund: { quote: { cash_out: number } } }>("POST", `/v1/checks/${s.checks[0]!.id}/refunds`, { token: r.t, body: { refund_id: randomUUID(), request: { kind: "amount", amount: 3 }, reason: "goodwill", print: false } });
+      expect(res.status).toBe(201);
+      cashOut += res.body.refund.quote.cash_out;
+    }
+    // 40 × 0.03 = 1.20 refunded: the drawer pays out 1.20, rounded on the running total, not 40 × 0.05 = 2.00.
+    expect(cashOut).toBe(120);
+    const z = await r.must<{ data: ZReport & { cash: { refunds: number } } }>("GET", `/v1/outlets/${r.m.outletId}/z-report`);
+    expect(z.data.cash.refunds).toBe(120);
+  });
+});

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import { quoteRefund, RefundError, type RefundableLine, type RefundablePayment } from "./refunds.js";
-import { sumCents } from "./money.js";
+import { roundCash, sumCents } from "./money.js";
 import type { TaxAmount } from "./pricing/schemas.js";
 
 /** The Singapore preset's single tax component, as a line's tax breakdown. */
@@ -101,6 +101,97 @@ describe("refund quotes", () => {
         if (q === a.quantity) expect(l.total).toBe(a.total);
       }),
       { numRuns: 300 },
+    );
+  });
+});
+
+/** Apply a quote to a line and its payments, as the server does when it records the refund. */
+function apply(l: RefundableLine, pays: RefundablePayment[], q: ReturnType<typeof quoteRefund>): RefundableLine {
+  const r = q.lines.find((x) => x.line_id === l.line_id);
+  for (const t of q.tenders) {
+    const p = pays.find((x) => x.payment_id === t.payment_id)!;
+    p.refunded += t.amount;
+    p.refunded_rounding = (p.refunded_rounding ?? 0) + t.rounding_cents;
+  }
+  if (!r) return l;
+  const taxes = l.refunded.taxes.map((t) => ({ ...t }));
+  for (const t of r.taxes) {
+    const cur = taxes.find((x) => x.name === t.name && x.bps === t.bps);
+    if (cur) cur.amount += t.amount;
+    else taxes.push({ ...t });
+  }
+  return { ...l, refunded: { quantity: l.refunded.quantity + r.quantity, base: l.refunded.base + r.base, discount: l.refunded.discount + r.discount, fee: l.refunded.fee + r.fee, taxes, total: l.refunded.total + r.total } };
+}
+
+describe("money review: refunds that leak or strand money", () => {
+  it("refunding every unit of a line one at a time gives back the whole line, the last unit taking the remainder", () => {
+    // 3 × 10.04 + GST: 3012 + 271 = 3283. Each unit as sold is 1094.33, so three unit refunds used to return 3282.
+    let l: RefundableLine = { line_id: "L", quantity: 3, base: 3012, discount: 0, fee: 0, taxes: sgTax(271), total: 3283, adjustments: {}, refunded: none };
+    const pays: RefundablePayment[] = [{ payment_id: "P", tender: "Card", is_cash: false, amount: 3283, refunded: 0 }];
+    for (let i = 0; i < 3; i++) l = apply(l, pays, quoteRefund([l], pays, { kind: "lines", lines: [{ line_id: "L", quantity: 1 }] }));
+    expect(l.refunded).toMatchObject({ quantity: 3, base: 3012, total: 3283 });
+    expect(l.refunded.taxes).toEqual(sgTax(271));
+  });
+
+  it("property: unit by unit, every line comes back whole", () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 2, max: 7 }), fc.integer({ min: 1, max: 99_999 }), fc.integer({ min: 0, max: 2000 }), (quantity, unit, bps) => {
+        const base = unit * quantity;
+        const tax = Math.round((base * bps) / 10_000);
+        let l: RefundableLine = { line_id: "L", quantity, base, discount: 0, fee: 0, taxes: sgTax(tax), total: base + tax, adjustments: {}, refunded: none };
+        const pays: RefundablePayment[] = [{ payment_id: "P", tender: "Card", is_cash: false, amount: base + tax, refunded: 0 }];
+        for (let i = 0; i < quantity; i++) l = apply(l, pays, quoteRefund([l], pays, { kind: "lines", lines: [{ line_id: "L", quantity: 1 }] }));
+        expect(l.refunded.total).toBe(l.total);
+        expect(l.refunded.base).toBe(l.base);
+      }),
+    );
+  });
+
+  it("a tender split naming one payment twice is checked against that payment once", () => {
+    const l: RefundableLine = { line_id: "L", quantity: 1, base: 1000, discount: 0, fee: 0, taxes: sgTax(90), total: 1090, adjustments: {}, refunded: none };
+    const pays: RefundablePayment[] = [
+      { payment_id: "CARD", tender: "Card", is_cash: false, amount: 545, refunded: 0 },
+      { payment_id: "CASH", tender: "Cash", is_cash: true, amount: 545, refunded: 0 },
+    ];
+    expect(() => quoteRefund([l], pays, { kind: "full" }, { tenderSplit: [{ payment_id: "CARD", amount: 545 }, { payment_id: "CARD", amount: 545 }] })).toThrow(/at most 545/);
+    const q = quoteRefund([l], pays, { kind: "full" }, { tenderSplit: [{ payment_id: "CARD", amount: 300 }, { payment_id: "CARD", amount: 245 }, { payment_id: "CASH", amount: 545 }] });
+    expect(q.tenders.map((t) => [t.payment_id, t.amount])).toEqual([["CARD", 545], ["CASH", 545]]);
+  });
+
+  it("cash rounding on repeated small refunds never hands out more cash than the payment took", () => {
+    // 10.02 paid in cash and rounded to 10.00 at the till (amount 1002, rounding -2). 0.03 at a time used to hand out 0.05 each.
+    let l: RefundableLine = { line_id: "L", quantity: 1, base: 1002, discount: 0, fee: 0, taxes: [], total: 1002, adjustments: {}, refunded: none };
+    const pays: RefundablePayment[] = [{ payment_id: "P", tender: "Cash", is_cash: true, amount: 1002, rounding: -2, refunded: 0 }];
+    let cashOut = 0;
+    while (l.total - l.refunded.total > 0) {
+      const q = quoteRefund([l], pays, { kind: "amount", amount: Math.min(3, l.total - l.refunded.total) }, { cashRoundingIncrement: 5 });
+      expect(q.cash_out).toBeGreaterThanOrEqual(0);
+      expect(q.cash_out % 5).toBe(0);
+      cashOut += q.cash_out;
+      l = apply(l, pays, q);
+      expect(cashOut).toBeLessThanOrEqual(1000);
+    }
+    expect(cashOut).toBe(1000);
+  });
+
+  it("property: across any sequence of cash refunds, the cash handed back ends exactly at the cash taken", () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: 50_000 }), fc.constantFrom(5, 10, 100), fc.array(fc.integer({ min: 1, max: 5000 }), { minLength: 1, maxLength: 30 }), (amount, inc, steps) => {
+        const rounding = roundCash(amount, inc).roundingCents;
+        let l: RefundableLine = { line_id: "L", quantity: 1, base: amount, discount: 0, fee: 0, taxes: [], total: amount, adjustments: {}, refunded: none };
+        const pays: RefundablePayment[] = [{ payment_id: "P", tender: "Cash", is_cash: true, amount, rounding, refunded: 0 }];
+        const taken = amount + rounding;
+        let out = 0;
+        for (const s of [...steps, amount]) {
+          const left = l.total - l.refunded.total;
+          if (left <= 0) break;
+          const q = quoteRefund([l], pays, { kind: "amount", amount: Math.min(s, left) }, { cashRoundingIncrement: inc });
+          out += q.cash_out;
+          l = apply(l, pays, q);
+          expect(out).toBeLessThanOrEqual(taken);
+        }
+        expect(out).toBe(taken);
+      }),
     );
   });
 });
