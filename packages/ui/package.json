@@ -11,7 +11,8 @@
     "./styles.css": "./src/styles.css"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint --max-warnings 0 ."
   },
   "dependencies": {
     "lucide-react": "^0.577.0",

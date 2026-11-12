@@ -88,7 +88,7 @@ export function PrintersView({ outlets, scope, initialOutletId, initialPrinters,
   });
   const products = useAllProducts({ include_archived: "false" }, outletId !== null);
 
-  const all = printers.data ?? [];
+  const all = useMemo(() => printers.data ?? [], [printers.data]);
   const rows = all.filter((p) => showArchived || !p.archived);
   const nameOf = useMemo(() => new Map(all.map((p) => [p.id, p.name])), [all]);
   const stationName = useMemo(() => new Map((stations.data ?? []).map((s) => [s.id, s.name])), [stations.data]);

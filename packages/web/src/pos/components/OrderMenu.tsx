@@ -209,7 +209,6 @@ function MoveTableSheet({ isOpen, onClose, order, actions }: SheetProps) {
       <div className="flex flex-col gap-6">
         {(snapshot?.areas ?? []).map((a) => {
           const tables = (snapshot?.tables ?? []).filter((t) => t.area_id === a.id);
-          const cols = Math.max(8, ...tables.map((t) => t.x + t.w));
           const rows = Math.max(2, ...tables.map((t) => t.y + t.h));
           const cell = 48;
           const gap = 8;

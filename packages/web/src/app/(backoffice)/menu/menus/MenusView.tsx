@@ -7,7 +7,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Badge, Button, Dialog, EmptyState, Icon, InlineError, Money, Select, Skeleton, StatusDot, Switch, TextField } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { GripVertical, Pencil, Plus, X } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { BrandChoice } from "@/components/backoffice/OutletChoice";
 import { ProductSearch } from "@/components/backoffice/ProductSearch";
 import { Warnings } from "@/components/backoffice/Warnings";
