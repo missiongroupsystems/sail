@@ -164,6 +164,19 @@ export function wrapUntrusted(value: unknown, keys: readonly string[], key?: str
   return value;
 }
 
+/**
+ * The call against the top level of the schema the tool published: every required argument present (so a mutation
+ * always carries the caller's own idempotency key, and a retry never applies twice) and nothing undeclared. The API
+ * validates the body itself.
+ */
+function argumentProblem(tool: ToolDef, args: Record<string, unknown>): string | null {
+  const props = (tool.inputSchema.properties ?? {}) as Record<string, unknown>;
+  const missing = ((tool.inputSchema.required ?? []) as string[]).filter((k) => args[k] === undefined || args[k] === null || args[k] === "");
+  if (missing.length) return `Missing required argument${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`;
+  const unknown = Object.keys(args).filter((k) => !(k in props));
+  return unknown.length ? `Unknown argument${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}` : null;
+}
+
 async function callApi(app: AppLike, bearer: string, tool: ToolDef, args: Record<string, unknown>): Promise<{ status: number; body: unknown }> {
   let path = tool.path;
   for (const p of tool.path_params) {
@@ -175,7 +188,7 @@ async function callApi(app: AppLike, bearer: string, tool: ToolDef, args: Record
   for (const q of tool.query_params) if (args[q] !== undefined && args[q] !== null) qs.set(q, String(args[q]));
   const url = qs.size ? `${path}?${qs}` : path;
   const headers: Record<string, string> = { authorization: `Bearer ${bearer}`, "content-type": "application/json", "x-request-id": randomUUID() };
-  if (tool.method !== "GET") headers["idempotency-key"] = typeof args.idempotency_key === "string" && args.idempotency_key ? args.idempotency_key : randomUUID();
+  if (tool.method !== "GET") headers["idempotency-key"] = String(args.idempotency_key);
   if (typeof args.rationale === "string" && args.rationale) headers["x-rationale"] = args.rationale.slice(0, 500);
   const payload = tool.has_body ? { ...((args.body as Record<string, unknown> | undefined) ?? {}), ...(args.dry_run === true ? { dry_run: true } : {}) } : undefined;
   const res = await app.request(url, { method: tool.method, headers, body: payload ? JSON.stringify(payload) : undefined });
@@ -207,8 +220,11 @@ function buildServer(app: AppLike, catalog: ToolDef[], bearer: string, me: Me): 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const tool = visible.find((t) => t.name === req.params.name);
     if (!tool) return { content: [{ type: "text", text: JSON.stringify({ code: "not_found", message: `No tool ${req.params.name} for this identity` }) }], isError: true };
+    const args = (req.params.arguments ?? {}) as Record<string, unknown>;
+    const wrong = argumentProblem(tool, args);
+    if (wrong) return { content: [{ type: "text", text: JSON.stringify({ code: "validation", message: wrong }) }], structuredContent: { status: 400, code: "validation", message: wrong }, isError: true };
     try {
-      const { status, body } = await callApi(app, bearer, tool, (req.params.arguments ?? {}) as Record<string, unknown>);
+      const { status, body } = await callApi(app, bearer, tool, args);
       const wrapped = wrapUntrusted(body, tool.untrusted);
       const structured = wrapped && typeof wrapped === "object" && !Array.isArray(wrapped) ? { status, ...(wrapped as Record<string, unknown>) } : { status, body: wrapped };
       return { content: [{ type: "text", text: JSON.stringify(structured) }], structuredContent: structured, isError: status >= 400 };

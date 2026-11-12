@@ -501,6 +501,15 @@ describe("MCP adapter", () => {
     expect(bad.isError).toBe(true);
     expect((bad.structuredContent as { status: number; code: string }).code).toBe("not_found");
 
+    // The adapter holds a call to the schema it published (A15): a mutation without its idempotency key, or with an
+    // argument the tool does not declare, is refused before it reaches the register.
+    const noKey = await client.callTool({ name: "orders_open", arguments: { body: { order_id: randomUUID(), order_type: "takeaway", outlet_id: A.outletId, brand_id: A.brandId } } });
+    expect(noKey.isError).toBe(true);
+    expect((noKey.structuredContent as { code: string }).code).toBe("validation");
+    const extra = await client.callTool({ name: "orders_get", arguments: { id: openedOut.data.id, not_a_param: "x" } });
+    expect(extra.isError).toBe(true);
+    expect((extra.structuredContent as { code: string }).code).toBe("validation");
+
     const resources = await client.listResources();
     expect(resources.resources.map((r) => r.uri)).toEqual(expect.arrayContaining([`sail://floor/${A.outletId}`, `sail://menu/${ids.link}`]));
     const menu = await client.readResource({ uri: `sail://menu/${ids.link}` });
