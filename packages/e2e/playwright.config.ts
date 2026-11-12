@@ -5,9 +5,12 @@ import { defineConfig, devices } from "@playwright/test";
  * back office and POS (web, :3000) and the guest app (:3001). Every run starts its own stack on a fresh database;
  * set E2E_REUSE_SERVERS=1 to run against servers already up (their data must still have free tables, and no shift open).
  * E2E_API_URL moves the API off :8080 when that port is taken; the apps are pointed at it through NEXT_PUBLIC_API_URL.
+ * First-run setup needs an empty database, so it gets a second API (E2E_SETUP_API_URL, default :8091) with no demo
+ * merchants and a second back office on :3002 (its own build directory, so the two dev servers do not collide).
  */
 const reuse = Boolean(process.env.E2E_REUSE_SERVERS);
 const api = process.env.E2E_API_URL ?? "http://localhost:8080";
+const setupApi = process.env.E2E_SETUP_API_URL ?? "http://localhost:8091";
 
 export default defineConfig({
   testDir: "./tests",
@@ -30,5 +33,7 @@ export default defineConfig({
     { command: "pnpm --filter @sail/server dev:local", env: { PORT: new URL(api).port }, url: `${api}/health`, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
     { command: "pnpm --filter @sail/web dev", env: { NEXT_PUBLIC_API_URL: api }, url: "http://localhost:3000/login", timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
     { command: "pnpm --filter @sail/guest dev", env: { NEXT_PUBLIC_API_URL: api }, url: "http://localhost:3001", timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
+    { command: "pnpm --filter @sail/server dev:local", env: { PORT: new URL(setupApi).port, SAIL_DEV_EMPTY: "1" }, url: `${setupApi}/health`, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
+    { command: "pnpm --filter @sail/web exec next dev -p 3002", env: { NEXT_PUBLIC_API_URL: setupApi, SAIL_WEB_DIST_DIR: ".next-setup" }, url: "http://localhost:3002/login", timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
   ],
 });

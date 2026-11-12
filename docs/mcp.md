@@ -13,7 +13,7 @@ AGENT_TOKEN_SECRET=local-agent-secret-0123456789abcdef \
 STATION_TOKEN_SECRET=local-station-secret-0123456789abcdef \
 GUEST_TOKEN_SECRET=local-guest-secret-0123456789abcdef \
 RELAY_TOKEN_SECRET=local-relay-secret-0123456789abcdef \
-DEV_AUTH_SECRET=local-dev-secret-change-me-0123456789 \
+SESSION_TOKEN_SECRET=local-session-secret-0123456789abcdef \
 PORT=8090 pnpm exec tsx src/index.ts --role=mcp
 ```
 

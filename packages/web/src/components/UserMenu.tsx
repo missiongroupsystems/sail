@@ -38,10 +38,11 @@ export function UserMenu({ me, theme: initialTheme }: { me: Me; theme: Theme }) 
         </span>
         <Icon icon={ChevronDown} size={16} className="text-ink-2" />
       </Button>
-      <Menu minWidth={240} onAction={(key) => (key === "theme" ? void switchTheme() : key === "signout" ? void signOut() : undefined)}>
+      <Menu minWidth={240} onAction={(key) => (key === "theme" ? void switchTheme() : key === "password" ? router.push("/account/password") : key === "signout" ? void signOut() : undefined)}>
         <MenuItem id="theme" detail={theme === "day" ? "Day" : "Service"}>
           {theme === "day" ? "Switch to Service theme" : "Switch to Day theme"}
         </MenuItem>
+        <MenuItem id="password">Change password</MenuItem>
         <MenuSeparator />
         <MenuItem id="signout">Sign out</MenuItem>
       </Menu>

@@ -3,35 +3,38 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, InlineError, TextField } from "@sail/ui";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { ApiError, toApiError } from "@/lib/api";
 
-export type LoginMode = { kind: "dev" } | { kind: "supabase"; url: string; anonKey: string };
+/** `password`: the register checks email and password. `supabase`: the external identity provider does, in the browser. */
+export type LoginMode = { kind: "password" } | { kind: "supabase"; url: string; anonKey: string } | { kind: "unconfigured" };
 
 type Values = { email: string; password: string };
 
-function schemaFor(mode: LoginMode) {
-  return z.object({
-    email: z.email("Enter an email address"),
-    password: mode.kind === "supabase" ? z.string().min(1, "Enter your password") : z.string(),
-  });
-}
+const Schema = z.object({
+  email: z.email("Enter an email address"),
+  password: z.string().min(1, "Enter your password"),
+});
 
-async function createSession(body: { kind: "dev"; email: string } | { kind: "token"; token: string }): Promise<void> {
+async function createSession(body: { kind: "password"; email: string; password: string } | { kind: "token"; token: string }): Promise<void> {
   const res = await fetch("/api/session", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) throw ApiError.from(res.status, await res.json().catch(() => null));
+}
+
+/** A lockout says when to try again in minutes, not in seconds. */
+function shown(e: ApiError): ApiError {
+  const retry = e.details?.retry_after_seconds;
+  if (e.code !== "rate_limited" || typeof retry !== "number") return e;
+  const minutes = Math.ceil(retry / 60);
+  return new ApiError({ code: e.code, message: "Sign-in is locked after too many failed attempts", remedy: retry < 90 ? `Try again in ${retry} seconds.` : `Try again in ${minutes} minutes.`, details: e.details }, e.status);
 }
 
 export function LoginForm({ mode, nextPath }: { mode: LoginMode; nextPath: string }) {
   const router = useRouter();
   const [error, setError] = useState<ApiError | null>(null);
-  const schema = useMemo(() => schemaFor(mode), [mode]);
-  const form = useForm<Values>({
-    resolver: zodResolver(schema),
-    defaultValues: { email: mode.kind === "dev" ? "admin@sail.local" : "", password: "" },
-  });
+  const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: { email: "", password: "" } });
 
   const submit = form.handleSubmit(async (values) => {
     setError(null);
@@ -45,14 +48,18 @@ export function LoginForm({ mode, nextPath }: { mode: LoginMode; nextPath: strin
         }
         await createSession({ kind: "token", token: data.session.access_token });
       } else {
-        await createSession({ kind: "dev", email: values.email });
+        await createSession({ kind: "password", email: values.email, password: values.password });
       }
       router.replace(nextPath);
       router.refresh();
     } catch (e) {
-      setError(toApiError(e));
+      setError(shown(toApiError(e)));
     }
   });
+
+  if (mode.kind === "unconfigured") {
+    return <InlineError error={{ message: "This server signs in through an external identity provider that the web app is not set up for", remedy: "Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY for the web app." }} />;
+  }
 
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-4">
@@ -74,32 +81,28 @@ export function LoginForm({ mode, nextPath }: { mode: LoginMode; nextPath: strin
           />
         )}
       />
-      {mode.kind === "supabase" ? (
-        <Controller
-          control={form.control}
-          name="password"
-          render={({ field, fieldState }) => (
-            <TextField
-              label="Password"
-              type="password"
-              autoComplete="current-password"
-              value={field.value}
-              onChange={field.onChange}
-              onBlur={field.onBlur}
-              isInvalid={!!fieldState.error}
-              errorMessage={fieldState.error?.message}
-            />
-          )}
-        />
-      ) : null}
+      <Controller
+        control={form.control}
+        name="password"
+        render={({ field, fieldState }) => (
+          <TextField
+            label="Password"
+            type="password"
+            autoComplete="current-password"
+            value={field.value}
+            onChange={field.onChange}
+            onBlur={field.onBlur}
+            isInvalid={!!fieldState.error}
+            errorMessage={fieldState.error?.message}
+          />
+        )}
+      />
       <InlineError error={error} />
       <Button type="submit" variant="primary" isPending={form.formState.isSubmitting} className="mt-2 w-full">
         Sign in
       </Button>
       <p className="text-caption text-ink-2">
-        {mode.kind === "dev"
-          ? "Development sign-in: the register issues a 12-hour token for this email. Not available in production."
-          : "Signed in with your organisation's account."}
+        {mode.kind === "password" ? "Forgotten your password? Ask an Admin for a reset link." : "Signed in with your organisation's account."}
       </p>
     </form>
   );

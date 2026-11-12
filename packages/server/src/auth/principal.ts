@@ -27,6 +27,8 @@ export type Principal =
       outletId?: string;
       riskCeiling: string | null;
       via: "backoffice" | "pin";
+      /** Set when signed in to the back office with a session from the local identity provider. */
+      backofficeSessionId?: string;
     }
   | {
       /** An iPad paired to a station, before anyone has signed in with a PIN. */

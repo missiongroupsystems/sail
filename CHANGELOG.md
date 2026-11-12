@@ -4,6 +4,14 @@ Notable changes to Sail, newest first. Field and operation names are as in `pack
 
 ## Unreleased
 
+### Back-office sign-in and first-run setup
+- Back-office sign-in goes through one identity provider: `local` (email and password, the default) or `oidc` (an external issuer's JWTs, selected by `SUPABASE_URL` or `SUPABASE_JWT_SECRET`). The local provider needs `SESSION_TOKEN_SECRET`.
+- Local sign-in: scrypt password hashes, 12 characters minimum and no composition rules; 12-hour sessions ended by sign-out, a password change, a reset or revocation; the same answer for an unknown email and a wrong password; 5 failures lock an email and 20 lock an address for 15 minutes, counted in Postgres (`TRUST_PROXY` makes the address the last `X-Forwarded-For` entry).
+- First-run setup: with no merchant, the back office opens on setup (`setup.create`, refused once a merchant exists and when two setups race). `bootstrap` takes `SAIL_ADMIN_PASSWORD`; without it the Admin's email is pre-authorised for the external provider.
+- Team access: Admins invite staff (single-use link, 7 days), generate reset links (24 hours) and revoke access from the staff sheet. With `oidc`, inviting pre-authorises the email and the first sign-in links the account, so linking a login no longer needs SQL; unknown emails are refused.
+- The new operations are hidden from MCP, list no agent principal and cannot become proposals (`proposable: false`; a caller above its risk ceiling is refused). The new tables `backoffice_logins`, `backoffice_sessions` and `backoffice_links` have RLS and no grants for the agent, guest or relay roles, and request roles cannot read password hashes.
+- Removed: the email-only development sign-in (`POST /v1/auth/dev-token`) and `DEV_AUTH_SECRET`. `dev:local` seeds the demo Admins with the password `sail-demo-password`. See [self-hosting](docs/self-hosting.md#sign-in).
+
 ### Any country by configuration
 - Tax classes and rates per merchant. A rate is a list of named components (state and local sales tax, VAT, consumption tax) and can be scoped to an outlet, an order type or both; an empty list is exempt. Tax rounds per line or once per rate (`tax_rounding`). New operations `tax_classes.list`, `tax_classes.create`, `tax_classes.update`, `tax_rates.set` and `tax_rates.delete`, and a Settings > Tax classes screen.
 - Region presets (`sg`, `us`, `eu-vat`, `jp`, `blank`) chosen when a merchant is created: currency, locale, tax classes and rates, service charge and deposit rules, tenders, cash denominations and registration labels. `bootstrap` takes `--preset` and `--time-zone`, both required. `dev:local` creates a second demo merchant, a café with inclusive VAT at 20% and 10% in EUR.

@@ -9,7 +9,7 @@ Node 22.12 or newer, with Corepack (it provides pnpm 10.17.1).
 ```bash
 corepack enable && pnpm install
 pnpm --filter @sail/server dev:local   # API on :8080 with an embedded Postgres and demo data
-pnpm --filter @sail/web dev            # back office and POS on :3000
+pnpm --filter @sail/web dev            # back office and POS on :3000 (admin@sail.local, password sail-demo-password)
 pnpm --filter @sail/guest dev          # guest app on :3001
 ```
 
@@ -27,7 +27,7 @@ Run these before you open a pull request. CI (`.github/workflows/ci.yml`) runs t
 | OpenAPI spec is up to date | `pnpm openapi:check` |
 | MCP tool list is up to date | `pnpm --filter @sail/server manifest:check` |
 | Schema changes have a migration | `pnpm db:generate` (must say "No schema changes" unless you meant to add one) |
-| End-to-end, in a browser | `pnpm test:e2e` (starts the API, web and guest apps itself; needs ports 8080, 3000 and 3001 free, or `E2E_API_URL` to move the API; run `pnpm --filter @sail/e2e exec playwright install chromium` once) |
+| End-to-end, in a browser | `pnpm test:e2e` (starts the API, web and guest apps itself, plus a second API and back office on an empty database for first-run setup; needs ports 8080, 3000, 3001, 8091 and 3002 free, or `E2E_API_URL` and `E2E_SETUP_API_URL` to move the APIs; run `pnpm --filter @sail/e2e exec playwright install chromium` once) |
 
 With `dev:local` running, `pnpm --filter @sail/guest smoke` and then `pnpm --filter @sail/web pos:smoke` drive the guest and POS flows through the API. Run them in that order on a fresh `dev:local`: the POS smoke uses up a guest rate limit the guest smoke needs.
 

@@ -225,6 +225,20 @@
       "when": 1794503325880,
       "tag": "0031_report_views_staff",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794506057149,
+      "tag": "0032_backoffice_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794506074719,
+      "tag": "0033_rls_backoffice_identity",
+      "breakpoints": true
     }
   ]
 }

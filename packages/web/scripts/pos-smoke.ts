@@ -28,7 +28,7 @@ import { createPosApi } from "../src/pos/api/client";
 import * as reg from "../src/pos/api/register";
 
 const API = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080").replace(/\/+$/, "");
-const devLocal = JSON.parse(readFileSync(resolve(process.cwd(), process.env.SAIL_DEV_LOCAL ?? "../server/.dev-local.json"), "utf8")) as { stationId: string; outletId: string };
+const devLocal = JSON.parse(readFileSync(resolve(process.cwd(), process.env.SAIL_DEV_LOCAL ?? "../server/.dev-local.json"), "utf8")) as { stationId: string; outletId: string; admin_email: string; admin_password: string };
 
 let token: string | null = null;
 const api = createPosApi({ baseUrl: API, getToken: () => token });
@@ -76,7 +76,7 @@ async function adminJson<T>(path: string, body: unknown, bearer?: string): Promi
 console.log(`POS smoke against ${API}`);
 
 // 0. An Admin issues a pairing code (back office step).
-const admin = await adminJson<{ token: string }>("/v1/auth/dev-token", { email: "admin@sail.local" });
+const admin = (await adminJson<{ data: { token: string } }>("/v1/auth/sign-in", { email: devLocal.admin_email, password: devLocal.admin_password })).data;
 const code = await adminJson<{ data: { code: string } }>(`/v1/stations/${devLocal.stationId}/pairing-code`, {}, admin.token);
 
 // 0b. The dev seed writes rule bodies with `${JSON.stringify(...)}::jsonb`, which postgres.js double-encodes, so the

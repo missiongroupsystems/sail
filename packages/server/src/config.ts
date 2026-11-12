@@ -28,11 +28,23 @@ const EnvSchema = z.object({
 
   CORS_ORIGIN: z.string().default("*"),
 
-  /** Back-office auth: Supabase JWTs verified against the project's JWKS, or an HS256 secret. */
+  /**
+   * Back-office sign-in through an external OIDC issuer: JWTs verified against the issuer's JWKS, or an HS256 secret.
+   * Setting either selects the `oidc` identity provider; leaving both unset selects `local` (email and password).
+   */
   SUPABASE_URL: z.string().url().optional(),
   SUPABASE_JWT_SECRET: z.string().optional(),
-  /** Development and tests only: HS256 secret for locally minted back-office JWTs. */
-  DEV_AUTH_SECRET: z.string().optional(),
+  /** Signs back-office sessions issued by the `local` identity provider. */
+  SESSION_TOKEN_SECRET: z.string().min(16).optional(),
+  /**
+   * Take the client address for sign-in lockout from the last `X-Forwarded-For` entry. Set it only when every request
+   * reaches the API through a proxy that sets that header (the web app's sign-in does); otherwise a caller could pick
+   * its own address.
+   */
+  TRUST_PROXY: z
+    .string()
+    .optional()
+    .transform((v) => v === "1" || v === "true"),
 
   /** Sail-issued tokens (station, PIN session, guest, relay, agent). */
   STATION_TOKEN_SECRET: z.string().min(16).optional(),
@@ -64,6 +76,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Env {
     if (port !== 5432) throw new Error(`LISTEN_DATABASE_URL must use the session connection on port 5432, got ${port ?? "unknown"}`);
   }
   return cfg;
+}
+
+/** The back-office identity provider: `oidc` when an external issuer is configured, `local` otherwise. */
+export function identityProviderKind(cfg: Env = config()): "local" | "oidc" {
+  return cfg.SUPABASE_URL || cfg.SUPABASE_JWT_SECRET ? "oidc" : "local";
 }
 
 export function config(): Env {

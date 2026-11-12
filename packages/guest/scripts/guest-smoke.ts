@@ -18,7 +18,7 @@ import { ApiError, createGuestApi, createRequest, createSession, getMenu, getOrd
 import type { CompiledGroup, CompiledProduct, GuestSession } from "../src/lib/types";
 
 const API = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080").replace(/\/+$/, "");
-const devLocal = JSON.parse(readFileSync(resolve(process.cwd(), process.env.SAIL_DEV_LOCAL ?? "../server/.dev-local.json"), "utf8")) as { outletId: string; brandId: string };
+const devLocal = JSON.parse(readFileSync(resolve(process.cwd(), process.env.SAIL_DEV_LOCAL ?? "../server/.dev-local.json"), "utf8")) as { outletId: string; brandId: string; admin_email: string; admin_password: string };
 
 let failures = 0;
 function ok(label: string, detail?: string) {
@@ -56,7 +56,7 @@ async function expectError<T>(label: string, fn: () => Promise<T>, code: string,
   }
 }
 
-/* ---- The register side (staff), plain fetch with the admin dev token. ---- */
+/* ---- The register side (staff), plain fetch with the Admin's back-office session. ---- */
 let admin = "";
 async function reg<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${API}${path}`, { method, headers: { "content-type": "application/json", "idempotency-key": uuid(), ...(admin ? { authorization: `Bearer ${admin}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -67,7 +67,7 @@ async function reg<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 console.log(`Guest smoke against ${API}`);
 
-admin = (await reg<{ token: string }>("POST", "/v1/auth/dev-token", { email: "admin@sail.local" })).token;
+admin = (await reg<{ data: { token: string } }>("POST", "/v1/auth/sign-in", { email: devLocal.admin_email, password: devLocal.admin_password })).data.token;
 const tables = (await reg<{ data: { id: string; name: string }[] }>("GET", `/v1/tables?outlet_id=${devLocal.outletId}`)).data;
 if (tables.length < 2) {
   console.log("Need at least two tables in the demo outlet");

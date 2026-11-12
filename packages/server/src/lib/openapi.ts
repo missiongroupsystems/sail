@@ -94,6 +94,7 @@ export function defineOp<R extends OpRoute>(app: OpenAPIHono<AppEnv>, route: R, 
     const method = String(c.req.method).toUpperCase();
     // Reads, quotes and dry runs are T0 by nature; anything else above the caller's ceiling becomes a proposal.
     if (principal && method !== "GET" && spec.principals.length > 0 && aboveCeiling(principal, spec)) {
+      if (spec.proposable === false) throw new AppError("permission_denied", `${spec.op} is above this caller's risk ceiling and cannot be proposed`, { remedy: "Ask someone without a risk ceiling to do it.", details: { action: spec.op, tier: spec.tier } });
       let body: unknown = null;
       try {
         body = await c.req.json();

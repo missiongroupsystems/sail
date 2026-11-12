@@ -85,14 +85,16 @@ The relay (`packages/relay`) is a small Node service on the outlet network. It p
 
 | Principal | How it starts | Lifetime | Ends |
 |-|-|-|-|
-| Back-office staff | A JWT verified against `SUPABASE_URL`'s JWKS or `SUPABASE_JWT_SECRET`, matched to a `staff` row by `auth_subject`; in development, `POST /v1/auth/dev-token` | Issuer's | Staff deactivated |
+| Back-office staff | Built in: `auth.sign_in` with email and password, which starts a session row (`backoffice_sessions`). With an external issuer: its JWT, verified against `SUPABASE_URL`'s JWKS or `SUPABASE_JWT_SECRET` and matched to a `staff` row by `auth_subject` | 12 h (built in) or the issuer's | Sign-out, password change or reset, access revoked, staff deactivated |
 | Station (paired iPad) | `stations.pair` with a single-use 6-digit code | No expiry | Pairing again or archiving the station |
 | Staff on a station | `staff_sessions.start` with the station token and a 6-digit PIN | 14 h, ended after `PIN_SESSION_IDLE_SECONDS` idle | Sign-out, idle or expiry |
 | Guest | `guest_sessions.create` with a table's QR token | 4 h | The order completes or is cancelled, or expiry |
 | Relay | `relays.pair` with a single-use code | No expiry | Pairing again |
 | Agent | `agent_sessions.start` with an identity credential | 15 min | Expiry, identity disabled, credential rotated |
 
-Sail-issued tokens are HS256 JWTs with a `typ` claim, signed per type (`auth/tokens.ts`): station and PIN-session tokens share `STATION_TOKEN_SECRET`; guest, relay and agent tokens each have their own. A station token alone has no staff role: it reads what the lock screen needs (merchant settings, channel links, menus, layouts, outlet events) and starts PIN sessions. Everything else needs a staff member signed in with a PIN.
+Sail-issued tokens are HS256 JWTs with a `typ` claim, signed per type (`auth/tokens.ts`): station and PIN-session tokens share `STATION_TOKEN_SECRET`; back-office session, guest, relay and agent tokens each have their own. A station token alone has no staff role: it reads what the lock screen needs (merchant settings, channel links, menus, layouts, outlet events) and starts PIN sessions. Everything else needs a staff member signed in with a PIN.
+
+**Back-office sign-in.** One identity provider is active, chosen by configuration (`auth/identity.ts`): `local`, the default, or `oidc` when an external issuer is set. The local provider stores scrypt password hashes in `backoffice_logins`, which request roles cannot read, and checks the session row on every request, so ending a session takes effect at once. Five failed sign-ins lock an email and twenty lock a client address for 15 minutes, on the same Postgres counters as PINs. First-run setup (`setup.create`) works only while no merchant exists. Invitations and reset links are single-use tokens stored as hashes (`backoffice_links`). With `oidc`, an invitation pre-authorises an email and the first sign-in with it links the account. None of these operations is open to agents or can become a proposal. Setting up, invitations and lockout are covered in [self-hosting.md](self-hosting.md#sign-in).
 
 **PINs.** Stored as an scrypt hash, found through an HMAC lookup keyed with `STATION_TOKEN_SECRET`. Five wrong PINs on a station lock it for 30 s. Sign-in PINs and manager-approval PINs count on the same counter, and each attempt is counted before it is checked; a right PIN resets the count but does not lift a lock. The counter is in Postgres (`pin_attempts`), so it holds across API machines; guest rate limits are also in Postgres (`guest_rate_hits`).
 

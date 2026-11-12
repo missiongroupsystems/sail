@@ -8,6 +8,8 @@ import type { AppEnv } from "../lib/context.js";
 import { RLS_OPT_OUT, SHORT_TX_ROUTES } from "../db/rls-opt-out.js";
 
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+/** The request body holds passwords, and the stored request hash is a fast unsalted SHA-256 of it. Retrying is safe: the old password no longer matches. */
+const NO_KEY = [/^\/v1\/auth\/password$/];
 
 /**
  * Idempotency-Key on every mutation. The key is scoped to
@@ -20,7 +22,7 @@ const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  */
 export const idempotency: MiddlewareHandler<AppEnv> = async (c, next) => {
   const path = c.req.path;
-  if (!MUTATING.has(c.req.method) || RLS_OPT_OUT.some((p) => p.test(path)) || SHORT_TX_ROUTES.some((p) => p.test(path))) {
+  if (!MUTATING.has(c.req.method) || RLS_OPT_OUT.some((p) => p.test(path)) || SHORT_TX_ROUTES.some((p) => p.test(path)) || NO_KEY.some((p) => p.test(path))) {
     c.set("idempotencyKey", null);
     return next();
   }
@@ -63,7 +65,11 @@ export const idempotency: MiddlewareHandler<AppEnv> = async (c, next) => {
   await next();
 
   const res = c.res;
-  if (res.status < 400) {
+  if (res.status < 400 && c.get("secretResult")) {
+    // Store a refusal instead of the secret, so the database never holds it and a retry asks for a new one.
+    const refusal = { code: "state_conflict", message: "This request already succeeded and its result was shown once", remedy: "Generate a new link; the earlier one still works until it expires or a newer one replaces it." };
+    await tx()`update idempotency_keys set status = 409, body = ${JSON.stringify(refusal)}::jsonb where principal_id = ${principal.id} and key = ${key}`;
+  } else if (res.status < 400) {
     const text = await res.clone().text();
     let stored: unknown = text;
     try {
