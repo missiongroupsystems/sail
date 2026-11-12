@@ -1,6 +1,6 @@
-# Legacy POS importer: CSV mapping specification
+# CSV import
 
-Status: v0.3, 4 Nov 2026. The importer (`packages/server/src/services/importer.ts`) is CSV-first, one-way and re-runnable (scope §4.2). This document is the contract between the legacy system's exports and Sail's fields. The exact column names of the legacy exports are not known yet (roadmap §6: sample exports requested in v0.1); the **mapping** in each import job translates their columns to the field names below, so the importer needs no code change when the exports arrive.
+The importer (`packages/server/src/services/importer.ts`) loads data exported from another system as CSV. It is one-way and safe to re-run. Each import job carries a **mapping** from Sail's field names (below) to the columns in your files, so a new export format needs no code change.
 
 ## How an import runs
 
@@ -32,15 +32,9 @@ Values: prices are in the merchant's currency with its own decimals and `.` as t
 | `customers` | `name`, and `mobile` or `legacy_id` | `email`, `marketing_consent` | `legacy_id` if given, else `mobile` |
 | `layouts` | `label` or `folder`, `brand_legacy_id`; one row per tile | `layout_legacy_id`, `layout_name`, `page`, `folder`, `product_legacy_id`/`product_sku`, `colour` (name or hex, mapped to the 12 tile colours), `access_level` | `layout_legacy_id` |
 
-## Flattening rules agreed for deep or messy exports
+## Rules for deep or messy exports
 
 - Modifier groups nested deeper than two levels are rejected with a reason; the row is listed for manual re-keying (the database also refuses depth > 2).
 - Legacy tile colours are mapped to the nearest of the 12 curated colours; `options.tile_colour_map` overrides the mapping per legacy value.
-- A product that exists in the export under the same SKU twice: the second row updates the first (last wins) and a warning is recorded.
+- A product that exists in the export under the same SKU twice: the second row updates the first (last wins).
 - Products referenced by menu items or modifier options but missing from the products file are rejected rows on the referencing file, never silently created.
-
-## Open items (need the real exports)
-
-- Column names and encodings of the legacy exports for both beta brands.
-- Whether POS layouts can be exported at all; if not, layouts are built in the back-office editor.
-- Table positions and shapes (design open question 7).
