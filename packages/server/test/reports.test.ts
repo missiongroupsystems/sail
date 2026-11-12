@@ -33,6 +33,8 @@ beforeAll(async () => {
   await call("POST", "/v1/areas", { token: t, body: { id: ids.area, outlet_id: A.outletId, name: "Main" } });
   await call("POST", "/v1/tables", { token: t, body: { id: ids.table, outlet_id: A.outletId, area_id: ids.area, name: "1" } });
   await call("POST", "/v1/tender-types", { token: t, body: { id: ids.cash, name: "Cash", is_cash: true } });
+  // Cash goes into a shift's drawer: one outlet-wide shift for the file.
+  expect((await call("POST", "/v1/shifts", { token: t, body: { outlet_id: A.outletId, station_id: null, float_cents: 0 } })).status).toBe(201);
   await call("POST", "/v1/tender-types", { token: t, body: { id: ids.card, name: "Card", is_terminal: true } });
   await call("POST", "/v1/printers", { token: t, body: { id: ids.printer, outlet_id: A.outletId, name: "Kitchen", ip: "10.0.0.1", is_default_kitchen: true, backup_printer_id: null } });
   await call("POST", "/v1/void-reasons", { token: t, body: { id: ids.reason, name: "Mistake" } });
@@ -133,7 +135,7 @@ describe("reports", () => {
     expect(manager.body.data).toMatchObject({ totals: { orders: 0, net: 0 }, refunds: { count: 0, amount: 0 }, voids: { count: 0 }, adjustments_by_rule: [], by_tender: [] });
     const ex = await call<{ data: { voids: unknown[]; discounts: unknown[]; refunds: unknown[] } }>("GET", `/v1/reports/exceptions?outlet_id=${A.outletId}&staff_id=${A.manager.id}`, { token: A.manager.token });
     expect(ex.status, JSON.stringify(ex.body)).toBe(200);
-    expect(ex.body.data).toEqual({ voids: [], discounts: [], refunds: [] });
+    expect(ex.body.data).toEqual({ voids: [], discounts: [], refunds: [], payment_reversals: [] });
   });
 
   it("product mix by item, category and staff with shares adding up; exceptions report shows who, approver and reason; print health lists late jobs", async () => {

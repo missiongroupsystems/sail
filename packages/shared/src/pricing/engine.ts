@@ -404,12 +404,12 @@ function rateTax(amount: Cents, components: readonly TaxComponent[], context: Pr
   let total: Cents;
   if (context.tax_mode === "exclusive") total = percentOfCents(amount, combined);
   else {
+    // Exact for large amounts: the product passes 2^53 for an IDR or VND order, so it is taken in BigInt.
     const sign = amount < 0 ? -1 : 1;
-    const num = Math.abs(amount) * combined;
-    const den = 10_000 + combined;
-    const q = Math.floor(num / den);
-    const r = num - q * den;
-    total = sign * (r * 2 >= den ? q + 1 : q);
+    const num = BigInt(Math.abs(amount)) * BigInt(combined);
+    const den = BigInt(10_000 + combined);
+    const q = num / den;
+    total = sign * Number((num - q * den) * 2n >= den ? q + 1n : q);
   }
   return components.length === 1 ? [total] : allocateLargestRemainder(total, components.map((c) => c.bps));
 }
@@ -561,11 +561,18 @@ function applyToStates(rule: PricingRule, eligible: readonly LineState[], magnit
   });
 }
 
+/**
+ * Re-emit a frozen adjustment with its stored per-line amounts. A frozen
+ * discount takes at most what the line is now worth: a line cut in quantity or
+ * discounted since the freeze keeps its share only up to its running amount,
+ * so no line goes below zero, and a line an exclusive discount has taken since
+ * the freeze gets none of it (exclusive blocks every later discount, frozen or not).
+ */
 function applyFrozen(rule: PricingRule, app: ManualApplication | null, f: FrozenAdjustment, states: LineState[]): Adjustment {
   const byLine = new Map(states.map((s) => [s.line.line_id, s]));
   const present = f.lines.filter((l) => byLine.has(l.line_id));
   const eligible = present.map((l) => byLine.get(l.line_id)!);
-  const magnitudes = present.map((l) => Math.abs(l.amount));
+  const magnitudes = present.map((l, i) => (rule.kind !== "discount" ? Math.abs(l.amount) : eligible[i]!.blocked ? 0 : Math.min(Math.abs(l.amount), eligible[i]!.running)));
   const adj = buildAdjustment(rule, app, eligible, magnitudes, false, true);
   applyToStates(rule, eligible, magnitudes);
   return adj;

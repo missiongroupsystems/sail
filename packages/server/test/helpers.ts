@@ -4,7 +4,7 @@ import { inject } from "vitest";
 import { presetSeedRules, REGION_PRESETS, type PricingRuleInput, type RegionPresetKey, type Role } from "@sail/shared";
 import { applyPreset, type MerchantSettingsInput } from "../src/bootstrap.js";
 import { setConfigForTests, loadConfig } from "../src/config.js";
-import { setPoolForTests } from "../src/db/client.js";
+import { PG_TYPES, setPoolForTests } from "../src/db/client.js";
 import { resetGateForTests } from "../src/middleware/pipeline.js";
 import { signSailToken, hashSecret, pinLookup } from "../src/auth/tokens.js";
 import { localSubject, SESSION_TTL_SECONDS } from "../src/auth/identity.js";
@@ -42,7 +42,7 @@ export async function freshDb(overrides: Partial<Record<string, string>> = {}): 
   );
   setPoolForTests(null);
   resetGateForTests();
-  const sql = postgres(url, { max: 2, prepare: false, onnotice: () => {} });
+  const sql = postgres(url, { max: 2, prepare: false, onnotice: () => {}, types: PG_TYPES });
   return {
     url,
     name,
@@ -176,4 +176,19 @@ export async function readSse(res: Response, count: number, timeoutMs = 5000): P
   }
   reader.cancel().catch(() => {});
   return out;
+}
+
+/**
+ * Settle every order still open at an outlet (fire, pay each bill's balance by card, complete), so its business day can
+ * close: a day with an open order cannot (pricing-semantics §10).
+ */
+export async function settleOpenOrders(sql: Sql, call: ReturnType<typeof api>["call"], token: string, outletId: string, cardTenderId: string) {
+  for (const { id } of await sql<{ id: string }[]>`select id from orders where outlet_id = ${outletId} and status not in ('completed','cancelled')`) {
+    await call("POST", `/v1/orders/${id}/fire`, { token, body: {} });
+    for (const c of await sql<{ id: string; balance: number }[]>`select id, total - paid_total as balance from checks where order_id = ${id} and total > paid_total`) {
+      const r = await call("POST", `/v1/checks/${c.id}/payments`, { token, body: { payment_id: randomUUID(), tender_type_id: cardTenderId, amount: c.balance } });
+      if (r.status !== 200) throw new Error(`settle ${id}: ${r.status} ${JSON.stringify(r.body)}`);
+    }
+    await call("POST", `/v1/orders/${id}/complete`, { token, body: {} });
+  }
 }

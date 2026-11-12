@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { asc, eq } from "drizzle-orm";
-import { PERMISSIONS, registerOperations, type OperationSpec } from "@sail/shared";
+import { AmountSchema, PERMISSIONS, registerOperations, type OperationSpec } from "@sail/shared";
 import { db, markDryRun, settleInvariants } from "../db/client.js";
 import { checks, paymentIntents, paymentProviderAccounts, payments } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -40,7 +40,7 @@ export function paymentIntentRoutes(app: OpenAPIHono<AppEnv>) {
       method: "post",
       path: "/v1/checks/{id}/payment-intents",
       tags: ["payments"],
-      request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({ expected_version: z.number().int().optional(), intent_id: z.uuid(), tender_type_id: z.uuid(), amount: z.number().int().min(1), tip_cents: z.number().int().min(0).optional() })) },
+      request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({ expected_version: z.number().int().optional(), intent_id: z.uuid(), tender_type_id: z.uuid(), amount: AmountSchema.min(1), tip_cents: AmountSchema.optional() })) },
       responses: { 201: jsonResponse(mutationResponse(Intent)), ...errorResponses },
     },
     async (c) => {

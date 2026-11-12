@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { and, eq } from "drizzle-orm";
-import { formatMoney, type BillDocument } from "@sail/shared";
+import type { BillDocument } from "@sail/shared";
+import { pdfDateTime, pdfMoney, winAnsi } from "../lib/pdf-text.js";
 import { db, tx } from "../db/client.js";
 import { checks, digitalReceipts, merchants, outlets } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -61,15 +62,14 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
   const ink = rgb(0.11, 0.11, 0.12);
   const grey = rgb(0.37, 0.35, 0.33);
   let y = 790;
-  // The standard fonts encode WinAnsi only: use a hyphen for the minus sign and a placeholder for other scripts (CJK fonts are a follow-up).
-  const safe = (s: string) => s.replace(/\u2212/g, "-").replace(/[^\u0020-\u007e\u00a0-\u00ff\u2013\u2014\u2018\u2019\u201c\u201d\u2022\u2026]/g, "?");
+  // The standard fonts encode WinAnsi only (see `winAnsi`).
+  const safe = winAnsi;
   const text = (raw: string, x: number, size = 10, f = font, color = ink) => page.drawText(safe(raw), { x, y, size, font: f, color });
   const right = (raw: string, xRight: number, size = 10, f = font) => {
     const s = safe(raw);
     page.drawText(s, { x: xRight - f.widthOfTextAtSize(s, size), y, size, font: f, color: ink });
   };
-  const fmt = { currency: doc.currency, locale: doc.header.locale };
-  const money = (amount: number) => formatMoney(amount, fmt);
+  const money = pdfMoney({ currency: doc.currency, locale: doc.header.locale });
   const rule = () => {
     page.drawLine({ start: { x: 48, y: y + 4 }, end: { x: 547, y: y + 4 }, thickness: 0.5, color: rgb(0.85, 0.83, 0.8) });
   };
@@ -90,7 +90,7 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
   y -= 18;
   right(extra.credit_note_no ?? doc.invoice.number, 547, 11, font);
   y -= 14;
-  right(new Date(doc.invoice.issued_at).toLocaleString(doc.header.locale, { timeZone: doc.header.time_zone, dateStyle: "medium", timeStyle: "short" }), 547, 9, font);
+  right(pdfDateTime(doc.invoice.issued_at, doc.header.locale, doc.header.time_zone), 547, 9, font);
   if (extra.original_invoice_no) {
     y -= 14;
     right(`Against invoice ${extra.original_invoice_no}`, 547, 9, font);

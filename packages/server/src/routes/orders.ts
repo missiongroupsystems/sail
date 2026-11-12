@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
-import { ORDER_STATUSES, OrderTypeSchema, PERMISSIONS, PricingRuleSchema, isFreezable, localParts, operation, price, registerOperations, roleAtLeast, validateManualApplication, type OrderType, type OperationSpec, type Role } from "@sail/shared";
+import { AmountSchema, ORDER_STATUSES, OrderTypeSchema, PERMISSIONS, PricingRuleSchema, isFreezable, localParts, operation, price, registerOperations, roleAtLeast, validateManualApplication, type OrderType, type OperationSpec, type Role } from "@sail/shared";
 import { db, markDryRun, settleInvariants, tx } from "../db/client.js";
 import { areas, channelLinks, customerGroupMembers, customers, orderLines, orderManualApplications, orders, stations, tables, voidReasons } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -20,6 +20,7 @@ import { activeRules, ruleOrLastVersion } from "../services/pricing-rules.js";
 import { releaseDailyCap } from "./catalogue.js";
 import { businessDayInputs } from "./org.js";
 import { businessDateFor } from "../lib/time.js";
+import { currentBusinessDate } from "../services/business-day.js";
 
 const op = (o: Partial<OperationSpec> & { op: string; summary: string; description: string }): OperationSpec => ({ tier: "T1", minRole: "server", overrideAllowed: false, reasonRequired: false, dryRun: true, principals: ["staff", "agent"], emits: [], mcp: { expose: true, toolsets: ["pos.order"] }, ...o });
 
@@ -73,7 +74,7 @@ const LineInputSchema = z.object({
   notes: untrusted(z.string().max(200).nullable().optional()),
   seat_no: z.number().int().min(1).max(99).nullable().optional(),
   hold: z.boolean().optional(),
-  open_price: z.number().int().min(0).nullable().optional(),
+  open_price: AmountSchema.nullable().optional(),
 });
 const SnapshotSchema = z.record(z.string(), z.unknown());
 const OrderMutationResponse = z.object({ data: SnapshotSchema, events: z.array(z.object({ id: z.string(), seq: z.number().int(), type: z.string(), occurredAt: z.string(), businessDate: z.string() })), warnings: z.array(z.string()) });
@@ -174,7 +175,6 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       customerId = cust?.id ?? null;
     }
     const tax = await orderTaxSettings(p.merchantId, ctx.outletId);
-    const bd = await businessDayInputs(p.merchantId, ctx.outletId);
     const now = new Date();
     const orderNo = await nextOrderNo(ctx.outletId, p.merchantId, "pos");
     const [row] = await db()
@@ -199,7 +199,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
         stationId: ctx.stationId,
         openedBy: p.type === "staff" ? p.id : null,
         openedByName: "name" in p ? p.name : null,
-        businessDate: businessDateFor(now, bd.cutoff, bd.timeZone),
+        businessDate: await currentBusinessDate(p.merchantId, ctx.outletId, now),
         taxMode: tax.taxMode,
         taxRounding: tax.taxRounding,
         taxRates: tax.taxRates,

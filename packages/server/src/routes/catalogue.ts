@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
-import { ORDER_TYPES, OrderTypeSchema, registerOperations, type OperationSpec } from "@sail/shared";
+import { AmountSchema, ORDER_TYPES, OrderTypeSchema, registerOperations, type OperationSpec } from "@sail/shared";
 import { db, tx } from "../db/client.js";
 import { availabilityRules, menuItems, menuSections, menus, modifierGroups, modifierOptions, productModifierGroups, productPrices, products, reportCategories, stockStatus } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -80,8 +80,8 @@ const ProductCreate = z.object({
   kitchen_name: z.string().nullable().optional(),
   sku: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
-  price: z.number().int().min(0),
-  prices_by_order_type: z.partialRecord(OrderTypeSchema, z.number().int().min(0)).optional(),
+  price: AmountSchema,
+  prices_by_order_type: z.partialRecord(OrderTypeSchema, AmountSchema).optional(),
   category_id: z.uuid().nullable().optional(),
   tags: z.array(z.string().min(1)).optional(),
   has_deposit: z.boolean().optional(),
@@ -93,7 +93,7 @@ const ProductCreate = z.object({
 const ProductPatch = ProductCreate.omit({ id: true }).partial().extend({ archived: z.boolean().optional() });
 
 const OptionSchema = z.object({ product_id: z.string(), price_override: z.number().int().nullable(), child_group_id: z.string().nullable(), is_default: z.boolean(), sort: z.number().int() });
-const OptionInput = z.object({ product_id: z.uuid(), price_override: z.number().int().min(0).nullable().optional(), child_group_id: z.uuid().nullable().optional(), is_default: z.boolean().optional(), sort: z.number().int().optional() });
+const OptionInput = z.object({ product_id: z.uuid(), price_override: AmountSchema.nullable().optional(), child_group_id: z.uuid().nullable().optional(), is_default: z.boolean().optional(), sort: z.number().int().optional() });
 const GroupSchema = z.object({ id: z.string(), name: z.string(), min_select: z.number().int(), max_select: z.number().int().nullable(), max_per_modifier: z.number().int(), options: z.array(OptionSchema), legacy_id: z.string().nullable(), archived: z.boolean() });
 const GroupCreate = z.object({ id: z.uuid().optional(), name: z.string().min(1), min_select: z.number().int().min(0).optional(), max_select: z.number().int().min(1).nullable().optional(), max_per_modifier: z.number().int().min(1).optional(), options: z.array(OptionInput).optional(), legacy_id: z.string().nullable().optional() });
 const GroupPatch = GroupCreate.omit({ id: true }).partial().extend({ archived: z.boolean().optional() });
@@ -317,7 +317,7 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
 
   defineOp(
     app,
-    { op: "products.bulk_price", method: "post", path: "/v1/products/bulk-price", tags: ["catalogue"], request: { body: jsonBody(z.object({ changes: z.array(z.object({ product_id: z.uuid(), price: z.number().int().min(0), prices_by_order_type: z.partialRecord(OrderTypeSchema, z.number().int().min(0)).optional() })).min(1).max(5000) })) }, responses: { 200: jsonResponse(mutationResponse(z.object({ updated: z.number().int() }))), ...errorResponses } },
+    { op: "products.bulk_price", method: "post", path: "/v1/products/bulk-price", tags: ["catalogue"], request: { body: jsonBody(z.object({ changes: z.array(z.object({ product_id: z.uuid(), price: AmountSchema, prices_by_order_type: z.partialRecord(OrderTypeSchema, AmountSchema).optional() })).min(1).max(5000) })) }, responses: { 200: jsonResponse(mutationResponse(z.object({ updated: z.number().int() }))), ...errorResponses } },
     async (c) => {
       const p = c.get("principal");
       const { changes } = c.req.valid("json");

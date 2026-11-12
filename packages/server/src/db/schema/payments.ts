@@ -1,4 +1,4 @@
-import { boolean, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import type { TaxAmount } from "@sail/shared";
 import { merchants, outlets, stations } from "./org.js";
 import { orderLines, orders } from "./orders.js";
@@ -23,16 +23,16 @@ export const checks = pgTable(
     /** Seat number for by-seat splits; null otherwise. */
     seatNo: integer("seat_no"),
     /* Totals: sums of this check's allocations. */
-    subtotal: integer("subtotal").notNull().default(0),
-    discountTotal: integer("discount_total").notNull().default(0),
-    feeTotal: integer("fee_total").notNull().default(0),
-    taxTotal: integer("tax_total").notNull().default(0),
+    subtotal: bigint("subtotal", { mode: "number" }).notNull().default(0),
+    discountTotal: bigint("discount_total", { mode: "number" }).notNull().default(0),
+    feeTotal: bigint("fee_total", { mode: "number" }).notNull().default(0),
+    taxTotal: bigint("tax_total", { mode: "number" }).notNull().default(0),
     /** tax_total by component: the sums of the allocations' components. */
     taxes: jsonb("taxes").$type<TaxAmount[]>().notNull().default([]),
-    total: integer("total").notNull().default(0),
-    paidTotal: integer("paid_total").notNull().default(0),
-    roundingTotal: integer("rounding_total").notNull().default(0),
-    refundedTotal: integer("refunded_total").notNull().default(0),
+    total: bigint("total", { mode: "number" }).notNull().default(0),
+    paidTotal: bigint("paid_total", { mode: "number" }).notNull().default(0),
+    roundingTotal: bigint("rounding_total", { mode: "number" }).notNull().default(0),
+    refundedTotal: bigint("refunded_total", { mode: "number" }).notNull().default(0),
     /** Set by the first payment: allocations are then fixed. */
     lockedAt: timestamp("locked_at", { withTimezone: true }),
     paidAt: timestamp("paid_at", { withTimezone: true }),
@@ -64,13 +64,13 @@ export const checkAllocations = pgTable(
       .references(() => orderLines.id, { onDelete: "cascade" }),
     shareNum: integer("share_num").notNull().default(1),
     shareDen: integer("share_den").notNull().default(1),
-    base: integer("base").notNull().default(0),
-    discount: integer("discount").notNull().default(0),
-    fee: integer("fee").notNull().default(0),
-    tax: integer("tax").notNull().default(0),
+    base: bigint("base", { mode: "number" }).notNull().default(0),
+    discount: bigint("discount", { mode: "number" }).notNull().default(0),
+    fee: bigint("fee", { mode: "number" }).notNull().default(0),
+    tax: bigint("tax", { mode: "number" }).notNull().default(0),
     /** tax by component. */
     taxes: jsonb("taxes").$type<TaxAmount[]>().notNull().default([]),
-    total: integer("total").notNull().default(0),
+    total: bigint("total", { mode: "number" }).notNull().default(0),
     /** Per-adjustment allocated cents: { [adjustment_id]: { amount, tax } } */
     adjustments: jsonb("adjustments").$type<Record<string, { amount: number; tax: number }>>().notNull().default({}),
   },
@@ -98,13 +98,13 @@ export const payments = pgTable(
     tenderName: text("tender_name").notNull(),
     isCash: boolean("is_cash").notNull(),
     /** Amount applied to the check's balance. */
-    amount: integer("amount").notNull(),
+    amount: bigint("amount", { mode: "number" }).notNull(),
     /** Cash rounding: rounded(balance) − balance, on the cash tender that settled the check. */
-    roundingCents: integer("rounding_cents").notNull().default(0),
+    roundingCents: bigint("rounding_cents", { mode: "number" }).notNull().default(0),
     /** Cash handed over, when given; change = tendered − (amount + rounding). */
-    tendered: integer("tendered"),
-    changeCents: integer("change_cents").notNull().default(0),
-    tipCents: integer("tip_cents").notNull().default(0),
+    tendered: bigint("tendered", { mode: "number" }),
+    changeCents: bigint("change_cents", { mode: "number" }).notNull().default(0),
+    tipCents: bigint("tip_cents", { mode: "number" }).notNull().default(0),
     reference: text("reference"),
     status: paymentStatusEnum("status").notNull().default("recorded"),
     recordedBy: uuid("recorded_by"),
@@ -152,15 +152,15 @@ export const shifts = pgTable(
     openedBy: uuid("opened_by"),
     openedByName: text("opened_by_name"),
     openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
-    floatCents: integer("float_cents").notNull().default(0),
+    floatCents: bigint("float_cents", { mode: "number" }).notNull().default(0),
     floatCounts: jsonb("float_counts").$type<Record<string, number> | null>(),
     closedBy: uuid("closed_by"),
     closedByName: text("closed_by_name"),
     closedAt: timestamp("closed_at", { withTimezone: true }),
-    countedCashCents: integer("counted_cash_cents"),
+    countedCashCents: bigint("counted_cash_cents", { mode: "number" }),
     countedCounts: jsonb("counted_counts").$type<Record<string, number> | null>(),
-    expectedCashCents: integer("expected_cash_cents"),
-    varianceCents: integer("variance_cents"),
+    expectedCashCents: bigint("expected_cash_cents", { mode: "number" }),
+    varianceCents: bigint("variance_cents", { mode: "number" }),
     varianceReason: text("variance_reason"),
     /** The figures at close, so the shift record stands on its own. */
     summary: jsonb("summary").$type<unknown>(),

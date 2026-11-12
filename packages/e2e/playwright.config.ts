@@ -38,7 +38,7 @@ export default defineConfig({
     { command: "pnpm --filter @sail/server dev:local", env: { PORT: new URL(api).port, GUEST_APP_URL: guest, WEB_APP_URL: web }, url: `${api}/health`, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
     { command: `pnpm --filter @sail/web exec next dev -p ${new URL(web).port}`, env: { NEXT_PUBLIC_API_URL: api }, url: `${web}/login`, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
     { command: `pnpm --filter @sail/guest exec next dev -p ${new URL(guest).port}`, env: { NEXT_PUBLIC_API_URL: api }, url: guest, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
-    { command: "pnpm --filter @sail/server dev:local", env: { PORT: new URL(setupApi).port, SAIL_DEV_EMPTY: "1" }, url: `${setupApi}/health`, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
+    { command: "pnpm --filter @sail/server dev:local", env: { PORT: new URL(setupApi).port, SAIL_DEV_EMPTY: "1", WEB_APP_URL: setupWeb }, url: `${setupApi}/health`, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
     { command: `pnpm --filter @sail/web exec next dev -p ${new URL(setupWeb).port}`, env: { NEXT_PUBLIC_API_URL: setupApi, SAIL_WEB_DIST_DIR: ".next-setup" }, url: `${setupWeb}/login`, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
   ],
 });

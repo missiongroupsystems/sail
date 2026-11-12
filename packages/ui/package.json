@@ -12,9 +12,11 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "lint": "eslint --max-warnings 0 ."
+    "lint": "eslint --max-warnings 0 .",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@sail/shared": "workspace:*",
     "lucide-react": "^0.577.0",
     "react-aria-components": "^1.22.0",
     "tailwindcss": "^4.1.0"
@@ -28,6 +30,7 @@
     "@types/react-dom": "^19.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
   }
 }

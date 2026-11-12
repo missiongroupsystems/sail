@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CentsSchema, ChannelTypeSchema, NonNegativeCentsSchema, OrderTypeSchema, TaxModeSchema, TaxRoundingSchema } from "../domain.js";
+import { AmountSchema, CentsSchema, ChannelTypeSchema, OrderTypeSchema, TaxModeSchema, TaxRoundingSchema } from "../domain.js";
 import { RoleSchema } from "../roles.js";
 
 /**
@@ -38,8 +38,8 @@ export const REPORT_CLASSES = [
 export const ReportClassSchema = z.enum(REPORT_CLASSES);
 
 export const RuleValueSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("fixed"), amount: z.number().int().min(0) }),
-  z.object({ type: z.literal("open"), min: z.number().int().min(0), max: z.number().int().min(0) }),
+  z.object({ type: z.literal("fixed"), amount: AmountSchema }),
+  z.object({ type: z.literal("open"), min: AmountSchema, max: AmountSchema }),
 ]);
 export type RuleValue = z.infer<typeof RuleValueSchema>;
 
@@ -60,7 +60,7 @@ export const RuleExclusionsSchema = z.object({
 });
 
 export const MinSpendSchema = z.object({
-  amount: NonNegativeCentsSchema,
+  amount: AmountSchema,
   /** `scoped`: the undiscounted total of the lines in this rule's scope. `order`: the undiscounted order subtotal. */
   basis: z.enum(["scoped", "order"]),
 });
@@ -96,7 +96,7 @@ export const PricingRuleSchema = z
     exclusions: RuleExclusionsSchema.default({ product_ids: [], category_ids: [], tags: [] }),
     conditions: RuleConditionsSchema.default({}),
     /** Maximum amount for this rule on one order, in cents. */
-    cap: NonNegativeCentsSchema.nullable().default(null),
+    cap: AmountSchema.nullable().default(null),
     priority: z.number().int(),
     stacking: StackingSchema.default("stackable"),
     application: ApplicationSchema,
@@ -156,7 +156,7 @@ export const PricingModifierSchema = z.object({
   product_id: z.string().min(1),
   quantity: z.number().int().min(1).default(1),
   /** Resolved unit price in cents: the modifier group's price override, or the modifier product's price. */
-  price: NonNegativeCentsSchema,
+  price: AmountSchema,
   name: z.string().optional(),
 });
 export type PricingModifier = z.infer<typeof PricingModifierSchema>;
@@ -174,11 +174,11 @@ export const PricingLineSchema = z.object({
   quantity: z.number().int().min(0),
   /** The product's base price and optional prices per order type. */
   prices: z.object({
-    base: NonNegativeCentsSchema,
-    by_order_type: z.partialRecord(OrderTypeSchema, NonNegativeCentsSchema).optional(),
+    base: AmountSchema,
+    by_order_type: z.partialRecord(OrderTypeSchema, AmountSchema).optional(),
   }),
   /** Open-price items: this replaces the product price entirely. */
-  open_price: NonNegativeCentsSchema.nullable().default(null),
+  open_price: AmountSchema.nullable().default(null),
   modifiers: z.array(PricingModifierSchema).default([]),
   name: z.string().optional(),
 });

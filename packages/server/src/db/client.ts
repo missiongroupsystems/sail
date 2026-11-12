@@ -23,6 +23,24 @@ const als = new AsyncLocalStorage<RequestTx>();
 
 let pool: Sql | null = null;
 
+/**
+ * Money amounts and their sums are bigint (int8) columns. postgres.js reads int8 as a string; here it is a number,
+ * which is exact up to 2^53, and an int8 above that is an error rather than a rounded amount. API input stays far
+ * below it (`MAX_AMOUNT`), so only a sum of billions of maximum orders could reach it.
+ */
+export const PG_TYPES = {
+  int8: {
+    to: 20,
+    from: [20],
+    serialize: (x: number) => String(x),
+    parse: (x: string) => {
+      const n = Number(x);
+      if (!Number.isSafeInteger(n)) throw new RangeError(`int8 ${x} is beyond the safe integer range`);
+      return n;
+    },
+  },
+};
+
 /** The transaction-pooler connection (6543). `prepare: false` because prepared statements break on the pooler. */
 export function pool6543(): Sql {
   if (!pool) {
@@ -33,6 +51,7 @@ export function pool6543(): Sql {
       idle_timeout: 30,
       connect_timeout: 10,
       onnotice: () => {},
+      types: PG_TYPES,
     });
   }
   return pool;
@@ -42,7 +61,7 @@ export function pool6543(): Sql {
 export function sessionConnection(): Sql {
   const cfg = config();
   const url = cfg.LISTEN_DATABASE_URL ?? cfg.DATABASE_URL;
-  return postgres(url, { max: 1, prepare: false, onnotice: () => {} });
+  return postgres(url, { max: 1, prepare: false, onnotice: () => {}, types: PG_TYPES });
 }
 
 export async function closePool() {

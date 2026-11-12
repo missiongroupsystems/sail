@@ -9,7 +9,7 @@ The importer (`packages/server/src/services/importer.ts`) loads data exported fr
 3. The Admin reviews the report (counts per entity, every rejected row with its reason and data) in the back office or via `GET /v1/imports/{id}`, fixes the export or mapping, and re-runs. When satisfied, `POST /v1/imports/{id}/apply` queues the same files for real.
 4. Re-running an unchanged export produces zero creates and updates. Re-running after an edit updates only the changed rows.
 
-Values: prices are in the merchant's currency with its own decimals and `.` as the decimal mark (`16.00` EUR, `1600` JPY, `1.600` KWD); a currency symbol is ignored, `,` may only group thousands, and `1600c` is already in minor units. Booleans accept `1/true/yes/y`. Lists (tags, outlet IDs) are separated by `;` or `|`. References use the referenced row's `legacy_id` (or SKU for products).
+Values: prices are in the merchant's currency with its own decimals and `.` as the decimal mark (`16.00` EUR, `1600` JPY, `1.600` KWD); a currency symbol is ignored, `,` may only group thousands, and `1600c` is already in minor units. A price cell that is not an amount (`0,50`, `abc`) or is above the register's largest amount refuses its row with the reason in the report; a blank `price_override` means the modifier product's own price. CSV files are a machine format, so they use `.` and Latin digits whatever the merchant's locale; amounts typed by people go through `parseAmount` (pricing-semantics §8). Booleans accept `1/true/yes/y`. Lists (tags, outlet IDs) are separated by `;` or `|`. References use the referenced row's `legacy_id` (or SKU for products).
 
 ## Fields by entity
 

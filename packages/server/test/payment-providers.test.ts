@@ -5,7 +5,7 @@ import { buildApp, type App } from "../src/app.js";
 import { drainPaymentOutbox, expireIntents, OUTBOX_MAX_ATTEMPTS, pollPendingIntents } from "../src/services/payment-intents.js";
 import { SIMULATOR_SIGNATURE_HEADER, signSimulatorWebhook, simulatorProvider } from "../src/payments/simulator.js";
 import { startSimulator, type Delivery, type Simulator } from "../scripts/payment-simulator.js";
-import { api, freshDb, seedMerchant, type TestDb } from "./helpers.js";
+import { api, freshDb, seedMerchant, settleOpenOrders, type TestDb } from "./helpers.js";
 
 /**
  * Terminal payments end to end against the simulator: the register never calls the provider inside a request, an
@@ -90,6 +90,8 @@ let B: M;
 beforeAll(async () => {
   A = await merchant("Alpha", { rounding: 5 });
   B = await merchant("Bravo");
+  // Cash goes into a shift's drawer: one outlet-wide shift for the file.
+  expect((await call("POST", "/v1/shifts", { token: A.m.admin.token, body: { outlet_id: A.m.outletId, station_id: null, float_cents: 0 } })).status).toBe(201);
 });
 
 describe("approve and decline", () => {
@@ -392,6 +394,8 @@ describe("payments.void", () => {
   const grant = (w: M, paymentId: string, amount: number) => call<{ data: { override_id: string } } & Err>("POST", "/v1/overrides", { token: w.token, body: { action: "payments.void", target_kind: "payment", target_id: paymentId, approver_pin: "222222", outlet_id: w.m.outletId, args: { amount } } });
 
   it("a cashier needs a manager's approval bound to that payment; the bill owes the amount again and the order reopens for payment", async () => {
+    const drawer = await call<{ data: { id: string } }>("POST", "/v1/shifts", { token: C.token, body: { outlet_id: C.m.outletId, float_cents: 0 } });
+    expect(drawer.status).toBe(201);
     const one = await paid(C);
     const other = await paid(C);
     expect((await snap(C, one.s.id)).status).toBe("completed");
@@ -416,6 +420,7 @@ describe("payments.void", () => {
     expect((await snap(C, one.s.id)).status).toBe("completed");
     // A manager voids directly.
     expect((await voidIt(C, other.paymentId, C.m.manager.token)).status).toBe(200);
+    expect((await call("POST", `/v1/shifts/${drawer.body.data.id}/close`, { token: C.token, body: { counted_cash_cents: one.s.balance } })).status).toBe(200);
   });
 
   it("another merchant's manager cannot see the payment; an agent's void becomes a proposal that a manager approves", async () => {
@@ -465,6 +470,62 @@ describe("payments.void", () => {
     expect(ev.body.data.filter((e) => e.payload.payment_id === payment!.id).map((e) => e.type)).toEqual(["payment.recorded", "payment_intent.approved", "payment.void_requested", "payment.voided"]);
     const closed = await call("POST", `/v1/shifts/${shift.body.data.id}/close`, { token: C.token, body: { counted_cash_cents: 0 } });
     expect(closed.status, JSON.stringify(closed.body)).toBe(200);
+  });
+
+  it("a void the provider made although every call to it failed is found by the poll, and the payment is reversed", async () => {
+    const s = await order(C);
+    const intent = await onTerminal(C, s);
+    await sim.settle(intent.id, "approve");
+    const [payment] = await paymentRows(s.id);
+    expect((await voidIt(C, payment!.id, C.m.manager.token)).body.void.status).toBe("pending_provider");
+    // The provider voids, but the answer never arrives, on every attempt.
+    const original = simulatorProvider.voidPayment;
+    simulatorProvider.voidPayment = async (input) => {
+      await original(input);
+      throw new Error("timed out");
+    };
+    try {
+      await db.sql`update payment_outbox set attempts = ${OUTBOX_MAX_ATTEMPTS - 1}, next_attempt_at = now() where intent_id = ${intent.id} and kind = 'void'`;
+      expect(await drainPaymentOutbox()).toMatchObject({ failed: 1 });
+    } finally {
+      simulatorProvider.voidPayment = original;
+    }
+    expect(simPayment(intent.id)!.status).toBe("voided");
+    expect((await paymentRows(s.id))[0]!.status).toBe("recorded");
+    // The register gave up on the call, but the money went back: the poll asks the provider and applies the void.
+    await pollPendingIntents();
+    expect((await paymentRows(s.id))[0]!.status).toBe("reversed");
+    expect(await snap(C, s.id)).toMatchObject({ balance: s.balance });
+    expect((await intentRow(intent.id)).provider_voided_at).not.toBeNull();
+  });
+
+  it("a void the provider made after the register gave up is not applied once the bill was refunded: the guest is never paid back twice by the register", async () => {
+    const s = await order(C);
+    const intent = await onTerminal(C, s);
+    await sim.settle(intent.id, "approve");
+    const [payment] = await paymentRows(s.id);
+    expect((await voidIt(C, payment!.id, C.m.manager.token)).body.void.status).toBe("pending_provider");
+    const original = simulatorProvider.voidPayment;
+    simulatorProvider.voidPayment = async (input) => {
+      await original(input);
+      throw new Error("timed out");
+    };
+    try {
+      await db.sql`update payment_outbox set attempts = ${OUTBOX_MAX_ATTEMPTS - 1}, next_attempt_at = now() where intent_id = ${intent.id} and kind = 'void'`;
+      expect(await drainPaymentOutbox()).toMatchObject({ failed: 1 });
+    } finally {
+      simulatorProvider.voidPayment = original;
+    }
+    // The register stopped waiting, so staff give the money back as a refund, as the void_failed event tells them to.
+    const refund = await call("POST", `/v1/checks/${s.checks[0]!.id}/refunds`, { token: C.m.manager.token, body: { refund_id: randomUUID(), request: { kind: "full" }, reason: "Void failed, refunding instead", print: false } });
+    expect(refund.status, JSON.stringify(refund.body)).toBe(201);
+    await pollPendingIntents();
+    // The payment stands next to its refund; the provider's late void is reported, not applied on top.
+    expect((await paymentRows(s.id))[0]!.status).toBe("recorded");
+    const [check] = await db.sql<{ paid_total: number; refunded_total: number }[]>`select paid_total, refunded_total from checks where id = ${s.checks[0]!.id}`;
+    expect(check).toMatchObject({ paid_total: payment!.amount, refunded_total: payment!.amount });
+    const ev = await call<{ data: { type: string; payload: { payment_id?: string; reason?: string } }[] }>("GET", `/v1/outlets/${C.m.outletId}/events?after=0`, { token: C.token });
+    expect(ev.body.data.filter((e) => e.payload.payment_id === payment!.id && e.type === "payment_intent.voided_not_applied").map((e) => e.payload.reason)).toEqual(["refunded"]);
   });
 
   it("a void and a shift close at the same moment run one after the other: the closed shift counts exactly the payments still recorded", async () => {
@@ -526,6 +587,7 @@ describe("payments.void", () => {
     expect((await call("POST", `/v1/outlets/${C.m.outletId}/business-days/close`, { token: C.m.manager.token, body: {} })).status).toBe(409);
     await drainPaymentOutbox();
     const { paymentId } = await paid(C);
+    await settleOpenOrders(db.sql, call, C.m.manager.token, C.m.outletId, C.ids.card);
     const close = await call("POST", `/v1/outlets/${C.m.outletId}/business-days/close`, { token: C.m.manager.token, body: {} });
     expect(close.status, JSON.stringify(close.body)).toBe(200);
     const r = await voidIt(C, paymentId, C.m.manager.token);

@@ -13,7 +13,7 @@ The recipes every change follows, so the codebase keeps one pattern. Commands an
 
 ## 2. Add a table
 
-1. Define it in `packages/server/src/db/schema/<domain>.ts` with Drizzle. **Every table carries `merchant_id`**, and `outlet_id` where an outlet applies. Money is an `integer` in minor units of the merchant's currency. Export it from `schema/index.ts`.
+1. Define it in `packages/server/src/db/schema/<domain>.ts` with Drizzle. **Every table carries `merchant_id`**, and `outlet_id` where an outlet applies. Money is a `bigint("...", { mode: "number" })` in minor units of the merchant's currency, and a sum of money in raw SQL is cast `::bigint` (the driver reads int8 as a number and fails loudly past 2^53). A request field that carries an amount uses `AmountSchema` from `@sail/shared`, which refuses anything above `MAX_AMOUNT`. Export it from `schema/index.ts`.
 2. Run `pnpm --filter @sail/server db:generate --name=<what>`. Review the SQL.
 3. Add RLS in a **hand-written** migration (next section): enable row-level security and add a policy for each role that may touch it, using `sail.merchant_id()` and `sail.outlet_allowed(outlet_id)`. Grants for `app_authenticated` come from default privileges; `app_guest`, `app_relay` and `app_agent` need explicit, narrow grants.
 4. Run the server tests. `test/rls-replay.test.ts` discovers every table with a `merchant_id` column and fails if RLS is off, no policy exists, or merchant A can see merchant B's rows. Seed a row for both merchants in that test's `beforeAll` when the table needs rows to prove scoping.

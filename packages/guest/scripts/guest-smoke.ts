@@ -197,6 +197,9 @@ const receiptToken = await step(
     const check = checks.data[0]!;
     const tenders = await reg<{ data: { id: string; name: string; is_cash: boolean }[] }>("GET", "/v1/tender-types");
     const cash = tenders.data.find((t) => t.is_cash) ?? tenders.data[0]!;
+    // Cash goes into a shift's drawer: open an outlet-wide one if none is open.
+    const open = await reg<{ data: { station_id: string | null }[] }>("GET", `/v1/outlets/${devLocal.outletId}/shifts?status=open`);
+    if (!open.data.some((s) => s.station_id === null)) await reg("POST", "/v1/shifts", { outlet_id: devLocal.outletId, station_id: null, float_cents: 0 });
     // A $10 note on top of the balance: the register applies cash rounding and computes the change for the receipt.
     await reg("POST", `/v1/checks/${check.id}/payments`, { payment_id: uuid(), tender_type_id: cash.id, amount: check.balance, tendered: check.balance + 1000 });
     const receipt = await reg<{ data: { token: string; url: string } }>("POST", `/v1/checks/${check.id}/receipt/send`, { channel: "qr" });

@@ -1,4 +1,4 @@
-import { boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import type { TaxBreakdown, TaxRate } from "@sail/shared";
 import { brands, merchants, outlets, stations } from "./org.js";
 import { channelLinks, tables, voidReasons } from "./catalogue.js";
@@ -56,13 +56,13 @@ export const orders = pgTable(
     taxRounding: text("tax_rounding").notNull(),
     /** The merchant's tax rates when the order was opened: later rate changes never re-price it. */
     taxRates: jsonb("tax_rates").$type<TaxRate[]>().notNull(),
-    subtotal: integer("subtotal").notNull().default(0),
-    discountTotal: integer("discount_total").notNull().default(0),
-    feeTotal: integer("fee_total").notNull().default(0),
-    taxTotal: integer("tax_total").notNull().default(0),
+    subtotal: bigint("subtotal", { mode: "number" }).notNull().default(0),
+    discountTotal: bigint("discount_total", { mode: "number" }).notNull().default(0),
+    feeTotal: bigint("fee_total", { mode: "number" }).notNull().default(0),
+    taxTotal: bigint("tax_total", { mode: "number" }).notNull().default(0),
     /** tax_total by component, with the amount it was charged on. */
     taxes: jsonb("taxes").$type<TaxBreakdown[]>().notNull().default([]),
-    total: integer("total").notNull().default(0),
+    total: bigint("total", { mode: "number" }).notNull().default(0),
     pricingFrozenAt: timestamp("pricing_frozen_at", { withTimezone: true }),
     /** Frozen order-level results, stored at the first payment (v0.6). */
     frozenAdjustments: jsonb("frozen_adjustments").$type<unknown[] | null>(),
@@ -112,10 +112,10 @@ export const orderLines = pgTable(
     taxClassId: uuid("tax_class_id").notNull(),
     quantity: integer("quantity").notNull(),
     /** Resolved unit price (open price, order-type price or base price). */
-    unitPrice: integer("unit_price").notNull(),
-    basePrice: integer("base_price").notNull(),
+    unitPrice: bigint("unit_price", { mode: "number" }).notNull(),
+    basePrice: bigint("base_price", { mode: "number" }).notNull(),
     pricesByOrderType: jsonb("prices_by_order_type").$type<Record<string, number>>().notNull().default({}),
-    openPrice: integer("open_price"),
+    openPrice: bigint("open_price", { mode: "number" }),
     modifiers: jsonb("modifiers").$type<LineModifier[]>().notNull().default([]),
     notes: text("notes"),
     /** Null = shared (no seat). */
@@ -134,14 +134,14 @@ export const orderLines = pgTable(
     voidApprovedBy: uuid("void_approved_by"),
     voidOverrideId: uuid("void_override_id"),
     /* Amounts from the latest pricing run (0 for voided lines). */
-    baseAmount: integer("base_amount").notNull().default(0),
-    discountAmount: integer("discount_amount").notNull().default(0),
-    netAmount: integer("net_amount").notNull().default(0),
-    feeAmount: integer("fee_amount").notNull().default(0),
-    taxAmount: integer("tax_amount").notNull().default(0),
+    baseAmount: bigint("base_amount", { mode: "number" }).notNull().default(0),
+    discountAmount: bigint("discount_amount", { mode: "number" }).notNull().default(0),
+    netAmount: bigint("net_amount", { mode: "number" }).notNull().default(0),
+    feeAmount: bigint("fee_amount", { mode: "number" }).notNull().default(0),
+    taxAmount: bigint("tax_amount", { mode: "number" }).notNull().default(0),
     /** tax_amount by component, with the amounts each was charged on. */
     taxes: jsonb("taxes").$type<TaxBreakdown[]>().notNull().default([]),
-    total: integer("total").notNull().default(0),
+    total: bigint("total", { mode: "number" }).notNull().default(0),
     sort: integer("sort").notNull().default(0),
     addedBy: uuid("added_by"),
     addedByName: text("added_by_name"),
@@ -162,7 +162,7 @@ export const orderManualApplications = pgTable(
       .notNull()
       .references(() => orders.id, { onDelete: "cascade" }),
     ruleKey: text("rule_key").notNull(),
-    enteredValue: integer("entered_value"),
+    enteredValue: bigint("entered_value", { mode: "number" }),
     lineIds: uuid("line_ids").array(),
     appliedBy: uuid("applied_by"),
     appliedByName: text("applied_by_name"),
@@ -196,12 +196,12 @@ export const orderAdjustments = pgTable(
     reportClass: text("report_class").notNull(),
     /** Fees: the class the fee was taxed at, null when untaxed. Null for discounts. */
     taxClassId: uuid("tax_class_id"),
-    total: integer("total").notNull(),
-    taxTotal: integer("tax_total").notNull(),
+    total: bigint("total", { mode: "number" }).notNull(),
+    taxTotal: bigint("tax_total", { mode: "number" }).notNull(),
     capped: boolean("capped").notNull().default(false),
     frozen: boolean("frozen").notNull().default(false),
     manualApplicationId: uuid("manual_application_id"),
-    enteredValue: integer("entered_value"),
+    enteredValue: bigint("entered_value", { mode: "number" }),
     appliedBy: uuid("applied_by"),
     approvedBy: uuid("approved_by"),
     overrideId: uuid("override_id"),
@@ -222,8 +222,8 @@ export const orderAdjustmentLines = pgTable(
     orderLineId: uuid("order_line_id")
       .notNull()
       .references(() => orderLines.id, { onDelete: "cascade" }),
-    amount: integer("amount").notNull(),
-    taxAmount: integer("tax_amount").notNull().default(0),
+    amount: bigint("amount", { mode: "number" }).notNull(),
+    taxAmount: bigint("tax_amount", { mode: "number" }).notNull().default(0),
   },
   (t) => [uniqueIndex("order_adjustment_lines_uq").on(t.adjustmentId, t.orderLineId), index("order_adjustment_lines_line_idx").on(t.orderLineId)],
 );

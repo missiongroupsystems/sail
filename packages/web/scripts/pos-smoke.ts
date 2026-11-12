@@ -370,6 +370,9 @@ if (lockedErr) check("split refusal names the paid bill", /Bill 1 is paid/.test(
 await expectError("payments.record card above the balance", () => reg.recordPayment(api, b1.id, { payment_id: idempotencyKey(), tender_type_id: cardTender.id, amount: bill.checks.find((x) => x.id === b1.id)!.balance + 1000 }), "validation");
 
 // 20. Cash: dry run first (rounding and change from the register), then the real payment with the same figures.
+// Cash goes into a shift's drawer, so one is opened first (step 25 closes it, then runs a shift of its own).
+const drawer = await step("shifts.open (drawer for the cash below)", () => reg.openShift(api, { float_cents: 0 }), (s) => `${s.id.slice(0, 8)} float ${s.float_cents}`);
+if (!drawer) process.exit(1);
 const b1now = bill.checks.find((x) => x.id === b1.id)!;
 const tendered = Math.ceil((b1now.balance + 1) / 1000) * 1000;
 const dry = await step("payments.record dry_run cash", () => reg.recordPayment(api, b1.id, { payment_id: idempotencyKey(), tender_type_id: cashTender.id, amount: b1now.balance, tendered, dry_run: true }), (r) => `amount ${r.payment.amount}, rounding ${r.payment.rounding_cents}, tendered ${tendered}, change_due ${r.payment.change_due}`);

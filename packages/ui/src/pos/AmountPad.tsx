@@ -2,6 +2,7 @@
 
 import { Delete } from "lucide-react";
 import { Button as AriaButton } from "react-aria-components";
+import { MAX_AMOUNT } from "@sail/shared";
 import { cx } from "../lib/cx";
 import { Icon } from "../components/Icon";
 import { useLocale } from "../lib/locale";
@@ -27,6 +28,17 @@ export function formatBpsText(bps: number): string {
   return frac === 0 ? `${whole}%` : `${whole}.${String(frac).padStart(2, "0").replace(/0$/, "")}%`;
 }
 
+/**
+ * The digits after a key press, or null when the key is refused. An amount may go up to the largest the register
+ * accepts (`MAX_AMOUNT`, so a rupiah bill in the millions can be typed); a percentage keeps to 9 digits.
+ */
+export function padDigits(digits: string, key: string, mode: AmountPadProps["mode"]): string | null {
+  if (key === "⌫") return digits.slice(0, -1);
+  const next = (digits + key).replace(/^0+(?=\d)/, "");
+  if (mode === "cents" ? Number(next) > MAX_AMOUNT : next.length > 9) return null;
+  return next;
+}
+
 /** An amount pad: currency or percentage entry, digits typed right to left like a till. */
 export function AmountPad({ digits, onChange, mode, hint, isDisabled, className }: AmountPadProps) {
   const { money } = useLocale();
@@ -34,10 +46,8 @@ export function AmountPad({ digits, onChange, mode, hint, isDisabled, className 
   const text = mode === "cents" ? money(n) : formatBpsText(n);
   const press = (k: string) => {
     if (isDisabled) return;
-    if (k === "⌫") return onChange(digits.slice(0, -1));
-    if (digits.length + k.length > 9) return;
-    const next = (digits + k).replace(/^0+(?=\d)/, "");
-    onChange(next);
+    const next = padDigits(digits, k, mode);
+    if (next !== null) onChange(next);
   };
   return (
     <div className={cx("flex flex-col items-center gap-4 pos-touch", className)}>

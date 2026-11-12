@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import { freezeFrom, price, sortRules } from "./engine.js";
 import type { PricingLineInput, PricingOrderInput, PricingRuleInput, TaxRateInput } from "./schemas.js";
-import type { TaxRounding } from "../domain.js";
+import { MAX_AMOUNT, type TaxRounding } from "../domain.js";
 import { SEED_RULE_IDS } from "./seed.js";
 import { SG_SEED_RULES, SG_TAX_RATES } from "./reference/dsl.js";
 import { percentOfCents, sumCents } from "../money.js";
@@ -293,6 +293,30 @@ describe("semantics", () => {
       expect(r.adjustments).toEqual([]);
       expect(r.trace[2]!.entries[0]!.detail).toMatch(/frozen/);
     });
+
+    it("a frozen order discount never takes more than a line is now worth after a quantity cut and a comp", () => {
+      // 50% off the bill frozen at the first payment; then the kopi goes from 5 to 1 and is comped.
+      const halfOff: PricingRuleInput = { ...tenOff, id: "half", calc: "percent", level: "order", value: { type: "fixed", amount: 5000 } };
+      const comp = SG_SEED_RULES.find((r) => r.id === SEED_RULE_IDS.managerComp)!;
+      const lines = [line("laksa", 1600), line("kopi", 180, { quantity: 5 })];
+      const live = price(order(lines), [halfOff, comp], ctx());
+      expect(live.lines.find((l) => l.line_id === "kopi")!.discount_amount).toBe(-450);
+      const frozen = { frozen_at: NOW, adjustments: freezeFrom(live, [halfOff, comp]) };
+      const cut = order([lines[0]!, { ...lines[1]!, quantity: 1 }], { manual_applications: [{ application_id: "c1", rule_id: comp.id, line_ids: ["kopi"] }] });
+      const r = price(cut, [halfOff, comp], { ...ctx(), frozen });
+      const kopi = r.lines.find((l) => l.line_id === "kopi")!;
+      expect(kopi.net_amount).toBe(0);
+      expect(kopi.total).toBe(0);
+      expect(r.adjustments.find((a) => a.rule_id === "half")!.lines.find((l) => l.line_id === "kopi")!.amount).toBe(0);
+      // The quantity cut alone: the frozen share is capped at the one kopi left.
+      const r2 = price(order([lines[0]!, { ...lines[1]!, quantity: 1 }]), [halfOff, comp], { ...ctx(), frozen });
+      expect(r2.lines.find((l) => l.line_id === "kopi")!.net_amount).toBe(0);
+      expect(r2.lines.find((l) => l.line_id === "laksa")!.total).toBe(live.lines.find((l) => l.line_id === "laksa")!.total);
+      // An exclusive 20% item discount after the freeze blocks the frozen bill discount on its line, as it would live.
+      const exclusive: PricingRuleInput = { ...comp, id: "x20", value: { type: "fixed", amount: 2000 } };
+      const r3 = price(order(lines, { manual_applications: [{ application_id: "x1", rule_id: "x20", line_ids: ["kopi"] }] }), [halfOff, comp, exclusive], { ...ctx(), frozen });
+      expect(r3.lines.find((l) => l.line_id === "kopi")!.discount_amount).toBe(-180);
+    });
   });
 });
 
@@ -506,6 +530,69 @@ describe("properties", () => {
       }),
       { numRuns: 200 },
     );
+  });
+
+  it("after the freeze, quantity cuts, comps, item discounts and removed lines never take a line, a total or a tax component below zero", () => {
+    const comp = SG_SEED_RULES.find((r) => r.id === SEED_RULE_IDS.managerComp)!;
+    const pctItem = SG_SEED_RULES.find((r) => r.id === SEED_RULE_IDS.percentOffItem)!;
+    // What happens to each line between the first payment and the re-price. A line moved to a paid bill
+    // is no longer given to the engine (the server prices it apart), which is the same as removing it here.
+    const arbChange = fc.record({ kind: fc.constantFrom("keep", "cut", "remove", "comp", "item"), quantity: fc.integer({ min: 0, max: 5 }), bps: fc.integer({ min: 1, max: 10_000 }) });
+    fc.assert(
+      fc.property(arbScenario, fc.array(arbChange, { minLength: 8, maxLength: 8 }), ({ order: o, rules, context }, changes) => {
+        const all = [...rules, comp, pctItem];
+        const live = price(o, all, context);
+        const frozen = freezeFrom(live, all);
+        const lines: PricingLineInput[] = [];
+        const apps: { application_id: string; rule_id: string; line_ids: string[]; entered_value?: number }[] = [];
+        o.lines.forEach((l, i) => {
+          const c = changes[i]!;
+          if (c.kind === "remove") return;
+          lines.push(c.kind === "cut" ? { ...l, quantity: Math.min(c.quantity, l.quantity) } : l);
+          if (c.kind === "comp") apps.push({ application_id: `a${i}`, rule_id: comp.id, line_ids: [l.line_id] });
+          if (c.kind === "item") apps.push({ application_id: `a${i}`, rule_id: pctItem.id, line_ids: [l.line_id], entered_value: Math.min(c.bps, 5000) });
+        });
+        const r = price({ ...o, lines, manual_applications: apps }, all, { ...context, frozen: { frozen_at: NOW, adjustments: frozen } });
+        for (const l of r.lines) {
+          expect(l.net_amount).toBeGreaterThanOrEqual(0);
+          expect(l.total).toBeGreaterThanOrEqual(0);
+          for (const t of l.taxes) expect(t.amount).toBeGreaterThanOrEqual(0);
+        }
+        expect(r.totals.total).toBeGreaterThanOrEqual(0);
+        for (const t of r.totals.taxes) expect(t.amount).toBeGreaterThanOrEqual(0);
+        // A frozen amount is at most what was stored at the freeze, line by line.
+        for (const a of r.adjustments.filter((x) => x.frozen)) {
+          const f = frozen.find((x) => x.rule_id === a.rule_id && x.manual_application_id === a.manual_application_id)!;
+          for (const al of a.lines) expect(Math.abs(al.amount)).toBeLessThanOrEqual(Math.abs(f.lines.find((x) => x.line_id === al.line_id)!.amount));
+        }
+      }),
+      { numRuns: 500 },
+    );
+  });
+
+  it("tax and discounts are exact at high-denomination amounts, where amount × rate passes 2^53", () => {
+    const rates: TaxRateInput[] = [{ tax_class_id: "standard", components: [{ name: "PPN 11%", bps: 1100 }] }];
+    const halfOff: PricingRuleInput = { id: "h", kind: "discount", name: "Half", calc: "percent", level: "order", value: { type: "fixed", amount: 3333 }, scope: { type: "all" }, priority: 1, application: "auto", report_class: "promo" };
+    fc.assert(
+      fc.property(fc.array(fc.integer({ min: 1, max: MAX_AMOUNT }), { minLength: 1, maxLength: 4 }), fc.constantFrom("inclusive", "exclusive"), (bases, mode) => {
+        const r = price(order(bases.map((b, i) => line(`L${i}`, b))), [halfOff], ctx(mode, "per_line", rates));
+        for (const l of r.lines) {
+          const n = BigInt(l.net_amount) * 1100n;
+          const den = mode === "exclusive" ? 10_000n : 11_100n;
+          const exact = Number(n / den + ((n % den) * 2n >= den ? 1n : 0n));
+          expect(l.tax_on_net).toBe(exact);
+        }
+        expect(r.totals.discount_total).toBe(-Number((BigInt(sumCents(bases)) * 3333n + 5000n) / 10_000n) || 0);
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  it("inclusive tax at a high combined rate near the largest amount rounds on the exact remainder", () => {
+    // 999,999,997,501 × 9999 passes 2^53: in floating point the remainder sits on the half and rounds up to …501.
+    const rates: TaxRateInput[] = [{ tax_class_id: "standard", components: [{ name: "Excise", bps: 9999 }] }];
+    const r = price(order([line("L", 999_999_997_501)]), [], ctx("inclusive", "per_line", rates));
+    expect(r.lines[0]!.tax_on_net).toBe(499_974_997_500);
   });
 
   it("sortRules is a total order on (priority, id)", () => {

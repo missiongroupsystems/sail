@@ -42,6 +42,8 @@ beforeAll(async () => {
   await call("POST", "/v1/areas", { token: t, body: { id: ids.area, outlet_id: A.outletId, name: "Main" } });
   for (let i = 1; i <= 6; i++) await call("POST", "/v1/tables", { token: t, body: { outlet_id: A.outletId, area_id: ids.area, name: String(i) } });
   await call("POST", "/v1/tender-types", { token: t, body: { id: ids.cash, name: "Cash", is_cash: true } });
+  // Cash goes into a shift's drawer: one outlet-wide shift for the file.
+  expect((await call("POST", "/v1/shifts", { token: t, body: { outlet_id: A.outletId, station_id: null, float_cents: 0 } })).status).toBe(201);
   await call("POST", "/v1/tender-types", { token: t, body: { id: ids.card, name: "Card", is_terminal: true } });
   await call("POST", "/v1/printers", { token: t, body: { id: ids.printer, outlet_id: A.outletId, name: "Receipt", ip: "10.0.0.9", role: "receipt" } });
   await call("POST", "/v1/stations", { token: t, body: { id: ids.station, outlet_id: A.outletId, brand_id: A.brandId, name: "Floor", seats_enabled: true, receipt_printer_id: ids.printer } });

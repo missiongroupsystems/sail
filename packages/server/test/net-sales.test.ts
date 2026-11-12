@@ -30,6 +30,7 @@ async function trade(m: SeededMerchant, price: number): Promise<Shop> {
   await call("POST", "/v1/areas", { token: t, body: { id: ids.area, outlet_id: m.outletId, name: "Main" } });
   await call("POST", "/v1/tables", { token: t, body: { id: ids.table, outlet_id: m.outletId, area_id: ids.area, name: "1" } });
   await call("POST", "/v1/tender-types", { token: t, body: { id: ids.cash, name: "Cash", is_cash: true } });
+  await call("POST", "/v1/shifts", { token: t, body: { outlet_id: m.outletId, station_id: null, float_cents: 0 } });
   await call("POST", "/v1/stations", { token: t, body: { id: ids.station, outlet_id: m.outletId, brand_id: m.brandId, name: "Floor" } });
   const code = await call<{ data: { code: string } }>("POST", `/v1/stations/${ids.station}/pairing-code`, { token: t, body: {} });
   const station = (await call<{ data: { station_token: string } }>("POST", "/v1/stations/pair", { body: { code: code.body.data.code, device_label: "iPad" }, idempotencyKey: null })).body.data.station_token;
@@ -80,11 +81,13 @@ describe.each(["exclusive", "inclusive"] as const)("net sales, %s tax", (mode) =
   it("the Z-report's net sales exclude tax and fees and subtract the refunds' net; the collected total still matches the tenders", async () => {
     const s = shops[mode];
     expect(s.orderTotal).toBe(expected[mode].total);
-    const z = await call<{ data: { sales: Sales; refunds: { count: number; amount: number }; tenders_summary: { cash: number; non_cash: number } } }>("GET", `/v1/outlets/${s.m.outletId}/z-report`, { token: s.manager });
+    const z = await call<{ data: { sales: Sales; refunds: { count: number; amount: number; taxes: { amount: number }[] }; tenders_summary: { cash: number; non_cash: number } } }>("GET", `/v1/outlets/${s.m.outletId}/z-report`, { token: s.manager });
     expect(z.status, JSON.stringify(z.body)).toBe(200);
     const { refunded, ...sales } = expected[mode];
     expect(z.body.data.sales).toMatchObject(sales);
-    expect(z.body.data.refunds).toEqual({ count: 1, amount: refunded });
+    expect(z.body.data.refunds).toMatchObject({ count: 1, amount: refunded });
+    // Half the order came back, and so did half its tax.
+    expect(z.body.data.refunds.taxes.reduce((a, t) => a + t.amount, 0)).toBe(expected[mode].tax / 2);
     expect(z.body.data.tenders_summary.cash + z.body.data.tenders_summary.non_cash).toBe(z.body.data.sales.total);
     // Before refunds the parts add up to what was collected.
     expect(z.body.data.sales.net + z.body.data.sales.refunds + z.body.data.sales.fees + z.body.data.sales.tax).toBe(z.body.data.sales.total);

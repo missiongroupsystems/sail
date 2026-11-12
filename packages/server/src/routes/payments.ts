@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { PERMISSIONS, registerOperations, type OperationSpec } from "@sail/shared";
+import { AmountSchema, PERMISSIONS, registerOperations, type OperationSpec } from "@sail/shared";
 import { db, markDryRun, settleInvariants, withTransaction } from "../db/client.js";
 import { checks, orders, paymentIntents, payments, printers, shifts, stations, tenderTypes } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -16,7 +16,7 @@ import { maybeComplete, paymentRole, recordPayment, reopenOrder } from "../servi
 import { createDigitalReceipt, issueInvoice, readDigitalReceipt, renderInvoicePdf, type InvoiceDocument } from "../services/documents.js";
 import { closeBusinessDay, closeShift, openShift, zReport } from "../services/shifts.js";
 import { insertJob } from "../services/printing.js";
-import { businessDayInputs } from "../services/business-day.js";
+import { businessDayInputs, currentBusinessDate } from "../services/business-day.js";
 import { businessDateFor } from "../lib/time.js";
 import { LocaleSettingsSchema, localeSettingsFor } from "./org.js";
 
@@ -78,7 +78,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
       method: "post",
       path: "/v1/checks/{id}/payments",
       tags: ["payments"],
-      request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ payment_id: z.uuid(), tender_type_id: z.uuid(), amount: z.number().int().min(1), tendered: z.number().int().min(0).nullable().optional(), tip_cents: z.number().int().min(0).optional(), reference: untrusted(z.string().max(80).nullable().optional()) })) },
+      request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ payment_id: z.uuid(), tender_type_id: z.uuid(), amount: AmountSchema.min(1), tendered: AmountSchema.nullable().optional(), tip_cents: AmountSchema.optional(), reference: untrusted(z.string().max(80).nullable().optional()) })) },
       responses: { 200: jsonResponse(OrderMutationResponse.extend({ payment: z.record(z.string(), z.unknown()) })), ...errorResponses },
     },
     async (c) => {
@@ -260,7 +260,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: rows.map(toShift), next_cursor: null }, 200);
   });
 
-  defineOp(app, { op: "shifts.open", method: "post", path: "/v1/shifts", tags: ["shifts"], request: { body: jsonBody(Mutation.extend({ outlet_id: z.uuid().optional(), station_id: z.uuid().nullable().optional(), name: untrusted(z.string().max(40).nullable().optional(), "name@shifts", "shift_name"), float_cents: z.number().int().min(0), float_counts: z.record(z.string(), z.number().int().min(0)).nullable().optional() })) }, responses: { 201: jsonResponse(mutationResponse(ShiftSchema)), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "shifts.open", method: "post", path: "/v1/shifts", tags: ["shifts"], request: { body: jsonBody(Mutation.extend({ outlet_id: z.uuid().optional(), station_id: z.uuid().nullable().optional(), name: untrusted(z.string().max(40).nullable().optional(), "name@shifts", "shift_name"), float_cents: AmountSchema, float_counts: z.record(z.string(), z.number().int().min(0)).nullable().optional() })) }, responses: { 201: jsonResponse(mutationResponse(ShiftSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const b = c.req.valid("json");
     dryRunFrom(c, b);
@@ -268,13 +268,13 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     if (!outletId || !(await outletVisible(p, outletId))) throw AppError.validation("outlet_id is required when not on a station");
     const stationId = b.station_id === undefined ? (p.type === "staff" ? (p.stationId ?? null) : null) : b.station_id;
     const bd = await businessDayInputs(p.merchantId, outletId);
-    const shift = await openShift(p, { outletId, stationId, name: b.name ?? null, floatCents: b.float_cents, floatCounts: b.float_counts ?? null, businessDate: businessDateFor(new Date(), bd.cutoff, bd.timeZone) });
+    const shift = await openShift(p, { outletId, stationId, name: b.name ?? null, floatCents: b.float_cents, floatCounts: b.float_counts ?? null, businessDate: await currentBusinessDate(p.merchantId, outletId) });
     const ev = await appendEvent({ merchantId: p.merchantId, outletId, type: "shift.opened", aggregate: { kind: "shift", id: shift.id }, operationId: "shifts.open", payload: { station_id: stationId, float_cents: b.float_cents, shift_name: b.name ?? null }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p);
     await recordAudit(p, { action: "shifts.open", targetKind: "shift", targetId: shift.id, outletId, details: { float_cents: b.float_cents } });
     return c.json({ data: toShift(shift), events: [ev], warnings: [] }, 201);
   });
 
-  defineOp(app, { op: "shifts.close", method: "post", path: "/v1/shifts/{id}/close", tags: ["shifts"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ counted_cash_cents: z.number().int().min(0), counted_counts: z.record(z.string(), z.number().int().min(0)).nullable().optional(), variance_reason: untrusted(z.string().max(200).nullable().optional()) })) }, responses: { 200: jsonResponse(mutationResponse(ShiftSchema.and(z.object({ report: z.record(z.string(), z.unknown()) })))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "shifts.close", method: "post", path: "/v1/shifts/{id}/close", tags: ["shifts"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ counted_cash_cents: AmountSchema, counted_counts: z.record(z.string(), z.number().int().min(0)).nullable().optional(), variance_reason: untrusted(z.string().max(200).nullable().optional()) })) }, responses: { 200: jsonResponse(mutationResponse(ShiftSchema.and(z.object({ report: z.record(z.string(), z.unknown()) })))), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const b = c.req.valid("json");
@@ -293,8 +293,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     const { id } = c.req.valid("param");
     const q = c.req.valid("query");
     if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
-    const bd = await businessDayInputs(p.merchantId, id);
-    const businessDate = q.business_date ?? businessDateFor(new Date(), bd.cutoff, bd.timeZone);
+    const businessDate = q.business_date ?? (await currentBusinessDate(p.merchantId, id));
     const closedShifts = await db().select().from(shifts).where(and(eq(shifts.outletId, id), eq(shifts.businessDate, businessDate), q.station_id ? eq(shifts.stationId, q.station_id) : sql`true`));
     const float = closedShifts.reduce((s, x) => s + x.floatCents, 0);
     const counted = closedShifts.filter((x) => x.status === "closed").reduce((s, x) => s + (x.countedCashCents ?? 0), 0);

@@ -330,6 +330,27 @@
       "when": 1794519530402,
       "tag": "0046_rls_brand_scope_children",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1794523939167,
+      "tag": "0047_money_bigint_drop_views",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1794523939841,
+      "tag": "0048_money_bigint",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1794523986623,
+      "tag": "0049_money_bigint_views",
+      "breakpoints": true
     }
   ]
 }

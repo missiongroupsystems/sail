@@ -1,4 +1,4 @@
-import { boolean, date, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, date, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { brands, merchants, outlets, stations } from "./org.js";
 import { taxClasses } from "./tax.js";
 
@@ -37,7 +37,7 @@ export const products = pgTable(
     sku: text("sku"),
     description: text("description"),
     /** Base price in cents. */
-    price: integer("price").notNull().default(0),
+    price: bigint("price", { mode: "number" }).notNull().default(0),
     categoryId: uuid("category_id").references(() => reportCategories.id),
     /** Free-form labels: printer routing and pricing-rule scope. */
     tags: text("tags").array().notNull().default([]),
@@ -73,7 +73,7 @@ export const productPrices = pgTable(
       .notNull()
       .references(() => products.id, { onDelete: "cascade" }),
     orderType: orderTypeEnum("order_type").notNull(),
-    price: integer("price").notNull(),
+    price: bigint("price", { mode: "number" }).notNull(),
   },
   (t) => [primaryKey({ columns: [t.productId, t.orderType] })],
 );
@@ -109,7 +109,7 @@ export const modifierOptions = pgTable(
       .notNull()
       .references(() => products.id, { onDelete: "cascade" }),
     /** Null = the modifier product's own price. */
-    priceOverride: integer("price_override"),
+    priceOverride: bigint("price_override", { mode: "number" }),
     childGroupId: uuid("child_group_id").references(() => modifierGroups.id),
     isDefault: boolean("is_default").notNull().default(false),
     sort: integer("sort").notNull().default(0),

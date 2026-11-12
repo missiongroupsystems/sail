@@ -4570,11 +4570,14 @@
                               "type": "array",
                               "items": {
                                 "type": "integer",
-                                "exclusiveMinimum": 0
+                                "minimum": 1,
+                                "maximum": 1000000000000
                               }
                             },
                             "cash_variance_threshold": {
-                              "type": "integer"
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 1000000000000
                             },
                             "business_day_cutoff": {
                               "type": "string"
@@ -4982,11 +4985,14 @@
                     "type": "array",
                     "items": {
                       "type": "integer",
-                      "exclusiveMinimum": 0
+                      "minimum": 1,
+                      "maximum": 1000000000000
                     }
                   },
                   "cash_variance_threshold": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000000000
                   },
                   "business_day_cutoff": {
                     "type": "string"
@@ -5077,11 +5083,14 @@
                               "type": "array",
                               "items": {
                                 "type": "integer",
-                                "exclusiveMinimum": 0
+                                "minimum": 1,
+                                "maximum": 1000000000000
                               }
                             },
                             "cash_variance_threshold": {
-                              "type": "integer"
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 1000000000000
                             },
                             "business_day_cutoff": {
                               "type": "string"
@@ -14706,26 +14715,31 @@
                   },
                   "price": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 1000000000000
                   },
                   "prices_by_order_type": {
                     "type": "object",
                     "properties": {
                       "dine_in": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "maximum": 1000000000000
                       },
                       "takeaway": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "maximum": 1000000000000
                       },
                       "pickup": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "maximum": 1000000000000
                       },
                       "delivery": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "maximum": 1000000000000
                       }
                     }
                   },
@@ -15763,26 +15777,31 @@
                   },
                   "price": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 1000000000000
                   },
                   "prices_by_order_type": {
                     "type": "object",
                     "properties": {
                       "dine_in": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "maximum": 1000000000000
                       },
                       "takeaway": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "maximum": 1000000000000
                       },
                       "pickup": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "maximum": 1000000000000
                       },
                       "delivery": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "maximum": 1000000000000
                       }
                     }
                   },
@@ -16330,26 +16349,31 @@
                         },
                         "price": {
                           "type": "integer",
-                          "minimum": 0
+                          "minimum": 0,
+                          "maximum": 1000000000000
                         },
                         "prices_by_order_type": {
                           "type": "object",
                           "properties": {
                             "dine_in": {
                               "type": "integer",
-                              "minimum": 0
+                              "minimum": 0,
+                              "maximum": 1000000000000
                             },
                             "takeaway": {
                               "type": "integer",
-                              "minimum": 0
+                              "minimum": 0,
+                              "maximum": 1000000000000
                             },
                             "pickup": {
                               "type": "integer",
-                              "minimum": 0
+                              "minimum": 0,
+                              "maximum": 1000000000000
                             },
                             "delivery": {
                               "type": "integer",
-                              "minimum": 0
+                              "minimum": 0,
+                              "maximum": 1000000000000
                             }
                           }
                         }
@@ -17216,7 +17240,8 @@
                             "integer",
                             "null"
                           ],
-                          "minimum": 0
+                          "minimum": 0,
+                          "maximum": 1000000000000
                         },
                         "child_group_id": {
                           "type": [
@@ -18139,7 +18164,8 @@
                             "integer",
                             "null"
                           ],
-                          "minimum": 0
+                          "minimum": 0,
+                          "maximum": 1000000000000
                         },
                         "child_group_id": {
                           "type": [
@@ -40256,26 +40282,31 @@
                               "properties": {
                                 "base": {
                                   "type": "integer",
-                                  "minimum": 0
+                                  "minimum": 0,
+                                  "maximum": 1000000000000
                                 },
                                 "by_order_type": {
                                   "type": "object",
                                   "properties": {
                                     "dine_in": {
                                       "type": "integer",
-                                      "minimum": 0
+                                      "minimum": 0,
+                                      "maximum": 1000000000000
                                     },
                                     "takeaway": {
                                       "type": "integer",
-                                      "minimum": 0
+                                      "minimum": 0,
+                                      "maximum": 1000000000000
                                     },
                                     "pickup": {
                                       "type": "integer",
-                                      "minimum": 0
+                                      "minimum": 0,
+                                      "maximum": 1000000000000
                                     },
                                     "delivery": {
                                       "type": "integer",
-                                      "minimum": 0
+                                      "minimum": 0,
+                                      "maximum": 1000000000000
                                     }
                                   }
                                 }
@@ -40290,6 +40321,7 @@
                                 "null"
                               ],
                               "minimum": 0,
+                              "maximum": 1000000000000,
                               "default": null
                             },
                             "modifiers": {
@@ -40312,7 +40344,8 @@
                                   },
                                   "price": {
                                     "type": "integer",
-                                    "minimum": 0
+                                    "minimum": 0,
+                                    "maximum": 1000000000000
                                   },
                                   "name": {
                                     "type": "string"
@@ -40348,6 +40381,7 @@
                             "quantity": {
                               "type": "integer",
                               "minimum": 1,
+                              "maximum": 999,
                               "default": 1
                             },
                             "open_price": {
@@ -40355,7 +40389,8 @@
                                 "integer",
                                 "null"
                               ],
-                              "minimum": 0
+                              "minimum": 0,
+                              "maximum": 1000000000000
                             },
                             "line_id": {
                               "type": "string"
@@ -48374,7 +48409,8 @@
                                   },
                                   "amount": {
                                     "type": "integer",
-                                    "minimum": 1
+                                    "minimum": 1,
+                                    "maximum": 1000000000000
                                   }
                                 },
                                 "required": [
@@ -48395,7 +48431,8 @@
                                 },
                                 "amount": {
                                   "type": "integer",
-                                  "minimum": 0
+                                  "minimum": 0,
+                                  "maximum": 1000000000000
                                 }
                               },
                               "required": [
@@ -50665,7 +50702,8 @@
                             "integer",
                             "null"
                           ],
-                          "minimum": 0
+                          "minimum": 0,
+                          "maximum": 1000000000000
                         }
                       },
                       "required": [
@@ -52761,7 +52799,8 @@
                             "integer",
                             "null"
                           ],
-                          "minimum": 0
+                          "minimum": 0,
+                          "maximum": 1000000000000
                         }
                       },
                       "required": [
@@ -66144,18 +66183,21 @@
                   },
                   "amount": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 1000000000000
                   },
                   "tendered": {
                     "type": [
                       "integer",
                       "null"
                     ],
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 1000000000000
                   },
                   "tip_cents": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 1000000000000
                   },
                   "reference": {
                     "type": [
@@ -70083,7 +70125,8 @@
                   },
                   "float_cents": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 1000000000000
                   },
                   "float_counts": {
                     "type": [
@@ -70494,7 +70537,8 @@
                   },
                   "counted_cash_cents": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 1000000000000
                   },
                   "counted_counts": {
                     "type": [
@@ -73388,7 +73432,8 @@
                           },
                           "amount": {
                             "type": "integer",
-                            "minimum": 1
+                            "minimum": 1,
+                            "maximum": 1000000000000
                           }
                         },
                         "required": [
@@ -73409,7 +73454,8 @@
                         },
                         "amount": {
                           "type": "integer",
-                          "minimum": 0
+                          "minimum": 0,
+                          "maximum": 1000000000000
                         }
                       },
                       "required": [
@@ -73846,7 +73892,8 @@
                           },
                           "amount": {
                             "type": "integer",
-                            "minimum": 1
+                            "minimum": 1,
+                            "maximum": 1000000000000
                           }
                         },
                         "required": [
@@ -73867,7 +73914,8 @@
                         },
                         "amount": {
                           "type": "integer",
-                          "minimum": 0
+                          "minimum": 0,
+                          "maximum": 1000000000000
                         }
                       },
                       "required": [
@@ -80193,7 +80241,7 @@
           "reports"
         ],
         "operationId": "reports.sales_summary",
-        "description": "Totals and breakdowns (by day, order type, source, tender, category, rule and reporting class, voids, refunds) for a date range with filters for outlet, brand, station, shift, source, order type, staff and category. `format=csv` returns CSV. Every figure is a sum of register-written cents. Every `net` is net sales: items after discounts, without tax and fees, less the net of refunds made in the period (`totals.refunds`); `totals.fees` excludes tax and `totals.total` is what was collected before refunds (`net + refunds + fees + tax = total`).",
+        "description": "Totals and breakdowns (by day, order type, source, tender, category, rule and reporting class, voids, refunds) for a date range with filters for outlet, brand, station, shift, source, order type, staff and category. The shift filter narrows `by_tender` only: sales belong to orders, which have no shift; a shift's own figures are in its Z-report at close. `format=csv` returns CSV. Every figure is a sum of register-written cents. Every `net` is net sales: items after discounts, without tax and fees, less the net of refunds made in the period (`totals.refunds`); `totals.fees` excludes tax and `totals.total` is what was collected before refunds (`net + refunds + fees + tax = total`).",
         "summary": "Sales summary",
         "x-sail": {
           "op": "reports.sales_summary",
@@ -90864,11 +90912,13 @@
                   },
                   "amount": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 1000000000000
                   },
                   "tip_cents": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 1000000000000
                   }
                 },
                 "required": [

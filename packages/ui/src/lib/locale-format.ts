@@ -1,3 +1,5 @@
+import { parseAmount } from "@sail/shared";
+
 /**
  * Money, date and time formatting for one merchant: currency, locale (BCP 47)
  * and time zone come from the merchant's settings, never from the code. Every
@@ -112,7 +114,6 @@ export function makeLocaleFormat(settings: LocaleSettings): LocaleFormat {
   const parts = fmt.formatToParts(-1234.5);
   const symbol = parts.find((p) => p.type === "currency")?.value ?? "";
   const decimalSeparator = new Intl.NumberFormat(locale).formatToParts(1.5).find((p) => p.type === "decimal")?.value ?? ".";
-  const groupSeparator = new Intl.NumberFormat(locale).formatToParts(12345).find((p) => p.type === "group")?.value ?? ",";
 
   const money = (minor: number, opts: MoneyFormatOptions = {}): string => {
     if (!Number.isFinite(minor) || !Number.isInteger(minor)) return "—";
@@ -124,31 +125,21 @@ export function makeLocaleFormat(settings: LocaleSettings): LocaleFormat {
       .join("");
   };
 
+  // An input shows the amount as the locale writes numbers (its own digits and decimal separator), without grouping.
+  const fmtText = new Intl.NumberFormat(locale, { useGrouping: false, minimumFractionDigits: minorDigits, maximumFractionDigits: minorDigits });
   const moneyText = (minor: number | null | undefined): string => {
     if (minor === null || minor === undefined || !Number.isInteger(minor)) return "";
-    return decimalString(minor, minorDigits).replace(".", decimalSeparator);
+    return fmtText.format(decimalString(minor, minorDigits));
   };
 
+  // The shared parser: it reads back everything `money` and `moneyText` write, in the locale's digits or Latin ones.
   const parseMoney = (text: string): number | null | undefined => {
-    // The symbol and sign drop out; the locale's group separator is allowed only between groups of three digits, so a
-    // separator the locale does not use ("16.50" where the decimal is ",") is malformed rather than a hundredfold amount.
-    const negative = /^[^\d]*[-−]/.test(text);
-    const body = text.replace(/[^\d.,'’\s\u00a0\u202f]/g, "").trim();
-    if (body === "") return null;
-    const pieces = body.split(decimalSeparator);
-    if (pieces.length > 2) return undefined;
-    const [wholeRaw = "", fraction = ""] = pieces;
-    const group = groupSeparator.replace(/[\s\u00a0\u202f]/, " ");
-    const wholeNorm = wholeRaw.replace(/[\s\u00a0\u202f]/g, " ");
-    const grouped = wholeNorm.split(group);
-    const wholeOk = /^\d*$/.test(wholeNorm) || (grouped.length > 1 && /^\d{1,3}$/.test(grouped[0]!) && grouped.slice(1).every((g) => /^\d{3}$/.test(g)));
-    if (!wholeOk || !/^\d*$/.test(fraction)) return undefined;
-    const whole = grouped.join("");
-    if (whole === "" && fraction === "") return null;
-    if (fraction.length > minorDigits) return undefined;
-    const value = Number(`${whole || "0"}${fraction.padEnd(minorDigits, "0")}`);
-    if (!Number.isSafeInteger(value)) return undefined;
-    return negative ? -value : value;
+    if (text.trim() === "") return null;
+    try {
+      return parseAmount(text, { locale, exponent: minorDigits, currency });
+    } catch {
+      return undefined;
+    }
   };
 
   const clockF = dateFormatter(locale, { hour: "numeric", minute: "2-digit", timeZone });

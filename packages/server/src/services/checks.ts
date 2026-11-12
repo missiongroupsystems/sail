@@ -146,7 +146,7 @@ export async function assertAdjustmentUnlocked(orderId: string, applicationId: s
 
 /** Sum of recorded payments on the order (for pay-before-firing and change-type guards). */
 export async function paidTotalFor(orderId: string): Promise<number> {
-  const [row] = await db().select({ s: sql<number>`coalesce(sum(amount),0)::int` }).from(payments).where(and(eq(payments.orderId, orderId), eq(payments.status, "recorded")));
+  const [row] = await db().select({ s: sql<number>`coalesce(sum(amount),0)::bigint` }).from(payments).where(and(eq(payments.orderId, orderId), eq(payments.status, "recorded")));
   return row?.s ?? 0;
 }
 

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, isNull, lt, sql } from "drizzle-orm";
 import type { Role } from "@sail/shared";
 import { db, settleInvariants, tx, withOwnTransaction, withTransaction } from "../db/client.js";
-import { checks, merchantSettings, paymentIntents, paymentOutbox, paymentProviderAccounts, payments, tenderTypes, type EventActor, type PaymentIntent } from "../db/schema/index.js";
+import { businessDayCloses, checks, merchantSettings, paymentIntents, paymentOutbox, paymentProviderAccounts, payments, refunds, tenderTypes, type EventActor, type PaymentIntent } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
@@ -275,7 +275,18 @@ async function completeVoid(intentId: string): Promise<void> {
     }
     const [payment] = await db().select().from(payments).where(eq(payments.id, intent.paymentId)).limit(1);
     if (!payment || payment.status !== "recorded") return;
-    if (payment.shiftId) await tx()`select id from shifts where id = ${payment.shiftId} for update`;
+    const [shift] = payment.shiftId ? await tx()<{ status: string }[]>`select status from shifts where id = ${payment.shiftId} for update` : [];
+    const [dayClosed] = await db().select({ id: businessDayCloses.id }).from(businessDayCloses).where(and(eq(businessDayCloses.outletId, payment.outletId), eq(businessDayCloses.businessDate, payment.businessDate))).limit(1);
+    const [refunded] = await db().select({ n: sql<number>`count(*)::int` }).from(refunds).where(eq(refunds.checkId, payment.checkId));
+    // The same conditions as assertVoidable: the register gave up waiting, and since then the bill was refunded or the
+    // order cancelled (the guest already has money back), or the shift or day closed (a closed day never changes,
+    // pricing-semantics §10). The payment stands, and the event says why, for staff to settle with the guest.
+    const notApplied = order.status === "cancelled" ? "order_cancelled" : (refunded?.n ?? 0) > 0 ? "refunded" : shift && shift.status !== "open" ? "shift_closed" : dayClosed ? "business_day_closed" : null;
+    if (notApplied) {
+      await settleInvariants();
+      await intentEvent(intent, "payment_intent.voided_not_applied", { amount: intent.amount + intent.tipCents, payment_id: payment.id, reason: notApplied }, { actor: request.actor, operationId: "payments.provider_void", businessDay: bd });
+      return;
+    }
     const by = principalFor(intent, request.actor);
     await reversePayment(order, payment, request.reason, by);
     await recordAudit(by, { action: "payments.void", targetKind: "payment", targetId: payment.id, outletId: order.outletId, reason: request.reason, approver: request.approver_id ? { id: request.approver_id, name: request.approver_name } : null, overrideId: request.override_id, details: { amount: payment.amount, tender: payment.tenderName, provider: intent.provider, provider_ref: intent.providerRef } });
@@ -318,7 +329,9 @@ async function giveUp(row: OutboxRow, intent: PaymentIntent | null, error: strin
   logger.error({ outbox: row.id, intent: row.intent_id, kind: row.kind, error }, "payment provider call failed for good");
   if (!intent || row.kind !== "void") return;
   await withTransaction(async () => {
-    if (intent.voidRequest) await db().update(paymentIntents).set({ voidRequestedAt: null, voidRequest: null }).where(eq(paymentIntents.id, intent.id));
+    // The register stops waiting (the shift and day can close, the void can be asked for again), but it keeps who asked
+    // and why: the provider may have voided although no answer came back, and the poll applies that void when it says so.
+    if (intent.voidRequest) await db().update(paymentIntents).set({ voidRequestedAt: null }).where(eq(paymentIntents.id, intent.id));
     await settleInvariants();
     await intentEvent(intent, "payment_intent.void_failed", { amount: intent.amount + intent.tipCents, error: error.slice(0, 200) }, { actor: intent.voidRequest?.actor ?? intent.actor, operationId: "payments.provider_void" });
   });
@@ -380,7 +393,9 @@ export async function pollPendingIntents(limit = 50): Promise<number> {
     db()
       .select()
       .from(paymentIntents)
-      .where(sql`(${paymentIntents.state} = 'pending' and ${paymentIntents.providerRef} is not null) or (${paymentIntents.state} in ('declined', 'cancelled', 'expired') and ${paymentIntents.providerVoidedAt} is null and ${paymentIntents.decidedAt} > now() - interval '1 hour')`)
+      .where(
+        sql`(${paymentIntents.state} = 'pending' and ${paymentIntents.providerRef} is not null) or (${paymentIntents.state} in ('declined', 'cancelled', 'expired') and ${paymentIntents.providerVoidedAt} is null and ${paymentIntents.decidedAt} > now() - interval '1 hour') or (${paymentIntents.state} = 'approved' and ${paymentIntents.voidRequest} is not null and ${paymentIntents.providerVoidedAt} is null and ${paymentIntents.decidedAt} > now() - interval '1 day')`,
+      )
       .orderBy(asc(paymentIntents.createdAt))
       .limit(limit),
   );
@@ -391,6 +406,14 @@ export async function pollPendingIntents(limit = 50): Promise<number> {
       const account = await withTransaction(() => accountFor(intent.merchantId, intent.provider));
       if (!provider || !account) continue;
       const p = await provider.getPayment({ account, reference: intent.id, providerRef: intent.providerRef });
+      // A void that was asked for: the provider says the money is back, so the register applies it.
+      if (intent.state === "approved") {
+        if (p?.status === "voided") {
+          await completeVoid(intent.id);
+          applied++;
+        }
+        continue;
+      }
       if (!p || p.status === "pending" || (intent.state !== "pending" && p.status !== "approved")) continue;
       const r = await applyOutcome(intent.merchantId, intent.id, { status: p.status, providerRef: p.providerRef, amount: p.amount }, { operationId: "payments.poll" });
       if (r !== "unchanged") applied++;

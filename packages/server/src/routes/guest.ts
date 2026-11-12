@@ -21,7 +21,7 @@ import { createKitchenJobs, insertJob } from "../services/printing.js";
 import { releaseDailyCap } from "./catalogue.js";
 import { registerFloorExtra } from "./orders.js";
 import { LocaleSettingsSchema, localeSettingsFor } from "./org.js";
-import { businessDayInputs, printLocale } from "../services/business-day.js";
+import { businessDayInputs, currentBusinessDate, printLocale } from "../services/business-day.js";
 import { businessDateFor } from "../lib/time.js";
 import { asSystem, bindSessionToTableOrder, checkLimit, createGuestSession, enforceLimit, guestOrderView, openOrderIdForTable, phoneAdmitted, qrSheetPdf, RATE, recordHit, revokeSessionsForOrder, rotateTableToken, toRequest, toRound } from "../services/guest.js";
 
@@ -105,7 +105,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
         if (!link.openOnFirstScan) throw new AppError("state_conflict", "Your table isn't ready for ordering yet", { remedy: "Ask a member of staff to seat you.", details: { table_not_open: true } });
         const tax = await orderTaxSettings(p.merchantId, p.outletId);
         const now = new Date();
-        const [row] = await db().insert(orders).values({ id: crypto.randomUUID(), merchantId: p.merchantId, outletId: p.outletId, brandId: link.brandId, channelLinkId: link.id, channel: "scan_to_order", orderType: "dine_in", orderNo: await nextOrderNo(p.outletId, p.merchantId, "scan_to_order"), tableId: p.tableId, businessDate: today, taxMode: tax.taxMode, taxRounding: tax.taxRounding, taxRates: tax.taxRates, openedAt: now, openedByName: b.guest_name ?? "Guest" }).returning();
+        const [row] = await db().insert(orders).values({ id: crypto.randomUUID(), merchantId: p.merchantId, outletId: p.outletId, brandId: link.brandId, channelLinkId: link.id, channel: "scan_to_order", orderType: "dine_in", orderNo: await nextOrderNo(p.outletId, p.merchantId, "scan_to_order"), tableId: p.tableId, businessDate: await currentBusinessDate(p.merchantId, p.outletId, now), taxMode: tax.taxMode, taxRounding: tax.taxRounding, taxRates: tax.taxRates, openedAt: now, openedByName: b.guest_name ?? "Guest" }).returning();
         orderId = row!.id;
         openedNow = true;
         await appendEvent({ merchantId: p.merchantId, outletId: p.outletId, type: "order.opened", aggregate: { kind: "order", id: orderId, version: 1 }, operationId: "rounds.submit", payload: { order_no: row!.orderNo, order_type: "dine_in", table_id: p.tableId, source: "guest" }, correlationId: c.get("correlationId"), businessDay: bd }, p);

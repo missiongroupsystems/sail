@@ -1,13 +1,13 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { quoteRefund, RefundError, sumTaxes, type BillDocument, type RefundQuote, type RefundRequest, type RefundableLine, type RefundablePayment } from "@sail/shared";
 import { db } from "../db/client.js";
-import { checkAllocations, checks, merchantSettings, orderAdjustments, orderLines, orders, payments, refundLines, refundTenders, refunds, shifts } from "../db/schema/index.js";
+import { checkAllocations, checks, merchantSettings, orderAdjustments, orderLines, orders, payments, refundLines, refundTenders, refunds } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { Principal } from "../auth/principal.js";
 import { billDocumentFor } from "./checks.js";
 import { nextDocumentNo, type InvoiceDocument } from "./documents.js";
-import { businessDateFor } from "../lib/time.js";
-import { businessDayInputs } from "./business-day.js";
+import { currentBusinessDate } from "./business-day.js";
+import { openShiftFor } from "./payments.js";
 import { registerRefundTotals } from "./shifts.js";
 
 /**
@@ -34,7 +34,10 @@ export async function refundableFor(checkId: string): Promise<{ check: typeof ch
     return { line_id: a.orderLineId, quantity: l.quantity, base: a.base, discount: a.discount, fee: a.fee, taxes: a.taxes, total: a.total, adjustments: a.adjustments, refunded: { quantity: sum("quantity"), base: sum("base"), discount: sum("discount"), fee: sum("fee"), taxes: sumTaxes(mine.map((p) => p.taxes)), total: sum("total") } };
   });
   const pays = await db().select().from(payments).where(and(eq(payments.checkId, checkId), eq(payments.status, "recorded")));
-  const paymentsList: RefundablePayment[] = pays.map((p) => ({ payment_id: p.id, tender: p.tenderName, is_cash: p.isCash, amount: p.amount, refunded: priorTenders.filter((t) => t.paymentId === p.id).reduce((s, t) => s + t.amount, 0) }));
+  const paymentsList: RefundablePayment[] = pays.map((p) => {
+    const prior = priorTenders.filter((t) => t.paymentId === p.id);
+    return { payment_id: p.id, tender: p.tenderName, is_cash: p.isCash, amount: p.amount, rounding: p.roundingCents, refunded: prior.reduce((s, t) => s + t.amount, 0), refunded_rounding: prior.reduce((s, t) => s + t.roundingCents, 0) };
+  });
   const [settings] = await db().select().from(merchantSettings).where(eq(merchantSettings.merchantId, check.merchantId)).limit(1);
   return { check, order, lines, paymentsList, increment: settings?.cashRoundingIncrement ?? null };
 }
@@ -57,11 +60,12 @@ export async function createRefund(input: { refundId: string; checkId: string; r
   const ref = await refundableFor(input.checkId);
   const q = quote(ref, input.request, input.tenderSplit);
   const now = new Date();
-  const bd = await businessDayInputs(ref.order.merchantId, ref.order.outletId);
-  const businessDate = businessDateFor(now, bd.cutoff, bd.timeZone);
+  const [openShift] = await openShiftFor(ref.order.outletId, input.stationId ?? null);
+  // Cash comes out of a drawer; with no shift open it would leave no drawer short. A refund counts on its shift's day.
+  if (q.tenders.some((t) => t.is_cash && t.amount + t.rounding_cents !== 0) && !openShift) throw AppError.invariant("no_open_shift", "No shift is open here to pay cash out of", "Open a shift first.");
+  const businessDate = openShift?.businessDate ?? (await currentBusinessDate(ref.order.merchantId, ref.order.outletId, now));
   const receiptNo = await nextDocumentNo(ref.order.merchantId, "refund_receipt");
   const creditNoteNo = ref.check.invoiceNo ? await nextDocumentNo(ref.order.merchantId, "credit_note") : null;
-  const [openShift] = await db().select({ id: shifts.id }).from(shifts).where(and(eq(shifts.outletId, ref.order.outletId), eq(shifts.status, "open"), input.stationId ? sql`(${shifts.stationId} = ${input.stationId} or ${shifts.stationId} is null)` : sql`${shifts.stationId} is null`)).orderBy(sql`${shifts.stationId} nulls last`).limit(1);
 
   // Documents: a refund receipt linked to the original bill, and a credit note when the bill was invoiced.
   const original = await billDocumentFor(input.checkId, "receipt", { serverName: "name" in input.principal ? input.principal.name : null });
@@ -131,13 +135,19 @@ export async function createRefund(input: { refundId: string; checkId: string; r
 registerRefundTotals(async (scope) => {
   const where = and(eq(refunds.outletId, scope.outletId), scope.shiftId ? eq(refunds.shiftId, scope.shiftId) : eq(refunds.businessDate, scope.businessDate), scope.stationId && !scope.shiftId ? eq(refunds.stationId, scope.stationId) : sql`true`);
   const [r] = await db()
-    .select({ count: sql<number>`count(*)::int`, amount: sql<number>`coalesce(sum(${refunds.total}),0)::int`, net: sql<number>`coalesce(sum((select n.net from report_refunds n where n.refund_id = ${refunds.id})),0)::int` })
+    .select({ count: sql<number>`count(*)::int`, amount: sql<number>`coalesce(sum(${refunds.total}),0)::bigint`, net: sql<number>`coalesce(sum((select n.net from report_refunds n where n.refund_id = ${refunds.id})),0)::bigint` })
     .from(refunds)
     .where(where);
   const [cash] = await db()
-    .select({ amount: sql<number>`coalesce(sum(${refundTenders.amount} + ${refundTenders.roundingCents}),0)::int` })
+    .select({ amount: sql<number>`coalesce(sum(${refundTenders.amount} + ${refundTenders.roundingCents}),0)::bigint` })
     .from(refundTenders)
     .innerJoin(refunds, eq(refunds.id, refundTenders.refundId))
     .where(and(where, eq(refundTenders.isCash, true)));
-  return { count: r?.count ?? 0, amount: r?.amount ?? 0, net: r?.net ?? 0, cash_amount: cash?.amount ?? 0 };
+  const taxes = await db()
+    .select({ name: sql<string>`t->>'name'`, bps: sql<number>`(t->>'bps')::int`, amount: sql<number>`coalesce(sum((t->>'amount')::bigint),0)::bigint` })
+    .from(sql`${refunds} cross join lateral jsonb_array_elements(${refunds.taxes}) t`)
+    .where(where)
+    .groupBy(sql`1`, sql`2`)
+    .orderBy(sql`2 desc`, sql`1`);
+  return { count: r?.count ?? 0, amount: r?.amount ?? 0, net: r?.net ?? 0, cash_amount: cash?.amount ?? 0, taxes };
 });

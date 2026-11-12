@@ -1,4 +1,4 @@
-import { boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { merchants } from "./org.js";
 
 /**
@@ -126,7 +126,7 @@ export const proposals = pgTable(
     targetKind: text("target_kind"),
     /** The order the request acts on, and its total when proposed: what the approver is shown. */
     orderId: uuid("order_id"),
-    orderTotal: integer("order_total"),
+    orderTotal: bigint("order_total", { mode: "number" }),
     /** When an agent's call would have lowered the amount due or changed tax or fees: why, and the order's money before and after (the pricing engine's result). */
     effect: jsonb("effect").$type<MoneyEffect | null>(),
     /** For a proposal on a shift, business day or stock cap: the figures the approver is shown. Execution is refused once they have changed. */

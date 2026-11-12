@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
-import { currencyExponent, TaxModeSchema, TaxRoundingSchema } from "@sail/shared";
+import { AmountSchema, currencyExponent, TaxModeSchema, TaxRoundingSchema } from "@sail/shared";
 import { db } from "../db/client.js";
 import { brands, displayDestinations, merchantSettings, merchants, outlets, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -19,9 +19,9 @@ export const MerchantSettingsSchema = z.object({
   /** Minor units; null = off. */
   cash_rounding_increment: z.number().int().nullable(),
   /** Notes and coins for the POS cash counter, largest first, in minor units. */
-  cash_denominations: z.array(z.number().int().positive()),
+  cash_denominations: z.array(AmountSchema.min(1)),
   /** Closing a shift more than this many minor units out needs a variance reason. */
-  cash_variance_threshold: z.number().int(),
+  cash_variance_threshold: AmountSchema,
   business_day_cutoff: z.string(),
   timezone: z.string(),
   /** ISO 4217. Fixed once the merchant exists. */
