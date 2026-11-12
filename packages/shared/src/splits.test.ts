@@ -106,4 +106,38 @@ describe("money review: a bill's adjustment rows add up to its discount and fee"
       }),
     );
   });
+
+  it("property: with one balance across a split's lines (even split's odd cents), each bill's rows still add up to its discount and fee, the bills to the order, and the bills stay a cent apart", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.record({ discs: fc.array(fc.integer({ min: -500, max: -1 }), { maxLength: 3 }), fees: fc.array(fc.integer({ min: 1, max: 500 }), { maxLength: 2 }), extra: fc.integer({ min: 0, max: 5000 }), gst: fc.integer({ min: 0, max: 900 }) }), { minLength: 1, maxLength: 8 }),
+        fc.integer({ min: 2, max: 7 }),
+        (lines, n) => {
+          const balance = Array.from({ length: n }, () => 0);
+          const bills = Array.from({ length: n }, () => 0);
+          let order = 0;
+          for (const l of lines) {
+            const adjustments: Record<string, { amount: number; tax: number }> = {};
+            l.discs.forEach((d, i) => (adjustments[`d${i}`] = { amount: d, tax: 0 }));
+            l.fees.forEach((f, i) => (adjustments[`f${i}`] = { amount: f, tax: 0 }));
+            const discount = sumCents(l.discs);
+            const fee = sumCents(l.fees);
+            const line = { base: -discount + l.extra, discount, fee, taxes: sgTax(l.gst), adjustments };
+            const parts = allocateLine(line, evenShares(n), { taxAddsToTotal: true, balance });
+            for (const p of parts) {
+              const rows = Object.entries(p.adjustments);
+              expect(sumCents(rows.filter(([k]) => k.startsWith("d")).map(([, a]) => a.amount))).toBe(p.discount + 0);
+              expect(sumCents(rows.filter(([k]) => k.startsWith("f")).map(([, a]) => a.amount))).toBe(p.fee + 0);
+            }
+            for (const [k, a] of Object.entries(adjustments)) expect(sumCents(parts.map((p) => p.adjustments[k]!.amount))).toBe(a.amount);
+            parts.forEach((p, i) => (bills[i] = bills[i]! + p.total));
+            order += line.base + line.discount + line.fee + sumCents(line.taxes.map((t) => t.amount));
+          }
+          expect(sumCents(bills)).toBe(order);
+          expect(Math.max(...bills) - Math.min(...bills)).toBeLessThanOrEqual(1);
+        },
+      ),
+      { numRuns: 500 },
+    );
+  });
 });

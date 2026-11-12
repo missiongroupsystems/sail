@@ -38,3 +38,13 @@ describe("production refuses weak secrets (B6)", () => {
     expect(() => loadConfig({ ...base, STATION_TOKEN_SECRET: undefined })).toThrow(/STATION_TOKEN_SECRET is required/);
   });
 });
+
+describe("the deployment example and the self-hosting guide set what production requires", () => {
+  it("WEB_APP_URL is set in the example and documented as required, and production refuses to start without it", () => {
+    const example = readFileSync(join(__dirname, "..", "..", "..", "examples", "fly", "fly.toml"), "utf8");
+    const guide = readFileSync(join(__dirname, "..", "..", "..", "docs", "self-hosting.md"), "utf8");
+    expect(example).toMatch(/WEB_APP_URL=/);
+    expect(guide).toMatch(/\| `WEB_APP_URL` \|[^\n]*Required in production/);
+    expect(() => loadConfig({ ...base, WEB_APP_URL: undefined })).toThrow(/WEB_APP_URL is required in production/);
+  });
+});

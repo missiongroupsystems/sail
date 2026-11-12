@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import "../src/modules.js";
 import { buildApp, type App } from "../src/app.js";
@@ -6,7 +6,7 @@ import { withTransaction } from "../src/db/client.js";
 import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
 import { resetGuestRateLimitsForTests, revokeStaleSessions } from "../src/services/guest.js";
 import { startListener, stopListener } from "../src/sse/listener.js";
-import { api, freshDb, readSse, seedMerchant, type SeededMerchant, type TestDb, sgSeedRules } from "./helpers.js";
+import { api, freshDb, readSse, seedMerchant, TEST_SECRETS, type SeededMerchant, type TestDb, sgSeedRules } from "./helpers.js";
 
 let db: TestDb;
 let app: App;
@@ -343,5 +343,42 @@ describe("with hold orders off, a phone is admitted to its seating", () => {
     await seat(t14);
     expect((await send(await scan(code14, "phone-dddd-0004"))).status).toBe("accepted");
     expect((await send(await scan(code14, "phone-aaaa-0001"))).status).toBe("pending");
+  });
+
+  it("codes derived from the guest secret: the sheet's code admits as the rotated one did, rotating every code keeps a seated phone's admission, and the sheet is never stored for a replay", async () => {
+    const t = A.admin.token;
+    const t16 = randomUUID();
+    await call("POST", "/v1/tables", { token: t, body: { id: t16, outlet_id: A.outletId, area_id: ids.area, name: "16" } });
+    // What the sheet prints: the live row's code, derived from its id and GUEST_TOKEN_SECRET.
+    const printed = async () => {
+      const [row] = await db.sql<{ id: string }[]>`select id from table_qr_tokens where table_id = ${t16} and rotated_at is null`;
+      return createHmac("sha256", TEST_SECRETS.GUEST_TOKEN_SECRET).update(`table-qr:${row!.id}`).digest().subarray(0, 24).toString("base64url");
+    };
+    const key = randomUUID();
+    const sheet = await app.request(`/v1/outlets/${A.outletId}/qr-sheet.pdf`, { method: "POST", headers: { authorization: `Bearer ${t}`, "content-type": "application/json", "idempotency-key": key }, body: "{}" });
+    expect(sheet.status).toBe(200);
+    const [stored] = await db.sql<{ body: unknown }[]>`select body from idempotency_keys where key = ${key}`;
+    // Only a marker that the result was shown once is kept, never the PDF and the codes in it.
+    expect(stored!.body).toMatchObject({ code: "state_conflict" });
+    expect(JSON.stringify(stored!.body)).not.toContain("PDF");
+    const before = await printed();
+    await call("POST", "/v1/orders", { token: serverPin, body: { order_id: randomUUID(), order_type: "dine_in", table_id: t16, pax: 2, outlet_id: A.outletId, brand_id: A.brandId } });
+    const scan = async (code: string, device: string) => call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: code, device_id: device }, idempotencyKey: null });
+    const send = async (g: string) => {
+      await resetGuestRateLimitsForTests();
+      return (await guestCall<{ data: { status: string } }>("POST", "/v1/guest/rounds", g, { round_id: randomUUID(), lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] })).body.data.status;
+    };
+    const first = await scan(before, "phone-ffff-0006");
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    expect(await send(first.body.data.guest_token)).toBe("accepted");
+    expect((await call("POST", `/v1/outlets/${A.outletId}/qr/rotate`, { token: t, body: {} })).status).toBe(200);
+    const after = await printed();
+    expect(after).not.toBe(before);
+    expect((await scan(before, "phone-ffff-0006")).status).toBe(404);
+    // Admission belongs to the order and the phone, not to the code: the seated phone scanning the new card is still admitted.
+    const again = await scan(after, "phone-ffff-0006");
+    expect(again.status).toBe(201);
+    expect(await send(again.body.data.guest_token)).toBe("accepted");
+    expect(await send((await scan(after, "phone-gggg-0007")).body.data.guest_token)).toBe("pending");
   });
 });
