@@ -4,6 +4,13 @@ Notable changes to Sail, newest first. Field and operation names are as in `pack
 
 ## Unreleased
 
+### Kitchen display
+- A kitchen display at `/kds`: a station of the new kind `display`, paired with a one-time code and used without a PIN. It shows the open tickets of its destinations oldest first, with elapsed time in amber and red after `kitchen_warn_minutes` and `kitchen_late_minutes` (merchant settings, defaults 8 and 15), struck voided lines, a changed marker, tap to bump, Recall and an all-day count, live over the outlet stream.
+- Display destinations (`display_destinations.*`, on Printing > Printers) route like kitchen printers; stations take `kind` and `display_destination_ids`. A fire creates one ticket per destination in the same transaction as the print jobs. A later fire makes a new ticket, a void after sending strikes the line and flags the ticket changed, and an order cancel cancels its tickets.
+- New operations `kitchen_tickets.list`, `kitchen_tickets.all_day` (staff, displays, agents) and `kitchen_tickets.start`, `kitchen_tickets.bump`, `kitchen_tickets.recall` (displays and staff; not for agents, not on MCP). A double bump or two displays on one ticket change it once.
+- The POS shows a sent line as ready once the kitchen has bumped every ticket carrying it. `dev:local` seeds one kitchen display per demo merchant.
+- Merchants without a display destination print exactly as before and create no tickets.
+
 ### Any country by configuration
 - Tax classes and rates per merchant. A rate is a list of named components (state and local sales tax, VAT, consumption tax) and can be scoped to an outlet, an order type or both; an empty list is exempt. Tax rounds per line or once per rate (`tax_rounding`). New operations `tax_classes.list`, `tax_classes.create`, `tax_classes.update`, `tax_rates.set` and `tax_rates.delete`, and a Settings > Tax classes screen.
 - Region presets (`sg`, `us`, `eu-vat`, `jp`, `blank`) chosen when a merchant is created: currency, locale, tax classes and rates, service charge and deposit rules, tenders, cash denominations and registration labels. `bootstrap` takes `--preset` and `--time-zone`, both required. `dev:local` creates a second demo merchant, a café with inclusive VAT at 20% and 10% in EUR.

@@ -21,6 +21,13 @@ Read with `GET /v1/merchant` (`data.settings`), change with `PATCH /v1/merchant/
 | `business_registration_label`, `tax_registration_label` | Printed before each outlet's `business_registration_no` and `tax_registration_no` on receipts and invoices. |
 | `receipt_footer`, `receipt_show_outlet_phone` | Receipt text. |
 | `busy_mode_threshold` | Open orders above which the POS switches to its busy layout. |
+| `kitchen_warn_minutes`, `kitchen_late_minutes` | Kitchen display: a ticket's elapsed time turns amber after the first and red after the second (defaults 8 and 15; the second must be higher, at most 240). |
+
+## Kitchen display
+
+Kitchen screens are set up in two places. On Printing > Printers, under Kitchen displays, add a **display destination** and give it routing the way you would a kitchen printer: include and exclude tags, order types and sources, or mark it the default to take every item no other destination matched. A destination with no tags takes everything. On Settings > Stations, add a station of kind **Kitchen display**, tick the destinations it shows, and pair a screen to it: open `/kds` on the screen and enter the code from Pair an iPad. A display needs no PIN, and several displays can show the same destination. Printers keep printing whether or not a display exists; to run a kitchen on screens only, add no kitchen printer.
+
+The elapsed-time colours come from `kitchen_warn_minutes` and `kitchen_late_minutes` in the merchant settings (API only for now: `PATCH /v1/merchant/settings`).
 
 ## Region presets
 
