@@ -1,12 +1,12 @@
 "use client";
 
-import { Button, Money, SegmentedControl, Skeleton, taxRows, useLocale } from "@sail/ui";
+import { Button, Money, SegmentedControl, Sheet, Skeleton, taxRows, useLocale } from "@sail/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toApiError } from "@/lib/api";
 import { closeBusinessDay } from "../../api/register";
 import { usePos } from "../../components/PosContext";
-import { useMerchant, useZReport } from "../../hooks/queries";
+import { useMerchant, useOpenOrders, useZReport } from "../../hooks/queries";
 import { useApi } from "../../hooks/useApi";
 import { roleAtLeast } from "../../hooks/useOrderActions";
 import { ORDER_TYPE_LABEL } from "../../lib/format";
@@ -19,12 +19,14 @@ export function ZReportView() {
   const { money, clock } = useLocale();
   const api = useApi();
   const qc = useQueryClient();
-  const { station, staff, offline } = usePos();
+  const { station, staff, offline, tablesById } = usePos();
   const notify = useUiStore((s) => s.notify);
   const [scope, setScope] = useState<"station" | "outlet">("station");
   const report = useZReport(station.outlet_id, scope === "station" ? station.id : null, null);
   const [busy, setBusy] = useState(false);
   const [closedAt, setClosedAt] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const open = useOpenOrders(station.outlet_id);
   const r = report.data;
   const taxMode = useMerchant().data?.settings.tax_mode ?? "exclusive";
   const tax = taxRows(r?.sales.taxes ?? [], taxMode);
@@ -35,6 +37,7 @@ export function ZReportView() {
     try {
       const res = await closeBusinessDay(api, station.outlet_id);
       setClosedAt(res.closed_at);
+      setConfirming(false);
       notify({ text: `Business day ${res.business_date} closed`, tone: "success" }, 5000);
       void qc.invalidateQueries({ queryKey: ["pos", "z-report", station.outlet_id] });
     } catch (e) {
@@ -146,10 +149,47 @@ export function ZReportView() {
 
       <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
         <p className="text-body text-ink-2">{closedAt ? `Business day closed at ${clock(closedAt)}.` : canCloseDay ? "Close the business day once every shift is closed. The register snapshots this report." : "Closing the business day needs a Manager."}</p>
-        <Button size="lg" variant="primary" isDisabled={offline || busy || !canCloseDay || Boolean(closedAt)} isPending={busy} onPress={closeDay}>
-          {offline ? "Offline" : "Close business day"}
+        <Button size="lg" variant="primary" isDisabled={offline || busy || !canCloseDay || Boolean(closedAt)} isPending={busy} onPress={() => setConfirming(true)}>
+          {offline ? "Offline" : closedAt ? "Business day closed" : "Close business day…"}
         </Button>
       </div>
+      <Sheet
+        isOpen={confirming}
+        onOpenChange={(o) => (!o ? setConfirming(false) : undefined)}
+        title="Close the business day?"
+        description="The register snapshots the Z-report as it stands now. Every shift must be closed first."
+        isDismissable={!busy}
+        footer={
+          <>
+            <Button size="lg" variant="quiet" isDisabled={busy} onPress={() => setConfirming(false)} className="mr-auto">
+              Keep the day open
+            </Button>
+            <Button size="lg" variant="primary" isDisabled={offline || busy || open.isPending} isPending={busy} onPress={closeDay}>
+              Close business day
+            </Button>
+          </>
+        }
+      >
+        {open.data && open.data.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            <p className="text-line text-ink">{open.data.length === 1 ? "1 order is still open:" : `${open.data.length} orders are still open:`}</p>
+            <ul className="flex flex-col">
+              {open.data.map((o) => (
+                <li key={o.id} className="flex min-h-11 items-center justify-between gap-3 hairline-b text-body text-ink">
+                  <span>
+                    {o.order_no}
+                    {o.table_id ? ` · Table ${tablesById.get(o.table_id)?.name ?? ""}` : ` · ${ORDER_TYPE_LABEL[o.order_type]}`}
+                  </span>
+                  <Money cents={o.totals.total} size="body" />
+                </li>
+              ))}
+            </ul>
+            <p className="text-body text-ink-2">Pay or cancel {open.data.length === 1 ? "it" : "them"} first, unless {open.data.length === 1 ? "it carries" : "they carry"} over to the next day.</p>
+          </div>
+        ) : (
+          <p className="text-body text-ink-2">{open.isPending ? "Checking for open orders…" : "No orders are open."}</p>
+        )}
+      </Sheet>
     </div>
   );
 }
