@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, desc, eq, isNull } from "drizzle-orm";
-import { PERMISSIONS, registerOperations, type OperationSpec } from "@sail/shared";
+import { AmountSchema, PERMISSIONS, registerOperations, type OperationSpec } from "@sail/shared";
 import { db, markDryRun, settleInvariants } from "../db/client.js";
 import { checks, printers, refunds, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -36,8 +36,8 @@ registerOperations({
 const Mutation = z.object({ expected_version: z.number().int().optional(), dry_run: z.boolean().optional(), override_id: z.uuid().optional() });
 const Snapshot = z.record(z.string(), z.unknown());
 const OrderMutationResponse = z.object({ data: Snapshot, events: z.array(z.object({ id: z.string(), seq: z.number().int(), type: z.string(), occurredAt: z.string(), businessDate: z.string() })), warnings: z.array(z.string()) });
-export const RefundRequestSchema = z.discriminatedUnion("kind", [z.object({ kind: z.literal("full") }), z.object({ kind: z.literal("lines"), lines: z.array(z.object({ line_id: z.uuid(), quantity: z.number().int().min(1) })).min(1) }), z.object({ kind: z.literal("amount"), amount: z.number().int().min(1) })]);
-export const TenderSplit = z.array(z.object({ payment_id: z.uuid(), amount: z.number().int().min(0) })).optional();
+export const RefundRequestSchema = z.discriminatedUnion("kind", [z.object({ kind: z.literal("full") }), z.object({ kind: z.literal("lines"), lines: z.array(z.object({ line_id: z.uuid(), quantity: z.number().int().min(1) })).min(1) }), z.object({ kind: z.literal("amount"), amount: AmountSchema.min(1) })]);
+export const TenderSplit = z.array(z.object({ payment_id: z.uuid(), amount: AmountSchema })).optional();
 
 function dryRunFrom(c: { set(k: "dryRun", v: boolean): void }, body: { dry_run?: boolean }) {
   if (body.dry_run) {

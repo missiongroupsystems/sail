@@ -1,4 +1,4 @@
-import { boolean, index, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, index, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { merchants } from "./org.js";
 
 /**
@@ -78,7 +78,7 @@ export const proposals = pgTable(
     targetKind: text("target_kind"),
     /** The order the request acts on, and its total when proposed: what the approver is shown. */
     orderId: uuid("order_id"),
-    orderTotal: integer("order_total"),
+    orderTotal: bigint("order_total", { mode: "number" }),
     targetId: text("target_id"),
     /** The agent's rationale (free text from a model: shown to staff, never executed). */
     rationale: text("rationale"),

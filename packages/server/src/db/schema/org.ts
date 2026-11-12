@@ -1,4 +1,4 @@
-import { boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 /** Merchant > Brand > Outlet > Station. Every row carries merchant_id. */
 
@@ -18,11 +18,11 @@ export const merchantSettings = pgTable("merchant_settings", {
   taxMode: taxModeEnum("tax_mode").notNull().default("exclusive"),
   taxRounding: taxRoundingEnum("tax_rounding").notNull(),
   /** Null = cash rounding off. Otherwise the increment in minor units of the currency, for example 5 (CHF 0.05) or 100 (SEK 1). */
-  cashRoundingIncrement: integer("cash_rounding_increment"),
+  cashRoundingIncrement: bigint("cash_rounding_increment", { mode: "number" }),
   /** Notes and coins the POS cash counter offers, largest first, in minor units. Empty = enter the total only. */
-  cashDenominations: integer("cash_denominations").array().notNull().default([]),
+  cashDenominations: bigint("cash_denominations", { mode: "number" }).array().notNull().default([]),
   /** Closing a shift more than this many minor units out needs a reason. */
-  cashVarianceThreshold: integer("cash_variance_threshold").notNull(),
+  cashVarianceThreshold: bigint("cash_variance_threshold", { mode: "number" }).notNull(),
   /** HH:MM local time at which the business day rolls over. */
   businessDayCutoff: text("business_day_cutoff").notNull().default("04:00"),
   /** IANA time zone; required, never defaulted. */

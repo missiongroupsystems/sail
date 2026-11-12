@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
-import { ORDER_STATUSES, OrderTypeSchema, PERMISSIONS, PricingRuleSchema, isFreezable, localParts, operation, price, registerOperations, roleAtLeast, validateManualApplication, type OrderType, type OperationSpec, type Role } from "@sail/shared";
+import { AmountSchema, ORDER_STATUSES, OrderTypeSchema, PERMISSIONS, PricingRuleSchema, isFreezable, localParts, operation, price, registerOperations, roleAtLeast, validateManualApplication, type OrderType, type OperationSpec, type Role } from "@sail/shared";
 import { db, markDryRun, settleInvariants, tx } from "../db/client.js";
 import { areas, channelLinks, customerGroupMembers, customers, orderLines, orderManualApplications, orders, stations, tables, voidReasons } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -73,7 +73,7 @@ const LineInputSchema = z.object({
   notes: untrusted(z.string().max(200).nullable().optional()),
   seat_no: z.number().int().min(1).max(99).nullable().optional(),
   hold: z.boolean().optional(),
-  open_price: z.number().int().min(0).nullable().optional(),
+  open_price: AmountSchema.nullable().optional(),
 });
 const SnapshotSchema = z.record(z.string(), z.unknown());
 const OrderMutationResponse = z.object({ data: SnapshotSchema, events: z.array(z.object({ id: z.string(), seq: z.number().int(), type: z.string(), occurredAt: z.string(), businessDate: z.string() })), warnings: z.array(z.string()) });

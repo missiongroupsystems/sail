@@ -4,7 +4,7 @@ import { inject } from "vitest";
 import { presetSeedRules, REGION_PRESETS, type PricingRuleInput, type RegionPresetKey, type Role } from "@sail/shared";
 import { applyPreset, type MerchantSettingsInput } from "../src/bootstrap.js";
 import { setConfigForTests, loadConfig } from "../src/config.js";
-import { setPoolForTests } from "../src/db/client.js";
+import { PG_TYPES, setPoolForTests } from "../src/db/client.js";
 import { resetGateForTests } from "../src/middleware/pipeline.js";
 import { signSailToken, hashSecret, pinLookup } from "../src/auth/tokens.js";
 import { localSubject, SESSION_TTL_SECONDS } from "../src/auth/identity.js";
@@ -42,7 +42,7 @@ export async function freshDb(overrides: Partial<Record<string, string>> = {}): 
   );
   setPoolForTests(null);
   resetGateForTests();
-  const sql = postgres(url, { max: 2, prepare: false, onnotice: () => {} });
+  const sql = postgres(url, { max: 2, prepare: false, onnotice: () => {}, types: PG_TYPES });
   return {
     url,
     name,

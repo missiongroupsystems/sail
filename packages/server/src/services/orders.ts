@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import { price, PricingContextSchema, sumCents, sumTaxBreakdowns, type Adjustment, type ManualApplication, type OrderType, type PricedLine, type PricingContext, type PricingLineInput, type PricingResult, type PricingRule, type TaxBreakdown, type TaxRate, ORDER_NUMBER_PREFIX, type ChannelType } from "@sail/shared";
+import { MAX_AMOUNT, price, PricingContextSchema, sumCents, sumTaxBreakdowns, type Adjustment, type ManualApplication, type OrderType, type PricedLine, type PricingContext, type PricingLineInput, type PricingResult, type PricingRule, type TaxBreakdown, type TaxRate, ORDER_NUMBER_PREFIX, type ChannelType } from "@sail/shared";
 import { assertNotSettled, db, maybeTx, tx } from "../db/client.js";
 import { checkAllocations, checks, customerGroupMembers, orderAdjustmentLines, orderAdjustments, orderLines, orderManualApplications, orders, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -196,6 +196,7 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
   const groupIds = groupRows.map((x) => x.g);
   const lockedLines = lines.filter((l) => locked.has(l.id));
   const liveLines = locked.size ? lines.filter((l) => !locked.has(l.id)) : lines;
+  assertWithinMaxAmount(order.orderType, liveLines, lockedLines);
   const storedAdjLines = locked.size && storedAdjs.length ? await db().select().from(orderAdjustmentLines).where(and(inArray(orderAdjustmentLines.adjustmentId, storedAdjs.map((a) => a.id)), inArray(orderAdjustmentLines.orderLineId, [...locked]))) : [];
 
   // A capped rule's cap is for the whole order: what paid lines already took is no longer available to the unpaid ones.
@@ -266,8 +267,8 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
   // The engine's own order (line discounts, order discounts, fees; by priority and id), so a paid bill's rows keep their order
   // whether an adjustment came from the engine or was carried over from the paid lines.
   const step = (a: Adjustment) => (a.kind === "fee" ? 2 : a.level === "order" ? 1 : 0);
-  const cmp = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
   const priority = new Map(adjustments.map((a) => [a, RulePriority.parse(a.rule_snapshot).priority]));
+  const cmp = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
   adjustments.sort((a, b) => step(a) - step(b) || priority.get(a)! - priority.get(b)! || cmp(a.rule_id, b.rule_id) || a.rule_version - b.rule_version || cmp(a.manual_application_id ?? "", b.manual_application_id ?? ""));
   const allLines = [...engine.lines, ...lockedPriced];
   const totals: PricingResult["totals"] = {
@@ -295,7 +296,7 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
     await tx()`
       update order_lines as l
       set unit_price = v.unit_price, base_amount = v.base_amount, discount_amount = v.discount_amount, net_amount = v.net_amount, fee_amount = v.fee_amount, tax_amount = v.tax_amount, taxes = v.taxes, total = v.total, updated_at = ${at.toISOString()}::timestamptz
-      from unnest(${ls.map((l) => l.line_id)}::uuid[], ${ls.map((l) => l.unit_price)}::int[], ${ls.map((l) => l.base_amount)}::int[], ${ls.map((l) => l.discount_amount)}::int[], ${ls.map((l) => l.net_amount)}::int[], ${ls.map((l) => l.fee_amount)}::int[], ${ls.map((l) => l.tax_on_net + l.tax_on_fees)}::int[], ${ls.map((l) => JSON.stringify(l.taxes))}::jsonb[], ${ls.map((l) => l.total)}::int[])
+      from unnest(${ls.map((l) => l.line_id)}::uuid[], ${ls.map((l) => l.unit_price)}::bigint[], ${ls.map((l) => l.base_amount)}::bigint[], ${ls.map((l) => l.discount_amount)}::bigint[], ${ls.map((l) => l.net_amount)}::bigint[], ${ls.map((l) => l.fee_amount)}::bigint[], ${ls.map((l) => l.tax_on_net + l.tax_on_fees)}::bigint[], ${ls.map((l) => JSON.stringify(l.taxes))}::jsonb[], ${ls.map((l) => l.total)}::bigint[])
         as v(id, unit_price, base_amount, discount_amount, net_amount, fee_amount, tax_amount, taxes, total)
       where l.id = v.id`;
   }
@@ -344,6 +345,21 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
     .where(eq(orders.id, orderId));
   for (const hook of repriceHooks) await hook(orderId, result);
   return result;
+}
+
+/**
+ * Every line and the order's subtotal stay within `MAX_AMOUNT`, so the pipeline's arithmetic and every sum a report
+ * takes over them are exact. Each value a request carries is already bounded; this catches their products (999 open
+ * items at the largest price) before pricing, as a validation error rather than a failed insert.
+ */
+function assertWithinMaxAmount(orderType: string, live: (typeof orderLines.$inferSelect)[], locked: (typeof orderLines.$inferSelect)[]) {
+  let subtotal = sumCents(locked.map((l) => l.baseAmount));
+  for (const l of live) {
+    const base = (resolveUnitPrice(l, orderType) + sumCents(l.modifiers.map((m) => m.price * m.quantity))) * l.quantity;
+    if (base > MAX_AMOUNT) throw AppError.validation(`${l.name} comes to more than the largest amount the register accepts`, { remedy: "Lower the quantity or the price.", limit: MAX_AMOUNT });
+    subtotal += base;
+  }
+  if (subtotal > MAX_AMOUNT) throw AppError.validation("The order comes to more than the largest amount the register accepts", { remedy: "Split it into more than one order.", limit: MAX_AMOUNT });
 }
 
 /** A stored line as the pricing engine sees it (the catalogue snapshot taken when the line was added). */

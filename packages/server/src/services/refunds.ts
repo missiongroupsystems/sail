@@ -131,11 +131,11 @@ export async function createRefund(input: { refundId: string; checkId: string; r
 registerRefundTotals(async (scope) => {
   const where = and(eq(refunds.outletId, scope.outletId), scope.shiftId ? eq(refunds.shiftId, scope.shiftId) : eq(refunds.businessDate, scope.businessDate), scope.stationId && !scope.shiftId ? eq(refunds.stationId, scope.stationId) : sql`true`);
   const [r] = await db()
-    .select({ count: sql<number>`count(*)::int`, amount: sql<number>`coalesce(sum(${refunds.total}),0)::int`, net: sql<number>`coalesce(sum((select n.net from report_refunds n where n.refund_id = ${refunds.id})),0)::int` })
+    .select({ count: sql<number>`count(*)::int`, amount: sql<number>`coalesce(sum(${refunds.total}),0)::bigint`, net: sql<number>`coalesce(sum((select n.net from report_refunds n where n.refund_id = ${refunds.id})),0)::bigint` })
     .from(refunds)
     .where(where);
   const [cash] = await db()
-    .select({ amount: sql<number>`coalesce(sum(${refundTenders.amount} + ${refundTenders.roundingCents}),0)::int` })
+    .select({ amount: sql<number>`coalesce(sum(${refundTenders.amount} + ${refundTenders.roundingCents}),0)::bigint` })
     .from(refundTenders)
     .innerJoin(refunds, eq(refunds.id, refundTenders.refundId))
     .where(and(where, eq(refundTenders.isCash, true)));

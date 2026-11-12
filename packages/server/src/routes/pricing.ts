@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { ChannelTypeSchema, OrderTypeSchema, PricingContextSchema, PricingLineSchema, PricingResultSchema, PricingRuleSchema, ManualApplicationSchema, price, registerOperations, validateRuleSet, type PricingRuleInput } from "@sail/shared";
+import { AmountSchema, ChannelTypeSchema, OrderTypeSchema, PricingContextSchema, PricingLineSchema, PricingResultSchema, PricingRuleSchema, ManualApplicationSchema, price, registerOperations, validateRuleSet, type PricingRuleInput } from "@sail/shared";
 import { db } from "../db/client.js";
 import { products, reportCategories } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -29,7 +29,7 @@ const SimulateBody = z.object({
   channel: ChannelTypeSchema.default("pos"),
   customer_group_ids: z.array(z.string()).default([]),
   /** Either full pricing lines, or product references the server expands from the catalogue. */
-  lines: z.array(z.union([PricingLineSchema, z.object({ product_id: z.uuid(), quantity: z.number().int().min(1).default(1), open_price: z.number().int().min(0).nullable().optional(), line_id: z.string().optional() })])),
+  lines: z.array(z.union([PricingLineSchema, z.object({ product_id: z.uuid(), quantity: z.number().int().min(1).default(1), open_price: AmountSchema.nullable().optional(), line_id: z.string().optional() })])),
   manual_applications: z.array(ManualApplicationSchema).default([]),
   /** Evaluate the rules active at this time (default now), or supply a rule set to try. */
   at: z.iso.datetime().optional(),

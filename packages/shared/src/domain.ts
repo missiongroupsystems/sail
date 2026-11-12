@@ -46,5 +46,15 @@ export const UuidSchema = z.uuid();
 export const CentsSchema = z.number().int().safe();
 export const NonNegativeCentsSchema = z.number().int().min(0);
 
+/**
+ * The largest amount the register accepts, in minor units: 10^12 (Rp 10,000,000,000.00, or 1,000,000,000,000 VND). It
+ * bounds every price, payment and cash amount a request carries and every line and order subtotal. Money columns are
+ * bigint and JS numbers are exact to 2^53, so a sum of 9,000 orders at this size is still exact; the engine takes the
+ * products it needs (amount × rate) in BigInt.
+ */
+export const MAX_AMOUNT = 1_000_000_000_000;
+/** A non-negative amount a request may carry: at most `MAX_AMOUNT`, refused with a validation error above it. */
+export const AmountSchema = z.number().int().min(0).max(MAX_AMOUNT, `amount is above the largest the register accepts (${MAX_AMOUNT} minor units)`);
+
 /** Business date as YYYY-MM-DD. */
 export const BusinessDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);

@@ -1,4 +1,4 @@
-import { index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { tenderTypes } from "./catalogue.js";
 import { orders } from "./orders.js";
@@ -29,8 +29,8 @@ export const paymentIntents = pgTable(
     provider: text("provider").notNull(),
     terminalId: text("terminal_id").notNull(),
     /** Applied to the bill's balance; the provider charges amount + tip. */
-    amount: integer("amount").notNull(),
-    tipCents: integer("tip_cents").notNull().default(0),
+    amount: bigint("amount", { mode: "number" }).notNull(),
+    tipCents: bigint("tip_cents", { mode: "number" }).notNull().default(0),
     currency: text("currency").notNull(),
     state: paymentIntentStateEnum("state").notNull().default("pending"),
     /** Why it ended other than approved: declined by the provider, cancelled by staff, bill_changed, expired. */
@@ -42,8 +42,8 @@ export const paymentIntents = pgTable(
     paymentId: uuid("payment_id").notNull(),
     /** The bill as it was at start. An approval is applied only to the same bill. */
     pinnedOrderVersion: integer("pinned_order_version").notNull(),
-    pinnedCheckTotal: integer("pinned_check_total").notNull(),
-    pinnedPaidTotal: integer("pinned_paid_total").notNull(),
+    pinnedCheckTotal: bigint("pinned_check_total", { mode: "number" }).notNull(),
+    pinnedPaidTotal: bigint("pinned_paid_total", { mode: "number" }).notNull(),
     startedBy: uuid("started_by"),
     startedByName: text("started_by_name"),
     stationId: uuid("station_id"),

@@ -4,8 +4,11 @@ import { renderBill, type BillDocument } from "@sail/shared";
 import { withTransaction } from "../src/db/client.js";
 import { billDocumentFor } from "../src/services/checks.js";
 import { renderInvoicePdf, type InvoiceDocument } from "../src/services/documents.js";
+import { MAX_AMOUNT, presetSeedRules, REGION_PRESETS, type RegionPresetKey } from "@sail/shared";
+import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
+import type { MerchantSettingsInput } from "../src/bootstrap.js";
 import { bootWorld, orderHelpers, type Call, type World } from "./world.js";
-import type { TestDb } from "./helpers.js";
+import { seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
 
 /**
  * Money review: regression tests for the findings of the adversarial money
@@ -26,6 +29,39 @@ type Amounts = { base: number; discount: number; net: number; fee: number; tax: 
 type Bill = { id: string; balance: number; totals: { total: number; tax_total: number } };
 type Snap = { id: string; lines: { id: string; amounts: Amounts }[]; checks: Bill[]; totals: { total: number; tax_total: number } };
 const mgr = () => w.pins.manager;
+
+type Body = { data: Snap & { id: string; balance: number; checks: Bill[] }; code?: string; message?: string };
+type Res<T = Body> = { status: number; body: T };
+
+/** A second merchant in another region, with one product per price given, a cash tender, a card tender and printers. */
+async function regionMerchant(name: string, region: { preset: RegionPresetKey } & MerchantSettingsInput, prices: number[]) {
+  const m = await seedMerchant(db.sql, name, region);
+  await withTransaction(() => seedRulesForMerchant(m.merchantId, presetSeedRules(REGION_PRESETS[region.preset], m.taxClassIds)));
+  const t = m.admin.token;
+  const must = async <T = Body>(method: string, path: string, body?: unknown): Promise<T> => {
+    const r = await call<T>(method, path, { token: t, body });
+    if (r.status >= 300) throw new Error(`${method} ${path} -> ${r.status} ${JSON.stringify(r.body)}`);
+    return r.body;
+  };
+  const products = prices.map(() => randomUUID());
+  const ids = { menu: randomUUID(), link: randomUUID(), cash: randomUUID(), card: randomUUID() };
+  for (const [i, price] of prices.entries()) await must("POST", "/v1/products", { id: products[i], name: `Item ${i + 1}`, price });
+  await must("POST", "/v1/menus", { id: ids.menu, brand_id: m.brandId, name: "M", sections: [{ name: "All", items: products.map((product_id) => ({ product_id })) }] });
+  await must("POST", "/v1/channel-links", { id: ids.link, channel: "pos", outlet_id: m.outletId, brand_id: m.brandId, menu_id: ids.menu });
+  await must("POST", "/v1/printers", { outlet_id: m.outletId, name: "K", ip: "10.0.0.1", is_default_kitchen: true });
+  await must("POST", "/v1/printers", { outlet_id: m.outletId, name: "R", ip: "10.0.0.2", role: "receipt" });
+  await must("POST", "/v1/tender-types", { id: ids.cash, name: "Cash", is_cash: true });
+  await must("POST", "/v1/tender-types", { id: ids.card, name: "Card", is_terminal: true });
+  /** A takeaway with the given products (by index), sent to the kitchen. */
+  const order = async (lines: { p: number; quantity?: number }[]) => {
+    const id = randomUUID();
+    await must("POST", "/v1/orders", { order_id: id, order_type: "takeaway", takeaway_ref: "T", outlet_id: m.outletId, brand_id: m.brandId });
+    const s = await must("POST", `/v1/orders/${id}/lines`, { lines: lines.map((l) => ({ line_id: randomUUID(), product_id: products[l.p], quantity: l.quantity ?? 1 })) });
+    await must("POST", `/v1/orders/${id}/fire`, {});
+    return s.data;
+  };
+  return { m, t, must, call: (method: string, path: string, body?: unknown) => call<Body>(method, path, { token: t, body }), products, ids, order };
+}
 const snapshot = async (orderId: string) => (await call<{ data: Snap }>("GET", `/v1/orders/${orderId}`, { token: mgr() })).body.data;
 
 describe("frozen discounts after a payment", () => {
@@ -112,5 +148,50 @@ describe("documents of a paid bill", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+type ZReport = { sales: { total: number; net: number; tax: number }; tenders: { amount: number }[]; cash: { expected: number; counted: number | null; variance: number | null; cash_payments: number } };
+
+describe("amounts beyond 32 bits", () => {
+  for (const [currency, locale, price, zone] of [["IDR", "id-ID", 1_200_000_000, "Asia/Jakarta"], ["VND", "vi-VN", 1_500_000_000, "Asia/Ho_Chi_Minh"]] as const) {
+    it(`${currency}: orders, payments, shift close, Z-report, day close and sales summary past 2^31 minor units`, async () => {
+      const r = await regionMerchant(`Big ${currency}`, { preset: "blank", timeZone: zone, currency, locale }, [price]);
+      const shift = await r.must<{ data: { id: string } }>("POST", "/v1/shifts", { outlet_id: r.m.outletId, station_id: null, float_cents: 0 });
+      let taken = 0;
+      for (let i = 0; i < 2; i++) {
+        const s = await r.order([{ p: 0, quantity: 2 }]);
+        expect(s.balance).toBe(2 * price);
+        await r.must("POST", `/v1/checks/${s.checks[0]!.id}/payments`, { payment_id: randomUUID(), tender_type_id: r.ids.cash, amount: s.balance });
+        taken += s.balance;
+      }
+      expect(taken).toBeGreaterThan(2 ** 31);
+      const z = await r.must<{ data: ZReport }>("GET", `/v1/outlets/${r.m.outletId}/z-report`);
+      expect(z.data.sales.total).toBe(taken);
+      expect(z.data.tenders.reduce((a, t) => a + t.amount, 0)).toBe(taken);
+      expect(z.data.cash.expected).toBe(taken);
+      const sum = await r.must<{ data: { totals: { total: number } } }>("GET", `/v1/reports/sales-summary?outlet_id=${r.m.outletId}`);
+      expect(sum.data.totals.total).toBe(taken);
+      const closed = await r.must<{ data: { variance_cents: number; expected_cash_cents: number } }>("POST", `/v1/shifts/${shift.data.id}/close`, { counted_cash_cents: taken });
+      expect(closed.data.expected_cash_cents).toBe(taken);
+      expect(closed.data.variance_cents).toBe(0);
+      const day = await r.must<{ data: { report: ZReport } }>("POST", `/v1/outlets/${r.m.outletId}/business-days/close`, {});
+      expect(day.data.report.sales.total).toBe(taken);
+    });
+  }
+
+  it("refuses an amount above the largest the register accepts with a validation error, not a 500", async () => {
+    const tooBig = await call<Body>("POST", "/v1/products", { token: w.m.admin.token, body: { id: randomUUID(), name: "Too big", price: MAX_AMOUNT + 1 } });
+    expect(tooBig.status).toBe(400);
+    expect((await call<Body>("POST", "/v1/products", { token: w.m.admin.token, body: { id: randomUUID(), name: "At the limit", price: MAX_AMOUNT } })).status).toBe(201);
+    // Each value within the limit, but the line is not: 999 open items at the largest price.
+    const o = await h.open(mgr());
+    const addLine = (quantity: number, open_price: number): Promise<Res> => call<Body>("POST", `/v1/orders/${o.body.data.id}/lines`, { token: mgr(), body: { lines: [{ line_id: randomUUID(), product_id: w.ids.openItem, quantity, open_price }] } });
+    const add = await addLine(999, MAX_AMOUNT);
+    expect(add.status).toBe(400);
+    expect(add.body.message).toMatch(/largest/);
+    const ok = await addLine(1, 2 ** 31);
+    expect(ok.status).toBe(200);
+    expect(ok.body.data.totals.total).toBe(Math.round(2 ** 31 * 1.09));
   });
 });

@@ -58,6 +58,41 @@ describe("allocateLargestRemainder", () => {
   });
 });
 
+/** Exact references in BigInt, for amounts whose products pass 2^53 (an IDR or VND order). */
+function exactAllocate(total: number, weights: number[]): number[] {
+  const t = BigInt(Math.abs(total));
+  const w = weights.map(BigInt);
+  const sum = w.reduce((a, b) => a + b, 0n);
+  const eff = sum === 0n ? w.map(() => 1n) : w;
+  const den = sum === 0n ? BigInt(w.length) : sum;
+  const parts = eff.map((x) => (t * x) / den);
+  const rem = eff.map((x) => (t * x) % den);
+  let left = t - parts.reduce((a, b) => a + b, 0n);
+  const order = eff.map((_, i) => i).sort((a, b) => (rem[b]! > rem[a]! ? 1 : rem[b]! < rem[a]! ? -1 : a - b));
+  for (const i of order) if (left > 0n) (parts[i]! += 1n), (left -= 1n);
+  return parts.map((x) => (total < 0 ? -Number(x) : Number(x)));
+}
+const exactPercent = (amount: number, bps: number) => {
+  const n = BigInt(Math.abs(amount)) * BigInt(bps);
+  const q = n / 10_000n + (((n % 10_000n) * 2n >= 10_000n) ? 1n : 0n);
+  return amount < 0 ? -Number(q) : Number(q);
+};
+
+describe("exact arithmetic for large amounts", () => {
+  const big = fc.integer({ min: 0, max: 1_000_000_000_000_000 });
+  it("property: allocation is exact when amount × weight passes 2^53", () => {
+    fc.assert(fc.property(fc.integer({ min: -1_000_000_000_000_000, max: 1_000_000_000_000_000 }), fc.array(big, { minLength: 1, maxLength: 6 }), (total, weights) => {
+      expect(allocateLargestRemainder(total, weights)).toEqual(exactAllocate(total, weights));
+    }), { numRuns: 3000 });
+  });
+  it("property: a percentage is exact when amount × bps passes 2^53", () => {
+    fc.assert(fc.property(fc.integer({ min: -Number.MAX_SAFE_INTEGER, max: Number.MAX_SAFE_INTEGER }), fc.integer({ min: 0, max: 100_000 }), (amount, bps) => {
+      expect(percentOfCents(amount, bps)).toBe(exactPercent(amount, bps));
+    }), { numRuns: 5000 });
+    expect(percentOfCents(9_007_199_254_740_991, 2000)).toBe(1_801_439_850_948_198);
+  });
+});
+
 describe("allocateByShares", () => {
   it("splits a $66.00 bottle three ways", () => {
     expect(allocateByShares(6600, [{ num: 1, den: 3 }, { num: 1, den: 3 }, { num: 1, den: 3 }])).toEqual([2200, 2200, 2200]);

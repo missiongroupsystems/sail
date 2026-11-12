@@ -47,19 +47,20 @@ export function allocateLargestRemainder(total: Cents, weights: readonly number[
   const sign = total < 0 ? -1 : 1;
   const abs = Math.abs(total);
 
-  // Work in integers when the weights are integers to avoid floating-point
-  // drift: exact share numerator = abs * w, denominator = effSum.
+  // Work in exact integers when the weights are integers: share numerator = abs * w, denominator = effSum. The
+  // product passes 2^53 for large amounts (an IDR order and its discount), so it is taken in BigInt.
   const allInt = effective.every((w) => Number.isInteger(w));
   const floors: number[] = new Array(n);
-  const remainders: number[] = new Array(n);
+  const remainders: (number | bigint)[] = new Array(n);
   let allocated = 0;
   for (let i = 0; i < n; i++) {
     const w = effective[i]!;
     if (allInt) {
-      const num = abs * w;
-      const q = Math.floor(num / effSum);
-      floors[i] = q;
-      remainders[i] = num - q * effSum; // integer remainder, comparable exactly
+      const num = BigInt(abs) * BigInt(w);
+      const den = BigInt(effSum);
+      const q = num / den;
+      floors[i] = Number(q);
+      remainders[i] = num - q * den; // integer remainder, comparable exactly
     } else {
       const exact = (abs * w) / effSum;
       const q = Math.floor(exact);
@@ -71,8 +72,9 @@ export function allocateLargestRemainder(total: Cents, weights: readonly number[
   let leftover = abs - allocated;
   if (leftover > 0) {
     const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => {
-      const d = remainders[b]! - remainders[a]!;
-      return d !== 0 ? d : a - b;
+      const ra = remainders[a]!;
+      const rb = remainders[b]!;
+      return rb > ra ? 1 : rb < ra ? -1 : a - b;
     });
     for (let k = 0; k < order.length && leftover > 0; k++) {
       floors[order[k]!]! += 1;
@@ -108,14 +110,14 @@ function lcmOf(a: number, b: number): number {
   return (a / gcd(a, b)) * b;
 }
 
-/** Percent of an amount in cents, where `bps` is basis points (10 000 = 100%). Rounded half up. */
+/** Percent of an amount in cents, where `bps` is basis points (10 000 = 100%). Rounded half up, exactly. */
 export function percentOfCents(amount: Cents, bps: number): Cents {
   assertCents(amount);
   if (!Number.isInteger(bps) || bps < 0) throw new RangeError(`bps must be a non-negative integer, got ${bps}`);
-  const num = Math.abs(amount) * bps;
-  const q = Math.floor(num / 10_000);
-  const r = num - q * 10_000;
-  const rounded = r * 2 >= 10_000 ? q + 1 : q;
+  // amount × bps passes 2^53 for large amounts, so the product is taken in BigInt; the result is at most the amount.
+  const num = BigInt(Math.abs(amount)) * BigInt(bps);
+  const q = num / 10_000n;
+  const rounded = Number((num - q * 10_000n) * 2n >= 10_000n ? q + 1n : q);
   return amount < 0 ? -rounded : rounded;
 }
 

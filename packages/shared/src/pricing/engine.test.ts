@@ -570,6 +570,24 @@ describe("properties", () => {
     );
   });
 
+  it("tax and discounts are exact at high-denomination amounts, where amount × rate passes 2^53", () => {
+    const rates: TaxRateInput[] = [{ tax_class_id: "standard", components: [{ name: "PPN 11%", bps: 1100 }] }];
+    const halfOff: PricingRuleInput = { id: "h", kind: "discount", name: "Half", calc: "percent", level: "order", value: { type: "fixed", amount: 3333 }, scope: { type: "all" }, priority: 1, application: "auto", report_class: "promo" };
+    fc.assert(
+      fc.property(fc.array(fc.integer({ min: 1, max: 2_000_000_000_000 }), { minLength: 1, maxLength: 4 }), fc.constantFrom("inclusive", "exclusive"), (bases, mode) => {
+        const r = price(order(bases.map((b, i) => line(`L${i}`, b))), [halfOff], ctx(mode, "per_line", rates));
+        for (const l of r.lines) {
+          const n = BigInt(l.net_amount) * 1100n;
+          const den = mode === "exclusive" ? 10_000n : 11_100n;
+          const exact = Number(n / den + ((n % den) * 2n >= den ? 1n : 0n));
+          expect(l.tax_on_net).toBe(exact);
+        }
+        expect(r.totals.discount_total).toBe(-Number((BigInt(sumCents(bases)) * 3333n + 5000n) / 10_000n));
+      }),
+      { numRuns: 300 },
+    );
+  });
+
   it("sortRules is a total order on (priority, id)", () => {
     const s = sortRules([{ id: "b", priority: 1 }, { id: "a", priority: 1 }, { id: "z", priority: 0 }]);
     expect(s.map((r) => r.id)).toEqual(["z", "a", "b"]);

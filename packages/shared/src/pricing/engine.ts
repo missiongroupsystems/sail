@@ -404,12 +404,12 @@ function rateTax(amount: Cents, components: readonly TaxComponent[], context: Pr
   let total: Cents;
   if (context.tax_mode === "exclusive") total = percentOfCents(amount, combined);
   else {
+    // Exact for large amounts: the product passes 2^53 for an IDR or VND order, so it is taken in BigInt.
     const sign = amount < 0 ? -1 : 1;
-    const num = Math.abs(amount) * combined;
-    const den = 10_000 + combined;
-    const q = Math.floor(num / den);
-    const r = num - q * den;
-    total = sign * (r * 2 >= den ? q + 1 : q);
+    const num = BigInt(Math.abs(amount)) * BigInt(combined);
+    const den = BigInt(10_000 + combined);
+    const q = num / den;
+    total = sign * Number((num - q * den) * 2n >= den ? q + 1n : q);
   }
   return components.length === 1 ? [total] : allocateLargestRemainder(total, components.map((c) => c.bps));
 }
