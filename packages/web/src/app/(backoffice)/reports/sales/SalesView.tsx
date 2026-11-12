@@ -9,9 +9,13 @@ import type { Scope } from "@/lib/cookies";
 import { useSession } from "@/lib/session-context";
 import { ReportRange, useReportRange } from "../ReportRange";
 
-/** The register's sales summary (reports.sales_summary). Figures are shown as the register reports them. */
+/**
+ * The register's sales summary (reports.sales_summary). Figures are shown as the register reports them.
+ * Every `net` is net sales: items after discounts, without tax and fees, less the refunds' net (`totals.refunds`).
+ * `totals.fees` excludes tax; `totals.total` is what was collected before refunds.
+ */
 type SalesSummary = {
-  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; tax: number; net: number; refunds: number; net_after_refunds: number; rounding: number; tips: number };
+  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; tax: number; refunds: number; net: number; total: number; rounding: number; tips: number };
   /** `totals.tax` by component. */
   taxes: TaxBreakdown[];
   by_day: { business_date: string; orders: number; covers: number; gross: number; net: number }[];
@@ -25,7 +29,7 @@ const dayColumns: DataTableColumn<SalesSummary["by_day"][number]>[] = [
   { key: "orders", header: "Orders", numeric: true, render: (d) => d.orders },
   { key: "covers", header: "Covers", numeric: true, render: (d) => d.covers },
   { key: "gross", header: "Gross", numeric: true, render: (d) => <Money cents={d.gross} /> },
-  { key: "net", header: "Net", numeric: true, render: (d) => <Money cents={d.net} /> },
+  { key: "net", header: "Net sales", numeric: true, render: (d) => <Money cents={d.net} /> },
 ];
 const tenderColumns: DataTableColumn<SalesSummary["by_tender"][number]>[] = [
   { key: "tender", header: "Tender", isRowHeader: true, render: (t) => <span className="text-ink">{t.tender}</span> },
@@ -38,7 +42,7 @@ const categoryColumns: DataTableColumn<SalesSummary["by_category"][number]>[] = 
   { key: "category", header: "Category", isRowHeader: true, render: (c) => <span className="text-ink">{c.category}</span> },
   { key: "quantity", header: "Items", numeric: true, render: (c) => c.quantity },
   { key: "gross", header: "Gross", numeric: true, render: (c) => <Money cents={c.gross} /> },
-  { key: "net", header: "Net", numeric: true, render: (c) => <Money cents={c.net} /> },
+  { key: "net", header: "Net sales", numeric: true, render: (c) => <Money cents={c.net} /> },
 ];
 
 export function SalesView({ outlets, scope, initialOutletId }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null }) {
@@ -68,12 +72,12 @@ export function SalesView({ outlets, scope, initialOutletId }: { outlets: Outlet
                 { term: "Items", detail: t.items, numeric: true },
                 { term: "Gross", detail: <Money cents={t.gross} />, numeric: true },
                 { term: "Discounts", detail: <Money cents={-t.discounts} />, numeric: true },
-                { term: "Service and fees", detail: <Money cents={t.fees} />, numeric: true },
+                { term: "Refunds (before tax)", detail: <Money cents={-t.refunds} />, numeric: true },
+                { term: "Net sales", detail: <Money cents={t.net} />, numeric: true },
+                { term: "Service and fees (before tax)", detail: <Money cents={t.fees} />, numeric: true },
                 ...taxRows(report.data.taxes, taxMode).before.map((x) => ({ term: x.label, detail: <Money cents={x.amount} />, numeric: true })),
-                { term: "Net", detail: <Money cents={t.net} />, numeric: true },
+                { term: "Collected", detail: <Money cents={t.total} />, numeric: true },
                 ...taxRows(report.data.taxes, taxMode).after.map((x) => ({ term: x.label, detail: <Money cents={x.amount} />, numeric: true })),
-                { term: "Refunds", detail: <Money cents={-t.refunds} />, numeric: true },
-                { term: "Net after refunds", detail: <Money cents={t.net_after_refunds} />, numeric: true },
                 { term: "Cash rounding", detail: <Money cents={t.rounding} signed />, numeric: true },
                 { term: "Tips", detail: <Money cents={t.tips} />, numeric: true },
                 { term: "Voids", detail: <>{report.data.voids.count} · <Money cents={report.data.voids.value} /></>, numeric: true },

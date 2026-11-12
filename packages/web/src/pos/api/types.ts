@@ -361,7 +361,8 @@ export type Shift = {
 export type ZReport = {
   scope: { outlet_id: string; station_id: string | null; business_date: string; shift_id: string | null };
   orders: { count: number; by_type: Record<string, number>; covers: number; open_count: number };
-  sales: { gross: number; discounts: number; fees: number; tax: number; taxes: TaxBreakdown[]; net: number };
+  /** `net` is net sales: items after discounts, without tax and fees, less `refunds` (the refunds' net). `fees` excludes tax; `total` is what was collected before refunds. */
+  sales: { gross: number; discounts: number; fees: number; tax: number; taxes: TaxBreakdown[]; refunds: number; net: number; total: number };
   adjustments: { rule_key: string; name: string; kind: string; report_class: string; total: number; count: number }[];
   tenders: { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number }[];
   cash: { float: number; cash_payments: number; rounding: number; refunds: number; expected: number; counted: number | null; variance: number | null };

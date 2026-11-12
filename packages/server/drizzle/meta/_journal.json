@@ -155,6 +155,13 @@
       "when": 1794495815776,
       "tag": "0021_guest_rounds_table_order",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794496114250,
+      "tag": "0022_net_sales",
+      "breakpoints": true
     }
   ]
 }

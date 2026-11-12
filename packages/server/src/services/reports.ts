@@ -38,7 +38,13 @@ function orderWhere(f: ReportFilters, alias = "r") {
 
 export type SalesSummary = {
   filters: ReportFilters;
-  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; tax: number; net: number; refunds: number; net_after_refunds: number; rounding: number; tips: number };
+  /**
+   * `net` is net sales: items after discounts, without tax and fees, less `refunds` (the refunds' net).
+   * `gross` and `discounts` are as charged (tax included in inclusive mode); `fees` excludes tax.
+   * `total` is what was collected before refunds: `net + refunds + fees + tax = total`.
+   * Every `net` below (by day, order type, source and category) is the same figure split up.
+   */
+  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; tax: number; refunds: number; net: number; total: number; rounding: number; tips: number };
   /** totals.tax by component name and rate. */
   taxes: TaxBreakdown[];
   by_day: { business_date: string; orders: number; covers: number; gross: number; net: number }[];
@@ -57,31 +63,38 @@ export async function salesSummary(f: ReportFilters): Promise<SalesSummary> {
   const sql = tx();
   const w = orderWhere(f);
   const catFilter = f.categoryId ? sql`and (r.category_id = ${f.categoryId} or r.parent_category_id = ${f.categoryId})` : sql``;
-  const [t] = await sql<{ orders: number; covers: number; gross: number; discounts: number; fees: number; tax: number; net: number }[]>`
+  const [t] = await sql<{ orders: number; covers: number; gross: number; discounts: number; fees: number; tax: number; net: number; total: number }[]>`
     select count(*)::int as orders, coalesce(sum(pax),0)::int as covers, coalesce(sum(subtotal),0)::int as gross, coalesce(sum(discount_total),0)::int as discounts,
-           coalesce(sum(fee_total),0)::int as fees, coalesce(sum(tax_total),0)::int as tax, coalesce(sum(total),0)::int as net
+           coalesce(sum(fees_net),0)::int as fees, coalesce(sum(tax_total),0)::int as tax, coalesce(sum(net_sales),0)::int as net, coalesce(sum(total),0)::int as total
     from report_orders r where ${w}`;
   const taxes = await sql<TaxBreakdown[]>`
     select t->>'name' as name, (t->>'bps')::int as bps, coalesce(sum((t->>'taxable')::int),0)::int as taxable, coalesce(sum((t->>'amount')::int),0)::int as amount
     from report_orders r, jsonb_array_elements(r.taxes) t where ${w} group by 1, 2 order by 2 desc, 1`;
   const [items] = await sql<{ n: number }[]>`select coalesce(sum(quantity),0)::int as n from report_sales_lines r where ${w} ${catFilter}`;
-  const byDay = await sql<SalesSummary["by_day"]>`select business_date, count(*)::int as orders, coalesce(sum(pax),0)::int as covers, coalesce(sum(subtotal),0)::int as gross, coalesce(sum(total),0)::int as net from report_orders r where ${w} group by business_date order by business_date`;
-  const byType = await sql<SalesSummary["by_order_type"]>`select order_type, count(*)::int as orders, coalesce(sum(total),0)::int as net from report_orders r where ${w} group by order_type order by order_type`;
-  const bySource = await sql<SalesSummary["by_source"]>`select source, count(*)::int as orders, coalesce(sum(total),0)::int as net from report_orders r where ${w} group by source order by source`;
+  // Orders and covers come from the orders of the period; net from report_net_sales, so a refund lands on its own day.
+  const byDay = await sql<SalesSummary["by_day"]>`select business_date, coalesce(o.orders,0)::int as orders, coalesce(o.covers,0)::int as covers, coalesce(o.gross,0)::int as gross, coalesce(n.net,0)::int as net
+    from (select business_date, count(*) as orders, sum(pax) as covers, sum(subtotal) as gross from report_orders r where ${w} group by 1) o
+    full join (select business_date, sum(net) as net from report_net_sales r where ${w} group by 1) n using (business_date) order by business_date`;
+  const byType = await sql<SalesSummary["by_order_type"]>`select order_type, coalesce(o.orders,0)::int as orders, coalesce(n.net,0)::int as net
+    from (select order_type, count(*) as orders from report_orders r where ${w} group by 1) o
+    full join (select order_type, sum(net) as net from report_net_sales r where ${w} group by 1) n using (order_type) order by order_type`;
+  const bySource = await sql<SalesSummary["by_source"]>`select source, coalesce(o.orders,0)::int as orders, coalesce(n.net,0)::int as net
+    from (select source, count(*) as orders from report_orders r where ${w} group by 1) o
+    full join (select source, sum(net) as net from report_net_sales r where ${w} group by 1) n using (source) order by source`;
   const byTender = await sql<SalesSummary["by_tender"]>`select tender_name as tender, is_cash, count(*)::int as count, coalesce(sum(amount),0)::int as amount, coalesce(sum(rounding_cents),0)::int as rounding, coalesce(sum(tip_cents),0)::int as tips
     from report_payments r where ${w} and status = 'recorded' ${f.shiftId ? sql`and shift_id = ${f.shiftId}` : sql``} group by tender_name, is_cash order by amount desc`;
-  const byCategory = await sql<SalesSummary["by_category"]>`select r.category_id, coalesce(c.name, 'Uncategorised') as category, coalesce(sum(r.quantity),0)::int as quantity, coalesce(sum(r.base_amount),0)::int as gross, coalesce(sum(r.net_amount),0)::int as net
-    from report_sales_lines r left join report_categories c on c.id = r.category_id where ${w} ${catFilter} group by r.category_id, c.name order by net desc`;
+  const byCategory = await sql<SalesSummary["by_category"]>`select r.category_id, coalesce(c.name, 'Uncategorised') as category, coalesce(sum(r.quantity),0)::int as quantity, coalesce(sum(r.gross),0)::int as gross, coalesce(sum(r.net),0)::int as net
+    from report_net_sales r left join report_categories c on c.id = r.category_id where ${w} ${catFilter} group by r.category_id, c.name order by net desc`;
   const byRule = await sql<SalesSummary["adjustments_by_rule"]>`select rule_key, name, kind, report_class, count(*)::int as count, coalesce(sum(total),0)::int as total from report_adjustments r where ${w} group by rule_key, name, kind, report_class order by kind, total`;
   const byClass = await sql<SalesSummary["adjustments_by_class"]>`select report_class, kind, count(*)::int as count, coalesce(sum(total),0)::int as total from report_adjustments r where ${w} group by report_class, kind order by kind, total`;
   const [voids] = await sql<{ count: number; quantity: number; value: number }[]>`select count(*)::int as count, coalesce(sum(quantity),0)::int as quantity, coalesce(sum(value),0)::int as value from report_voids r where ${w}`;
-  const [refunds] = await sql<{ count: number; amount: number }[]>`select count(*)::int as count, coalesce(sum(total),0)::int as amount from report_refunds r where ${w}`;
+  const [refunds] = await sql<{ count: number; amount: number; net: number }[]>`select count(*)::int as count, coalesce(sum(total),0)::int as amount, coalesce(sum(net),0)::int as net from report_refunds r where ${w}`;
   const refundKinds = await sql<{ kind: string; count: number; amount: number }[]>`select kind, count(*)::int as count, coalesce(sum(total),0)::int as amount from report_refunds r where ${w} group by kind order by kind`;
   const rounding = byTender.reduce((s, x) => s + x.rounding, 0);
   const tips = byTender.reduce((s, x) => s + x.tips, 0);
   return {
     filters: f,
-    totals: { orders: t?.orders ?? 0, covers: t?.covers ?? 0, items: items?.n ?? 0, gross: t?.gross ?? 0, discounts: t?.discounts ?? 0, fees: t?.fees ?? 0, tax: t?.tax ?? 0, net: t?.net ?? 0, refunds: refunds?.amount ?? 0, net_after_refunds: (t?.net ?? 0) - (refunds?.amount ?? 0), rounding, tips },
+    totals: { orders: t?.orders ?? 0, covers: t?.covers ?? 0, items: items?.n ?? 0, gross: t?.gross ?? 0, discounts: t?.discounts ?? 0, fees: t?.fees ?? 0, tax: t?.tax ?? 0, refunds: refunds?.net ?? 0, net: (t?.net ?? 0) - (refunds?.net ?? 0), total: t?.total ?? 0, rounding, tips },
     taxes,
     by_day: byDay,
     by_order_type: byType,
@@ -103,9 +116,9 @@ export async function productMix(f: ReportFilters, groupBy: "item" | "category" 
   const w = orderWhere(f);
   const catFilter = f.categoryId ? sql`and (r.category_id = ${f.categoryId} or r.parent_category_id = ${f.categoryId})` : sql``;
   let rows: Omit<ProductMixRow, "share_bps">[];
-  if (groupBy === "item") rows = await sql<Omit<ProductMixRow, "share_bps">[]>`select r.product_id::text as key, r.product_name as name, sum(r.quantity)::int as quantity, sum(r.base_amount)::int as gross, sum(r.discount_amount)::int as discounts, sum(r.net_amount)::int as net from report_sales_lines r where ${w} ${catFilter} group by r.product_id, r.product_name order by net desc`;
-  else if (groupBy === "category") rows = await sql<Omit<ProductMixRow, "share_bps">[]>`select r.category_id::text as key, coalesce(c.name, 'Uncategorised') as name, sum(r.quantity)::int as quantity, sum(r.base_amount)::int as gross, sum(r.discount_amount)::int as discounts, sum(r.net_amount)::int as net from report_sales_lines r left join report_categories c on c.id = r.category_id where ${w} ${catFilter} group by r.category_id, c.name order by net desc`;
-  else rows = await sql<Omit<ProductMixRow, "share_bps">[]>`select r.added_by::text as key, coalesce(r.added_by_name, 'Guest') as name, sum(r.quantity)::int as quantity, sum(r.base_amount)::int as gross, sum(r.discount_amount)::int as discounts, sum(r.net_amount)::int as net from report_sales_lines r where ${w} ${catFilter} group by r.added_by, r.added_by_name order by net desc`;
+  if (groupBy === "item") rows = await sql<Omit<ProductMixRow, "share_bps">[]>`select r.product_id::text as key, r.product_name as name, sum(r.quantity)::int as quantity, sum(r.gross)::int as gross, sum(r.discounts)::int as discounts, sum(r.net)::int as net from report_net_sales r where ${w} ${catFilter} group by r.product_id, r.product_name order by net desc`;
+  else if (groupBy === "category") rows = await sql<Omit<ProductMixRow, "share_bps">[]>`select r.category_id::text as key, coalesce(c.name, 'Uncategorised') as name, sum(r.quantity)::int as quantity, sum(r.gross)::int as gross, sum(r.discounts)::int as discounts, sum(r.net)::int as net from report_net_sales r left join report_categories c on c.id = r.category_id where ${w} ${catFilter} group by r.category_id, c.name order by net desc`;
+  else rows = await sql<Omit<ProductMixRow, "share_bps">[]>`select r.added_by::text as key, coalesce(r.added_by_name, 'Guest') as name, sum(r.quantity)::int as quantity, sum(r.gross)::int as gross, sum(r.discounts)::int as discounts, sum(r.net)::int as net from report_net_sales r where ${w} ${catFilter} group by r.added_by, r.added_by_name order by net desc`;
   const total = rows.reduce((s, r) => s + r.net, 0);
   return rows.map((r) => ({ ...r, share_bps: total ? Math.round((r.net * 10_000) / total) : 0 }));
 }
@@ -149,7 +162,7 @@ export async function printHealth(f: Pick<ReportFilters, "merchantId" | "outletI
 
 export function salesSummaryCsv(s: SalesSummary): string {
   const rows: (string | number | boolean | null)[][] = [];
-  rows.push(["totals", "orders", s.totals.orders, "covers", s.totals.covers, "gross", s.totals.gross, "discounts", s.totals.discounts, "fees", s.totals.fees, "tax", s.totals.tax, "net", s.totals.net, "refunds", s.totals.refunds, "rounding", s.totals.rounding, "tips", s.totals.tips]);
+  rows.push(["totals", "orders", s.totals.orders, "covers", s.totals.covers, "gross", s.totals.gross, "discounts", s.totals.discounts, "refunds", s.totals.refunds, "net", s.totals.net, "fees", s.totals.fees, "tax", s.totals.tax, "total", s.totals.total, "rounding", s.totals.rounding, "tips", s.totals.tips]);
   for (const t of s.taxes) rows.push(["tax", t.name, t.bps, t.taxable, t.amount]);
   for (const d of s.by_day) rows.push(["by_day", d.business_date, d.orders, d.covers, d.gross, d.net]);
   for (const t of s.by_order_type) rows.push(["by_order_type", t.order_type, t.orders, t.net]);
@@ -159,7 +172,7 @@ export function salesSummaryCsv(s: SalesSummary): string {
   for (const a of s.adjustments_by_rule) rows.push(["adjustment", a.rule_key, a.name, a.kind, a.report_class, a.count, a.total]);
   rows.push(["voids", s.voids.count, s.voids.quantity, s.voids.value]);
   rows.push(["refunds", s.refunds.count, s.refunds.amount]);
-  return toCsv(["section", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s"], rows);
+  return toCsv(["section", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v"], rows);
 }
 
 export function rowsCsv<T extends Record<string, unknown>>(rows: T[]): string {
@@ -199,10 +212,12 @@ export async function dailySummaryPdf(input: { outletName: string; businessDate:
   row("Covers", String(input.z.orders.covers));
   row("Gross sales", formatCents(input.z.sales.gross));
   row("Discounts", formatCents(input.z.sales.discounts));
-  row("Fees", formatCents(input.z.sales.fees));
-  for (const t of input.z.sales.taxes) row(t.name, formatCents(t.amount));
+  row("Refunds (net)", formatCents(-input.z.sales.refunds));
   row("Net sales", formatCents(input.z.sales.net), bold);
-  row("Refunds", formatCents(-input.z.refunds.amount));
+  row("Fees (net)", formatCents(input.z.sales.fees));
+  for (const t of input.z.sales.taxes) row(t.name, formatCents(t.amount));
+  row("Collected", formatCents(input.z.sales.total), bold);
+  row(`Refunded (${input.z.refunds.count})`, formatCents(-input.z.refunds.amount));
   section("Tenders");
   for (const t of input.z.tenders) row(`${t.tender} (${t.count})`, `${formatCents(t.amount)}${t.rounding ? ` · rounding ${formatCents(t.rounding)}` : ""}`);
   section("Cash");

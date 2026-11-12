@@ -13,8 +13,13 @@ import type { Principal } from "../auth/principal.js";
 export type ZReport = {
   scope: { outlet_id: string; station_id: string | null; business_date: string; shift_id: string | null };
   orders: { count: number; by_type: Record<string, number>; covers: number; open_count: number };
-  /** `tax` by component in `taxes`, one row per component name and rate. */
-  sales: { gross: number; discounts: number; fees: number; tax: number; taxes: TaxBreakdown[]; net: number };
+  /**
+   * `gross` and `discounts` are the items at menu prices and their discounts, as charged (tax included in inclusive mode).
+   * `net` is net sales: items after discounts, without tax and fees, less `refunds` (the refunds' net).
+   * `fees` excludes tax; `tax` is by component in `taxes`. `total` is what was collected before refunds,
+   * so `net + refunds + fees + tax = total` and the tenders add up to `total`.
+   */
+  sales: { gross: number; discounts: number; fees: number; tax: number; taxes: TaxBreakdown[]; refunds: number; net: number; total: number };
   adjustments: { rule_key: string; name: string; kind: string; report_class: string; total: number; count: number }[];
   tenders: { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number }[];
   /** Register-computed totals across tenders, so clients never add rows up: `non_cash` is the figure to compare with the terminal's end-of-day total. */
@@ -28,7 +33,7 @@ export type ZReport = {
 type Scope = { outletId: string; businessDate: string; stationId?: string | null; shiftId?: string | null };
 
 /** Refund figures arrive in v0.7 through this provider. */
-let refundProvider: (scope: Scope) => Promise<{ count: number; amount: number; cash_amount: number }> = async () => ({ count: 0, amount: 0, cash_amount: 0 });
+let refundProvider: (scope: Scope) => Promise<{ count: number; amount: number; net: number; cash_amount: number }> = async () => ({ count: 0, amount: 0, net: 0, cash_amount: 0 });
 export function registerRefundTotals(fn: typeof refundProvider) {
   refundProvider = fn;
 }
@@ -36,10 +41,11 @@ export function registerRefundTotals(fn: typeof refundProvider) {
 export async function zReport(scope: Scope, cashCounts: { float: number; counted: number | null } = { float: 0, counted: null }): Promise<ZReport> {
   const orderWhere = and(eq(orders.outletId, scope.outletId), eq(orders.businessDate, scope.businessDate), scope.stationId ? eq(orders.stationId, scope.stationId) : sql`true`);
   const completed = and(orderWhere, eq(orders.status, "completed"));
-  const [o] = await db()
-    .select({ count: sql<number>`count(*)::int`, covers: sql<number>`coalesce(sum(pax),0)::int`, gross: sql<number>`coalesce(sum(subtotal),0)::int`, discounts: sql<number>`coalesce(sum(discount_total),0)::int`, fees: sql<number>`coalesce(sum(fee_total),0)::int`, tax: sql<number>`coalesce(sum(tax_total),0)::int`, net: sql<number>`coalesce(sum(total),0)::int` })
-    .from(orders)
-    .where(completed);
+  const [o] = await tx()<{ count: number; covers: number; gross: number; discounts: number; fees: number; tax: number; net: number; total: number }[]>`
+    select count(*)::int as count, coalesce(sum(pax),0)::int as covers, coalesce(sum(subtotal),0)::int as gross, coalesce(sum(discount_total),0)::int as discounts,
+           coalesce(sum(fees_net),0)::int as fees, coalesce(sum(tax_total),0)::int as tax, coalesce(sum(net_sales),0)::int as net, coalesce(sum(total),0)::int as total
+    from report_orders r
+    where r.outlet_id = ${scope.outletId} and r.business_date = ${scope.businessDate} ${scope.stationId ? tx()`and r.station_id = ${scope.stationId}` : tx()``}`;
   const byType = await db().select({ t: orders.orderType, n: sql<number>`count(*)::int` }).from(orders).where(completed).groupBy(orders.orderType);
   const taxes = await tx()<TaxBreakdown[]>`
     select t->>'name' as name, (t->>'bps')::int as bps, coalesce(sum((t->>'taxable')::int),0)::int as taxable, coalesce(sum((t->>'amount')::int),0)::int as amount
@@ -72,7 +78,7 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
   return {
     scope: { outlet_id: scope.outletId, station_id: scope.stationId ?? null, business_date: scope.businessDate, shift_id: scope.shiftId ?? null },
     orders: { count: o?.count ?? 0, by_type: Object.fromEntries(byType.map((b) => [b.t, b.n])), covers: o?.covers ?? 0, open_count: open?.n ?? 0 },
-    sales: { gross: o?.gross ?? 0, discounts: o?.discounts ?? 0, fees: o?.fees ?? 0, tax: o?.tax ?? 0, taxes, net: o?.net ?? 0 },
+    sales: { gross: o?.gross ?? 0, discounts: o?.discounts ?? 0, fees: o?.fees ?? 0, tax: o?.tax ?? 0, taxes, refunds: refunds.net, net: (o?.net ?? 0) - refunds.net, total: o?.total ?? 0 },
     adjustments: adj,
     tenders,
     tenders_summary: { cash: cashPayments, non_cash: tenders.filter((t) => !t.is_cash).reduce((s, t) => s + t.amount, 0), tips: tenders.reduce((s, t) => s + t.tips, 0), count: tenders.reduce((s, t) => s + t.count, 0) },

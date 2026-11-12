@@ -78,12 +78,17 @@ describe("reports", () => {
     const r = await call<{ data: { totals: Record<string, number>; by_tender: { tender: string; amount: number; rounding: number }[]; by_category: { category: string; quantity: number; net: number }[]; adjustments_by_rule: { rule_key: string; total: number }[]; adjustments_by_class: { report_class: string; total: number }[]; by_order_type: { order_type: string; orders: number }[]; by_source: { source: string; orders: number }[]; voids: { count: number; quantity: number; value: number }; refunds: { count: number; amount: number; by_kind: { kind: string }[] } } }>("GET", `/v1/reports/sales-summary?outlet_id=${A.outletId}`, { token: A.manager.token });
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     const d = r.body.data;
-    const [db1] = await db.sql`select count(*)::int as orders, sum(total)::int as net, sum(subtotal)::int as gross, sum(discount_total)::int as discounts, sum(fee_total)::int as fees, sum(tax_total)::int as tax from orders where outlet_id = ${A.outletId} and status = 'completed'`;
+    const [db1] = await db.sql`select count(*)::int as orders, sum(total)::int as total, sum(subtotal)::int as gross, sum(discount_total)::int as discounts, sum(fee_total)::int as fees, sum(tax_total)::int as tax from orders where outlet_id = ${A.outletId} and status = 'completed'`;
+    // Exclusive tax: the 100 goodwill refund's net is its amount less the GST inside it.
+    const [ref] = await db.sql`select (sum(base) + sum(discount))::int as net, sum(total)::int as total from refunds where outlet_id = ${A.outletId}`;
+    const net = db1!.gross + db1!.discounts - ref!.net;
     expect(d.totals.orders).toBe(3);
-    expect(d.totals).toMatchObject({ net: db1!.net, gross: db1!.gross, discounts: db1!.discounts, fees: db1!.fees, tax: db1!.tax, refunds: 100, net_after_refunds: db1!.net - 100 });
+    expect(ref!.total).toBe(100);
+    expect(ref!.net).toBeLessThan(100);
+    expect(d.totals).toMatchObject({ total: db1!.total, gross: db1!.gross, discounts: db1!.discounts, fees: db1!.fees, tax: db1!.tax, refunds: ref!.net, net });
     expect(d.totals.items).toBe(2 + 2 + 1 + 3);
     expect(d.by_order_type.map((x) => [x.order_type, x.orders]).sort()).toEqual([["dine_in", 1], ["takeaway", 2]]);
-    expect(d.by_source).toEqual([{ source: "pos", orders: 3, net: db1!.net }]);
+    expect(d.by_source).toEqual([{ source: "pos", orders: 3, net }]);
     const cash = d.by_tender.find((t) => t.tender === "Cash")!;
     const card = d.by_tender.find((t) => t.tender === "Card")!;
     const [pay] = await db.sql`select sum(amount) filter (where is_cash)::int as cash, sum(rounding_cents) filter (where is_cash)::int as rounding, sum(amount) filter (where not is_cash)::int as card from payments where outlet_id = ${A.outletId} and status = 'recorded'`;

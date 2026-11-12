@@ -66445,7 +66445,7 @@
           "shifts"
         ],
         "operationId": "business_days.z_report",
-        "description": "Sales, tenders, expected vs counted cash, rounding, voids and covers for an outlet (or station) and business date. Figures come from the register.",
+        "description": "Sales, tenders, expected vs counted cash, rounding, voids and covers for an outlet (or station) and business date. Figures come from the register. `sales.net` is net sales: items after discounts, without tax and fees, less `sales.refunds` (the refunds' net); `sales.fees` excludes tax; `sales.total` is what was collected before refunds (`net + refunds + fees + tax = total`), and `refunds.amount` is the money refunded.",
         "summary": "Z-report",
         "x-sail": {
           "op": "business_days.z_report",
@@ -75697,7 +75697,7 @@
           "reports"
         ],
         "operationId": "reports.sales_summary",
-        "description": "Totals and breakdowns (by day, order type, source, tender, category, rule and reporting class, voids, refunds) for a date range with filters for outlet, brand, station, shift, source, order type, staff and category. `format=csv` returns CSV. Every figure is a sum of register-written cents.",
+        "description": "Totals and breakdowns (by day, order type, source, tender, category, rule and reporting class, voids, refunds) for a date range with filters for outlet, brand, station, shift, source, order type, staff and category. `format=csv` returns CSV. Every figure is a sum of register-written cents. Every `net` is net sales: items after discounts, without tax and fees, less the net of refunds made in the period (`totals.refunds`); `totals.fees` excludes tax and `totals.total` is what was collected before refunds (`net + refunds + fees + tax = total`).",
         "summary": "Sales summary",
         "x-sail": {
           "op": "reports.sales_summary",
@@ -76135,7 +76135,7 @@
           "reports"
         ],
         "operationId": "reports.product_mix",
-        "description": "Quantity, gross, discounts and net by item, category or staff member, with share of net in basis points.",
+        "description": "Quantity sold, gross, discounts and net by item, category or staff member, with share of net in basis points. `net` is net sales as in the sales summary: after discounts, without tax and fees, less the net of refunds in the period.",
         "summary": "Product mix",
         "x-sail": {
           "op": "reports.product_mix",

@@ -2425,7 +2425,7 @@ export interface paths {
         };
         /**
          * Z-report
-         * @description Sales, tenders, expected vs counted cash, rounding, voids and covers for an outlet (or station) and business date. Figures come from the register.
+         * @description Sales, tenders, expected vs counted cash, rounding, voids and covers for an outlet (or station) and business date. Figures come from the register. `sales.net` is net sales: items after discounts, without tax and fees, less `sales.refunds` (the refunds' net); `sales.fees` excludes tax; `sales.total` is what was collected before refunds (`net + refunds + fees + tax = total`), and `refunds.amount` is the money refunded.
          */
         get: operations["business_days.z_report"];
         put?: never;
@@ -2905,7 +2905,7 @@ export interface paths {
         };
         /**
          * Sales summary
-         * @description Totals and breakdowns (by day, order type, source, tender, category, rule and reporting class, voids, refunds) for a date range with filters for outlet, brand, station, shift, source, order type, staff and category. `format=csv` returns CSV. Every figure is a sum of register-written cents.
+         * @description Totals and breakdowns (by day, order type, source, tender, category, rule and reporting class, voids, refunds) for a date range with filters for outlet, brand, station, shift, source, order type, staff and category. `format=csv` returns CSV. Every figure is a sum of register-written cents. Every `net` is net sales: items after discounts, without tax and fees, less the net of refunds made in the period (`totals.refunds`); `totals.fees` excludes tax and `totals.total` is what was collected before refunds (`net + refunds + fees + tax = total`).
          */
         get: operations["reports.sales_summary"];
         put?: never;
@@ -2925,7 +2925,7 @@ export interface paths {
         };
         /**
          * Product mix
-         * @description Quantity, gross, discounts and net by item, category or staff member, with share of net in basis points.
+         * @description Quantity sold, gross, discounts and net by item, category or staff member, with share of net in basis points. `net` is net sales as in the sales summary: after discounts, without tax and fees, less the net of refunds in the period.
          */
         get: operations["reports.product_mix"];
         put?: never;

@@ -460,7 +460,7 @@
         "pos.read"
       ],
       "emits": [],
-      "description": "Z-report\n\nSales, tenders, expected vs counted cash, rounding, voids and covers for an outlet (or station) and business date. Figures come from the register.\n\nRisk tier T0. Needs role cashier or above.",
+      "description": "Z-report\n\nSales, tenders, expected vs counted cash, rounding, voids and covers for an outlet (or station) and business date. Figures come from the register. `sales.net` is net sales: items after discounts, without tax and fees, less `sales.refunds` (the refunds' net); `sales.fees` excludes tax; `sales.total` is what was collected before refunds (`net + refunds + fees + tax = total`), and `refunds.amount` is the money refunded.\n\nRisk tier T0. Needs role cashier or above.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -4903,7 +4903,7 @@
         "reports"
       ],
       "emits": [],
-      "description": "Product mix\n\nQuantity, gross, discounts and net by item, category or staff member, with share of net in basis points.\n\nRisk tier T0. Needs role manager or above.",
+      "description": "Product mix\n\nQuantity sold, gross, discounts and net by item, category or staff member, with share of net in basis points. `net` is net sales as in the sales summary: after discounts, without tax and fees, less the net of refunds in the period.\n\nRisk tier T0. Needs role manager or above.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -4988,7 +4988,7 @@
         "reports"
       ],
       "emits": [],
-      "description": "Sales summary\n\nTotals and breakdowns (by day, order type, source, tender, category, rule and reporting class, voids, refunds) for a date range with filters for outlet, brand, station, shift, source, order type, staff and category. `format=csv` returns CSV. Every figure is a sum of register-written cents.\n\nRisk tier T0. Needs role manager or above.",
+      "description": "Sales summary\n\nTotals and breakdowns (by day, order type, source, tender, category, rule and reporting class, voids, refunds) for a date range with filters for outlet, brand, station, shift, source, order type, staff and category. `format=csv` returns CSV. Every figure is a sum of register-written cents. Every `net` is net sales: items after discounts, without tax and fees, less the net of refunds made in the period (`totals.refunds`); `totals.fees` excludes tax and `totals.total` is what was collected before refunds (`net + refunds + fees + tax = total`).\n\nRisk tier T0. Needs role manager or above.",
       "inputSchema": {
         "type": "object",
         "properties": {

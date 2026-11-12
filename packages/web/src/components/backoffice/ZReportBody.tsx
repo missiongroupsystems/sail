@@ -34,9 +34,11 @@ export function ZReportBody({ report, stationName }: { report: ZReport; stationN
             items={[
               { term: "Gross (items)", detail: <Money cents={r.sales.gross} />, numeric: true },
               { term: "Discounts", detail: <Money cents={-r.sales.discounts} />, numeric: true },
-              { term: "Fees", detail: <Money cents={r.sales.fees} />, numeric: true },
-              ...tax.before.map((t) => ({ term: t.label, detail: <Money cents={t.amount} />, numeric: true })),
+              { term: "Refunds (before tax)", detail: <Money cents={-r.sales.refunds} />, numeric: true },
               { term: <span className="text-ink">Net sales</span>, detail: <Money cents={r.sales.net} size="heading" />, numeric: true },
+              { term: "Fees (before tax)", detail: <Money cents={r.sales.fees} />, numeric: true },
+              ...tax.before.map((t) => ({ term: t.label, detail: <Money cents={t.amount} />, numeric: true })),
+              { term: <span className="text-ink">Collected</span>, detail: <Money cents={r.sales.total} />, numeric: true },
               ...tax.after.map((t) => ({ term: t.label, detail: <Money cents={t.amount} />, numeric: true })),
             ]}
           />

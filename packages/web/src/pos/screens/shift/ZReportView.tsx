@@ -67,11 +67,13 @@ export function ZReportView() {
             <dl>
               <Row label="Gross" cents={r.sales.gross} />
               <Row label="Discounts" cents={-r.sales.discounts} />
-              <Row label="Service and fees" cents={r.sales.fees} />
+              <Row label="Refunds (before tax)" cents={-r.sales.refunds} />
+              <Row label="Net sales" cents={r.sales.net} strong />
+              <Row label="Service and fees (before tax)" cents={r.sales.fees} />
               {tax.before.map((t) => (
                 <Row key={t.key} label={t.label} cents={t.amount} />
               ))}
-              <Row label="Net sales" cents={r.sales.net} strong />
+              <Row label="Collected" cents={r.sales.total} strong />
               {tax.after.map((t) => (
                 <Row key={t.key} label={t.label} cents={t.amount} />
               ))}

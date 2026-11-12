@@ -130,11 +130,14 @@ export async function createRefund(input: { refundId: string; checkId: string; r
 // Z-report and shift close: refunds on the business day (or shift), with the cash portion.
 registerRefundTotals(async (scope) => {
   const where = and(eq(refunds.outletId, scope.outletId), scope.shiftId ? eq(refunds.shiftId, scope.shiftId) : eq(refunds.businessDate, scope.businessDate), scope.stationId && !scope.shiftId ? eq(refunds.stationId, scope.stationId) : sql`true`);
-  const [r] = await db().select({ count: sql<number>`count(*)::int`, amount: sql<number>`coalesce(sum(total),0)::int` }).from(refunds).where(where);
+  const [r] = await db()
+    .select({ count: sql<number>`count(*)::int`, amount: sql<number>`coalesce(sum(${refunds.total}),0)::int`, net: sql<number>`coalesce(sum((select n.net from report_refunds n where n.refund_id = ${refunds.id})),0)::int` })
+    .from(refunds)
+    .where(where);
   const [cash] = await db()
     .select({ amount: sql<number>`coalesce(sum(${refundTenders.amount} + ${refundTenders.roundingCents}),0)::int` })
     .from(refundTenders)
     .innerJoin(refunds, eq(refunds.id, refundTenders.refundId))
     .where(and(where, eq(refundTenders.isCash, true)));
-  return { count: r?.count ?? 0, amount: r?.amount ?? 0, cash_amount: cash?.amount ?? 0 };
+  return { count: r?.count ?? 0, amount: r?.amount ?? 0, net: r?.net ?? 0, cash_amount: cash?.amount ?? 0 };
 });
