@@ -582,7 +582,7 @@ describe("properties", () => {
           const exact = Number(n / den + ((n % den) * 2n >= den ? 1n : 0n));
           expect(l.tax_on_net).toBe(exact);
         }
-        expect(r.totals.discount_total).toBe(-Number((BigInt(sumCents(bases)) * 3333n + 5000n) / 10_000n));
+        expect(r.totals.discount_total).toBe(-Number((BigInt(sumCents(bases)) * 3333n + 5000n) / 10_000n) || 0);
       }),
       { numRuns: 300 },
     );

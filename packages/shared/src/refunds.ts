@@ -174,8 +174,10 @@ export function quoteRefund(lines: readonly RefundableLine[], payments: readonly
     // total refunded so far, less what it already paid out, and the whole payment back is exactly the cash it took.
     let rounding = 0;
     if (p.is_cash && opts.cashRoundingIncrement && opts.cashRoundingIncrement > 1) {
-      // A part payment in cash may have taken an amount the coins cannot give back exactly: its last refund is rounded too.
-      const taken = roundCash(p.amount + (p.rounding ?? 0), opts.cashRoundingIncrement).rounded;
+      // A part payment in cash may have taken an amount the coins cannot give back exactly: its last refund is rounded
+      // down to a whole number of steps, never up past what the drawer took.
+      const took = p.amount + (p.rounding ?? 0);
+      const taken = took - (took % opts.cashRoundingIncrement);
       const after = p.refunded + t.amount;
       const outAfter = after === p.amount ? taken : Math.min(roundCash(after, opts.cashRoundingIncrement).rounded, taken);
       rounding = outAfter - (p.refunded + (p.refunded_rounding ?? 0)) - t.amount;

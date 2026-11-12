@@ -16,7 +16,9 @@ const cash: RefundablePayment = { payment_id: "cash", tender: "Cash", is_cash: t
 
 describe("refund quotes", () => {
   it("a full refund reverses every component and spreads it across the original tenders", () => {
-    const q = quoteRefund([laksa, kopi], [card, cash], { kind: "full" }, { cashRoundingIncrement: 5 });
+    // The cash payment settled the bill, so it was rounded to 5 cents when it was taken.
+    const settled = { ...cash, rounding: roundCash(cash.amount, 5).roundingCents };
+    const q = quoteRefund([laksa, kopi], [card, settled], { kind: "full" }, { cashRoundingIncrement: 5 });
     expect(q.totals.total).toBe(laksa.total + kopi.total);
     expect(q.totals).toMatchObject({ base: 3380, discount: -800, fee: 258, tax: 256 });
     expect(sumCents(q.tenders.map((t) => t.amount))).toBe(q.totals.total);
@@ -193,5 +195,22 @@ describe("money review: refunds that leak or strand money", () => {
         expect(out).toBe(taken);
       }),
     );
+  });
+
+  it("a cash part payment that took an amount the coins cannot give back is refunded rounded down, never up", () => {
+    // 10.03 taken in cash as a part payment, no rounding: the whole of it back is 10.00 at 0.05, not 10.05.
+    const l: RefundableLine = { line_id: "L", quantity: 1, base: 1003, discount: 0, fee: 0, taxes: [], total: 1003, adjustments: {}, refunded: none };
+    for (const steps of [[1003], [1, 1002], [2, 2, 999]]) {
+      let line = l;
+      const pays: RefundablePayment[] = [{ payment_id: "P", tender: "Cash", is_cash: true, amount: 1003, refunded: 0 }];
+      let out = 0;
+      for (const amount of steps) {
+        const q = quoteRefund([line], pays, { kind: "amount", amount }, { cashRoundingIncrement: 5 });
+        out += q.cash_out;
+        line = apply(line, pays, q);
+        expect(out).toBeLessThanOrEqual(1003);
+      }
+      expect(out).toBe(1000);
+    }
   });
 });
