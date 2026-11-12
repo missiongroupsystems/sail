@@ -195,3 +195,94 @@ describe("A2: the money-effect rule itself", () => {
     expect(moneyEffect(null, m(0, { subtotal: 0 }), {})).toBeNull();
   });
 });
+
+describe("A11: proposals outside an order are pinned to the state the approver saw", () => {
+  it("a shifts.close proposal fails once more cash lands on the shift, and the shift stays open", async () => {
+    const shift = await call<{ data: { id: string } }>("POST", "/v1/shifts", { token: w.pins.cashierStation2, body: { outlet_id: w.m.outletId, float_cents: 0 } });
+    expect(shift.status, JSON.stringify(shift.body)).toBe(201);
+    const tok = await session((await identity({ role: "cashier", toolsets: ["pos.payment"], risk_ceiling: "T1" })).credential);
+    const p = await call<{ data: { id: string; outlet_id: string | null } }>("POST", `/v1/shifts/${shift.body.data.id}/close`, { token: tok, body: { counted_cash_cents: 0, variance_reason: "counted" } });
+    expect(p.status, JSON.stringify(p.body)).toBe(202);
+    expect(p.body.data.outlet_id).toBe(w.m.outletId); // A10: staff at the outlet see it
+    const o = await openTakeaway(w.pins.cashierStation2);
+    const a = await addLine(w.pins.cashierStation2, o.body.data.id, { product_id: w.ids.wine });
+    const pay = await call("POST", `/v1/checks/${a.body.data.checks[0]!.id}/payments`, { token: w.pins.cashierStation2, body: { payment_id: randomUUID(), tender_type_id: w.ids.cash, amount: a.body.data.balance, tendered: a.body.data.balance } });
+    expect(pay.status, JSON.stringify(pay.body)).toBe(200);
+    const ap = await call<{ data: { status: string; result: { body: { code: string } } } }>("POST", `/v1/proposals/${p.body.data.id}/approve`, { token: w.pins.manager, body: {} });
+    expect(ap.body.data.status).toBe("failed");
+    expect(ap.body.data.result.body.code).toBe("version_conflict");
+    const [s] = await db.sql<{ status: string }[]>`select status from shifts where id = ${shift.body.data.id}`;
+    expect(s!.status).toBe("open");
+  });
+});
+
+describe("A12: the kill switch also withdraws the agent's pending proposals", () => {
+  it("disabling an identity rejects its pending proposals, so nobody can approve them later", async () => {
+    const id = await identity({ role: "cashier", toolsets: ["pos.order"], risk_ceiling: "T1" });
+    const tok = await session(id.credential);
+    const o = await openTakeaway(w.pins.cashier);
+    await addLine(w.pins.cashier, o.body.data.id, { product_id: w.ids.kopi });
+    const p = await call<{ data: { id: string } }>("POST", `/v1/orders/${o.body.data.id}/fire`, { token: tok, body: {} });
+    expect(p.status).toBe(202);
+    expect((await call("PATCH", `/v1/agent-identities/${id.id}`, { token: w.m.admin.token, body: { enabled: false } })).status).toBe(200);
+    const got = await call<{ data: { status: string } }>("GET", `/v1/proposals/${p.body.data.id}`, { token: w.pins.manager });
+    expect(got.body.data.status).toBe("rejected");
+    expect((await call("POST", `/v1/proposals/${p.body.data.id}/approve`, { token: w.pins.manager, body: {} })).status).toBe(409);
+  });
+});
+
+describe("A10: a proposal with no outlet still reaches the people who can approve it", () => {
+  it("a configuration proposal by a person with a risk ceiling is listed at every outlet", async () => {
+    await db.sql`update staff set risk_ceiling = 'T1' where id = ${w.m.admin.id}`;
+    try {
+      const p = await call<{ data: { id: string; outlet_id: string | null } }>("PATCH", `/v1/products/${w.ids.wine}`, { token: w.m.admin.token, body: { price: 1 } });
+      expect(p.status).toBe(202);
+      expect(p.body.data.outlet_id).toBeNull();
+      const list = await call<{ data: { id: string }[] }>("GET", `/v1/outlets/${w.m.outletId}/proposals?status=pending`, { token: w.pins.manager });
+      expect(list.body.data.some((x) => x.id === p.body.data.id)).toBe(true);
+    } finally {
+      await db.sql`update staff set risk_ceiling = null where id = ${w.m.admin.id}`;
+    }
+  });
+});
+
+describe("operations whose tier was too low", () => {
+  const spec = async (path: string, method: string) => ((await (await (await import("../src/app.js")).buildApp().request("/openapi.json")).json()) as { paths: Record<string, Record<string, { "x-sail": { tier: string } }>> }).paths[path]?.[method];
+
+  it("closing a business day is T3, and the QR sheet that rotates every token is a POST", async () => {
+    expect((await spec("/v1/outlets/{id}/business-days/close", "post"))!["x-sail"].tier).toBe("T3");
+    expect(await spec("/v1/outlets/{id}/qr-sheet.pdf", "get")).toBeUndefined();
+    expect((await spec("/v1/outlets/{id}/qr-sheet.pdf", "post"))!["x-sail"].tier).toBe("T3");
+  });
+
+  it("an agent marks at most 20 products sold out an hour, and acknowledges at most 60 table requests", async () => {
+    const tok = await session((await identity({ role: "cashier", toolsets: ["kitchen"], risk_ceiling: "T1" })).credential);
+    const statuses: number[] = [];
+    for (let i = 0; i < 21; i++) statuses.push((await call("POST", "/v1/stock/sold-out", { token: tok, body: { outlet_id: w.m.outletId, product_id: w.ids.kopi, until: "today" } })).status);
+    expect(statuses.slice(0, 20).every((s) => s === 200)).toBe(true);
+    expect(statuses[20]).toBe(429);
+    await call("POST", "/v1/stock/restore", { token: w.pins.manager, body: { outlet_id: w.m.outletId, product_id: w.ids.kopi } });
+  });
+
+  it("an agent cannot reprint a kitchen ticket (food cooked twice); a person can", async () => {
+    const o = await openTakeaway(w.pins.server);
+    await addLine(w.pins.server, o.body.data.id, { product_id: w.ids.laksa });
+    expect((await call("POST", `/v1/orders/${o.body.data.id}/fire`, { token: w.pins.server, body: {} })).status).toBe(200);
+    const jobs = await call<{ data: { id: string; kind: string }[] }>("GET", `/v1/outlets/${w.m.outletId}/print-jobs?order_id=${o.body.data.id}`, { token: w.pins.server });
+    const kitchen = jobs.body.data.find((j) => j.kind === "kitchen")!;
+    const tok = await session((await identity({ role: "server", toolsets: ["kitchen"], risk_ceiling: "T1" })).credential);
+    expect((await call("POST", `/v1/print-jobs/${kitchen.id}/reprint`, { token: tok, body: {} })).status).toBe(403);
+    expect((await call("POST", `/v1/print-jobs/${kitchen.id}/reprint`, { token: w.pins.server, body: {} })).status).toBe(201);
+  });
+
+  it("customers.upsert with group_ids is the same approval step as customer_groups.set_members for a person with a ceiling", async () => {
+    const group = await call<{ data: { id: string } }>("POST", "/v1/customer-groups", { token: w.m.manager.token, body: { name: `G-${randomUUID().slice(0, 4)}` } });
+    await db.sql`update staff set risk_ceiling = 'T1' where id = ${w.m.manager.id}`;
+    try {
+      expect((await call("PUT", "/v1/customers", { token: w.m.manager.token, body: { name: "Grouped", group_ids: [group.body.data.id] } })).status).toBe(403);
+      expect((await call("PUT", "/v1/customers", { token: w.m.manager.token, body: { name: "Ungrouped" } })).status).toBe(200);
+    } finally {
+      await db.sql`update staff set risk_ceiling = null where id = ${w.m.manager.id}`;
+    }
+  });
+});

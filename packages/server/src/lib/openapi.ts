@@ -3,7 +3,7 @@ import type { Next } from "hono";
 import { ApiErrorSchema, operation, roleAtLeast, type OperationSpec } from "@sail/shared";
 import { AppError } from "./errors.js";
 import { markDryRun, tx } from "../db/client.js";
-import { aboveCeiling, createProposal, directCeiling, moneyEffect, orderMoney, requestOrderId, toProposal } from "../services/agents.js";
+import { aboveCeiling, createProposal, directCeiling, moneyEffect, orderMoney, requestOrderId, takeAgentBudget, toProposal } from "../services/agents.js";
 import type { MoneyEffect } from "../db/schema/index.js";
 import type { Principal } from "../auth/principal.js";
 import type { AppEnv } from "./context.js";
@@ -93,6 +93,7 @@ export function defineOp<R extends OpRoute>(app: OpenAPIHono<AppEnv>, route: R, 
     c.set("operationId", op);
     enforce(c, spec);
     const principal = c.get("principal") as AppEnv["Variables"]["principal"] | undefined;
+    if (principal?.type === "agent" && spec.agentPerHour) await takeAgentBudget({ id: principal.identityId, merchantId: principal.merchantId, name: principal.name }, { kind: `op:${spec.op}`, window: "hour", max: spec.agentPerHour, what: `${spec.op} calls this hour` });
     const method = String(c.req.method).toUpperCase();
     // Reads, quotes and dry runs are T0 by nature; anything else above the caller's ceiling becomes a proposal.
     const aboveTier = principal && method !== "GET" && spec.principals.length > 0 && aboveCeiling(principal, spec);

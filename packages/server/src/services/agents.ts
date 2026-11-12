@@ -2,12 +2,15 @@ import { randomUUID } from "node:crypto";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { roleAtLeast, type OperationSpec, type Role } from "@sail/shared";
 import { db, tx, withOwnTransaction, type RequestTx } from "../db/client.js";
-import { agentDelegations, agentIdentities, agentSessions, backofficeSessions, checks, orders, paymentIntents, payments, proposals, staff, staffSessions, type MoneyEffect, type OnBehalfOf, type OrderMoney, type ProposalStatus } from "../db/schema/index.js";
+import { agentDelegations, agentIdentities, agentSessions, backofficeSessions, checks, guestRounds, orders, paymentIntents, payments, printJobs, proposals, refunds, serviceRequests, shifts, staff, staffSessions, stockStatus, outlets, type MoneyEffect, type OnBehalfOf, type OrderMoney, type ProposalStatus } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { hashSecret, randomToken, sha256, signSailToken, verifySailToken, verifySecret } from "../auth/tokens.js";
 import type { Principal } from "../auth/principal.js";
 import { config } from "../config.js";
 import { appendEvent } from "../lib/events.js";
+import { businessDateFor } from "../lib/time.js";
+import { businessDayInputs } from "./business-day.js";
+import { zReport } from "./shifts.js";
 
 /**
  * Agent principals: identities provisioned by an Admin, 15-minute
@@ -115,7 +118,7 @@ export async function resolveAgentPrincipal(token: string, t: RequestTx): Promis
   if (!row || row.s.revokedAt || row.s.expiresAt.getTime() < Date.now()) throw new AppError("unauthenticated", "This agent session has ended", { remedy: "Start a new agent session." });
   if (!row.i.enabled) throw new AppError("permission_denied", `Agent "${row.i.name}" is switched off`);
   if (row.s.onBehalfOf) await assertPersonPresent(row.s.onBehalfOf, t);
-  await takeAgentBudget(row.i, "ops");
+  await takeAgentBudget(row.i, opsBudget(row.i));
   await t.sql`update agent_sessions set last_seen_at = now() where id in (select id from agent_sessions where id = ${row.s.id} for update skip locked)`;
   return {
     type: "agent",
@@ -133,19 +136,17 @@ export async function resolveAgentPrincipal(token: string, t: RequestTx): Promis
   };
 }
 
-type BudgetHolder = Pick<typeof agentIdentities.$inferSelect, "id" | "merchantId" | "name" | "maxOpsPerHour" | "maxProposalsPerDay">;
-const BUDGETS = {
-  ops: { window: "hour", max: (i: BudgetHolder) => i.maxOpsPerHour, what: "operations this hour" },
-  proposals: { window: "day", max: (i: BudgetHolder) => i.maxProposalsPerDay, what: "proposals today" },
-} as const;
+type BudgetHolder = Pick<typeof agentIdentities.$inferSelect, "id" | "merchantId" | "name">;
+export type Budget = { kind: string; window: "hour" | "day"; max: number; what: string };
+const opsBudget = (i: { maxOpsPerHour: number }): Budget => ({ kind: "ops", window: "hour", max: i.maxOpsPerHour, what: "operations this hour" });
+const proposalBudget = (i: { maxProposalsPerDay: number }): Budget => ({ kind: "proposals", window: "day", max: i.maxProposalsPerDay, what: "proposals today" });
 
 /**
  * Count one use of an identity's budget, across all its sessions, in one atomic statement on a connection of its own:
  * the count commits whatever happens to the request, and concurrent calls can never take more than the limit.
  */
-export async function takeAgentBudget(identity: BudgetHolder, kind: keyof typeof BUDGETS): Promise<void> {
-  const b = BUDGETS[kind];
-  const max = b.max(identity);
+export async function takeAgentBudget(identity: BudgetHolder, b: Budget): Promise<void> {
+  const { kind, max } = b;
   const rows =
     max <= 0
       ? []
@@ -189,16 +190,19 @@ export async function inferTarget(path: string, body: unknown): Promise<{ target
   const b = (body ?? {}) as Record<string, unknown>;
   let outletId = typeof b.outlet_id === "string" ? b.outlet_id : null;
   if (!outletId && kind === "outlet" && id) outletId = id;
-  const order =
-    id && kind === "order"
-      ? (await db().select({ o: orders.outletId, id: orders.id }).from(orders).where(eq(orders.id, id)).limit(1))[0]
-      : id && kind === "check"
-        ? (await db().select({ o: checks.outletId, id: checks.orderId }).from(checks).where(eq(checks.id, id)).limit(1))[0]
-        : id && kind === "payment"
-          ? (await db().select({ o: payments.outletId, id: payments.orderId }).from(payments).where(eq(payments.id, id)).limit(1))[0]
-          : id && kind === "payment_intent"
-            ? (await db().select({ o: paymentIntents.outletId, id: paymentIntents.orderId }).from(paymentIntents).where(eq(paymentIntents.id, id)).limit(1))[0]
-            : undefined;
+  // The outlet (and the order, when the target belongs to one) of each kind of target an agent can act on.
+  const lookups: Record<string, () => Promise<{ o: string | null; id: string | null }[]>> = {
+    order: () => db().select({ o: orders.outletId, id: orders.id }).from(orders).where(eq(orders.id, id!)).limit(1),
+    check: () => db().select({ o: checks.outletId, id: checks.orderId }).from(checks).where(eq(checks.id, id!)).limit(1),
+    payment: () => db().select({ o: payments.outletId, id: payments.orderId }).from(payments).where(eq(payments.id, id!)).limit(1),
+    payment_intent: () => db().select({ o: paymentIntents.outletId, id: paymentIntents.orderId }).from(paymentIntents).where(eq(paymentIntents.id, id!)).limit(1),
+    refund: () => db().select({ o: refunds.outletId, id: refunds.orderId }).from(refunds).where(eq(refunds.id, id!)).limit(1),
+    round: () => db().select({ o: guestRounds.outletId, id: guestRounds.orderId }).from(guestRounds).where(eq(guestRounds.id, id!)).limit(1),
+    shift: () => db().select({ o: shifts.outletId, id: sql<null>`null` }).from(shifts).where(eq(shifts.id, id!)).limit(1),
+    service_request: () => db().select({ o: serviceRequests.outletId, id: sql<null>`null` }).from(serviceRequests).where(eq(serviceRequests.id, id!)).limit(1),
+    print_job: () => db().select({ o: printJobs.outletId, id: sql<null>`null` }).from(printJobs).where(eq(printJobs.id, id!)).limit(1),
+  };
+  const order = id && kind && lookups[kind] ? (await lookups[kind]())[0] : undefined;
   return { targetKind: kind, targetId: id, outletId: outletId ?? order?.o ?? null, orderId: order?.id ?? null };
 }
 
@@ -235,11 +239,40 @@ export function moneyEffect(before: OrderMoney | null, after: OrderMoney | null,
   return null;
 }
 
+/**
+ * The figures a proposal not pinned to an order is approved on, recomputed at approval: a shift's expected cash, a
+ * business day's sales, a product's stock state. A proposal replayed against different figures would close on a stale
+ * count or set a cap nobody saw.
+ */
+export async function statePin(op: string, path: string, body: unknown): Promise<Record<string, unknown> | null> {
+  const id = path.split("?")[0]!.split("/")[3] ?? "";
+  const b = (body ?? {}) as Record<string, unknown>;
+  if (op === "shifts.close" && UUID.test(id)) {
+    const [shift] = await db().select().from(shifts).where(eq(shifts.id, id)).limit(1);
+    if (!shift) return null;
+    const report = await zReport({ outletId: shift.outletId, businessDate: shift.businessDate, stationId: shift.stationId, shiftId: shift.id }, { float: shift.floatCents, counted: null });
+    return { expected_cash: report.cash.expected, payments: report.tenders_summary.count };
+  }
+  if (op === "business_days.close" && UUID.test(id)) {
+    const [outlet] = await db().select({ merchantId: outlets.merchantId }).from(outlets).where(eq(outlets.id, id)).limit(1);
+    if (!outlet) return null;
+    const bd = await businessDayInputs(outlet.merchantId, id);
+    const businessDate = typeof b.business_date === "string" ? b.business_date : businessDateFor(new Date(), bd.cutoff, bd.timeZone);
+    const report = await zReport({ outletId: id, businessDate });
+    return { business_date: businessDate, orders: report.orders.count, net_sales: report.sales.net, total: report.sales.total };
+  }
+  if (op === "stock.set_daily_cap" && typeof b.outlet_id === "string" && typeof b.product_id === "string") {
+    const [row] = await db().select({ daily_cap: stockStatus.dailyCap, cap_remaining: stockStatus.capRemaining, cap_date: stockStatus.capDate, sold_out_until: stockStatus.soldOutUntil }).from(stockStatus).where(and(eq(stockStatus.outletId, b.outlet_id), eq(stockStatus.productId, b.product_id))).limit(1);
+    return { daily_cap: row?.daily_cap ?? null, cap_remaining: row?.cap_remaining ?? null, cap_date: row?.cap_date ?? null, sold_out_until: row?.sold_out_until?.toISOString() ?? null };
+  }
+  return null;
+}
+
 export async function createProposal(input: { principal: Principal; spec: OperationSpec; method: string; path: string; body: unknown; idempotencyKey: string | null; rationale: string | null; correlationId: string; effect?: MoneyEffect }) {
   const { principal: p, spec } = input;
   if (p.type === "agent") {
     const [identity] = await db().select({ id: agentIdentities.id, merchantId: agentIdentities.merchantId, name: agentIdentities.name, maxOpsPerHour: agentIdentities.maxOpsPerHour, maxProposalsPerDay: agentIdentities.maxProposalsPerDay }).from(agentIdentities).where(eq(agentIdentities.id, p.identityId)).limit(1);
-    await takeAgentBudget(identity!, "proposals");
+    await takeAgentBudget(identity!, proposalBudget(identity!));
   }
   const { targetKind, targetId, outletId, orderId } = await inferTarget(input.path, input.body);
   const scope = p.type === "agent" ? p.outletIds : p.type === "staff" ? (p.outletId ? [p.outletId] : p.outletIds) : [];
@@ -265,6 +298,7 @@ export async function createProposal(input: { principal: Principal; spec: Operat
       orderId: order ? orderId : null,
       orderTotal: order?.total ?? null,
       effect: input.effect ?? null,
+      pin: await statePin(spec.op, input.path, input.body),
       rationale: input.rationale,
       proposedByType: p.type,
       proposedById: p.id,
@@ -293,6 +327,7 @@ export const toProposal = (r: typeof proposals.$inferSelect) => ({
   target_id: r.targetId,
   order: r.orderId == null ? null : { id: r.orderId, version: r.expectedVersion, total: r.orderTotal },
   effect: r.effect,
+  pin: r.pin,
   rationale: r.rationale == null ? null : { untrusted_text: r.rationale },
   status: r.status,
   proposed_by: { type: r.proposedByType, id: r.proposedById, name: r.proposedByName, agent_identity_id: r.agentIdentityId, agent_session_id: r.agentSessionId, on_behalf_of: r.onBehalfOfId },
@@ -330,8 +365,10 @@ export async function expireProposals(): Promise<number> {
   return rows.length;
 }
 
+/** The kill switch and credential rotation: end the identity's live sessions and withdraw its pending proposals, so none can be approved later. */
 export async function revokeAgentSessions(identityId: string): Promise<number> {
   const rows = await db().update(agentSessions).set({ revokedAt: new Date() }).where(and(eq(agentSessions.identityId, identityId), isNull(agentSessions.revokedAt))).returning({ id: agentSessions.id });
+  await db().update(proposals).set({ status: "rejected", decidedAt: new Date(), decidedByName: "Register", rejectReason: "The agent was switched off or its credential rotated" }).where(and(eq(proposals.agentIdentityId, identityId), eq(proposals.status, "pending")));
   return rows.length;
 }
 

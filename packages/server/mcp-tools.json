@@ -579,7 +579,7 @@
       "op": "business_days.close",
       "method": "POST",
       "path": "/v1/outlets/{id}/business-days/close",
-      "tier": "T2",
+      "tier": "T3",
       "min_role": "manager",
       "toolsets": [
         "pos.payment"
@@ -607,7 +607,7 @@
         "variance_reason",
         "void_reason"
       ],
-      "description": "Close a business day\n\nSnapshots the Z-report once every shift is closed. Manager+.\n\nRisk tier T2. Needs role manager or above. Emits business_day.closed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "description": "Close a business day\n\nSnapshots the Z-report once every shift is closed. Manager+. T3: it cannot be undone and closes the day for the whole outlet.\n\nRisk tier T3. Needs role manager or above. Emits business_day.closed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -5203,7 +5203,7 @@
         "variance_reason",
         "void_reason"
       ],
-      "description": "Reprint a ticket\n\nA new job marked REPRINT on the same printer.\n\nRisk tier T1. Needs role server or above. Emits print_job.created.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "description": "Reprint a ticket\n\nA new job marked REPRINT on the same printer. Kitchen tickets are reprinted by staff only: a duplicate ticket can mean food cooked twice.\n\nRisk tier T1. Needs role server or above. Emits print_job.created.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -5622,7 +5622,7 @@
         "variance_reason",
         "void_reason"
       ],
-      "description": "Proposals for an outlet\n\nPending proposals waiting for a human, and recent decided ones. Agents see their own.\n\nRisk tier T0. Needs role server or above.",
+      "description": "Proposals for an outlet\n\nPending proposals waiting for a human, and recent decided ones, for this outlet and merchant-wide (configuration changes). Agents see their own.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -7052,7 +7052,7 @@
         "variance_reason",
         "void_reason"
       ],
-      "description": "Acknowledge a table request\n\nMarks the request done.\n\nRisk tier T1. Needs role server or above. Emits service_request.acknowledged.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "description": "Acknowledge a table request\n\nMarks the request done. An agent may acknowledge at most 60 an hour.\n\nRisk tier T1. Needs role server or above. Emits service_request.acknowledged.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -7494,7 +7494,7 @@
         "variance_reason",
         "void_reason"
       ],
-      "description": "Mark a product sold out at an outlet\n\nToday, until a date, or indefinitely. Enforced by lines.add and rounds.submit.\n\nRisk tier T1. Needs role cashier or above. Emits stock.sold_out.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "description": "Mark a product sold out at an outlet\n\nToday, until a date, or indefinitely. Enforced by lines.add and rounds.submit. An agent may mark at most 20 an hour.\n\nRisk tier T1. Needs role cashier or above. Emits stock.sold_out.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
         "properties": {

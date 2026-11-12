@@ -216,8 +216,8 @@ export function rolesFor(key: PermissionKey): string {
 }
 
 /** Fetches a PDF through the Next proxy and opens it in a new tab; errors come back as ApiError with the register's remedy. */
-export async function openPdf(path: string, filename: string): Promise<void> {
-  const res = await fetch(`/api${path}`, { headers: { accept: "application/pdf" } });
+export async function openPdf(path: string, filename: string, method: "GET" | "POST" = "GET"): Promise<void> {
+  const res = await fetch(`/api${path}`, method === "GET" ? { headers: { accept: "application/pdf" } } : { method, headers: { accept: "application/pdf", "content-type": "application/json", "idempotency-key": crypto.randomUUID() }, body: "{}" });
   if (!res.ok) {
     let body: unknown = null;
     try {

@@ -10,7 +10,7 @@ import { openPdf } from "./register";
 
 /** "Download QR sheet (PDF)": the register rotates every table token at the outlet and returns the cards. Admin. */
 export function QrSheetButton({ outletId, outletName, canRotate }: { outletId: string; outletName: string; canRotate: boolean }) {
-  const sheet = useMutation<void, ApiError>({ mutationFn: () => openPdf(`/v1/outlets/${outletId}/qr-sheet.pdf`, `qr-sheet-${outletName.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.pdf`) });
+  const sheet = useMutation<void, ApiError>({ mutationFn: () => openPdf(`/v1/outlets/${outletId}/qr-sheet.pdf`, `qr-sheet-${outletName.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.pdf`, "POST") });
   return (
     <div className="flex flex-col items-end gap-1">
       <Button onPress={() => sheet.mutate()} isPending={sheet.isPending} isDisabled={!canRotate}>

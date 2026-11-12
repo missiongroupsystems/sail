@@ -128,6 +128,8 @@ export const proposals = pgTable(
     orderTotal: integer("order_total"),
     /** When an agent's call would have lowered the amount due or changed tax or fees: why, and the order's money before and after (the pricing engine's result). */
     effect: jsonb("effect").$type<MoneyEffect | null>(),
+    /** For a proposal on a shift, business day or stock cap: the figures the approver is shown. Execution is refused once they have changed. */
+    pin: jsonb("pin").$type<Record<string, unknown> | null>(),
     targetId: text("target_id"),
     /** The agent's rationale (free text from a model: shown to staff, never executed). */
     rationale: text("rationale"),

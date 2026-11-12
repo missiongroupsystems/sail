@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { operation, registerOperations, roleAtLeast, ROLES, type OperationSpec, type Role } from "@sail/shared";
 import { db, withTransaction } from "../db/client.js";
 import { agentIdentities, orders, proposals } from "../db/schema/index.js";
@@ -12,7 +12,7 @@ import { recordAudit } from "../lib/audit.js";
 import { outletVisible, principalRole } from "../auth/principal.js";
 import { registerAgentResolver } from "../auth/resolve.js";
 import { registerFloorExtra } from "./orders.js";
-import { issueCredential, lockPendingProposal, mintDelegation, resolveAgentPrincipal, revokeAgentSessions, startAgentSession, TIERS, toProposal } from "../services/agents.js";
+import { issueCredential, lockPendingProposal, mintDelegation, statePin, resolveAgentPrincipal, revokeAgentSessions, startAgentSession, TIERS, toProposal } from "../services/agents.js";
 
 const op = (o: Partial<OperationSpec> & { op: string; summary: string; description: string }): OperationSpec => ({ tier: "T0", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: [], mcp: { expose: false, toolsets: [] }, ...o });
 
@@ -23,7 +23,7 @@ registerOperations({
   "agent_identities.rotate_credential": op({ op: "agent_identities.rotate_credential", summary: "Rotate an agent credential", description: "Admin. The old credential stops working and live sessions are revoked. Returns the new credential once.", tier: "T3", minRole: "admin", emits: ["agent_identity.credential_rotated"], proposable: false }),
   "agent_delegations.create": op({ op: "agent_delegations.create", summary: "Delegate to an agent", description: "A signed-in person lets one agent identity act for them: returns a single-use grant, valid for five minutes, for the agent runner to pass as `on_behalf_of`. The runner never holds the person's own token. The agent acts for them only while the session they delegated from lasts, and they cannot approve its proposals.", tier: "T1", proposable: false, emits: [] }),
   "agent_sessions.start": op({ op: "agent_sessions.start", summary: "Start an agent session", description: "Exchanges an agent credential for a 15-minute agent token bound to a task. With `on_behalf_of` (a delegation grant from agent_delegations.create) the effective role is the lower of the agent's and the person's, and the outlet scope is the intersection, so an agent never does for a Server what the Server could not.", principals: [], emits: ["agent_session.started"] }),
-  "proposals.list": op({ op: "proposals.list", summary: "Proposals for an outlet", description: "Pending proposals waiting for a human, and recent decided ones. Agents see their own.", minRole: "server", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read", "pos.order", "pos.refund", "watch"] } }),
+  "proposals.list": op({ op: "proposals.list", summary: "Proposals for an outlet", description: "Pending proposals waiting for a human, and recent decided ones, for this outlet and merchant-wide (configuration changes). Agents see their own.", minRole: "server", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read", "pos.order", "pos.refund", "watch"] } }),
   "proposals.get": op({ op: "proposals.get", summary: "One proposal", description: "Status, frozen request, decision and the executed result. Agents poll this after a `requires_confirmation` response.", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read", "pos.order", "pos.refund", "pos.payment", "kitchen", "watch"] } }),
   "proposals.approve": op({ op: "proposals.approve", summary: "Approve a proposal", description: "A human with the operation's role approves; the register executes the frozen request exactly, as the approver, with the frozen idempotency key. The approver cannot be the proposer. If the target changed, execution fails with version_conflict and the proposal is marked failed.", tier: "T1", minRole: "server", emits: ["proposal.approved", "proposal.failed"] }),
   "proposals.reject": op({ op: "proposals.reject", summary: "Reject a proposal", description: "With a reason, shown to the agent. Rejections become eval cases.", tier: "T1", minRole: "server", reasonRequired: true, emits: ["proposal.rejected"] }),
@@ -32,7 +32,7 @@ registerOperations({
 registerAgentResolver(resolveAgentPrincipal);
 
 registerFloorExtra(async (outletId) => {
-  const [n] = await db().select({ n: sql<number>`count(*)::int` }).from(proposals).where(and(eq(proposals.outletId, outletId), eq(proposals.status, "pending"), sql`${proposals.expiresAt} > now()`));
+  const [n] = await db().select({ n: sql<number>`count(*)::int` }).from(proposals).where(and(or(eq(proposals.outletId, outletId), isNull(proposals.outletId)), eq(proposals.status, "pending"), sql`${proposals.expiresAt} > now()`));
   return { extra: { pending_proposals: n?.n ?? 0 } };
 });
 
@@ -112,7 +112,8 @@ export function agentRoutes(app: OpenAPIHono<AppEnv>) {
     const rows = await db()
       .select()
       .from(proposals)
-      .where(and(eq(proposals.outletId, id), q.status ? eq(proposals.status, q.status) : sql`true`, p.type === "agent" ? eq(proposals.agentIdentityId, p.identityId) : sql`true`))
+      // A proposal that belongs to no outlet (a configuration change) is merchant-wide: listed at every outlet.
+      .where(and(or(eq(proposals.outletId, id), isNull(proposals.outletId)), q.status ? eq(proposals.status, q.status) : sql`true`, p.type === "agent" ? eq(proposals.agentIdentityId, p.identityId) : sql`true`))
       .orderBy(desc(proposals.createdAt))
       .limit(200);
     return c.json({ data: rows.map(toProposal), next_cursor: null }, 200);
@@ -141,9 +142,13 @@ export function agentRoutes(app: OpenAPIHono<AppEnv>) {
     if (prop.tier === "T3" && !roleAtLeast(role, "manager")) throw AppError.permission("manager", false, spec.op);
     // The approver approves the order as it was proposed: once it has changed, nothing executes.
     const [current] = prop.orderId ? await db().select({ version: orders.version }).from(orders).where(eq(orders.id, prop.orderId)).limit(1) : [];
+    const pinNow = prop.pin ? await statePin(prop.operationId, prop.path, prop.body) : null;
     let res: { status: number; text: () => Promise<string> };
     if (prop.orderId && current?.version !== prop.expectedVersion) {
       const e = AppError.version("The order has changed since this proposal was made", { current_version: current?.version ?? null, expected_version: prop.expectedVersion, order_id: prop.orderId });
+      res = { status: e.status, text: async () => JSON.stringify(e.toBody()) };
+    } else if (prop.pin && JSON.stringify(pinNow) !== JSON.stringify(prop.pin)) {
+      const e = AppError.version("The figures have changed since this proposal was made", { proposed: prop.pin, current: pinNow });
       res = { status: e.status, text: async () => JSON.stringify(e.toBody()) };
     } else {
       // Execute the frozen request exactly, as the approver, through the ordinary pipeline (its own transaction, same checks);

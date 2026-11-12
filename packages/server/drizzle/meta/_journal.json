@@ -302,6 +302,13 @@
       "when": 1794515003358,
       "tag": "0042_proposal_money_effect",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1794515405695,
+      "tag": "0043_proposal_state_pin",
+      "breakpoints": true
     }
   ]
 }

@@ -851,7 +851,7 @@ export interface paths {
         put?: never;
         /**
          * Mark a product sold out at an outlet
-         * @description Today, until a date, or indefinitely. Enforced by lines.add and rounds.submit.
+         * @description Today, until a date, or indefinitely. Enforced by lines.add and rounds.submit. An agent may mark at most 20 an hour.
          */
         post: operations["stock.mark_sold_out"];
         delete?: never;
@@ -2287,7 +2287,7 @@ export interface paths {
         put?: never;
         /**
          * Reprint a ticket
-         * @description A new job marked REPRINT on the same printer.
+         * @description A new job marked REPRINT on the same printer. Kitchen tickets are reprinted by staff only: a duplicate ticket can mean food cooked twice.
          */
         post: operations["print_jobs.reprint"];
         delete?: never;
@@ -2627,7 +2627,7 @@ export interface paths {
         put?: never;
         /**
          * Close a business day
-         * @description Snapshots the Z-report once every shift is closed. Manager+.
+         * @description Snapshots the Z-report once every shift is closed. Manager+. T3: it cannot be undone and closes the day for the whole outlet.
          */
         post: operations["business_days.close"];
         delete?: never;
@@ -3027,7 +3027,7 @@ export interface paths {
         put?: never;
         /**
          * Acknowledge a table request
-         * @description Marks the request done.
+         * @description Marks the request done. An agent may acknowledge at most 60 an hour.
          */
         post: operations["service_requests.acknowledge"];
         delete?: never;
@@ -3063,13 +3063,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        get?: never;
+        put?: never;
         /**
          * Printable QR sheet (PDF)
          * @description Rotates every table token at the outlet and returns a PDF of QR cards for ordinary printers. Admin.
          */
-        get: operations["tables.qr_sheet"];
-        put?: never;
-        post?: never;
+        post: operations["tables.qr_sheet"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3289,7 +3289,7 @@ export interface paths {
         };
         /**
          * Proposals for an outlet
-         * @description Pending proposals waiting for a human, and recent decided ones. Agents see their own.
+         * @description Pending proposals waiting for a human, and recent decided ones, for this outlet and merchant-wide (configuration changes). Agents see their own.
          */
         get: operations["proposals.list"];
         put?: never;
@@ -31300,7 +31300,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        /** @description Request body */
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description PDF of QR cards */
             200: {

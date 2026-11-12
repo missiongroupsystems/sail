@@ -35,6 +35,8 @@ export type OperationSpec = {
    * ceiling is refused instead of getting a proposal, because a proposal stores both.
    */
   proposable?: boolean;
+  /** At most this many calls an hour by one agent identity: for cheap operations a loop could turn into a stoppage (sold out, silenced requests). */
+  agentPerHour?: number;
 };
 
 function fromPermission(key: PermissionKey): Pick<OperationSpec, "minRole" | "overrideAllowed" | "permission"> {

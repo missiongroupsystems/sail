@@ -37,7 +37,7 @@ registerOperations({
   "rounds.accept": op({ op: "rounds.accept", summary: "Accept a held QR round", description: "Fires the round's lines and prints kitchen tickets.", tier: "T2", minRole: "server", dryRun: true, principals: ["staff", "agent"], emits: ["round.accepted", "order.fired", "print_job.created"], mcp: { expose: true, toolsets: ["pos.order"] } }),
   "rounds.reject": op({ op: "rounds.reject", summary: "Reject a held QR round", description: "Removes the round's lines with the given reason and releases daily caps.", tier: "T2", minRole: "server", reasonRequired: true, dryRun: true, principals: ["staff", "agent"], emits: ["round.rejected", "line.voided"], mcp: { expose: true, toolsets: ["pos.order"] } }),
   "service_requests.list": op({ op: "service_requests.list", summary: "Table requests of an outlet", description: "Open and recently acknowledged requests.", tier: "T0", minRole: "server", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read"] } }),
-  "service_requests.acknowledge": op({ op: "service_requests.acknowledge", summary: "Acknowledge a table request", description: "Marks the request done.", minRole: "server", principals: ["staff", "agent"], emits: ["service_request.acknowledged"], mcp: { expose: true, toolsets: ["pos.order"] } }),
+  "service_requests.acknowledge": op({ op: "service_requests.acknowledge", summary: "Acknowledge a table request", description: "Marks the request done. An agent may acknowledge at most 60 an hour.", agentPerHour: 60, minRole: "server", principals: ["staff", "agent"], emits: ["service_request.acknowledged"], mcp: { expose: true, toolsets: ["pos.order"] } }),
   "tables.rotate_qr_token": op({ op: "tables.rotate_qr_token", summary: "Rotate a table's QR token", description: "Old QR codes for the table stop working. Admin.", tier: "T3", minRole: "admin", principals: ["staff"], emits: ["table.qr_rotated"], mcp: { expose: false, toolsets: [] } }),
   "tables.qr_sheet": op({ op: "tables.qr_sheet", summary: "Printable QR sheet (PDF)", description: "Rotates every table token at the outlet and returns a PDF of QR cards for ordinary printers. Admin.", tier: "T3", minRole: "admin", principals: ["staff"], emits: ["table.qr_rotated"], mcp: { expose: false, toolsets: [] } }),
 });
@@ -256,12 +256,14 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: { url }, events: [ev], warnings: [] }, 201);
   });
 
-  defineOp(app, { op: "tables.qr_sheet", method: "get", path: "/v1/outlets/{id}/qr-sheet.pdf", tags: ["guest"], request: { params: z.object({ id: z.uuid() }) }, responses: { 200: { description: "PDF of QR cards", content: { "application/pdf": { schema: z.string() } } }, ...errorResponses } }, async (c) => {
+  // A POST: it rotates every token (a GET would skip the ceiling check), and the PDF holds them, so it is never stored for a replay.
+  defineOp(app, { op: "tables.qr_sheet", method: "post", path: "/v1/outlets/{id}/qr-sheet.pdf", tags: ["guest"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 200: { description: "PDF of QR cards", content: { "application/pdf": { schema: z.string() } } }, ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
     const pdf = await qrSheetPdf(id, p.merchantId);
     await recordAudit(p, { action: "tables.qr_sheet", targetKind: "outlet", targetId: id, outletId: id });
+    c.set("secretResult", true);
     return c.body(pdf as unknown as ArrayBuffer, 200, { "content-type": "application/pdf", "content-disposition": 'inline; filename="qr-sheet.pdf"' });
   });
 }

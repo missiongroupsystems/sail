@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, desc, eq, gt, inArray, isNull, sql, type SQL } from "drizzle-orm";
-import { registerOperations } from "@sail/shared";
+import { registerOperations, type PrintJobPayload } from "@sail/shared";
 import { db, withTransaction, type RequestTx } from "../db/client.js";
 import { auditLog, printJobs, printRelays, printers, relayPairingCodes } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -27,7 +27,7 @@ registerOperations({
   "print_jobs.claim": { op: "print_jobs.claim", summary: "Claim a queued job", description: "Relay principal only. Moves queued → claimed; another relay claiming the same job gets state_conflict.", tier: "T0", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["relay"], emits: ["print_job.claimed"], mcp: { expose: false, toolsets: [] } },
   "print_jobs.ack": { op: "print_jobs.ack", summary: "Acknowledge a job result", description: "Relay principal only. claimed → printed, or → failed with the error. Retries reuse the job ID.", tier: "T0", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["relay"], emits: ["print_job.printed", "print_job.failed"], mcp: { expose: false, toolsets: [] } },
   "print_jobs.list": { op: "print_jobs.list", summary: "Print jobs of an outlet", description: "By status, printer or order; `late=true` returns jobs not printed within 10 seconds (the POS alert). Includes the plain-text rendering for previews.", tier: "T0", minRole: "server", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff", "station", "agent"], emits: [], mcp: { expose: true, toolsets: ["kitchen", "watch", "reports"] } },
-  "print_jobs.reprint": { op: "print_jobs.reprint", summary: "Reprint a ticket", description: "A new job marked REPRINT on the same printer.", tier: "T1", minRole: "server", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff", "agent"], emits: ["print_job.created"], mcp: { expose: true, toolsets: ["kitchen"] } },
+  "print_jobs.reprint": { op: "print_jobs.reprint", summary: "Reprint a ticket", description: "A new job marked REPRINT on the same printer. Kitchen tickets are reprinted by staff only: a duplicate ticket can mean food cooked twice.", tier: "T1", minRole: "server", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff", "agent"], emits: ["print_job.created"], mcp: { expose: true, toolsets: ["kitchen"] } },
   "print_jobs.reroute": { op: "print_jobs.reroute", summary: "Reroute waiting tickets to another printer", description: "New jobs on the target printer (default: each printer's configured backup); the originals are marked rerouted. Not for jobs already printed.", tier: "T1", minRole: "server", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff", "agent"], emits: ["print_job.created", "print_job.rerouted"], mcp: { expose: true, toolsets: ["kitchen"] } },
   "print_jobs.test": { op: "print_jobs.test", summary: "Test print", description: "Sends a test ticket to a printer. Admin.", tier: "T1", minRole: "admin", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: ["print_job.created"], mcp: { expose: false, toolsets: [] } },
 });
@@ -314,6 +314,7 @@ export function printingRoutes(app: OpenAPIHono<AppEnv>) {
     const { id } = c.req.valid("param");
     const [job] = await db().select().from(printJobs).where(eq(printJobs.id, id)).limit(1);
     if (!job) throw AppError.notFound("print job", id);
+    if (p.type === "agent" && (job.document as PrintJobPayload).template === "kitchen_ticket") throw new AppError("permission_denied", "Only staff reprint kitchen tickets", { remedy: "Ask the kitchen or a server to reprint it on the POS." });
     const created = await reprintJob(job, p, c.get("correlationId"));
     await recordAudit(p, { action: "print_jobs.reprint", targetKind: "print_job", targetId: id, outletId: job.outletId, details: { new_job_id: created.id } });
     return c.json({ data: [created], events: [], warnings: [] }, 201);

@@ -23281,7 +23281,7 @@
           "stock"
         ],
         "operationId": "stock.mark_sold_out",
-        "description": "Today, until a date, or indefinitely. Enforced by lines.add and rounds.submit.",
+        "description": "Today, until a date, or indefinitely. Enforced by lines.add and rounds.submit. An agent may mark at most 20 an hour.",
         "summary": "Mark a product sold out at an outlet",
         "x-sail": {
           "op": "stock.mark_sold_out",
@@ -64464,7 +64464,7 @@
           "printing"
         ],
         "operationId": "print_jobs.reprint",
-        "description": "A new job marked REPRINT on the same printer.",
+        "description": "A new job marked REPRINT on the same printer. Kitchen tickets are reprinted by staff only: a duplicate ticket can mean food cooked twice.",
         "summary": "Reprint a ticket",
         "x-sail": {
           "op": "print_jobs.reprint",
@@ -71196,11 +71196,11 @@
           "shifts"
         ],
         "operationId": "business_days.close",
-        "description": "Snapshots the Z-report once every shift is closed. Manager+.",
+        "description": "Snapshots the Z-report once every shift is closed. Manager+. T3: it cannot be undone and closes the day for the whole outlet.",
         "summary": "Close a business day",
         "x-sail": {
           "op": "business_days.close",
-          "tier": "T2",
+          "tier": "T3",
           "min_role": "manager",
           "override_allowed": false,
           "reason_required": false,
@@ -79052,7 +79052,7 @@
           "guest"
         ],
         "operationId": "service_requests.acknowledge",
-        "description": "Marks the request done.",
+        "description": "Marks the request done. An agent may acknowledge at most 60 an hour.",
         "summary": "Acknowledge a table request",
         "x-sail": {
           "op": "service_requests.acknowledge",
@@ -79819,7 +79819,7 @@
       }
     },
     "/v1/outlets/{id}/qr-sheet.pdf": {
-      "get": {
+      "post": {
         "tags": [
           "guest"
         ],
@@ -79855,6 +79855,19 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "PDF of QR cards",
@@ -84810,7 +84823,7 @@
           "agents"
         ],
         "operationId": "proposals.list",
-        "description": "Pending proposals waiting for a human, and recent decided ones. Agents see their own.",
+        "description": "Pending proposals waiting for a human, and recent decided ones, for this outlet and merchant-wide (configuration changes). Agents see their own.",
         "summary": "Proposals for an outlet",
         "x-sail": {
           "op": "proposals.list",

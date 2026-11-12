@@ -63,7 +63,7 @@ describe("Scan to Order", () => {
   it("rotating a token issues a guest-app URL; the QR sheet is a PDF and rotates tokens; only Admin may do either", async () => {
     expect(qrUrl12).toMatch(/^https:\/\/order\.example\.test\/t\/[A-Za-z0-9_-]+$/);
     expect((await call("POST", `/v1/tables/${ids.table12}/qr/rotate`, { token: A.manager.token, body: {} })).status).toBe(403);
-    const pdf = await app.request(`/v1/outlets/${A.outletId}/qr-sheet.pdf`, { headers: { authorization: `Bearer ${A.admin.token}` } });
+    const pdf = await app.request(`/v1/outlets/${A.outletId}/qr-sheet.pdf`, { method: "POST", headers: { authorization: `Bearer ${A.admin.token}`, "content-type": "application/json", "idempotency-key": randomUUID() }, body: "{}" });
     expect(pdf.status).toBe(200);
     expect(Buffer.from(await pdf.arrayBuffer()).subarray(0, 4).toString()).toBe("%PDF");
     // The sheet rotated every table token: the earlier URLs are dead now.

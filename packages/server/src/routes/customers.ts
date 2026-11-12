@@ -1,6 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, eq, ilike, inArray, isNull, or, type SQL } from "drizzle-orm";
-import { PERMISSIONS, registerOperations, roleAtLeast } from "@sail/shared";
+import { operation, PERMISSIONS, registerOperations, roleAtLeast } from "@sail/shared";
+import { aboveCeiling } from "../services/agents.js";
 import { principalRole } from "../auth/principal.js";
 import { db } from "../db/client.js";
 import { customerGroupMembers, customerGroups, customers } from "../db/schema/index.js";
@@ -62,6 +63,8 @@ export function customerRoutes(app: OpenAPIHono<AppEnv>) {
     const groupRole = PERMISSIONS["customer_groups.set_members"].minRole;
     const role = principalRole(p);
     if (b.group_ids && !(role && roleAtLeast(role, groupRole))) throw AppError.permission(groupRole, false, "customer_groups.set_members");
+    // ... and the same risk tier: a person whose ceiling stops set_members cannot reach it through upsert.
+    if (b.group_ids && aboveCeiling(p, operation("customer_groups.set_members"))) throw new AppError("permission_denied", "Changing a customer's groups is above your risk ceiling", { remedy: "Use customer_groups.set_members, which becomes a proposal for a Manager to approve." });
     const mobile = b.mobile ? b.mobile.replace(/\s+/g, "") : (b.mobile ?? null);
     let row: typeof customers.$inferSelect | undefined;
     if (b.id) {
