@@ -44,6 +44,8 @@ beforeAll(async () => {
   await call("POST", "/v1/tables", { token: t, body: { id: ids.table12, outlet_id: A.outletId, area_id: ids.area, name: "12" } });
   await call("POST", "/v1/tables", { token: t, body: { id: ids.table13, outlet_id: A.outletId, area_id: ids.area, name: "13" } });
   await call("POST", "/v1/tender-types", { token: t, body: { id: ids.cash, name: "Cash", is_cash: true } });
+  // Cash goes into a shift's drawer: one outlet-wide shift for the file.
+  expect((await call("POST", "/v1/shifts", { token: t, body: { outlet_id: A.outletId, station_id: null, float_cents: 0 } })).status).toBe(201);
   await call("POST", "/v1/stations", { token: t, body: { id: ids.station, outlet_id: A.outletId, brand_id: A.brandId, name: "Floor" } });
   const code = await call<{ data: { code: string } }>("POST", `/v1/stations/${ids.station}/pairing-code`, { token: t, body: {} });
   const paired = await call<{ data: { station_token: string } }>("POST", "/v1/stations/pair", { body: { code: code.body.data.code, device_label: "iPad" }, idempotencyKey: null });

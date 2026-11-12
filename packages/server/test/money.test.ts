@@ -8,7 +8,7 @@ import { MAX_AMOUNT, presetSeedRules, REGION_PRESETS, type RegionPresetKey } fro
 import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
 import type { MerchantSettingsInput } from "../src/bootstrap.js";
 import { bootWorld, orderHelpers, type Call, type World } from "./world.js";
-import { seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
+import { seedMerchant, type TestDb } from "./helpers.js";
 
 /**
  * Money review: regression tests for the findings of the adversarial money
@@ -238,5 +238,127 @@ describe("refunds", () => {
     expect(cashOut).toBe(120);
     const z = await r.must<{ data: ZReport & { cash: { refunds: number } } }>("GET", `/v1/outlets/${r.m.outletId}/z-report`);
     expect(z.data.cash.refunds).toBe(120);
+  });
+});
+
+type Recon = { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number };
+type Z = ZReport & { reversals: { count: number; amount: number; cash_amount: number; items: { payment_id: string; amount: number; tender: string; reason: string | null; reversed_by: string | null }[] }; reconciliation: Recon; scope: { business_date: string } };
+const tendersOf = (z: Z) => z.tenders.reduce((a, t) => a + t.amount, 0);
+const reconciles = (z: Z) => {
+  expect(z.reconciliation.tenders).toBe(tendersOf(z));
+  expect(z.reconciliation.sales_total).toBe(z.sales.total);
+  expect(z.reconciliation.tenders).toBe(z.reconciliation.sales_total + z.reconciliation.paid_on_other_orders - z.reconciliation.paid_elsewhere);
+};
+
+describe("shifts, business days and the Z-report", () => {
+  it("orders.reopen refuses to reverse a payment whose shift or business day is closed, as payments.void does", async () => {
+    const r = await regionMerchant("Reopen", { preset: "sg", timeZone: "Asia/Singapore" }, [2000]);
+    const shift = await r.must<{ data: { id: string } }>("POST", "/v1/shifts", { outlet_id: r.m.outletId, station_id: null, float_cents: 10_000 });
+    const s = await r.order([{ p: 0 }]);
+    const pid = randomUUID();
+    await r.must("POST", `/v1/checks/${s.checks[0]!.id}/payments`, { payment_id: pid, tender_type_id: r.ids.cash, amount: s.balance });
+    await r.must("POST", `/v1/shifts/${shift.data.id}/close`, { counted_cash_cents: 10_000 + s.balance });
+    const voidTry = await call<{ details: { invariant: string } }>("POST", `/v1/payments/${pid}/void`, { token: r.t, body: { reason: "x" } });
+    expect([voidTry.status, voidTry.body.details.invariant]).toEqual([422, "shift_closed"]);
+    const reopen = await call<{ details: { invariant: string } }>("POST", `/v1/orders/${s.id}/reopen`, { token: r.t, body: { reason: "changed order" } });
+    expect([reopen.status, reopen.body.details.invariant]).toEqual([422, "shift_closed"]);
+    const [p] = await db.sql<{ status: string }[]>`select status from payments where id = ${pid}`;
+    expect(p!.status).toBe("recorded");
+    await r.must("POST", `/v1/outlets/${r.m.outletId}/business-days/close`, {});
+    const afterClose = await call<{ details: { invariant: string } }>("POST", `/v1/orders/${s.id}/reopen`, { token: r.t, body: { reason: "changed order" } });
+    expect(afterClose.status).toBe(422);
+  });
+
+  it("a voided payment shows in the Z-report and the exceptions report, with who reversed it and why", async () => {
+    const r = await regionMerchant("Voids", { preset: "sg", timeZone: "Asia/Singapore" }, [1600]);
+    await r.must("POST", "/v1/shifts", { outlet_id: r.m.outletId, station_id: null, float_cents: 0 });
+    const s = await r.order([{ p: 0 }]);
+    const pid = randomUUID();
+    await r.must("POST", `/v1/checks/${s.checks[0]!.id}/payments`, { payment_id: pid, tender_type_id: r.ids.cash, amount: s.balance });
+    await r.must("POST", `/v1/payments/${pid}/void`, { reason: "wrong bill" });
+    const z = (await r.must<{ data: Z }>("GET", `/v1/outlets/${r.m.outletId}/z-report`)).data;
+    expect(z.cash.cash_payments).toBe(0);
+    expect(z.reversals).toMatchObject({ count: 1, amount: s.balance, cash_amount: s.balance });
+    expect(z.reversals.items[0]).toMatchObject({ payment_id: pid, amount: s.balance, tender: "Cash", reversed_by: "Ada Admin" });
+    expect(z.reversals.items[0]!.reason).toMatch(/wrong bill/);
+    const ex = (await r.must<{ data: { payment_reversals: { order_no: string; amount: number; reason: string; reversed_by: string }[] } }>("GET", `/v1/reports/exceptions?outlet_id=${r.m.outletId}`)).data;
+    expect(ex.payment_reversals).toHaveLength(1);
+    expect(ex.payment_reversals[0]).toMatchObject({ amount: s.balance, reversed_by: "Ada Admin" });
+  });
+
+  it("an order opened before the cutoff and paid after it counts on its shift's business day: the day closes with no false variance", async () => {
+    const r = await regionMerchant("Cutoff", { preset: "sg", timeZone: "Asia/Singapore" }, [1600]);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const real = Date.now();
+      const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Singapore" }).format(new Date(real));
+      let cut = Date.parse(`${today}T04:00:00+08:00`);
+      if (cut > real - 11 * 60_000) cut -= 86_400_000;
+      const day1 = new Date(cut - 86_400_000 + 8 * 3_600_000).toISOString().slice(0, 10);
+      vi.setSystemTime(new Date(cut - 10 * 60_000)); // 03:50
+      const shift = await r.must<{ data: { id: string; business_date: string } }>("POST", "/v1/shifts", { outlet_id: r.m.outletId, station_id: null, float_cents: 20_000 });
+      expect(shift.data.business_date).toBe(day1);
+      const s = await r.order([{ p: 0 }]);
+      vi.setSystemTime(new Date(cut + 10 * 60_000)); // 04:10, the next business day by the clock
+      await r.must("POST", `/v1/checks/${s.checks[0]!.id}/payments`, { payment_id: randomUUID(), tender_type_id: r.ids.cash, amount: s.balance });
+      const [pay] = await db.sql<{ business_date: string }[]>`select business_date::text from payments where order_id = ${s.id}`;
+      expect(pay!.business_date).toBe(day1);
+      const closed = await r.must<{ data: { variance_cents: number } }>("POST", `/v1/shifts/${shift.data.id}/close`, { counted_cash_cents: 20_000 + s.balance });
+      expect(closed.data.variance_cents).toBe(0);
+      const day = await r.must<{ data: { report: Z } }>("POST", `/v1/outlets/${r.m.outletId}/business-days/close`, { business_date: day1 });
+      expect(day.data.report.sales.total).toBe(s.balance);
+      expect(tendersOf(day.data.report)).toBe(s.balance);
+      expect(day.data.report.cash).toMatchObject({ expected: 20_000 + s.balance, counted: 20_000 + s.balance, variance: 0 });
+      reconciles(day.data.report);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a sale opened on one station and paid on another: each station's Z-report says where its tenders and sales went", async () => {
+    const o = await h.open(mgr());
+    const a = await h.add(mgr(), o.body.data.id, [{ product_id: w.ids.laksa, quantity: 1 }]);
+    await h.fire(mgr(), o.body.data.id);
+    expect((await call("POST", `/v1/checks/${a.body.data.checks[0]!.id}/payments`, { token: w.pins.cashierStation2, body: { payment_id: randomUUID(), tender_type_id: w.ids.card, amount: a.body.data.balance } })).status).toBe(200);
+    for (const station of [w.ids.station, w.ids.station2]) {
+      const z = (await call<{ data: Z }>("GET", `/v1/outlets/${w.m.outletId}/z-report?station_id=${station}`, { token: w.m.admin.token })).body.data;
+      reconciles(z);
+    }
+    const z2 = (await call<{ data: Z }>("GET", `/v1/outlets/${w.m.outletId}/z-report?station_id=${w.ids.station2}`, { token: w.m.admin.token })).body.data;
+    expect(z2.reconciliation.paid_on_other_orders).toBeGreaterThanOrEqual(a.body.data.balance);
+    const z1 = (await call<{ data: Z }>("GET", `/v1/outlets/${w.m.outletId}/z-report?station_id=${w.ids.station}`, { token: w.m.admin.token })).body.data;
+    expect(z1.reconciliation.paid_elsewhere).toBeGreaterThanOrEqual(a.body.data.balance);
+    const all = (await call<{ data: Z }>("GET", `/v1/outlets/${w.m.outletId}/z-report`, { token: w.m.admin.token })).body.data;
+    reconciles(all);
+  });
+
+  it("cash needs an open shift; a business day closes once, only with its orders settled, and later activity goes to the next day", async () => {
+    const r = await regionMerchant("Close", { preset: "sg", timeZone: "Asia/Singapore" }, [180, 12_000]);
+    const s1 = await r.order([{ p: 0 }]);
+    const noShift = await call<{ details: { invariant: string } }>("POST", `/v1/checks/${s1.checks[0]!.id}/payments`, { token: r.t, body: { payment_id: randomUUID(), tender_type_id: r.ids.cash, amount: s1.balance } });
+    expect([noShift.status, noShift.body.details.invariant]).toEqual([422, "no_open_shift"]);
+    // A card needs no drawer.
+    await r.must("POST", `/v1/checks/${s1.checks[0]!.id}/payments`, { payment_id: randomUUID(), tender_type_id: r.ids.card, amount: s1.balance });
+    const open = await r.order([{ p: 1 }]);
+    const refused = await call<{ details: { invariant: string } }>("POST", `/v1/outlets/${r.m.outletId}/business-days/close`, { token: r.t, body: {} });
+    expect([refused.status, refused.body.details.invariant]).toEqual([422, "open_orders"]);
+    await r.must("POST", `/v1/checks/${open.checks[0]!.id}/payments`, { payment_id: randomUUID(), tender_type_id: r.ids.card, amount: open.balance });
+    const closed = await r.must<{ data: { business_date: string; report: Z } }>("POST", `/v1/outlets/${r.m.outletId}/business-days/close`, {});
+    const day = closed.data.business_date;
+    expect(closed.data.report.sales.total).toBe(s1.balance + open.balance);
+    expect((await call("POST", `/v1/outlets/${r.m.outletId}/business-days/close`, { token: r.t, body: {} })).status).toBe(409);
+    // After the early close, a new order, shift and payment are dated on the next business day; the closed day's report stands.
+    const late = await r.order([{ p: 1 }]);
+    const shift = await r.must<{ data: { id: string; business_date: string } }>("POST", "/v1/shifts", { outlet_id: r.m.outletId, station_id: null, float_cents: 0 });
+    await r.must("POST", `/v1/checks/${late.checks[0]!.id}/payments`, { payment_id: randomUUID(), tender_type_id: r.ids.cash, amount: late.balance });
+    const [row] = await db.sql<{ order_day: string; pay_day: string }[]>`select o.business_date::text as order_day, p.business_date::text as pay_day from orders o join payments p on p.order_id = o.id where o.id = ${late.id}`;
+    expect(row!.order_day).not.toBe(day);
+    expect(row!.pay_day).toBe(row!.order_day);
+    expect(shift.data.business_date).toBe(row!.order_day);
+    const stored = await r.must<{ data: Z }>("GET", `/v1/outlets/${r.m.outletId}/z-report?business_date=${day}`);
+    expect(stored.data.sales.total).toBe(closed.data.report.sales.total);
+    expect(tendersOf(stored.data)).toBe(tendersOf(closed.data.report));
+    // The next day has not started on the clock, so it cannot be closed yet.
+    expect((await call("POST", `/v1/outlets/${r.m.outletId}/business-days/close`, { token: r.t, body: { business_date: row!.order_day } })).status).toBe(409);
   });
 });

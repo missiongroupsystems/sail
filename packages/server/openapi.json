@@ -80247,7 +80247,7 @@
           "reports"
         ],
         "operationId": "reports.sales_summary",
-        "description": "Totals and breakdowns (by day, order type, source, tender, category, rule and reporting class, voids, refunds) for a date range with filters for outlet, brand, station, shift, source, order type, staff and category. `format=csv` returns CSV. Every figure is a sum of register-written cents. Every `net` is net sales: items after discounts, without tax and fees, less the net of refunds made in the period (`totals.refunds`); `totals.fees` excludes tax and `totals.total` is what was collected before refunds (`net + refunds + fees + tax = total`).",
+        "description": "Totals and breakdowns (by day, order type, source, tender, category, rule and reporting class, voids, refunds) for a date range with filters for outlet, brand, station, shift, source, order type, staff and category. The shift filter narrows `by_tender` only: sales belong to orders, which have no shift; a shift's own figures are in its Z-report at close. `format=csv` returns CSV. Every figure is a sum of register-written cents. Every `net` is net sales: items after discounts, without tax and fees, less the net of refunds made in the period (`totals.refunds`); `totals.fees` excludes tax and `totals.total` is what was collected before refunds (`net + refunds + fees + tax = total`).",
         "summary": "Sales summary",
         "x-sail": {
           "op": "reports.sales_summary",

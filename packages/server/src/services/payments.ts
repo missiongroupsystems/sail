@@ -7,8 +7,7 @@ import type { Principal } from "../auth/principal.js";
 import { orderClosed, repriceOrder } from "./orders.js";
 import { activeRules } from "./pricing-rules.js";
 import { syncAllocations } from "./checks.js";
-import { businessDateFor } from "../lib/time.js";
-import { businessDayInputs } from "./business-day.js";
+import { assertBusinessDayOpen, currentBusinessDate } from "./business-day.js";
 
 /**
  * Payments: several tenders per check, part payments until the
@@ -96,13 +95,11 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
     if (applied > balance) throw AppError.validation(`${tender.name} payments cannot exceed the balance of ${formatCents(balance)}`, { remedy: `The bill's balance is ${formatCents(balance)}. Enter the balance or a smaller part payment.`, details: { balance, check_id: check.id, check_total: check.total } });
   }
 
-  const openShift = await db()
-    .select({ id: shifts.id })
-    .from(shifts)
-    .where(and(eq(shifts.outletId, order.outletId), eq(shifts.status, "open"), input.stationId ? sql`(${shifts.stationId} = ${input.stationId} or ${shifts.stationId} is null)` : sql`${shifts.stationId} is null`))
-    .orderBy(sql`${shifts.stationId} nulls last`)
-    .limit(1);
-  const bd = await businessDayInputs(order.merchantId, order.outletId);
+  const [openShift] = await openShiftFor(order.outletId, input.stationId ?? null);
+  // Cash goes into a drawer, and a drawer is counted at a shift's close: cash with no shift open would count nowhere.
+  if (tender.isCash && !openShift) throw AppError.invariant("no_open_shift", "No shift is open here to take cash into", "Open a shift (with its float) first, or take the payment by card.");
+  // A payment counts on its shift's business day, so the shift's count and the day's Z-report agree across the cutoff.
+  const businessDate = openShift?.businessDate ?? (await currentBusinessDate(order.merchantId, order.outletId, now));
 
   const [payment] = await db()
     .insert(payments)
@@ -124,8 +121,8 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
       recordedBy: principal.type === "staff" ? principal.id : null,
       recordedByName: "name" in principal ? principal.name : null,
       stationId: input.stationId ?? null,
-      shiftId: openShift[0]?.id ?? null,
-      businessDate: businessDateFor(now, bd.cutoff, bd.timeZone),
+      shiftId: openShift?.id ?? null,
+      businessDate,
     })
     .returning();
 
@@ -139,6 +136,16 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
 
   const completed = await maybeComplete(order.id, now);
   return { payment: payment!, check: updatedCheck!, changeDue: change, firstPayment, orderCompleted: completed };
+}
+
+/** The open shift a payment or refund at this station counts in: the station's own, else the outlet's shared drawer. */
+export function openShiftFor(outletId: string, stationId: string | null) {
+  return db()
+    .select({ id: shifts.id, businessDate: shifts.businessDate })
+    .from(shifts)
+    .where(and(eq(shifts.outletId, outletId), eq(shifts.status, "open"), stationId ? sql`(${shifts.stationId} = ${stationId} or ${shifts.stationId} is null)` : sql`${shifts.stationId} is null`))
+    .orderBy(sql`${shifts.stationId} nulls last`)
+    .limit(1);
 }
 
 /** Complete the order when every check is paid and every line is fired or voided. */
@@ -165,6 +172,14 @@ export async function assertVoidable(order: typeof orders.$inferSelect, payment:
   if (order.status === "cancelled") throw AppError.state("The order is cancelled", []);
   const [refunded] = await db().select({ n: sql<number>`count(*)::int` }).from(refunds).where(eq(refunds.checkId, payment.checkId));
   if ((refunded?.n ?? 0) > 0) throw AppError.invariant("payment_refunded", "Money has already been refunded from this bill", "Correct it with a further refund instead.");
+  await assertReversible(payment);
+}
+
+/**
+ * A recorded payment may be reversed (by a void or a reopen) only while the shift it counts in is open and its business
+ * day is not closed: after that its cash has been counted and its day reported, so a correction is a refund.
+ */
+async function assertReversible(payment: typeof payments.$inferSelect) {
   // Locks, so a void and a shift or business-day close at the same moment run one after the other, never both.
   await tx()`select id from outlets where id = ${payment.outletId} for share`;
   if (payment.shiftId) {
@@ -204,12 +219,14 @@ export async function reversePayment(order: typeof orders.$inferSelect, payment:
 /** Reopen a completed order on the same business day: payments reversed, checks unlocked, pricing unfrozen, order back to fired/open. */
 export async function reopenOrder(order: typeof orders.$inferSelect, principal: Principal, reason: string, now = new Date()) {
   if (order.status !== "completed") throw AppError.state(`Only completed orders can be reopened; this one is ${order.status}`, ["completed → open"]);
-  const bd = await businessDayInputs(order.merchantId, order.outletId);
-  const today = businessDateFor(now, bd.cutoff, bd.timeZone);
+  const today = await currentBusinessDate(order.merchantId, order.outletId, now);
   if (order.businessDate !== today) throw AppError.invariant("reopen_same_business_day", `The order belongs to business day ${order.businessDate}`, "Orders can only be reopened on the same business day. Use a refund instead.");
   // A refund has already handed money back against these payments; reversing them as well would double-count.
   const [refunded] = await db().select({ n: sql<number>`count(*)::int` }).from(refunds).where(eq(refunds.orderId, order.id));
   if ((refunded?.n ?? 0) > 0) throw AppError.invariant("order_has_refunds", "This order already has a refund", "Reopening would reverse payments that were partly refunded. Correct the order with a further refund instead.");
+  // Every payment it reverses must be one a void could reverse: its shift still open, its day not closed.
+  await assertBusinessDayOpen(order.outletId, order.businessDate);
+  for (const payment of await db().select().from(payments).where(and(eq(payments.orderId, order.id), eq(payments.status, "recorded")))) await assertReversible(payment);
   const reversed = await db()
     .update(payments)
     .set({ status: "reversed", reversedAt: now, reversedBy: principal.type === "staff" ? principal.id : null, reversedReason: `reopened: ${reason}` })

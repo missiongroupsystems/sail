@@ -5,7 +5,7 @@ import { buildApp, type App } from "../src/app.js";
 import { drainPaymentOutbox, expireIntents, OUTBOX_MAX_ATTEMPTS, pollPendingIntents } from "../src/services/payment-intents.js";
 import { SIMULATOR_SIGNATURE_HEADER, signSimulatorWebhook, simulatorProvider } from "../src/payments/simulator.js";
 import { startSimulator, type Delivery, type Simulator } from "../scripts/payment-simulator.js";
-import { api, freshDb, seedMerchant, type TestDb } from "./helpers.js";
+import { api, freshDb, seedMerchant, settleOpenOrders, type TestDb } from "./helpers.js";
 
 /**
  * Terminal payments end to end against the simulator: the register never calls the provider inside a request, an
@@ -90,6 +90,8 @@ let B: M;
 beforeAll(async () => {
   A = await merchant("Alpha", { rounding: 5 });
   B = await merchant("Bravo");
+  // Cash goes into a shift's drawer: one outlet-wide shift for the file.
+  expect((await call("POST", "/v1/shifts", { token: A.m.admin.token, body: { outlet_id: A.m.outletId, station_id: null, float_cents: 0 } })).status).toBe(201);
 });
 
 describe("approve and decline", () => {
@@ -392,6 +394,8 @@ describe("payments.void", () => {
   const grant = (w: M, paymentId: string, amount: number) => call<{ data: { override_id: string } } & Err>("POST", "/v1/overrides", { token: w.token, body: { action: "payments.void", target_kind: "payment", target_id: paymentId, approver_pin: "222222", outlet_id: w.m.outletId, args: { amount } } });
 
   it("a cashier needs a manager's approval bound to that payment; the bill owes the amount again and the order reopens for payment", async () => {
+    const drawer = await call<{ data: { id: string } }>("POST", "/v1/shifts", { token: C.token, body: { outlet_id: C.m.outletId, float_cents: 0 } });
+    expect(drawer.status).toBe(201);
     const one = await paid(C);
     const other = await paid(C);
     expect((await snap(C, one.s.id)).status).toBe("completed");
@@ -416,6 +420,7 @@ describe("payments.void", () => {
     expect((await snap(C, one.s.id)).status).toBe("completed");
     // A manager voids directly.
     expect((await voidIt(C, other.paymentId, C.m.manager.token)).status).toBe(200);
+    expect((await call("POST", `/v1/shifts/${drawer.body.data.id}/close`, { token: C.token, body: { counted_cash_cents: one.s.balance } })).status).toBe(200);
   });
 
   it("another merchant's manager cannot see the payment; an agent's void becomes a proposal that a manager approves", async () => {
@@ -526,6 +531,7 @@ describe("payments.void", () => {
     expect((await call("POST", `/v1/outlets/${C.m.outletId}/business-days/close`, { token: C.m.manager.token, body: {} })).status).toBe(409);
     await drainPaymentOutbox();
     const { paymentId } = await paid(C);
+    await settleOpenOrders(db.sql, call, C.m.manager.token, C.m.outletId, C.ids.card);
     const close = await call("POST", `/v1/outlets/${C.m.outletId}/business-days/close`, { token: C.m.manager.token, body: {} });
     expect(close.status, JSON.stringify(close.body)).toBe(200);
     const r = await voidIt(C, paymentId, C.m.manager.token);

@@ -30,6 +30,7 @@ async function trade(m: SeededMerchant, price: number): Promise<Shop> {
   await call("POST", "/v1/areas", { token: t, body: { id: ids.area, outlet_id: m.outletId, name: "Main" } });
   await call("POST", "/v1/tables", { token: t, body: { id: ids.table, outlet_id: m.outletId, area_id: ids.area, name: "1" } });
   await call("POST", "/v1/tender-types", { token: t, body: { id: ids.cash, name: "Cash", is_cash: true } });
+  await call("POST", "/v1/shifts", { token: t, body: { outlet_id: m.outletId, station_id: null, float_cents: 0 } });
   await call("POST", "/v1/stations", { token: t, body: { id: ids.station, outlet_id: m.outletId, brand_id: m.brandId, name: "Floor" } });
   const code = await call<{ data: { code: string } }>("POST", `/v1/stations/${ids.station}/pairing-code`, { token: t, body: {} });
   const station = (await call<{ data: { station_token: string } }>("POST", "/v1/stations/pair", { body: { code: code.body.data.code, device_label: "iPad" }, idempotencyKey: null })).body.data.station_token;

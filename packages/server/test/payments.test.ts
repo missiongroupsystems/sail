@@ -78,6 +78,9 @@ describe("checks and payments", () => {
   });
 
   it("card part payment, then cash with rounding settles the bill; the first payment freezes order-level pricing and new lines go to a new bill", async () => {
+    // Cash goes into a shift's drawer.
+    const shift = await call<{ data: { id: string } }>("POST", "/v1/shifts", { token: cashierPin, body: { float_cents: 0 } });
+    expect(shift.status).toBe(201);
     const o = await open(cashierPin, { order_type: "dine_in", table_id: ids.table, pax: 2 });
     const orderId = o.body.data.id;
     // Laksa 1600 + Kopi 180 = 1780; SC 10% = 178; GST: 144 + 16 + 14 + 2 (16.2→16, 14.4→14, 1.62→2) = 176 → 2134.
@@ -150,6 +153,7 @@ describe("checks and payments", () => {
     expect(floor.body.data.tables.find((t) => t.id === ids.table)!.status).toBe("free");
     const [row] = await db.sql`select paid_total, total from checks where id = ${checkId}`;
     expect(row!.paid_total).toBe(row!.total);
+    expect((await call("POST", `/v1/shifts/${shift.body.data.id}/close`, { token: cashierPin, body: { counted_cash_cents: 0, variance_reason: "counted in another test" } })).status).toBe(200);
   });
 
   it("a double-tapped tender is recorded once (same idempotency key replays; same payment_id with a new key is refused)", async () => {
@@ -274,8 +278,20 @@ describe("checks and payments", () => {
     const s2 = await call<{ data: { id: string } }>("POST", "/v1/shifts", { token: cashierPin, body: { float_cents: 0 } });
     expect((await call("POST", `/v1/shifts/${s2.body.data.id}/close`, { token: serverPin, body: { counted_cash_cents: 0 } })).status).toBe(403);
     expect((await call("POST", `/v1/shifts/${s2.body.data.id}/close`, { token: managerPin, body: { counted_cash_cents: 0 } })).status).toBe(200);
+    // A day with an order still open cannot close: its sale would land on the day after the report was stored.
+    const refused = await call<{ details: Record<string, unknown> }>("POST", `/v1/outlets/${A.outletId}/business-days/close`, { token: managerPin, body: {} });
+    expect(refused.status).toBe(422);
+    expect(refused.body.details).toMatchObject({ invariant: "open_orders" });
+    // Settle the orders earlier tests left open (by card, so no drawer is needed), then close.
+    for (const { id } of await db.sql<{ id: string }[]>`select id from orders where outlet_id = ${A.outletId} and status not in ('completed','cancelled')`) {
+      await call("POST", `/v1/orders/${id}/fire`, { token: cashierPin, body: {} });
+      for (const c of await db.sql<{ id: string; balance: number }[]>`select id, total - paid_total as balance from checks where order_id = ${id} and total > paid_total`) await pay(cashierPin, c.id, { tender_type_id: ids.card, amount: c.balance });
+      await call("POST", `/v1/orders/${id}/complete`, { token: cashierPin, body: {} });
+    }
     const day = await call<{ data: { report: { sales: { net: number }; orders: { count: number } } } }>("POST", `/v1/outlets/${A.outletId}/business-days/close`, { token: managerPin, body: {} });
     expect(day.status, JSON.stringify(day.body)).toBe(200);
+    // It closes once.
+    expect((await call("POST", `/v1/outlets/${A.outletId}/business-days/close`, { token: managerPin, body: {} })).status).toBe(409);
     expect(day.body.data.report.orders.count).toBeGreaterThan(3);
   });
 
@@ -323,6 +339,8 @@ describe("checks and payments", () => {
     expect(reopened.body.events.map((e) => e.type)).toEqual(["payment.reversed", "order.reopened"]);
     const [n] = await db.sql`select count(*)::int as n from payments where order_id = ${o.body.data.id} and status = 'reversed'`;
     expect(n!.n).toBe(1);
+    const shift = await call<{ data: { id: string } }>("POST", "/v1/shifts", { token: cashierPin, body: { float_cents: 0 } });
+    expect(shift.status).toBe(201);
     const again = await pay(cashierPin, reopened.body.data.checks[0]!.id, { tender_type_id: ids.cash, amount: total });
     expect(again.body.data.status).toBe("completed");
     // Yesterday's order cannot be reopened.

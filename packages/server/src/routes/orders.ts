@@ -20,6 +20,7 @@ import { activeRules, ruleOrLastVersion } from "../services/pricing-rules.js";
 import { releaseDailyCap } from "./catalogue.js";
 import { businessDayInputs } from "./org.js";
 import { businessDateFor } from "../lib/time.js";
+import { currentBusinessDate } from "../services/business-day.js";
 
 const op = (o: Partial<OperationSpec> & { op: string; summary: string; description: string }): OperationSpec => ({ tier: "T1", minRole: "server", overrideAllowed: false, reasonRequired: false, dryRun: true, principals: ["staff", "agent"], emits: [], mcp: { expose: true, toolsets: ["pos.order"] }, ...o });
 
@@ -174,7 +175,6 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       customerId = cust?.id ?? null;
     }
     const tax = await orderTaxSettings(p.merchantId, ctx.outletId);
-    const bd = await businessDayInputs(p.merchantId, ctx.outletId);
     const now = new Date();
     const orderNo = await nextOrderNo(ctx.outletId, p.merchantId, "pos");
     const [row] = await db()
@@ -199,7 +199,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
         stationId: ctx.stationId,
         openedBy: p.type === "staff" ? p.id : null,
         openedByName: "name" in p ? p.name : null,
-        businessDate: businessDateFor(now, bd.cutoff, bd.timeZone),
+        businessDate: await currentBusinessDate(p.merchantId, ctx.outletId, now),
         taxMode: tax.taxMode,
         taxRounding: tax.taxRounding,
         taxRates: tax.taxRates,

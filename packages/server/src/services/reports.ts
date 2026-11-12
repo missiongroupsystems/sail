@@ -129,6 +129,8 @@ export type ExceptionsReport = {
   voids: { order_no: string; business_date: string; product_name: string; quantity: number; value: number; after_firing: boolean; reason: string | null; voided_by: string | null; approved_by: string | null }[];
   discounts: { order_no: string; business_date: string; rule_key: string; name: string; report_class: string; total: number; entered_value: number | null; applied_by: string | null; approved_by: string | null; reason: string | null }[];
   refunds: { order_no: string; business_date: string; kind: string; total: number; reason: string; refunded_by: string | null; approved_by: string | null; refund_receipt_no: string; credit_note_no: string | null }[];
+  /** Payments reversed after they were taken: voided, or reversed by reopening the order. */
+  payment_reversals: { order_no: string; business_date: string; tender: string; is_cash: boolean; amount: number; reversed_at: string | null; reversed_by: string | null; reason: string | null }[];
 };
 
 export async function exceptions(f: ReportFilters): Promise<ExceptionsReport> {
@@ -139,7 +141,9 @@ export async function exceptions(f: ReportFilters): Promise<ExceptionsReport> {
   const discounts = await sql<ExceptionsReport["discounts"]>`select r.order_no, r.business_date, r.rule_key, r.name, r.report_class, r.total, r.entered_value, s1.name as applied_by, s2.name as approved_by, r.reason
     from report_adjustments r left join staff s1 on s1.id::text = r.applied_by::text left join staff s2 on s2.id::text = r.approved_by::text where ${w} and r.kind = 'discount' and r.manual_application_id is not null order by r.business_date desc limit 1000`;
   const refunds = await sql<ExceptionsReport["refunds"]>`select order_no, business_date, kind, total, reason, refunded_by_name as refunded_by, approved_by_name as approved_by, refund_receipt_no, credit_note_no from report_refunds r where ${w} order by created_at desc limit 1000`;
-  return { voids, discounts, refunds };
+  const paymentReversals = await sql<ExceptionsReport["payment_reversals"]>`select r.order_no, r.business_date, r.tender_name as tender, r.is_cash, r.amount, p.reversed_at, s.name as reversed_by, p.reversed_reason as reason
+    from report_payments r join payments p on p.id = r.payment_id left join staff s on s.id = p.reversed_by where ${w} and r.status = 'reversed' order by p.reversed_at desc limit 1000`;
+  return { voids, discounts, refunds, payment_reversals: paymentReversals };
 }
 
 export type PrintHealthRow = { printer_id: string | null; printer_name: string | null; relay_id: string | null; jobs: number; printed: number; failed: number; rerouted: number; reprints: number; late: number; p50_seconds: number | null; p95_seconds: number | null };

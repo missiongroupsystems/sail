@@ -1,13 +1,13 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { quoteRefund, RefundError, sumTaxes, type BillDocument, type RefundQuote, type RefundRequest, type RefundableLine, type RefundablePayment } from "@sail/shared";
 import { db } from "../db/client.js";
-import { checkAllocations, checks, merchantSettings, orderAdjustments, orderLines, orders, payments, refundLines, refundTenders, refunds, shifts } from "../db/schema/index.js";
+import { checkAllocations, checks, merchantSettings, orderAdjustments, orderLines, orders, payments, refundLines, refundTenders, refunds } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { Principal } from "../auth/principal.js";
 import { billDocumentFor } from "./checks.js";
 import { nextDocumentNo, type InvoiceDocument } from "./documents.js";
-import { businessDateFor } from "../lib/time.js";
-import { businessDayInputs } from "./business-day.js";
+import { currentBusinessDate } from "./business-day.js";
+import { openShiftFor } from "./payments.js";
 import { registerRefundTotals } from "./shifts.js";
 
 /**
@@ -60,11 +60,12 @@ export async function createRefund(input: { refundId: string; checkId: string; r
   const ref = await refundableFor(input.checkId);
   const q = quote(ref, input.request, input.tenderSplit);
   const now = new Date();
-  const bd = await businessDayInputs(ref.order.merchantId, ref.order.outletId);
-  const businessDate = businessDateFor(now, bd.cutoff, bd.timeZone);
+  const [openShift] = await openShiftFor(ref.order.outletId, input.stationId ?? null);
+  // Cash comes out of a drawer; with no shift open it would leave no drawer short. A refund counts on its shift's day.
+  if (q.tenders.some((t) => t.is_cash && t.amount + t.rounding_cents !== 0) && !openShift) throw AppError.invariant("no_open_shift", "No shift is open here to pay cash out of", "Open a shift first.");
+  const businessDate = openShift?.businessDate ?? (await currentBusinessDate(ref.order.merchantId, ref.order.outletId, now));
   const receiptNo = await nextDocumentNo(ref.order.merchantId, "refund_receipt");
   const creditNoteNo = ref.check.invoiceNo ? await nextDocumentNo(ref.order.merchantId, "credit_note") : null;
-  const [openShift] = await db().select({ id: shifts.id }).from(shifts).where(and(eq(shifts.outletId, ref.order.outletId), eq(shifts.status, "open"), input.stationId ? sql`(${shifts.stationId} = ${input.stationId} or ${shifts.stationId} is null)` : sql`${shifts.stationId} is null`)).orderBy(sql`${shifts.stationId} nulls last`).limit(1);
 
   // Documents: a refund receipt linked to the original bill, and a credit note when the bill was invoiced.
   const original = await billDocumentFor(input.checkId, "receipt", { serverName: "name" in input.principal ? input.principal.name : null });

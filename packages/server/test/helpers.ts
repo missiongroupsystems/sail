@@ -177,3 +177,18 @@ export async function readSse(res: Response, count: number, timeoutMs = 5000): P
   reader.cancel().catch(() => {});
   return out;
 }
+
+/**
+ * Settle every order still open at an outlet (fire, pay each bill's balance by card, complete), so its business day can
+ * close: a day with an open order cannot (pricing-semantics §10).
+ */
+export async function settleOpenOrders(sql: Sql, call: ReturnType<typeof api>["call"], token: string, outletId: string, cardTenderId: string) {
+  for (const { id } of await sql<{ id: string }[]>`select id from orders where outlet_id = ${outletId} and status not in ('completed','cancelled')`) {
+    await call("POST", `/v1/orders/${id}/fire`, { token, body: {} });
+    for (const c of await sql<{ id: string; balance: number }[]>`select id, total - paid_total as balance from checks where order_id = ${id} and total > paid_total`) {
+      const r = await call("POST", `/v1/checks/${c.id}/payments`, { token, body: { payment_id: randomUUID(), tender_type_id: cardTenderId, amount: c.balance } });
+      if (r.status !== 200) throw new Error(`settle ${id}: ${r.status} ${JSON.stringify(r.body)}`);
+    }
+    await call("POST", `/v1/orders/${id}/complete`, { token, body: {} });
+  }
+}
