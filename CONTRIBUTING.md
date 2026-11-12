@@ -17,7 +17,7 @@ The tests start their own embedded PostgreSQL, so you need no database or Docker
 
 ## Checks
 
-Run these before you open a pull request. CI (`.github/workflows/ci.yml`) runs the typecheck, the shared and server tests, the spec, tool-list and migration checks, a forbidden-term scan (`pnpm check:no-other-pos`, which skips itself unless `SAIL_FORBIDDEN_TERMS_FILE` is set) and the server and web builds; it does not run lint, the relay tests or the end-to-end suite yet.
+Run these before you open a pull request. CI (`.github/workflows/ci.yml`) runs the typecheck, lint, the shared, server and relay tests, the spec, tool-list and migration checks, a forbidden-term scan (`pnpm check:no-other-pos`, which skips itself unless `SAIL_FORBIDDEN_TERMS_FILE` is set) and the server and web builds, and the end-to-end suite as a separate job.
 
 | Check | Command |
 |-|-|

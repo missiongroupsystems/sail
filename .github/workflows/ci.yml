@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   test:
-    name: Typecheck, test, contract checks
+    name: Typecheck, lint, test, contract checks
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -26,12 +26,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Typecheck
         run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
       - name: Unit, property and reference-set tests (shared)
         run: pnpm --filter @sail/shared test
         env:
           SAIL_REFERENCE_MIN: "60"
       - name: Server tests on embedded Postgres (RLS replay, pipeline, SSE)
         run: pnpm --filter @sail/server test
+      - name: Relay tests
+        run: pnpm --filter @sail/relay test
       - name: OpenAPI contract is committed and reviewed
         run: pnpm --filter @sail/server openapi:check
       - name: MCP tool manifest matches the routes
@@ -43,9 +47,11 @@ jobs:
             echo "Schema differs from migrations. Run pnpm db:generate and commit the result."; git status --porcelain packages/server/drizzle; exit 1
           fi
       - name: No other POS named in the repo
-        run: pnpm check:no-other-pos
+        run: |
+          if [ -n "$TERMS" ]; then printf '%s\n' "$TERMS" > "$RUNNER_TEMP/forbidden.txt"; export SAIL_FORBIDDEN_TERMS_FILE="$RUNNER_TEMP/forbidden.txt"; fi
+          pnpm check:no-other-pos
         env:
-          SAIL_FORBIDDEN_TERMS_FILE: ${{ secrets.SAIL_FORBIDDEN_TERMS_FILE != '' && '/tmp/forbidden.txt' || '' }}
+          TERMS: ${{ secrets.SAIL_FORBIDDEN_TERMS_FILE }}
       - name: Build server image artefact
         run: pnpm --filter @sail/server build
       - name: Build web
@@ -53,9 +59,34 @@ jobs:
         env:
           NEXT_PUBLIC_API_URL: http://localhost:8080
 
+  e2e:
+    name: End-to-end (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm --filter @sail/e2e exec playwright install --with-deps chromium
+      - name: Back office, POS and guest app in a browser
+        run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results
+          path: packages/e2e/test-results
+          retention-days: 7
+
   # Staging: on merge to main, migrate the staging database (Supabase branch), then deploy the staging Fly app.
   # Prod: manual approval through the `production` environment, then migrate, deploy and poll /health.
-  # Both jobs need secrets that are not configured yet (see docs/completions/v0.1-foundations.md, "Blocked").
+  # Both jobs need secrets that are not configured yet, so they run only when DEPLOY_ENABLED is true.
   deploy-staging:
     name: Migrate and deploy staging
     needs: test
