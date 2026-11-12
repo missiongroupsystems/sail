@@ -542,7 +542,14 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     await db().update(orders).set({ status: "cancelled", cancelledAt: now, cancelReason: b.reason }).where(eq(orders.id, id));
     await orderClosed(id);
     await recordAudit(p, { action: "orders.cancel", targetKind: "order", targetId: id, outletId: o.outletId, reason: b.reason });
-    return finish(c, p, id, [() => emit(c, p, o, "order.cancelled", { reason: b.reason }, { reason: { text: b.reason } })]);
+    return finish(c, p, id, [
+      () => emit(c, p, o, "order.cancelled", { reason: b.reason }, { reason: { text: b.reason } }),
+      // Kitchen display tickets of the order are cancelled after the event, as void tickets follow the void.
+      async () => {
+        for (const hook of cancelHooks) await hook({ order: o, principal: p, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") ?? null });
+        return null;
+      },
+    ]);
   });
 
   defineOp(app, { op: "adjustments.apply_manual", method: "post", path: "/v1/orders/{id}/adjustments", tags: ["orders"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ application_id: z.uuid(), rule_key: z.string().min(1), entered_value: z.number().int().min(0).nullable().optional(), line_ids: z.array(z.uuid()).min(1).nullable().optional(), reason: untrusted(z.string().max(200).nullable().optional()) })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
@@ -646,13 +653,18 @@ function assertOpen(o: { status: string }) {
 
 export type FireHook = (input: { order: typeof orders.$inferSelect; lines: (typeof orderLines.$inferSelect)[]; round: number; station: typeof stations.$inferSelect | null; principal: Principal; correlationId: string }) => Promise<string[]>;
 export type VoidHook = (input: { order: typeof orders.$inferSelect; line: typeof orderLines.$inferSelect; quantity: number; fired: boolean; principal: Principal; correlationId: string }) => Promise<void>;
+export type CancelHook = (input: { order: typeof orders.$inferSelect; principal: Principal; correlationId: string; idempotencyKey: string | null }) => Promise<void>;
 const fireHooks: FireHook[] = [];
 const voidHooks: VoidHook[] = [];
+const cancelHooks: CancelHook[] = [];
 export function onFire(hook: FireHook) {
   fireHooks.push(hook);
 }
 export function onVoid(hook: VoidHook) {
   voidHooks.push(hook);
+}
+export function onCancel(hook: CancelHook) {
+  cancelHooks.push(hook);
 }
 type FloorExtra = (outletId: string) => Promise<{ pending_rounds_by_order?: Record<string, number>; requests_by_table?: Record<string, number>; extra?: Record<string, unknown> }>;
 const floorExtras: FloorExtra[] = [];

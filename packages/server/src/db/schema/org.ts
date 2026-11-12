@@ -38,6 +38,9 @@ export const merchantSettings = pgTable("merchant_settings", {
   receiptShowOutletPhone: boolean("receipt_show_outlet_phone").notNull().default(true),
   /** Outlets with more open orders than this show the POS in busy mode. */
   busyModeThreshold: integer("busy_mode_threshold").notNull().default(12),
+  /** A kitchen display ticket turns amber after this many minutes and red after the late threshold. */
+  kitchenWarnMinutes: integer("kitchen_warn_minutes").notNull().default(8),
+  kitchenLateMinutes: integer("kitchen_late_minutes").notNull().default(15),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -88,6 +91,8 @@ export const outlets = pgTable(
 );
 
 export const stationHomeEnum = pgEnum("station_home", ["floor", "takeaway"]);
+/** A POS iPad, or a kitchen display that shows and bumps tickets without a PIN. */
+export const stationKindEnum = pgEnum("station_kind", ["pos", "display"]);
 
 export const stations = pgTable(
   "stations",
@@ -100,6 +105,9 @@ export const stations = pgTable(
       .notNull()
       .references(() => outlets.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    kind: stationKindEnum("kind").notNull().default("pos"),
+    /** A display station shows the tickets of these display destinations (same outlet). */
+    displayDestinationIds: uuid("display_destination_ids").array().notNull().default([]),
     /** POS layout (per brand); set in v0.4 when layouts exist. */
     layoutId: uuid("layout_id"),
     brandId: uuid("brand_id").references(() => brands.id),

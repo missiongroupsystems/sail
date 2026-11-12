@@ -25,6 +25,7 @@ beforeAll(async () => {
     await db.sql`insert into idempotency_keys (merchant_id, principal_id, key, request_hash) values (${m.merchantId}, ${m.admin.id}, 'k', 'h')`;
     await db.sql`insert into pin_attempts (merchant_id, scope, failures) values (${m.merchantId}, 'station:x', 1)`;
     await db.sql`insert into guest_rate_hits (merchant_id, key, hits) values (${m.merchantId}, 'k', array[now()])`;
+    await db.sql`insert into display_destinations (merchant_id, outlet_id, name) values (${m.merchantId}, ${m.outletId}, 'Kitchen screen')`;
     await db.sql`with s as (insert into stations (merchant_id, outlet_id, name) values (${m.merchantId}, ${m.outletId}, 'S') returning id)
       insert into staff_sessions (merchant_id, staff_id, station_id, outlet_id) select ${m.merchantId}, ${m.admin.id}, s.id, ${m.outletId} from s`;
   }

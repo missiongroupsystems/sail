@@ -40,6 +40,8 @@ beforeAll(async () => {
   await must("POST", "/v1/layouts", { brand_id: w.m.brandId, name: "Main", pages: [] });
   await must("POST", "/v1/modifier-groups", { name: "Size", min_select: 0, options: [{ product_id: w.ids.kopi }] });
   await must("POST", "/v1/relays", { outlet_id: w.m.outletId, name: "Relay" });
+  // A kitchen display destination, so the fire below also makes a kitchen ticket.
+  await must("POST", "/v1/display-destinations", { outlet_id: w.m.outletId, name: "Kitchen screen" });
   await must("POST", "/v1/imports", { files: { "brands.csv": "id,name\nB9,Second brand\n" }, mapping: { files: [{ name: "brands.csv", entity: "brands", columns: { legacy_id: "id", name: "name" } }] }, dry_run: true });
   await must("POST", "/v1/shifts", { float_cents: 0 }, w.pins.cashier);
   const s = await h.orderWith(w.pins.cashier, [{ product_id: w.ids.laksa }, { product_id: w.ids.kopi }]);
@@ -73,7 +75,7 @@ async function idsOfA(): Promise<Record<string, string>> {
     if (!r) throw new Error("merchant A is missing a row for a route family");
     return r.id;
   };
-  const tables: Record<string, string> = { "agent-identities": "agent_identities", areas: "areas", "availability-rules": "availability_rules", brands: "brands", categories: "report_categories", "channel-links": "channel_links", checks: "checks", "customer-groups": "customer_groups", customers: "customers", imports: "import_jobs", layouts: "pos_layouts", menus: "menus", "modifier-groups": "modifier_groups", orders: "orders", outlets: "outlets", "print-jobs": "print_jobs", printers: "printers", products: "products", proposals: "proposals", refunds: "refunds", relays: "print_relays", rounds: "guest_rounds", "service-requests": "service_requests", shifts: "shifts", staff: "staff", stations: "stations", tables: "tables", "tax-classes": "tax_classes", "tender-types": "tender_types", "void-reasons": "void_reasons" };
+  const tables: Record<string, string> = { "agent-identities": "agent_identities", areas: "areas", "availability-rules": "availability_rules", brands: "brands", categories: "report_categories", "channel-links": "channel_links", checks: "checks", "customer-groups": "customer_groups", customers: "customers", "display-destinations": "display_destinations", "kitchen-tickets": "kitchen_tickets", imports: "import_jobs", layouts: "pos_layouts", menus: "menus", "modifier-groups": "modifier_groups", orders: "orders", outlets: "outlets", "print-jobs": "print_jobs", printers: "printers", products: "products", proposals: "proposals", refunds: "refunds", relays: "print_relays", rounds: "guest_rounds", "service-requests": "service_requests", shifts: "shifts", staff: "staff", stations: "stations", tables: "tables", "tax-classes": "tax_classes", "tender-types": "tender_types", "void-reasons": "void_reasons" };
   const out: Record<string, string> = {};
   for (const [family, table] of Object.entries(tables)) out[family] = await one(db.sql.unsafe(`select id::text as id from ${table} where merchant_id = $1 order by id limit 1`, [m]) as unknown as Promise<{ id: string }[]>);
   // An invoiced bill and a refund with a credit note, so their documents exist.

@@ -276,6 +276,6 @@ async function fireRound(correlationId: string, p: Principal, order: typeof orde
   await db().update(orders).set({ roundCount: round, status: order.status === "open" ? "fired" : order.status, firstFiredAt: order.firstFiredAt ?? now }).where(eq(orders.id, order.id));
   await db().update(guestRounds).set({ status: "fired" }).where(eq(guestRounds.id, roundId));
   await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "order.fired", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "rounds.submit", payload: { round, line_ids: lines.map((l) => l.id), source: "guest", round_id: roundId }, correlationId, businessDay: bd }, p);
-  const { warnings } = await createKitchenJobs({ order: { ...order, roundCount: round }, lines: lines.map((l) => ({ ...l, status: "fired" as const })), round, stationId: null, principal: p, correlationId });
+  const { warnings } = await createKitchenJobs({ order: { ...order, roundCount: round }, lines: lines.map((l) => ({ ...l, status: "fired" as const })), round, stationId: null, principal: p, correlationId, operationId: "rounds.submit" });
   return warnings;
 }

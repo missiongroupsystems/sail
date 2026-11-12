@@ -1,8 +1,8 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { currencyExponent, TaxModeSchema, TaxRoundingSchema } from "@sail/shared";
 import { db } from "../db/client.js";
-import { brands, merchantSettings, merchants, outlets, stations } from "../db/schema/index.js";
+import { brands, displayDestinations, merchantSettings, merchants, outlets, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
@@ -35,6 +35,10 @@ export const MerchantSettingsSchema = z.object({
   receipt_footer: z.string().nullable(),
   receipt_show_outlet_phone: z.boolean(),
   busy_mode_threshold: z.number().int(),
+  /** Kitchen display: a ticket's elapsed time turns amber after this many minutes... */
+  kitchen_warn_minutes: z.number().int(),
+  /** ...and red after this many. */
+  kitchen_late_minutes: z.number().int(),
 });
 export const MerchantSchema = z.object({ id: z.string(), name: z.string(), settings: MerchantSettingsSchema });
 /** What a guest surface (the ordering app, a digital receipt) needs to format amounts, dates and times. */
@@ -97,6 +101,10 @@ export const StationSchema = z.object({
   home: z.enum(["floor", "takeaway"]),
   receipt_printer_id: z.string().nullable(),
   text_size: z.string(),
+  /** `display`: a kitchen display, which shows and bumps tickets without a PIN. */
+  kind: z.enum(["pos", "display"]),
+  /** The kitchen display destinations a display station shows. */
+  display_destination_ids: z.array(z.string()),
   paired: z.boolean(),
   device_label: untrusted(z.string().nullable()),
   archived: z.boolean(),
@@ -112,8 +120,10 @@ const StationInput = z.object({
   home: z.enum(["floor", "takeaway"]).optional(),
   receipt_printer_id: z.uuid().nullable().optional(),
   text_size: z.enum(["standard", "large"]).optional(),
+  kind: z.enum(["pos", "display"]).optional(),
+  display_destination_ids: z.array(z.uuid()).max(20).optional(),
 });
-const StationPatch = StationInput.omit({ id: true, outlet_id: true }).partial().extend({ archived: z.boolean().optional() });
+const StationPatch = StationInput.omit({ id: true, outlet_id: true, kind: true }).partial().extend({ archived: z.boolean().optional() });
 
 /* ---- Mappers ------------------------------------------------------------ */
 
@@ -142,6 +152,8 @@ export const toStation = (s: typeof stations.$inferSelect) => ({
   home: s.home,
   receipt_printer_id: s.receiptPrinterId,
   text_size: s.textSize,
+  kind: s.kind,
+  display_destination_ids: s.displayDestinationIds,
   paired: s.tokenHash != null,
   device_label: s.deviceLabel,
   archived: s.archivedAt != null,
@@ -162,11 +174,22 @@ const toSettings = (s: typeof merchantSettings.$inferSelect) => ({
   receipt_footer: s.receiptFooter,
   receipt_show_outlet_phone: s.receiptShowOutletPhone,
   busy_mode_threshold: s.busyModeThreshold,
+  kitchen_warn_minutes: s.kitchenWarnMinutes,
+  kitchen_late_minutes: s.kitchenLateMinutes,
 });
 
 /** Business-day inputs live in the service layer; re-exported here for the routes that import them from this module. */
 import { businessDayInputs } from "../services/business-day.js";
 export { businessDayInputs };
+
+/** A display station shows destinations of its own outlet only; a POS station shows none. */
+async function assertDestinations(st: typeof stations.$inferSelect) {
+  const ids = [...new Set(st.displayDestinationIds)];
+  if (ids.length === 0) return;
+  if (st.kind !== "display") throw AppError.validation("Only a kitchen display station shows display destinations", { remedy: "Create a station of kind display for the kitchen screen." });
+  const found = await db().select({ id: displayDestinations.id }).from(displayDestinations).where(and(inArray(displayDestinations.id, ids), eq(displayDestinations.outletId, st.outletId), isNull(displayDestinations.archivedAt)));
+  if (found.length !== ids.length) throw AppError.notFound("kitchen display destination at this station's outlet");
+}
 
 /* ---- Routes -------------------------------------------------------------- */
 
@@ -194,6 +217,12 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
       if (patch.timezone != null && !isValidTimeZone(patch.timezone)) throw AppError.validation(`Unknown time zone ${patch.timezone}`, { remedy: "Use an IANA zone such as Europe/Berlin." });
       if (patch.locale != null && !isValidLocale(patch.locale)) throw AppError.validation(`Unknown locale ${patch.locale}`, { remedy: "Use a BCP 47 tag such as en-GB or de-DE." });
       if (patch.busy_mode_threshold != null && (patch.busy_mode_threshold < 1 || patch.busy_mode_threshold > 999)) throw AppError.validation("busy_mode_threshold must be between 1 and 999 open orders");
+      if (patch.kitchen_warn_minutes != null || patch.kitchen_late_minutes != null) {
+        const [k] = await db().select({ warn: merchantSettings.kitchenWarnMinutes, late: merchantSettings.kitchenLateMinutes }).from(merchantSettings).where(eq(merchantSettings.merchantId, p.merchantId)).limit(1);
+        const warn = patch.kitchen_warn_minutes ?? k!.warn;
+        const late = patch.kitchen_late_minutes ?? k!.late;
+        if (warn < 1 || late <= warn || late > 240) throw AppError.validation("kitchen_warn_minutes must be at least 1 and below kitchen_late_minutes, which is at most 240", { remedy: "For example 8 and 15: a ticket turns amber after 8 minutes and red after 15." });
+      }
       if (patch.currency != null && patch.currency !== current.currency) throw AppError.validation(`The currency is ${current.currency} and cannot change`, { remedy: "Every stored amount is in this currency's minor units. Create a new merchant for another currency.", details: { currency: current.currency } });
       const { name, ...settings } = patch;
       if (name) await db().update(merchants).set({ name }).where(eq(merchants.id, p.merchantId));
@@ -213,6 +242,8 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
           ...(settings.receipt_footer !== undefined && { receiptFooter: settings.receipt_footer }),
           ...(settings.receipt_show_outlet_phone !== undefined && { receiptShowOutletPhone: settings.receipt_show_outlet_phone }),
           ...(settings.busy_mode_threshold !== undefined && { busyModeThreshold: settings.busy_mode_threshold }),
+          ...(settings.kitchen_warn_minutes !== undefined && { kitchenWarnMinutes: settings.kitchen_warn_minutes }),
+          ...(settings.kitchen_late_minutes !== undefined && { kitchenLateMinutes: settings.kitchen_late_minutes }),
           updatedAt: new Date(),
         })
         .where(eq(merchantSettings.merchantId, p.merchantId))
@@ -331,8 +362,9 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
     if (!outlet) throw AppError.notFound("outlet", body.outlet_id);
     const [row] = await db()
       .insert(stations)
-      .values({ id: body.id, merchantId: p.merchantId, outletId: body.outlet_id, name: body.name, brandId: body.brand_id ?? null, layoutId: body.layout_id ?? null, payBeforeFiring: body.pay_before_firing ?? false, seatsEnabled: body.seats_enabled ?? false, home: body.home ?? "floor", receiptPrinterId: body.receipt_printer_id ?? null, textSize: body.text_size ?? "standard" })
+      .values({ id: body.id, merchantId: p.merchantId, outletId: body.outlet_id, name: body.name, brandId: body.brand_id ?? null, layoutId: body.layout_id ?? null, payBeforeFiring: body.pay_before_firing ?? false, seatsEnabled: body.seats_enabled ?? false, home: body.home ?? "floor", receiptPrinterId: body.receipt_printer_id ?? null, textSize: body.text_size ?? "standard", kind: body.kind ?? "pos", displayDestinationIds: body.display_destination_ids ?? [] })
       .returning();
+    await assertDestinations(row!);
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: body.outlet_id, type: "station.created", aggregate: { kind: "station", id: row!.id }, operationId: "stations.create", payload: toStation(row!), correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(p.merchantId, body.outlet_id) }, p);
     await recordAudit(p, { action: "stations.create", targetKind: "station", targetId: row!.id, outletId: body.outlet_id, details: { name: row!.name } });
     return c.json({ data: toStation(row!), events: [ev], warnings: [] }, 201);
@@ -354,11 +386,13 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
         ...(body.home !== undefined && { home: body.home }),
         ...(body.receipt_printer_id !== undefined && { receiptPrinterId: body.receipt_printer_id }),
         ...(body.text_size !== undefined && { textSize: body.text_size }),
+        ...(body.display_destination_ids !== undefined && { displayDestinationIds: body.display_destination_ids }),
         ...(body.archived !== undefined && { archivedAt: body.archived ? new Date() : null }),
       })
       .where(and(eq(stations.id, id), eq(stations.merchantId, p.merchantId)))
       .returning();
     if (!row) throw AppError.notFound("station", id);
+    if (body.display_destination_ids !== undefined) await assertDestinations(row);
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: row.outletId, type: "station.updated", aggregate: { kind: "station", id }, operationId: "stations.update", payload: body, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(p.merchantId, row.outletId) }, p);
     await recordAudit(p, { action: "stations.update", targetKind: "station", targetId: id, outletId: row.outletId, details: body });
     return c.json({ data: toStation(row), events: [ev], warnings: [] }, 200);

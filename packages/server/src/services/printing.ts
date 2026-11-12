@@ -7,6 +7,7 @@ import { AppError } from "../lib/errors.js";
 import { appendEvent } from "../lib/events.js";
 import type { Principal } from "../auth/principal.js";
 import { businessDayInputs, printLocale } from "./business-day.js";
+import { activeDestinations, createKitchenTickets, ticketBusinessDay } from "./kitchen.js";
 
 /**
  * Printing: routing rules, server-side rendering with the
@@ -24,8 +25,11 @@ export function profileFor(p: PrinterRow): PrinterProfile {
   return { width: p.paperWidth === "58mm" ? "58mm" : "80mm", code_page_cjk: p.codePageCjk, cut: p.cut, beep: p.beep };
 }
 
+/** What routing reads from a target: a kitchen printer, or a kitchen display destination in the same shape. */
+export type RouteTarget = Pick<PrinterRow, "id" | "role" | "archivedAt" | "stationId" | "includeTags" | "excludeTags" | "orderTypes" | "sources" | "isDefaultKitchen">;
+
 /** Does a kitchen printer's routing rule match a line fired from `stationId`? */
-export function printerMatches(p: PrinterRow, line: { tags: string[]; source: string }, order: { orderType: string }, stationId: string | null): boolean {
+export function printerMatches(p: RouteTarget, line: { tags: string[]; source: string }, order: { orderType: string }, stationId: string | null): boolean {
   if (p.role !== "kitchen" || p.archivedAt) return false;
   if (p.stationId && p.stationId !== stationId) return false;
   // The default kitchen printer with no include tags is a pure fallback: it takes only items no other printer matched.
@@ -38,10 +42,10 @@ export function printerMatches(p: PrinterRow, line: { tags: string[]; source: st
 }
 
 /** Group lines by target printer following the routing rules; unmatched lines go to the default kitchen printer. */
-export function routeLines<L extends { id: string; tags: string[]; source: string }>(all: PrinterRow[], lines: L[], order: { orderType: string }, stationId: string | null): { printer: PrinterRow; lines: L[] }[] {
+export function routeLines<T extends RouteTarget, L extends { id: string; tags: string[]; source: string }>(all: T[], lines: L[], order: { orderType: string }, stationId: string | null): { printer: T; lines: L[] }[] {
   const active = all.filter((p) => !p.archivedAt);
   const fallback = active.find((p) => p.isDefaultKitchen && p.role === "kitchen") ?? null;
-  const byPrinter = new Map<string, { printer: PrinterRow; lines: L[] }>();
+  const byPrinter = new Map<string, { printer: T; lines: L[] }>();
   for (const line of lines) {
     // Outlet printers match by tags; station printers additionally only for their station.
     let targets = active.filter((p) => (p.stationId ? p.stationId === stationId : true) && printerMatches(p, line, order, stationId));
@@ -127,14 +131,21 @@ export async function insertJob(input: { merchantId: string; outletId: string; p
   return { id, printer_id: input.printer.id, printer_name: input.printer.name, kind: input.kind, copy_no: row.copyNo, copies: row.copies };
 }
 
-/** Kitchen tickets for a fire: one job per target printer per copy. Returns created jobs and warnings for unrouted lines. */
-export async function createKitchenJobs(input: { order: typeof orders.$inferSelect; lines: (typeof orderLines.$inferSelect)[]; round: number; stationId: string | null; principal: Principal; correlationId: string }): Promise<{ jobs: CreatedJob[]; warnings: string[] }> {
-  const all = await db().select().from(printers).where(and(eq(printers.outletId, input.order.outletId), isNull(printers.archivedAt)));
+/**
+ * Kitchen tickets for a fire: one job per target printer per copy, and one display ticket per kitchen display
+ * destination the same routing picks (services/kitchen.ts). Returns created jobs and warnings for lines that reach
+ * neither a printer nor a display.
+ */
+export async function createKitchenJobs(input: { order: typeof orders.$inferSelect; lines: (typeof orderLines.$inferSelect)[]; round: number; stationId: string | null; principal: Principal; correlationId: string; operationId?: string }): Promise<{ jobs: CreatedJob[]; warnings: string[] }> {
+  // The printers, the display destinations and the business day are read together: pipelined, one round trip.
+  const [all, displays, bd] = await Promise.all([db().select().from(printers).where(and(eq(printers.outletId, input.order.outletId), isNull(printers.archivedAt))), activeDestinations(input.order.outletId), ticketBusinessDay(input.order.outletId)]);
   const routed = routeLines(all, input.lines, input.order, input.stationId);
+  const shown = routeLines(displays, input.lines, input.order, null);
   const warnings: string[] = [];
-  const routedIds = new Set(routed.flatMap((r) => r.lines.map((l) => l.id)));
+  const routedIds = new Set([...routed, ...shown].flatMap((r) => r.lines.map((l) => l.id)));
   const unrouted = input.lines.filter((l) => !routedIds.has(l.id));
   if (unrouted.length) warnings.push(`${unrouted.length} item${unrouted.length === 1 ? "" : "s"} route to no printer and no default kitchen printer is set: ${unrouted.map((l) => l.name).join(", ")}`);
+  await createKitchenTickets({ order: input.order, routed: shown, round: input.round, principal: input.principal, correlationId: input.correlationId, operationId: input.operationId ?? "orders.fire", bd });
   const jobs: CreatedJob[] = [];
   for (const r of routed) {
     for (let copy = 1; copy <= Math.max(1, r.printer.copies); copy++) {
