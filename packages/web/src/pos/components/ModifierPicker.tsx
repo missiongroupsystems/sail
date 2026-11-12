@@ -109,7 +109,7 @@ export function ModifierPicker({ menu, product, selection, onChange, isDisabled 
         const met = chosen.length >= group.min_select;
         const full = group.max_select != null && chosen.length >= group.max_select;
         return (
-          <section key={group.id} className={parent ? "ml-4 border-l-2 border-line pl-4" : ""} aria-label={group.name}>
+          <section key={group.id} className={parent ? "ml-4 border-l-2 border-rule pl-4" : ""} aria-label={group.name}>
             <header className="mb-2 flex items-baseline justify-between gap-2">
               <h3 className="text-line text-ink">
                 {group.name}

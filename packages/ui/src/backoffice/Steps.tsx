@@ -53,7 +53,7 @@ export function Steps({ steps, current, onStepPress, className }: StepsProps) {
                 {label}
               </span>
             )}
-            {i < steps.length - 1 ? <span aria-hidden className="h-px w-6 bg-line" /> : null}
+            {i < steps.length - 1 ? <span aria-hidden className="h-px w-6 bg-rule" /> : null}
           </li>
         );
       })}

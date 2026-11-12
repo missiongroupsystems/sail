@@ -55,7 +55,7 @@ export function TotalsBlock({ rows, pricing, className }: TotalsBlockProps) {
 
   return (
     <div className={cx("relative px-3 pt-2 pb-3", className)} aria-busy={pricing || undefined}>
-      <div aria-hidden className={cx("absolute inset-x-3 top-0 h-px overflow-hidden", pricing ? "bg-line" : "bg-transparent")}>
+      <div aria-hidden className={cx("absolute inset-x-3 top-0 h-px overflow-hidden", pricing ? "bg-rule" : "bg-transparent")}>
         {pricing ? <div className="pos-progress keep-motion h-full w-1/2 bg-ink" /> : null}
       </div>
       {/* Polite live region (design 10): a changed row is announced; the whole block is not re-read. */}

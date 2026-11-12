@@ -44,7 +44,7 @@ export function BottomSheet({ isOpen, onOpenChange, title, description, children
         <AriaDialog className="flex min-h-0 flex-1 flex-col outline-none">
           {({ close }) => (
             <>
-              <span aria-hidden className="absolute left-1/2 top-2 h-1 w-10 -translate-x-1/2 rounded-full bg-line" />
+              <span aria-hidden className="absolute left-1/2 top-2 h-1 w-10 -translate-x-1/2 rounded-full bg-rule" />
               <header className="flex items-start justify-between gap-3 px-4 pt-5 pb-3 hairline-b">
                 <div className="min-w-0 pt-1">
                   <Heading slot="title" className="font-display text-title text-ink">

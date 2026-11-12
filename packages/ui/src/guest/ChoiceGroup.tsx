@@ -103,7 +103,7 @@ export function ChoiceGroup({ name, rule, required, met, mode, maxSelect, maxPer
     const child = renderUnder?.(option.id) ?? null;
     if (!stepper && !child) return null;
     return (
-      <div className="ml-9 flex flex-col gap-3 pb-2 pl-3 border-l-2 border-line">
+      <div className="ml-9 flex flex-col gap-3 pb-2 pl-3 border-l-2 border-rule">
         {stepper ? (
           <div className="flex items-center justify-between gap-3">
             <span className="text-caption text-ink-2">How many (up to {maxPerOption})</span>
