@@ -32,6 +32,12 @@ function detectMode(order: OrderSnapshot): Mode {
 
 export const shareText = (share: string) => FRACTIONS[share] ?? (share === "1" ? "" : share);
 
+/** "$13.50 each", or "$13.50 or $13.48 each" when the register's even shares differ by a cent. */
+function shareSummary(totals: number[]): string {
+  const distinct = [...new Set(totals)].sort((a, b) => b - a);
+  return `${distinct.map((t) => formatCents(t)).join(" or ")} each`;
+}
+
 export function billLabel(check: CheckSnapshot): string {
   return check.seat_no != null ? `${check.label} · Seat ${check.seat_no}` : check.label;
 }
@@ -249,7 +255,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
               <span className="text-line text-ink">Split evenly between</span>
               <QuantityStepper value={evenN ?? snap.checks.length} onChange={changeEven} min={2} max={20} label="Number of bills" />
               <span className="text-line text-ink">bills</span>
-              {inFlight ? <span className="text-caption text-ink-2">Checking…</span> : snap.checks[0] ? <span className="text-caption text-ink-2 tabular">{formatCents(snap.checks[0].totals.total)} each</span> : null}
+              {inFlight ? <span className="text-caption text-ink-2">Checking…</span> : snap.checks[0] ? <span className="text-caption text-ink-2 tabular">{shareSummary(snap.checks.map((c) => c.totals.total))}</span> : null}
             </div>
           ) : null}
           {mode === "seat" ? (
