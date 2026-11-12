@@ -48098,7 +48098,8 @@
                                 },
                                 "open_price": {
                                   "type": "integer",
-                                  "minimum": 0
+                                  "minimum": 0,
+                                  "maximum": 1000000000000
                                 }
                               },
                               "required": [
@@ -48283,11 +48284,13 @@
                           },
                           "amount": {
                             "type": "integer",
-                            "minimum": 1
+                            "minimum": 1,
+                            "maximum": 1000000000000
                           },
                           "tip_cents": {
                             "type": "integer",
-                            "minimum": 0
+                            "minimum": 0,
+                            "maximum": 1000000000000
                           },
                           "reference": {
                             "type": [
@@ -48443,7 +48446,8 @@
                           },
                           "total": {
                             "type": "integer",
-                            "minimum": 0
+                            "minimum": 0,
+                            "maximum": 1000000000000
                           }
                         },
                         "required": [
@@ -48534,7 +48538,8 @@
                         "properties": {
                           "amount": {
                             "type": "integer",
-                            "minimum": 1
+                            "minimum": 1,
+                            "maximum": 1000000000000
                           }
                         },
                         "required": [

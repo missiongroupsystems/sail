@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, eq, gt, isNull } from "drizzle-orm";
-import { PERMISSIONS, RoleSchema, registerOperations, type Role } from "@sail/shared";
+import { AmountSchema, PERMISSIONS, RoleSchema, registerOperations, type Role } from "@sail/shared";
 import { db, withTransaction } from "../db/client.js";
 import { auditLog, orderManualApplications, staff, staffSessions, stationPairingCodes, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -30,13 +30,13 @@ registerOperations({
 const grantBase = { target_id: z.uuid(), approver_pin: secret(z.string().regex(/^\d{6}$/)), outlet_id: z.uuid().optional() };
 const GrantRequest = z.discriminatedUnion("action", [
   z.object({ action: z.literal("lines.void_fired"), target_kind: z.literal("order_line"), ...grantBase, args: z.object({ quantity: z.number().int().min(1) }) }),
-  z.object({ action: z.literal("lines.add_open_price"), target_kind: z.literal("order"), ...grantBase, args: z.object({ lines: z.array(z.object({ line_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1), open_price: z.number().int().min(0) })).min(1) }) }),
+  z.object({ action: z.literal("lines.add_open_price"), target_kind: z.literal("order"), ...grantBase, args: z.object({ lines: z.array(z.object({ line_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1), open_price: AmountSchema })).min(1) }) }),
   z.object({ action: z.literal("adjustments.apply_manual"), target_kind: z.literal("order"), ...grantBase, args: z.object({ rule_key: z.string().min(1), entered_value: z.number().int().min(0).nullable(), line_ids: z.array(z.uuid()).min(1).nullable() }) }),
   z.object({ action: z.literal("adjustments.remove"), target_kind: z.literal("order"), ...grantBase, args: z.object({ application_id: z.uuid() }) }),
-  z.object({ action: z.literal("payments.record"), target_kind: z.literal("order"), ...grantBase, args: z.object({ check_id: z.uuid(), tender_type_id: z.uuid(), amount: z.number().int().min(1), tip_cents: z.number().int().min(0), reference: untrusted(z.string().max(80).nullable().default(null)) }) }),
-  z.object({ action: z.literal("refunds.create"), target_kind: z.literal("check"), ...grantBase, args: z.object({ request: RefundRequestSchema, tender_split: TenderSplit, total: z.number().int().min(0) }) }),
+  z.object({ action: z.literal("payments.record"), target_kind: z.literal("order"), ...grantBase, args: z.object({ check_id: z.uuid(), tender_type_id: z.uuid(), amount: AmountSchema.min(1), tip_cents: AmountSchema, reference: untrusted(z.string().max(80).nullable().default(null)) }) }),
+  z.object({ action: z.literal("refunds.create"), target_kind: z.literal("check"), ...grantBase, args: z.object({ request: RefundRequestSchema, tender_split: TenderSplit, total: AmountSchema }) }),
   z.object({ action: z.literal("orders.reopen"), target_kind: z.literal("order"), ...grantBase, args: z.object({}) }),
-  z.object({ action: z.literal("payments.void"), target_kind: z.literal("payment"), ...grantBase, args: z.object({ amount: z.number().int().min(1) }) }),
+  z.object({ action: z.literal("payments.void"), target_kind: z.literal("payment"), ...grantBase, args: z.object({ amount: AmountSchema.min(1) }) }),
 ]);
 
 export function stationRoutes(app: OpenAPIHono<AppEnv>) {
