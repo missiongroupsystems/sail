@@ -195,6 +195,21 @@ describe("event log and live updates", () => {
     expect(partial.body.data.map((e) => e.seq)).toEqual([3]);
   });
 
+  it("filters catch-up by one event type or several", async () => {
+    const st = await call<{ data: { id: string } }>("POST", "/v1/stations", { token: B.admin.token, body: { outlet_id: B.outletId, name: "Filtered" } });
+    await call("PATCH", `/v1/stations/${st.body.data.id}`, { token: B.admin.token, body: { name: "Filtered 2" } });
+    const all = await call<{ data: { type: string }[] }>("GET", `/v1/outlets/${B.outletId}/events`, { token: B.admin.token });
+    const kinds = [...new Set(all.body.data.map((e) => e.type))];
+    expect(kinds).toEqual(expect.arrayContaining(["station.created", "station.updated"]));
+    const one = await call<{ data: { type: string }[] }>("GET", `/v1/outlets/${B.outletId}/events?types=station.updated`, { token: B.admin.token });
+    expect(one.status, JSON.stringify(one.body)).toBe(200);
+    expect(one.body.data.map((e) => e.type)).toEqual(["station.updated"]);
+    const both = await call<{ data: { type: string }[] }>("GET", `/v1/outlets/${B.outletId}/events?types=station.created,station.updated`, { token: B.admin.token });
+    expect(both.status, JSON.stringify(both.body)).toBe(200);
+    expect(both.body.data).toHaveLength(all.body.data.filter((e) => e.type === "station.created" || e.type === "station.updated").length);
+    expect(new Set(both.body.data.map((e) => e.type))).toEqual(new Set(["station.created", "station.updated"]));
+  });
+
   it("events are append-only in the database", async () => {
     await expect(db.sql`delete from events where outlet_id = ${A.outlet2Id}`).rejects.toThrow(/append_only/);
   });

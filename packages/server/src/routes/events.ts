@@ -1,5 +1,5 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray } from "drizzle-orm";
 import { db, withTransaction } from "../db/client.js";
 import { events, outletSequences, outlets } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -62,7 +62,7 @@ export function eventRoutes(app: OpenAPIHono<AppEnv>) {
       const conds = [eq(events.outletId, id), gt(events.seq, q.after)];
       if (q.types) {
         const types = q.types.split(",").filter(Boolean);
-        conds.push(sql`${events.type} = any(${types})`);
+        conds.push(inArray(events.type, types));
       }
       if (q.aggregate_id) conds.push(eq(events.aggregateId, q.aggregate_id));
       const rows = await db()
