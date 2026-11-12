@@ -9,7 +9,7 @@ import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
-import { principalCanSeeOutlet, principalRole } from "../auth/principal.js";
+import { outletVisible, principalRole } from "../auth/principal.js";
 import { registerAgentResolver } from "../auth/resolve.js";
 import { registerFloorExtra } from "./orders.js";
 import { issueCredential, lockPendingProposal, resolveAgentPrincipal, revokeAgentSessions, startAgentSession, TIERS, toProposal } from "../services/agents.js";
@@ -99,7 +99,7 @@ export function agentRoutes(app: OpenAPIHono<AppEnv>) {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const q = c.req.valid("query");
-    if (!principalCanSeeOutlet(p, id)) throw AppError.notFound("outlet", id);
+    if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
     const rows = await db()
       .select()
       .from(proposals)

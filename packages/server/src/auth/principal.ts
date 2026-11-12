@@ -1,4 +1,7 @@
+import { and, eq } from "drizzle-orm";
 import type { Role } from "@sail/shared";
+import { db } from "../db/client.js";
+import { outlets } from "../db/schema/index.js";
 
 /**
  * The resolved caller of a request (scope doc 7.1 rule 8; vision 7.2). Every
@@ -103,6 +106,16 @@ export function principalRole(p: Principal): Role | null {
 export function principalCanSeeOutlet(p: Principal, outletId: string): boolean {
   const scope = outletScopeFor(p);
   return scope === "*" || scope.split(",").includes(outletId);
+}
+
+/**
+ * The caller may act on this outlet: it is in the caller's scope and it is one of the caller's merchant's outlets. A
+ * scope of '*' (every outlet) says nothing about which merchant an outlet id belongs to, so the row is looked up too.
+ */
+export async function outletVisible(p: Principal, outletId: string): Promise<boolean> {
+  if (!principalCanSeeOutlet(p, outletId)) return false;
+  const [o] = await db().select({ id: outlets.id }).from(outlets).where(and(eq(outlets.id, outletId), eq(outlets.merchantId, p.merchantId))).limit(1);
+  return o !== undefined;
 }
 
 export function actorOf(p: Principal) {

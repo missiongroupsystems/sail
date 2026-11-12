@@ -9,7 +9,7 @@ import type { AppEnv } from "./context.js";
 import { defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, dataResponse, z } from "./openapi.js";
 import { appendEvent } from "./events.js";
 import { recordAudit } from "./audit.js";
-import { principalCanSeeOutlet, type Principal } from "../auth/principal.js";
+import { outletVisible, type Principal } from "../auth/principal.js";
 
 /**
  * A factory for simple reference entities (categories, tender types, void
@@ -104,7 +104,7 @@ export function defineCrud<TTable extends PgTable, TApi extends z.ZodTypeAny, TC
     const body = c.req.valid("json") as z.infer<TCreate>;
     const values = cfg.fromCreate(body, p) as Record<string, unknown>;
     const outletId = (values["outletId"] as string | undefined) ?? null;
-    if (outletId && !principalCanSeeOutlet(p, outletId)) throw AppError.notFound("outlet", outletId);
+    if (outletId && !(await outletVisible(p, outletId))) throw AppError.notFound("outlet", outletId);
     const [row] = await db()
       .insert(cfg.table as PgTable)
       .values({ ...values, merchantId: p.merchantId } as never)

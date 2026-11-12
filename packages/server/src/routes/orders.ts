@@ -8,7 +8,7 @@ import type { AppContext, AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
 import { appendEvent, type AppendedEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
-import { principalCanSeeOutlet, principalRole, type Principal } from "../auth/principal.js";
+import { outletVisible, principalRole, type Principal } from "../auth/principal.js";
 import { compileMenu } from "../services/menu.js";
 import { buildLines, resolveModifiers, type LineInput } from "../services/lines.js";
 import { bumpVersion, getOrderRow, loadSnapshot, lockOrder, nextOrderNo, OPEN_STATUSES, openOrderForTable, orderClosed, paidTotal, pricingContextOf, pricingLineOf, repriceOrder, resolveUnitPrice, tableExists, type OrderSnapshot } from "../services/orders.js";
@@ -91,7 +91,7 @@ async function outletContext(p: Principal, body: { outlet_id?: string; brand_id?
     return { outletId: st.outletId, brandId, stationId: st.id, station: st };
   }
   if (!body.outlet_id || !body.brand_id) throw AppError.validation("outlet_id and brand_id are required when not on a station");
-  if (!principalCanSeeOutlet(p, body.outlet_id)) throw AppError.notFound("outlet", body.outlet_id);
+  if (!(await outletVisible(p, body.outlet_id))) throw AppError.notFound("outlet", body.outlet_id);
   return { outletId: body.outlet_id, brandId: body.brand_id, stationId: null, station: null };
 }
 
@@ -231,7 +231,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       const p = c.get("principal");
       const { id } = c.req.valid("param");
       const q = c.req.valid("query");
-      if (!principalCanSeeOutlet(p, id)) throw AppError.notFound("outlet", id);
+      if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
       const conds: SQL[] = [eq(orders.outletId, id)];
       if (q.status) conds.push(inArray(orders.status, q.status.split(",").filter((s) => (ORDER_STATUSES as readonly string[]).includes(s)) as (typeof ORDER_STATUSES)[number][]));
       if (q.open_only === "true") conds.push(inArray(orders.status, [...OPEN_STATUSES]));
@@ -587,7 +587,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "floor.snapshot", method: "get", path: "/v1/outlets/{id}/floor", tags: ["orders"], request: { params: z.object({ id: z.uuid() }) }, responses: { 200: jsonResponse(dataResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
-    if (!principalCanSeeOutlet(p, id)) throw AppError.notFound("outlet", id);
+    if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
     const areaRows = await db().select().from(areas).where(eq(areas.outletId, id)).orderBy(asc(areas.sort), asc(areas.name));
     const tableRows = await db().select().from(tables).where(and(eq(tables.outletId, id), isNull(tables.archivedAt))).orderBy(asc(tables.name));
     const open = await db().select().from(orders).where(and(eq(orders.outletId, id), inArray(orders.status, [...OPEN_STATUSES])));

@@ -10,7 +10,7 @@ import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listRes
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { compact, defineCrud } from "../lib/crud.js";
-import { principalCanSeeOutlet } from "../auth/principal.js";
+import { outletVisible } from "../auth/principal.js";
 import { compileMenu } from "../services/menu.js";
 import { businessToday } from "../services/business-day.js";
 import { nextCutoff } from "../lib/time.js";
@@ -385,11 +385,12 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const b = c.req.valid("json");
-    const [row] = await db()
-      .update(modifierGroups)
-      .set(compact({ name: b.name, minSelect: b.min_select, maxSelect: b.max_select, maxPerModifier: b.max_per_modifier, legacyId: b.legacy_id, archivedAt: b.archived === undefined ? undefined : b.archived ? new Date() : null }))
-      .where(and(eq(modifierGroups.id, id), eq(modifierGroups.merchantId, p.merchantId)))
-      .returning();
+    const set = compact({ name: b.name, minSelect: b.min_select, maxSelect: b.max_select, maxPerModifier: b.max_per_modifier, legacyId: b.legacy_id, archivedAt: b.archived === undefined ? undefined : b.archived ? new Date() : null });
+    if (Object.keys(set).length === 0 && !b.options) throw AppError.validation("Nothing to update");
+    // Options alone change no column of the group itself: look it up instead of updating nothing.
+    const [row] = Object.keys(set).length
+      ? await db().update(modifierGroups).set(set).where(and(eq(modifierGroups.id, id), eq(modifierGroups.merchantId, p.merchantId))).returning()
+      : await db().select().from(modifierGroups).where(and(eq(modifierGroups.id, id), eq(modifierGroups.merchantId, p.merchantId))).limit(1);
     if (!row) throw AppError.notFound("modifier group", id);
     if (row.maxSelect != null && row.minSelect > row.maxSelect) throw AppError.validation("min_select cannot exceed max_select");
     if (b.options) await writeOptions(p.merchantId, id, b.options);
@@ -473,7 +474,7 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const menu = await compileMenu(id, new Date());
-    if (!principalCanSeeOutlet(p, menu.channel_link.outlet_id)) throw AppError.notFound("channel link", id);
+    if (!(await outletVisible(p, menu.channel_link.outlet_id))) throw AppError.notFound("channel link", id);
     c.header("etag", `"${menu.version}"`);
     return c.json({ data: menu }, 200);
   });
@@ -486,7 +487,7 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "stock.list", method: "get", path: "/v1/outlets/{id}/stock", tags: ["stock"], request: { params: z.object({ id: z.uuid() }) }, responses: { 200: jsonResponse(listResponse(StockSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
-    if (!principalCanSeeOutlet(p, id)) throw AppError.notFound("outlet", id);
+    if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
     const { today } = await todayFor(p.merchantId, id);
     const rows = await db().select().from(stockStatus).where(eq(stockStatus.outletId, id)).orderBy(desc(stockStatus.updatedAt));
     return c.json({ data: rows.map((s) => toStock(s, today)).filter((s) => s.sold_out || s.daily_cap != null), next_cursor: null }, 200);
@@ -498,7 +499,7 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
     async (c) => {
       const p = c.get("principal");
       const b = c.req.valid("json");
-      if (!principalCanSeeOutlet(p, b.outlet_id)) throw AppError.notFound("outlet", b.outlet_id);
+      if (!(await outletVisible(p, b.outlet_id))) throw AppError.notFound("outlet", b.outlet_id);
       const { bd, today } = await todayFor(p.merchantId, b.outlet_id);
       let until: Date;
       if (b.until === "indefinite") until = new Date("9999-12-31T00:00:00Z");
@@ -519,7 +520,7 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "stock.restore", method: "post", path: "/v1/stock/restore", tags: ["stock"], request: { body: jsonBody(stockBody) }, responses: { 200: jsonResponse(mutationResponse(StockSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const b = c.req.valid("json");
-    if (!principalCanSeeOutlet(p, b.outlet_id)) throw AppError.notFound("outlet", b.outlet_id);
+    if (!(await outletVisible(p, b.outlet_id))) throw AppError.notFound("outlet", b.outlet_id);
     const { bd, today } = await todayFor(p.merchantId, b.outlet_id);
     const [row] = await db()
       .insert(stockStatus)
@@ -535,7 +536,7 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "stock.set_daily_cap", method: "post", path: "/v1/stock/daily-cap", tags: ["stock"], request: { body: jsonBody(stockBody.extend({ quantity: z.number().int().min(0).nullable() })) }, responses: { 200: jsonResponse(mutationResponse(StockSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const b = c.req.valid("json");
-    if (!principalCanSeeOutlet(p, b.outlet_id)) throw AppError.notFound("outlet", b.outlet_id);
+    if (!(await outletVisible(p, b.outlet_id))) throw AppError.notFound("outlet", b.outlet_id);
     const { bd, today } = await todayFor(p.merchantId, b.outlet_id);
     const [row] = await db()
       .insert(stockStatus)

@@ -6,7 +6,7 @@ import { merchantSettings, outlets, shifts } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonResponse, z } from "../lib/openapi.js";
-import { principalCanSeeOutlet } from "../auth/principal.js";
+import { outletVisible } from "../auth/principal.js";
 import { businessDateFor } from "../lib/time.js";
 import { businessDayInputs } from "./org.js";
 import { dailySummaryPdf, exceptions, printHealth, productMix, rowsCsv, salesSummary, salesSummaryCsv, type ReportFilters } from "../services/reports.js";
@@ -36,8 +36,8 @@ const Filters = z.object({
   format: z.enum(["json", "csv"]).default("json"),
 });
 
-async function filtersFrom(p: { merchantId: string; type: string }, q: z.infer<typeof Filters>, principal: Parameters<typeof principalCanSeeOutlet>[0]): Promise<ReportFilters> {
-  if (q.outlet_id && !principalCanSeeOutlet(principal, q.outlet_id)) throw AppError.notFound("outlet", q.outlet_id);
+async function filtersFrom(p: { merchantId: string; type: string }, q: z.infer<typeof Filters>, principal: Parameters<typeof outletVisible>[0]): Promise<ReportFilters> {
+  if (q.outlet_id && !(await outletVisible(principal, q.outlet_id))) throw AppError.notFound("outlet", q.outlet_id);
   const bd = await businessDayInputs(p.merchantId, q.outlet_id ?? null);
   const today = businessDateFor(new Date(), bd.cutoff, bd.timeZone);
   return { merchantId: p.merchantId, outletId: q.outlet_id ?? null, from: q.from ?? today, to: q.to ?? q.from ?? today, brandId: q.brand_id ?? null, stationId: q.station_id ?? null, shiftId: q.shift_id ?? null, source: q.source ?? null, orderType: q.order_type ?? null, staffId: q.staff_id ?? null, categoryId: q.category_id ?? null };
@@ -80,7 +80,7 @@ export function reportRoutes(app: OpenAPIHono<AppEnv>) {
   });
 
   const daily = async (p: AppEnv["Variables"]["principal"], outletId: string, businessDate: string | undefined) => {
-    if (!principalCanSeeOutlet(p, outletId)) throw AppError.notFound("outlet", outletId);
+    if (!(await outletVisible(p, outletId))) throw AppError.notFound("outlet", outletId);
     const [outlet] = await db().select().from(outlets).where(eq(outlets.id, outletId)).limit(1);
     if (!outlet) throw AppError.notFound("outlet", outletId);
     const bd = await businessDayInputs(p.merchantId, outletId);

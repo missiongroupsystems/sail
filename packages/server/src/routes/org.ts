@@ -8,7 +8,7 @@ import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
-import { principalCanSeeOutlet } from "../auth/principal.js";
+import { outletVisible } from "../auth/principal.js";
 import { isCashRoundingIncrement, isValidLocale, isValidTimeZone, validDenominations } from "../lib/locale.js";
 
 /* ---- Schemas ----------------------------------------------------------- */
@@ -247,6 +247,7 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const body = c.req.valid("json");
+    if (Object.keys(body).length === 0) throw AppError.validation("Nothing to update");
     const [row] = await db()
       .update(brands)
       .set({
@@ -291,6 +292,7 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const body = c.req.valid("json");
+    if (Object.keys(body).length === 0) throw AppError.validation("Nothing to update");
     const [row] = await db()
       .update(outlets)
       .set({
@@ -317,7 +319,7 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "stations.list", method: "get", path: "/v1/outlets/{id}/stations", tags: ["organisation"], request: { params: z.object({ id: z.uuid() }) }, responses: { 200: jsonResponse(listResponse(StationSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
-    if (!principalCanSeeOutlet(p, id)) throw AppError.notFound("outlet", id);
+    if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
     const rows = await db().select().from(stations).where(and(eq(stations.outletId, id), isNull(stations.archivedAt))).orderBy(asc(stations.name));
     return c.json({ data: rows.map(toStation), next_cursor: null }, 200);
   });
@@ -340,6 +342,7 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const body = c.req.valid("json");
+    if (Object.keys(body).length === 0) throw AppError.validation("Nothing to update");
     const [row] = await db()
       .update(stations)
       .set({

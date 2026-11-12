@@ -8,7 +8,7 @@ import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
 import { appendEvent, type AppendedEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
-import { principalCanSeeOutlet, principalRole, type Principal } from "../auth/principal.js";
+import { outletVisible, principalRole, type Principal } from "../auth/principal.js";
 import { bumpVersion, loadSnapshot, lockOrder, repriceOrder } from "../services/orders.js";
 import { requireRoleOrOverride } from "../services/overrides.js";
 import { billDocumentFor, syncAllocations } from "../services/checks.js";
@@ -244,7 +244,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const q = c.req.valid("query");
-    if (!principalCanSeeOutlet(p, id)) throw AppError.notFound("outlet", id);
+    if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
     const rows = await db()
       .select()
       .from(shifts)
@@ -259,7 +259,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     const b = c.req.valid("json");
     dryRunFrom(c, b);
     const outletId = p.type === "staff" && p.outletId ? p.outletId : b.outlet_id;
-    if (!outletId || !principalCanSeeOutlet(p, outletId)) throw AppError.validation("outlet_id is required when not on a station");
+    if (!outletId || !(await outletVisible(p, outletId))) throw AppError.validation("outlet_id is required when not on a station");
     const stationId = b.station_id === undefined ? (p.type === "staff" ? (p.stationId ?? null) : null) : b.station_id;
     const bd = await businessDayInputs(p.merchantId, outletId);
     const shift = await openShift(p, { outletId, stationId, name: b.name ?? null, floatCents: b.float_cents, floatCounts: b.float_counts ?? null, businessDate: businessDateFor(new Date(), bd.cutoff, bd.timeZone) });
@@ -286,7 +286,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const q = c.req.valid("query");
-    if (!principalCanSeeOutlet(p, id)) throw AppError.notFound("outlet", id);
+    if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
     const bd = await businessDayInputs(p.merchantId, id);
     const businessDate = q.business_date ?? businessDateFor(new Date(), bd.cutoff, bd.timeZone);
     const closedShifts = await db().select().from(shifts).where(and(eq(shifts.outletId, id), eq(shifts.businessDate, businessDate), q.station_id ? eq(shifts.stationId, q.station_id) : sql`true`));
@@ -301,7 +301,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     const { id } = c.req.valid("param");
     const b = c.req.valid("json");
     dryRunFrom(c, b);
-    if (!principalCanSeeOutlet(p, id)) throw AppError.notFound("outlet", id);
+    if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
     const bd = await businessDayInputs(p.merchantId, id);
     const businessDate = b.business_date ?? businessDateFor(new Date(), bd.cutoff, bd.timeZone);
     const { close, report } = await closeBusinessDay(p, id, businessDate);

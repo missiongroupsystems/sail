@@ -8,7 +8,7 @@ import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
 import { appendEvent, type AppendedEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
-import { principalCanSeeOutlet, type Principal } from "../auth/principal.js";
+import { outletVisible, type Principal } from "../auth/principal.js";
 import { registerGuestResolver } from "../auth/resolve.js";
 import { verifySailToken } from "../auth/tokens.js";
 import { applyRls } from "../middleware/pipeline.js";
@@ -181,7 +181,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const q = c.req.valid("query");
-    if (!principalCanSeeOutlet(p, id)) throw AppError.notFound("outlet", id);
+    if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
     const rows = await db().select().from(guestRounds).where(and(eq(guestRounds.outletId, id), q.status ? eq(guestRounds.status, q.status) : sql`true`)).orderBy(asc(guestRounds.submittedAt)).limit(200);
     const lineIds = rows.flatMap((r) => r.lineIds);
     const lines = lineIds.length ? await db().select().from(orderLines).where(inArray(orderLines.id, lineIds)) : [];
@@ -230,7 +230,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const q = c.req.valid("query");
-    if (!principalCanSeeOutlet(p, id)) throw AppError.notFound("outlet", id);
+    if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
     const rows = await db().select().from(serviceRequests).where(and(eq(serviceRequests.outletId, id), q.status ? eq(serviceRequests.status, q.status) : sql`true`)).orderBy(asc(serviceRequests.createdAt)).limit(200);
     const tableRows = rows.length ? await db().select({ id: tables.id, name: tables.name }).from(tables).where(inArray(tables.id, rows.map((r) => r.tableId))) : [];
     return c.json({ data: rows.map((r) => ({ ...toRequest(r), table_name: tableRows.find((t) => t.id === r.tableId)?.name ?? null })), next_cursor: null }, 200);
@@ -259,7 +259,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "tables.qr_sheet", method: "get", path: "/v1/outlets/{id}/qr-sheet.pdf", tags: ["guest"], request: { params: z.object({ id: z.uuid() }) }, responses: { 200: { description: "PDF of QR cards", content: { "application/pdf": { schema: z.string() } } }, ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
-    if (!principalCanSeeOutlet(p, id)) throw AppError.notFound("outlet", id);
+    if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
     const pdf = await qrSheetPdf(id, p.merchantId);
     await recordAudit(p, { action: "tables.qr_sheet", targetKind: "outlet", targetId: id, outletId: id });
     return c.body(pdf as unknown as ArrayBuffer, 200, { "content-type": "application/pdf", "content-disposition": 'inline; filename="qr-sheet.pdf"' });

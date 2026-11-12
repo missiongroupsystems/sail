@@ -5,7 +5,7 @@ import { events, outletSequences, outlets } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { defineOp, errorResponses, jsonResponse, z } from "../lib/openapi.js";
-import { principalCanSeeOutlet } from "../auth/principal.js";
+import { outletVisible, principalCanSeeOutlet } from "../auth/principal.js";
 import { applyRls } from "../middleware/pipeline.js";
 import { serveStream } from "../sse/stream.js";
 
@@ -58,7 +58,7 @@ export function eventRoutes(app: OpenAPIHono<AppEnv>) {
       const p = c.get("principal");
       const { id } = c.req.valid("param");
       const q = c.req.valid("query");
-      if (!principalCanSeeOutlet(p, id)) throw AppError.notFound("outlet", id);
+      if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
       const conds = [eq(events.outletId, id), gt(events.seq, q.after)];
       if (q.types) {
         const types = q.types.split(",").filter(Boolean);

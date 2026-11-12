@@ -9,7 +9,7 @@ import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listRes
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { compact, defineCrud } from "../lib/crud.js";
-import { principalCanSeeOutlet, type Principal } from "../auth/principal.js";
+import { outletVisible, type Principal } from "../auth/principal.js";
 import { hashSecret, randomDigits, sha256, signSailToken, verifySailToken, verifySecret } from "../auth/tokens.js";
 import { registerRelayResolver } from "../auth/resolve.js";
 import { applyRls } from "../middleware/pipeline.js";
@@ -293,7 +293,7 @@ export function printingRoutes(app: OpenAPIHono<AppEnv>) {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const q = c.req.valid("query");
-    if (!principalCanSeeOutlet(p, id)) throw AppError.notFound("outlet", id);
+    if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
     if (q.late === "true") return c.json({ data: (await lateJobs(id)).map((j) => toJob(j)), next_cursor: null }, 200);
     const conds: SQL[] = [eq(printJobs.outletId, id)];
     if (q.status) conds.push(inArray(printJobs.status, q.status.split(",") as JobRowStatus[]));

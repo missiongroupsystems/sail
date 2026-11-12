@@ -9,7 +9,7 @@ import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listRes
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { principalRole, type Principal } from "../auth/principal.js";
-import { bumpVersion, loadSnapshot, lockOrder } from "../services/orders.js";
+import { bumpVersion, getOrderRow, loadSnapshot, lockOrder } from "../services/orders.js";
 import { requireRoleOrOverride } from "../services/overrides.js";
 import { allocateLines, splitBySeat, splitEven, unsplit } from "../services/splits.js";
 import { createRefund, quote, refundableFor } from "../services/refunds.js";
@@ -116,6 +116,7 @@ export function splitRefundRoutes(app: OpenAPIHono<AppEnv>) {
 
   defineOp(app, { op: "refunds.list", method: "get", path: "/v1/orders/{id}/refunds", tags: ["refunds"], request: { params: z.object({ id: z.uuid() }) }, responses: { 200: jsonResponse(listResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {
     const { id } = c.req.valid("param");
+    await getOrderRow(id); // 404 for an order the caller cannot see, not an empty list
     const rows = await db().select().from(refunds).where(eq(refunds.orderId, id)).orderBy(desc(refunds.createdAt));
     return c.json({ data: rows.map(toRefund), next_cursor: null }, 200);
   });
