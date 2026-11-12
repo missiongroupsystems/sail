@@ -461,3 +461,22 @@ describe("review follow-ups", () => {
   });
 
 });
+
+describe("review follow-ups: brand scope reaches rows that hang off an order", () => {
+  it("an agent scoped to another brand sees none of this brand's order events, lines or print jobs", async () => {
+    const b3 = randomUUID();
+    await call("POST", "/v1/brands", { token: w.m.admin.token, body: { id: b3, name: "Brand three" } });
+    const o = await openTakeaway(w.pins.server);
+    await addLine(w.pins.server, o.body.data.id, { product_id: w.ids.wine });
+    await call("POST", `/v1/orders/${o.body.data.id}/fire`, { token: w.pins.server, body: {} });
+    const tok = await session((await identity({ role: "manager", toolsets: ["pos.read", "watch", "kitchen"], risk_ceiling: "T1", brand_ids: [b3] })).credential);
+    const ev = await call<{ data: unknown[] }>("GET", `/v1/outlets/${w.m.outletId}/events?after=0`, { token: tok });
+    expect(ev.status, JSON.stringify(ev.body).slice(0, 200)).toBe(200);
+    expect(JSON.stringify(ev.body)).not.toContain(o.body.data.id);
+    const jobs = await call("GET", `/v1/outlets/${w.m.outletId}/print-jobs?order_id=${o.body.data.id}`, { token: tok });
+    expect(JSON.stringify(jobs.body)).not.toContain(o.body.data.id);
+    // Unscoped, the same agent sees them.
+    const all = await session((await identity({ role: "manager", toolsets: ["pos.read", "watch"], risk_ceiling: "T1" })).credential);
+    expect(JSON.stringify((await call("GET", `/v1/outlets/${w.m.outletId}/events?after=0`, { token: all })).body)).toContain(o.body.data.id);
+  });
+});
