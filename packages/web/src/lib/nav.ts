@@ -77,5 +77,8 @@ export const PRINTING_TABS = [
 export const REPORTS_TABS = [
   { href: "/reports", label: "Overview", match: "exact" },
   { href: "/reports/z-report", label: "Z-report" },
+  { href: "/reports/sales", label: "Sales" },
+  { href: "/reports/items", label: "Items" },
   { href: "/reports/shifts", label: "Shifts" },
+  { href: "/reports/print-health", label: "Print health" },
 ] as const;
