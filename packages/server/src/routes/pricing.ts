@@ -2,13 +2,14 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { ChannelTypeSchema, OrderTypeSchema, PricingContextSchema, PricingLineSchema, PricingResultSchema, PricingRuleSchema, ManualApplicationSchema, price, registerOperations, validateRuleSet, type PricingRuleInput } from "@sail/shared";
 import { db } from "../db/client.js";
-import { merchantSettings, products, reportCategories } from "../db/schema/index.js";
+import { products, reportCategories } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { activeRules, archiveRule, createRuleVersion, ruleVersions } from "../services/pricing-rules.js";
+import { assertTaxClass, defaultTaxClassId, orderTaxSettings } from "../services/tax.js";
 
 registerOperations({
   "pricing_rules.list": { op: "pricing_rules.list", summary: "List pricing rules", description: "Every rule with its versions, or only the set active at a given time (`active_at`). Fees and discounts share one shape.", tier: "T0", minRole: "server", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff", "station", "agent"], emits: [], mcp: { expose: true, toolsets: ["pos.read", "config.author", "reports"] } },
@@ -56,6 +57,7 @@ export function pricingRoutes(app: OpenAPIHono<AppEnv>) {
       const b = c.req.valid("json");
       const parsed = PricingRuleSchema.safeParse({ ...b.body, id: b.rule_key, version: 1 });
       if (!parsed.success) throw AppError.validation(`Invalid rule: ${parsed.error.issues[0]?.path.join(".")}: ${parsed.error.issues[0]?.message}`, { issues: parsed.error.issues });
+      if (parsed.data.tax_class_id) await assertTaxClass(p.merchantId, parsed.data.tax_class_id, "body.tax_class_id");
       const effectiveFrom = b.effective_from ? new Date(b.effective_from) : new Date();
       const row = await createRuleVersion(p.merchantId, { rule_key: b.rule_key, body: parsed.data as PricingRuleInput, effective_from: effectiveFrom, note: b.note ?? null, created_by: p.id });
       // Validation warnings for the resulting set (advisory; the version is still created).
@@ -81,13 +83,13 @@ export function pricingRoutes(app: OpenAPIHono<AppEnv>) {
     const p = c.get("principal");
     const b = c.req.valid("json");
     const at = b.at ? new Date(b.at) : new Date();
-    const [settings] = await db().select().from(merchantSettings).where(eq(merchantSettings.merchantId, p.merchantId)).limit(1);
+    const tax = await orderTaxSettings(p.merchantId, b.outlet_id);
     const rules = b.rules ? b.rules.map((r) => PricingRuleSchema.parse(r)) : await activeRules(p.merchantId, at);
-    const lines = await expandLines(b.lines);
+    const lines = await expandLines(p.merchantId, b.lines);
     const result = price(
       { order_type: b.order_type, channel: b.channel, outlet_id: b.outlet_id, brand_id: b.brand_id, customer_group_ids: b.customer_group_ids, lines, manual_applications: b.manual_applications },
       rules,
-      PricingContextSchema.parse({ tax_mode: b.tax_mode ?? settings?.taxMode ?? "exclusive", gst_bps: settings?.gstBps ?? 900, now: at.toISOString() }),
+      PricingContextSchema.parse({ tax_mode: b.tax_mode ?? tax.taxMode, tax_rounding: tax.taxRounding, tax_rates: tax.taxRates, now: at.toISOString() }),
     );
     return c.json({ data: result }, 200);
   });
@@ -98,14 +100,14 @@ export function pricingRoutes(app: OpenAPIHono<AppEnv>) {
     const rules = b.rules ? b.rules.map((r) => PricingRuleSchema.parse(r)) : await activeRules(p.merchantId, b.at ? new Date(b.at) : new Date());
     const cats = await db().select().from(reportCategories).where(eq(reportCategories.merchantId, p.merchantId));
     const parent = new Map(cats.map((x) => [x.id, x.parentId]));
-    const prods = await db().select({ id: products.id, categoryId: products.categoryId, tags: products.tags, isBcrs: products.isBcrs }).from(products).where(and(eq(products.merchantId, p.merchantId), isNull(products.archivedAt), eq(products.kind, "product")));
-    const catalogue = prods.map((x) => ({ product_id: x.id, category_id: x.categoryId, parent_category_id: x.categoryId ? (parent.get(x.categoryId) ?? null) : null, tags: x.tags, is_bcrs: x.isBcrs }));
+    const prods = await db().select({ id: products.id, categoryId: products.categoryId, tags: products.tags, hasDeposit: products.hasDeposit }).from(products).where(and(eq(products.merchantId, p.merchantId), isNull(products.archivedAt), eq(products.kind, "product")));
+    const catalogue = prods.map((x) => ({ product_id: x.id, category_id: x.categoryId, parent_category_id: x.categoryId ? (parent.get(x.categoryId) ?? null) : null, tags: x.tags, has_deposit: x.hasDeposit }));
     return c.json({ data: { warnings: validateRuleSet(rules, catalogue) } }, 200);
   });
 }
 
 /** Expand `{product_id, quantity}` references into full pricing lines from the catalogue. */
-export async function expandLines(lines: z.infer<typeof SimulateBody>["lines"]) {
+export async function expandLines(merchantId: string, lines: z.infer<typeof SimulateBody>["lines"]) {
   const refs = lines.filter((l): l is { product_id: string; quantity: number; open_price?: number | null; line_id?: string } => !("prices" in l));
   const full = lines.filter((l) => "prices" in l) as z.infer<typeof PricingLineSchema>[];
   if (refs.length === 0) return full;
@@ -116,6 +118,7 @@ export async function expandLines(lines: z.infer<typeof SimulateBody>["lines"]) 
   const parent = new Map(cats.map((x) => [x.id, x.parentId]));
   const { productPrices } = await import("../db/schema/index.js");
   const prices = await db().select().from(productPrices).where(inArray(productPrices.productId, ids));
+  const defaultClass = await defaultTaxClassId(merchantId);
   const expanded = refs.map((r, i) => {
     const prod = byId.get(r.product_id);
     if (!prod) throw AppError.notFound("product", r.product_id);
@@ -125,7 +128,8 @@ export async function expandLines(lines: z.infer<typeof SimulateBody>["lines"]) 
       category_id: prod.categoryId,
       parent_category_id: prod.categoryId ? (parent.get(prod.categoryId) ?? null) : null,
       tags: prod.tags,
-      is_bcrs: prod.isBcrs,
+      has_deposit: prod.hasDeposit,
+      tax_class_id: prod.taxClassId ?? defaultClass,
       quantity: r.quantity,
       prices: { base: prod.price, by_order_type: Object.fromEntries(prices.filter((x) => x.productId === prod.id).map((x) => [x.orderType, x.price])) },
       open_price: r.open_price ?? null,

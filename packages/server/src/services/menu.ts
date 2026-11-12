@@ -5,6 +5,7 @@ import { availabilityRules, brands, channelLinks, menuItems, menuSections, menus
 import { AppError } from "../lib/errors.js";
 import { businessDateFor, localParts } from "../lib/time.js";
 import { businessDayInputs } from "./business-day.js";
+import { defaultTaxClassId } from "./tax.js";
 
 /**
  * The compiled menu for one channel link (`menu.get`, vision 5.12): sections,
@@ -33,7 +34,9 @@ export type CompiledProduct = {
   category_id: string | null;
   parent_category_id: string | null;
   tags: string[];
-  is_bcrs: boolean;
+  has_deposit: boolean;
+  /** The product's tax class, or the merchant's default when it names none. */
+  tax_class_id: string;
   open_price: boolean;
   modifier_groups: string[];
   available_now: boolean;
@@ -49,7 +52,7 @@ export async function compileMenu(channelLinkId: string, at: Date): Promise<Comp
   if (!link) throw AppError.notFound("channel link", channelLinkId);
   // Reads that depend only on the link are issued together (pipelined on the transaction's connection); the
   // compiled menu is loaded on every lines.add and rounds.submit, so its round trips are on the hot path.
-  const [[brand], [outlet], [menu], sections, items, cats, rules, bd] = await Promise.all([
+  const [[brand], [outlet], [menu], sections, items, cats, rules, bd, defaultTaxClass] = await Promise.all([
     db().select().from(brands).where(eq(brands.id, link.brandId)).limit(1),
     db().select().from(outlets).where(eq(outlets.id, link.outletId)).limit(1),
     db().select().from(menus).where(eq(menus.id, link.menuId)).limit(1),
@@ -58,6 +61,7 @@ export async function compileMenu(channelLinkId: string, at: Date): Promise<Comp
     db().select().from(reportCategories).where(eq(reportCategories.merchantId, link.merchantId)),
     db().select().from(availabilityRules).where(eq(availabilityRules.merchantId, link.merchantId)),
     businessDayInputs(link.merchantId, link.outletId),
+    defaultTaxClassId(link.merchantId),
   ]);
   if (!brand || !outlet || !menu) throw AppError.notFound("menu for channel link", channelLinkId);
 
@@ -132,7 +136,8 @@ export async function compileMenu(channelLinkId: string, at: Date): Promise<Comp
       category_id: p.categoryId,
       parent_category_id: p.categoryId ? (catParent.get(p.categoryId) ?? null) : null,
       tags: p.tags,
-      is_bcrs: p.isBcrs,
+      has_deposit: p.hasDeposit,
+      tax_class_id: p.taxClassId ?? defaultTaxClass,
       open_price: p.openPrice,
       modifier_groups: pmg.filter((x) => x.productId === p.id).map((x) => x.groupId),
       available_now: unavailable === null,

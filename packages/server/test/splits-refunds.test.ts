@@ -5,7 +5,7 @@ import "../src/modules.js";
 import { buildApp, type App } from "../src/app.js";
 import { withTransaction } from "../src/db/client.js";
 import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
-import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
+import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb, sgSeedRules } from "./helpers.js";
 
 let db: TestDb;
 let app: App;
@@ -16,9 +16,9 @@ let cashierPin: string;
 let managerPin: string;
 const ids = { laksa: randomUUID(), wine: randomUUID(), kopi: randomUUID(), menu: randomUUID(), link: randomUUID(), area: randomUUID(), station: randomUUID(), cash: randomUUID(), card: randomUUID(), printer: randomUUID() };
 
-type Check = { id: string; index: number; label: string; status: string; seat_no: number | null; totals: { total: number; subtotal: number; gst_total: number; fee_total: number }; paid_total: number; balance: number; locked: boolean; refunded_total: number; allocations: { line_id: string; share: string; total: number }[]; payments: { id: string; amount: number; tender: string }[] };
-type Snap = { id: string; version: number; status: string; totals: { total: number; gst_total: number }; lines: { id: string; name: string; quantity: number; seat_no: number | null; amounts: { total: number } }[]; checks: Check[]; balance: number };
-type Body = { data: Snap; refund?: { id: string; refund_receipt_no: string; credit_note_no: string | null; totals: { total: number; gst: number; base: number }; quote: { lines: { line_id: string; quantity: number; total: number; gst: number }[]; tenders: { payment_id: string; amount: number; rounding_cents: number; is_cash: boolean }[]; cash_out: number } }; events: { type: string }[]; warnings: string[]; code?: string; message?: string; details?: Record<string, unknown> };
+type Check = { id: string; index: number; label: string; status: string; seat_no: number | null; totals: { total: number; subtotal: number; tax_total: number; fee_total: number }; paid_total: number; balance: number; locked: boolean; refunded_total: number; allocations: { line_id: string; share: string; total: number }[]; payments: { id: string; amount: number; tender: string }[] };
+type Snap = { id: string; version: number; status: string; totals: { total: number; tax_total: number }; lines: { id: string; name: string; quantity: number; seat_no: number | null; amounts: { total: number } }[]; checks: Check[]; balance: number };
+type Body = { data: Snap; refund?: { id: string; refund_receipt_no: string; credit_note_no: string | null; totals: { total: number; tax: number; base: number }; quote: { lines: { line_id: string; quantity: number; total: number; tax: number }[]; tenders: { payment_id: string; amount: number; rounding_cents: number; is_cash: boolean }[]; cash_out: number } }; events: { type: string }[]; warnings: string[]; code?: string; message?: string; details?: Record<string, unknown> };
 
 const open = (token: string, body: Record<string, unknown>) => call<Body>("POST", "/v1/orders", { token, body: { order_id: randomUUID(), ...body } });
 const addLines = (token: string, orderId: string, lines: Record<string, unknown>[]) => call<Body>("POST", `/v1/orders/${orderId}/lines`, { token, body: { lines } });
@@ -30,7 +30,7 @@ beforeAll(async () => {
   app = buildApp();
   call = api(app).call;
   A = await seedMerchant(db.sql, "Alpha");
-  await withTransaction(() => seedRulesForMerchant(A.merchantId));
+  await withTransaction(() => seedRulesForMerchant(A.merchantId, sgSeedRules(A)));
   const t = A.admin.token;
   await call("PATCH", "/v1/merchant/settings", { token: t, body: { cash_rounding_increment: 5 } });
   await call("POST", "/v1/products", { token: t, body: { id: ids.laksa, name: "Laksa", price: 1600, tags: ["kitchen", "food"] } });
@@ -75,8 +75,8 @@ describe("bill splitting", () => {
       // Ties go to earlier bills: totals are non-increasing by index.
       const totals = r.body.data.checks.map((c) => c.totals.total);
       for (let i = 1; i < totals.length; i++) expect(totals[i - 1]!).toBeGreaterThanOrEqual(totals[i]!);
-      const gst = r.body.data.checks.reduce((a, c) => a + c.totals.gst_total, 0);
-      expect(gst).toBe(added.body.data.totals.gst_total);
+      const tax = r.body.data.checks.reduce((a, c) => a + c.totals.tax_total, 0);
+      expect(tax).toBe(added.body.data.totals.tax_total);
     }
     const one = await call<Body>("POST", `/v1/orders/${o.body.data.id}/checks/unsplit`, { token: serverPin, body: {} });
     expect(one.body.data.checks).toHaveLength(1);
@@ -171,10 +171,10 @@ describe("refunds", () => {
 
     const unpaidQuote = await call("POST", `/v1/checks/${randomUUID()}/refunds/quote`, { token: managerPin, body: { request: { kind: "full" } } });
     expect(unpaidQuote.status).toBe(404);
-    const q = await call<{ data: { totals: { total: number; gst: number }; tenders: { tender: string; amount: number; rounding_cents: number }[]; cash_out: number } }>("POST", `/v1/checks/${check.id}/refunds/quote`, { token: cashierPin, body: { request: { kind: "full" } } });
+    const q = await call<{ data: { totals: { total: number; tax: number }; tenders: { tender: string; amount: number; rounding_cents: number }[]; cash_out: number } }>("POST", `/v1/checks/${check.id}/refunds/quote`, { token: cashierPin, body: { request: { kind: "full" } } });
     expect(q.status, JSON.stringify(q.body)).toBe(200);
     expect(q.body.data.totals.total).toBe(total);
-    expect(q.body.data.totals.gst).toBe(check.totals.gst_total);
+    expect(q.body.data.totals.tax).toBe(check.totals.tax_total);
     expect(q.body.data.tenders.map((t) => [t.tender, t.amount])).toEqual([["Card", 1000], ["Cash", total - 1000]]);
 
     const denied = await call<Body>("POST", `/v1/checks/${check.id}/refunds`, { token: cashierPin, body: { refund_id: randomUUID(), request: { kind: "full" }, reason: "Guest unhappy" } });
@@ -210,14 +210,14 @@ describe("refunds", () => {
     const paid = await pay(cashierPin, check.id, { tender_type_id: ids.cash, amount: check.totals.total, tendered: 10_000 });
     expect(paid.status).toBe(200);
     const laksaTotal = added.body.data.lines.find((l) => l.id === laksaLine)!.amounts.total;
-    const q = await call<{ data: { lines: { quantity: number; total: number; gst: number; base: number; discount: number; fee: number }[]; tenders: { is_cash: boolean; amount: number; rounding_cents: number }[]; cash_out: number } }>("POST", `/v1/checks/${check.id}/refunds/quote`, { token: cashierPin, body: { request: { kind: "lines", lines: [{ line_id: laksaLine, quantity: 1 }] } } });
+    const q = await call<{ data: { lines: { quantity: number; total: number; tax: number; base: number; discount: number; fee: number }[]; tenders: { is_cash: boolean; amount: number; rounding_cents: number }[]; cash_out: number } }>("POST", `/v1/checks/${check.id}/refunds/quote`, { token: cashierPin, body: { request: { kind: "lines", lines: [{ line_id: laksaLine, quantity: 1 }] } } });
     const l = q.body.data.lines[0]!;
     // 1 of 2 laksa: base 1600, 25% off −400, SC 10% of 1200 = 120, GST 9%: 108 + 10.8→11 (half of 2 × ...) → the half of the line.
     expect(l.quantity).toBe(1);
     expect(l.base).toBe(1600);
     expect(l.discount).toBe(-400);
     expect(l.fee).toBe(120);
-    expect(l.base + l.discount + l.fee + l.gst).toBe(l.total);
+    expect(l.base + l.discount + l.fee + l.tax).toBe(l.total);
     expect(Math.abs(l.total * 2 - laksaTotal)).toBeLessThanOrEqual(1);
     const grant = await call<{ data: { override_id: string } }>("POST", "/v1/overrides", { token: cashierPin, body: { action: "refunds.create", target_kind: "check", target_id: check.id, approver_pin: "222222" } });
     expect(grant.status).toBe(201);
@@ -253,7 +253,7 @@ describe("refunds", () => {
     expect(refund.body.refund!.totals.total).toBe(1000);
     expect(refund.body.refund!.credit_note_no).toBe("CN-000001");
     expect(refund.body.refund!.quote.lines.every((l) => l.quantity === 0)).toBe(true);
-    expect(refund.body.refund!.totals.gst).toBeGreaterThan(0);
+    expect(refund.body.refund!.totals.tax).toBeGreaterThan(0);
     const pdf = await app.request(`/v1/refunds/${refund.body.refund!.id}/credit-note.pdf`, { headers: { authorization: `Bearer ${managerPin}` } });
     expect(pdf.status).toBe(200);
     expect(Buffer.from(await pdf.arrayBuffer()).subarray(0, 4).toString()).toBe("%PDF");

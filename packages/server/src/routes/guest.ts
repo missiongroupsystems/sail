@@ -2,7 +2,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { registerOperations, type OperationSpec } from "@sail/shared";
 import { db, settleInvariants, tx, withTransaction, type RequestTx } from "../db/client.js";
-import { channelLinks, guestRounds, guestSessions, merchantSettings, orderLines, orders, outlets, printers, serviceRequests, tables } from "../db/schema/index.js";
+import { channelLinks, guestRounds, guestSessions, orderLines, orders, outlets, printers, serviceRequests, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
@@ -16,10 +16,11 @@ import { serveStream } from "../sse/stream.js";
 import { compileMenu } from "../services/menu.js";
 import { buildLines, type LineInput } from "../services/lines.js";
 import { bumpVersion, loadSnapshot, lockOrder, nextOrderNo, registerOrderClosedHook, repriceOrder } from "../services/orders.js";
+import { orderTaxSettings } from "../services/tax.js";
 import { createKitchenJobs, insertJob } from "../services/printing.js";
 import { releaseDailyCap } from "./catalogue.js";
 import { registerFloorExtra } from "./orders.js";
-import { businessDayInputs } from "../services/business-day.js";
+import { businessDayInputs, printLocale } from "../services/business-day.js";
 import { businessDateFor } from "../lib/time.js";
 import { asSystem, bindSessionToTableOrder, checkLimit, createGuestSession, enforceLimit, guestOrderView, openOrderIdForTable, qrSheetPdf, RATE, recordHit, revokeSessionsForOrder, rotateTableToken, toRequest, toRound } from "../services/guest.js";
 
@@ -100,9 +101,9 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
       let openedNow = false;
       if (!orderId) {
         if (!link.openOnFirstScan) throw new AppError("state_conflict", "Your table isn't ready for ordering yet", { remedy: "Ask a member of staff to seat you.", details: { table_not_open: true } });
-        const [settings] = await db().select().from(merchantSettings).where(eq(merchantSettings.merchantId, p.merchantId)).limit(1);
+        const tax = await orderTaxSettings(p.merchantId, p.outletId);
         const now = new Date();
-        const [row] = await db().insert(orders).values({ id: crypto.randomUUID(), merchantId: p.merchantId, outletId: p.outletId, brandId: link.brandId, channelLinkId: link.id, channel: "scan_to_order", orderType: "dine_in", orderNo: await nextOrderNo(p.outletId, p.merchantId, "scan_to_order"), tableId: p.tableId, businessDate: today, taxMode: settings?.taxMode ?? "exclusive", gstBps: settings?.gstBps ?? 900, openedAt: now, openedByName: b.guest_name ?? "Guest" }).returning();
+        const [row] = await db().insert(orders).values({ id: crypto.randomUUID(), merchantId: p.merchantId, outletId: p.outletId, brandId: link.brandId, channelLinkId: link.id, channel: "scan_to_order", orderType: "dine_in", orderNo: await nextOrderNo(p.outletId, p.merchantId, "scan_to_order"), tableId: p.tableId, businessDate: today, taxMode: tax.taxMode, taxRounding: tax.taxRounding, taxRates: tax.taxRates, openedAt: now, openedByName: b.guest_name ?? "Guest" }).returning();
         orderId = row!.id;
         openedNow = true;
         await appendEvent({ merchantId: p.merchantId, outletId: p.outletId, type: "order.opened", aggregate: { kind: "order", id: orderId, version: 1 }, operationId: "rounds.submit", payload: { order_no: row!.orderNo, order_type: "dine_in", table_id: p.tableId, source: "guest" }, correlationId: c.get("correlationId"), businessDay: bd }, p);
@@ -152,7 +153,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
         const [table] = await db().select({ name: tables.name }).from(tables).where(eq(tables.id, p.tableId)).limit(1);
         const [outlet] = await db().select({ name: outlets.name }).from(outlets).where(eq(outlets.id, p.outletId)).limit(1);
         if (printer) {
-          const job = await insertJob({ merchantId: p.merchantId, outletId: p.outletId, printer, kind: "service_slip", payload: { template: "service_slip", data: { header: { outlet_name: outlet?.name ?? "Outlet", brand_name: "Table request", order_no: orderId ? "QR" : "—", order_type: "dine_in", table_name: table?.name, printed_at: new Date().toISOString(), job_id: "pending" }, request_type: b.type === "call_for_bill" ? "Call for bill" : b.type, guest_name: b.guest_name ?? undefined } }, orderId, principal: p, correlationId: c.get("correlationId") });
+          const job = await insertJob({ merchantId: p.merchantId, outletId: p.outletId, printer, kind: "service_slip", payload: { template: "service_slip", data: { header: { outlet_name: outlet?.name ?? "Outlet", brand_name: "Table request", order_no: orderId ? "QR" : "—", order_type: "dine_in", table_name: table?.name, printed_at: new Date().toISOString(), job_id: "pending", ...(await printLocale(p.merchantId)) }, request_type: b.type === "call_for_bill" ? "Call for bill" : b.type, guest_name: b.guest_name ?? undefined } }, orderId, principal: p, correlationId: c.get("correlationId") });
           await db().update(serviceRequests).set({ printJobId: job.id }).where(eq(serviceRequests.id, row!.id));
         }
       }
@@ -202,7 +203,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
       const today = businessDateFor(now, bd.cutoff, bd.timeZone);
       for (const l of lines) {
         await releaseDailyCap(order.outletId, l.productId, l.quantity, today);
-        await db().update(orderLines).set({ status: "voided", voidedAt: now, voidReason: `QR order rejected: ${reason}`, voidedBy: p.type === "staff" ? p.id : null, baseAmount: 0, discountAmount: 0, netAmount: 0, feeAmount: 0, gstAmount: 0, total: 0 }).where(eq(orderLines.id, l.id));
+        await db().update(orderLines).set({ status: "voided", voidedAt: now, voidReason: `QR order rejected: ${reason}`, voidedBy: p.type === "staff" ? p.id : null, baseAmount: 0, discountAmount: 0, netAmount: 0, feeAmount: 0, taxAmount: 0, taxes: [], total: 0 }).where(eq(orderLines.id, l.id));
       }
       await db().update(guestRounds).set({ status: "rejected", decidedAt: now, decidedBy: p.type === "staff" ? p.id : null, decidedByName: "name" in p ? p.name : null, rejectReason: reason ?? null }).where(eq(guestRounds.id, roundId));
     }

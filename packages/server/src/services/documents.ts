@@ -1,6 +1,6 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { and, eq } from "drizzle-orm";
-import { formatCents, type BillDocument } from "@sail/shared";
+import { formatMoney, type BillDocument } from "@sail/shared";
 import { db, tx } from "../db/client.js";
 import { checks, digitalReceipts, merchants, outlets } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -9,8 +9,8 @@ import { config } from "../config.js";
 
 /**
  * Tax documents (scope doc 4.3, 4.5): gap-free numbering per merchant inside
- * the transaction, numbered PDF tax invoices with the outlet UEN, and digital
- * receipt tokens.
+ * the transaction, numbered PDF tax invoices with the outlet's registration
+ * numbers, and digital receipt tokens.
  */
 export const DOCUMENT_PREFIX: Record<string, string> = { invoice: "INV-", credit_note: "CN-", refund_receipt: "RR-" };
 
@@ -23,7 +23,7 @@ export async function nextDocumentNo(merchantId: string, kind: "invoice" | "cred
   return `${DOCUMENT_PREFIX[kind] ?? ""}${String(row!.n).padStart(6, "0")}`;
 }
 
-export type InvoiceDocument = BillDocument & { invoice: { number: string; issued_at: string; merchant_name: string; outlet_address: string | null; outlet_uen: string | null } };
+export type InvoiceDocument = BillDocument & { invoice: { number: string; issued_at: string; merchant_name: string; outlet_address: string | null } };
 
 /** Issue (or return the existing) tax invoice for a paid check. Issued once; reprints reuse the number. */
 export async function issueInvoice(checkId: string, bill: BillDocument): Promise<{ check: typeof checks.$inferSelect; document: InvoiceDocument; reused: boolean }> {
@@ -33,10 +33,10 @@ export async function issueInvoice(checkId: string, bill: BillDocument): Promise
   if (check.status !== "paid" && check.status !== "partially_refunded" && check.status !== "refunded") throw AppError.state(`${check.label} is not paid yet`, ["pay the bill first"], "An invoice can be issued once the bill is paid.");
   if (check.invoiceNo && check.invoiceDocument) return { check, document: check.invoiceDocument as InvoiceDocument, reused: true };
   const [merchant] = await db().select().from(merchants).where(eq(merchants.id, check.merchantId)).limit(1);
-  const [outlet] = await db().select().from(outlets).where(eq(outlets.id, check.outletId)).limit(1);
+  const [outlet] = await db().select({ address: outlets.address }).from(outlets).where(eq(outlets.id, check.outletId)).limit(1);
   const number = await nextDocumentNo(check.merchantId, "invoice");
   const issuedAt = new Date();
-  const document: InvoiceDocument = { ...bill, invoice_no: number, invoice: { number, issued_at: issuedAt.toISOString(), merchant_name: merchant?.name ?? "", outlet_address: outlet?.address ?? null, outlet_uen: outlet?.uen ?? null } };
+  const document: InvoiceDocument = { ...bill, invoice_no: number, invoice: { number, issued_at: issuedAt.toISOString(), merchant_name: merchant?.name ?? "", outlet_address: outlet?.address ?? null } };
   const [updated] = await db().update(checks).set({ invoiceNo: number, invoiceIssuedAt: issuedAt, invoiceDocument: document, updatedAt: issuedAt }).where(eq(checks.id, checkId)).returning();
   return { check: updated!, document, reused: false };
 }
@@ -68,6 +68,8 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
     const s = safe(raw);
     page.drawText(s, { x: xRight - f.widthOfTextAtSize(s, size), y, size, font: f, color: ink });
   };
+  const fmt = { currency: doc.currency, locale: doc.header.locale };
+  const money = (amount: number) => formatMoney(amount, fmt);
   const rule = () => {
     page.drawLine({ start: { x: 48, y: y + 4 }, end: { x: 547, y: y + 4 }, thickness: 0.5, color: rgb(0.85, 0.83, 0.8) });
   };
@@ -78,16 +80,17 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
     y -= 13;
     text(doc.invoice.outlet_address, 48, 9, font, grey);
   }
-  if (doc.invoice.outlet_uen) {
+  for (const reg of [doc.business_registration, doc.tax_registration]) {
+    if (!reg) continue;
     y -= 13;
-    text(`UEN ${doc.invoice.outlet_uen}`, 48, 9, font, grey);
+    text(`${reg.label} ${reg.value}`, 48, 9, font, grey);
   }
   y = 790;
   right(kind, 547, 16, bold);
   y -= 18;
   right(extra.credit_note_no ?? doc.invoice.number, 547, 11, font);
   y -= 14;
-  right(new Date(doc.invoice.issued_at).toLocaleString("en-SG", { timeZone: doc.header.time_zone ?? "Asia/Singapore", dateStyle: "medium", timeStyle: "short" }), 547, 9, font);
+  right(new Date(doc.invoice.issued_at).toLocaleString(doc.header.locale, { timeZone: doc.header.time_zone, dateStyle: "medium", timeStyle: "short" }), 547, 9, font);
   if (extra.original_invoice_no) {
     y -= 14;
     right(`Against invoice ${extra.original_invoice_no}`, 547, 9, font);
@@ -105,12 +108,12 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
   for (const l of doc.lines) {
     text(String(l.quantity), 48, 10);
     text(l.share ? `${l.name} (${l.share})` : l.name, 90, 10);
-    right(formatCents(l.unit_price), 460, 10);
-    right(formatCents(l.amount), 547, 10);
+    right(money(l.unit_price), 460, 10);
+    right(money(l.amount), 547, 10);
     y -= 14;
     for (const m of l.modifiers) {
       text(`+ ${m.name}`, 100, 9, font, grey);
-      if (m.price) right(formatCents(m.price), 547, 9);
+      if (m.price) right(money(m.price), 547, 9);
       y -= 12;
     }
   }
@@ -119,14 +122,15 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
   y -= 16;
   const row = (label: string, amount: number, f = font) => {
     text(label, 340, 10, f);
-    right(formatCents(amount), 547, 10, f);
+    right(money(amount), 547, 10, f);
     y -= 14;
   };
   row("Subtotal", doc.totals.subtotal);
   for (const a of doc.adjustments) row(a.name, a.amount);
-  if (doc.totals.tax_mode === "exclusive") row(`GST ${doc.totals.gst_bps / 100}%`, doc.totals.gst_total);
+  // One row per tax component, labelled with its own name.
+  if (doc.totals.tax_mode === "exclusive") for (const t of doc.totals.taxes) row(t.name, t.amount);
   row(kind === "CREDIT NOTE" ? "Credit total" : "Total", doc.totals.total, bold);
-  if (doc.totals.tax_mode === "inclusive") row(`GST ${doc.totals.gst_bps / 100}% (included)`, doc.totals.gst_total);
+  if (doc.totals.tax_mode === "inclusive") for (const t of doc.totals.taxes) row(`${t.name} (included)`, t.amount);
   if (doc.payments?.length) {
     y -= 6;
     for (const p of doc.payments) {

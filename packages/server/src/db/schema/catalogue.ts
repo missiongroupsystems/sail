@@ -1,5 +1,6 @@
 import { boolean, date, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { brands, merchants, outlets, stations } from "./org.js";
+import { taxClasses } from "./tax.js";
 
 /** Catalogue, menus, channels, floor and reference lists (scope doc 4.2). */
 
@@ -40,7 +41,10 @@ export const products = pgTable(
     categoryId: uuid("category_id").references(() => reportCategories.id),
     /** Free-form labels: printer routing and pricing-rule scope. */
     tags: text("tags").array().notNull().default([]),
-    isBcrs: boolean("is_bcrs").notNull().default(false),
+    /** Carries a deposit (a returnable container): the scope of deposit fees. */
+    hasDeposit: boolean("has_deposit").notNull().default(false),
+    /** Null = the merchant's default tax class. */
+    taxClassId: uuid("tax_class_id").references(() => taxClasses.id),
     /** Staff may enter the price at the POS (Manager+). */
     openPrice: boolean("open_price").notNull().default(false),
     /** Kitchen ticket name override (for example a short or CJK name). */
@@ -312,7 +316,7 @@ export const tenderTypes = pgTable(
     name: text("name").notNull(),
     isCash: boolean("is_cash").notNull().default(false),
     opensDrawer: boolean("opens_drawer").notNull().default(false),
-    /** Card, PayNow and e-wallets taken on the standalone terminal. */
+    /** Card and wallet payments taken on the standalone terminal. */
     isTerminal: boolean("is_terminal").notNull().default(false),
     sort: integer("sort").notNull().default(0),
     legacyId: text("legacy_id"),

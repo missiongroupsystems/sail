@@ -5,7 +5,7 @@ import "../src/modules.js";
 import { buildApp, type App } from "../src/app.js";
 import { withTransaction } from "../src/db/client.js";
 import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
-import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
+import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb, sgSeedRules } from "./helpers.js";
 
 let db: TestDb;
 let app: App;
@@ -30,7 +30,7 @@ beforeAll(async () => {
   app = buildApp();
   call = api(app).call;
   A = await seedMerchant(db.sql, "Alpha");
-  await withTransaction(() => seedRulesForMerchant(A.merchantId));
+  await withTransaction(() => seedRulesForMerchant(A.merchantId, sgSeedRules(A)));
   const t = A.admin.token;
   await call("PATCH", "/v1/merchant/settings", { token: t, body: { cash_rounding_increment: 5 } });
   await call("POST", "/v1/products", { token: t, body: { id: ids.laksa, name: "Laksa", price: 1600, tags: ["kitchen"] } });

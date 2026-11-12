@@ -1,4 +1,5 @@
 import { boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import type { TaxBreakdown, TaxRate } from "@sail/shared";
 import { brands, merchants, outlets, stations } from "./org.js";
 import { channelLinks, tables, voidReasons } from "./catalogue.js";
 import { customers } from "./customers.js";
@@ -52,11 +53,15 @@ export const orders = pgTable(
     businessDate: text("business_date").notNull(),
     /* Totals from the latest pricing run. */
     taxMode: text("tax_mode").notNull(),
-    gstBps: integer("gst_bps").notNull(),
+    taxRounding: text("tax_rounding").notNull(),
+    /** The merchant's tax rates when the order was opened: later rate changes never re-price it. */
+    taxRates: jsonb("tax_rates").$type<TaxRate[]>().notNull(),
     subtotal: integer("subtotal").notNull().default(0),
     discountTotal: integer("discount_total").notNull().default(0),
     feeTotal: integer("fee_total").notNull().default(0),
-    gstTotal: integer("gst_total").notNull().default(0),
+    taxTotal: integer("tax_total").notNull().default(0),
+    /** tax_total by component, with the amount it was charged on. */
+    taxes: jsonb("taxes").$type<TaxBreakdown[]>().notNull().default([]),
     total: integer("total").notNull().default(0),
     pricingFrozenAt: timestamp("pricing_frozen_at", { withTimezone: true }),
     /** Frozen order-level results, stored at the first payment (v0.6). */
@@ -102,7 +107,9 @@ export const orderLines = pgTable(
     categoryId: uuid("category_id"),
     parentCategoryId: uuid("parent_category_id"),
     tags: text("tags").array().notNull().default([]),
-    isBcrs: boolean("is_bcrs").notNull().default(false),
+    hasDeposit: boolean("has_deposit").notNull().default(false),
+    /** The product's tax class (or the merchant default) when the line was added. */
+    taxClassId: uuid("tax_class_id").notNull(),
     quantity: integer("quantity").notNull(),
     /** Resolved unit price (open price, order-type price or base price). */
     unitPrice: integer("unit_price").notNull(),
@@ -131,7 +138,9 @@ export const orderLines = pgTable(
     discountAmount: integer("discount_amount").notNull().default(0),
     netAmount: integer("net_amount").notNull().default(0),
     feeAmount: integer("fee_amount").notNull().default(0),
-    gstAmount: integer("gst_amount").notNull().default(0),
+    taxAmount: integer("tax_amount").notNull().default(0),
+    /** tax_amount by component, with the amounts each was charged on. */
+    taxes: jsonb("taxes").$type<TaxBreakdown[]>().notNull().default([]),
     total: integer("total").notNull().default(0),
     sort: integer("sort").notNull().default(0),
     addedBy: uuid("added_by"),
@@ -185,9 +194,10 @@ export const orderAdjustments = pgTable(
     level: text("level").notNull(),
     name: text("name").notNull(),
     reportClass: text("report_class").notNull(),
-    gstApplicable: boolean("gst_applicable").notNull(),
+    /** Fees: the class the fee was taxed at, null when untaxed. Null for discounts. */
+    taxClassId: uuid("tax_class_id"),
     total: integer("total").notNull(),
-    gstTotal: integer("gst_total").notNull(),
+    taxTotal: integer("tax_total").notNull(),
     capped: boolean("capped").notNull().default(false),
     frozen: boolean("frozen").notNull().default(false),
     manualApplicationId: uuid("manual_application_id"),
@@ -213,7 +223,7 @@ export const orderAdjustmentLines = pgTable(
       .notNull()
       .references(() => orderLines.id, { onDelete: "cascade" }),
     amount: integer("amount").notNull(),
-    gstAmount: integer("gst_amount").notNull().default(0),
+    taxAmount: integer("tax_amount").notNull().default(0),
   },
   (t) => [uniqueIndex("order_adjustment_lines_uq").on(t.adjustmentId, t.orderLineId), index("order_adjustment_lines_line_idx").on(t.orderLineId)],
 );

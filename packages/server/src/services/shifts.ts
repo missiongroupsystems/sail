@@ -1,5 +1,6 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { db } from "../db/client.js";
+import type { TaxBreakdown } from "@sail/shared";
+import { db, tx } from "../db/client.js";
 import { businessDayCloses, orderAdjustments, orderLines, orders, payments, shifts } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { Principal } from "../auth/principal.js";
@@ -12,7 +13,8 @@ import type { Principal } from "../auth/principal.js";
 export type ZReport = {
   scope: { outlet_id: string; station_id: string | null; business_date: string; shift_id: string | null };
   orders: { count: number; by_type: Record<string, number>; covers: number; open_count: number };
-  sales: { gross: number; discounts: number; fees: number; gst: number; net: number };
+  /** `tax` by component in `taxes`, one row per component name and rate. */
+  sales: { gross: number; discounts: number; fees: number; tax: number; taxes: TaxBreakdown[]; net: number };
   adjustments: { rule_key: string; name: string; kind: string; report_class: string; total: number; count: number }[];
   tenders: { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number }[];
   /** Register-computed totals across tenders, so clients never add rows up: `non_cash` is the figure to compare with the terminal's end-of-day total. */
@@ -35,10 +37,15 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
   const orderWhere = and(eq(orders.outletId, scope.outletId), eq(orders.businessDate, scope.businessDate), scope.stationId ? eq(orders.stationId, scope.stationId) : sql`true`);
   const completed = and(orderWhere, eq(orders.status, "completed"));
   const [o] = await db()
-    .select({ count: sql<number>`count(*)::int`, covers: sql<number>`coalesce(sum(pax),0)::int`, gross: sql<number>`coalesce(sum(subtotal),0)::int`, discounts: sql<number>`coalesce(sum(discount_total),0)::int`, fees: sql<number>`coalesce(sum(fee_total),0)::int`, gst: sql<number>`coalesce(sum(gst_total),0)::int`, net: sql<number>`coalesce(sum(total),0)::int` })
+    .select({ count: sql<number>`count(*)::int`, covers: sql<number>`coalesce(sum(pax),0)::int`, gross: sql<number>`coalesce(sum(subtotal),0)::int`, discounts: sql<number>`coalesce(sum(discount_total),0)::int`, fees: sql<number>`coalesce(sum(fee_total),0)::int`, tax: sql<number>`coalesce(sum(tax_total),0)::int`, net: sql<number>`coalesce(sum(total),0)::int` })
     .from(orders)
     .where(completed);
   const byType = await db().select({ t: orders.orderType, n: sql<number>`count(*)::int` }).from(orders).where(completed).groupBy(orders.orderType);
+  const taxes = await tx()<TaxBreakdown[]>`
+    select t->>'name' as name, (t->>'bps')::int as bps, coalesce(sum((t->>'taxable')::int),0)::int as taxable, coalesce(sum((t->>'amount')::int),0)::int as amount
+    from orders o, jsonb_array_elements(o.taxes) t
+    where o.outlet_id = ${scope.outletId} and o.business_date = ${scope.businessDate} and o.status = 'completed' ${scope.stationId ? tx()`and o.station_id = ${scope.stationId}` : tx()``}
+    group by 1, 2 order by 2 desc, 1`;
   const [open] = await db().select({ n: sql<number>`count(*)::int` }).from(orders).where(and(orderWhere, sql`${orders.status} in ('open','fired','ready','out_for_delivery')`));
   const adj = await db()
     .select({ rule_key: orderAdjustments.ruleKey, name: orderAdjustments.name, kind: orderAdjustments.kind, report_class: orderAdjustments.reportClass, total: sql<number>`coalesce(sum(${orderAdjustments.total}),0)::int`, count: sql<number>`count(*)::int` })
@@ -65,7 +72,7 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
   return {
     scope: { outlet_id: scope.outletId, station_id: scope.stationId ?? null, business_date: scope.businessDate, shift_id: scope.shiftId ?? null },
     orders: { count: o?.count ?? 0, by_type: Object.fromEntries(byType.map((b) => [b.t, b.n])), covers: o?.covers ?? 0, open_count: open?.n ?? 0 },
-    sales: { gross: o?.gross ?? 0, discounts: o?.discounts ?? 0, fees: o?.fees ?? 0, gst: o?.gst ?? 0, net: o?.net ?? 0 },
+    sales: { gross: o?.gross ?? 0, discounts: o?.discounts ?? 0, fees: o?.fees ?? 0, tax: o?.tax ?? 0, taxes, net: o?.net ?? 0 },
     adjustments: adj,
     tenders,
     tenders_summary: { cash: cashPayments, non_cash: tenders.filter((t) => !t.is_cash).reduce((s, t) => s + t.amount, 0), tips: tenders.reduce((s, t) => s + t.tips, 0), count: tenders.reduce((s, t) => s + t.count, 0) },

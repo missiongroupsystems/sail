@@ -2,6 +2,7 @@ import { currentTx, isDryRun, tx } from "../db/client.js";
 import type { EventActor, EventApproval } from "../db/schema/index.js";
 import { actorOf, type Principal } from "../auth/principal.js";
 import { businessDateFor } from "./time.js";
+import { businessDayInputs } from "../services/business-day.js";
 
 export type AppendEventInput = {
   merchantId: string;
@@ -17,7 +18,7 @@ export type AppendEventInput = {
   causationId?: string | null;
   correlationId: string;
   idempotencyKey?: string | null;
-  /** Business-day inputs; default Asia/Singapore 04:00 when unknown. */
+  /** Business-day inputs; read from the merchant (and outlet) settings when the caller has not already loaded them. */
   businessDay?: { cutoff: string; timeZone: string };
   at?: Date;
 };
@@ -32,7 +33,7 @@ export type AppendedEvent = { id: string; seq: number; occurredAt: string; type:
 export async function appendEvent(input: AppendEventInput, principal?: Principal): Promise<AppendedEvent> {
   const sql = tx();
   const at = input.at ?? new Date();
-  const bd = input.businessDay ?? { cutoff: "04:00", timeZone: "Asia/Singapore" };
+  const bd = input.businessDay ?? (await businessDayInputs(input.merchantId, input.outletId));
   const businessDate = businessDateFor(at, bd.cutoff, bd.timeZone);
   const actor: EventActor = input.actor ?? (principal ? (actorOf(principal) as EventActor) : { principal_type: "system", principal_id: "system", role: null });
   if (isDryRun()) {

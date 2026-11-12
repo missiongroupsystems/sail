@@ -1,8 +1,8 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, desc, eq, isNull } from "drizzle-orm";
-import { registerOperations } from "@sail/shared";
+import { currencyExponent, registerOperations } from "@sail/shared";
 import { db } from "../db/client.js";
-import { importJobs, products, reportCategories, type ImportEntity } from "../db/schema/index.js";
+import { importJobs, merchantSettings, products, reportCategories, taxClasses, type ImportEntity } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
@@ -81,10 +81,22 @@ export function importRoutes(app: OpenAPIHono<AppEnv>) {
     const rows = await db().select().from(products).where(and(eq(products.merchantId, p.merchantId), isNull(products.archivedAt))).orderBy(products.name);
     const cats = await db().select().from(reportCategories).where(eq(reportCategories.merchantId, p.merchantId));
     const catLegacy = new Map(cats.map((x) => [x.id, x.legacyId ?? x.name]));
+    const [settings] = await db().select({ currency: merchantSettings.currency }).from(merchantSettings).where(eq(merchantSettings.merchantId, p.merchantId)).limit(1);
+    if (!settings) throw AppError.notFound("merchant settings");
+    const exponent = currencyExponent(settings.currency);
+    const classNames = new Map((await db().select({ id: taxClasses.id, name: taxClasses.name }).from(taxClasses).where(eq(taxClasses.merchantId, p.merchantId))).map((x) => [x.id, x.name]));
     const csv = toCsv(
-      ["legacy_id", "sku", "name", "kind", "price", "category_legacy_id", "tags", "is_bcrs", "open_price", "description", "kitchen_name"],
-      rows.map((r) => [r.legacyId, r.sku, r.name, r.kind, (r.price / 100).toFixed(2), r.categoryId ? (catLegacy.get(r.categoryId) ?? "") : "", r.tags.join(";"), r.isBcrs ? "true" : "false", r.openPrice ? "true" : "false", r.description, r.kitchenName]),
+      ["legacy_id", "sku", "name", "kind", "price", "category_legacy_id", "tags", "has_deposit", "tax_class", "open_price", "description", "kitchen_name"],
+      rows.map((r) => [r.legacyId, r.sku, r.name, r.kind, decimal(r.price, exponent), r.categoryId ? (catLegacy.get(r.categoryId) ?? "") : "", r.tags.join(";"), r.hasDeposit ? "true" : "false", r.taxClassId ? (classNames.get(r.taxClassId) ?? "") : "", r.openPrice ? "true" : "false", r.description, r.kitchenName]),
     );
     return c.body(csv, 200, { "content-type": "text/csv; charset=utf-8", "content-disposition": 'attachment; filename="products.csv"' });
   });
+}
+
+/** Minor units as a plain decimal for CSV, in the currency's decimals: 1600 → "16.00" (EUR), "1600" (JPY), "1.600" (KWD). */
+function decimal(amount: number, exponent: number): string {
+  if (exponent === 0) return String(amount);
+  const sign = amount < 0 ? "-" : "";
+  const digits = String(Math.abs(amount)).padStart(exponent + 1, "0");
+  return `${sign}${digits.slice(0, -exponent)}.${digits.slice(-exponent)}`;
 }

@@ -40,8 +40,6 @@ const EnvSchema = z.object({
   RELAY_TOKEN_SECRET: z.string().min(16).optional(),
   AGENT_TOKEN_SECRET: z.string().min(16).optional(),
 
-  /** Default GST rate in basis points for new merchants. */
-  GST_BPS: z.coerce.number().int().default(900),
   /** PIN sessions expire after this many seconds of inactivity. */
   PIN_SESSION_IDLE_SECONDS: z.coerce.number().int().default(15 * 60),
   /** Base URL of the guest ordering app, used in QR codes. */

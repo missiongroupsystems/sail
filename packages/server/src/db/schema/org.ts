@@ -3,6 +3,7 @@ import { boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid 
 /** Merchant > Brand > Outlet > Station (scope doc 4.1). Every row carries merchant_id. */
 
 export const taxModeEnum = pgEnum("tax_mode", ["inclusive", "exclusive"]);
+export const taxRoundingEnum = pgEnum("tax_rounding", ["per_line", "per_rate"]);
 
 export const merchants = pgTable("merchants", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -15,13 +16,22 @@ export const merchantSettings = pgTable("merchant_settings", {
     .primaryKey()
     .references(() => merchants.id, { onDelete: "cascade" }),
   taxMode: taxModeEnum("tax_mode").notNull().default("exclusive"),
-  gstBps: integer("gst_bps").notNull().default(900),
-  /** Null = cash rounding off. Otherwise the increment in cents, for example 5. */
+  taxRounding: taxRoundingEnum("tax_rounding").notNull(),
+  /** Null = cash rounding off. Otherwise the increment in minor units of the currency, for example 5 (CHF 0.05) or 100 (SEK 1). */
   cashRoundingIncrement: integer("cash_rounding_increment"),
+  /** Notes and coins the POS cash counter offers, largest first, in minor units. Empty = enter the total only. */
+  cashDenominations: integer("cash_denominations").array().notNull().default([]),
   /** HH:MM local time at which the business day rolls over. */
   businessDayCutoff: text("business_day_cutoff").notNull().default("04:00"),
-  timezone: text("timezone").notNull().default("Asia/Singapore"),
-  currency: text("currency").notNull().default("SGD"),
+  /** IANA time zone; required, never defaulted. */
+  timezone: text("timezone").notNull(),
+  /** ISO 4217; fixes the minor-unit exponent of every stored amount, so it never changes once set. */
+  currency: text("currency").notNull(),
+  /** BCP 47 locale for money, dates and times, for example "en-GB". */
+  locale: text("locale").notNull(),
+  /** Printed before the outlet's registration numbers on documents, for example "Company no." and "VAT no.". */
+  businessRegistrationLabel: text("business_registration_label").notNull(),
+  taxRegistrationLabel: text("tax_registration_label").notNull(),
   receiptFooter: text("receipt_footer"),
   receiptShowOutletPhone: boolean("receipt_show_outlet_phone").notNull().default(true),
   /** Outlets with more open orders than this show the POS in busy mode (design 2.2). */
@@ -58,8 +68,10 @@ export const outlets = pgTable(
     name: text("name").notNull(),
     address: text("address"),
     phone: text("phone"),
-    /** Unique Entity Number printed on tax invoices. */
-    uen: text("uen"),
+    /** Company or business registration number printed on documents, after the merchant's label. */
+    businessRegistrationNo: text("business_registration_no"),
+    /** Tax (VAT, sales tax) registration number printed on documents. */
+    taxRegistrationNo: text("tax_registration_no"),
     /** Overrides the merchant cutoff when set. */
     businessDayCutoff: text("business_day_cutoff"),
     /** Opening hours by weekday: { mon: [["11:00","22:00"]], ... } */

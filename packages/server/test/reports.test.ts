@@ -5,7 +5,7 @@ import "../src/modules.js";
 import { buildApp, type App } from "../src/app.js";
 import { withTransaction } from "../src/db/client.js";
 import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
-import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
+import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb, sgSeedRules } from "./helpers.js";
 
 let db: TestDb;
 let app: App;
@@ -14,14 +14,14 @@ let call: ReturnType<typeof api>["call"];
 let cashierPin: string;
 let managerPin: string;
 const ids = { food: randomUUID(), drinks: randomUUID(), laksa: randomUUID(), kopi: randomUUID(), menu: randomUUID(), link: randomUUID(), area: randomUUID(), table: randomUUID(), station: randomUUID(), cash: randomUUID(), card: randomUUID(), printer: randomUUID(), reason: randomUUID() };
-type Snap = { id: string; totals: { total: number; subtotal: number; discount_total: number; fee_total: number; gst_total: number }; checks: { id: string; totals: { total: number } }[]; lines: { id: string }[] };
+type Snap = { id: string; totals: { total: number; subtotal: number; discount_total: number; fee_total: number; tax_total: number }; checks: { id: string; totals: { total: number } }[]; lines: { id: string }[] };
 
 beforeAll(async () => {
   db = await freshDb();
   app = buildApp();
   call = api(app).call;
   A = await seedMerchant(db.sql, "Alpha");
-  await withTransaction(() => seedRulesForMerchant(A.merchantId));
+  await withTransaction(() => seedRulesForMerchant(A.merchantId, sgSeedRules(A)));
   const t = A.admin.token;
   await call("PATCH", "/v1/merchant/settings", { token: t, body: { cash_rounding_increment: 5 } });
   await call("POST", "/v1/categories", { token: t, body: { id: ids.food, name: "Food" } });
@@ -78,9 +78,9 @@ describe("reports", () => {
     const r = await call<{ data: { totals: Record<string, number>; by_tender: { tender: string; amount: number; rounding: number }[]; by_category: { category: string; quantity: number; net: number }[]; adjustments_by_rule: { rule_key: string; total: number }[]; adjustments_by_class: { report_class: string; total: number }[]; by_order_type: { order_type: string; orders: number }[]; by_source: { source: string; orders: number }[]; voids: { count: number; quantity: number; value: number }; refunds: { count: number; amount: number; by_kind: { kind: string }[] } } }>("GET", `/v1/reports/sales-summary?outlet_id=${A.outletId}`, { token: A.manager.token });
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     const d = r.body.data;
-    const [db1] = await db.sql`select count(*)::int as orders, sum(total)::int as net, sum(subtotal)::int as gross, sum(discount_total)::int as discounts, sum(fee_total)::int as fees, sum(gst_total)::int as gst from orders where outlet_id = ${A.outletId} and status = 'completed'`;
+    const [db1] = await db.sql`select count(*)::int as orders, sum(total)::int as net, sum(subtotal)::int as gross, sum(discount_total)::int as discounts, sum(fee_total)::int as fees, sum(tax_total)::int as tax from orders where outlet_id = ${A.outletId} and status = 'completed'`;
     expect(d.totals.orders).toBe(3);
-    expect(d.totals).toMatchObject({ net: db1!.net, gross: db1!.gross, discounts: db1!.discounts, fees: db1!.fees, gst: db1!.gst, refunds: 100, net_after_refunds: db1!.net - 100 });
+    expect(d.totals).toMatchObject({ net: db1!.net, gross: db1!.gross, discounts: db1!.discounts, fees: db1!.fees, tax: db1!.tax, refunds: 100, net_after_refunds: db1!.net - 100 });
     expect(d.totals.items).toBe(2 + 2 + 1 + 3);
     expect(d.by_order_type.map((x) => [x.order_type, x.orders]).sort()).toEqual([["dine_in", 1], ["takeaway", 2]]);
     expect(d.by_source).toEqual([{ source: "pos", orders: 3, net: db1!.net }]);

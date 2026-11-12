@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import { formatCents, freezeFrom, roundCash } from "@sail/shared";
+import { formatMoney, freezeFrom, roundCash } from "@sail/shared";
 import { db } from "../db/client.js";
 import { checks, merchantSettings, orderLines, orders, payments, refunds, shifts, tenderTypes } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -39,6 +39,8 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
   const [tender] = await db().select().from(tenderTypes).where(and(eq(tenderTypes.id, input.tenderTypeId), eq(tenderTypes.merchantId, order.merchantId))).limit(1);
   if (!tender || tender.archivedAt) throw AppError.notFound("payment method", input.tenderTypeId);
   const [settings] = await db().select().from(merchantSettings).where(eq(merchantSettings.merchantId, order.merchantId)).limit(1);
+  if (!settings) throw AppError.notFound("merchant settings", order.merchantId);
+  const formatCents = (amount: number) => formatMoney(amount, settings);
   if (!Number.isInteger(input.amount) || input.amount <= 0) throw AppError.validation("amount must be a positive number of cents");
   if (input.tipCents != null && (!Number.isInteger(input.tipCents) || input.tipCents < 0)) throw AppError.validation("tip_cents must be zero or a positive number of cents");
 
@@ -70,7 +72,7 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
       tendered = tendered ?? applied;
       applied = balance;
     }
-    if (applied === balance && settings?.cashRoundingIncrement && settings.cashRoundingIncrement > 1) {
+    if (applied === balance && settings.cashRoundingIncrement && settings.cashRoundingIncrement > 1) {
       rounding = roundCash(balance, settings.cashRoundingIncrement).roundingCents;
     }
     const due = applied + rounding;

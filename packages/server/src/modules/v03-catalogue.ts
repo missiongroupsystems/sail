@@ -4,6 +4,7 @@ import { availabilityDeleteRoute, catalogueRoutes } from "../routes/catalogue.js
 import { floorRoutes } from "../routes/floor.js";
 import { customerRoutes } from "../routes/customers.js";
 import { pricingRoutes } from "../routes/pricing.js";
+import { taxRoutes } from "../routes/tax.js";
 import { importRoutes } from "../routes/imports.js";
 import { runQueuedImports } from "../services/importer.js";
 import { withTransaction } from "../db/client.js";
@@ -17,6 +18,7 @@ registerRoutes(availabilityDeleteRoute);
 registerRoutes(floorRoutes);
 registerRoutes(customerRoutes);
 registerRoutes(pricingRoutes);
+registerRoutes(taxRoutes);
 registerRoutes(importRoutes);
 
 registerWorkerTask({

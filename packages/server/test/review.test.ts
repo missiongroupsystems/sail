@@ -7,7 +7,7 @@ import { withTransaction } from "../src/db/client.js";
 import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
 import { AdmissionGate } from "../src/lib/gate.js";
 import { localParts } from "../src/lib/time.js";
-import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
+import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb, sgSeedRules } from "./helpers.js";
 
 /**
  * Beta v1 review: regression tests for the defects found in the end-to-end
@@ -49,7 +49,7 @@ beforeAll(async () => {
   app = buildApp();
   call = api(app).call;
   A = await seedMerchant(db.sql, "Review");
-  await withTransaction(() => seedRulesForMerchant(A.merchantId));
+  await withTransaction(() => seedRulesForMerchant(A.merchantId, sgSeedRules(A)));
   const t = A.admin.token;
   await call("PATCH", "/v1/merchant/settings", { token: t, body: { cash_rounding_increment: 5 } });
   await call("POST", "/v1/products", { token: t, body: { id: ids.laksa, name: "Laksa", price: 1600, tags: ["kitchen", "food"] } });
@@ -266,7 +266,10 @@ describe("tokens and settings", () => {
     expect((await call("PATCH", "/v1/merchant/settings", { token: t, body: { timezone: "Mars/Olympus" } })).status).toBe(400);
     expect((await call("PATCH", "/v1/merchant/settings", { token: t, body: { business_day_cutoff: "25:00" } })).status).toBe(400);
     expect((await call("PATCH", "/v1/merchant/settings", { token: t, body: { cash_rounding_increment: 3 } })).status).toBe(400);
-    expect((await call("PATCH", "/v1/merchant/settings", { token: t, body: { gst_bps: 20_000 } })).status).toBe(400);
+    expect((await call("PATCH", "/v1/merchant/settings", { token: t, body: { currency: "EUR" } })).status).toBe(400);
+    expect((await call("PATCH", "/v1/merchant/settings", { token: t, body: { locale: "not a locale" } })).status).toBe(400);
+    expect((await call("PATCH", "/v1/merchant/settings", { token: t, body: { cash_rounding_increment: 3 } })).status).toBe(400);
+    expect((await call("PATCH", "/v1/merchant/settings", { token: t, body: { cash_denominations: [5, 10] } })).status).toBe(400);
     expect((await call("PATCH", "/v1/merchant/settings", { token: t, body: { timezone: "Asia/Singapore", business_day_cutoff: "04:00", cash_rounding_increment: 5 } })).status).toBe(200);
   });
 
@@ -298,7 +301,7 @@ describe("nested requests and the admission gate", () => {
     tightApp = buildApp();
     tcall = api(tightApp).call;
     B = await seedMerchant(tight.sql, "Tight");
-    await withTransaction(() => seedRulesForMerchant(B.merchantId));
+    await withTransaction(() => seedRulesForMerchant(B.merchantId, sgSeedRules(B)));
     const t = B.admin.token;
     await tcall("POST", "/v1/products", { token: t, body: { id: bid.laksa, name: "Laksa", price: 1600, tags: ["kitchen"] } });
     await tcall("POST", "/v1/menus", { token: t, body: { id: bid.menu, brand_id: B.brandId, name: "M", sections: [{ name: "All", items: [{ product_id: bid.laksa }] }] } });

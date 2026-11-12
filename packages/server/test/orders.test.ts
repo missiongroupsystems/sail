@@ -6,7 +6,7 @@ import "../src/modules.js";
 import { buildApp, type App } from "../src/app.js";
 import { withTransaction } from "../src/db/client.js";
 import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
-import { api, freshDb, readSse, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
+import { api, freshDb, readSse, seedMerchant, type SeededMerchant, type TestDb, sgSeedRules } from "./helpers.js";
 import { startListener, stopListener } from "../src/sse/listener.js";
 
 let db: TestDb;
@@ -43,7 +43,7 @@ let serverPin: string; // PIN session token for Sam Server on the station
 let cashierPin: string;
 let managerPin: string;
 
-type Snap = { id: string; order_no: string; version: number; status: string; totals: { subtotal: number; discount_total: number; fee_total: number; gst_total: number; total: number }; lines: { id: string; status: string; quantity: number; amounts: { total: number; net: number; fee: number }; unit_price: number }[]; adjustments: { rule_key: string; total: number; manual_application_id: string | null }[] };
+type Snap = { id: string; order_no: string; version: number; status: string; totals: { subtotal: number; discount_total: number; fee_total: number; tax_total: number; total: number }; lines: { id: string; status: string; quantity: number; amounts: { total: number; net: number; fee: number }; unit_price: number }[]; adjustments: { rule_key: string; total: number; manual_application_id: string | null }[] };
 type Mut = { status: number; body: { data: Snap; events: { type: string; seq: number }[]; warnings: string[]; code?: string; message?: string; remedy?: string; details?: Record<string, unknown> } };
 
 beforeAll(async () => {
@@ -51,7 +51,7 @@ beforeAll(async () => {
   app = buildApp();
   call = api(app).call;
   A = await seedMerchant(db.sql, "Alpha");
-  await withTransaction(() => seedRulesForMerchant(A.merchantId));
+  await withTransaction(() => seedRulesForMerchant(A.merchantId, sgSeedRules(A)));
   const t = A.admin.token;
   await call("POST", "/v1/categories", { token: t, body: { id: cat.food, name: "Food" } });
   await call("POST", "/v1/categories", { token: t, body: { id: cat.noodles, name: "Noodles", parent_id: cat.food } });
@@ -62,7 +62,7 @@ beforeAll(async () => {
   await call("POST", "/v1/products", { token: t, body: { id: cat.laksa, name: "Laksa", sku: "LAK", price: 1600, category_id: cat.noodles, tags: ["kitchen"], prices_by_order_type: { delivery: 1800 }, modifier_group_ids: [cat.protein] } });
   await call("POST", "/v1/products", { token: t, body: { id: cat.wine, name: "House wine", price: 6000, category_id: cat.alcohol, tags: ["bar", "alcohol"] } });
   await call("POST", "/v1/products", { token: t, body: { id: cat.kopi, name: "Kopi", price: 180, tags: ["bar"] } });
-  await call("POST", "/v1/products", { token: t, body: { id: cat.can, name: "Can", price: 250, is_bcrs: true, tags: ["bar"] } });
+  await call("POST", "/v1/products", { token: t, body: { id: cat.can, name: "Can", price: 250, has_deposit: true, tags: ["bar"] } });
   await call("POST", "/v1/products", { token: t, body: { id: cat.openItem, name: "Open item", price: 0, open_price: true } });
   await call("POST", "/v1/menus", { token: t, body: { id: cat.menu, brand_id: A.brandId, name: "All day", sections: [{ id: cat.section, name: "All", items: [cat.laksa, cat.wine, cat.kopi, cat.can, cat.openItem].map((product_id) => ({ product_id })) }] } });
   await call("POST", "/v1/channel-links", { token: t, body: { id: cat.link, channel: "pos", outlet_id: A.outletId, brand_id: A.brandId, menu_id: cat.menu } });
@@ -125,7 +125,7 @@ describe("orders of every type with server-authoritative pricing", () => {
     expect(s.totals.subtotal).toBe(1800 + 360);
     expect(s.totals.discount_total).toBe(-450);
     expect(s.totals.fee_total).toBe(171);
-    expect(s.totals.gst_total).toBe(122 + 32 + 12 + 3);
+    expect(s.totals.tax_total).toBe(122 + 32 + 12 + 3);
     expect(s.totals.total).toBe(1350 + 360 + 171 + 122 + 32 + 12 + 3);
     expect(s.adjustments.map((a) => a.rule_key).sort()).toEqual(["promo:food25", SEED_RULE_IDS.serviceCharge].sort());
     expect(added.body.events.map((e) => e.type)).toEqual(["line.added", "line.added", "order.repriced"]);
@@ -349,7 +349,7 @@ describe("concurrency, caps, dry runs and live updates", () => {
       const lines: { line_id: string; product_id: string; quantity: number }[] = [];
       for (const l of c.order.lines) {
         const pid = randomUUID();
-        await call("POST", "/v1/products", { token: A.admin.token, body: { id: pid, name: l.name ?? l.line_id, price: l.prices.base, is_bcrs: l.is_bcrs ?? false, tags: l.tags ?? [], prices_by_order_type: l.prices.by_order_type ?? {} } });
+        await call("POST", "/v1/products", { token: A.admin.token, body: { id: pid, name: l.name ?? l.line_id, price: l.prices.base, has_deposit: l.has_deposit ?? false, tags: l.tags ?? [], prices_by_order_type: l.prices.by_order_type ?? {} } });
         lines.push({ line_id: randomUUID(), product_id: pid, quantity: l.quantity });
       }
       const menu = await call<{ data: { sections: { id: string; items: { product_id: string }[] }[] } }>("GET", `/v1/menus/${cat.menu}`, { token: A.admin.token });
@@ -362,7 +362,7 @@ describe("concurrency, caps, dry runs and live updates", () => {
       const r = await call<Mut["body"]>("POST", `/v1/orders/${o.body.data.id}/lines`, { token: serverPin, body: { lines } });
       expect(r.status, `${c.id} ${JSON.stringify(r.body).slice(0, 200)}`).toBe(200);
       expect(r.body.data.totals.total, `${c.id} total`).toBe(c.expect.total);
-      if (c.expect.gst_total != null) expect(r.body.data.totals.gst_total, `${c.id} gst`).toBe(c.expect.gst_total);
+      if (c.expect.tax_total != null) expect(r.body.data.totals.tax_total, `${c.id} tax`).toBe(c.expect.tax_total);
       await call("POST", `/v1/orders/${o.body.data.id}/cancel`, { token: serverPin, body: { reason: "replay" } });
     }
   });

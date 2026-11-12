@@ -6,7 +6,7 @@ import "../src/modules.js";
 import { buildApp, type App } from "../src/app.js";
 import { withTransaction } from "../src/db/client.js";
 import { activateDueRules, seedRulesForMerchant } from "../src/services/pricing-rules.js";
-import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
+import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb, sgSeedRules } from "./helpers.js";
 
 let db: TestDb;
 let app: App;
@@ -18,7 +18,7 @@ beforeAll(async () => {
   app = buildApp();
   call = api(app).call;
   A = await seedMerchant(db.sql, "Alpha");
-  await withTransaction(() => seedRulesForMerchant(A.merchantId));
+  await withTransaction(() => seedRulesForMerchant(A.merchantId, sgSeedRules(A)));
 });
 afterAll(async () => {
   await db.drop();
@@ -40,11 +40,11 @@ describe("persisted pricing rules", () => {
     for (const c of seedCases) {
       const r = await call<{ data: PricingResult }>("POST", "/v1/pricing/simulate", {
         token: A.manager.token,
-        body: { outlet_id: A.outletId, brand_id: A.brandId, order_type: c.order.order_type, channel: c.order.channel, customer_group_ids: c.order.customer_group_ids ?? [], lines: c.order.lines, manual_applications: c.order.manual_applications ?? [], at: c.context.now, tax_mode: c.context.tax_mode },
+        body: { outlet_id: A.outletId, brand_id: A.brandId, order_type: c.order.order_type, channel: c.order.channel, customer_group_ids: c.order.customer_group_ids ?? [], lines: c.order.lines.map((l) => ({ ...l, tax_class_id: A.taxClassIds.standard })), manual_applications: c.order.manual_applications ?? [], at: c.context.now, tax_mode: c.context.tax_mode },
       });
       expect(r.status, `${c.id} status`).toBe(200);
       expect(r.body.data.totals.total, `${c.id} total`).toBe(c.expect.total);
-      if (c.expect.gst_total != null) expect(r.body.data.totals.gst_total, `${c.id} gst`).toBe(c.expect.gst_total);
+      if (c.expect.tax_total != null) expect(r.body.data.totals.tax_total, `${c.id} tax`).toBe(c.expect.tax_total);
     }
   });
 
@@ -55,7 +55,7 @@ describe("persisted pricing rules", () => {
 
   it("a scheduled version takes effect at its time; earlier evaluations keep the old version", async () => {
     const future = new Date(Date.now() + 60 * 60 * 1000);
-    const body = { kind: "fee", name: "Service charge 12%", calc: "percent", value: { type: "fixed", amount: 1200 }, scope: { type: "all" }, conditions: { order_types: ["dine_in"] }, priority: 100, application: "auto", gst_applicable: true, report_class: "service_charge" };
+    const body = { kind: "fee", name: "Service charge 12%", calc: "percent", value: { type: "fixed", amount: 1200 }, scope: { type: "all" }, conditions: { order_types: ["dine_in"] }, priority: 100, application: "auto", tax_class_id: A.taxClassIds.standard, report_class: "service_charge" };
     const created = await call<{ data: { version: number; status: string }; warnings: string[] }>("POST", "/v1/pricing-rules", { token: A.admin.token, body: { rule_key: SEED_RULE_IDS.serviceCharge, body, effective_from: future.toISOString(), note: "rate change" } });
     expect(created.status).toBe(201);
     expect(created.body.data).toMatchObject({ version: 2, status: "scheduled" });

@@ -1,3 +1,4 @@
+import { currencyExponent } from "@sail/shared";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { ROLES } from "@sail/shared";
@@ -60,6 +61,12 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
   const sql = t.sql;
   const legacy: Record<string, Map<string, string>> = {}; // entity → legacy_id → our id
   const skuToProduct = new Map<string, string>();
+  const [settings] = await sql<{ currency: string }[]>`select currency from merchant_settings where merchant_id = ${merchantId}`;
+  if (!settings) throw new Error("merchant settings not found");
+  const exponent = currencyExponent(settings.currency);
+  const cents = (s: string) => minorUnits(s, exponent);
+  // Products name their tax class by name; blank is the merchant's default class.
+  const taxClasses = new Map((await sql<{ id: string; name: string }[]>`select id, name from tax_classes where merchant_id = ${merchantId} and archived_at is null`).map((c) => [c.name.toLowerCase(), c.id]));
 
   // Pre-load existing legacy IDs so references resolve across re-runs and across files.
   const preload = async (entity: string, table: string) => {
@@ -123,7 +130,7 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               const lid = get(row, "legacy_id") || get(row, "name");
               const name = get(row, "name");
               if (!name) throw new Error("name is required");
-              const { id } = await upsert("outlets", lid, { name, address: get(row, "address") || null, phone: get(row, "phone") || null, uen: get(row, "uen") || null, business_day_cutoff: get(row, "business_day_cutoff") || null });
+              const { id } = await upsert("outlets", lid, { name, address: get(row, "address") || null, phone: get(row, "phone") || null, business_registration_no: get(row, "business_registration_no") || null, tax_registration_no: get(row, "tax_registration_no") || null, business_day_cutoff: get(row, "business_day_cutoff") || null });
               legacy.outlets!.set(lid, id);
               break;
             }
@@ -145,7 +152,7 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               if (!name) throw new Error("name is required");
               if (!lid) throw new Error("sku or legacy_id is required");
               const priceCents = cents(get(row, "price"));
-              if (priceCents == null) throw new Error(`price "${get(row, "price")}" is not a number`);
+              if (priceCents == null) throw new Error(`price "${get(row, "price")}" is not an amount in ${settings.currency}`);
               const catKey = get(row, "category_legacy_id");
               const categoryId = (catKey ? ref("categories", catKey) : null) ?? null;
               if (catKey && !categoryId) throw new Error(`category ${catKey} not found`);
@@ -154,7 +161,10 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               if (brandKey && !brandId) throw new Error(`brand ${brandKey} not found`);
               const tags = get(row, "tags").split(/[;|]/).map((s) => s.trim()).filter(Boolean);
               const kind = /^(component|modifier)$/i.test(get(row, "kind")) ? "component" : "product";
-              const values = { name, sku, description: get(row, "description") || null, price: priceCents, category_id: categoryId, brand_id: brandId, tags, is_bcrs: bool(get(row, "is_bcrs")), open_price: bool(get(row, "open_price")), kind, kitchen_name: get(row, "kitchen_name") || null, archived_at: bool(get(row, "archived")) ? new Date().toISOString() : null };
+              const className = get(row, "tax_class");
+              const taxClassId = className ? taxClasses.get(className.toLowerCase()) : null;
+              if (taxClassId === undefined) throw new Error(`tax class "${className}" not found`);
+              const values = { name, sku, description: get(row, "description") || null, price: priceCents, category_id: categoryId, brand_id: brandId, tags, has_deposit: bool(get(row, "has_deposit")), tax_class_id: taxClassId, open_price: bool(get(row, "open_price")), kind, kitchen_name: get(row, "kitchen_name") || null, archived_at: bool(get(row, "archived")) ? new Date().toISOString() : null };
               const match = sku && !get(row, "legacy_id") ? { column: "sku", value: sku } : { column: "legacy_id", value: lid };
               const { id } = await upsert("products", lid, values, match);
               legacy.products!.set(lid, id);
@@ -163,7 +173,7 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
                 const v = get(row, `price_${ot}`);
                 if (v) {
                   const c = cents(v);
-                  if (c == null) throw new Error(`price_${ot} "${v}" is not a number`);
+                  if (c == null) throw new Error(`price_${ot} "${v}" is not an amount in ${settings.currency}`);
                   await sql`insert into product_prices (merchant_id, product_id, order_type, price) values (${merchantId}, ${id}, ${ot}, ${c}) on conflict (product_id, order_type) do update set price = excluded.price`;
                 }
               }
@@ -392,14 +402,27 @@ function num(s: string, dflt: number): number {
   const n = Number(s);
   return s === "" || Number.isNaN(n) ? dflt : Math.trunc(n);
 }
-/** "16.00", "$16", "1600c" → cents. */
-export function cents(s: string): number | null {
-  const t = s.replace(/[$,\s]/g, "");
+/**
+ * An amount from a CSV cell in minor units of a currency with `exponent`
+ * decimals: "16.00", "$16", "1,234.5" (exponent 2) → 1600, 1600, 123450;
+ * "1600c" is already in minor units. Null for text that is not an amount or
+ * has more decimals than the currency. CSV files use "." for decimals.
+ */
+export function minorUnits(s: string, exponent: number): number | null {
+  let t = s.replace(/[\p{Sc}\s]/gu, "");
   if (t === "") return null;
   if (/^\d+c$/i.test(t)) return Number(t.slice(0, -1));
-  const n = Number(t);
-  if (Number.isNaN(n)) return null;
-  return Math.round(n * 100);
+  // A comma only ever groups thousands: "16,50" is refused, not read as 1650.
+  const [whole = "", ...rest] = t.split(".");
+  if (whole.includes(",")) {
+    if (!/^\d{1,3}(,\d{3})+$/.test(whole)) return null;
+    t = [whole.replaceAll(",", ""), ...rest].join(".");
+  }
+  const m = /^(\d+)(?:\.(\d*))?$/.exec(t);
+  if (!m) return null;
+  const fraction = m[2] ?? "";
+  if (fraction.length > exponent) return null;
+  return Number(m[1]! + fraction.padEnd(exponent, "0"));
 }
 function bool(s: string): boolean {
   return /^(1|true|yes|y|t)$/i.test(s.trim());

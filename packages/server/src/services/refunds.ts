@@ -1,5 +1,5 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { quoteRefund, RefundError, type BillDocument, type RefundQuote, type RefundRequest, type RefundableLine, type RefundablePayment } from "@sail/shared";
+import { quoteRefund, RefundError, sumTaxes, type BillDocument, type RefundQuote, type RefundRequest, type RefundableLine, type RefundablePayment } from "@sail/shared";
 import { db } from "../db/client.js";
 import { checkAllocations, checks, merchantSettings, orderAdjustments, orderLines, orders, payments, refundLines, refundTenders, refunds, shifts } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -30,8 +30,8 @@ export async function refundableFor(checkId: string): Promise<{ check: typeof ch
   const lines: RefundableLine[] = allocs.map((a) => {
     const l = lineRows.find((x) => x.id === a.orderLineId)!;
     const mine = prior.filter((p) => p.orderLineId === a.orderLineId);
-    const sum = (k: "base" | "discount" | "fee" | "gst" | "total" | "quantity") => mine.reduce((s, p) => s + p[k], 0);
-    return { line_id: a.orderLineId, quantity: l.quantity, base: a.base, discount: a.discount, fee: a.fee, gst: a.gst, total: a.total, adjustments: a.adjustments, refunded: { quantity: sum("quantity"), base: sum("base"), discount: sum("discount"), fee: sum("fee"), gst: sum("gst"), total: sum("total") } };
+    const sum = (k: "base" | "discount" | "fee" | "total" | "quantity") => mine.reduce((s, p) => s + p[k], 0);
+    return { line_id: a.orderLineId, quantity: l.quantity, base: a.base, discount: a.discount, fee: a.fee, taxes: a.taxes, total: a.total, adjustments: a.adjustments, refunded: { quantity: sum("quantity"), base: sum("base"), discount: sum("discount"), fee: sum("fee"), taxes: sumTaxes(mine.map((p) => p.taxes)), total: sum("total") } };
   });
   const pays = await db().select().from(payments).where(and(eq(payments.checkId, checkId), eq(payments.status, "recorded")));
   const paymentsList: RefundablePayment[] = pays.map((p) => ({ payment_id: p.id, tender: p.tenderName, is_cash: p.isCash, amount: p.amount, refunded: priorTenders.filter((t) => t.paymentId === p.id).reduce((s, t) => s + t.amount, 0) }));
@@ -79,7 +79,7 @@ export async function createRefund(input: { refundId: string; checkId: string; r
       return { quantity: -(l.quantity || row.quantity), name: l.quantity ? row.name : `${row.name} (partial)`, unit_price: row.unitPrice, amount: -l.base, modifiers: [], seat_no: row.seatNo ?? undefined };
     }),
     adjustments: adjRows.filter((a) => (adjTotals.get(a.id) ?? 0) !== 0).map((a) => ({ name: a.name, amount: -(adjTotals.get(a.id) ?? 0), kind: a.kind as "fee" | "discount" })),
-    totals: { ...original.totals, subtotal: -q.totals.base, discount_total: -q.totals.discount, fee_total: -q.totals.fee, gst_total: -q.totals.gst, total: -q.totals.total },
+    totals: { ...original.totals, subtotal: -q.totals.base, discount_total: -q.totals.discount, fee_total: -q.totals.fee, tax_total: -q.totals.tax, taxes: q.totals.taxes.map((t) => ({ ...t, amount: -t.amount })), total: -q.totals.total },
     payments: q.tenders.map((t) => ({ tender: t.tender, amount: -t.amount, rounding_cents: t.rounding_cents ? -t.rounding_cents : undefined, reference: input.reference ?? undefined })),
     balance: undefined,
     original_check_no: original.header.order_no + " · " + original.check_label,
@@ -111,7 +111,8 @@ export async function createRefund(input: { refundId: string; checkId: string; r
       base: q.totals.base,
       discount: q.totals.discount,
       fee: q.totals.fee,
-      gst: q.totals.gst,
+      tax: q.totals.tax,
+      taxes: q.totals.taxes,
       total: q.totals.total,
       refundReceiptNo: receiptNo,
       creditNoteNo,
@@ -119,7 +120,7 @@ export async function createRefund(input: { refundId: string; checkId: string; r
       creditNoteDocument: creditNote,
     })
     .returning();
-  await db().insert(refundLines).values(q.lines.map((l) => ({ merchantId: ref.order.merchantId, refundId: refund!.id, orderLineId: l.line_id, quantity: l.quantity, base: l.base, discount: l.discount, fee: l.fee, gst: l.gst, total: l.total, adjustments: l.adjustments })));
+  await db().insert(refundLines).values(q.lines.map((l) => ({ merchantId: ref.order.merchantId, refundId: refund!.id, orderLineId: l.line_id, quantity: l.quantity, base: l.base, discount: l.discount, fee: l.fee, tax: l.tax, taxes: l.taxes, total: l.total, adjustments: l.adjustments })));
   await db().insert(refundTenders).values(q.tenders.map((t) => ({ merchantId: ref.order.merchantId, refundId: refund!.id, paymentId: t.payment_id, tenderName: t.tender, isCash: t.is_cash, amount: t.amount, roundingCents: t.rounding_cents, reference: input.reference ?? null })));
   const newRefunded = ref.check.refundedTotal + q.totals.total;
   await db().update(checks).set({ refundedTotal: newRefunded, status: newRefunded >= ref.check.total ? "refunded" : "partially_refunded", updatedAt: now }).where(eq(checks.id, input.checkId));

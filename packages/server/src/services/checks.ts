@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
-import { allocateLine, type BillDocument, type Share } from "@sail/shared";
+import { allocateLine, sumTaxes, type BillDocument, type Share, type TaxAmount } from "@sail/shared";
 import { assertNotSettled, db } from "../db/client.js";
 import { brands, checkAllocations, checks, merchantSettings, orderAdjustmentLines, orderAdjustments, orderLines, orders, outlets, payments, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -26,21 +26,21 @@ export async function ensureFirstCheck(order: { id: string; merchantId: string; 
   return [row!];
 }
 
-type LineComp = { id: string; base: number; discount: number; fee: number; gst: number; total: number; adjustments: Record<string, { amount: number; gst: number }> };
+type LineComp = { id: string; base: number; discount: number; fee: number; taxes: TaxAmount[]; total: number; adjustments: Record<string, { amount: number; tax: number }> };
 
 async function lineComponents(orderId: string): Promise<LineComp[]> {
   const [lines, adjLines] = await Promise.all([
     db().select().from(orderLines).where(and(eq(orderLines.orderId, orderId), sql`${orderLines.status} <> 'voided'`)).orderBy(asc(orderLines.sort), asc(orderLines.createdAt)),
-    db().select({ adjustmentId: orderAdjustmentLines.adjustmentId, orderLineId: orderAdjustmentLines.orderLineId, amount: orderAdjustmentLines.amount, gstAmount: orderAdjustmentLines.gstAmount }).from(orderAdjustmentLines).innerJoin(orderAdjustments, eq(orderAdjustments.id, orderAdjustmentLines.adjustmentId)).where(eq(orderAdjustments.orderId, orderId)),
+    db().select({ adjustmentId: orderAdjustmentLines.adjustmentId, orderLineId: orderAdjustmentLines.orderLineId, amount: orderAdjustmentLines.amount, taxAmount: orderAdjustmentLines.taxAmount }).from(orderAdjustmentLines).innerJoin(orderAdjustments, eq(orderAdjustments.id, orderAdjustmentLines.adjustmentId)).where(eq(orderAdjustments.orderId, orderId)),
   ]);
   return lines.map((l) => ({
     id: l.id,
     base: l.baseAmount,
     discount: l.discountAmount,
     fee: l.feeAmount,
-    gst: l.gstAmount,
+    taxes: l.taxes.map((t) => ({ name: t.name, bps: t.bps, amount: t.amount })),
     total: l.total,
-    adjustments: Object.fromEntries(adjLines.filter((a) => a.orderLineId === l.id).map((a) => [a.adjustmentId, { amount: a.amount, gst: a.gstAmount }])),
+    adjustments: Object.fromEntries(adjLines.filter((a) => a.orderLineId === l.id).map((a) => [a.adjustmentId, { amount: a.amount, tax: a.taxAmount }])),
   }));
 }
 
@@ -58,7 +58,7 @@ export async function syncAllocations(orderId: string, opts: { sharesByLine?: Ma
   let chks = await ensureFirstCheck(order);
   const [comps, existing] = await Promise.all([lineComponents(orderId), db().select().from(checkAllocations).where(inArray(checkAllocations.checkId, chks.map((c) => c.id)))]);
   const lockedIds = new Set(chks.filter((c) => c.lockedAt).map((c) => c.id));
-  const gstAdds = order.taxMode === "exclusive";
+  const taxAdds = order.taxMode === "exclusive";
 
   // Lines whose allocations include a locked check are fixed.
   const fixedLines = new Set(existing.filter((a) => lockedIds.has(a.checkId)).map((a) => a.orderLineId));
@@ -93,23 +93,22 @@ export async function syncAllocations(orderId: string, opts: { sharesByLine?: Ma
     await db().delete(checkAllocations).where(and(inArray(checkAllocations.checkId, unlockedCheckIds), fixed.length ? notInArray(checkAllocations.orderLineId, fixed) : sql`true`));
     const values = rebuilt.flatMap((line) => {
       const shares = sharesFor(line);
-      const parts = allocateLine({ base: line.base, discount: line.discount, fee: line.fee, gst: line.gst, adjustments: line.adjustments }, shares, { gstAddsToTotal: gstAdds });
+      const parts = allocateLine({ base: line.base, discount: line.discount, fee: line.fee, taxes: line.taxes, adjustments: line.adjustments }, shares, { taxAddsToTotal: taxAdds });
       return chks
         .map((c, i) => ({ c, p: parts[i]!, s: shares[i]! }))
         .filter(({ s }) => s.num > 0)
-        .map(({ c, p, s }) => ({ merchantId: order.merchantId, checkId: c.id, orderLineId: line.id, shareNum: s.num, shareDen: s.den, base: p.base, discount: p.discount, fee: p.fee, gst: p.gst, total: p.total, adjustments: p.adjustments }));
+        .map(({ c, p, s }) => ({ merchantId: order.merchantId, checkId: c.id, orderLineId: line.id, shareNum: s.num, shareDen: s.den, base: p.base, discount: p.discount, fee: p.fee, tax: p.tax, taxes: p.taxes, total: p.total, adjustments: p.adjustments }));
     });
     if (values.length) await db().insert(checkAllocations).values(values);
   }
 
-  // Recompute totals for unlocked checks in one grouped query.
-  const sums = unlockedCheckIds.length
-    ? await db()
-        .select({ checkId: checkAllocations.checkId, base: sql<number>`coalesce(sum(base),0)::int`, discount: sql<number>`coalesce(sum(discount),0)::int`, fee: sql<number>`coalesce(sum(fee),0)::int`, gst: sql<number>`coalesce(sum(gst),0)::int`, total: sql<number>`coalesce(sum(total),0)::int` })
-        .from(checkAllocations)
-        .where(inArray(checkAllocations.checkId, unlockedCheckIds))
-        .groupBy(checkAllocations.checkId)
-    : [];
+  // Recompute totals for unlocked checks from their allocations (tax by component is added up in code).
+  const allocs = unlockedCheckIds.length ? await db().select({ checkId: checkAllocations.checkId, base: checkAllocations.base, discount: checkAllocations.discount, fee: checkAllocations.fee, tax: checkAllocations.tax, taxes: checkAllocations.taxes, total: checkAllocations.total }).from(checkAllocations).where(inArray(checkAllocations.checkId, unlockedCheckIds)) : [];
+  const sums = unlockedCheckIds.map((checkId) => {
+    const mine = allocs.filter((a) => a.checkId === checkId);
+    const add = (k: "base" | "discount" | "fee" | "tax" | "total") => mine.reduce((s, a) => s + a[k], 0);
+    return { checkId, base: add("base"), discount: add("discount"), fee: add("fee"), tax: add("tax"), taxes: sumTaxes(mine.map((a) => a.taxes)), total: add("total") };
+  });
   const now = new Date();
   const refreshed: CheckRow[] = [];
   for (const c of chks) {
@@ -117,14 +116,14 @@ export async function syncAllocations(orderId: string, opts: { sharesByLine?: Ma
       refreshed.push(c);
       continue;
     }
-    const s = sums.find((x) => x.checkId === c.id) ?? { base: 0, discount: 0, fee: 0, gst: 0, total: 0 };
-    if (s.base === c.subtotal && s.discount === c.discountTotal && s.fee === c.feeTotal && s.gst === c.gstTotal && s.total === c.total) {
+    const s = sums.find((x) => x.checkId === c.id)!;
+    if (s.base === c.subtotal && s.discount === c.discountTotal && s.fee === c.feeTotal && s.tax === c.taxTotal && s.total === c.total && JSON.stringify(s.taxes) === JSON.stringify(c.taxes)) {
       refreshed.push(c);
       continue;
     }
     const [row] = await db()
       .update(checks)
-      .set({ subtotal: s.base, discountTotal: s.discount, feeTotal: s.fee, gstTotal: s.gst, total: s.total, status: s.total === 0 && c.paidTotal === 0 ? "open" : c.status, updatedAt: now })
+      .set({ subtotal: s.base, discountTotal: s.discount, feeTotal: s.fee, taxTotal: s.tax, taxes: s.taxes, total: s.total, status: s.total === 0 && c.paidTotal === 0 ? "open" : c.status, updatedAt: now })
       .where(eq(checks.id, c.id))
       .returning();
     refreshed.push(row!);
@@ -168,14 +167,14 @@ export type CheckSnapshot = {
   label: string;
   status: string;
   seat_no: number | null;
-  totals: { subtotal: number; discount_total: number; fee_total: number; gst_total: number; total: number };
+  totals: { subtotal: number; discount_total: number; fee_total: number; tax_total: number; taxes: TaxAmount[]; total: number };
   paid_total: number;
   rounding_total: number;
   refunded_total: number;
   balance: number;
   locked: boolean;
   invoice_no: string | null;
-  allocations: { line_id: string; share: string; base: number; discount: number; fee: number; gst: number; total: number }[];
+  allocations: { line_id: string; share: string; base: number; discount: number; fee: number; tax: number; taxes: TaxAmount[]; total: number }[];
   payments: { id: string; tender_type_id: string; tender: string; is_cash: boolean; amount: number; rounding_cents: number; tendered: number | null; change_cents: number; tip_cents: number; reference: string | null; status: string; recorded_by: string | null; created_at: string }[];
 };
 
@@ -190,14 +189,14 @@ export async function checkSnapshots(orderId: string): Promise<CheckSnapshot[]> 
     label: c.label,
     status: c.status,
     seat_no: c.seatNo,
-    totals: { subtotal: c.subtotal, discount_total: c.discountTotal, fee_total: c.feeTotal, gst_total: c.gstTotal, total: c.total },
+    totals: { subtotal: c.subtotal, discount_total: c.discountTotal, fee_total: c.feeTotal, tax_total: c.taxTotal, taxes: c.taxes, total: c.total },
     paid_total: c.paidTotal,
     rounding_total: c.roundingTotal,
     refunded_total: c.refundedTotal,
     balance: c.total - c.paidTotal,
     locked: c.lockedAt != null,
     invoice_no: c.invoiceNo,
-    allocations: allocs.filter((a) => a.checkId === c.id).map((a) => ({ line_id: a.orderLineId, share: a.shareNum === a.shareDen ? "1" : `${a.shareNum}/${a.shareDen}`, base: a.base, discount: a.discount, fee: a.fee, gst: a.gst, total: a.total })),
+    allocations: allocs.filter((a) => a.checkId === c.id).map((a) => ({ line_id: a.orderLineId, share: a.shareNum === a.shareDen ? "1" : `${a.shareNum}/${a.shareDen}`, base: a.base, discount: a.discount, fee: a.fee, tax: a.tax, taxes: a.taxes, total: a.total })),
     payments: pays.filter((p) => p.checkId === c.id).map((p) => ({ id: p.id, tender_type_id: p.tenderTypeId, tender: p.tenderName, is_cash: p.isCash, amount: p.amount, rounding_cents: p.roundingCents, tendered: p.tendered, change_cents: p.changeCents, tip_cents: p.tipCents, reference: p.reference, status: p.status, recorded_by: p.recordedByName, created_at: p.createdAt.toISOString() })),
   }));
 }
@@ -211,6 +210,7 @@ export async function billDocumentFor(checkId: string, kind: "prebill" | "receip
   const [outlet] = await db().select().from(outlets).where(eq(outlets.id, o.outletId)).limit(1);
   const [brand] = await db().select().from(brands).where(eq(brands.id, o.brandId)).limit(1);
   const [settings] = await db().select().from(merchantSettings).where(eq(merchantSettings.merchantId, o.merchantId)).limit(1);
+  if (!settings) throw AppError.notFound("merchant settings", o.merchantId);
   const table = o.tableId ? (await db().select({ name: tables.name }).from(tables).where(eq(tables.id, o.tableId)).limit(1))[0] : null;
   const allocs = await db().select().from(checkAllocations).where(eq(checkAllocations.checkId, checkId));
   const lines = allocs.length ? await db().select().from(orderLines).where(inArray(orderLines.id, allocs.map((a) => a.orderLineId))).orderBy(asc(orderLines.sort)) : [];
@@ -234,23 +234,33 @@ export async function billDocumentFor(checkId: string, kind: "prebill" | "receip
       station_name: extra.stationName ?? undefined,
       printed_at: new Date().toISOString(),
       job_id: extra.jobId ?? "pending",
-      time_zone: settings?.timezone ?? "Asia/Singapore",
+      time_zone: settings.timezone,
+      locale: settings.locale,
     },
     kind,
+    currency: settings.currency,
     check_label: allChecks.length > 1 ? `${c.label} of ${allChecks.length}` : c.label,
     lines: lines.map((l) => {
       const a = allocs.find((x) => x.orderLineId === l.id)!;
       return { quantity: l.quantity, name: l.name, unit_price: l.unitPrice, amount: a.base, modifiers: l.modifiers.map((m) => ({ name: m.quantity > 1 ? `${m.quantity}× ${m.name}` : m.name, price: m.price * m.quantity * l.quantity })), seat_no: l.seatNo ?? undefined, share: a.shareNum === a.shareDen ? undefined : `${a.shareNum}/${a.shareDen}` };
     }),
     adjustments: adjs.filter((a) => (adjustmentTotals.get(a.id) ?? 0) !== 0).map((a) => ({ name: a.name, amount: adjustmentTotals.get(a.id)!, kind: a.kind as "fee" | "discount" })),
-    totals: { subtotal: c.subtotal, discount_total: c.discountTotal, fee_total: c.feeTotal, gst_total: c.gstTotal, total: c.total, tax_mode: o.taxMode as "inclusive" | "exclusive", gst_bps: o.gstBps },
+    totals: { subtotal: c.subtotal, discount_total: c.discountTotal, fee_total: c.feeTotal, tax_total: c.taxTotal, taxes: c.taxes, total: c.total, tax_mode: o.taxMode as "inclusive" | "exclusive" },
     payments: kind === "receipt" ? pays.map((p) => ({ tender: p.tenderName, amount: p.amount, rounding_cents: p.roundingCents || undefined, reference: p.reference ?? undefined, change: p.changeCents || undefined })) : undefined,
     balance: c.total - c.paidTotal > 0 ? c.total - c.paidTotal : undefined,
     invoice_no: c.invoiceNo ?? undefined,
-    footer_lines: settings?.receiptFooter ? settings.receiptFooter.split("\n") : undefined,
-    outlet_phone: settings?.receiptShowOutletPhone && outlet?.phone ? outlet.phone : undefined,
-    uen: outlet?.uen ?? undefined,
+    footer_lines: settings.receiptFooter ? settings.receiptFooter.split("\n") : undefined,
+    outlet_phone: settings.receiptShowOutletPhone && outlet?.phone ? outlet.phone : undefined,
+    ...registrations(settings, outlet),
     digital_receipt_url: extra.digitalReceiptUrl,
+  };
+}
+
+/** The outlet's registration numbers as printed, each after the merchant's label for it. */
+export function registrations(settings: typeof merchantSettings.$inferSelect, outlet: typeof outlets.$inferSelect | undefined): Pick<BillDocument, "business_registration" | "tax_registration"> {
+  return {
+    business_registration: outlet?.businessRegistrationNo ? { label: settings.businessRegistrationLabel, value: outlet.businessRegistrationNo } : undefined,
+    tax_registration: outlet?.taxRegistrationNo ? { label: settings.taxRegistrationLabel, value: outlet.taxRegistrationNo } : undefined,
   };
 }
 

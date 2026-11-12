@@ -101,7 +101,7 @@ describe("organisation CRUD writes events and audit entries", () => {
     expect(brand.status).toBe(201);
     expect(brand.body.events[0]!.type).toBe("brand.created");
 
-    const outlet = await call<{ data: { id: string } }>("POST", "/v1/outlets", { token: A.admin.token, body: { name: "Airport", uen: "201234567A", business_day_cutoff: "05:00", hours: { mon: [["08:00", "22:00"]] } } });
+    const outlet = await call<{ data: { id: string } }>("POST", "/v1/outlets", { token: A.admin.token, body: { name: "Airport", business_registration_no: "201234567A", business_day_cutoff: "05:00", hours: { mon: [["08:00", "22:00"]] } } });
     expect(outlet.status).toBe(201);
 
     const station = await call<{ data: { id: string; paired: boolean }; events: { seq: number }[] }>("POST", "/v1/stations", { token: A.admin.token, body: { outlet_id: outlet.body.data.id, name: "Counter 1", pay_before_firing: true, home: "takeaway" } });

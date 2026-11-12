@@ -1,8 +1,8 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
-import { ORDER_STATUSES, OrderTypeSchema, PERMISSIONS, PricingRuleSchema, isFreezable, price, PricingContextSchema, registerOperations, roleAtLeast, validateManualApplication, type OrderType, type OperationSpec, type Role } from "@sail/shared";
+import { ORDER_STATUSES, OrderTypeSchema, PERMISSIONS, PricingRuleSchema, isFreezable, price, registerOperations, roleAtLeast, validateManualApplication, type OrderType, type OperationSpec, type Role } from "@sail/shared";
 import { db, markDryRun, settleInvariants, tx } from "../db/client.js";
-import { areas, channelLinks, customerGroupMembers, customers, merchantSettings, orderLines, orderManualApplications, orders, stations, tables, voidReasons } from "../db/schema/index.js";
+import { areas, channelLinks, customerGroupMembers, customers, orderLines, orderManualApplications, orders, stations, tables, voidReasons } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppContext, AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
@@ -11,7 +11,8 @@ import { recordAudit } from "../lib/audit.js";
 import { principalCanSeeOutlet, principalRole, type Principal } from "../auth/principal.js";
 import { compileMenu } from "../services/menu.js";
 import { buildLines, resolveModifiers, type LineInput } from "../services/lines.js";
-import { bumpVersion, getOrderRow, loadSnapshot, lockOrder, nextOrderNo, OPEN_STATUSES, openOrderForTable, orderClosed, paidTotal, repriceOrder, resolveUnitPrice, tableExists, type OrderSnapshot } from "../services/orders.js";
+import { bumpVersion, getOrderRow, loadSnapshot, lockOrder, nextOrderNo, OPEN_STATUSES, openOrderForTable, orderClosed, paidTotal, pricingContextOf, pricingLineOf, repriceOrder, resolveUnitPrice, tableExists, type OrderSnapshot } from "../services/orders.js";
+import { orderTaxRates, orderTaxSettings, usedTaxClasses } from "../services/tax.js";
 import { assertAdjustmentUnlocked, assertLineUnlocked } from "../services/checks.js";
 import { requireRoleOrOverride } from "../services/overrides.js";
 import { activeRules } from "../services/pricing-rules.js";
@@ -171,7 +172,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
         .returning({ id: customers.id });
       customerId = cust?.id ?? null;
     }
-    const [settings] = await db().select().from(merchantSettings).where(eq(merchantSettings.merchantId, p.merchantId)).limit(1);
+    const tax = await orderTaxSettings(p.merchantId, ctx.outletId);
     const bd = await businessDayInputs(p.merchantId, ctx.outletId);
     const now = new Date();
     const orderNo = await nextOrderNo(ctx.outletId, p.merchantId, "pos");
@@ -198,8 +199,9 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
         openedBy: p.type === "staff" ? p.id : null,
         openedByName: "name" in p ? p.name : null,
         businessDate: businessDateFor(now, bd.cutoff, bd.timeZone),
-        taxMode: settings?.taxMode ?? "exclusive",
-        gstBps: settings?.gstBps ?? 900,
+        taxMode: tax.taxMode,
+        taxRounding: tax.taxRounding,
+        taxRates: tax.taxRates,
         openedAt: now,
       })
       .returning();
@@ -259,6 +261,8 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     const extra = b.extra_lines?.length ? await buildLines(await compileMenu(o.channelLinkId, new Date()), b.extra_lines as LineInput[], { orderType: o.orderType, outletId: o.outletId, today: await todayFor(o.merchantId, o.outletId), source: "pos", addedBy: null, addedByName: null, allowOpenPrice: true, startSort: 0 }) : [];
     const apps = await db().select().from(orderManualApplications).where(and(eq(orderManualApplications.orderId, id), isNull(orderManualApplications.removedAt)));
     const groupIds = o.customerId ? (await db().select({ g: customerGroupMembers.groupId }).from(customerGroupMembers).where(eq(customerGroupMembers.customerId, o.customerId))).map((x) => x.g) : [];
+    const rules = await activeRules(o.merchantId, new Date());
+    const taxRates = await orderTaxRates(o, usedTaxClasses([...lines, ...extra], rules));
     const result = price(
       {
         order_type: o.orderType as OrderType,
@@ -266,11 +270,11 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
         outlet_id: o.outletId,
         brand_id: o.brandId,
         customer_group_ids: groupIds,
-        lines: [...lines, ...extra.map((e) => ({ ...e, orderId: id, merchantId: o.merchantId, outletId: o.outletId }))].map((l) => ({ line_id: l.id!, product_id: l.productId, category_id: l.categoryId ?? null, parent_category_id: l.parentCategoryId ?? null, tags: l.tags ?? [], is_bcrs: l.isBcrs ?? false, quantity: l.quantity, prices: { base: l.basePrice, by_order_type: (l.pricesByOrderType ?? {}) as Partial<Record<OrderType, number>> }, open_price: l.openPrice ?? null, modifiers: (l.modifiers ?? []).map((m) => ({ modifier_id: m.modifier_id, product_id: m.product_id, quantity: m.quantity, price: m.price, name: m.name })), name: l.name })),
+        lines: [...lines.map(pricingLineOf), ...extra.map((l) => ({ line_id: l.id!, product_id: l.productId, category_id: l.categoryId ?? null, parent_category_id: l.parentCategoryId ?? null, tags: l.tags ?? [], has_deposit: l.hasDeposit ?? false, tax_class_id: l.taxClassId, quantity: l.quantity, prices: { base: l.basePrice, by_order_type: (l.pricesByOrderType ?? {}) as Partial<Record<OrderType, number>> }, open_price: l.openPrice ?? null, modifiers: (l.modifiers ?? []).map((m) => ({ modifier_id: m.modifier_id, product_id: m.product_id, quantity: m.quantity, price: m.price, name: m.name })), name: l.name }))],
         manual_applications: apps.map((a) => ({ application_id: a.id, rule_id: a.ruleKey, entered_value: a.enteredValue, line_ids: a.lineIds, applied_by: a.appliedBy, approved_by: a.approvedBy, override_id: a.overrideId, reason: a.reason })),
       },
-      await activeRules(o.merchantId, new Date()),
-      PricingContextSchema.parse({ tax_mode: o.taxMode, gst_bps: o.gstBps, now: new Date().toISOString(), frozen: o.pricingFrozenAt ? { frozen_at: o.pricingFrozenAt.toISOString(), adjustments: o.frozenAdjustments ?? [] } : null }),
+      rules,
+      pricingContextOf(o, new Date(), taxRates),
     );
     // The quote consumed nothing: extra lines were only built in memory, and daily caps are rolled back with a dry run.
     if (extra.length) {
@@ -444,9 +448,9 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     if (qty < line.quantity) {
       // Partial void: keep the remainder on the original line; record the voided quantity on a new line.
       await db().update(orderLines).set({ quantity: line.quantity - qty, updatedAt: now }).where(eq(orderLines.id, line_id));
-      await db().insert(orderLines).values({ ...line, id: crypto.randomUUID(), quantity: qty, status: "voided", voidedAt: now, voidReasonId: b.reason_id ?? null, voidReason: reasonText, voidedBy: p.type === "staff" ? p.id : null, voidApprovedBy: approval?.id ?? null, voidOverrideId: b.override_id ?? null, baseAmount: 0, discountAmount: 0, netAmount: 0, feeAmount: 0, gstAmount: 0, total: 0, createdAt: now, updatedAt: now });
+      await db().insert(orderLines).values({ ...line, id: crypto.randomUUID(), quantity: qty, status: "voided", voidedAt: now, voidReasonId: b.reason_id ?? null, voidReason: reasonText, voidedBy: p.type === "staff" ? p.id : null, voidApprovedBy: approval?.id ?? null, voidOverrideId: b.override_id ?? null, baseAmount: 0, discountAmount: 0, netAmount: 0, feeAmount: 0, taxAmount: 0, taxes: [], total: 0, createdAt: now, updatedAt: now });
     } else {
-      await db().update(orderLines).set({ status: "voided", voidedAt: now, voidReasonId: b.reason_id ?? null, voidReason: reasonText, voidedBy: p.type === "staff" ? p.id : null, voidApprovedBy: approval?.id ?? null, voidOverrideId: b.override_id ?? null, baseAmount: 0, discountAmount: 0, netAmount: 0, feeAmount: 0, gstAmount: 0, total: 0, updatedAt: now }).where(eq(orderLines.id, line_id));
+      await db().update(orderLines).set({ status: "voided", voidedAt: now, voidReasonId: b.reason_id ?? null, voidReason: reasonText, voidedBy: p.type === "staff" ? p.id : null, voidApprovedBy: approval?.id ?? null, voidOverrideId: b.override_id ?? null, baseAmount: 0, discountAmount: 0, netAmount: 0, feeAmount: 0, taxAmount: 0, taxes: [], total: 0, updatedAt: now }).where(eq(orderLines.id, line_id));
     }
     if (!fired) await releaseDailyCap(o.outletId, line.productId, qty, await todayFor(o.merchantId, o.outletId));
     await recordAudit(p, { action: fired ? "lines.void_fired" : "lines.void", targetKind: "order_line", targetId: line_id, outletId: o.outletId, reason: reasonText, approver: approval, overrideId: b.override_id ?? null, details: { order_id: id, quantity: qty, name: line.name } });
@@ -527,7 +531,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     const now = new Date();
     for (const l of lines) {
       await releaseDailyCap(o.outletId, l.productId, l.quantity, today);
-      await db().update(orderLines).set({ status: "voided", voidedAt: now, voidReason: `Order cancelled: ${b.reason}`, voidedBy: p.type === "staff" ? p.id : null, baseAmount: 0, discountAmount: 0, netAmount: 0, feeAmount: 0, gstAmount: 0, total: 0 }).where(eq(orderLines.id, l.id));
+      await db().update(orderLines).set({ status: "voided", voidedAt: now, voidReason: `Order cancelled: ${b.reason}`, voidedBy: p.type === "staff" ? p.id : null, baseAmount: 0, discountAmount: 0, netAmount: 0, feeAmount: 0, taxAmount: 0, taxes: [], total: 0 }).where(eq(orderLines.id, l.id));
     }
     await db().update(orders).set({ status: "cancelled", cancelledAt: now, cancelReason: b.reason }).where(eq(orders.id, id));
     await orderClosed(id);

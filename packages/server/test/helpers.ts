@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import postgres, { type Sql } from "postgres";
 import { inject } from "vitest";
-import type { Role } from "@sail/shared";
+import { presetSeedRules, REGION_PRESETS, type PricingRuleInput, type RegionPresetKey, type Role } from "@sail/shared";
+import { applyPreset, type MerchantSettingsInput } from "../src/bootstrap.js";
 import { setConfigForTests, loadConfig } from "../src/config.js";
 import { setPoolForTests } from "../src/db/client.js";
 import { resetGateForTests } from "../src/middleware/pipeline.js";
@@ -59,6 +60,8 @@ export async function freshDb(overrides: Partial<Record<string, string>> = {}): 
 /** PINs used by seedMerchant: admin 111111, manager 222222, cashier 333333, server 444444, outlet-2 cashier 555555. */
 export type SeededMerchant = {
   merchantId: string;
+  /** Tax class ids by preset code (the sg preset has one: `standard`, GST 9%). */
+  taxClassIds: Record<string, string>;
   brandId: string;
   outletId: string;
   outlet2Id: string;
@@ -70,14 +73,23 @@ export type SeededMerchant = {
   outlet2Cashier: { id: string; token: string };
 };
 
-/** Insert a merchant with settings, a brand, two outlets and one staff member per role; return bearer tokens. */
-export async function seedMerchant(sql: Sql, name = "Test Merchant"): Promise<SeededMerchant> {
+/** The sg preset's seed rules for a seeded merchant, wired to its tax class. */
+export function sgSeedRules(m: SeededMerchant): PricingRuleInput[] {
+  return presetSeedRules(REGION_PRESETS.sg, m.taxClassIds);
+}
+
+/**
+ * Insert a merchant with settings and tax classes from a region preset (sg,
+ * in Singapore, unless the caller says otherwise; no seed rules or tenders),
+ * a brand, two outlets and one staff member per role; return bearer tokens.
+ */
+export async function seedMerchant(sql: Sql, name = "Test Merchant", region: { preset: RegionPresetKey } & MerchantSettingsInput = { preset: "sg", timeZone: "Asia/Singapore" }): Promise<SeededMerchant> {
   const merchantId = randomUUID();
   const brandId = randomUUID();
   const outletId = randomUUID();
   const outlet2Id = randomUUID();
   await sql`insert into merchants (id, name) values (${merchantId}, ${name})`;
-  await sql`insert into merchant_settings (merchant_id) values (${merchantId})`;
+  const taxClassIds = await sql.begin((tx) => applyPreset(tx, merchantId, REGION_PRESETS[region.preset], region));
   await sql`insert into brands (id, merchant_id, name) values (${brandId}, ${merchantId}, ${name + " Brand"})`;
   await sql`insert into outlets (id, merchant_id, name) values (${outletId}, ${merchantId}, ${name + " Outlet 1"})`;
   await sql`insert into outlets (id, merchant_id, name) values (${outlet2Id}, ${merchantId}, ${name + " Outlet 2"})`;
@@ -92,6 +104,7 @@ export async function seedMerchant(sql: Sql, name = "Test Merchant"): Promise<Se
   };
   return {
     merchantId,
+    taxClassIds: taxClassIds as Record<string, string>,
     brandId,
     outletId,
     outlet2Id,
