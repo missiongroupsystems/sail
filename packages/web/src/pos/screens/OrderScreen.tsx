@@ -13,7 +13,7 @@ import { usePos } from "../components/PosContext";
 import { RefundSheet } from "../components/RefundSheet";
 import { RejectRoundSheet, ReopenSheet } from "../components/ReasonSheets";
 import { ReprintSheet } from "../components/ReprintSheet";
-import { useLateJobs, useManualRules, useOrder, useOrderPrintJobs, usePendingRounds } from "../hooks/queries";
+import { useLateJobs, useManualRules, useOrder, useOrderPrintJobs, usePendingRounds, useReadyLineIds } from "../hooks/queries";
 import { useOrderActions } from "../hooks/useOrderActions";
 import { useNow } from "../lib/device";
 import { formatElapsed, ORDER_TYPE_LABEL } from "../lib/format";
@@ -43,6 +43,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
   const rounds = usePendingRounds(station.outlet_id);
   const pendingRounds = useMemo(() => (rounds.data ?? []).filter((r) => r.order_id === orderId), [rounds.data, orderId]);
   const jobs = useOrderPrintJobs(station.outlet_id, orderId, Boolean(snap && snap.round_count > 0));
+  const ready = useReadyLineIds(station.outlet_id, orderId, Boolean(snap && snap.round_count > 0));
   const late = useLateJobs(station.outlet_id);
   const lateJobIds = useMemo(() => new Set((late.data ?? []).map((j) => j.id)), [late.data]);
 
@@ -139,6 +140,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
             onRejectRound={(r) => setSheet({ kind: "reject", round: r })}
             jobs={jobs.data ?? []}
             lateJobIds={lateJobIds}
+            readyLineIds={ready.data}
             onReopen={() => setSheet({ kind: "reopen" })}
             onRefund={() => setSheet({ kind: "refund" })}
             onReceipt={() => {

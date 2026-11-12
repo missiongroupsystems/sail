@@ -55,11 +55,11 @@ Each operation has an id of the form `group.verb` (`lines.add`, `refunds.create`
 From there:
 
 - `defineOp` registers the Hono route and writes the entry into the spec as `x-sail`.
-- `packages/server/openapi.json` is generated and committed (150 paths, 189 operations). `pnpm openapi:check` fails when it is stale.
-- `packages/server/mcp-tools.json` is generated from the spec (104 tools) and checked by `pnpm --filter @sail/server manifest:check`.
+- `packages/server/openapi.json` is generated and committed (166 paths, 207 operations). `pnpm openapi:check` fails when it is stale.
+- `packages/server/mcp-tools.json` is generated from the spec (108 tools) and checked by `pnpm --filter @sail/server manifest:check`.
 - The front ends generate their API types from the spec (`gen:api`).
 
-Risk tiers: T0 reads, quotes and dry runs; T1 routine and reversible (add a line, split, mark sold out, reroute a ticket); T2 consequential (send to the kitchen, record a payment, apply a discount or comp, close a shift); T3 money out (refunds, reopening), configuration and identities. Today there are 85 T0, 31 T1, 15 T2 and 58 T3 operations.
+Risk tiers: T0 reads, quotes and dry runs; T1 routine and reversible (add a line, split, mark sold out, reroute a ticket); T2 consequential (send to the kitchen, record a payment, apply a discount or comp, close a shift); T3 money out (refunds, reopening), configuration and identities. Today there are 92 T0, 35 T1, 15 T2 and 65 T3 operations.
 
 ## Pricing and tax
 
@@ -80,6 +80,20 @@ The server renders ESC/POS bytes from templates in `packages/shared/src/escpos` 
 Jobs live in a durable queue (`print_jobs`): queued, claimed, printed, failed or rerouted. A job not printed within 10 s shows an alert on the POS, where staff can reprint or reroute to a backup printer. The worker re-queues stale claims.
 
 The relay (`packages/relay`) is a small Node service on the outlet network. It pairs once with a 6-digit code, keeps an SSE stream to the API, fetches outstanding jobs on every reconnect, sends raw bytes to printers on TCP port 9100 (checking paper and cover with DLE EOT where the printer supports it), acknowledges each job and sends a heartbeat every 30 s. It holds no business logic and needs outbound HTTPS only.
+
+## Kitchen display
+
+A kitchen display is a station of kind `display`, paired with the same one-time code as an iPad, and opened at `/kds` on a wall monitor or tablet. It needs no PIN: the station token alone lets it read and bump the tickets of the **display destinations** it is assigned (Settings > Stations), and nothing else.
+
+A display destination (`display_destinations`, managed on Printing > Printers) routes exactly as a kitchen printer does: include and exclude tags, order types, sources, and a default that takes what no other destination matched. Printers and destinations are routed separately, so a merchant without a destination prints exactly as before, and a destination and a printer can take the same tags (both get the item).
+
+The fire transaction that creates the print jobs also creates the tickets (`createKitchenJobs` in `services/printing.ts`, tickets in `services/kitchen.ts`): one `kitchen_tickets` row per fire round per destination, with its `kitchen_ticket_lines` (kitchen name, quantity, modifiers, notes, seat) and the order as it was sent (number, type, table, guests, name), so a later table move does not change a ticket under the cook. The destinations and the table name are read in the same pipelined round trip as the printers, so the fire path gains the two inserts and one `kitchen_ticket.created` event for all its tickets, and nothing at all without a destination. Later changes are recorded, not edited in silently:
+
+- Lines sent in a later fire make a new ticket (`round_no`).
+- A void after sending adds to the line's `voided_quantity` on every ticket that carries it and sets `changed`; the display strikes the line.
+- Cancelling the order sets its tickets to `cancelled`; they stay on the display, marked, until bumped.
+
+A ticket is `new`, `in_progress`, `ready` (bumped), `recalled` or `cancelled`; a trigger refuses any other transition. `kitchen_tickets.start`, `.bump` and `.recall` are conditional updates (recall takes only the last ticket bumped at its destination; recalling again walks back one at a time), so a double tap, or two displays showing the same destination, move a ticket once: the later call gets the ticket back unchanged and appends no event. A fire, void or cancel appends one `kitchen_ticket.*` event on the order naming the tickets it touched, and a display action one event on its ticket. The display follows them on the outlet stream and replays from `events.list` after a reconnect. `kitchen_tickets.list` and `kitchen_tickets.all_day` are T0 and open to staff, display stations and agents; start, bump and recall are T1, for displays and staff only, and not on MCP. Guests and relays have no grant on the ticket tables. On the POS a sent line shows "ready" once every ticket carrying it is bumped.
 
 ## Auth
 
@@ -123,7 +137,6 @@ Three rules shape the screens:
 These are deliberate gaps, not hidden features. The [roadmap](roadmap.md) says which are planned.
 
 - **Payment providers.** No terminal, online-payment or webhook integration. Tenders are recorded by hand after the card is taken on a standalone terminal. `payments.void` does not exist; a wrong tender is corrected by refund or reopen.
-- **Kitchen display (KDS).** Kitchens work from printed tickets.
 - **Offline mode.** Every action needs the API. Queued print jobs survive a relay or printer outage.
 - **Changesets.** Configuration is edited directly through the API and back-office forms; there is no draft, diff, simulate and approve flow. The back-office Changes page is a placeholder.
 - **Agent runner.** Sail exposes agents to the register but ships no agents, playbooks, sandbox or evals. The back-office Assistants page is a placeholder; identities are managed through the API.

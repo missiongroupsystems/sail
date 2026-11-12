@@ -27,6 +27,8 @@ export type OrderSheetProps = {
   /** Print jobs for this order and the ids the register lists as late (⚠ instead of ✓). */
   jobs: PrintJob[];
   lateJobIds: Set<string>;
+  /** Sent lines the kitchen display has bumped (ready). */
+  readyLineIds?: Set<string>;
   /** Closed order (Reopen, Refund). */
   onReopen: () => void;
   onRefund: () => void;
@@ -54,7 +56,7 @@ function usePricing(orderId: string): boolean {
  * status per sent round, the totals block with every adjustment by
  * name plus Paid and Balance once money has been taken, and the action dock.
  */
-export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, onDiscount, onBill, onPay, onReprintRound, pendingRounds, onAcceptRound, onRejectRound, jobs, lateJobIds, onReopen, onRefund, onReceipt }: OrderSheetProps) {
+export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, onDiscount, onBill, onPay, onReprintRound, pendingRounds, onAcceptRound, onRejectRound, jobs, lateJobIds, readyLineIds, onReopen, onRefund, onReceipt }: OrderSheetProps) {
   const { money, clock } = useLocale();
   const { station, offline, staff } = usePos();
   const pricing = usePricing(order.id);
@@ -135,6 +137,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
       flash={flashes.has(l.id)}
       entering={entering.has(l.id)}
       printStatus={printStatus}
+      ready={status === "sent" && (readyLineIds?.has(l.id) ?? false)}
       chip={l.source === "guest" ? "QR" : null}
       onPress={status === "voided" || closed ? undefined : () => onLine(l)}
     />

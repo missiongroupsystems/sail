@@ -52,13 +52,17 @@ export function stationRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: { code, expires_at: expiresAt.toISOString() }, events: [ev], warnings: [] }, 201);
   });
 
-  defineOp(app, { op: "stations.pair", method: "post", path: "/v1/stations/pair", tags: ["stations"], request: { body: jsonBody(z.object({ code: z.string().regex(/^\d{6}$/), device_label: untrusted(z.string().min(1).max(80)) })) }, responses: { 200: jsonResponse(dataResponse(z.object({ station_token: z.string(), station: z.record(z.string(), z.unknown()) }))), ...errorResponses } }, async (c) => {
-    const { code, device_label } = c.req.valid("json");
+  defineOp(app, { op: "stations.pair", method: "post", path: "/v1/stations/pair", tags: ["stations"], request: { body: jsonBody(z.object({ code: z.string().regex(/^\d{6}$/), device_label: untrusted(z.string().min(1).max(80)), kind: z.enum(["pos", "display"]).optional().describe("The kind of station this device expects (the kitchen display sends display). Another kind is refused before the code is used, so the station's current device stays paired.") })) }, responses: { 200: jsonResponse(dataResponse(z.object({ station_token: z.string(), station: z.record(z.string(), z.unknown()) }))), ...errorResponses } }, async (c) => {
+    const { code, device_label, kind } = c.req.valid("json");
     // Public route: runs its own transaction as the connection owner (no principal yet).
     const result = await withTransaction(async (t) => {
       const candidates = await t.db.select().from(stationPairingCodes).where(and(isNull(stationPairingCodes.usedAt), gt(stationPairingCodes.expiresAt, new Date())));
       const match = candidates.find((x) => verifySecret(code, x.codeHash));
       if (!match) throw new AppError("unauthenticated", "Pairing code not recognised or expired", { remedy: "Ask an Admin for a new code from the station's page in the back office." });
+      if (kind) {
+        const [target] = await t.db.select({ kind: stations.kind }).from(stations).where(eq(stations.id, match.stationId)).limit(1);
+        if (target && target.kind !== kind) throw AppError.validation(`This code is for a ${target.kind === "display" ? "kitchen display" : "POS"} station`, { remedy: target.kind === "display" ? "Open /kds on the screen and enter the code there." : "Use a code from a kitchen display station, or open /pos on the iPad." });
+      }
       const token = await signSailToken({ typ: "station", merchant_id: match.merchantId, station_id: match.stationId }, null);
       await t.db.update(stationPairingCodes).set({ usedAt: new Date() }).where(eq(stationPairingCodes.id, match.id));
       const [st] = await t.db.update(stations).set({ tokenHash: sha256(token), pairedAt: new Date(), deviceLabel: device_label }).where(eq(stations.id, match.stationId)).returning();

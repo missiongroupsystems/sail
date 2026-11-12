@@ -138,6 +138,8 @@ Set `SUPABASE_URL` or `SUPABASE_JWT_SECRET` on the API, and `NEXT_PUBLIC_SUPABAS
 
 **Stations.** In Settings > Stations, open a station and press Pair an iPad; enter the code (valid 10 minutes) on the iPad at `/pos`. The POS calls `NEXT_PUBLIC_API_URL` directly from the iPad, so the API address must be reachable from the iPad, and the web app's origin must be in `CORS_ORIGIN`. Staff then sign in with their PIN. Pairing again invalidates the previous token.
 
+**Kitchen displays.** A station of kind Kitchen display pairs the same way, with the code entered at `/kds` on the screen. It needs no PIN and no back-office sign-in, and shows only the tickets of its display destinations ([configuration.md](configuration.md#kitchen-display)).
+
 **Print relays.** One per outlet, paired with a code from Printing > Relays. Install, printers, replacement and troubleshooting: [runbooks/relay.md](runbooks/relay.md).
 
 ## Security settings to change

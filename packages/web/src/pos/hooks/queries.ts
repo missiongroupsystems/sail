@@ -9,6 +9,7 @@ import {
   getMenu,
   getOrder,
   getZReport,
+  listKitchenTickets,
   listManualRules,
   listOpenOrders,
   listOpenServiceRequests,
@@ -55,6 +56,7 @@ export const posKeys = {
   rounds: (outletId: string) => ["pos", "rounds", outletId] as const,
   requests: (outletId: string) => ["pos", "service-requests", outletId] as const,
   stock: (outletId: string) => ["pos", "stock", outletId] as const,
+  kitchenTickets: (orderId: string) => ["pos", "kitchen-tickets", orderId] as const,
 };
 
 /** The merchant's settings (signed in: a station without a PIN session may not read them). */
@@ -189,6 +191,25 @@ export function useLateJobs(outletId: string | null) {
 export function useOrderPrintJobs(outletId: string | null, orderId: string | null, enabled = true) {
   const api = useApi();
   return useQuery({ queryKey: posKeys.orderJobs(outletId ?? "", orderId ?? ""), queryFn: () => listPrintJobs(api, outletId!, { order_id: orderId! }), enabled: Boolean(outletId && orderId) && enabled, staleTime: 5_000 });
+}
+
+/** Lines of the order whose kitchen display tickets are all bumped (ready). Empty when the outlet has no display. */
+export function useReadyLineIds(outletId: string | null, orderId: string | null, enabled = true) {
+  const api = useApi();
+  return useQuery({
+    queryKey: posKeys.kitchenTickets(orderId ?? ""),
+    queryFn: () => listKitchenTickets(api, outletId!, { order_id: orderId! }),
+    enabled: Boolean(outletId && orderId) && enabled,
+    staleTime: 5_000,
+    select: (page) => {
+      const byLine = new Map<string, boolean>();
+      for (const t of page.data) {
+        if (t.status === "cancelled") continue;
+        for (const l of t.lines) byLine.set(l.order_line_id, (byLine.get(l.order_line_id) ?? true) && t.status === "ready");
+      }
+      return new Set([...byLine].filter(([, ready]) => ready).map(([id]) => id));
+    },
+  });
 }
 
 export function useRecentPrintJobs(outletId: string | null, enabled = true) {

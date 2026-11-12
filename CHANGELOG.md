@@ -4,6 +4,14 @@ Notable changes to Sail, newest first. Field and operation names are as in `pack
 
 ## Unreleased
 
+### Kitchen display
+- A kitchen display at `/kds`: a station of the new kind `display`, paired with a one-time code and used without a PIN. It shows the open tickets of its destinations oldest first, with elapsed time in amber and red after `kitchen_warn_minutes` and `kitchen_late_minutes` (merchant settings, defaults 8 and 15), struck voided lines, a changed marker, tap to bump, Recall and an all-day count, live over the outlet stream.
+- Display destinations (`display_destinations.*`, on Printing > Printers) route like kitchen printers; stations take `kind` and `display_destination_ids`. A fire creates one ticket per destination in the same transaction as the print jobs. A later fire makes a new ticket, a void after sending strikes the line and flags the ticket changed, and an order cancel cancels its tickets.
+- New operations `kitchen_tickets.list`, `kitchen_tickets.all_day` (staff, displays, agents) and `kitchen_tickets.start`, `kitchen_tickets.bump`, `kitchen_tickets.recall` (displays and staff; not for agents, not on MCP). A double bump or two displays on one ticket change it once.
+- The POS shows a sent line as ready once the kitchen has bumped every ticket carrying it. `dev:local` seeds one kitchen display per demo merchant.
+- `stations.pair` takes an optional `kind`; the display sends `display`, so a POS station's code is refused before it is used and that iPad stays paired.
+- Merchants without a display destination print exactly as before and create no tickets.
+
 ### Back-office sign-in and first-run setup
 - Back-office sign-in goes through one identity provider: `local` (email and password, the default) or `oidc` (an external issuer's JWTs, selected by `SUPABASE_URL` or `SUPABASE_JWT_SECRET`). The local provider needs `SESSION_TOKEN_SECRET`.
 - Local sign-in: scrypt password hashes, 12 characters minimum and no composition rules; 12-hour sessions ended by sign-out, a password change, a reset or revocation; the same answer for an unknown email and a wrong password; 5 failures lock an email and 20 lock an address for 15 minutes, counted in Postgres (`TRUST_PROXY` makes the address the last `X-Forwarded-For` entry).

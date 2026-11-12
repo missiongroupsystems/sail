@@ -27,6 +27,7 @@ beforeAll(async () => {
     await db.sql`insert into guest_rate_hits (merchant_id, key, hits) values (${m.merchantId}, 'k', array[now()])`;
     await db.sql`insert into backoffice_logins (staff_id, merchant_id, email, password_hash) values (${m.admin.id}, ${m.merchantId}, ${`admin@${m.merchantId}.test`}, 'scrypt$x$y')`;
     await db.sql`insert into backoffice_links (merchant_id, staff_id, kind, token_hash, created_by, expires_at) values (${m.merchantId}, ${m.manager.id}, 'invite', ${`hash-${m.merchantId}`}, ${m.admin.id}, now() + interval '1 day')`;
+    await db.sql`insert into display_destinations (merchant_id, outlet_id, name) values (${m.merchantId}, ${m.outletId}, 'Kitchen screen')`;
     await db.sql`with s as (insert into stations (merchant_id, outlet_id, name) values (${m.merchantId}, ${m.outletId}, 'S') returning id)
       insert into staff_sessions (merchant_id, staff_id, station_id, outlet_id) select ${m.merchantId}, ${m.admin.id}, s.id, ${m.outletId} from s`;
   }
@@ -81,7 +82,7 @@ describe("RLS replay", () => {
       expect(seen, `${t.table_name}: saw ${seen}, own ${ownRows!.n}, total ${total!.n}`).toBe(expected);
       expect(total!.n).toBeGreaterThan(expected); // there really were other-tenant rows to hide
     }
-    expect(exercised).toEqual(expect.arrayContaining(["merchant_settings", "brands", "outlets", "stations", "staff", "staff_sessions", "audit_log", "events", "outlet_sequences", "merchant_sequences", "idempotency_keys", "pin_attempts", "guest_rate_hits", "backoffice_logins", "backoffice_sessions", "backoffice_links"]));
+    expect(exercised).toEqual(expect.arrayContaining(["merchant_settings", "brands", "outlets", "stations", "staff", "staff_sessions", "audit_log", "events", "outlet_sequences", "merchant_sequences", "idempotency_keys", "pin_attempts", "guest_rate_hits", "backoffice_logins", "backoffice_sessions", "backoffice_links", "display_destinations"]));
   });
 
   it("outlet scoping hides other outlets' rows for a limited staff member", async () => {
@@ -122,7 +123,7 @@ describe("RLS replay", () => {
       (priv!.any ? readable : denied).push(t.table_name);
     }
     expect(denied).toEqual(expect.arrayContaining(["staff_sessions", "station_pairing_codes", "relay_pairing_codes", "table_qr_tokens", "guest_sessions", "agent_sessions", "backoffice_logins", "backoffice_sessions", "backoffice_links"]));
-    expect(readable).toEqual(expect.arrayContaining(["orders", "order_lines", "products", "events", "staff", "customers"]));
+    expect(readable).toEqual(expect.arrayContaining(["orders", "order_lines", "products", "events", "staff", "customers", "display_destinations", "kitchen_tickets", "kitchen_ticket_lines"]));
     for (const t of readable) {
       const [total] = await db.sql.unsafe<{ n: number }[]>(`select count(merchant_id)::int as n from ${t}`);
       if (!total || total.n === 0) continue;

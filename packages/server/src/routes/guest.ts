@@ -217,7 +217,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     await settleInvariants();
     if (action === "accept") {
       events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "round.accepted", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "rounds.accept", payload: { round_id: roundId }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
-      warnings = await fireRound(c.get("correlationId"), p, order, roundId, bd); // statuses only, no amounts
+      warnings = await fireRound(c.get("correlationId"), p, order, roundId, bd, "rounds.accept"); // statuses only, no amounts
     } else {
       events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "round.rejected", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "rounds.reject", payload: { round_id: roundId, line_ids: round.lineIds }, reason: { text: reason }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
     }
@@ -267,7 +267,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
 }
 
 /** Fire a round's lines and print kitchen tickets (used by immediate rounds and by acceptance). */
-async function fireRound(correlationId: string, p: Principal, order: typeof orders.$inferSelect, roundId: string, bd: { cutoff: string; timeZone: string }): Promise<string[]> {
+async function fireRound(correlationId: string, p: Principal, order: typeof orders.$inferSelect, roundId: string, bd: { cutoff: string; timeZone: string }, operationId: "rounds.submit" | "rounds.accept" = "rounds.submit"): Promise<string[]> {
   const lines = await db().select().from(orderLines).where(and(eq(orderLines.roundId, roundId), inArray(orderLines.status, ["pending", "held"])));
   if (lines.length === 0) return [];
   const now = new Date();
@@ -276,6 +276,6 @@ async function fireRound(correlationId: string, p: Principal, order: typeof orde
   await db().update(orders).set({ roundCount: round, status: order.status === "open" ? "fired" : order.status, firstFiredAt: order.firstFiredAt ?? now }).where(eq(orders.id, order.id));
   await db().update(guestRounds).set({ status: "fired" }).where(eq(guestRounds.id, roundId));
   await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "order.fired", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "rounds.submit", payload: { round, line_ids: lines.map((l) => l.id), source: "guest", round_id: roundId }, correlationId, businessDay: bd }, p);
-  const { warnings } = await createKitchenJobs({ order: { ...order, roundCount: round }, lines: lines.map((l) => ({ ...l, status: "fired" as const })), round, stationId: null, principal: p, correlationId });
+  const { warnings } = await createKitchenJobs({ order: { ...order, roundCount: round }, lines: lines.map((l) => ({ ...l, status: "fired" as const })), round, stationId: null, principal: p, correlationId, operationId });
   return warnings;
 }

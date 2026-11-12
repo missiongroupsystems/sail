@@ -24,6 +24,9 @@ export type Station = {
   home: "floor" | "takeaway";
   receipt_printer_id: string | null;
   text_size: string;
+  /** `display`: a kitchen display (the /kds screen), not a POS. */
+  kind: "pos" | "display";
+  display_destination_ids: string[];
   paired: boolean;
   device_label: string | null;
   archived: boolean;
@@ -56,6 +59,9 @@ export type MerchantSettings = {
   cash_denominations: number[];
   /** Closing a shift more than this many minor units out needs a reason. */
   cash_variance_threshold: number;
+  /** Kitchen display: a ticket's elapsed time turns amber, then red, after these many minutes. */
+  kitchen_warn_minutes: number;
+  kitchen_late_minutes: number;
 };
 export type Merchant = { id: string; name: string; settings: MerchantSettings };
 
@@ -244,6 +250,12 @@ export type OutletEvent = {
   payload?: unknown;
 };
 export type EventsPage = { data: OutletEvent[]; latest_seq: number; has_more: boolean };
+
+/** Kitchen display tickets (routes/kitchen.ts), typed by the spec. */
+export type KitchenTicketsPage = operations["kitchen_tickets.list"]["responses"][200]["content"]["application/json"];
+export type KitchenTicket = KitchenTicketsPage["data"][number];
+export type KitchenTicketLine = KitchenTicket["lines"][number];
+export type AllDayItem = operations["kitchen_tickets.all_day"]["responses"][200]["content"]["application/json"]["data"][number];
 
 /** A pricing rule body (shared PricingRuleSchema) as the register lists it; only the fields the POS shows. */
 export type ManualRule = {

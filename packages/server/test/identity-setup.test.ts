@@ -46,13 +46,15 @@ describe("first-run setup", () => {
     expect(admins!.n).toBe(1);
   });
 
-  it("the winner is signed in as the merchant's Admin, with the preset applied, an outlet and a station, and can sign in again", async () => {
+  it("the winner is signed in as the merchant's Admin, with the preset applied, an outlet and one POS station, and can sign in again", async () => {
     const [merchant] = await db.sql<{ id: string; name: string }[]>`select id, name from merchants`;
     const n = Number(merchant!.name.split(" ").pop());
     const [settings] = await db.sql<{ currency: string; timezone: string }[]>`select currency, timezone from merchant_settings where merchant_id = ${merchant!.id}`;
     expect(settings).toEqual({ currency: "EUR", timezone: "Europe/Berlin" });
     expect((await db.sql`select name from outlets where merchant_id = ${merchant!.id}`).map((o) => o.name)).toEqual([`Outlet ${n}`]);
-    expect((await db.sql`select count(*)::int as n from stations where merchant_id = ${merchant!.id}`)[0]!.n).toBe(1);
+    // One POS station and no kitchen display: a display needs a destination, which setup does not guess.
+    expect((await db.sql`select kind from stations where merchant_id = ${merchant!.id}`).map((st) => st.kind)).toEqual(["pos"]);
+    expect((await db.sql`select count(*)::int as n from display_destinations where merchant_id = ${merchant!.id}`)[0]!.n).toBe(0);
 
     const signIn = await call<{ data: { token: string } }>("POST", "/v1/auth/sign-in", { body: { email: `First.Admin.${n}@setup.test`, password: "a long enough password" }, idempotencyKey: null });
     expect(signIn.status, JSON.stringify(signIn.body)).toBe(201);

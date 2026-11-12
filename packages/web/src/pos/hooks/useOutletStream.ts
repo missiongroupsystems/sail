@@ -64,6 +64,11 @@ export function useOutletStream(outletId: string | null, enabled: boolean, stati
         }
         if (e.type.startsWith("print_job.") || kind === "print_job" || kind === "relay" || kind === "printer") printing = true;
         if (e.type.startsWith("shift.") || e.type.startsWith("business_day.") || kind === "shift") shifts = true;
+        // A bump or recall on the kitchen display changes the ready marks of that order's lines.
+        if (e.type.startsWith("kitchen_ticket.")) {
+          const orderId = (e.payload as { order_id?: string } | undefined)?.order_id;
+          if (orderId) void qc.invalidateQueries({ queryKey: posKeys.kitchenTickets(orderId) });
+        }
       }
       const openId = (() => {
         const s = useNavStore.getState().screen;

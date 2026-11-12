@@ -10,6 +10,7 @@ What is built, what comes next and what Sail will not do. There are no dates. Th
 - Bills split evenly, by seat or by item; several tenders per bill; cash rounding; refunds by line or amount with refund receipts and credit notes; gap-free invoices.
 - Shifts with blind cash counts, business days with a cutoff, Z-reports, sales, product mix, exceptions and print-health reports with CSV export.
 - Kitchen and receipt printing through a relay, with routing, a durable queue, alerts, reprint and reroute.
+- A kitchen display with the same routing as the printers, tickets that record voids and cancels, bump, recall and an all-day count.
 - QR ordering at the table, without payment.
 - Back office, iPad POS and guest app, with an end-to-end browser suite.
 - Agent identities, risk tiers, proposals and an MCP adapter generated from the API spec.
@@ -44,7 +45,6 @@ What is built, what comes next and what Sail will not do. There are no dates. Th
 - Changesets: every configuration change drafted, validated, simulated against past orders and approved before it applies, by a person or an agent.
 - An agent runner with playbooks, a sandbox register and evals, and assistants in the POS and back office.
 - Masked customer views, so agents can work with customer records without seeing contact details.
-- A kitchen display with bump and recall.
 - Paying on the guest's phone, once the payments interface exists. Today guests order and staff take payment.
 - Offline order taking with sync.
 - Fees that compound on other fees, usage limits per customer.

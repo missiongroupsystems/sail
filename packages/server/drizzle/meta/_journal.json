@@ -239,6 +239,20 @@
       "when": 1794506074719,
       "tag": "0033_rls_backoffice_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1794510370497,
+      "tag": "0034_kitchen_display",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1794510378185,
+      "tag": "0035_rls_kitchen_display",
+      "breakpoints": true
     }
   ]
 }

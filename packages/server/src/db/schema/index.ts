@@ -13,3 +13,4 @@ export * from "./refunds.js";
 export * from "./guest.js";
 export * from "./agents.js";
 export * from "./identity.js";
+export * from "./kitchen.js";

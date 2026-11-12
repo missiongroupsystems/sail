@@ -8,6 +8,7 @@ It is for restaurant groups and developers who want a POS they can run, read and
 
 - **POS** (`/pos`, iPad in landscape): pair a station, sign in with a PIN, floor plan with live tables, dine-in, takeaway, pickup and delivery orders, modifiers, seats, hold and send, voids, discounts with manager approval, bills split evenly, by seat or by item, several payment methods per bill, cash rounding, refunds, receipts and invoices, shift open and close with a counted drawer, Z-report.
 - **Kitchen printing** through a small relay at each outlet: ESC/POS over the network, routed by product tags and stations, a durable queue with alerts, reprint and reroute.
+- **Kitchen display** (`/kds`, a paired screen with no PIN): tickets routed like the printers, struck voids, bump, recall and an all-day count, with ready shown on the POS.
 - **Back office** (web): email and password sign-in with first-run setup and invitation links (or your own identity provider), menu, modifiers, availability and sold out, pricing rules with a simulator, tax classes, floor plans and QR sheets, printers and relays, staff and roles, orders with refunds and documents, sales, item, print-health and Z reports, CSV import.
 - **Guest QR ordering**: guests scan the table's code, browse the menu, send rounds to the table's order (held for staff to accept, or sent straight to the kitchen), call staff and ask for the bill. Guests never pay on their phones.
 - **Agents over MCP**: every operation carries a risk tier (T0 to T3). Agents get scoped identities and short sessions; risky actions become proposals that a person approves, and the register runs exactly what was approved.
@@ -66,7 +67,7 @@ Nothing in the code assumes a country. A merchant is created from a region prese
 
 Beta (`0.9.0-beta.1`). Sail has never run a real service in production. The register has unit, property, reference-set and database tests, and an end-to-end suite drives the three apps in a browser, but nothing has been tested on real printers, card terminals or a busy floor.
 
-Missing today: payment provider and card-terminal integration (payments are recorded by hand), a kitchen display, offline mode, reviewed configuration changes, a self-serve sign-up and any bundled agents. See the [roadmap](docs/roadmap.md).
+Missing today: payment provider and card-terminal integration (payments are recorded by hand), offline mode, reviewed configuration changes, a self-serve sign-up and any bundled agents. See the [roadmap](docs/roadmap.md).
 
 ## Licence
 

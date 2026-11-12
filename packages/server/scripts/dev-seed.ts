@@ -144,6 +144,7 @@ export async function devSeed(url: string, boot: BootstrapResult): Promise<void>
       const layoutId = randomUUID();
       await tx`insert into pos_layouts (id, merchant_id, brand_id, name, pages) values (${layoutId}, ${m}, ${boot.brandId}, 'Sample Kitchen main', ${tx.json(pages)})`;
       await tx`update stations set layout_id = ${layoutId} where id = ${boot.stationId}`;
+      await seedKitchenDisplay(tx, m, boot.outletId);
 
       // More staff for PIN sign-in.
       const { hashSecret, pinLookup } = await import("../src/auth/tokens.js");
@@ -200,6 +201,7 @@ export async function devSeedEu(url: string, boot: BootstrapResult): Promise<voi
       await tx`insert into areas (id, merchant_id, outlet_id, name, sort) values (${area}, ${m}, ${boot.outletId}, 'Gastraum', 1)`;
       for (const [i, name] of ["1", "2", "3", "4"].entries()) await tx`insert into tables (merchant_id, outlet_id, area_id, name, seats, shape, x, y, w, h) values (${m}, ${boot.outletId}, ${area}, ${name}, 4, 'square', ${i * 3}, 0, 2, 2)`;
       for (const [i, name] of ["Falsch gebucht", "Gast hat storniert", "Küchenfehler"].entries()) await tx`insert into void_reasons (merchant_id, name, sort) values (${m}, ${name}, ${i})`;
+      await seedKitchenDisplay(tx, m, boot.outletId);
       await tx`update outlets set address = 'Musterstraße 1, 10115 Berlin', business_registration_no = 'HRB 123456 B', tax_registration_no = 'DE123456789' where id = ${boot.outletId}`;
       const rule = PricingRuleSchema.parse({ id: "promo:happy-hour", kind: "discount", name: "Happy Hour 20% auf Getränke", calc: "percent", value: { type: "fixed", amount: 2000 }, scope: { type: "categories", category_ids: [drinks] }, priority: 10, application: "auto", report_class: "promo" });
       await tx`insert into pricing_rules (merchant_id, rule_key, version, status, effective_from, body, note, created_by) values (${m}, ${rule.id}, 1, 'active', '2026-01-01T00:00:00Z', ${tx.json({ ...rule, version: 1 })}, 'demo', 'system')`;
@@ -207,4 +209,11 @@ export async function devSeedEu(url: string, boot: BootstrapResult): Promise<voi
   } finally {
     await sql.end({ timeout: 5 });
   }
+}
+
+/** One kitchen display per demo merchant: a destination that takes every item, and a display station showing it. */
+async function seedKitchenDisplay(tx: postgres.TransactionSql, merchantId: string, outletId: string): Promise<void> {
+  const destination = randomUUID();
+  await tx`insert into display_destinations (id, merchant_id, outlet_id, name, is_default) values (${destination}, ${merchantId}, ${outletId}, 'Kitchen', true)`;
+  await tx`insert into stations (merchant_id, outlet_id, name, kind, display_destination_ids) values (${merchantId}, ${outletId}, 'Kitchen display', 'display', ${[destination]})`;
 }

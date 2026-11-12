@@ -3,11 +3,11 @@ import { resolve } from "node:path";
 import { expect, test as base, type Page, type Response } from "@playwright/test";
 
 export const API = process.env.E2E_API_URL ?? "http://localhost:8080";
-export const WEB = "http://localhost:3000";
+export const WEB = process.env.E2E_WEB_URL ?? "http://localhost:3000";
 export const GUEST = "http://localhost:3001";
 /** The first-run stack: an API on an empty database and its own back office (playwright.config.ts). */
 export const SETUP_API = process.env.E2E_SETUP_API_URL ?? "http://localhost:8091";
-export const SETUP_WEB = "http://localhost:3002";
+export const SETUP_WEB = process.env.E2E_SETUP_WEB_URL ?? "http://localhost:3002";
 
 type DemoMerchant = { merchantId: string; brandId: string; outletId: string; stationId: string };
 
