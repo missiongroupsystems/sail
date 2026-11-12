@@ -8,6 +8,16 @@ import { principalRole } from "../auth/principal.js";
 
 export { z };
 
+/**
+ * Marks a field as free text from outside the register: typed by a guest or customer, or by a person during service.
+ * The MCP adapter wraps it as `{ untrusted_text }` wherever its key comes back in a response. `returnedAs` names the
+ * keys it comes back under when they differ, and `key@group` limits it to the responses of one operation group (a
+ * customer's `name`, where `name` elsewhere is a product's). An unmarked free-text request field fails the MCP test.
+ */
+export function untrusted<T extends z.ZodType>(schema: T, ...returnedAs: string[]): T {
+  return schema.openapi({ "x-sail-untrusted": returnedAs.length ? returnedAs : true }) as T;
+}
+
 /** Shared response envelopes. */
 export const EventRefSchema = z.object({
   id: z.string(),

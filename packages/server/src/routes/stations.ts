@@ -5,7 +5,7 @@ import { db, withTransaction } from "../db/client.js";
 import { auditLog, orderManualApplications, staff, staffSessions, stationPairingCodes, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
-import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, mutationResponse, z } from "../lib/openapi.js";
+import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { hashSecret, pinLookup, randomDigits, randomToken, sha256, signSailToken, verifySecret } from "../auth/tokens.js";
@@ -51,7 +51,7 @@ export function stationRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: { code, expires_at: expiresAt.toISOString() }, events: [ev], warnings: [] }, 201);
   });
 
-  defineOp(app, { op: "stations.pair", method: "post", path: "/v1/stations/pair", tags: ["stations"], request: { body: jsonBody(z.object({ code: z.string().regex(/^\d{6}$/), device_label: z.string().min(1).max(80) })) }, responses: { 200: jsonResponse(dataResponse(z.object({ station_token: z.string(), station: z.record(z.string(), z.unknown()) }))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "stations.pair", method: "post", path: "/v1/stations/pair", tags: ["stations"], request: { body: jsonBody(z.object({ code: z.string().regex(/^\d{6}$/), device_label: untrusted(z.string().min(1).max(80)) })) }, responses: { 200: jsonResponse(dataResponse(z.object({ station_token: z.string(), station: z.record(z.string(), z.unknown()) }))), ...errorResponses } }, async (c) => {
     const { code, device_label } = c.req.valid("json");
     // Public route: runs its own transaction as the connection owner (no principal yet).
     const result = await withTransaction(async (t) => {

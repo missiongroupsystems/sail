@@ -20,7 +20,7 @@ const target = join(here, "..", "mcp-tools.json");
 const mode = process.argv[2] ?? "check";
 
 const catalog = await loadCatalog(buildApp());
-const json = JSON.stringify({ generated_from: "openapi.json x-sail manifest", tools: catalog.map(({ name, op, method, path, tier, min_role, toolsets, emits, description, inputSchema }) => ({ name, op, method, path, tier, min_role, toolsets, emits, description, inputSchema })) }, null, 2) + "\n";
+const json = JSON.stringify({ generated_from: "openapi.json x-sail manifest", tools: catalog.map(({ name, op, method, path, tier, min_role, toolsets, emits, untrusted, description, inputSchema }) => ({ name, op, method, path, tier, min_role, toolsets, emits, untrusted, description, inputSchema })) }, null, 2) + "\n";
 
 if (mode === "write") {
   writeFileSync(target, json);

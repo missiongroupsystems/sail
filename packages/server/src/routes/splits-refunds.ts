@@ -5,7 +5,7 @@ import { db, markDryRun, settleInvariants } from "../db/client.js";
 import { checks, printers, refunds, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
-import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
+import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { principalRole, type Principal } from "../auth/principal.js";
@@ -79,7 +79,7 @@ export function splitRefundRoutes(app: OpenAPIHono<AppEnv>) {
 
   defineOp(
     app,
-    { op: "refunds.create", method: "post", path: "/v1/checks/{id}/refunds", tags: ["refunds"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ refund_id: z.uuid(), request: RefundRequestSchema, tender_split: TenderSplit, reason: z.string().min(1).max(200), reference: z.string().max(80).nullable().optional(), print: z.boolean().optional() })) }, responses: { 201: jsonResponse(OrderMutationResponse.extend({ refund: z.record(z.string(), z.unknown()) })), ...errorResponses } },
+    { op: "refunds.create", method: "post", path: "/v1/checks/{id}/refunds", tags: ["refunds"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ refund_id: z.uuid(), request: RefundRequestSchema, tender_split: TenderSplit, reason: untrusted(z.string().min(1).max(200)), reference: untrusted(z.string().max(80).nullable().optional()), print: z.boolean().optional() })) }, responses: { 201: jsonResponse(OrderMutationResponse.extend({ refund: z.record(z.string(), z.unknown()) })), ...errorResponses } },
     async (c) => {
       const p = c.get("principal");
       const { id } = c.req.valid("param");
@@ -139,7 +139,7 @@ export function splitRefundRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: [job], events: [], warnings: [] }, 200);
   });
 
-  defineOp(app, { op: "refunds.receipt_send", method: "post", path: "/v1/refunds/{id}/receipt/send", tags: ["refunds"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ channel: z.enum(["qr", "link", "email", "sms"]), destination: z.string().max(120).optional() })) }, responses: { 200: jsonResponse(mutationResponse(z.object({ token: z.string(), url: z.string(), delivery_status: z.string() }))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "refunds.receipt_send", method: "post", path: "/v1/refunds/{id}/receipt/send", tags: ["refunds"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ channel: z.enum(["qr", "link", "email", "sms"]), destination: untrusted(z.string().max(120).optional()) })) }, responses: { 200: jsonResponse(mutationResponse(z.object({ token: z.string(), url: z.string(), delivery_status: z.string() }))), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const b = c.req.valid("json");

@@ -6,7 +6,7 @@ import { db, withTransaction } from "../db/client.js";
 import { agentIdentities, orders, proposals } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
-import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
+import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { principalCanSeeOutlet, principalRole } from "../auth/principal.js";
@@ -155,7 +155,7 @@ export function agentRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: toProposal(updated!), events: [ev], warnings: ok ? [] : [`The frozen request failed (${res.status}); the agent must propose again from the current state.`] }, 200);
   });
 
-  defineOp(app, { op: "proposals.reject", method: "post", path: "/v1/proposals/{id}/reject", tags: ["agents"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({ reason: z.string().min(1).max(200) })) }, responses: { 200: jsonResponse(mutationResponse(Any)), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "proposals.reject", method: "post", path: "/v1/proposals/{id}/reject", tags: ["agents"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({ reason: untrusted(z.string().min(1).max(200), "reason", "reject_reason") })) }, responses: { 200: jsonResponse(mutationResponse(Any)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const { reason } = c.req.valid("json");

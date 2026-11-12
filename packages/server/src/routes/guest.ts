@@ -5,7 +5,7 @@ import { db, settleInvariants, tx, withTransaction, type RequestTx } from "../db
 import { channelLinks, guestRounds, guestSessions, orderLines, orders, outlets, printers, serviceRequests, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
-import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
+import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
 import { appendEvent, type AppendedEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { principalCanSeeOutlet, type Principal } from "../auth/principal.js";
@@ -62,7 +62,7 @@ registerOrderClosedHook(async (orderId) => {
   await asSystem(() => revokeSessionsForOrder(orderId));
 });
 
-const LineInputSchema = z.object({ line_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1).max(50), modifiers: z.array(z.object({ group_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1).max(20).optional() })).max(40).optional(), notes: z.string().max(200).nullable().optional(), seat_no: z.number().int().min(1).max(99).nullable().optional() });
+const LineInputSchema = z.object({ line_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1).max(50), modifiers: z.array(z.object({ group_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1).max(20).optional() })).max(40).optional(), notes: untrusted(z.string().max(200).nullable().optional()), seat_no: z.number().int().min(1).max(99).nullable().optional() });
 
 function guestOnly(p: Principal): Extract<Principal, { type: "guest" }> {
   if (p.type !== "guest") throw new AppError("permission_denied", "Guest endpoints need a table session", { remedy: "Scan the table's QR code." });
@@ -70,7 +70,7 @@ function guestOnly(p: Principal): Extract<Principal, { type: "guest" }> {
 }
 
 export function guestRoutes(app: OpenAPIHono<AppEnv>) {
-  defineOp(app, { op: "guest_sessions.create", method: "post", path: "/v1/guest/sessions", tags: ["guest"], request: { body: jsonBody(z.object({ token: z.string().min(10).max(200), device_id: z.string().min(8).max(120), guest_name: z.string().max(40).optional() })) }, responses: { 201: jsonResponse(dataResponse(z.object({ guest_token: z.string(), session_id: z.string(), table: z.object({ id: z.string(), name: z.string() }), outlet: z.object({ id: z.string(), name: z.string() }), brand_id: z.string(), channel_link_id: z.string(), order_open: z.boolean(), can_order: z.boolean(), hold_orders: z.boolean(), service_requests: z.array(z.string()), expires_at: z.string(), settings: LocaleSettingsSchema }))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "guest_sessions.create", method: "post", path: "/v1/guest/sessions", tags: ["guest"], request: { body: jsonBody(z.object({ token: z.string().min(10).max(200), device_id: z.string().min(8).max(120), guest_name: untrusted(z.string().max(40).optional()) })) }, responses: { 201: jsonResponse(dataResponse(z.object({ guest_token: z.string(), session_id: z.string(), table: z.object({ id: z.string(), name: z.string() }), outlet: z.object({ id: z.string(), name: z.string() }), brand_id: z.string(), channel_link_id: z.string(), order_open: z.boolean(), can_order: z.boolean(), hold_orders: z.boolean(), service_requests: z.array(z.string()), expires_at: z.string(), settings: LocaleSettingsSchema }))), ...errorResponses } }, async (c) => {
     const b = c.req.valid("json");
     const result = await withTransaction(async (t) => {
       const r = await createGuestSession({ token: b.token, deviceId: b.device_id, guestName: b.guest_name ?? null });
@@ -86,7 +86,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: await guestOrderView(p) }, 200);
   });
 
-  defineOp(app, { op: "rounds.submit", method: "post", path: "/v1/guest/rounds", tags: ["guest"], request: { body: jsonBody(z.object({ round_id: z.uuid(), lines: z.array(LineInputSchema).min(1).max(30), guest_name: z.string().max(40).optional(), notes: z.string().max(200).optional() })) }, responses: { 201: jsonResponse(dataResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "rounds.submit", method: "post", path: "/v1/guest/rounds", tags: ["guest"], request: { body: jsonBody(z.object({ round_id: z.uuid(), lines: z.array(LineInputSchema).min(1).max(30), guest_name: untrusted(z.string().max(40).optional()), notes: untrusted(z.string().max(200).optional()) })) }, responses: { 201: jsonResponse(dataResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {
     const p = guestOnly(c.get("principal"));
     const b = c.req.valid("json");
     await checkLimit(p.merchantId, `round:sess:${p.sessionId}`, RATE.roundsPerSession, "orders from this phone");
@@ -136,7 +136,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: { round_id: b.round_id, status: result.hold ? "pending" : "accepted", order_opened: result.openedNow, ...view } }, 201);
   });
 
-  defineOp(app, { op: "service_requests.create", method: "post", path: "/v1/guest/requests", tags: ["guest"], request: { body: jsonBody(z.object({ type: z.string().min(1).max(40), guest_name: z.string().max(40).optional() })) }, responses: { 201: jsonResponse(dataResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "service_requests.create", method: "post", path: "/v1/guest/requests", tags: ["guest"], request: { body: jsonBody(z.object({ type: z.string().min(1).max(40), guest_name: untrusted(z.string().max(40).optional()) })) }, responses: { 201: jsonResponse(dataResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {
     const p = guestOnly(c.get("principal"));
     const b = c.req.valid("json");
     const [link] = await db().select().from(channelLinks).where(eq(channelLinks.id, p.channelLinkId)).limit(1);
@@ -223,7 +223,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: { ...(await loadSnapshot(order.id)), version }, events, warnings }, 200);
   };
   defineOp(app, { op: "rounds.accept", method: "post", path: "/v1/rounds/{id}/accept", tags: ["guest"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 200: jsonResponse(mutationResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, (c) => decide(c, c.req.valid("param").id, "accept"));
-  defineOp(app, { op: "rounds.reject", method: "post", path: "/v1/rounds/{id}/reject", tags: ["guest"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({ reason: z.string().min(1).max(200) })) }, responses: { 200: jsonResponse(mutationResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, (c) => decide(c, c.req.valid("param").id, "reject", c.req.valid("json").reason));
+  defineOp(app, { op: "rounds.reject", method: "post", path: "/v1/rounds/{id}/reject", tags: ["guest"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({ reason: untrusted(z.string().min(1).max(200), "reason", "reject_reason") })) }, responses: { 200: jsonResponse(mutationResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, (c) => decide(c, c.req.valid("param").id, "reject", c.req.valid("json").reason));
 
   defineOp(app, { op: "service_requests.list", method: "get", path: "/v1/outlets/{id}/service-requests", tags: ["guest"], request: { params: z.object({ id: z.uuid() }), query: z.object({ status: z.enum(["open", "acknowledged"]).optional() }) }, responses: { 200: jsonResponse(listResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {
     const p = c.get("principal");

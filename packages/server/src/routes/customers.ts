@@ -5,7 +5,7 @@ import { db } from "../db/client.js";
 import { customerGroupMembers, customerGroups, customers } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
-import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
+import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { compact, defineCrud } from "../lib/crud.js";
@@ -17,8 +17,8 @@ registerOperations({
   "customer_groups.set_members": { op: "customer_groups.set_members", summary: "Add or remove customers from a group", description: "Changes pricing eligibility, so it is a configuration change and is evented.", tier: "T3", minRole: "manager", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff", "agent"], emits: ["customer_group.members_changed"], mcp: { expose: false, toolsets: [] } },
 });
 
-export const CustomerSchema = z.object({ id: z.string(), name: z.string(), mobile: z.string().nullable(), email: z.string().nullable(), marketing_consent: z.boolean(), notes: z.string().nullable(), group_ids: z.array(z.string()), legacy_id: z.string().nullable(), archived: z.boolean() });
-const CustomerUpsert = z.object({ id: z.uuid().optional(), name: z.string().min(1), mobile: z.string().min(3).nullable().optional(), email: z.string().email().nullable().optional(), marketing_consent: z.boolean().optional(), notes: z.string().nullable().optional(), legacy_id: z.string().nullable().optional(), group_ids: z.array(z.uuid()).optional(), archived: z.boolean().optional() });
+export const CustomerSchema = z.object({ id: z.string(), name: z.string(), mobile: z.string().nullable(), email: z.string().nullable(), marketing_consent: z.boolean(), notes: untrusted(z.string().nullable()), group_ids: z.array(z.string()), legacy_id: z.string().nullable(), archived: z.boolean() });
+const CustomerUpsert = z.object({ id: z.uuid().optional(), name: untrusted(z.string().min(1), "name@customers"), mobile: untrusted(z.string().min(3).nullable().optional(), "mobile@customers"), email: z.string().email().nullable().optional(), marketing_consent: z.boolean().optional(), notes: untrusted(z.string().nullable().optional()), legacy_id: z.string().nullable().optional(), group_ids: z.array(z.uuid()).optional(), archived: z.boolean().optional() });
 
 function mask(value: string | null, agent: boolean): string | null {
   if (!value || !agent) return value;

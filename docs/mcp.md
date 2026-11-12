@@ -23,7 +23,7 @@ On Fly it is the `mcp` process group next to `app` and `worker` (`fly.toml`). It
 - `tools/list` returns the tools in the identity's **toolsets** that its **role** may call. Tool names are the operation ids with `_` for `.` (`lines.add` → `lines_add`). Tools above the identity's ceiling stay listed and are marked **PROPOSAL ONLY**.
 - Each tool's schema is generated from the OpenAPI spec: path parameters, query parameters, `body`, plus `idempotency_key` (required on mutations), `rationale` (shown to staff on proposals) and `dry_run` where the operation supports it.
 - Resources: `sail://floor/{outlet_id}` and `sail://menu/{channel_link_id}`.
-- Responses are the API envelope with `status` added. Free text that came from outside the register (notes, guest names, reasons) arrives as `{ "untrusted_text": "..." }`.
+- Responses are the API envelope with `status` added. Free text that came from outside the register (notes, reasons, guest and customer names, delivery details, references, ticket text) arrives as `{ "untrusted_text": "..." }`. Which keys are wrapped comes from the spec: a route marks such a field with `untrusted()` (`x-sail-untrusted` in `openapi.json`, with the key it comes back under when that differs), and each tool in `mcp-tools.json` lists its `untrusted` keys. A test fails when a free-text request field is neither marked nor listed as register data with a reason.
 
 Toolsets (vision §7.6): `pos.read`, `pos.order`, `pos.payment`, `pos.refund`, `kitchen`, `guest`, `config.author`, `reports`, `watch`.
 

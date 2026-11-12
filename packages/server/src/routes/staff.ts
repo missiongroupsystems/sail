@@ -5,7 +5,7 @@ import { db } from "../db/client.js";
 import { auditLog, staff } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
-import { defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
+import { defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { hashSecret, pinLookup } from "../auth/tokens.js";
@@ -69,7 +69,7 @@ export const AuditEntrySchema = z.object({
   approver_id: z.string().nullable(),
   approver_name: z.string().nullable(),
   override_id: z.string().nullable(),
-  reason: z.string().nullable(),
+  reason: untrusted(z.string().nullable()),
   details: z.record(z.string(), z.unknown()),
 });
 

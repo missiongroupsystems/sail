@@ -5,7 +5,7 @@ import { db } from "../db/client.js";
 import { importJobs, merchantSettings, products, reportCategories, taxClasses, type ImportEntity } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
-import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
+import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { toCsv } from "../services/csv.js";
@@ -23,7 +23,7 @@ const MappingSchema = z.object({
   files: z.array(z.object({ name: z.string().min(1), entity: z.enum(ENTITIES), columns: z.record(z.string(), z.string()), defaults: z.record(z.string(), z.string()).optional() })).min(1),
   options: z.object({ brand_legacy_id: z.string().optional(), outlet_legacy_id: z.string().optional(), tile_colour_map: z.record(z.string(), z.string()).optional() }).optional(),
 });
-const ReportSchema = z.object({ entities: z.record(z.string(), z.object({ creates: z.number().int(), updates: z.number().int(), unchanged: z.number().int(), rejected: z.array(z.object({ row: z.number().int(), reason: z.string(), data: z.record(z.string(), z.string()) })) })), warnings: z.array(z.string()) });
+const ReportSchema = z.object({ entities: z.record(z.string(), z.object({ creates: z.number().int(), updates: z.number().int(), unchanged: z.number().int(), rejected: z.array(z.object({ row: z.number().int(), reason: untrusted(z.string()), data: z.record(z.string(), z.string()) })) })), warnings: z.array(z.string()) });
 const JobSchema = z.object({ id: z.string(), status: z.enum(["queued", "running", "dry_run_complete", "applied", "failed"]), dry_run: z.boolean(), mapping: MappingSchema, file_names: z.array(z.string()), report: ReportSchema.nullable(), error: z.string().nullable(), created_by: z.string().nullable(), created_at: z.string(), finished_at: z.string().nullable() });
 
 const toJob = (j: typeof importJobs.$inferSelect) => ({ id: j.id, status: j.status, dry_run: j.dryRun, mapping: j.mapping, file_names: Object.keys(j.files), report: j.report ?? null, error: j.error, created_by: j.createdBy, created_at: j.createdAt.toISOString(), finished_at: j.finishedAt?.toISOString() ?? null });

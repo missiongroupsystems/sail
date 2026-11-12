@@ -41,6 +41,8 @@ export type ToolDef = {
   path_params: string[];
   query_params: string[];
   has_body: boolean;
+  /** Response keys whose text came from outside the register, wrapped as `{ untrusted_text }`; from the spec's `x-sail-untrusted` markers. */
+  untrusted: string[];
 };
 
 export const toolName = (op: string) => op.replace(/\./g, "_");
@@ -59,9 +61,38 @@ function resolveRefs(schema: unknown, doc: OpenApiDoc, depth = 0): unknown {
   return out;
 }
 
+/**
+ * The response keys marked `x-sail-untrusted` anywhere in the spec (request fields and response fields): for every
+ * operation, and the `key@group` ones for one operation group only.
+ */
+function untrustedKeys(doc: OpenApiDoc): { all: Set<string>; byGroup: Map<string, Set<string>> } {
+  const all = new Set<string>();
+  const byGroup = new Map<string, Set<string>>();
+  const visit = (s: unknown, key: string | null, depth: number) => {
+    if (depth > 60 || s == null || typeof s !== "object") return;
+    if (Array.isArray(s)) return s.forEach((x) => visit(x, key, depth + 1));
+    const o = s as Record<string, unknown>;
+    const mark = o["x-sail-untrusted"];
+    if (mark !== undefined && key) {
+      for (const m of Array.isArray(mark) ? (mark as string[]) : [key]) {
+        const [k, group] = m.split("@") as [string, string | undefined];
+        if (!group) all.add(k);
+        else byGroup.set(group, (byGroup.get(group) ?? new Set()).add(k));
+      }
+    }
+    for (const [k, v] of Object.entries(o)) {
+      if (k === "properties" && v && typeof v === "object") for (const [pk, pv] of Object.entries(v)) visit(pv, pk, depth + 1);
+      else visit(v, ["items", "anyOf", "oneOf", "allOf", "additionalProperties"].includes(k) ? key : null, depth + 1);
+    }
+  };
+  visit(resolveRefs(doc.paths, doc), null, 0);
+  return { all, byGroup };
+}
+
 /** Every exposable tool in the spec, unfiltered (the committed manifest). */
 export function buildToolCatalog(doc: OpenApiDoc): ToolDef[] {
   const tools: ToolDef[] = [];
+  const marked = untrustedKeys(doc);
   const seen = new Map<string, string>();
   for (const [path, methods] of Object.entries(doc.paths)) {
     for (const [method, o] of Object.entries(methods)) {
@@ -98,7 +129,8 @@ export function buildToolCatalog(doc: OpenApiDoc): ToolDef[] {
       if (x.dry_run) props.dry_run = { type: "boolean", description: "Validate and price without committing; returns what WOULD happen (events have seq -1)." };
       const lines = [o.summary ?? x.op, "", o.description ?? "", "", `Risk tier ${x.tier}.${x.min_role ? ` Needs role ${x.min_role} or above.` : ""}${x.reason_required ? " A reason is required." : ""}${x.emits.length ? ` Emits ${x.emits.join(", ")}.` : ""}`];
       if (x.tier !== "T0") lines.push("Above your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.");
-      tools.push({ name, op: x.op, method: method.toUpperCase(), path, description: lines.join("\n").trim(), inputSchema: { type: "object", properties: props, required, additionalProperties: false }, tier: x.tier, min_role: x.min_role, toolsets: x.mcp.toolsets, emits: x.emits, path_params: pathParams, query_params: queryParams, has_body: hasBody });
+      const untrusted = [...new Set([...marked.all, ...(marked.byGroup.get(x.op.split(".")[0]!) ?? [])])].sort();
+      tools.push({ name, op: x.op, method: method.toUpperCase(), path, description: lines.join("\n").trim(), inputSchema: { type: "object", properties: props, required, additionalProperties: false }, tier: x.tier, min_role: x.min_role, toolsets: x.mcp.toolsets, emits: x.emits, path_params: pathParams, query_params: queryParams, has_body: hasBody, untrusted });
     }
   }
   return tools.sort((a, b) => a.name.localeCompare(b.name));
@@ -113,16 +145,20 @@ export function toolsFor(catalog: ToolDef[], me: Me): ToolDef[] {
   return catalog.filter((t) => t.toolsets.some((s) => toolsets.includes(s)) && (!t.min_role || (me.role && roleAtLeast(me.role, t.min_role)))).map((t) => (ceiling && tierRank(t.tier) > tierRank(ceiling) ? { ...t, description: `PROPOSAL ONLY for this identity (tier ${t.tier} > ceiling ${ceiling}): the call stores a proposal for a human to approve.\n\n${t.description}` } : t));
 }
 
-/** Free text that came from outside the register (guests, notes, reasons) is wrapped so a model never reads it as an instruction (vision 11). */
-const UNTRUSTED_KEYS = new Set(["notes", "note", "guest_name", "reason", "reject_reason", "void_reason", "variance_reason", "cancel_reason", "reference", "text", "customer_name", "device_label"]);
-export function wrapUntrusted(value: unknown, key?: string, depth = 0): unknown {
+/**
+ * Free text that came from outside the register (guests, customers, notes, reasons) is wrapped so a model never reads
+ * it as an instruction (vision 11). `keys` is the tool's `untrusted` list; every string under a marked key is wrapped,
+ * including inside a marked object such as `customer_ref`.
+ */
+export function wrapUntrusted(value: unknown, keys: readonly string[], key?: string, depth = 0): unknown {
   if (depth > 30) return value;
-  if (typeof value === "string" && key && UNTRUSTED_KEYS.has(key)) return { untrusted_text: value };
-  if (Array.isArray(value)) return value.map((v) => wrapUntrusted(v, undefined, depth + 1));
+  const marked = key !== undefined && keys.includes(key);
+  if (typeof value === "string") return marked ? { untrusted_text: value } : value;
+  if (Array.isArray(value)) return value.map((v) => wrapUntrusted(v, keys, marked ? key : undefined, depth + 1));
   if (value && typeof value === "object") {
     if ("untrusted_text" in (value as object)) return value;
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = wrapUntrusted(v, k, depth + 1);
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = wrapUntrusted(v, keys, marked ? key : k, depth + 1);
     return out;
   }
   return value;
@@ -173,7 +209,7 @@ function buildServer(app: AppLike, catalog: ToolDef[], bearer: string, me: Me): 
     if (!tool) return { content: [{ type: "text", text: JSON.stringify({ code: "not_found", message: `No tool ${req.params.name} for this identity` }) }], isError: true };
     try {
       const { status, body } = await callApi(app, bearer, tool, (req.params.arguments ?? {}) as Record<string, unknown>);
-      const wrapped = wrapUntrusted(body);
+      const wrapped = wrapUntrusted(body, tool.untrusted);
       const structured = wrapped && typeof wrapped === "object" && !Array.isArray(wrapped) ? { status, ...(wrapped as Record<string, unknown>) } : { status, body: wrapped };
       return { content: [{ type: "text", text: JSON.stringify(structured) }], structuredContent: structured, isError: status >= 400 };
     } catch (err) {
@@ -198,7 +234,7 @@ function buildServer(app: AppLike, catalog: ToolDef[], bearer: string, me: Me): 
     if (!m) throw new Error(`Unknown resource ${req.params.uri}`);
     const path = m[1] === "floor" ? `/v1/outlets/${m[2]}/floor` : `/v1/channel-links/${m[2]}/menu`;
     const res = await app.request(path, { headers: { authorization: `Bearer ${bearer}` } });
-    const body = wrapUntrusted(await res.json());
+    const body = wrapUntrusted(await res.json(), catalog.find((t) => t.name === (m[1] === "floor" ? "floor_snapshot" : "menu_get"))?.untrusted ?? []);
     return { contents: [{ uri: req.params.uri, mimeType: "application/json", text: JSON.stringify(body) }] };
   });
   return server;

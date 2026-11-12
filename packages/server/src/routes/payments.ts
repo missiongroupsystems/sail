@@ -5,7 +5,7 @@ import { db, markDryRun, settleInvariants, withTransaction } from "../db/client.
 import { checks, orders, printers, shifts, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
-import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
+import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
 import { appendEvent, type AppendedEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { principalCanSeeOutlet, principalRole, type Principal } from "../auth/principal.js";
@@ -78,7 +78,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
       method: "post",
       path: "/v1/checks/{id}/payments",
       tags: ["payments"],
-      request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ payment_id: z.uuid(), tender_type_id: z.uuid(), amount: z.number().int().min(1), tendered: z.number().int().min(0).nullable().optional(), tip_cents: z.number().int().min(0).optional(), reference: z.string().max(80).nullable().optional() })) },
+      request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ payment_id: z.uuid(), tender_type_id: z.uuid(), amount: z.number().int().min(1), tendered: z.number().int().min(0).nullable().optional(), tip_cents: z.number().int().min(0).optional(), reference: untrusted(z.string().max(80).nullable().optional()) })) },
       responses: { 200: jsonResponse(OrderMutationResponse.extend({ payment: z.record(z.string(), z.unknown()) })), ...errorResponses },
     },
     async (c) => {
@@ -132,7 +132,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: { ...snapshot, version }, events: [ev], warnings: [] }, 200);
   });
 
-  defineOp(app, { op: "orders.reopen", method: "post", path: "/v1/orders/{id}/reopen", tags: ["payments"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ reason: z.string().min(1).max(200) })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "orders.reopen", method: "post", path: "/v1/orders/{id}/reopen", tags: ["payments"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ reason: untrusted(z.string().min(1).max(200)) })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const b = c.req.valid("json");
@@ -189,7 +189,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: jobs, events: [], warnings: [] }, 200);
   });
 
-  defineOp(app, { op: "receipts.send", method: "post", path: "/v1/checks/{id}/receipt/send", tags: ["payments"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ channel: z.enum(["qr", "link", "email", "sms"]), destination: z.string().max(120).optional() })) }, responses: { 200: jsonResponse(mutationResponse(z.object({ token: z.string(), url: z.string(), delivery_status: z.string() }))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "receipts.send", method: "post", path: "/v1/checks/{id}/receipt/send", tags: ["payments"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ channel: z.enum(["qr", "link", "email", "sms"]), destination: untrusted(z.string().max(120).optional()) })) }, responses: { 200: jsonResponse(mutationResponse(z.object({ token: z.string(), url: z.string(), delivery_status: z.string() }))), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const b = c.req.valid("json");
@@ -254,7 +254,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: rows.map(toShift), next_cursor: null }, 200);
   });
 
-  defineOp(app, { op: "shifts.open", method: "post", path: "/v1/shifts", tags: ["shifts"], request: { body: jsonBody(Mutation.extend({ outlet_id: z.uuid().optional(), station_id: z.uuid().nullable().optional(), name: z.string().max(40).nullable().optional(), float_cents: z.number().int().min(0), float_counts: z.record(z.string(), z.number().int().min(0)).nullable().optional() })) }, responses: { 201: jsonResponse(mutationResponse(ShiftSchema)), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "shifts.open", method: "post", path: "/v1/shifts", tags: ["shifts"], request: { body: jsonBody(Mutation.extend({ outlet_id: z.uuid().optional(), station_id: z.uuid().nullable().optional(), name: untrusted(z.string().max(40).nullable().optional(), "name@shifts"), float_cents: z.number().int().min(0), float_counts: z.record(z.string(), z.number().int().min(0)).nullable().optional() })) }, responses: { 201: jsonResponse(mutationResponse(ShiftSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const b = c.req.valid("json");
     dryRunFrom(c, b);
@@ -268,7 +268,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: toShift(shift), events: [ev], warnings: [] }, 201);
   });
 
-  defineOp(app, { op: "shifts.close", method: "post", path: "/v1/shifts/{id}/close", tags: ["shifts"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ counted_cash_cents: z.number().int().min(0), counted_counts: z.record(z.string(), z.number().int().min(0)).nullable().optional(), variance_reason: z.string().max(200).nullable().optional() })) }, responses: { 200: jsonResponse(mutationResponse(ShiftSchema.and(z.object({ report: z.record(z.string(), z.unknown()) })))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "shifts.close", method: "post", path: "/v1/shifts/{id}/close", tags: ["shifts"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ counted_cash_cents: z.number().int().min(0), counted_counts: z.record(z.string(), z.number().int().min(0)).nullable().optional(), variance_reason: untrusted(z.string().max(200).nullable().optional()) })) }, responses: { 200: jsonResponse(mutationResponse(ShiftSchema.and(z.object({ report: z.record(z.string(), z.unknown()) })))), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const b = c.req.valid("json");

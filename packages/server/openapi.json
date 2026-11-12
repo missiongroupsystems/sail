@@ -4708,7 +4708,8 @@
                             "type": [
                               "string",
                               "null"
-                            ]
+                            ],
+                            "x-sail-untrusted": true
                           },
                           "archived": {
                             "type": "boolean"
@@ -5177,7 +5178,8 @@
                           "type": [
                             "string",
                             "null"
-                          ]
+                          ],
+                          "x-sail-untrusted": true
                         },
                         "archived": {
                           "type": "boolean"
@@ -5678,7 +5680,8 @@
                           "type": [
                             "string",
                             "null"
-                          ]
+                          ],
+                          "x-sail-untrusted": true
                         },
                         "archived": {
                           "type": "boolean"
@@ -7671,7 +7674,8 @@
                             "type": [
                               "string",
                               "null"
-                            ]
+                            ],
+                            "x-sail-untrusted": true
                           },
                           "details": {
                             "type": "object",
@@ -31935,7 +31939,8 @@
                             "type": [
                               "string",
                               "null"
-                            ]
+                            ],
+                            "x-sail-untrusted": true
                           },
                           "group_ids": {
                             "type": "array",
@@ -32295,14 +32300,20 @@
                   },
                   "name": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "x-sail-untrusted": [
+                      "name@customers"
+                    ]
                   },
                   "mobile": {
                     "type": [
                       "string",
                       "null"
                     ],
-                    "minLength": 3
+                    "minLength": 3,
+                    "x-sail-untrusted": [
+                      "mobile@customers"
+                    ]
                   },
                   "email": {
                     "type": [
@@ -32318,7 +32329,8 @@
                     "type": [
                       "string",
                       "null"
-                    ]
+                    ],
+                    "x-sail-untrusted": true
                   },
                   "legacy_id": {
                     "type": [
@@ -32380,7 +32392,8 @@
                           "type": [
                             "string",
                             "null"
-                          ]
+                          ],
+                          "x-sail-untrusted": true
                         },
                         "group_ids": {
                           "type": "array",
@@ -32803,7 +32816,8 @@
                           "type": [
                             "string",
                             "null"
-                          ]
+                          ],
+                          "x-sail-untrusted": true
                         },
                         "group_ids": {
                           "type": "array",
@@ -35167,7 +35181,8 @@
                             "type": [
                               "string",
                               "null"
-                            ]
+                            ],
+                            "x-sail-untrusted": true
                           },
                           "created_by": {
                             "type": [
@@ -35535,7 +35550,8 @@
                       "string",
                       "null"
                     ],
-                    "maxLength": 500
+                    "maxLength": 500,
+                    "x-sail-untrusted": true
                   }
                 },
                 "required": [
@@ -35586,7 +35602,8 @@
                           "type": [
                             "string",
                             "null"
-                          ]
+                          ],
+                          "x-sail-untrusted": true
                         },
                         "created_by": {
                           "type": [
@@ -35979,7 +35996,8 @@
                 "properties": {
                   "reason": {
                     "type": "string",
-                    "maxLength": 500
+                    "maxLength": 500,
+                    "x-sail-untrusted": true
                   }
                 }
               }
@@ -40314,7 +40332,8 @@
                                           "type": "integer"
                                         },
                                         "reason": {
-                                          "type": "string"
+                                          "type": "string",
+                                          "x-sail-untrusted": true
                                         },
                                         "data": {
                                           "type": "object",
@@ -40794,7 +40813,8 @@
                                             "type": "integer"
                                           },
                                           "reason": {
-                                            "type": "string"
+                                            "type": "string",
+                                            "x-sail-untrusted": true
                                           },
                                           "data": {
                                             "type": "object",
@@ -41360,7 +41380,8 @@
                                           "type": "integer"
                                         },
                                         "reason": {
-                                          "type": "string"
+                                          "type": "string",
+                                          "x-sail-untrusted": true
                                         },
                                         "data": {
                                           "type": "object",
@@ -41901,7 +41922,8 @@
                                           "type": "integer"
                                         },
                                         "reason": {
-                                          "type": "string"
+                                          "type": "string",
+                                          "x-sail-untrusted": true
                                         },
                                         "data": {
                                           "type": "object",
@@ -43032,7 +43054,8 @@
                   "device_label": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 80
+                    "maxLength": 80,
+                    "x-sail-untrusted": true
                   }
                 },
                 "required": [
@@ -45108,15 +45131,18 @@
                         "type": "string",
                         "maxLength": 30
                       }
-                    }
+                    },
+                    "x-sail-untrusted": true
                   },
                   "delivery_address": {
                     "type": "string",
-                    "maxLength": 400
+                    "maxLength": 400,
+                    "x-sail-untrusted": true
                   },
                   "delivery_notes": {
                     "type": "string",
-                    "maxLength": 400
+                    "maxLength": 400,
+                    "x-sail-untrusted": true
                   },
                   "ready_by": {
                     "type": "string",
@@ -45124,11 +45150,15 @@
                   },
                   "notes": {
                     "type": "string",
-                    "maxLength": 400
+                    "maxLength": 400,
+                    "x-sail-untrusted": true
                   },
                   "takeaway_ref": {
                     "type": "string",
-                    "maxLength": 40
+                    "maxLength": 40,
+                    "x-sail-untrusted": [
+                      "customer_ref"
+                    ]
                   }
                 },
                 "required": [
@@ -45880,21 +45910,24 @@
                         "type": "string",
                         "maxLength": 30
                       }
-                    }
+                    },
+                    "x-sail-untrusted": true
                   },
                   "delivery_address": {
                     "type": [
                       "string",
                       "null"
                     ],
-                    "maxLength": 400
+                    "maxLength": 400,
+                    "x-sail-untrusted": true
                   },
                   "delivery_notes": {
                     "type": [
                       "string",
                       "null"
                     ],
-                    "maxLength": 400
+                    "maxLength": 400,
+                    "x-sail-untrusted": true
                   },
                   "ready_by": {
                     "type": [
@@ -45908,7 +45941,8 @@
                       "string",
                       "null"
                     ],
-                    "maxLength": 400
+                    "maxLength": 400,
+                    "x-sail-untrusted": true
                   }
                 }
               }
@@ -46755,7 +46789,8 @@
                             "string",
                             "null"
                           ],
-                          "maxLength": 200
+                          "maxLength": 200,
+                          "x-sail-untrusted": true
                         },
                         "seat_no": {
                           "type": [
@@ -47190,13 +47225,15 @@
                         "type": "string",
                         "maxLength": 30
                       }
-                    }
+                    },
+                    "x-sail-untrusted": true
                   },
                   "delivery_address": {
                     "type": [
                       "string",
                       "null"
-                    ]
+                    ],
+                    "x-sail-untrusted": true
                   },
                   "ready_by": {
                     "type": [
@@ -48848,7 +48885,8 @@
                             "string",
                             "null"
                           ],
-                          "maxLength": 200
+                          "maxLength": 200,
+                          "x-sail-untrusted": true
                         },
                         "seat_no": {
                           "type": [
@@ -49295,7 +49333,8 @@
                       "string",
                       "null"
                     ],
-                    "maxLength": 200
+                    "maxLength": 200,
+                    "x-sail-untrusted": true
                   },
                   "seat_no": {
                     "type": [
@@ -49747,7 +49786,10 @@
                   },
                   "reason_text": {
                     "type": "string",
-                    "maxLength": 200
+                    "maxLength": 200,
+                    "x-sail-untrusted": [
+                      "void_reason"
+                    ]
                   }
                 }
               }
@@ -50552,7 +50594,8 @@
                   },
                   "note": {
                     "type": "string",
-                    "maxLength": 200
+                    "maxLength": 200,
+                    "x-sail-untrusted": true
                   }
                 }
               }
@@ -50950,7 +50993,8 @@
                   },
                   "note": {
                     "type": "string",
-                    "maxLength": 200
+                    "maxLength": 200,
+                    "x-sail-untrusted": true
                   }
                 }
               }
@@ -51349,7 +51393,11 @@
                   "reason": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 200
+                    "maxLength": 200,
+                    "x-sail-untrusted": [
+                      "reason",
+                      "cancel_reason"
+                    ]
                   }
                 },
                 "required": [
@@ -51780,7 +51828,8 @@
                       "string",
                       "null"
                     ],
-                    "maxLength": 200
+                    "maxLength": 200,
+                    "x-sail-untrusted": true
                   }
                 },
                 "required": [
@@ -52192,7 +52241,8 @@
                   },
                   "reason": {
                     "type": "string",
-                    "maxLength": 200
+                    "maxLength": 200,
+                    "x-sail-untrusted": true
                   }
                 }
               }
@@ -58467,7 +58517,8 @@
                             ]
                           },
                           "text": {
-                            "type": "string"
+                            "type": "string",
+                            "x-sail-untrusted": true
                           },
                           "payload": {
                             "type": "string"
@@ -59266,7 +59317,8 @@
                           ]
                         },
                         "text": {
-                          "type": "string"
+                          "type": "string",
+                          "x-sail-untrusted": true
                         },
                         "payload": {
                           "type": "string"
@@ -59752,7 +59804,8 @@
                           ]
                         },
                         "text": {
-                          "type": "string"
+                          "type": "string",
+                          "x-sail-untrusted": true
                         },
                         "payload": {
                           "type": "string"
@@ -60257,7 +60310,8 @@
                             ]
                           },
                           "text": {
-                            "type": "string"
+                            "type": "string",
+                            "x-sail-untrusted": true
                           },
                           "payload": {
                             "type": "string"
@@ -62254,7 +62308,8 @@
                       "string",
                       "null"
                     ],
-                    "maxLength": 80
+                    "maxLength": 80,
+                    "x-sail-untrusted": true
                   }
                 },
                 "required": [
@@ -63058,7 +63113,8 @@
                   "reason": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 200
+                    "maxLength": 200,
+                    "x-sail-untrusted": true
                   }
                 },
                 "required": [
@@ -64272,7 +64328,8 @@
                   },
                   "destination": {
                     "type": "string",
-                    "maxLength": 120
+                    "maxLength": 120,
+                    "x-sail-untrusted": true
                   }
                 },
                 "required": [
@@ -66163,7 +66220,10 @@
                       "string",
                       "null"
                     ],
-                    "maxLength": 40
+                    "maxLength": 40,
+                    "x-sail-untrusted": [
+                      "name@shifts"
+                    ]
                   },
                   "float_cents": {
                     "type": "integer",
@@ -66595,7 +66655,8 @@
                       "string",
                       "null"
                     ],
-                    "maxLength": 200
+                    "maxLength": 200,
+                    "x-sail-untrusted": true
                   }
                 },
                 "required": [
@@ -69962,14 +70023,16 @@
                   "reason": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 200
+                    "maxLength": 200,
+                    "x-sail-untrusted": true
                   },
                   "reference": {
                     "type": [
                       "string",
                       "null"
                     ],
-                    "maxLength": 80
+                    "maxLength": 80,
+                    "x-sail-untrusted": true
                   },
                   "print": {
                     "type": "boolean"
@@ -71450,7 +71513,8 @@
                   },
                   "destination": {
                     "type": "string",
-                    "maxLength": 120
+                    "maxLength": 120,
+                    "x-sail-untrusted": true
                   }
                 },
                 "required": [
@@ -71848,7 +71912,8 @@
                   },
                   "guest_name": {
                     "type": "string",
-                    "maxLength": 40
+                    "maxLength": 40,
+                    "x-sail-untrusted": true
                   }
                 },
                 "required": [
@@ -72661,7 +72726,8 @@
                             "string",
                             "null"
                           ],
-                          "maxLength": 200
+                          "maxLength": 200,
+                          "x-sail-untrusted": true
                         },
                         "seat_no": {
                           "type": [
@@ -72683,11 +72749,13 @@
                   },
                   "guest_name": {
                     "type": "string",
-                    "maxLength": 40
+                    "maxLength": 40,
+                    "x-sail-untrusted": true
                   },
                   "notes": {
                     "type": "string",
-                    "maxLength": 200
+                    "maxLength": 200,
+                    "x-sail-untrusted": true
                   }
                 },
                 "required": [
@@ -73035,7 +73103,8 @@
                   },
                   "guest_name": {
                     "type": "string",
-                    "maxLength": 40
+                    "maxLength": 40,
+                    "x-sail-untrusted": true
                   }
                 },
                 "required": [
@@ -74440,7 +74509,11 @@
                   "reason": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 200
+                    "maxLength": 200,
+                    "x-sail-untrusted": [
+                      "reason",
+                      "reject_reason"
+                    ]
                   }
                 },
                 "required": [
@@ -81668,7 +81741,11 @@
                   "reason": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 200
+                    "maxLength": 200,
+                    "x-sail-untrusted": [
+                      "reason",
+                      "reject_reason"
+                    ]
                   }
                 },
                 "required": [

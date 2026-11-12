@@ -5,7 +5,7 @@ import { db } from "../db/client.js";
 import { products, reportCategories } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
-import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
+import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { activeRules, archiveRule, createRuleVersion, ruleVersions } from "../services/pricing-rules.js";
@@ -20,7 +20,7 @@ registerOperations({
 });
 
 const RuleBodySchema = z.record(z.string(), z.unknown());
-const VersionSchema = z.object({ id: z.string(), rule_key: z.string(), version: z.number().int(), status: z.enum(["scheduled", "active", "superseded", "archived"]), effective_from: z.string(), body: RuleBodySchema, note: z.string().nullable(), created_by: z.string().nullable(), created_at: z.string(), archived: z.boolean() });
+const VersionSchema = z.object({ id: z.string(), rule_key: z.string(), version: z.number().int(), status: z.enum(["scheduled", "active", "superseded", "archived"]), effective_from: z.string(), body: RuleBodySchema, note: untrusted(z.string().nullable()), created_by: z.string().nullable(), created_at: z.string(), archived: z.boolean() });
 
 const SimulateBody = z.object({
   outlet_id: z.uuid(),
@@ -51,7 +51,7 @@ export function pricingRoutes(app: OpenAPIHono<AppEnv>) {
 
   defineOp(
     app,
-    { op: "pricing_rules.create_version", method: "post", path: "/v1/pricing-rules", tags: ["pricing"], request: { body: jsonBody(z.object({ rule_key: z.string().min(1).max(80).regex(/^[a-z0-9:_-]+$/i), body: RuleBodySchema, effective_from: z.iso.datetime().optional(), note: z.string().max(500).nullable().optional() })) }, responses: { 201: jsonResponse(mutationResponse(VersionSchema)), ...errorResponses } },
+    { op: "pricing_rules.create_version", method: "post", path: "/v1/pricing-rules", tags: ["pricing"], request: { body: jsonBody(z.object({ rule_key: z.string().min(1).max(80).regex(/^[a-z0-9:_-]+$/i), body: RuleBodySchema, effective_from: z.iso.datetime().optional(), note: untrusted(z.string().max(500).nullable().optional()) })) }, responses: { 201: jsonResponse(mutationResponse(VersionSchema)), ...errorResponses } },
     async (c) => {
       const p = c.get("principal");
       const b = c.req.valid("json");
@@ -69,7 +69,7 @@ export function pricingRoutes(app: OpenAPIHono<AppEnv>) {
     },
   );
 
-  defineOp(app, { op: "pricing_rules.archive", method: "post", path: "/v1/pricing-rules/{rule_key}/archive", tags: ["pricing"], request: { params: z.object({ rule_key: z.string() }), body: jsonBody(z.object({ reason: z.string().max(500).optional() })) }, responses: { 200: jsonResponse(mutationResponse(z.object({ rule_key: z.string(), versions_archived: z.number().int() }))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "pricing_rules.archive", method: "post", path: "/v1/pricing-rules/{rule_key}/archive", tags: ["pricing"], request: { params: z.object({ rule_key: z.string() }), body: jsonBody(z.object({ reason: untrusted(z.string().max(500).optional()) })) }, responses: { 200: jsonResponse(mutationResponse(z.object({ rule_key: z.string(), versions_archived: z.number().int() }))), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { rule_key } = c.req.valid("param");
     const { reason } = c.req.valid("json");

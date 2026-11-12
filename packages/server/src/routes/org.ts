@@ -5,7 +5,7 @@ import { db } from "../db/client.js";
 import { brands, merchantSettings, merchants, outlets, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
-import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
+import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { principalCanSeeOutlet } from "../auth/principal.js";
@@ -98,7 +98,7 @@ export const StationSchema = z.object({
   receipt_printer_id: z.string().nullable(),
   text_size: z.string(),
   paired: z.boolean(),
-  device_label: z.string().nullable(),
+  device_label: untrusted(z.string().nullable()),
   archived: z.boolean(),
 });
 const StationInput = z.object({

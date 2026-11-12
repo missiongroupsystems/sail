@@ -5,7 +5,7 @@ import { db, withTransaction, type RequestTx } from "../db/client.js";
 import { auditLog, printJobs, printRelays, printers, relayPairingCodes } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
-import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
+import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { compact, defineCrud } from "../lib/crud.js";
@@ -113,7 +113,8 @@ const JobSchema = z.object({
   age_seconds: z.number().int(),
   /** The fire round the ticket belongs to (kitchen, void and reprint tickets), so clients match tickets to rounds without guessing from timestamps. */
   round_no: z.number().int().nullable(),
-  text: z.string(),
+  /** The rendered ticket, with the guests' and staff's notes on it. */
+  text: untrusted(z.string()),
   /** Base64 ESC/POS bytes; only returned to relays. */
   payload: z.string().optional(),
 });

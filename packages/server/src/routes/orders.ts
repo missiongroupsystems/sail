@@ -5,7 +5,7 @@ import { db, markDryRun, settleInvariants, tx } from "../db/client.js";
 import { areas, channelLinks, customerGroupMembers, customers, orderLines, orderManualApplications, orders, stations, tables, voidReasons } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppContext, AppEnv } from "../lib/context.js";
-import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
+import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
 import { appendEvent, type AppendedEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { principalCanSeeOutlet, principalRole, type Principal } from "../auth/principal.js";
@@ -46,7 +46,7 @@ registerOperations({
 
 /* ---- Schemas ----------------------------------------------------------- */
 
-const CustomerRef = z.object({ name: z.string().max(80).optional(), mobile: z.string().max(30).optional() });
+const CustomerRef = untrusted(z.object({ name: z.string().max(80).optional(), mobile: z.string().max(30).optional() }));
 const Mutation = z.object({ expected_version: z.number().int().optional(), dry_run: z.boolean().optional(), override_id: z.uuid().optional() });
 const OpenBody = Mutation.extend({
   order_id: z.uuid(),
@@ -57,19 +57,19 @@ const OpenBody = Mutation.extend({
   pax: z.number().int().min(1).max(99).optional(),
   customer_id: z.uuid().optional(),
   customer_ref: CustomerRef.optional(),
-  delivery_address: z.string().max(400).optional(),
-  delivery_notes: z.string().max(400).optional(),
+  delivery_address: untrusted(z.string().max(400).optional()),
+  delivery_notes: untrusted(z.string().max(400).optional()),
   ready_by: z.iso.datetime().optional(),
-  notes: z.string().max(400).optional(),
-  takeaway_ref: z.string().max(40).optional(),
+  notes: untrusted(z.string().max(400).optional()),
+  takeaway_ref: untrusted(z.string().max(40).optional(), "customer_ref"),
 });
-const DetailsBody = Mutation.extend({ pax: z.number().int().min(1).max(99).nullable().optional(), customer_ref: CustomerRef.nullable().optional(), delivery_address: z.string().max(400).nullable().optional(), delivery_notes: z.string().max(400).nullable().optional(), ready_by: z.iso.datetime().nullable().optional(), notes: z.string().max(400).nullable().optional() });
+const DetailsBody = Mutation.extend({ pax: z.number().int().min(1).max(99).nullable().optional(), customer_ref: CustomerRef.nullable().optional(), delivery_address: untrusted(z.string().max(400).nullable().optional()), delivery_notes: untrusted(z.string().max(400).nullable().optional()), ready_by: z.iso.datetime().nullable().optional(), notes: untrusted(z.string().max(400).nullable().optional()) });
 const LineInputSchema = z.object({
   line_id: z.uuid(),
   product_id: z.uuid(),
   quantity: z.number().int().min(1).max(999),
   modifiers: z.array(z.object({ group_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1).max(99).optional() })).max(40).optional(),
-  notes: z.string().max(200).nullable().optional(),
+  notes: untrusted(z.string().max(200).nullable().optional()),
   seat_no: z.number().int().min(1).max(99).nullable().optional(),
   hold: z.boolean().optional(),
   open_price: z.number().int().min(0).nullable().optional(),
@@ -300,7 +300,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     return finish(c, p, id, [() => emit(c, p, o, "order.details_updated", b)]);
   });
 
-  defineOp(app, { op: "orders.change_type", method: "post", path: "/v1/orders/{id}/change-type", tags: ["orders"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ order_type: OrderTypeSchema, table_id: z.uuid().nullable().optional(), pax: z.number().int().min(1).nullable().optional(), customer_ref: CustomerRef.nullable().optional(), delivery_address: z.string().nullable().optional(), ready_by: z.iso.datetime().nullable().optional() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "orders.change_type", method: "post", path: "/v1/orders/{id}/change-type", tags: ["orders"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ order_type: OrderTypeSchema, table_id: z.uuid().nullable().optional(), pax: z.number().int().min(1).nullable().optional(), customer_ref: CustomerRef.nullable().optional(), delivery_address: untrusted(z.string().nullable().optional()), ready_by: z.iso.datetime().nullable().optional() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const b = c.req.valid("json");
@@ -385,7 +385,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     return finish(c, p, id, pending);
   });
 
-  defineOp(app, { op: "lines.update", method: "patch", path: "/v1/orders/{id}/lines/{line_id}", tags: ["orders"], request: { params: z.object({ id: z.uuid(), line_id: z.uuid() }), body: jsonBody(Mutation.extend({ quantity: z.number().int().min(1).max(999).optional(), notes: z.string().max(200).nullable().optional(), seat_no: z.number().int().min(1).max(99).nullable().optional(), hold: z.boolean().optional(), modifiers: z.array(z.object({ group_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1).optional() })).optional() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "lines.update", method: "patch", path: "/v1/orders/{id}/lines/{line_id}", tags: ["orders"], request: { params: z.object({ id: z.uuid(), line_id: z.uuid() }), body: jsonBody(Mutation.extend({ quantity: z.number().int().min(1).max(999).optional(), notes: untrusted(z.string().max(200).nullable().optional()), seat_no: z.number().int().min(1).max(99).nullable().optional(), hold: z.boolean().optional(), modifiers: z.array(z.object({ group_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1).optional() })).optional() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id, line_id } = c.req.valid("param");
     const b = c.req.valid("json");
@@ -419,7 +419,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     return finish(c, p, id, [() => emit(c, p, o, "line.updated", { line_id, ...b })]);
   });
 
-  defineOp(app, { op: "lines.void", method: "post", path: "/v1/orders/{id}/lines/{line_id}/void", tags: ["orders"], request: { params: z.object({ id: z.uuid(), line_id: z.uuid() }), body: jsonBody(Mutation.extend({ quantity: z.number().int().min(1).optional(), reason_id: z.uuid().optional(), reason_text: z.string().max(200).optional() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "lines.void", method: "post", path: "/v1/orders/{id}/lines/{line_id}/void", tags: ["orders"], request: { params: z.object({ id: z.uuid(), line_id: z.uuid() }), body: jsonBody(Mutation.extend({ quantity: z.number().int().min(1).optional(), reason_id: z.uuid().optional(), reason_text: untrusted(z.string().max(200).optional(), "void_reason") })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id, line_id } = c.req.valid("param");
     const b = c.req.valid("json");
@@ -503,7 +503,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
   });
 
   const transition = (opId: string, path: string, from: string[], to: "ready" | "out_for_delivery", onlyType?: OrderType) =>
-    defineOp(app, { op: opId, method: "post", path, tags: ["orders"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ note: z.string().max(200).optional() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
+    defineOp(app, { op: opId, method: "post", path, tags: ["orders"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ note: untrusted(z.string().max(200).optional()) })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
       const p = c.get("principal");
       const { id } = c.req.valid("param");
       const b = c.req.valid("json");
@@ -517,7 +517,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
   transition("orders.mark_ready", "/v1/orders/{id}/ready", ["fired", "open"], "ready");
   transition("orders.mark_out_for_delivery", "/v1/orders/{id}/out-for-delivery", ["ready"], "out_for_delivery", "delivery");
 
-  defineOp(app, { op: "orders.cancel", method: "post", path: "/v1/orders/{id}/cancel", tags: ["orders"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ reason: z.string().min(1).max(200) })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "orders.cancel", method: "post", path: "/v1/orders/{id}/cancel", tags: ["orders"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ reason: untrusted(z.string().min(1).max(200), "reason", "cancel_reason") })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const b = c.req.valid("json");
@@ -539,7 +539,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     return finish(c, p, id, [() => emit(c, p, o, "order.cancelled", { reason: b.reason }, { reason: { text: b.reason } })]);
   });
 
-  defineOp(app, { op: "adjustments.apply_manual", method: "post", path: "/v1/orders/{id}/adjustments", tags: ["orders"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ application_id: z.uuid(), rule_key: z.string().min(1), entered_value: z.number().int().min(0).nullable().optional(), line_ids: z.array(z.uuid()).min(1).nullable().optional(), reason: z.string().max(200).nullable().optional() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "adjustments.apply_manual", method: "post", path: "/v1/orders/{id}/adjustments", tags: ["orders"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ application_id: z.uuid(), rule_key: z.string().min(1), entered_value: z.number().int().min(0).nullable().optional(), line_ids: z.array(z.uuid()).min(1).nullable().optional(), reason: untrusted(z.string().max(200).nullable().optional()) })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const b = c.req.valid("json");
@@ -565,7 +565,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     return finish(c, p, id, [() => emit(c, p, o, "adjustment.applied", { application_id: b.application_id, rule_key: rule.id, rule_name: rule.name, entered_value: b.entered_value ?? null, line_ids: b.line_ids ?? null }, { reason: b.reason ? { text: b.reason } : null, approval: approval ? { override_id: b.override_id, approver_id: approval.id, approver_name: approval.name ?? undefined } : null })]);
   });
 
-  defineOp(app, { op: "adjustments.remove", method: "delete", path: "/v1/orders/{id}/adjustments/{application_id}", tags: ["orders"], request: { params: z.object({ id: z.uuid(), application_id: z.uuid() }), body: jsonBody(Mutation.extend({ reason: z.string().max(200).optional() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "adjustments.remove", method: "delete", path: "/v1/orders/{id}/adjustments/{application_id}", tags: ["orders"], request: { params: z.object({ id: z.uuid(), application_id: z.uuid() }), body: jsonBody(Mutation.extend({ reason: untrusted(z.string().max(200).optional()) })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id, application_id } = c.req.valid("param");
     const b = c.req.valid("json");

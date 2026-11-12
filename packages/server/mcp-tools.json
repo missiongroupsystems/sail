@@ -15,6 +15,23 @@
         "adjustment.applied",
         "order.repriced"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Apply a manual pricing rule\n\nApplies a manual discount or waiver (for example staff meal, % off item, service-charge waiver) with its entered value and lines. The rule's own minimum role, override and reason settings apply. Automatic rules never need applying.\n\nRisk tier T2. Needs role server or above. Emits adjustment.applied, order.repriced.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -67,7 +84,8 @@
                   "string",
                   "null"
                 ],
-                "maxLength": 200
+                "maxLength": 200,
+                "x-sail-untrusted": true
               }
             },
             "required": [
@@ -111,6 +129,23 @@
         "adjustment.removed",
         "order.repriced"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Remove a manual pricing rule from an order\n\nBlocked when the adjustment is frozen by a payment.\n\nRisk tier T2. Needs role server or above. Emits adjustment.removed, order.repriced.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -138,7 +173,8 @@
               },
               "reason": {
                 "type": "string",
-                "maxLength": 200
+                "maxLength": 200,
+                "x-sail-untrusted": true
               }
             }
           },
@@ -177,6 +213,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Get a area\n\nGet a area\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -204,6 +257,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List areas\n\nList areas\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -236,6 +306,23 @@
         "watch"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List audit entries\n\nWho did what, on which target, when, and who approved it. Filter by actor, action, target or time.\n\nRisk tier T0. Needs role manager or above.",
       "inputSchema": {
         "type": "object",
@@ -288,6 +375,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Who am I\n\nReturns the caller's principal: type, role, merchant and outlet scope. Use it to decide which buttons to show; the server enforces permissions regardless.\n\nRisk tier T0.",
       "inputSchema": {
         "type": "object",
@@ -308,6 +412,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Get a availability rule\n\nGet a availability rule\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -335,6 +456,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List availability rules\n\nList availability rules\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -371,6 +509,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List brands\n\nBrands of the caller's merchant.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -399,6 +554,23 @@
       ],
       "emits": [
         "business_day.closed"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Close a business day\n\nSnapshots the Z-report once every shift is closed. Manager+.\n\nRisk tier T2. Needs role manager or above. Emits business_day.closed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -460,6 +632,23 @@
         "pos.read"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Z-report\n\nSales, tenders, expected vs counted cash, rounding, voids and covers for an outlet (or station) and business date. Figures come from the register. `sales.net` is net sales: items after discounts, without tax and fees, less `sales.refunds` (the refunds' net); `sales.fees` excludes tax; `sales.total` is what was collected before refunds (`net + refunds + fees + tax = total`), and `refunds.amount` is the money refunded.\n\nRisk tier T0. Needs role cashier or above.",
       "inputSchema": {
         "type": "object",
@@ -494,6 +683,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Get a report category\n\nGet a report category\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -521,6 +727,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List report categorys\n\nList report categorys\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -553,6 +776,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Get a channel link\n\nGet a channel link\n\nRisk tier T0.",
       "inputSchema": {
         "type": "object",
@@ -580,6 +820,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List channel links\n\nList channel links\n\nRisk tier T0.",
       "inputSchema": {
         "type": "object",
@@ -623,6 +880,23 @@
       ],
       "emits": [
         "checks.allocated"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Move or share items between bills\n\nPut each listed item wholly on one bill, or share it equally between the listed bills (a bottle three ways). A paid bill's allocations are locked.\n\nRisk tier T1. Needs role server or above. Emits checks.allocated.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -723,6 +997,23 @@
         "pos.read"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Bills of an order\n\nChecks with allocations, payments and balances.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -751,6 +1042,23 @@
       "emits": [
         "print_job.created",
         "order.bill_requested"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Print a pre-bill\n\nPrints the bill (or every bill of the order) on the station's receipt printer and marks the table as bill requested.\n\nRisk tier T1. Needs role server or above. Emits print_job.created, order.bill_requested.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -813,6 +1121,23 @@
       ],
       "emits": [
         "checks.split"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Split the bill by seat\n\nOne bill per seat number; items without a seat are shared evenly across the seats, or put on a separate Shared bill with `shared: manual`.\n\nRisk tier T1. Needs role server or above. Emits checks.split.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -889,6 +1214,23 @@
       "emits": [
         "checks.split"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Split the bill evenly\n\nN bills, every item shared 1/N. Bills add up to the order to the cent (largest remainder; bill order breaks ties). Only before the first payment.\n\nRisk tier T1. Needs role server or above. Emits checks.split.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -964,6 +1306,23 @@
       "emits": [
         "checks.split"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Back to one bill\n\nOnly before the first payment.\n\nRisk tier T1. Needs role server or above. Emits checks.split.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -1029,6 +1388,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Get a customer group\n\nGet a customer group\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -1056,6 +1432,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List customer groups\n\nList customer groups\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -1087,6 +1480,25 @@
         "pos.read"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "mobile",
+        "name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Find customers\n\nBy mobile (exact or prefix) or name prefix. Contact details are masked for agent principals.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -1123,6 +1535,25 @@
         "pos.read"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "mobile",
+        "name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Get a customer with their groups\n\nContact details are masked for agent principals.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -1151,6 +1582,25 @@
       "emits": [
         "customer.upserted"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "mobile",
+        "name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Create or update a customer\n\nMobile is unique per merchant. Consent changes are evented.\n\nRisk tier T1. Needs role cashier or above. Emits customer.upserted.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -1164,14 +1614,20 @@
               },
               "name": {
                 "type": "string",
-                "minLength": 1
+                "minLength": 1,
+                "x-sail-untrusted": [
+                  "name@customers"
+                ]
               },
               "mobile": {
                 "type": [
                   "string",
                   "null"
                 ],
-                "minLength": 3
+                "minLength": 3,
+                "x-sail-untrusted": [
+                  "mobile@customers"
+                ]
               },
               "email": {
                 "type": [
@@ -1187,7 +1643,8 @@
                 "type": [
                   "string",
                   "null"
-                ]
+                ],
+                "x-sail-untrusted": true
               },
               "legacy_id": {
                 "type": [
@@ -1239,6 +1696,23 @@
       ],
       "emits": [
         "invoice.issued"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Issue a tax invoice\n\nNumbered PDF tax invoice for a paid bill, including the outlet's business and tax registration numbers. Gap-free numbering per merchant. Issued once; later calls return the same number.\n\nRisk tier T2. Needs role cashier or above. Emits invoice.issued.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -1297,6 +1771,23 @@
         "pos.read"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Catch up on outlet events\n\nEvents for an outlet after a sequence number. This is the source of truth for every live view; the SSE stream only signals that new events exist.\n\nRisk tier T0.",
       "inputSchema": {
         "type": "object",
@@ -1344,6 +1835,23 @@
         "pos.read"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Floor plan snapshot\n\nAreas and tables with live status (free, seated, sent, bill requested, paid), pax, elapsed time, pending QR rounds and table requests.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -1371,6 +1879,23 @@
       ],
       "emits": [
         "import.queued"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Upload legacy CSV files and queue an import\n\nQueues a dry run by default: the worker produces a report of creates, updates, unchanged and rejected rows (with reasons) without changing data. Apply it with imports.apply. Records match on legacy_id or SKU, so re-runs update instead of duplicating.\n\nRisk tier T1. Needs role admin or above. Emits import.queued.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -1503,6 +2028,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Get an import job with its full report\n\nThe full dry-run or apply report, including rejected rows and reasons.\n\nRisk tier T0. Needs role admin or above.",
       "inputSchema": {
         "type": "object",
@@ -1529,6 +2071,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List import jobs\n\nImport jobs with status and report summary.\n\nRisk tier T0. Needs role admin or above.",
       "inputSchema": {
         "type": "object",
@@ -1549,6 +2108,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Get a POS layout\n\nPages, folders and tiles for one layout. Stations cache it with the menu.\n\nRisk tier T0.",
       "inputSchema": {
         "type": "object",
@@ -1576,6 +2152,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List POS layouts\n\nLayouts per brand: pages > folders > tiles with colour and access level.\n\nRisk tier T0.",
       "inputSchema": {
         "type": "object",
@@ -1609,6 +2202,23 @@
       "emits": [
         "line.added",
         "order.repriced"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Add lines to an order\n\nAll-or-nothing: every line must be on the channel's menu, available, not sold out, within its daily cap, and have valid modifiers (min/max, nesting to 2 levels). Open prices need Manager+ (or an override). Returns the re-priced snapshot.\n\nRisk tier T1. Needs role server or above. Emits line.added, order.repriced.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -1680,7 +2290,8 @@
                         "string",
                         "null"
                       ],
-                      "maxLength": 200
+                      "maxLength": 200,
+                      "x-sail-untrusted": true
                     },
                     "seat_no": {
                       "type": [
@@ -1751,6 +2362,23 @@
         "line.updated",
         "order.repriced"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Update an unsent line\n\nQuantity, notes, seat, hold/unhold or modifiers on a line that has not been sent to the kitchen. Caps are re-checked on a quantity increase.\n\nRisk tier T1. Needs role server or above. Emits line.updated, order.repriced.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -1786,7 +2414,8 @@
                   "string",
                   "null"
                 ],
-                "maxLength": 200
+                "maxLength": 200,
+                "x-sail-untrusted": true
               },
               "seat_no": {
                 "type": [
@@ -1863,6 +2492,23 @@
         "order.repriced",
         "print_job.created"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Remove or void a line\n\nA reason is required. Before sending: Server+ and the daily cap is released. After sending: Manager+ or a manager override, and a void ticket prints to the printers that got the item. Not on a line whose bill has a payment.\n\nRisk tier T1. Needs role server or above. A reason is required. Emits line.voided, order.repriced, print_job.created.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -1898,7 +2544,10 @@
               },
               "reason_text": {
                 "type": "string",
-                "maxLength": 200
+                "maxLength": 200,
+                "x-sail-untrusted": [
+                  "void_reason"
+                ]
               }
             }
           },
@@ -1937,6 +2586,23 @@
         "guest"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Compiled menu for a channel link\n\nEverything a station or guest needs to order from one channel link: sections, products with resolved prices and modifier groups, availability and sold-out status. Cache it by `version`. Never computes order totals.\n\nRisk tier T0.",
       "inputSchema": {
         "type": "object",
@@ -1964,6 +2630,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Get a menu with sections and items\n\nGet a menu with sections and items\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -1991,6 +2674,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List menus\n\nList menus\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -2024,6 +2724,23 @@
         "reports"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Get the merchant and its settings\n\nCurrency, locale, time zone, tax mode and rounding, default tax class, cash rounding, cash denominations for the cash counter, registration labels and business-day cutoff for the caller's merchant. A paired station reads it before anyone signs in, so the lock screen shows the outlet's time.\n\nRisk tier T0.",
       "inputSchema": {
         "type": "object",
@@ -2044,6 +2761,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Get a modifier group with its options\n\nGet a modifier group with its options\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -2071,6 +2805,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List modifier groups\n\nList modifier groups\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -2109,6 +2860,23 @@
       "emits": [
         "order.customer_attached",
         "order.repriced"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Attach a customer\n\nCustomer-group conditions re-evaluate; frozen order-level results stay frozen.\n\nRisk tier T1. Needs role server or above. Emits order.customer_attached, order.repriced.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -2175,6 +2943,23 @@
       "emits": [
         "order.cancelled"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Cancel an order\n\nOnly with no payments and no fired lines (void fired lines first, which needs Manager+). Releases daily caps.\n\nRisk tier T2. Needs role server or above. A reason is required. Emits order.cancelled.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -2199,7 +2984,11 @@
               "reason": {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 200
+                "maxLength": 200,
+                "x-sail-untrusted": [
+                  "reason",
+                  "cancel_reason"
+                ]
               }
             },
             "required": [
@@ -2241,6 +3030,23 @@
       "emits": [
         "order.type_changed",
         "order.repriced"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Change the order type\n\nRe-prices with the new type's prices and fees. Blocked after the first payment.\n\nRisk tier T1. Needs role server or above. Emits order.type_changed, order.repriced.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -2300,13 +3106,15 @@
                     "type": "string",
                     "maxLength": 30
                   }
-                }
+                },
+                "x-sail-untrusted": true
               },
               "delivery_address": {
                 "type": [
                   "string",
                   "null"
-                ]
+                ],
+                "x-sail-untrusted": true
               },
               "ready_by": {
                 "type": [
@@ -2354,6 +3162,23 @@
       ],
       "emits": [
         "order.completed"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Complete an order\n\nEvery bill paid (balance 0) and every item sent or removed.\n\nRisk tier T2. Needs role server or above. Emits order.completed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -2414,6 +3239,23 @@
         "order.customer_detached",
         "order.repriced"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Detach the customer\n\nRemoves the customer; group discounts re-evaluate.\n\nRisk tier T1. Needs role server or above. Emits order.customer_detached, order.repriced.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -2473,6 +3315,23 @@
       "emits": [
         "order.fired",
         "print_job.created"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Send lines to the kitchen\n\nFires the given lines (default: every pending, unheld line). Creates one print job per target printer in the same transaction. On a pay-before-firing station, blocked until the balance is 0.\n\nRisk tier T2. Needs role server or above. Emits order.fired, print_job.created.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -2540,6 +3399,23 @@
         "pos.read"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Get an order snapshot\n\nThe priced order: lines, adjustments, totals, checks, payments and balance. Amounts come from the register; never recompute them.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -2571,6 +3447,23 @@
         "reports"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List orders\n\nOrders of an outlet by status, type, table, business date or search; takeaway/pickup/delivery sorted by ready-by.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -2638,6 +3531,23 @@
       "emits": [
         "order.status_changed"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Mark a delivery order out for delivery\n\nDelivery orders only, from ready.\n\nRisk tier T1. Needs role server or above. Emits order.status_changed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -2661,7 +3571,8 @@
               },
               "note": {
                 "type": "string",
-                "maxLength": 200
+                "maxLength": 200,
+                "x-sail-untrusted": true
               }
             }
           },
@@ -2701,6 +3612,23 @@
       "emits": [
         "order.status_changed"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Mark an order ready\n\nFrom fired to ready (pickup and delivery lists).\n\nRisk tier T1. Needs role server or above. Emits order.status_changed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -2724,7 +3652,8 @@
               },
               "note": {
                 "type": "string",
-                "maxLength": 200
+                "maxLength": 200,
+                "x-sail-untrusted": true
               }
             }
           },
@@ -2762,6 +3691,23 @@
       ],
       "emits": [
         "order.moved"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Move an order to another table\n\nThe target table must have no open order.\n\nRisk tier T1. Needs role server or above. Emits order.moved.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -2828,6 +3774,23 @@
       "emits": [
         "order.opened"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Open an order\n\nOpens an order of one type (dine-in with a table and pax; takeaway with an optional name; pickup with a customer reference and ready-by; delivery with address). Returns the priced snapshot. At most one open dine-in order per table.\n\nRisk tier T1. Needs role server or above. Emits order.opened.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -2890,15 +3853,18 @@
                     "type": "string",
                     "maxLength": 30
                   }
-                }
+                },
+                "x-sail-untrusted": true
               },
               "delivery_address": {
                 "type": "string",
-                "maxLength": 400
+                "maxLength": 400,
+                "x-sail-untrusted": true
               },
               "delivery_notes": {
                 "type": "string",
-                "maxLength": 400
+                "maxLength": 400,
+                "x-sail-untrusted": true
               },
               "ready_by": {
                 "type": "string",
@@ -2906,11 +3872,15 @@
               },
               "notes": {
                 "type": "string",
-                "maxLength": 400
+                "maxLength": 400,
+                "x-sail-untrusted": true
               },
               "takeaway_ref": {
                 "type": "string",
-                "maxLength": 40
+                "maxLength": 40,
+                "x-sail-untrusted": [
+                  "customer_ref"
+                ]
               }
             },
             "required": [
@@ -2950,6 +3920,23 @@
         "pos.read"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Quote an order with the full pricing trace\n\nRe-runs the pricing pipeline on the order's current lines (optionally with hypothetical extra lines) and returns totals with every step. Pure: writes nothing.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -3010,7 +3997,8 @@
                         "string",
                         "null"
                       ],
-                      "maxLength": 200
+                      "maxLength": 200,
+                      "x-sail-untrusted": true
                     },
                     "seat_no": {
                       "type": [
@@ -3072,6 +4060,23 @@
         "order.reopened",
         "payment.reversed"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Reopen a completed order\n\nSame business day, Manager+ (or override). Reverses the order's payments as events and unlocks the bills; the order is then recharged.\n\nRisk tier T3. Needs role manager or above. A reason is required. Emits order.reopened, payment.reversed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -3096,7 +4101,8 @@
               "reason": {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 200
+                "maxLength": 200,
+                "x-sail-untrusted": true
               }
             },
             "required": [
@@ -3137,6 +4143,23 @@
       ],
       "emits": [
         "order.details_updated"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Update order details\n\nPax, customer reference, ready-by, delivery address, notes. Fields must be valid for the order type.\n\nRisk tier T1. Needs role server or above. Emits order.details_updated.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -3181,21 +4204,24 @@
                     "type": "string",
                     "maxLength": 30
                   }
-                }
+                },
+                "x-sail-untrusted": true
               },
               "delivery_address": {
                 "type": [
                   "string",
                   "null"
                 ],
-                "maxLength": 400
+                "maxLength": 400,
+                "x-sail-untrusted": true
               },
               "delivery_notes": {
                 "type": [
                   "string",
                   "null"
                 ],
-                "maxLength": 400
+                "maxLength": 400,
+                "x-sail-untrusted": true
               },
               "ready_by": {
                 "type": [
@@ -3209,7 +4235,8 @@
                   "string",
                   "null"
                 ],
-                "maxLength": 400
+                "maxLength": 400,
+                "x-sail-untrusted": true
               }
             }
           },
@@ -3248,6 +4275,23 @@
         "reports"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List outlets\n\nOutlets the caller can see (their outlet scope).\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -3278,6 +4322,23 @@
         "payment.recorded",
         "check.paid",
         "order.completed"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Record a payment on a bill\n\nApplies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.\n\nRisk tier T2. Needs role cashier or above. Emits payment.recorded, check.paid, order.completed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -3328,7 +4389,8 @@
                   "string",
                   "null"
                 ],
-                "maxLength": 80
+                "maxLength": 80,
+                "x-sail-untrusted": true
               }
             },
             "required": [
@@ -3372,6 +4434,23 @@
         "reports"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List pricing rules\n\nEvery rule with its versions, or only the set active at a given time (`active_at`). Fees and discounts share one shape.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -3399,6 +4478,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Validate the rule set\n\nWarnings for likely mistakes: overlapping exclusive rules, products no fee covers, caps below the minimum. Optionally validates a proposed rule set instead of the active one.\n\nRisk tier T0. Needs role manager or above.",
       "inputSchema": {
         "type": "object",
@@ -3448,6 +4544,23 @@
         "reports"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Simulate the pricing pipeline\n\nPrices a sample basket for an outlet, order type, channel and customer groups with the active rules (or a supplied rule set) and returns the full step-by-step trace. Pure: writes nothing. Totals come from the register, never from the caller.\n\nRisk tier T0. Needs role manager or above.",
       "inputSchema": {
         "type": "object",
@@ -3775,6 +4888,23 @@
         "reports"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Print jobs of an outlet\n\nBy status, printer or order; `late=true` returns jobs not printed within 10 seconds (the POS alert). Includes the plain-text rendering for previews.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -3827,6 +4957,23 @@
       "emits": [
         "print_job.created"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Reprint a ticket\n\nA new job marked REPRINT on the same printer.\n\nRisk tier T1. Needs role server or above. Emits print_job.created.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -3871,6 +5018,23 @@
       "emits": [
         "print_job.created",
         "print_job.rerouted"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Reroute waiting tickets to another printer\n\nNew jobs on the target printer (default: each printer's configured backup); the originals are marked rerouted. Not for jobs already printed.\n\nRisk tier T1. Needs role server or above. Emits print_job.created, print_job.rerouted.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -3929,6 +5093,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Get a printer\n\nGet a printer\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -3956,6 +5137,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List printers\n\nList printers\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -3988,6 +5186,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Get a product\n\nGet a product\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -4015,6 +5230,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Search products\n\nProducts and components of the merchant, searchable by name, SKU or tag; paginated. Use menu.get for what a station or guest may order.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -4077,6 +5309,23 @@
         "watch"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "One proposal\n\nStatus, frozen request, decision and the executed result. Agents poll this after a `requires_confirmation` response.\n\nRisk tier T0.",
       "inputSchema": {
         "type": "object",
@@ -4106,6 +5355,23 @@
         "watch"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Proposals for an outlet\n\nPending proposals waiting for a human, and recent decided ones. Agents see their own.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -4143,6 +5409,23 @@
       ],
       "emits": [
         "print_job.created"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Print a receipt\n\nPrints the receipt for a paid bill on the station's receipt printer.\n\nRisk tier T1. Needs role server or above. Emits print_job.created.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -4202,6 +5485,23 @@
       "emits": [
         "receipt.sent"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Send a digital receipt\n\nCreates a receipt link (for a QR code on screen) or queues an email/SMS. Email and SMS need a provider, which is not configured yet; the link always works.\n\nRisk tier T2. Needs role cashier or above. Emits receipt.sent.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -4234,7 +5534,8 @@
               },
               "destination": {
                 "type": "string",
-                "maxLength": 120
+                "maxLength": 120,
+                "x-sail-untrusted": true
               }
             },
             "required": [
@@ -4277,6 +5578,23 @@
         "refund.created",
         "check.refunded",
         "print_job.created"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Refund a bill\n\nFull, by lines and quantities, or by amount. Manager, Finance or Admin, or a lower role with a manager override. Reason required. Produces a numbered refund receipt and, when the bill was invoiced, a numbered credit note. Each line's refunds never exceed its paid amount; each payment's refunds never exceed what it paid. Refunded items do not restore daily caps.\n\nRisk tier T3. Needs role manager or above. A reason is required. Emits refund.created, check.refunded, print_job.created.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -4399,14 +5717,16 @@
               "reason": {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 200
+                "maxLength": 200,
+                "x-sail-untrusted": true
               },
               "reference": {
                 "type": [
                   "string",
                   "null"
                 ],
-                "maxLength": 80
+                "maxLength": 80,
+                "x-sail-untrusted": true
               },
               "print": {
                 "type": "boolean"
@@ -4452,6 +5772,23 @@
         "reports"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Refunds of an order\n\nRefunds with their lines, tenders and document numbers.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -4479,6 +5816,23 @@
         "pos.read"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Quote a refund\n\nReversal per line, adjustment and tax component, plus the split across the original payments with per-payment caps and cash rounding. Pure: writes nothing. Agents must show these figures, never their own.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -4619,6 +5973,23 @@
       "emits": [
         "print_job.created"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Print a refund receipt\n\nReprints the refund receipt on the station's receipt printer.\n\nRisk tier T1. Needs role server or above. Emits print_job.created.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -4677,6 +6048,23 @@
       "emits": [
         "receipt.sent"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Send a refund receipt digitally\n\nA public link (QR) for the refund receipt.\n\nRisk tier T2. Needs role cashier or above. Emits receipt.sent.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -4709,7 +6097,8 @@
               },
               "destination": {
                 "type": "string",
-                "maxLength": 120
+                "maxLength": 120,
+                "x-sail-untrusted": true
               }
             },
             "required": [
@@ -4749,6 +6138,23 @@
         "reports"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Daily outlet report\n\nThe Z-report plus breakdowns for one outlet and business date; `.pdf` for the printable summary.\n\nRisk tier T0. Needs role manager or above.",
       "inputSchema": {
         "type": "object",
@@ -4787,6 +6193,23 @@
         "reports"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Void, discount and refund report\n\nWho voided, discounted or refunded, who approved, the reason and the rule applied.\n\nRisk tier T0. Needs role manager or above.",
       "inputSchema": {
         "type": "object",
@@ -4863,6 +6286,23 @@
         "reports"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Print health\n\nJobs, printed, failed, rerouted, reprinted and late counts with p50/p95 fire-to-printed seconds by printer and relay.\n\nRisk tier T0. Needs role manager or above.",
       "inputSchema": {
         "type": "object",
@@ -4903,6 +6343,23 @@
         "reports"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Product mix\n\nQuantity sold, gross, discounts and net by item, category or staff member, with share of net in basis points. `net` is net sales as in the sales summary: after discounts, without tax and fees, less the net of refunds in the period.\n\nRisk tier T0. Needs role manager or above.",
       "inputSchema": {
         "type": "object",
@@ -4988,6 +6445,23 @@
         "reports"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Sales summary\n\nTotals and breakdowns (by day, order type, source, tender, category, rule and reporting class, voids, refunds) for a date range with filters for outlet, brand, station, shift, source, order type, staff and category. `format=csv` returns CSV. Every figure is a sum of register-written cents. Every `net` is net sales: items after discounts, without tax and fees, less the net of refunds made in the period (`totals.refunds`); `totals.fees` excludes tax and `totals.total` is what was collected before refunds (`net + refunds + fees + tax = total`).\n\nRisk tier T0. Needs role manager or above.",
       "inputSchema": {
         "type": "object",
@@ -5068,6 +6542,23 @@
         "order.fired",
         "print_job.created"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Accept a held QR round\n\nFires the round's lines and prints kitchen tickets.\n\nRisk tier T2. Needs role server or above. Emits round.accepted, order.fired, print_job.created.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -5114,6 +6605,23 @@
         "pos.read"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "QR rounds of an outlet\n\nPending rounds waiting for acceptance, and recent decided ones.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -5152,6 +6660,23 @@
         "round.rejected",
         "line.voided"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Reject a held QR round\n\nRemoves the round's lines with the given reason and releases daily caps.\n\nRisk tier T2. Needs role server or above. A reason is required. Emits round.rejected, line.voided.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -5166,7 +6691,11 @@
               "reason": {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 200
+                "maxLength": 200,
+                "x-sail-untrusted": [
+                  "reason",
+                  "reject_reason"
+                ]
               }
             },
             "required": [
@@ -5207,6 +6736,23 @@
       ],
       "emits": [
         "service_request.acknowledged"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Acknowledge a table request\n\nMarks the request done.\n\nRisk tier T1. Needs role server or above. Emits service_request.acknowledged.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -5250,6 +6796,23 @@
         "pos.read"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Table requests of an outlet\n\nOpen and recently acknowledged requests.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -5284,6 +6847,24 @@
       ],
       "emits": [
         "shift.closed"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Close a shift\n\nWith the counted cash. Returns expected vs counted cash including rounding, and the shift's Z figures. A variance above the merchant's `cash_variance_threshold` needs `variance_reason`; without one the close is refused (400, `details` has expected, counted, variance and variance_threshold). Cashier+ for own shift; Manager+ for another's.\n\nRisk tier T2. Needs role cashier or above. Emits shift.closed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -5325,7 +6906,8 @@
                   "string",
                   "null"
                 ],
-                "maxLength": 200
+                "maxLength": 200,
+                "x-sail-untrusted": true
               }
             },
             "required": [
@@ -5366,6 +6948,24 @@
         "reports"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Shifts of an outlet\n\nOpen and closed shifts with their summaries.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -5408,6 +7008,24 @@
       "emits": [
         "shift.opened"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Open a shift\n\nWith a counted float. One open shift per station (or per outlet when no station).\n\nRisk tier T2. Needs role cashier or above. Emits shift.opened.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -5441,7 +7059,10 @@
                   "string",
                   "null"
                 ],
-                "maxLength": 40
+                "maxLength": 40,
+                "x-sail-untrusted": [
+                  "name@shifts"
+                ]
               },
               "float_cents": {
                 "type": "integer",
@@ -5494,6 +7115,23 @@
         "reports"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List staff\n\nStaff of the merchant with role and outlet scope. PINs are never returned.\n\nRisk tier T0. Needs role manager or above.",
       "inputSchema": {
         "type": "object",
@@ -5522,6 +7160,23 @@
         "kitchen"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Sold-out and capped products at an outlet\n\nSold-out and capped products at an outlet\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -5549,6 +7204,23 @@
       ],
       "emits": [
         "stock.sold_out"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Mark a product sold out at an outlet\n\nToday, until a date, or indefinitely. Enforced by lines.add and rounds.submit.\n\nRisk tier T1. Needs role cashier or above. Emits stock.sold_out.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -5622,6 +7294,23 @@
       "emits": [
         "stock.restored"
       ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Restore a sold-out product\n\nRestore a sold-out product\n\nRisk tier T1. Needs role cashier or above. Emits stock.restored.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
@@ -5672,6 +7361,23 @@
       ],
       "emits": [
         "stock.cap_set"
+      ],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
       ],
       "description": "Set a daily quantity cap\n\nCounts down with sales and blocks at 0. Null removes the cap.\n\nRisk tier T2. Needs role manager or above. Emits stock.cap_set.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
@@ -5731,6 +7437,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Get a table\n\nGet a table\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -5758,6 +7481,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List tables\n\nList tables\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -5794,6 +7534,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List tax classes and their rates\n\nEvery tax class of the merchant with its rates: the default rate (no outlet, no order type) and any outlet or order-type rate. A rate is a list of named components in basis points; an empty list is tax-exempt.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -5822,6 +7579,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Get a tender type\n\nGet a tender type\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -5849,6 +7623,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List tender types\n\nList tender types\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -5881,6 +7672,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "Get a void reason\n\nGet a void reason\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
@@ -5908,6 +7716,23 @@
         "config.author"
       ],
       "emits": [],
+      "untrusted": [
+        "cancel_reason",
+        "customer_ref",
+        "delivery_address",
+        "delivery_notes",
+        "destination",
+        "device_label",
+        "guest_name",
+        "note",
+        "notes",
+        "reason",
+        "reference",
+        "reject_reason",
+        "text",
+        "variance_reason",
+        "void_reason"
+      ],
       "description": "List void reasons\n\nList void reasons\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
