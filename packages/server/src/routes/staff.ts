@@ -39,6 +39,15 @@ const StaffInput = z.object({
 });
 const StaffPatch = StaffInput.omit({ id: true }).partial().extend({ active: z.boolean().optional() });
 
+/**
+ * Events and the audit log are kept for good and readable more widely than the team list (agents read the audit log),
+ * so they record that a person's email changed, never the address.
+ */
+export function withoutContact<T extends { email?: unknown }>(v: T): Omit<T, "email"> & { email_changed?: true } {
+  const { email, ...rest } = v;
+  return email === undefined ? rest : { ...rest, email_changed: true };
+}
+
 export const toStaff = (s: typeof staff.$inferSelect) => ({
   id: s.id,
   name: s.name,
@@ -111,7 +120,7 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
         riskCeiling: body.risk_ceiling ?? null,
       })
       .returning();
-    const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "staff.created", aggregate: { kind: "staff", id: row!.id }, operationId: "staff.create", payload: toStaff(row!), correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
+    const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "staff.created", aggregate: { kind: "staff", id: row!.id }, operationId: "staff.create", payload: withoutContact(toStaff(row!)), correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
     await recordAudit(p, { action: "staff.create", targetKind: "staff", targetId: row!.id, details: { name: row!.name, role: row!.role, outlet_ids: row!.outletIds } });
     return c.json({ data: toStaff(row!), events: [ev], warnings: [] }, 201);
   });
@@ -144,7 +153,7 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
       await db().update(backofficeSessions).set({ endedAt: new Date() }).where(and(eq(backofficeSessions.staffId, id), isNull(backofficeSessions.endedAt)));
       await db().update(backofficeLinks).set({ revokedAt: new Date() }).where(and(eq(backofficeLinks.staffId, id), isNull(backofficeLinks.usedAt), isNull(backofficeLinks.revokedAt)));
     }
-    const { pin: _pin, ...auditable } = body;
+    const { pin: _pin, ...auditable } = withoutContact(body);
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "staff.updated", aggregate: { kind: "staff", id }, operationId: "staff.update", payload: { ...auditable, pin_changed: body.pin !== undefined }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
     await recordAudit(p, { action: "staff.update", targetKind: "staff", targetId: id, details: { ...auditable, pin_changed: body.pin !== undefined } });
     return c.json({ data: toStaff(row), events: [ev], warnings: [] }, 200);

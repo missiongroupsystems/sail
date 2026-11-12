@@ -275,7 +275,7 @@ export function identityRoutes(app: OpenAPIHono<AppEnv>) {
       await preAuthoriseLogin(tx(), row, email);
       out = { kind: "pre_authorised", email, url: null, expires_at: null };
     }
-    await recordAudit(p, { action: "staff.invite", targetKind: "staff", targetId: row.id, details: { email, kind: out.kind } });
+    await recordAudit(p, { action: "staff.invite", targetKind: "staff", targetId: row.id, details: { kind: out.kind } });
     return c.json({ data: out, events: [], warnings: out.url ? ["Copy the link now; it is not shown again."] : [] }, 201);
   });
 

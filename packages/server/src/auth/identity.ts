@@ -81,7 +81,7 @@ async function linkPreAuthorised(t: RequestTx, sub: string, email: string) {
     .returning();
   // Another request of the same first sign-in linked it a moment ago.
   if (!row) return (await t.db.select().from(staff).where(and(eq(staff.authSubject, sub), eq(staff.active, true))).limit(1))[0] ?? null;
-  await t.db.insert(auditLog).values({ merchantId: row.merchantId, actorType: "staff", actorId: row.id, actorName: row.name, actorRole: row.role, action: "staff.login_linked", targetKind: "staff", targetId: row.id, details: { email } });
+  await t.db.insert(auditLog).values({ merchantId: row.merchantId, actorType: "staff", actorId: row.id, actorName: row.name, actorRole: row.role, action: "staff.login_linked", targetKind: "staff", targetId: row.id });
   return row;
 }
 

@@ -394,3 +394,18 @@ describe("A7: brand scope is enforced, for agents and for staff", () => {
     }
   });
 });
+
+describe("A8: staff contact details never reach the audit log or events", () => {
+  it("changing, inviting or creating staff with an email records that it changed, not the address (R5.1)", async () => {
+    const addr = `sam.private.${randomUUID().slice(0, 6)}@example.com`;
+    expect((await call("PATCH", `/v1/staff/${w.m.server.id}`, { token: w.m.admin.token, body: { email: addr } })).status).toBe(200);
+    const created = await call<{ data: { id: string } }>("POST", "/v1/staff", { token: w.m.admin.token, body: { name: "New", role: "server", email: `new.${addr}` } });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const tok = await session((await identity({ role: "manager", toolsets: ["reports"], risk_ceiling: "T1" })).credential);
+    const audit = await call("GET", "/v1/audit?limit=200", { token: tok });
+    expect(audit.status).toBe(200);
+    expect(JSON.stringify(audit.body)).not.toContain(addr);
+    const stored = await db.sql`select id from events where payload::text like ${"%" + addr + "%"} union all select id from audit_log where details::text like ${"%" + addr + "%"}`;
+    expect(stored).toEqual([]);
+  });
+});
