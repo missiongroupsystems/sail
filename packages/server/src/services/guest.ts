@@ -63,13 +63,14 @@ export async function recordHit(merchantId: string, key: string, limit: readonly
   await hitWindow(merchantId, key, [Number.MAX_SAFE_INTEGER, limit[1]], true);
 }
 
-/** Run `fn` as the register (app_authenticated) inside a guest request, then drop back to app_guest. */
+/** Run `fn` as the register (app_authenticated) inside a guest or agent request, then drop back to the caller's role. */
 export async function asSystem<T>(fn: () => Promise<T>): Promise<T> {
+  const [me] = await tx()<{ role: string }[]>`select current_user as role`;
   await tx().unsafe("set local role app_authenticated");
   try {
     return await fn();
   } finally {
-    await tx().unsafe("set local role app_guest");
+    await tx().unsafe(`set local role "${me!.role}"`);
   }
 }
 

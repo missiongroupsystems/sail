@@ -57,8 +57,9 @@ registerFloorExtra(async (outletId) => {
   return { pending_rounds_by_order: Object.fromEntries(pending.map((p) => [p.orderId, p.n])), requests_by_table: Object.fromEntries(reqs.map((r) => [r.tableId, r.n])) };
 });
 
+// Whoever closed the order (a guest, an agent), the register ends its guest sessions.
 registerOrderClosedHook(async (orderId) => {
-  await revokeSessionsForOrder(orderId);
+  await asSystem(() => revokeSessionsForOrder(orderId));
 });
 
 const LineInputSchema = z.object({ line_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1).max(50), modifiers: z.array(z.object({ group_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1).max(20).optional() })).max(40).optional(), notes: z.string().max(200).nullable().optional(), seat_no: z.number().int().min(1).max(99).nullable().optional() });

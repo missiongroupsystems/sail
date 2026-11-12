@@ -10,7 +10,7 @@ import { buildApp, type App } from "../src/app.js";
 import { withTransaction } from "../src/db/client.js";
 import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
 import { expireProposals } from "../src/services/agents.js";
-import { lockOrder } from "../src/services/orders.js";
+import { lockOrder, orderClosed } from "../src/services/orders.js";
 import { buildToolCatalog, createMcpHandler, loadCatalog, toolsFor, wrapUntrusted, type ToolDef } from "../src/mcp/index.js";
 import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb, sgSeedRules } from "./helpers.js";
 
@@ -252,6 +252,20 @@ describe("ceilings and proposals", () => {
     expect((await call("GET", "/v1/me", { token: live })).status).toBe(401);
     expect((await startSession(r.body.data.credential)).status).toBe(401);
     expect((await startSession(rot.body.data.credential)).status).toBe(201);
+  });
+
+  it("closing an order ends its guest sessions as the register, so it works under the agent's database role too", async () => {
+    const o = await call<{ data: Snap }>("POST", "/v1/orders", { token: cashierPin, body: { order_id: randomUUID(), order_type: "takeaway", takeaway_ref: "G", outlet_id: A.outletId, brand_id: A.brandId } });
+    const [sess] = await db.sql<{ id: string }[]>`insert into guest_sessions (merchant_id, outlet_id, brand_id, table_id, channel_link_id, order_id, device_hash, expires_at) values (${A.merchantId}, ${A.outletId}, ${A.brandId}, ${ids.table}, ${ids.link}, ${o.body.data.id}, 'device', now() + interval '1 hour') returning id`;
+    await withTransaction(async (t) => {
+      await t.sql`select set_config('app.current_merchant', ${A.merchantId}, true), set_config('app.current_outlets', '*', true), set_config('app.current_principal', ${cashierAgent.id}, true), set_config('app.current_principal_type', 'agent', true)`;
+      await t.sql.unsafe("set local role app_agent");
+      await orderClosed(o.body.data.id);
+      // The caller's role is back in force afterwards.
+      expect((await t.sql<{ r: string }[]>`select current_user as r`)[0]!.r).toBe("app_agent");
+    });
+    const [after] = await db.sql<{ revoked: boolean }[]>`select revoked_at is not null as revoked from guest_sessions where id = ${sess!.id}`;
+    expect(after!.revoked).toBe(true);
   });
 
   it("app_agent has no access to PIN hashes, tokens or sessions in the database", async () => {
