@@ -561,11 +561,18 @@ function applyToStates(rule: PricingRule, eligible: readonly LineState[], magnit
   });
 }
 
+/**
+ * Re-emit a frozen adjustment with its stored per-line amounts. A frozen
+ * discount takes at most what the line is now worth: a line cut in quantity or
+ * discounted since the freeze keeps its share only up to its running amount,
+ * so no line goes below zero, and a line an exclusive discount has taken since
+ * the freeze gets none of it (exclusive blocks every later discount, frozen or not).
+ */
 function applyFrozen(rule: PricingRule, app: ManualApplication | null, f: FrozenAdjustment, states: LineState[]): Adjustment {
   const byLine = new Map(states.map((s) => [s.line.line_id, s]));
   const present = f.lines.filter((l) => byLine.has(l.line_id));
   const eligible = present.map((l) => byLine.get(l.line_id)!);
-  const magnitudes = present.map((l) => Math.abs(l.amount));
+  const magnitudes = present.map((l, i) => (rule.kind !== "discount" ? Math.abs(l.amount) : eligible[i]!.blocked ? 0 : Math.min(Math.abs(l.amount), eligible[i]!.running)));
   const adj = buildAdjustment(rule, app, eligible, magnitudes, false, true);
   applyToStates(rule, eligible, magnitudes);
   return adj;

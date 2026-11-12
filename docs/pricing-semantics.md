@@ -71,6 +71,7 @@ price(order, rules, context) → { lines, adjustments, totals, trace, warnings, 
 - `freezeFrom(result, rules)` extracts the freezable adjustments from a live result; the server stores them at the first payment.
 - With `context.frozen` set:
   - a freezable rule that **was** applied at the freeze is re-emitted with its stored per-line amounts (lines that no longer exist are dropped), marked `frozen: true`;
+  - a frozen **discount** takes at most what the line is now worth: on a line cut in quantity, comped or discounted since the freeze, its share is capped at the line's running amount, and a line an exclusive discount took since the freeze gets none of it. The stored amounts stay as they were, so a line that grows back gets its share back. No line, bill or tax component goes below zero;
   - a freezable rule that **was not** applied stays off, even if its conditions now hold;
   - lines added after the freeze receive line-level rules only (minus any with minimum spend);
   - fees recompute on the current discounted amounts, so a frozen discount keeps a paid check stable.
@@ -83,7 +84,7 @@ The engine prices whatever lines it is given. The server (`repriceOrder`) never 
 ## 6. Output invariants (all property-tested)
 1. Every adjustment's line amounts sum to its total; the same for tax.
 2. `|total| ≤ cap` for every capped rule.
-3. `net_amount ≥ 0` for every line; `net = base + discounts`.
+3. `net_amount ≥ 0` for every line; `net = base + discounts`. This holds after the freeze too, whatever happens to the unpaid lines (quantity cuts, comps, item discounts, removed or moved lines).
 4. An uncapped percent fee equals the percentage of each eligible line's net amount (no compounding).
 5. `Σ line totals = totals.total`; `net_subtotal = subtotal + discount_total`; exclusive: `total = net_subtotal + fee_total + tax_total`; inclusive: `total = net_subtotal + fee_total`.
 6. Rule order and repeated evaluation do not change the result.
