@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { expect, test as base, type Page, type Response } from "@playwright/test";
 
 export const API = process.env.E2E_API_URL ?? "http://localhost:8080";
-export const WEB = "http://localhost:3000";
+export const WEB = process.env.E2E_WEB_URL ?? "http://localhost:3000";
 export const GUEST = "http://localhost:3001";
 
 type DemoMerchant = { merchantId: string; brandId: string; outletId: string; stationId: string };
