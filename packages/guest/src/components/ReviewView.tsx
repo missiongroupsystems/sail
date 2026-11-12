@@ -93,7 +93,7 @@ export function ReviewView({ session, menu, items, guestName, onGuestName, canOr
                 <li key={item.key} className="flex flex-col gap-2 py-4 hairline-b">
                   <div className="flex items-baseline gap-3">
                     <span className="w-7 shrink-0 text-body tabular text-ink-2">{item.quantity}×</span>
-                    <span className="min-w-0 flex-1 font-display text-line text-ink">{item.name}</span>
+                    <span className="min-w-0 flex-1 font-display text-line text-ink wrap-anywhere">{item.name}</span>
                     <span className="shrink-0 text-body text-ink">
                       <Money cents={item.unit_price} />
                       {item.quantity > 1 ? <span className="text-ink-2"> each</span> : null}
@@ -112,7 +112,8 @@ export function ReviewView({ session, menu, items, guestName, onGuestName, canOr
                       ))}
                     </ul>
                   ) : null}
-                  {item.notes ? <p className="pl-10 text-body text-ink-2">Note: {item.notes}</p> : null}
+                  {/* A pasted link or a long unbroken run wraps instead of widening the page past Send to kitchen. */}
+                  {item.notes ? <p className="pl-10 text-body text-ink-2 wrap-anywhere">Note: {item.notes}</p> : null}
                   {itemError ? <InlineError error={{ message: itemError.message, remedy: itemError.remedy ?? (error?.kind === "group" ? "Tap Edit to choose." : null) }} className="ml-10" /> : null}
                   <div className="flex gap-2 pl-10 pt-1">
                     <BrandButton onPress={() => onEdit(item.key)} isDisabled={sending}>

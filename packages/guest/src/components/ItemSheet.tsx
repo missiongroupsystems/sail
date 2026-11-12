@@ -99,7 +99,11 @@ export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupE
 
   // The same rule as the POS picker: while a minimum is unmet the button says what is missing ("Choose 1 more: Protein").
   // It stays pressable so a VoiceOver user can reach it; pressing takes them to that group.
-  const addLabel = editing ? "Update item" : quantity > 1 ? `Add ${quantity} to order · ${money(product.price)} each` : `Add to order · ${money(product.price)}`;
+  // The price is the menu price and each chosen option's price, as the register lists them (a default option that costs
+  // extra included); the phone never adds them up, so the button shows the parts, as the review page does.
+  const extras = toModifiers(menu, product, selection).filter((m) => m.price !== 0).map((m) => (m.quantity > 1 ? `${m.quantity} × ${money(m.price)}` : money(m.price)));
+  const price = [money(product.price), ...extras].join(" + ");
+  const addLabel = editing ? "Update item" : quantity > 1 ? `Add ${quantity} to order · ${price} each` : `Add to order · ${price}`;
   const label = unmet ? unmet.message : addLabel;
 
   return (
