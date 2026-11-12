@@ -1,5 +1,5 @@
 import { formatMoney, type Cents, type MoneyFormat } from "../money.js";
-import type { Align, SizeMultiplier } from "./encoder.js";
+import { canEncodeSingleByte, type Align, type SizeMultiplier } from "./encoder.js";
 import type { PaperWidth } from "./types.js";
 
 /**
@@ -201,9 +201,16 @@ export function columns(left: string, rightText: string, cols: number): string[]
   return [...wrap(left, cols), ...wrap(rightText, cols).map((l) => right(l, cols))];
 }
 
-/** Money text for receipts in the merchant's currency and locale, true minus sign for negatives. */
+/**
+ * Money text for receipts in the merchant's currency and locale, true minus sign for negatives, always in Latin digits
+ * and in characters the printer's code page carries: a symbol outside it (₹, ฿, د.ك.) gives way to the ISO code
+ * ("2.125 KWD"), as on the PDFs, so an amount never goes out as a raster image or in Kanji mode.
+ */
 export function money(cents: Cents, fmt: MoneyFormat): string {
-  return formatMoney(cents, fmt);
+  const latin = { currency: fmt.currency, locale: new Intl.Locale(fmt.locale, { numberingSystem: "latn" }).toString() };
+  const plain = (s: string) => s.replace(/[\u200e\u200f\u061c\u202a-\u202e\u2066-\u2069]/g, "").replace(/[\u2009\u202f]/g, " ").replace(/\uffe5/g, "¥").trim();
+  const s = plain(formatMoney(cents, latin));
+  return canEncodeSingleByte(s) ? s : plain(formatMoney(cents, latin, { currencyDisplay: "code" }));
 }
 
 /** `Subtotal                                $34.80`. */

@@ -64,12 +64,17 @@ const ALIGN_CODE: Record<Align, number> = { left: 0, center: 1, right: 2 };
 const utf8 = new TextEncoder();
 export const encodeUtf8: CjkEncoder = (text) => utf8.encode(text);
 
-/** Map one code point to its single-byte value in WPC1252/Latin-1, or -1 when it has none. */
+/** WPC1252's characters in 0x80–0x9F (the euro sign, typographic quotes and dashes), which Latin-1 leaves as controls. */
+const WPC1252_HIGH: ReadonlyMap<number, number> = new Map(
+  [..."€\u0081‚ƒ„…†‡ˆ‰Š‹Œ\u008dŽ\u008f\u0090‘’“”•–—˜™š›œ\u009džŸ"].map((ch, i) => [ch.codePointAt(0)!, 0x80 + i] as const).filter(([cp]) => cp > 0x9f),
+);
+
+/** Map one code point to its single-byte value in WPC1252 (the default code page), or -1 when it has none. */
 export function singleByteFor(codePoint: number): number {
   if (codePoint >= 0x20 && codePoint < 0x7f) return codePoint;
   if (codePoint === 0x2212) return 0x2d; // true minus sign -> hyphen-minus
   if (codePoint >= 0xa0 && codePoint <= 0xff) return codePoint;
-  return -1;
+  return WPC1252_HIGH.get(codePoint) ?? -1;
 }
 
 export function canEncodeSingleByte(text: string): boolean {

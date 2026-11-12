@@ -21,7 +21,10 @@ import {
   itemLine,
   justify,
   modifierLine,
+  money,
   moneyRow,
+  documentToBytes,
+  text,
   noteLine,
   qtyColumn,
   renderBill,
@@ -536,8 +539,24 @@ describe("layout", () => {
     const sgd = { currency: "SGD", locale: "en-SG" };
     expect(moneyRow("Member 10% off", -488, 48, sgd)).toEqual(["Member 10% off" + " ".repeat(28) + "−$4.88"]);
     expect(moneyRow("Total", 123456789, 32, sgd)).toEqual(["Total" + " ".repeat(14) + "$1,234,567.89"]);
-    // The full-width yen sign takes two columns.
-    expect(moneyRow("Total", 1600, 32, { currency: "JPY", locale: "ja-JP" })).toEqual(["Total" + " ".repeat(20) + "￥1,600"]);
+    // The full-width yen sign is the code page's ¥, one column, as on the PDFs.
+    expect(moneyRow("Total", 1600, 32, { currency: "JPY", locale: "ja-JP" })).toEqual(["Total" + " ".repeat(21) + "¥1,600"]);
+  });
+
+  it("amounts print from the code page in Latin digits: the euro sign natively, a symbol the code page lacks as its ISO code", () => {
+    expect(money(1250, { currency: "EUR", locale: "de-DE" })).toBe("12,50\u00a0€");
+    expect(money(1250, { currency: "EUR", locale: "en-IE" })).toBe("€12.50");
+    expect(money(2125, { currency: "KWD", locale: "ar-KW" })).toBe("2.125\u00a0KWD");
+    expect(money(-2125, { currency: "KWD", locale: "ar-KW" })).toBe("−2.125\u00a0KWD");
+    expect(money(1250, { currency: "INR", locale: "hi-IN" })).toMatch(/^INR\s?12\.50$/);
+    expect(money(1250, { currency: "THB", locale: "th-TH" })).toMatch(/^THB\s?12\.50$/);
+    expect(money(25000, { currency: "IRR", locale: "fa-IR" })).not.toMatch(/[\u06f0-\u06f9\u0660-\u0669\u200e\u200f]/);
+    for (const [currency, locale] of [["EUR", "de-DE"], ["KWD", "ar-KW"], ["INR", "hi-IN"], ["JPY", "ja-JP"], ["IRR", "fa-IR"], ["THB", "th-TH"]] as const) expect(canEncodeSingleByte(money(123456, { currency, locale })), `${currency} ${locale}`).toBe(true);
+    // The euro sign is WPC1252's 0x80, so the line goes out as text, not as a raster image or Kanji-mode bytes.
+    expect([...encodeSingleByte("€1")]).toEqual([0x80, 0x31]);
+    const bill = documentToBytes([text(moneyRow("Total", 1250, 32, { currency: "EUR", locale: "de-DE" })[0]!)], { width: "58mm", code_page_cjk: true, cut: false });
+    expect([...bill]).toContain(0x80);
+    expect([...bill]).not.toContain(0x1c); // no FS & (Kanji mode on)
   });
 
   it("item, modifier and note lines", () => {
