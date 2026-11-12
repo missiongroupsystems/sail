@@ -116,9 +116,18 @@ Arguments: merchant name, Admin name, Admin email, an optional 6-digit PIN, then
 
 ### Signing in and lockout
 
-Sessions last 12 hours. **Sign out** in the user menu ends the session on the server as well as in the browser; **Change password** in the same menu ends your other sessions. An unknown email and a wrong password get the same answer. Five failed attempts lock that email for 15 minutes, and twenty from one address lock the address; the counters are in Postgres, so they hold across API machines and restarts.
+Sessions last 12 hours. **Sign out** in the user menu ends the session on the server as well as in the browser; **Change password** in the same menu ends your other sessions. An unknown email and a wrong password get the same answer. The lockout is built so that knowing someone's email does not let you lock them out, while guessing stays slow:
 
-The address lock counts the address the API sees. When the API is reached only through the web app or a proxy that sets `X-Forwarded-For`, set `TRUST_PROXY=1` so it counts the browser's address (the last entry) instead of the proxy's. Do not set it when callers can reach the API directly, because they could then choose their own address. The web app passes on the header it receives, so put a proxy in front of it that overwrites `X-Forwarded-For` with the real client address. Without one, a caller can send a different address on every attempt and avoid the address lock; the email lock still applies. Without `TRUST_PROXY`, every sign-in through the web app shares the web server's address, so twenty failures from anyone lock web sign-in for everyone for 15 minutes.
+| Counter | Limit | Effect |
+|-|-|-|
+| One address and one email | 5 failures | That pair is locked for 15 minutes, the right password included. The owner signing in from their own address is not affected. |
+| One address, any emails | 20 failures | The address is locked for 15 minutes (password spraying). |
+| One email, all addresses together | after 5 failures | Each further failure pauses that email for 2, 4, 8 ... seconds, up to 3 minutes, which keeps guesses from many addresses near 20 an hour. During an attack the owner waits at most 3 minutes, not 15. |
+| One email, all addresses together | 50 failures | The email is locked for 15 minutes, and an `auth.sign_in_locked` entry in the merchant's audit log tells the Admins. |
+
+A right password clears the email's and the pair's counts but never a lock or a pause, and never the address's count. The counters are in Postgres, so they hold across API machines and restarts. Changing your password has its own limit: 5 wrong current passwords lock password changes for that person for 15 minutes.
+
+The address counters use the address the API sees. `X-Forwarded-For` is honoured only when `TRUST_PROXY=1`; without it the header is ignored, so a caller cannot choose its own address (a test covers both). When the API is reached only through the web app or a proxy that sets `X-Forwarded-For`, set `TRUST_PROXY=1` so it counts the browser's address (the last entry) instead of the proxy's. Do not set it when callers can reach the API directly, because they could then choose their own address. The web app passes on the header it receives, so put a proxy in front of it that overwrites `X-Forwarded-For` with the real client address. Without one, a caller can send a different address on every attempt and avoid the address lock; the email lock still applies. Without `TRUST_PROXY`, every sign-in through the web app shares the web server's address, so twenty failures from anyone lock web sign-in for everyone for 15 minutes.
 
 ### Adding people
 

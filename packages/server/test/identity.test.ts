@@ -105,24 +105,49 @@ describe("sign-in", () => {
 });
 
 describe("lockout", () => {
-  it("5 failures lock the email for 15 minutes from any address, the right password included, and the lock holds on another API instance", async () => {
+  it("5 failures lock the email for 15 minutes from that address only, the right password included; the owner signs in from their own address", async () => {
     const email = await givePassword(A, A.server.id);
-    for (let i = 0; i < 5; i++) expect((await signIn(email, `guess number ${i}`)).status).toBe(401);
-    const locked = await signIn(email, PASSWORD);
+    const attacker = "198.51.100.66";
+    for (let i = 0; i < 5; i++) expect((await signIn(email, `guess number ${i}`, attacker)).status).toBe(401);
+    const locked = await signIn(email, PASSWORD, attacker);
     expect(locked.status).toBe(429);
     expect(locked.body.details!.retry_after_seconds).toBeGreaterThan(14 * 60);
     // Another API process: a new app over the same database sees the same lock.
     const other = api(buildApp()).call;
-    expect((await signIn(email, PASSWORD, ip(), other)).status).toBe(429);
+    expect((await signIn(email, PASSWORD, attacker, other)).status).toBe(429);
+    // Knowing someone's email no longer locks them out: from their own address the right password works.
+    expect((await signIn(email, PASSWORD, "203.0.113.200")).status).toBe(201);
     // An unknown email locks exactly the same way, so the lock reveals nothing either.
     const ghost = `ghost.${randomUUID()}@nowhere.test`;
-    for (let i = 0; i < 5; i++) await signIn(ghost, `guess number ${i}`);
-    const ghostLocked = await signIn(ghost, PASSWORD);
+    for (let i = 0; i < 5; i++) await signIn(ghost, `guess number ${i}`, attacker);
+    const ghostLocked = await signIn(ghost, PASSWORD, attacker);
     expect(ghostLocked.status).toBe(429);
     expect({ ...ghostLocked.body, details: undefined }).toEqual({ ...locked.body, details: undefined });
-    // Once the lock has passed, the right password works and clears the count.
-    await db.sql`update pin_attempts set locked_until = now() - interval '1 second'`;
-    expect((await signIn(email, PASSWORD)).status).toBe(201);
+    await db.sql`delete from pin_attempts`;
+  });
+
+  it("guessing one email from many addresses slows down after 5 failures, and 50 lock the email and tell the merchant's Admins", async () => {
+    const email = await givePassword(A, A.cashier.id);
+    for (let i = 0; i < 5; i++) expect((await signIn(email, `guess ${i}`)).status).toBe(401);
+    expect((await signIn(email, "guess 5")).status).toBe(401); // the 6th failure starts a 2-second pause
+    const paused = await signIn(email, PASSWORD);
+    expect(paused.status).toBe(429);
+    expect(paused.body.details!.retry_after_seconds).toBeLessThanOrEqual(2);
+    // Each further failure doubles the pause, up to 3 minutes; skip the waiting by ending each pause.
+    let pause = 0;
+    for (let i = 6; i < 49; i++) {
+      await db.sql`update pin_attempts set locked_until = now() - interval '1 second' where scope like 'signin-email:%'`;
+      expect((await signIn(email, `guess ${i}`)).status).toBe(401);
+      pause = (await db.sql<{ s: number }[]>`select ceil(extract(epoch from locked_until - now()))::int as s from pin_attempts where scope like 'signin-email:%' and failures > 0`)[0]?.s ?? pause;
+    }
+    expect(pause).toBe(180);
+    await db.sql`update pin_attempts set locked_until = now() - interval '1 second' where scope like 'signin-email:%'`;
+    expect((await signIn(email, "guess 49")).status).toBe(401); // the 50th locks
+    const locked = await signIn(email, PASSWORD, "203.0.113.201");
+    expect(locked.status).toBe(429);
+    expect(locked.body.details!.retry_after_seconds).toBeGreaterThan(14 * 60);
+    const alert = await db.sql`select target_id from audit_log where action = 'auth.sign_in_locked' and merchant_id = ${A.merchantId}`;
+    expect(alert.map((r) => r.target_id)).toEqual([A.cashier.id]);
     await db.sql`delete from pin_attempts`;
   });
 

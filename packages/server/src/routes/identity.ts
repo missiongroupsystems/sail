@@ -35,9 +35,20 @@ registerOperations({
 
 /** Pre-tenant counters (sign-in happens before anyone knows the merchant) live under the nil merchant, which no RLS context ever matches. */
 const NO_MERCHANT = "00000000-0000-0000-0000-000000000000";
-const EMAIL_LIMITS: AttemptLimits = { maxFailures: 5, lockSeconds: 15 * 60, what: "sign-in attempts for this email" };
+/**
+ * Sign-in lockout, chosen so that guessing stays slow without letting anyone who knows an email lock its owner out:
+ * - an address and email pair locks after 5 failures for 15 minutes (the guesser, not the owner at their own address);
+ * - an address locks after 20 failures for 15 minutes, whatever the emails (password spraying);
+ * - an email, from all addresses together, pauses after its 5th failure for 2, 4, 8 ... seconds up to 3 minutes, which
+ *   keeps distributed guessing near 20 an hour, and locks for 15 minutes after 50, which also tells the merchant's
+ *   Admins through the audit log.
+ */
+const PAIR_LIMITS: AttemptLimits = { maxFailures: 5, lockSeconds: 15 * 60, what: "sign-in attempts for this email from this address" };
 const ADDRESS_LIMITS: AttemptLimits = { maxFailures: 20, lockSeconds: 15 * 60, what: "sign-in attempts from this address" };
+const EMAIL_LIMITS: AttemptLimits = { maxFailures: 50, lockSeconds: 15 * 60, what: "sign-in attempts for this email", delay: { after: 5, maxSeconds: 180 } };
+const PASSWORD_CHANGE_LIMITS: AttemptLimits = { maxFailures: 5, lockSeconds: 15 * 60, what: "wrong current passwords" };
 const emailScope = (email: string) => `signin-email:${sha256(email)}`;
+const pairScope = (address: string, email: string) => `signin-pair:${sha256(`${address}\n${email}`)}`;
 const INVITE_DAYS = 7;
 const RESET_HOURS = 24;
 
@@ -45,9 +56,18 @@ let dummyHash: string | null = null;
 /** Compared against when there is no stored hash, so an unknown email costs the same scrypt work as a wrong password. */
 const noHash = () => (dummyHash ??= hashSecret(randomToken()));
 
-const notRecognised = () => new AppError("unauthenticated", "Email or password not recognised", { remedy: "Check both and try again. After 5 failed attempts the email is locked for 15 minutes." });
+const notRecognised = () => new AppError("unauthenticated", "Email or password not recognised", { remedy: "Check both and try again. After 5 failed attempts from here the email is locked here for 15 minutes." });
 const alreadySetUp = () => new AppError("state_conflict", "This server is already set up", { remedy: "Sign in instead; an Admin can invite more people from Team." });
 const linkUnusable = () => new AppError("unauthenticated", "This link has expired or has already been used", { remedy: "Ask an Admin for a new link." });
+
+/** An email reached the sign-in cap: tell its merchant's Admins in the audit log, the place they review access. */
+async function alertAdmins(email: string): Promise<void> {
+  await withOwnTransaction(
+    (sql) => sql`insert into audit_log (merchant_id, actor_type, actor_id, actor_name, actor_role, action, target_kind, target_id, details)
+      select s.merchant_id, 'system', 'sign-in', 'Sign-in lockout', null, 'auth.sign_in_locked', 'staff', s.id, ${JSON.stringify({ failures: EMAIL_LIMITS.maxFailures, locked_minutes: EMAIL_LIMITS.lockSeconds / 60 })}::jsonb
+      from backoffice_logins l join staff s on s.id = l.staff_id where l.email = ${email}`,
+  );
+}
 
 function requireLocal(what: string) {
   if (identityProviderKind() !== "local") throw new AppError("not_found", `${what} is not used on this server`, { remedy: "Sign in through your organisation's identity provider." });
@@ -89,8 +109,10 @@ export function identityRoutes(app: OpenAPIHono<AppEnv>) {
     const body = c.req.valid("json");
     const email = normaliseEmail(body.email);
     // Counted before the password is checked, in Postgres, so concurrent guesses and other API machines all add up.
-    await takePinAttempt(NO_MERCHANT, `signin-address:${clientAddress(c)}`, ADDRESS_LIMITS);
-    await takePinAttempt(NO_MERCHANT, emailScope(email), EMAIL_LIMITS);
+    const address = clientAddress(c);
+    await takePinAttempt(NO_MERCHANT, `signin-address:${address}`, ADDRESS_LIMITS);
+    await takePinAttempt(NO_MERCHANT, pairScope(address, email), PAIR_LIMITS);
+    if ((await takePinAttempt(NO_MERCHANT, emailScope(email), EMAIL_LIMITS)).lockedNow) await alertAdmins(email);
     type Row = { password_hash: string | null; id: string; merchant_id: string; name: string; role: "server" | "cashier" | "manager" | "finance" | "admin"; active: boolean; auth_subject: string | null };
     const signedIn = await withTransaction(async (t) => {
       const [row] = await t.sql<Row[]>`select l.password_hash, s.id, s.merchant_id, s.name, s.role, s.active, s.auth_subject from backoffice_logins l join staff s on s.id = l.staff_id where l.email = ${email}`;
@@ -103,8 +125,9 @@ export function identityRoutes(app: OpenAPIHono<AppEnv>) {
       return { session, member };
     });
     if (!signedIn) throw notRecognised();
-    // A right password clears the email's count but never a lock, and never the address's count.
+    // A right password clears the email's and the pair's counts but never a lock, and never the address's count.
     await clearPinFailures(NO_MERCHANT, emailScope(email));
+    await clearPinFailures(NO_MERCHANT, pairScope(address, email));
     return c.json({ data: { ...signedIn.session, staff: { id: signedIn.member.id, name: signedIn.member.name, role: signedIn.member.role } } }, 201);
   });
 
@@ -125,7 +148,7 @@ export function identityRoutes(app: OpenAPIHono<AppEnv>) {
     checkPassword(body.new_password);
     const [login] = await db().select({ email: backofficeLogins.email }).from(backofficeLogins).where(and(eq(backofficeLogins.staffId, p.id), eq(backofficeLogins.merchantId, p.merchantId))).limit(1);
     if (!login) throw new AppError("unauthenticated", "Your back-office session has ended", { remedy: "Sign in again." });
-    await takePinAttempt(NO_MERCHANT, emailScope(login.email), EMAIL_LIMITS);
+    await takePinAttempt(NO_MERCHANT, `password-change:${p.id}`, PASSWORD_CHANGE_LIMITS);
     // Hashes are read and written as the connection owner: request roles have no access to them.
     const ended = await withOwnTransaction(async (sql) => {
       const [row] = await sql<{ password_hash: string | null }[]>`select password_hash from backoffice_logins where staff_id = ${p.id} and merchant_id = ${p.merchantId} for update`;
@@ -136,8 +159,8 @@ export function identityRoutes(app: OpenAPIHono<AppEnv>) {
       await sql`update backoffice_links set revoked_at = now() where staff_id = ${p.id} and used_at is null and revoked_at is null`;
       return others.length;
     });
-    if (ended == null) throw AppError.validation("Your current password is not right", { remedy: "Type your current password again. After 5 wrong attempts the email is locked for 15 minutes." });
-    await clearPinFailures(NO_MERCHANT, emailScope(login.email));
+    if (ended == null) throw AppError.validation("Your current password is not right", { remedy: "Type your current password again. After 5 wrong attempts password changes are locked for 15 minutes." });
+    await clearPinFailures(NO_MERCHANT, `password-change:${p.id}`);
     await recordAudit(p, { action: "auth.change_password", targetKind: "staff", targetId: p.id, details: { sessions_ended: ended } });
     return c.json({ data: { changed: true, sessions_ended: ended }, events: [], warnings: [] }, 200);
   });
