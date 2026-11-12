@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import { formatMoney, freezeFrom, PERMISSIONS, roleAtLeast, roundCash, type Role } from "@sail/shared";
+import { formatMoney, freezeFrom, percentOfCents, PERMISSIONS, roleAtLeast, roundCash, type Role } from "@sail/shared";
 import { db, tx } from "../db/client.js";
 import { businessDayCloses, checks, merchantSettings, orderLines, orders, payments, refunds, shifts, tenderTypes } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -23,6 +23,8 @@ export type RecordPaymentInput = {
   amount: number;
   tendered?: number | null;
   tipCents?: number;
+  /** A tip as a percentage (basis points) of the amount applied; the register works out the cents. Not with `tipCents`. */
+  tipBps?: number;
   reference?: string | null;
   stationId?: string | null;
 };
@@ -51,6 +53,7 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
   const formatCents = (amount: number) => formatMoney(amount, settings);
   if (!Number.isInteger(input.amount) || input.amount <= 0) throw AppError.validation("amount must be a positive number of cents");
   if (input.tipCents != null && (!Number.isInteger(input.tipCents) || input.tipCents < 0)) throw AppError.validation("tip_cents must be zero or a positive number of cents");
+  if (input.tipBps != null && input.tipCents != null) throw AppError.validation("Give the tip as tip_cents or as tip_bps, not both", { remedy: "Send tip_bps to preview a percentage, then the tip_cents it returned." });
 
   const paymentsSoFar = await db().select({ n: sql<number>`count(*)::int` }).from(payments).where(and(eq(payments.orderId, order.id), eq(payments.status, "recorded")));
   const firstPayment = (paymentsSoFar[0]?.n ?? 0) === 0;
@@ -75,12 +78,14 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
   let tendered: number | null = input.tendered ?? null;
   let rounding = 0;
   let change = 0;
-  const tip = input.tipCents ?? 0;
+  let tip = input.tipCents ?? 0;
   if (tender.isCash) {
     if (applied > balance) {
       tendered = tendered ?? applied;
       applied = balance;
     }
+    // A percentage tip in cash is rounded to the smallest cash amount, so the change can be paid.
+    if (input.tipBps != null) tip = roundCash(percentOfCents(applied, input.tipBps), settings.cashRoundingIncrement ?? 1).rounded;
     if (applied === balance && settings.cashRoundingIncrement && settings.cashRoundingIncrement > 1) {
       rounding = roundCash(balance, settings.cashRoundingIncrement).roundingCents;
     }
@@ -93,6 +98,7 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
       change = tendered - due;
     }
   } else {
+    if (input.tipBps != null) tip = percentOfCents(applied, input.tipBps);
     if (applied > balance) throw AppError.validation(`${tender.name} payments cannot exceed the balance of ${formatCents(balance)}`, { remedy: `The bill's balance is ${formatCents(balance)}. Enter the balance or a smaller part payment.`, details: { balance, check_id: check.id, check_total: check.total } });
   }
 

@@ -1,0 +1,1 @@
+ALTER TABLE "merchant_settings" ADD COLUMN "tips_enabled" boolean DEFAULT false NOT NULL;

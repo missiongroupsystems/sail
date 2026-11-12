@@ -23,6 +23,8 @@ export const merchantSettings = pgTable("merchant_settings", {
   cashDenominations: integer("cash_denominations").array().notNull().default([]),
   /** Closing a shift more than this many minor units out needs a reason. */
   cashVarianceThreshold: integer("cash_variance_threshold").notNull(),
+  /** The POS pay screen offers a tip (amount or a quick percentage). Off by default; the `us` preset turns it on. */
+  tipsEnabled: boolean("tips_enabled").notNull().default(false),
   /** HH:MM local time at which the business day rolls over. */
   businessDayCutoff: text("business_day_cutoff").notNull().default("04:00"),
   /** IANA time zone; required, never defaulted. */

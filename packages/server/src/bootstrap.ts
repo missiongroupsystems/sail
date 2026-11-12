@@ -52,8 +52,8 @@ export function presetSettings(preset: RegionPreset, input: MerchantSettingsInpu
  */
 export async function applyPreset(tx: TransactionSql, merchantId: string, preset: RegionPreset, input: MerchantSettingsInput): Promise<Record<string, string>> {
   const s = presetSettings(preset, input);
-  await tx`insert into merchant_settings (merchant_id, tax_mode, tax_rounding, cash_rounding_increment, cash_denominations, cash_variance_threshold, timezone, currency, locale, business_registration_label, tax_registration_label)
-    values (${merchantId}, ${s.taxMode}, ${preset.tax_rounding}, ${s.cashRounding}, ${preset.cash_denominations}, ${s.varianceThreshold}, ${s.timeZone}, ${s.currency}, ${s.locale}, ${preset.business_registration_label}, ${preset.tax_registration_label})`;
+  await tx`insert into merchant_settings (merchant_id, tax_mode, tax_rounding, cash_rounding_increment, cash_denominations, cash_variance_threshold, tips_enabled, timezone, currency, locale, business_registration_label, tax_registration_label)
+    values (${merchantId}, ${s.taxMode}, ${preset.tax_rounding}, ${s.cashRounding}, ${preset.cash_denominations}, ${s.varianceThreshold}, ${preset.tips_enabled}, ${s.timeZone}, ${s.currency}, ${s.locale}, ${preset.business_registration_label}, ${preset.tax_registration_label})`;
   const ids: Record<string, string> = {};
   for (const c of preset.tax_classes) {
     const id = randomUUID();

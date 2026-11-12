@@ -267,6 +267,13 @@
       "when": 1794511227057,
       "tag": "0037_rls_payment_providers",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1794518387845,
+      "tag": "0038_tips_enabled",
+      "breakpoints": true
     }
   ]
 }
