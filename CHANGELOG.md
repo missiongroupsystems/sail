@@ -4,6 +4,18 @@ Notable changes to Sail, newest first. Field and operation names are as in `pack
 
 ## Unreleased
 
+### Money
+- A frozen order discount takes at most what a line is now worth: after a payment, cutting or comping a line on an unpaid bill can no longer take it, its tax or its bill below zero.
+- Money fields read back everything they show, in every locale: Arabic-Indic and other native digits are accepted, as are Latin digits; groups must be the locale's. One parser (`parseAmount`) for every field. See [pricing semantics §8](docs/pricing-semantics.md#8-tax-model).
+- A paid bill's receipt, tax invoice and refund receipt no longer change when the order is re-priced: adjustments keep their ids, and a split bill's adjustment rows add up to its discount and fee.
+- Amounts are bigint (migrations 0038 to 0040). Every amount a request carries, and every line and order subtotal, is at most `MAX_AMOUNT` (10^12 minor units), with a validation error above it; IDR and VND days close.
+- Cash needs an open shift (`no_open_shift`). A payment or refund taken in a shift counts on the shift's business day. A business day closes once, only with its shifts closed and orders settled; after an early close new activity is dated on the next day. `orders.reopen` refuses a payment whose shift or day is closed, as `payments.void` does. See [§10](docs/pricing-semantics.md#10-business-days-shifts-and-the-z-report-server-not-the-engine).
+- The Z-report adds `reversals` (voided and reopened payments), `reconciliation` (tenders against sales) and `refunds.taxes`; the sales summary adds `refunds.taxes`; the exceptions report adds `payment_reversals`.
+- Refunds: the last units of a line give back exactly what is left; a tender split naming a payment twice is checked once against it; cash goes back rounded on the payment's running total, never more than it took.
+- PDFs print the euro sign, the yen sign and amounts in Arabic locales (Latin digits, the ISO code where a symbol cannot be drawn).
+- The importer refuses a row whose price or price override is not an amount instead of importing it without its override.
+- A terminal void the provider made although every call to it failed is found by the poll and applied.
+
 ### Payment providers
 - A payment-provider interface (`PaymentProvider`): start a payment on a terminal, read it, cancel it, void it, and verify and parse a webhook. A tender with `provider` and `terminal_id` sends its payments to that terminal; every other tender is recorded by hand as before, and a provider tender can no longer be recorded by hand.
 - Payment intents. `payments.start` pins the bill and the amount and tip, writes the intent and an outbox row, and returns at once; the worker calls the provider; the outcome, by webhook or by the worker's poll, is recorded through the ordinary payment path exactly once. An approval for a bill that changed or was paid another way, for a different amount, or after the intent was cancelled or expired (120 s) is voided at the provider and never applied. New operations `payments.start`, `payments.cancel` and `payment_intents.list`, and `payment_intent.*` events.
