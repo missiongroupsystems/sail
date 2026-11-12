@@ -15,6 +15,7 @@ What is built, what comes next and what Sail will not do. There are no dates. Th
 - Back office, iPad POS and guest app, with an end-to-end browser suite.
 - Agent identities, risk tiers, proposals and an MCP adapter generated from the API spec.
 - Built-in back-office sign-in with email and password, first-run setup, invitation and reset links, or an external identity provider.
+- A payment-provider interface for card terminals: payments sent to the terminal as intents, an outbox the worker drains, signed and replay-protected webhooks, and a terminal simulator. `payments.void` for a payment recorded in error.
 - Country-neutral configuration with region presets.
 
 ## Known gaps
@@ -29,10 +30,15 @@ What is built, what comes next and what Sail will not do. There are no dates. Th
 - One email signs in to one staff record on the whole server, so a person who works for two merchants on one server needs two emails.
 - Passwords use Node's default scrypt cost, the same as PINs. It has not been tuned or made configurable.
 - The built-in sign-in has no multi-factor step and sends no email: invitation and reset links are passed on by hand.
+- A refund of a terminal payment is recorded in the register but not sent to the provider; staff give it back on the terminal by hand.
+- The tip on a terminal payment is fixed when the payment is sent; the guest cannot change it on the terminal.
+- A provider's webhook secret is stored in plain text in `payment_provider_accounts`, readable by the merchant's request role though no route returns it.
+- A terminal payment is pinned to the bill's total and paid amount, not the order's version, so an edit that leaves the bill's total unchanged does not cancel it.
+- The payment outbox claims rows with `for update skip locked`, but more than one worker draining it at once has not been tested.
 
 ## Next
 
-- Payments interface: a provider abstraction for card terminals and online payments, with signed webhooks and simulators, instead of recording card payments by hand. `payments.void` for a tender recorded in error.
+- An adapter for a real card-terminal provider, and refunds of terminal payments given back through the provider (today they are given back on the terminal by hand).
 - Typed responses in the API spec for order snapshots, floor, menu and documents (they are open records today, so clients mirror the types).
 - Back-office screens for agent identities and proposals (both work through the API only).
 - An independent second implementation of pricing, splits and refunds to test the engine against.
@@ -45,7 +51,7 @@ What is built, what comes next and what Sail will not do. There are no dates. Th
 - Changesets: every configuration change drafted, validated, simulated against past orders and approved before it applies, by a person or an agent.
 - An agent runner with playbooks, a sandbox register and evals, and assistants in the POS and back office.
 - Masked customer views, so agents can work with customer records without seeing contact details.
-- Paying on the guest's phone, once the payments interface exists. Today guests order and staff take payment.
+- Online payments and paying on the guest's phone, on top of the payment-provider interface. Today guests order and staff take payment.
 - Offline order taking with sync.
 - Fees that compound on other fees, usage limits per customer.
 - Merging and splitting tables; uneven splits within one line; refunds that restore stock caps.

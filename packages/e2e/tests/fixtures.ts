@@ -4,7 +4,7 @@ import { expect, test as base, type Page, type Response } from "@playwright/test
 
 export const API = process.env.E2E_API_URL ?? "http://localhost:8080";
 export const WEB = process.env.E2E_WEB_URL ?? "http://localhost:3000";
-export const GUEST = "http://localhost:3001";
+export const GUEST = process.env.E2E_GUEST_URL ?? "http://localhost:3001";
 /** The first-run stack: an API on an empty database and its own back office (playwright.config.ts). */
 export const SETUP_API = process.env.E2E_SETUP_API_URL ?? "http://localhost:8091";
 export const SETUP_WEB = process.env.E2E_SETUP_WEB_URL ?? "http://localhost:3002";
@@ -13,9 +13,9 @@ type DemoMerchant = { merchantId: string; brandId: string; outletId: string; sta
 
 /**
  * What `dev:local` bootstrapped (written by packages/server/scripts/dev-local.ts): the Singapore demo merchant at the
- * top level and the EU VAT café (EUR, de-DE) under `eu`.
+ * top level and the EU VAT café (EUR, de-DE) under `eu`, and the card-terminal simulator's address.
  */
-export function devLocal(): DemoMerchant & { admin_password: string; eu: DemoMerchant } {
+export function devLocal(): DemoMerchant & { admin_password: string; payment_simulator: string; eu: DemoMerchant } {
   return JSON.parse(readFileSync(resolve(import.meta.dirname, "../../server/.dev-local.json"), "utf8"));
 }
 

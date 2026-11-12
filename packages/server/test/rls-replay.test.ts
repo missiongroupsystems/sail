@@ -28,6 +28,8 @@ beforeAll(async () => {
     await db.sql`insert into backoffice_logins (staff_id, merchant_id, email, password_hash) values (${m.admin.id}, ${m.merchantId}, ${`admin@${m.merchantId}.test`}, 'scrypt$x$y')`;
     await db.sql`insert into backoffice_links (merchant_id, staff_id, kind, token_hash, created_by, expires_at) values (${m.merchantId}, ${m.manager.id}, 'invite', ${`hash-${m.merchantId}`}, ${m.admin.id}, now() + interval '1 day')`;
     await db.sql`insert into display_destinations (merchant_id, outlet_id, name) values (${m.merchantId}, ${m.outletId}, 'Kitchen screen')`;
+    await db.sql`insert into payment_provider_accounts (merchant_id, provider, webhook_secret) values (${m.merchantId}, 'simulator', 'secret-for-the-replay-test')`;
+    await db.sql`insert into payment_webhook_events (merchant_id, provider, event_id) values (${m.merchantId}, 'simulator', 'evt_1')`;
     await db.sql`with s as (insert into stations (merchant_id, outlet_id, name) values (${m.merchantId}, ${m.outletId}, 'S') returning id)
       insert into staff_sessions (merchant_id, staff_id, station_id, outlet_id) select ${m.merchantId}, ${m.admin.id}, s.id, ${m.outletId} from s`;
   }
@@ -82,7 +84,7 @@ describe("RLS replay", () => {
       expect(seen, `${t.table_name}: saw ${seen}, own ${ownRows!.n}, total ${total!.n}`).toBe(expected);
       expect(total!.n).toBeGreaterThan(expected); // there really were other-tenant rows to hide
     }
-    expect(exercised).toEqual(expect.arrayContaining(["merchant_settings", "brands", "outlets", "stations", "staff", "staff_sessions", "audit_log", "events", "outlet_sequences", "merchant_sequences", "idempotency_keys", "pin_attempts", "guest_rate_hits", "backoffice_logins", "backoffice_sessions", "backoffice_links", "display_destinations"]));
+    expect(exercised).toEqual(expect.arrayContaining(["merchant_settings", "brands", "outlets", "stations", "staff", "staff_sessions", "audit_log", "events", "outlet_sequences", "merchant_sequences", "idempotency_keys", "pin_attempts", "guest_rate_hits", "backoffice_logins", "backoffice_sessions", "backoffice_links", "display_destinations", "payment_provider_accounts", "payment_webhook_events"]));
   });
 
   it("outlet scoping hides other outlets' rows for a limited staff member", async () => {

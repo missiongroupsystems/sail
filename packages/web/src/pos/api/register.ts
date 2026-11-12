@@ -22,6 +22,7 @@ import type {
   Outlet,
   OverrideGrant,
   OverrideSubject,
+  PaymentIntent,
   PaymentResult,
   Printer,
   PrintJob,
@@ -346,6 +347,27 @@ export type PaymentInput = {
 export async function recordPayment(api: PosApi, checkId: string, input: PaymentInput, opts?: MutationOpts): Promise<PaymentResult> {
   const res = await req(api.POST("/v1/checks/{id}/payments", { params: { path: { id: checkId } }, body: { ...mutation(opts), ...input }, headers: headers(opts) }));
   return res as unknown as PaymentResult;
+}
+
+/** Send a payment to the card terminal. Returns at once with a pending intent; the outcome arrives on the event stream. */
+export async function startTerminalPayment(api: PosApi, checkId: string, input: { intent_id: string; tender_type_id: string; amount: number; tip_cents?: number }, opts?: MutationOpts): Promise<PaymentIntent> {
+  const res = await req(api.POST("/v1/checks/{id}/payment-intents", { params: { path: { id: checkId } }, body: { ...(opts?.expectedVersion != null ? { expected_version: opts.expectedVersion } : {}), ...input }, headers: headers(opts) }));
+  return res.data as unknown as PaymentIntent;
+}
+
+export async function cancelTerminalPayment(api: PosApi, intentId: string): Promise<PaymentIntent> {
+  const res = await req(api.POST("/v1/payment-intents/{id}/cancel", { params: { path: { id: intentId } }, body: {}, headers: headers() }));
+  return res.data as unknown as PaymentIntent;
+}
+
+export async function listPaymentIntents(api: PosApi, orderId: string): Promise<PaymentIntent[]> {
+  return (await req(api.GET("/v1/orders/{id}/payment-intents", { params: { path: { id: orderId } } }))).data as unknown as PaymentIntent[];
+}
+
+/** Void a payment taken in error. A terminal payment comes back `pending_provider`: it is reversed once the provider confirms. */
+export async function voidPayment(api: PosApi, paymentId: string, reason: string, opts?: MutationOpts): Promise<MutationResult & { void: { payment_id: string; status: "voided" | "pending_provider" } }> {
+  const res = await req(api.POST("/v1/payments/{id}/void", { params: { path: { id: paymentId } }, body: { ...mutation(opts), reason }, headers: headers(opts) }));
+  return res as unknown as MutationResult & { void: { payment_id: string; status: "voided" | "pending_provider" } };
 }
 
 export async function completeOrder(api: PosApi, orderId: string, opts?: MutationOpts): Promise<MutationResult> {

@@ -7,7 +7,7 @@ Sail is beta software and has not run in production anywhere yet. Read the READM
 | Service | Package | Command | Notes |
 |-|-|-|-|
 | API | `server` | `node dist/index.js --role=app` | Stateless; run two or more behind HTTPS. Holds one `LISTEN` connection per process for SSE. |
-| Worker | `server` | `node dist/index.js --role=worker` | One instance. Scheduled rules, imports, print-claim re-queue, relay alerts, guest and proposal expiry. |
+| Worker | `server` | `node dist/index.js --role=worker` | One instance. Scheduled rules, imports, print-claim re-queue, relay alerts, guest and proposal expiry, and the payment-provider outbox, polling and expiry. |
 | MCP adapter | `server` | `PORT=8090 node dist/index.js --role=mcp` | Optional; only if you connect agents ([mcp.md](mcp.md)). Serves `/mcp`; give it its own `PORT`, since the default is 8080 like the API. |
 | Back office and POS | `web` | `pnpm --filter @sail/web build`, then `pnpm --filter @sail/web start` | Next.js on port 3000. The POS is `/pos`. |
 | Guest app | `guest` | `pnpm --filter @sail/guest build`, then `pnpm --filter @sail/guest start` | Next.js on port 3001. Give it its own host name; it is what table QR codes open. |
@@ -44,6 +44,7 @@ Read in `packages/server/src/config.ts`; `packages/server/.env.example` has a te
 | `WEB_APP_URL` | Declared but not read by any code today. | No |
 | `SAIL_VERSION` | Reported by `/health` and the spec. The Dockerfile sets it from a build argument. | No |
 | `SAIL_ROLE` | Alternative to `--role`. | No |
+| `PAYMENT_SIMULATOR_URL` | Development and tests: the terminal simulator behind the `simulator` payment provider. Leave unset in production. | No |
 | `MIGRATE_DATABASE_URL` | Used by `db:migrate` and `bootstrap`: a direct session connection. | Yes |
 
 ### Web (back office and POS)
@@ -156,7 +157,7 @@ Set `SUPABASE_URL` or `SUPABASE_JWT_SECRET` on the API, and `NEXT_PUBLIC_SUPABAS
 
 ## Operating
 
-- **Card payments are typed in by hand**, so compare each card tender's total on the Z-report with the terminal's end-of-day total before closing the shift. A payment taken but not recorded: record it with the terminal reference. Recorded but declined, or the wrong tender: there is no payment void, so refund it by amount with a reason, then record the right tender. Anything left over goes in the shift's variance reason.
+- **Card payments recorded by hand** need checking: compare each card tender's total on the Z-report with the terminal's end-of-day total before closing the shift. A payment taken but not recorded: record it with the terminal reference. Recorded but declined, or the wrong tender: void it (`payments.void`, a Manager) while the shift is open, then record the right tender; after the shift closes, refund it by amount with a reason. Anything left over goes in the shift's variance reason. Tenders linked to a provider are recorded by the register from the provider's answer; a void of one is given back at the provider before the payment is reversed.
 - **Releases.** Run migrations before the new API starts. Because migrations only add, the previous API image still runs against the newer schema, so rolling back the API is a redeploy of the old image. Never edit an applied migration; write a new one that reverses it. Deploy the web apps after the API whose spec they were generated from. Restoring a database backup rewinds sales, so treat it as a last resort.
 
 There is no offline mode: if the API is unreachable, stations stop. Agree a paper fallback with each outlet, and alert on `/health`, 503 responses, late print jobs (`GET /v1/outlets/{id}/print-jobs?late=true`) and relays shown offline.

@@ -13,3 +13,4 @@ import "./modules/v08-guest.js";
 import "./modules/v09-reports.js";
 import "./modules/v09-agents.js";
 import "./modules/v10-kitchen-display.js";
+import "./modules/v10-payment-providers.js";

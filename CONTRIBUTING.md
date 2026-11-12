@@ -27,7 +27,7 @@ Run these before you open a pull request. CI (`.github/workflows/ci.yml`) runs t
 | OpenAPI spec is up to date | `pnpm openapi:check` |
 | MCP tool list is up to date | `pnpm --filter @sail/server manifest:check` |
 | Schema changes have a migration | `pnpm db:generate` (must say "No schema changes" unless you meant to add one) |
-| End-to-end, in a browser | `pnpm test:e2e` (starts the API, web and guest apps itself, plus a second API and back office on an empty database for first-run setup; needs ports 8080, 3000, 3001, 8091 and 3002 free, or `E2E_API_URL`, `E2E_WEB_URL`, `E2E_SETUP_API_URL` and `E2E_SETUP_WEB_URL` to move them; run `pnpm --filter @sail/e2e exec playwright install chromium` once) |
+| End-to-end, in a browser | `pnpm test:e2e` (starts the API, web and guest apps itself, plus a second API and back office on an empty database for first-run setup; needs ports 8080, 3000, 3001, 8091 and 3002 free, or `E2E_API_URL`, `E2E_WEB_URL`, `E2E_GUEST_URL`, `E2E_SETUP_API_URL` and `E2E_SETUP_WEB_URL` to move them; run `pnpm --filter @sail/e2e exec playwright install chromium` once) |
 
 With `dev:local` running, `pnpm --filter @sail/guest smoke` and then `pnpm --filter @sail/web pos:smoke` drive the guest and POS flows through the API. Run them in that order on a fresh `dev:local`: the POS smoke uses up a guest rate limit the guest smoke needs.
 

@@ -55,6 +55,11 @@ describe("first-run setup", () => {
     // One POS station and no kitchen display: a display needs a destination, which setup does not guess.
     expect((await db.sql`select kind from stations where merchant_id = ${merchant!.id}`).map((st) => st.kind)).toEqual(["pos"]);
     expect((await db.sql`select count(*)::int as n from display_destinations where merchant_id = ${merchant!.id}`)[0]!.n).toBe(0);
+    // The preset's tenders, all recorded by hand: nothing is sent to a payment provider until an Admin configures one.
+    const tenders = await db.sql<{ name: string; provider: string | null }[]>`select name, provider from tender_types where merchant_id = ${merchant!.id}`;
+    expect(tenders.length).toBeGreaterThan(0);
+    expect(tenders.filter((t) => t.provider !== null)).toEqual([]);
+    expect((await db.sql`select count(*)::int as n from payment_provider_accounts where merchant_id = ${merchant!.id}`)[0]!.n).toBe(0);
 
     const signIn = await call<{ data: { token: string } }>("POST", "/v1/auth/sign-in", { body: { email: `First.Admin.${n}@setup.test`, password: "a long enough password" }, idempotencyKey: null });
     expect(signIn.status, JSON.stringify(signIn.body)).toBe(201);

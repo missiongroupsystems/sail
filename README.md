@@ -6,7 +6,7 @@ It is for restaurant groups and developers who want a POS they can run, read and
 
 ## What works today
 
-- **POS** (`/pos`, iPad in landscape): pair a station, sign in with a PIN, floor plan with live tables, dine-in, takeaway, pickup and delivery orders, modifiers, seats, hold and send, voids, discounts with manager approval, bills split evenly, by seat or by item, several payment methods per bill, cash rounding, refunds, receipts and invoices, shift open and close with a counted drawer, Z-report.
+- **POS** (`/pos`, iPad in landscape): pair a station, sign in with a PIN, floor plan with live tables, dine-in, takeaway, pickup and delivery orders, modifiers, seats, hold and send, voids, discounts with manager approval, bills split evenly, by seat or by item, several payment methods per bill, cash rounding, card payments sent to a terminal through a payment-provider interface (a simulator ships; no real provider yet), voiding a payment taken in error, refunds, receipts and invoices, shift open and close with a counted drawer, Z-report.
 - **Kitchen printing** through a small relay at each outlet: ESC/POS over the network, routed by product tags and stations, a durable queue with alerts, reprint and reroute.
 - **Kitchen display** (`/kds`, a paired screen with no PIN): tickets routed like the printers, struck voids, bump, recall and an all-day count, with ready shown on the POS.
 - **Back office** (web): email and password sign-in with first-run setup and invitation links (or your own identity provider), menu, modifiers, availability and sold out, pricing rules with a simulator, tax classes, floor plans and QR sheets, printers and relays, staff and roles, orders with refunds and documents, sales, item, print-health and Z reports, CSV import.
@@ -30,6 +30,8 @@ Open http://localhost:3000 and sign in with `admin@sail.local` (a Singapore demo
 On a database with no merchant yet, the back office opens on first-run setup instead: your business, a region preset, the first outlet and your Admin login. [Self-hosting](docs/self-hosting.md#sign-in) covers setup, inviting staff and the external identity provider option.
 
 To use the POS, go to Settings > Stations, open Station 1 and press Pair an iPad. Open http://localhost:3000/pos (best in a window about 1180 by 820), enter the code, then the PIN. For guest ordering, seat a table on the POS (guests can only order on an open table), then in the back office open Floor & QR, select that table, press Rotate code and open the link it shows.
+
+`dev:local` also starts a card-terminal simulator: pay with Card (terminal) on the POS and it approves after a moment ([configuration.md](docs/configuration.md#payment-providers) shows how to make it decline).
 
 To try the POS on a real iPad, start the web app with `NEXT_PUBLIC_API_URL` set to an address the iPad can reach (your machine's LAN address and port 8080); the POS calls the API directly.
 
@@ -60,14 +62,14 @@ Nothing in the code assumes a country. A merchant is created from a region prese
 - [Self-hosting](docs/self-hosting.md): services, environment variables, migrations, the first merchant.
 - [Pricing semantics](docs/pricing-semantics.md): every rule the pricing engine follows.
 - [MCP](docs/mcp.md): connecting an agent.
-- [How-to](docs/how-to.md): adding operations, tables and migrations.
+- [How-to](docs/how-to.md): adding operations, tables, migrations and payment providers.
 - [CSV import](docs/csv-mapping.md) and the [roadmap](docs/roadmap.md).
 
 ## Status
 
-Beta (`0.9.0-beta.1`). Sail has never run a real service in production. The register has unit, property, reference-set and database tests, and an end-to-end suite drives the three apps in a browser, but nothing has been tested on real printers, card terminals or a busy floor.
+Beta (`0.9.0-beta.1`). Sail has never run a real service in production. The register has unit, property, reference-set and database tests, and an end-to-end suite drives the three apps in a browser, but nothing has been tested on real printers, real card terminals or a busy floor.
 
-Missing today: payment provider and card-terminal integration (payments are recorded by hand), offline mode, reviewed configuration changes, a self-serve sign-up and any bundled agents. See the [roadmap](docs/roadmap.md).
+Missing today: an adapter for a real card-terminal provider (the interface and a simulator exist; by-hand card payments still work), online payments, offline mode, reviewed configuration changes, a self-serve sign-up and any bundled agents. See the [roadmap](docs/roadmap.md).
 
 ## Licence
 

@@ -5,14 +5,14 @@ import { formatBpsText, useLocale } from "@sail/ui";
 import { useCallback, useMemo } from "react";
 import { ApiError, idempotencyKey, toApiError } from "@/lib/api";
 import * as reg from "../api/register";
-import type { CheckSnapshot, CompiledProduct, ManualRule, MutationResult, OrderSnapshot, OrderType, OverrideAction, OverrideSubject, PaymentResult, ReceiptChannel, RefundRequest, RefundResult, Role, SnapshotLine } from "../api/types";
+import type { CheckPayment, CheckSnapshot, CompiledProduct, ManualRule, MutationResult, OrderSnapshot, OrderType, OverrideAction, OverrideSubject, PaymentIntent, PaymentResult, ReceiptChannel, RefundRequest, RefundResult, Role, SnapshotLine } from "../api/types";
 import { useSessionStore } from "../state/session";
 import { useUiStore } from "../state/ui";
 import { applySnapshot, posKeys } from "./queries";
 import { useApi } from "./useApi";
 
 const RANK: Record<Role, number> = { server: 10, cashier: 20, manager: 30, finance: 40, admin: 50 };
-const MIN_ROLE: Record<OverrideAction, Role> = { "lines.void_fired": "manager", "lines.add_open_price": "manager", "adjustments.apply_manual": "server", "adjustments.remove": "server", "payments.record": "cashier", "refunds.create": "manager", "orders.reopen": "manager" };
+const MIN_ROLE: Record<OverrideAction, Role> = { "lines.void_fired": "manager", "lines.add_open_price": "manager", "adjustments.apply_manual": "server", "adjustments.remove": "server", "payments.record": "cashier", "refunds.create": "manager", "orders.reopen": "manager", "payments.void": "manager" };
 
 export function roleAtLeast(role: Role | null | undefined, min: Role): boolean {
   return role ? RANK[role] >= RANK[min] : false;
@@ -536,6 +536,63 @@ export function useOrderActions(orderId: string) {
     [api, beginMutation, endMutation, fail, key, money, notify, orderId, qc, refreshIfBalanceChanged, snapshot, withApproval],
   );
 
+  /**
+   * Send a payment to the card terminal. The register answers at once with a pending payment; the terminal's answer
+   * arrives on the event stream. `intent_id` is kept by the caller for the attempt, so a retry never sends twice.
+   */
+  const startTerminal = useCallback(
+    async (check: CheckSnapshot, input: { intent_id: string; tender_type_id: string; amount: number }): Promise<PaymentIntent | null> => {
+      try {
+        const intent = await reg.startTerminalPayment(api, check.id, input, { key: input.intent_id, expectedVersion: snapshot()?.version ?? null });
+        void qc.invalidateQueries({ queryKey: posKeys.paymentIntents(orderId) });
+        return intent;
+      } catch (e) {
+        if (e instanceof ApiError && e.code === "version_conflict") await qc.invalidateQueries({ queryKey: key });
+        refreshIfBalanceChanged(e);
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, key, orderId, qc, refreshIfBalanceChanged, snapshot],
+  );
+
+  const cancelTerminal = useCallback(
+    async (intentId: string) => {
+      try {
+        const intent = await reg.cancelTerminalPayment(api, intentId);
+        void qc.invalidateQueries({ queryKey: posKeys.paymentIntents(orderId) });
+        return intent;
+      } catch (e) {
+        void qc.invalidateQueries({ queryKey: posKeys.paymentIntents(orderId) });
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, orderId, qc],
+  );
+
+  /** Void a payment taken in error (Manager+, or a manager's approval bound to this payment). */
+  const voidPayment = useCallback(
+    async (payment: CheckPayment, reason: string) => {
+      beginMutation(orderId);
+      try {
+        const res = await withApproval({ action: "payments.void", target_kind: "payment", target_id: payment.id, args: { amount: payment.amount } }, `Void ${money(payment.amount)} by ${payment.tender}`, `Reason: ${reason}`, (overrideId) => reg.voidPayment(api, payment.id, reason, { expectedVersion: snapshot()?.version ?? null, overrideId }));
+        if (!res) return null;
+        applySnapshot(qc, res.data);
+        void qc.invalidateQueries({ queryKey: posKeys.paymentIntents(orderId) });
+        notify({ text: res.void.status === "voided" ? `Voided ${money(payment.amount)} by ${payment.tender}` : `Voiding ${money(payment.amount)} on the terminal`, tone: "success", orderId }, 5000);
+        return res;
+      } catch (e) {
+        if (e instanceof ApiError && e.code === "version_conflict") await qc.invalidateQueries({ queryKey: key });
+        fail(e);
+        return null;
+      } finally {
+        endMutation(orderId);
+      }
+    },
+    [api, beginMutation, endMutation, fail, key, money, notify, orderId, qc, snapshot, withApproval],
+  );
+
   const complete = useCallback(async () => {
     try {
       return await run((expected) => reg.completeOrder(api, orderId, { expectedVersion: expected }));
@@ -719,6 +776,9 @@ export function useOrderActions(orderId: string) {
       prebill,
       previewPayment,
       pay,
+      startTerminal,
+      cancelTerminal,
+      voidPayment,
       complete,
       reopen,
       printReceipt,
@@ -732,7 +792,7 @@ export function useOrderActions(orderId: string) {
       reprint,
       role,
     }),
-    [addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, splitEven, splitBySeat, allocate, unsplit, prebill, previewPayment, pay, complete, reopen, printReceipt, sendReceipt, issueInvoice, quoteRefund, refund, printRefundReceipt, acceptRound, rejectRound, reprint, role],
+    [addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, splitEven, splitBySeat, allocate, unsplit, prebill, previewPayment, pay, startTerminal, cancelTerminal, voidPayment, complete, reopen, printReceipt, sendReceipt, issueInvoice, quoteRefund, refund, printRefundReceipt, acceptRound, rejectRound, reprint, role],
   );
 }
 

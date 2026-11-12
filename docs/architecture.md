@@ -31,7 +31,7 @@ Every request goes through `packages/server/src/middleware/pipeline.ts` (steps 1
 5. **Idempotency.** Every `POST`, `PUT`, `PATCH` and `DELETE`, except the public pairing and session-start routes and the streams, needs an `Idempotency-Key` header. A repeat with the same body replays the stored response; the same key with another body is `idempotency_conflict`.
 6. **The operation.** `defineOp` (`lib/openapi.ts`) checks the principal kind and the minimum role from the manifest before the handler runs. Handlers add only the checks the manifest cannot express: manager approvals and a manual rule's own role, and the approver's role on a proposal.
 
-Responses use one envelope: `{ data }` for reads, `{ data, next_cursor }` for lists and `{ data, events, warnings }` for mutations. Errors are `{ code, message, remedy, details }`; the codes are in `packages/shared/src/errors.ts`. Orders carry a `version`; edits pass `expected_version` and get `version_conflict` if someone else moved first. 37 operations accept `dry_run: true`.
+Responses use one envelope: `{ data }` for reads, `{ data, next_cursor }` for lists and `{ data, events, warnings }` for mutations. Errors are `{ code, message, remedy, details }`; the codes are in `packages/shared/src/errors.ts`. Orders carry a `version`; edits pass `expected_version` and get `version_conflict` if someone else moved first. 38 operations accept `dry_run: true`.
 
 A few routes run without the per-request transaction: `/health`, `/openapi.json`, the development token, the public pairing and session-start endpoints and digital receipts (`db/rls-opt-out.ts`, covered by a test). The three SSE streams check access in a short transaction and then stream outside it.
 
@@ -55,11 +55,11 @@ Each operation has an id of the form `group.verb` (`lines.add`, `refunds.create`
 From there:
 
 - `defineOp` registers the Hono route and writes the entry into the spec as `x-sail`.
-- `packages/server/openapi.json` is generated and committed (166 paths, 207 operations). `pnpm openapi:check` fails when it is stale.
-- `packages/server/mcp-tools.json` is generated from the spec (108 tools) and checked by `pnpm --filter @sail/server manifest:check`.
+- `packages/server/openapi.json` is generated and committed (172 paths, 213 operations). `pnpm openapi:check` fails when it is stale.
+- `packages/server/mcp-tools.json` is generated from the spec (112 tools) and checked by `pnpm --filter @sail/server manifest:check`.
 - The front ends generate their API types from the spec (`gen:api`).
 
-Risk tiers: T0 reads, quotes and dry runs; T1 routine and reversible (add a line, split, mark sold out, reroute a ticket); T2 consequential (send to the kitchen, record a payment, apply a discount or comp, close a shift); T3 money out (refunds, reopening), configuration and identities. Today there are 92 T0, 35 T1, 15 T2 and 65 T3 operations.
+Risk tiers: T0 reads, quotes and dry runs; T1 routine and reversible (add a line, split, mark sold out, reroute a ticket); T2 consequential (send to the kitchen, record a payment, apply a discount or comp, close a shift); T3 money out (refunds, reopening), configuration and identities. Today there are 93 T0, 35 T1, 18 T2 and 67 T3 operations.
 
 ## Pricing and tax
 
@@ -128,15 +128,43 @@ Three rules shape the screens:
 - **Friction follows the risk tier.** T1 actions run and offer Undo; T2 actions need one tap on a button that states the effect; T3 actions on the POS (refund, reopen) need a Manager or a manager's PIN; back-office configuration is Admin-only instead.
 - **Money is never optimistic.** A tapped item shows at once, but totals change only when the register replies.
 
+## Payments
+
+A tender is recorded by hand (cash, a standalone card terminal, a house account) unless it names a payment provider and a terminal (`provider`, `terminal_id`). The provider seam is one interface, `PaymentProvider` in `packages/server/src/payments/provider.ts`: start a payment on a terminal, read its status, cancel it, void it by reference, and verify and parse a webhook. Providers register by name; the built-in `simulator` talks to the terminal simulator in `packages/server/scripts/payment-simulator.ts` and is for development and tests.
+
+A payment on a provider tender goes through a payment intent (`payment_intents`):
+
+```
+POS ── payments.start ──> intent (pending) + outbox row, commit, 201
+worker ── outbox ──> provider.startPayment ──> terminal
+terminal ──> webhook (signed) ─┐
+worker ── poll ────────────────┴─> applyOutcome: lock order, lock intent
+      approved, same bill ──> recordPayment (the by-hand path) ──> payment.recorded, check.paid, order.completed
+      approved, bill changed or intent no longer pending ──> intent cancelled + outbox void ──> provider.voidPayment
+      declined / cancelled ──> intent declined or cancelled; the bill is untouched
+```
+
+What it guarantees:
+
+- **No provider call inside a request.** `payments.start`, `payments.cancel` and `payments.void` write rows and commit; the worker makes every provider call afterwards, so a slow terminal never holds the bill's lock.
+- **Pinned bill.** The intent stores the amount, the tip, the bill's total and what was already paid (and the order's version, for the record; edits to other bills of the order do not cancel it). An approval is recorded only if the provider took exactly amount + tip and the bill still has that total and that paid amount (it is checked again after the first-payment re-price). Otherwise the approval is voided at the provider and the intent is cancelled with the reason (`bill_changed`, `amount_mismatch`); nothing is applied.
+- **Exactly once.** The order and then the intent are locked for every outcome, so a webhook, its duplicate and the worker's poll queue behind one another and the later ones find the intent decided. The payment's id is reserved on the intent at start, and each webhook event id is stored once (`payment_webhook_events`). An approval for an intent that is declined, cancelled or expired is voided, never recorded.
+- **One payment in flight per bill.** Starts serialise on the order lock, and a partial unique index allows one pending intent per bill.
+- **Timeouts.** An intent still pending after 120 s is expired by the worker and cancelled at the provider; a cancel the provider has not settled is retried. For an hour after the register gives up on an intent (declined, cancelled, expired), the worker keeps asking the provider about it, so an approval that arrives later is voided even if its webhook is lost.
+- **Outbox.** Each row (`start`, `cancel`, `void`) is claimed on its own under a 60 s lease with `for update skip locked` and handled on its own. A failure doubles the row's delay (1 s, 2 s, 4 s, up to 5 minutes) and never holds up the rows after it; after 8 attempts the row is marked failed and logged, and a failed void emits `payment_intent.void_failed` on the order. A void a person asked for can be asked for again; the poll arms an unapplied approval's void again.
+- **Webhooks.** `POST /v1/webhooks/payments/{provider}/{merchant_id}` carries no token. Its signature is checked first, with that merchant's secret for that provider (`payment_providers.configure`), together with a timestamp within 5 minutes. Verified deliveries count against the merchant's limit (the Postgres-backed limiter the guest app uses, 300 a minute) and refused ones against a separate limit (60 a minute), so forged requests cannot crowd out the provider's. The body is parsed as untrusted data and acted on only for an intent of that merchant and provider. A wrong signature, an unknown merchant or provider and a stale timestamp all answer 401.
+
+**Voiding a payment** (`payments.void`, T3, Manager+ or a manager's approval bound to that payment and its amount, reason required) reverses one recorded payment: the bill owes the amount again, an order it completed goes back to open, and when no recorded payment is left the bills unlock and pricing unfreezes. It is refused once anything has been refunded from the bill, once the payment's shift is closed and once its business day is closed; after that, a refund is the correction. A payment taken on a provider tender is voided at the provider first: the request records the void request, the worker calls the provider, and the payment is reversed when the provider confirms (`payment.voided`). While that void waits, refunds on the order, the shift's close and the business day's close are refused. A void and a shift or business-day close lock the same rows, so they run one after the other. Reopening an order paid on a provider tender is refused, because a reopen reverses payments in the register only. An agent's void is a proposal.
+
 ## Worker
 
-`node dist/index.js --role=worker` (`src/worker/index.ts`) runs scheduled pricing-rule activation, queued CSV imports (`services/importer.ts`, contract in [csv-mapping.md](csv-mapping.md)), stale print-claim re-queue, relay heartbeat alerts, guest-session expiry and rate-limit pruning, and proposal expiry. Reports read plain SQL views (`report_*`, `security_invoker`), so RLS applies to them too. Gross sales are items as charged (tax included in inclusive mode); net sales are items after discounts, without tax and fees, less the refunds' net, and every report uses that one definition (`report_net_sales`).
+`node dist/index.js --role=worker` (`src/worker/index.ts`) runs scheduled pricing-rule activation, queued CSV imports (`services/importer.ts`, contract in [csv-mapping.md](csv-mapping.md)), stale print-claim re-queue, relay heartbeat alerts, guest-session expiry and rate-limit pruning, proposal expiry, and payments: the provider outbox (every second), polling waiting intents and expiring old ones (every 5 s), and pruning webhook event ids after a day. Reports read plain SQL views (`report_*`, `security_invoker`), so RLS applies to them too. Gross sales are items as charged (tax included in inclusive mode); net sales are items after discounts, without tax and fees, less the refunds' net, and every report uses that one definition (`report_net_sales`).
 
 ## Not built
 
 These are deliberate gaps, not hidden features. The [roadmap](roadmap.md) says which are planned.
 
-- **Payment providers.** No terminal, online-payment or webhook integration. Tenders are recorded by hand after the card is taken on a standalone terminal. `payments.void` does not exist; a wrong tender is corrected by refund or reopen.
+- **Real payment providers and online payments.** The provider seam, intents, webhooks and the simulator are built; no adapter for a real provider ships, and nothing takes a payment online or on the guest's phone. A refund of a terminal payment is recorded in the register and given back on the terminal by hand.
 - **Offline mode.** Every action needs the API. Queued print jobs survive a relay or printer outage.
 - **Changesets.** Configuration is edited directly through the API and back-office forms; there is no draft, diff, simulate and approve flow. The back-office Changes page is a placeholder.
 - **Agent runner.** Sail exposes agents to the register but ships no agents, playbooks, sandbox or evals. The back-office Assistants page is a placeholder; identities are managed through the API.

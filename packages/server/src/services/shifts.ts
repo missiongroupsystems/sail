@@ -123,10 +123,15 @@ export async function openShift(principal: Principal, input: { outletId: string;
 }
 
 export async function closeShift(principal: Principal, shiftId: string, input: { countedCashCents: number; countedCounts: Record<string, number> | null; varianceReason: string | null }) {
+  // Locked, so a payment void in this shift either commits first (and is counted) or waits and finds the shift closed.
+  await tx()`select id from shifts where id = ${shiftId} for update`;
   const [shift] = await db().select().from(shifts).where(eq(shifts.id, shiftId)).limit(1);
   if (!shift) throw AppError.notFound("shift", shiftId);
   if (shift.status === "closed") throw AppError.state("The shift is already closed", []);
   assertCountsMatch(input.countedCounts, input.countedCashCents, "counted cash");
+  // A void still waiting for the provider would change this shift's figures after they were counted.
+  const [voiding] = await tx()<{ n: number }[]>`select count(*)::int as n from payment_intents i join payments p on p.id = i.payment_id where p.shift_id = ${shiftId} and i.void_requested_at is not null and i.provider_voided_at is null`;
+  if ((voiding?.n ?? 0) > 0) throw AppError.state("A card void in this shift is waiting for the terminal", [], "Wait for the terminal to confirm the void, then close the shift.");
   const report = await zReport({ outletId: shift.outletId, businessDate: shift.businessDate, stationId: shift.stationId, shiftId: shift.id }, { float: shift.floatCents, counted: input.countedCashCents });
   const [settings] = await db().select({ threshold: merchantSettings.cashVarianceThreshold }).from(merchantSettings).where(eq(merchantSettings.merchantId, shift.merchantId)).limit(1);
   if (!settings) throw AppError.notFound("merchant");
@@ -146,6 +151,10 @@ export async function closeShift(principal: Principal, shiftId: string, input: {
 }
 
 export async function closeBusinessDay(principal: Principal, outletId: string, businessDate: string) {
+  // Waits for a void being requested at this outlet, and refuses while a terminal void is still to be confirmed.
+  await tx()`select id from outlets where id = ${outletId} for no key update`;
+  const [voiding] = await tx()<{ n: number }[]>`select count(*)::int as n from payment_intents where outlet_id = ${outletId} and void_requested_at is not null and provider_voided_at is null`;
+  if ((voiding?.n ?? 0) > 0) throw AppError.state("A card void at this outlet is waiting for the terminal", [], "Wait for the terminal to confirm the void, then close the business day.");
   const [openShift] = await db().select({ id: shifts.id }).from(shifts).where(and(eq(shifts.outletId, outletId), eq(shifts.status, "open"))).limit(1);
   if (openShift) throw AppError.invariant("open_shifts", "Every shift must be closed before the business day", "Close the open shifts first.");
   const closed = await db().select().from(shifts).where(and(eq(shifts.outletId, outletId), eq(shifts.businessDate, businessDate), eq(shifts.status, "closed")));

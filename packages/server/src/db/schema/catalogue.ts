@@ -322,6 +322,10 @@ export const tenderTypes = pgTable(
     requiresApproval: boolean("requires_approval").notNull().default(false),
     /** A payment with this tender needs a reference (an account, a room, a voucher number). */
     requiresReference: boolean("requires_reference").notNull().default(false),
+    /** A registered payment provider (`simulator`, ...). Null: payments are recorded by hand, as before. */
+    provider: text("provider"),
+    /** The provider's terminal this tender sends payments to. Set exactly when `provider` is. */
+    terminalId: text("terminal_id"),
     sort: integer("sort").notNull().default(0),
     legacyId: text("legacy_id"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),

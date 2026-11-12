@@ -4,11 +4,12 @@ import { AmountPad, BackButton, Badge, Button, Money, Skeleton, TenderGrid, Text
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import { ApiError, idempotencyKey, toApiError } from "@/lib/api";
-import type { CheckSnapshot, OrderSnapshot, PaymentFigures, TenderType } from "../api/types";
+import type { CheckPayment, CheckSnapshot, OrderSnapshot, PaymentFigures, PaymentIntent, TenderType } from "../api/types";
 import { Frame } from "../components/Frame";
 import { usePos } from "../components/PosContext";
 import { ReceiptChooser } from "../components/ReceiptChooser";
-import { useOrder, useTenderTypes } from "../hooks/queries";
+import { VoidPaymentSheet } from "../components/ReasonSheets";
+import { useOrder, usePaymentIntents, useTenderTypes } from "../hooks/queries";
 import { likelyTendered, useCashDenominations } from "../lib/cash";
 import { roleAtLeast, useOrderActions } from "../hooks/useOrderActions";
 import { useNavStore } from "../state/nav";
@@ -19,7 +20,8 @@ type Preview = { figures: PaymentFigures; left: number } | null;
 /**
  * Payment: the bill on the left, methods, the amount prefilled
  * with the balance, cash with a dry run for rounding and change, card with the
- * amount at 34pt and the terminal instruction, then the done screen.
+ * amount at 34pt and the terminal instruction, then the done screen. A payment method linked to a terminal sends
+ * the amount there and waits for the terminal's answer on the event stream; a recorded payment can be voided.
  */
 export function PayScreen({ orderId, checkId }: { orderId: string; checkId: string }) {
   const { money } = useLocale();
@@ -30,6 +32,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const openBill = useNavStore((s) => s.openBill);
   const order = useOrder(orderId);
   const tenders = useTenderTypes(station.outlet_id);
+  const intents = usePaymentIntents(orderId);
   const denominations = useCashDenominations();
   const actions = useOrderActions(orderId);
   const snap = order.data;
@@ -45,6 +48,10 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<{ check: CheckSnapshot; order: OrderSnapshot; figures: PaymentFigures } | null>(null);
   const paymentId = useRef(idempotencyKey());
+  /** The terminal payment being waited for; its state comes from the register, refreshed by the event stream. */
+  const [waitingId, setWaitingId] = useState<string | null>(null);
+  const [terminalNote, setTerminalNote] = useState<string | null>(null);
+  const [voiding, setVoiding] = useState<CheckPayment | null>(null);
   /** The dry run on the wire, if any. A payment waits for it: answered after the payment, a dry run is refused 409. */
   const previewInFlight = useRef<Promise<unknown> | null>(null);
   /** Set the moment Pay is pressed, before React re-renders: a dry-run timer that fires in between sends nothing. */
@@ -56,6 +63,13 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const amount = digits === null ? balance : Number(digits || "0");
   const part = amount > 0 && amount < balance;
   const canPay = roleAtLeast(staff.role, "cashier");
+  const onTerminal = Boolean(tender?.provider);
+  const mine = useMemo(() => (intents.data ?? []).filter((i) => i.check_id === checkId), [intents.data, checkId]);
+  // Resumed after a reload or from another screen: a payment still on the terminal for this bill is waited for here.
+  const pendingId = mine.find((i) => i.state === "pending")?.id ?? null;
+  const watching = waitingId ?? pendingId;
+  const watched: PaymentIntent | null = mine.find((i) => i.id === watching) ?? null;
+  const voidWaiting = (paymentRowId: string) => mine.some((i) => i.payment_id === paymentRowId && i.void_requested_at && !i.provider_voided_at);
 
   // A bill that disappeared (unsplit elsewhere) or an order that closed leaves the screen.
   useEffect(() => {
@@ -68,6 +82,25 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   useEffect(() => {
     paymentId.current = idempotencyKey();
   }, [tenderId, amount, tendered, reference]);
+
+  // The terminal answered: approved shows the paid screen once the bill shows the payment; anything else says why.
+  const refetchOrder = order.refetch;
+  useEffect(() => {
+    if (!watched || watched.state === "pending") return;
+    if (watched.state === "approved") {
+      const after = snap?.checks.find((c) => c.id === checkId);
+      const payment = after?.payments.find((p) => p.id === watched.payment_id);
+      if (!snap || !after || !payment) {
+        void refetchOrder();
+        return;
+      }
+      setDone({ check: after, order: snap, figures: { ...payment, change_due: 0 } });
+    } else {
+      setTerminalNote(watched.state === "declined" ? "Declined on the terminal. Try again or take another payment method." : watched.outcome_reason === "bill_changed" ? "The bill changed while the terminal was waiting, so the payment was given back. Send it again." : watched.state === "expired" ? "The terminal did not answer in time. Send it again or take another payment method." : "Cancelled. Nothing was charged.");
+    }
+    setWaitingId(null);
+    paymentId.current = idempotencyKey();
+  }, [watched, snap, checkId, refetchOrder]);
 
   const runPreview = useCallback(
     (t: TenderType, amt: number, tnd: number | null): (() => void) | undefined => {
@@ -108,7 +141,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   // A dry run still waiting when the inputs change, or when the payment is taken, is dropped with the effect.
   useEffect(() => {
     if (!tender || !check || done || busy) return;
-    if (tender.is_cash || part) return runPreview(tender, amount, tender.is_cash ? tendered : null);
+    if (tender.is_cash || (part && !tender.provider)) return runPreview(tender, amount, tender.is_cash ? tendered : null);
     setPreview(null);
     setPreviewError(amount > balance ? "Amount above the balance. Enter the balance or a smaller part payment." : null);
     return undefined;
@@ -118,6 +151,29 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
     setTenderId(id);
     setTendered(null);
     setPreview(null);
+    setTerminalNote(null);
+  };
+
+  const sendToTerminal = async () => {
+    if (!check || !tender || amount <= 0 || busy) return;
+    setBusy(true);
+    setTerminalNote(null);
+    try {
+      const intent = await actions.startTerminal(check, { intent_id: paymentId.current, tender_type_id: tender.id, amount });
+      if (intent) setWaitingId(intent.id);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const voidPayment = async (reason: string) => {
+    if (!voiding) return false;
+    const res = await actions.voidPayment(voiding, reason);
+    if (!res) return false;
+    // A by-hand payment is reversed now and the bill is open again; a terminal one waits for the provider.
+    if (res.void.status === "voided") setDone(null);
+    setVoiding(null);
+    return true;
   };
 
   const pay = async () => {
@@ -167,8 +223,20 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
     const paidAmount = done.figures.amount ?? amount;
     const change = done.figures.change_due;
     return (
-      <Frame left={<BackButton label={screen.kind === "pay" && screen.returnTo === "bill" ? "Bill" : where} onPress={leave} />} title={`${done.check.label} · ${where}`}>
+      <Frame
+        left={<BackButton label={screen.kind === "pay" && screen.returnTo === "bill" ? "Bill" : where} onPress={leave} />}
+        title={`${done.check.label} · ${where}`}
+        right={
+          done.figures.id && !voidWaiting(done.figures.id) ? (
+            <Button size="md" variant="quiet" onPress={() => setVoiding(done.figures as CheckPayment)}>
+              Void payment
+            </Button>
+          ) : null
+        }
+      >
+        <VoidPaymentSheet label={voiding ? `${money(voiding.amount)} by ${voiding.tender}` : null} isOpen={voiding !== null} onClose={() => setVoiding(null)} onVoid={voidPayment} />
         <ReceiptChooser
+          autoReturnMs={voiding ? 0 : undefined}
           order={done.order}
           check={done.check}
           actions={actions}
@@ -186,10 +254,10 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const rounding = tender.is_cash && figures?.rounding_cents ? figures.rounding_cents : 0;
   const change = tender.is_cash && figures && tendered != null ? figures.change_due : null;
   const left = preview?.left ?? null;
-  const verb = tender.is_cash ? `Take ${money(tendered ?? amount)} cash` : tender.is_terminal ? (part ? `Take ${money(amount)} by ${tender.name}` : `Paid by ${tender.name}`) : `Take ${money(amount)} by ${tender.name}`;
+  const verb = tender.is_cash ? `Take ${money(tendered ?? amount)} cash` : onTerminal ? `Send ${money(amount)} to the terminal` : tender.is_terminal ? (part ? `Take ${money(amount)} by ${tender.name}` : `Paid by ${tender.name}`) : `Take ${money(amount)} by ${tender.name}`;
   const label = `${verb}${part && left != null ? ` · ${money(left)} left` : ""} ▸`;
   // Too little cash for the rounded amount comes back from the dry run as a validation error, which blocks the button with its remedy.
-  const blocked = offline || busy || amount <= 0 || Boolean(previewError);
+  const blocked = offline || busy || amount <= 0 || Boolean(previewError) || watched?.state === "pending";
 
   return (
     <Frame left={<BackButton label={screen.kind === "pay" && screen.returnTo === "bill" ? "Bill" : where} onPress={back} />} title={`${billLabel(check)} · ${where}`}>
@@ -221,6 +289,26 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
             ))}
             {check.paid_total === 0 ? <Row label="Paid" cents={0} /> : null}
           </dl>
+          {check.payments.some((p) => p.status === "recorded") ? (
+            <ul className="px-4 pb-4" aria-label="Payments on this bill">
+              {check.payments
+                .filter((p) => p.status === "recorded")
+                .map((p) => (
+                  <li key={p.id} className="flex min-h-11 items-center gap-3">
+                    <span className="min-w-0 flex-1 truncate text-body text-ink">{p.tender}</span>
+                    <Money cents={p.amount} size="body" className="text-ink" />
+                    {voidWaiting(p.id) ? (
+                      <Badge tone="bill">Voiding on terminal</Badge>
+                    ) : check.refunded_total === 0 ? (
+                      <Button size="md" variant="quiet" onPress={() => setVoiding(p)} isDisabled={offline} aria-label={`Void ${money(p.amount)} by ${p.tender}`}>
+                        Void
+                      </Button>
+                    ) : null}
+                  </li>
+                ))}
+            </ul>
+          ) : null}
+          <VoidPaymentSheet label={voiding ? `${money(voiding.amount)} by ${voiding.tender}` : null} isOpen={voiding !== null} onClose={() => setVoiding(null)} onVoid={voidPayment} />
         </section>
 
         <section className="flex min-w-0 flex-1 flex-col px-6 py-4" aria-label="Payment">
@@ -285,7 +373,25 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
             </div>
           ) : (
             <div className="mt-5 flex flex-col gap-3">
-              {tender.is_terminal ? (
+              {onTerminal && watched?.state === "pending" ? (
+                <div role="status" aria-live="polite" className="flex flex-col gap-3">
+                  <Money cents={watched.amount} size="amount-xl" className="text-ink" />
+                  <p className="text-line text-ink">Waiting for the terminal. Ask the guest to tap or insert their card.</p>
+                  <Button size="lg" variant="secondary" className="self-start" onPress={() => void actions.cancelTerminal(watched.id)}>
+                    Cancel on terminal
+                  </Button>
+                </div>
+              ) : onTerminal ? (
+                <>
+                  <Money cents={amount} size="amount-xl" className="text-ink" />
+                  <p className="text-line text-ink">The terminal asks the guest for {money(amount)}. The bill updates when they have paid.</p>
+                  {terminalNote ? (
+                    <p className="text-body text-status-alert" role="alert">
+                      {terminalNote}
+                    </p>
+                  ) : null}
+                </>
+              ) : tender.is_terminal ? (
                 <>
                   <Money cents={amount} size="amount-xl" className="text-ink" />
                   <p className="text-line text-ink">Charge {money(amount)} on the terminal, then tap Paid.</p>
@@ -293,7 +399,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
               ) : (
                 <p className="text-line text-ink">Record {money(amount)} to {tender.name}.</p>
               )}
-              <TextField label={tender.requires_reference ? "Reference" : "Reference (optional)"} isRequired={tender.requires_reference} value={reference} onChange={setReference} inputClassName="min-h-14 text-line" className="max-w-[360px]" maxLength={80} mono />
+              {onTerminal ? null : <TextField label={tender.requires_reference ? "Reference" : "Reference (optional)"} isRequired={tender.requires_reference} value={reference} onChange={setReference} inputClassName="min-h-14 text-line" className="max-w-[360px]" maxLength={80} mono />}
               {previewError ? (
                 <p className="text-body text-status-alert" role="alert">
                   {previewError}
@@ -305,7 +411,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
           <div className="flex-1" />
           <div className="flex items-center justify-end gap-2">
             {!canPay ? <Badge tone="bill">Manager approval</Badge> : null}
-            <Button size="lg" variant="primary" isDisabled={blocked} isPending={busy} onPress={pay} className="min-h-16 min-w-[280px] px-6 text-heading">
+            <Button size="lg" variant="primary" isDisabled={blocked} isPending={busy} onPress={onTerminal ? sendToTerminal : pay} className="min-h-16 min-w-[280px] px-6 text-heading">
               {offline ? "Offline" : label}
             </Button>
           </div>

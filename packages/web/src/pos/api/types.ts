@@ -319,7 +319,24 @@ export type CheckSnapshot = {
   payments: CheckPayment[];
 };
 
-export type TenderType = { id: string; name: string; is_cash: boolean; opens_drawer: boolean; is_terminal: boolean; requires_approval: boolean; requires_reference: boolean; sort: number; archived: boolean };
+/** `provider` set: payments are sent to that provider's terminal (`terminal_id`) instead of recorded by hand. */
+export type TenderType = { id: string; name: string; is_cash: boolean; opens_drawer: boolean; is_terminal: boolean; requires_approval: boolean; requires_reference: boolean; provider: string | null; terminal_id: string | null; sort: number; archived: boolean };
+
+/** A payment sent to a terminal. The register decides its state; the POS only shows it. */
+export type PaymentIntent = {
+  id: string;
+  order_id: string;
+  check_id: string;
+  tender_type_id: string;
+  amount: number;
+  tip_cents: number;
+  state: "pending" | "approved" | "declined" | "cancelled" | "expired";
+  outcome_reason: string | null;
+  payment_id: string | null;
+  void_requested_at: string | null;
+  provider_voided_at: string | null;
+  created_at: string;
+};
 
 /** The register's figures for one payment (or a dry run): rounding and change are never computed on the iPad. */
 export type PaymentFigures = Partial<CheckPayment> & { change_due: number };

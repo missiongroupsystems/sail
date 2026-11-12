@@ -385,6 +385,36 @@ describe("events", () => {
   });
 });
 
+describe("payments and the kitchen display", () => {
+  let paymentId: string;
+  it("voiding a payment leaves the order's kitchen tickets exactly as they were, with no ticket event", async () => {
+    const card = randomUUID();
+    await must("POST", "/v1/tender-types", A.admin.token, { id: card, name: "Card", is_terminal: true });
+    const sent = await sendOrder([{ product_id: ids.laksa }]);
+    const before = (await list(tokens.server, `?order_id=${sent.orderId}`)).body.data;
+    expect(before.length).toBeGreaterThan(0);
+    const order = await must<{ data: { checks: { id: string; balance: number }[] } }>("GET", `/v1/orders/${sent.orderId}`, tokens.server);
+    const check = order.data.checks[0]!;
+    const paid = await must<{ data: { checks: { payments: { id: string }[] }[] } }>("POST", `/v1/checks/${check.id}/payments`, tokens.manager, { payment_id: randomUUID(), tender_type_id: card, amount: check.balance });
+    paymentId = paid.data.checks[0]!.payments[0]!.id;
+    const seq = await latestSeq();
+    const voided = await call<{ void: { status: string } }>("POST", `/v1/payments/${paymentId}/void`, { token: tokens.manager, body: { reason: "Wrong payment method" } });
+    expect(voided.status, JSON.stringify(voided.body)).toBe(200);
+    expect(voided.body.void.status).toBe("voided");
+    expect((await list(tokens.server, `?order_id=${sent.orderId}`)).body.data).toEqual(before);
+    expect(await ticketEvents(seq)).toEqual([]);
+  });
+
+  it("a display station, a guest and a relay cannot void or cancel a payment or configure a provider", async () => {
+    for (const tk of [tokens.d1, tokens.guest, tokens.relay]) {
+      expect((await call("POST", `/v1/payments/${paymentId}/void`, { token: tk, body: { reason: "Not theirs" } })).status).toBe(403);
+      expect((await call("POST", `/v1/payment-intents/${randomUUID()}/cancel`, { token: tk, body: {} })).status).toBe(403);
+      expect((await call("PUT", "/v1/payment-providers/simulator", { token: tk, body: { webhook_secret: "s".repeat(32) } })).status).toBe(403);
+    }
+    expect((await db.sql`select count(*)::int as n from payment_provider_accounts where merchant_id = ${A.merchantId}`)[0]!.n).toBe(0);
+  });
+});
+
 describe("merchants without a display", () => {
   it("firing prints as before and creates no tickets and no ticket events", async () => {
     const tb = B.admin.token;

@@ -48,6 +48,8 @@ export function useOutletStream(outletId: string | null, enabled: boolean, stati
           touchedOrders.set(e.aggregate.id, e);
           floor = true;
           if (e.type.startsWith("refund.")) void qc.invalidateQueries({ queryKey: posKeys.refunds(e.aggregate.id) });
+          // A terminal's answer comes from the worker, not this iPad: the waiting pay screen reads it from here.
+          if (e.type.startsWith("payment_intent.") || e.type.startsWith("payment.void")) void qc.invalidateQueries({ queryKey: posKeys.paymentIntents(e.aggregate.id) });
         } else if (FLOOR_KINDS.has(kind)) floor = true;
         else if (MENU_KINDS.has(kind) || e.type.startsWith("stock.") || e.type.startsWith("product.") || e.type.startsWith("menu.")) {
           menu = true;
@@ -118,6 +120,7 @@ export function useOutletStream(outletId: string | null, enabled: boolean, stati
           void qc.invalidateQueries({ queryKey: posKeys.orders(outletId) });
           void qc.invalidateQueries({ queryKey: ["pos", "orders-today", outletId] });
           void qc.invalidateQueries({ queryKey: ["pos", "order"] });
+          void qc.invalidateQueries({ queryKey: ["pos", "payment-intents"] });
           void qc.invalidateQueries({ queryKey: ["pos", "print-jobs", outletId] });
           void qc.invalidateQueries({ queryKey: posKeys.rounds(outletId) });
           void qc.invalidateQueries({ queryKey: posKeys.requests(outletId) });

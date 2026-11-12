@@ -253,6 +253,20 @@
       "when": 1794510378185,
       "tag": "0035_rls_kitchen_display",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794511226454,
+      "tag": "0036_payment_providers",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1794511227057,
+      "tag": "0037_rls_payment_providers",
+      "breakpoints": true
     }
   ]
 }

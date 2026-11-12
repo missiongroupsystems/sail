@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { formatMoney, freezeFrom, PERMISSIONS, roleAtLeast, roundCash, type Role } from "@sail/shared";
-import { db } from "../db/client.js";
-import { checks, merchantSettings, orderLines, orders, payments, refunds, shifts, tenderTypes } from "../db/schema/index.js";
+import { db, tx } from "../db/client.js";
+import { businessDayCloses, checks, merchantSettings, orderLines, orders, payments, refunds, shifts, tenderTypes } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { Principal } from "../auth/principal.js";
 import { orderClosed, repriceOrder } from "./orders.js";
@@ -154,6 +154,51 @@ export async function maybeComplete(orderId: string, now = new Date()): Promise<
   await db().update(orders).set({ status: "completed", completedAt: now, updatedAt: now }).where(eq(orders.id, orderId));
   await orderClosed(orderId);
   return true;
+}
+
+/**
+ * May this payment be voided? Only a recorded payment on a bill nothing has been refunded from, while the shift it
+ * counts in is open and its business day is not closed. Later corrections are refunds.
+ */
+export async function assertVoidable(order: typeof orders.$inferSelect, payment: typeof payments.$inferSelect) {
+  if (payment.status !== "recorded") throw AppError.state(`This payment is already ${payment.status}`, []);
+  if (order.status === "cancelled") throw AppError.state("The order is cancelled", []);
+  const [refunded] = await db().select({ n: sql<number>`count(*)::int` }).from(refunds).where(eq(refunds.checkId, payment.checkId));
+  if ((refunded?.n ?? 0) > 0) throw AppError.invariant("payment_refunded", "Money has already been refunded from this bill", "Correct it with a further refund instead.");
+  // Locks, so a void and a shift or business-day close at the same moment run one after the other, never both.
+  await tx()`select id from outlets where id = ${payment.outletId} for share`;
+  if (payment.shiftId) {
+    const [shift] = await tx()<{ status: string }[]>`select status from shifts where id = ${payment.shiftId} for update`;
+    if (shift?.status !== "open") throw AppError.invariant("shift_closed", "The shift this payment was taken in is closed", "Use a refund instead (for a terminal payment, give it back on the terminal too).");
+  }
+  const [closed] = await db().select({ id: businessDayCloses.id }).from(businessDayCloses).where(and(eq(businessDayCloses.outletId, payment.outletId), eq(businessDayCloses.businessDate, payment.businessDate))).limit(1);
+  if (closed) throw AppError.invariant("business_day_closed", `Business day ${payment.businessDate} is closed`, "Use a refund instead.");
+}
+
+/**
+ * Reverse a payment taken in error. The bill owes the amount again; an order it completed goes back to open; when no
+ * recorded payment is left, the bills unlock and pricing unfreezes, as on a reopen.
+ */
+export async function reversePayment(order: typeof orders.$inferSelect, payment: typeof payments.$inferSelect, reason: string, by: Principal, now = new Date()) {
+  await db()
+    .update(payments)
+    .set({ status: "reversed", reversedAt: now, reversedBy: by.type === "staff" ? by.id : null, reversedReason: `voided: ${reason}` })
+    .where(eq(payments.id, payment.id));
+  const [left] = await db().select({ n: sql<number>`count(*)::int` }).from(payments).where(and(eq(payments.orderId, order.id), eq(payments.status, "recorded")));
+  const [hasFired] = await db().select({ n: sql<number>`count(*)::int` }).from(orderLines).where(and(eq(orderLines.orderId, order.id), eq(orderLines.status, "fired")));
+  const status = order.status === "completed" ? ((hasFired?.n ?? 0) > 0 ? "fired" : "open") : order.status;
+  if ((left?.n ?? 0) === 0) {
+    await db().update(checks).set({ paidTotal: 0, roundingTotal: 0, status: "open", paidAt: null, lockedAt: null, updatedAt: now }).where(eq(checks.orderId, order.id));
+    await db().update(orders).set({ status, completedAt: null, pricingFrozenAt: null, frozenAdjustments: null, updatedAt: now }).where(eq(orders.id, order.id));
+    await repriceOrder(order.id, now);
+    await syncAllocations(order.id);
+    return;
+  }
+  await db()
+    .update(checks)
+    .set({ paidTotal: sql`${checks.paidTotal} - ${payment.amount}`, roundingTotal: sql`${checks.roundingTotal} - ${payment.roundingCents}`, status: "open", paidAt: null, updatedAt: now })
+    .where(eq(checks.id, payment.checkId));
+  if (status !== order.status) await db().update(orders).set({ status, completedAt: null, updatedAt: now }).where(eq(orders.id, order.id));
 }
 
 /** Reopen a completed order on the same business day: payments reversed, checks unlocked, pricing unfrozen, order back to fired/open. */

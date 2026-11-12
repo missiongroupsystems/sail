@@ -17,6 +17,7 @@ import {
   listPendingRounds,
   listPrinters,
   listPrintJobs,
+  listPaymentIntents,
   listRefunds,
   listRelays,
   listShifts,
@@ -46,6 +47,7 @@ export const posKeys = {
   tenderTypes: (outletId: string) => ["pos", "tender-types", outletId] as const,
   todaysOrders: (outletId: string, businessDate: string) => ["pos", "orders-today", outletId, businessDate] as const,
   refunds: (orderId: string) => ["pos", "refunds", orderId] as const,
+  paymentIntents: (orderId: string) => ["pos", "payment-intents", orderId] as const,
   shifts: (outletId: string, status: "open" | "closed") => ["pos", "shifts", outletId, status] as const,
   zReport: (outletId: string, stationId: string | null, businessDate: string | null) => ["pos", "z-report", outletId, stationId, businessDate] as const,
   lateJobs: (outletId: string) => ["pos", "print-jobs", outletId, "late"] as const,
@@ -118,6 +120,12 @@ export function useOpenOrders(outletId: string | null) {
 export function useOrder(orderId: string | null) {
   const api = useApi();
   return useQuery<OrderSnapshot>({ queryKey: posKeys.order(orderId ?? ""), queryFn: () => getOrder(api, orderId!), enabled: Boolean(orderId), staleTime: 5_000 });
+}
+
+/** Terminal payments of an order. The event stream refreshes it; no polling. */
+export function usePaymentIntents(orderId: string) {
+  const api = useApi();
+  return useQuery({ queryKey: posKeys.paymentIntents(orderId), queryFn: () => listPaymentIntents(api, orderId), staleTime: 60_000 });
 }
 
 export function useManualRules() {
