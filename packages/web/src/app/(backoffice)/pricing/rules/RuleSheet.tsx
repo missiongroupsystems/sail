@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Badge, Button, Icon, InlineError, MoneyField, PercentField, Sheet, TagsField, TextField, useLocale } from "@sail/ui";
+import { zonedInputToIso } from "@sail/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -17,7 +18,7 @@ import { api } from "@/lib/api.browser";
 import type { Brand, Category, CustomerGroup, Outlet, PricingRuleVersion } from "@/lib/api/types";
 import { keys } from "@/lib/query";
 import type { RuleRow } from "./RulesView";
-import { emptyForm, formFrom, fromLocalInput, NONE, RuleFormSchema, toBody, type RuleForm } from "./rule-form";
+import { emptyForm, formFrom, NONE, RuleFormSchema, toBody, type RuleForm } from "./rule-form";
 
 export type RuleSheetState = { mode: "create"; kind: "fee" | "discount" } | { mode: "edit"; row: RuleRow } | null;
 
@@ -29,10 +30,10 @@ const STATUS_LABEL: Record<PricingRuleVersion["status"], string> = { active: "Ac
  * register returns validation warnings for the resulting active set.
  */
 export function RuleSheet({ state, onClose, outlets, brands, categories, groups, allRules }: { state: RuleSheetState; onClose: () => void; outlets: Outlet[]; brands: Brand[]; categories: Category[]; groups: CustomerGroup[]; allRules: RuleRow[] }) {
-  const { dayClock } = useLocale();
+  const { dayClock, timeZone } = useLocale();
   const qc = useQueryClient();
   const row = state?.mode === "edit" ? state.row : null;
-  const form = useForm<RuleForm>({ resolver: zodResolver(RuleFormSchema), defaultValues: state?.mode === "edit" ? formFrom(state.row.current) : emptyForm(state?.mode === "create" ? state.kind : "fee") });
+  const form = useForm<RuleForm>({ resolver: zodResolver(RuleFormSchema), defaultValues: state?.mode === "edit" ? formFrom(state.row.current, timeZone) : emptyForm(state?.mode === "create" ? state.kind : "fee") });
   const [saved, setSaved] = useState<{ version: PricingRuleVersion; warnings: string[] } | null>(null);
   const [archiving, setArchiving] = useState(false);
   const [reason, setReason] = useState("");
@@ -40,12 +41,12 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
   const reset = form.reset;
   useEffect(() => {
     if (!state) return;
-    reset(state.mode === "edit" ? formFrom(state.row.current) : emptyForm(state.kind));
+    reset(state.mode === "edit" ? formFrom(state.row.current, timeZone) : emptyForm(state.kind));
     setSaved(null);
     setArchiving(false);
     setReason("");
     setShowVersions(false);
-  }, [state, reset]);
+  }, [state, reset, timeZone]);
 
   const kind = useWatch({ control: form.control, name: "kind" });
   const calc = useWatch({ control: form.control, name: "calc" });
@@ -77,7 +78,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
     await qc.invalidateQueries({ queryKey: keys.pricingValidation });
   };
   const save = useMutation<{ data: PricingRuleVersion; warnings: string[] }, ApiError, RuleForm>({
-    mutationFn: (v) => req(api.POST("/v1/pricing-rules", { body: { rule_key: v.rule_key.trim(), body: toBody(v) as unknown as Record<string, unknown>, effective_from: v.effective === "at" ? fromLocalInput(v.effective_at) : undefined, note: v.note.trim() || null } })),
+    mutationFn: (v) => req(api.POST("/v1/pricing-rules", { body: { rule_key: v.rule_key.trim(), body: toBody(v, timeZone) as unknown as Record<string, unknown>, effective_from: v.effective === "at" ? zonedInputToIso(v.effective_at, timeZone) : undefined, note: v.note.trim() || null } })),
     onSuccess: async (r) => {
       await settle();
       if (r.warnings.length) setSaved({ version: r.data, warnings: r.warnings });

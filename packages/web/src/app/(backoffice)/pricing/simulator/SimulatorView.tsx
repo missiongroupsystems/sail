@@ -1,6 +1,7 @@
 "use client";
 
-import { Badge, Button, Checkbox, CheckboxGroup, DescriptionList, EmptyState, Icon, InlineError, Money, MoneyField, PercentField, SectionHeading, Select, taxRows, TextField } from "@sail/ui";
+import { zonedInputToIso } from "@sail/shared";
+import { Badge, Button, Checkbox, CheckboxGroup, DescriptionList, EmptyState, Icon, InlineError, Money, MoneyField, PercentField, SectionHeading, Select, taxRows, TextField, useLocale } from "@sail/ui";
 import { useMutation } from "@tanstack/react-query";
 import { Minus, Plus, X } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -30,6 +31,7 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
   const [channel, setChannel] = useState<string>("pos");
   const [groupIds, setGroupIds] = useState<string[]>([]);
   const [taxMode, setTaxMode] = useState<TaxMode>("merchant");
+  const { timeZone } = useLocale();
   const [at, setAt] = useState("");
   const [lines, setLines] = useState<BasketLine[]>([]);
   const [manuals, setManuals] = useState<Manual[]>([]);
@@ -49,7 +51,7 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
             lines: lines.map((l) => ({ line_id: l.line_id, product_id: l.product.id, quantity: l.quantity, open_price: l.open_price })),
             manual_applications: manuals.map((m) => ({ application_id: m.application_id, rule_id: m.rule_id, entered_value: m.entered_value, reason: m.reason || null })),
             ...(taxMode !== "merchant" ? { tax_mode: taxMode } : {}),
-            ...(at ? { at: new Date(at).toISOString() } : {}),
+            ...(at ? { at: zonedInputToIso(at, timeZone) } : {}),
           },
         }),
       ).then((r) => r.data),

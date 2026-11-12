@@ -1,5 +1,6 @@
 "use client";
 
+import { zonedInputToIso } from "@sail/shared";
 import { Badge, Button, DataTable, EmptyState, InlineError, Select, Sheet, TextField, type DataTableColumn, type LocaleFormat, useLocale } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -24,7 +25,7 @@ function soldOutLabel(e: StockEntry, dayClock: LocaleFormat["dayClock"]): string
 
 /** Sold out (design 1.1: "86" is the staff word). Per outlet: what is sold out or capped today, and the actions to change it. */
 export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; initialStock: StockEntry[] }) {
-  const { dayClock } = useLocale();
+  const { dayClock, timeZone } = useLocale();
   const qc = useQueryClient();
   const { outletId, setOutletId } = useOutletChoice(outlets, scope, initialOutletId);
   const [mode, setMode] = useState<Mode>(null);
@@ -109,7 +110,7 @@ export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: {
   );
 
   const picked = mode?.product ?? null;
-  const untilValue = until === "today" ? "today" : until === "indefinite" ? "indefinite" : untilAt ? new Date(untilAt).toISOString() : "";
+  const untilValue = until === "today" ? "today" : until === "indefinite" ? "indefinite" : untilAt ? (zonedInputToIso(untilAt, timeZone) ?? "") : "";
 
   return (
     <>

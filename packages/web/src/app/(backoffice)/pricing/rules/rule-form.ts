@@ -1,3 +1,4 @@
+import { isoToZonedInput, zonedInputToIso } from "@sail/shared";
 import { z } from "zod";
 import type { PricingRuleVersion } from "@/lib/api/types";
 
@@ -116,21 +117,6 @@ export function bodyOf(v: PricingRuleVersion): RuleBody {
   return v.body as unknown as RuleBody;
 }
 
-/** ISO -> value for <input type="datetime-local"> in the browser's zone. */
-export function toLocalInput(iso: string | undefined | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-export function fromLocalInput(local: string): string | undefined {
-  if (!local) return undefined;
-  const d = new Date(local);
-  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
-}
-
 export function emptyForm(kind: "fee" | "discount"): RuleForm {
   return {
     rule_key: "",
@@ -176,7 +162,8 @@ export function emptyForm(kind: "fee" | "discount"): RuleForm {
   };
 }
 
-export function formFrom(version: PricingRuleVersion): RuleForm {
+/** `timeZone` is the merchant's: date fields show and are typed in it, whatever zone the browser is in. */
+export function formFrom(version: PricingRuleVersion, timeZone: string): RuleForm {
   const b = bodyOf(version);
   const base = emptyForm(b.kind);
   const c = b.conditions ?? {};
@@ -205,8 +192,8 @@ export function formFrom(version: PricingRuleVersion): RuleForm {
     cond_customer_group_ids: c.customer_group_ids ?? [],
     min_spend_amount: c.min_spend?.amount ?? null,
     min_spend_basis: c.min_spend?.basis ?? "order",
-    active_from: toLocalInput(c.active_from),
-    active_to: toLocalInput(c.active_to),
+    active_from: isoToZonedInput(c.active_from, timeZone),
+    active_to: isoToZonedInput(c.active_to, timeZone),
     cap: b.cap ?? null,
     priority: String(b.priority),
     stacking: b.stacking ?? "stackable",
@@ -221,7 +208,7 @@ export function formFrom(version: PricingRuleVersion): RuleForm {
   };
 }
 
-export function toBody(v: RuleForm): RuleBody {
+export function toBody(v: RuleForm, timeZone: string): RuleBody {
   const conditions: NonNullable<RuleBody["conditions"]> = {};
   if (v.cond_order_types.length) conditions.order_types = v.cond_order_types;
   if (v.cond_channels.length) conditions.channels = v.cond_channels;
@@ -230,8 +217,8 @@ export function toBody(v: RuleForm): RuleBody {
   if (v.cond_brand_ids.length) conditions.brand_ids = v.cond_brand_ids;
   if (v.cond_customer_group_ids.length) conditions.customer_group_ids = v.cond_customer_group_ids;
   if (v.min_spend_amount !== null && v.min_spend_amount > 0) conditions.min_spend = { amount: v.min_spend_amount, basis: v.min_spend_basis };
-  const from = fromLocalInput(v.active_from);
-  const to = fromLocalInput(v.active_to);
+  const from = zonedInputToIso(v.active_from, timeZone);
+  const to = zonedInputToIso(v.active_to, timeZone);
   if (from) conditions.active_from = from;
   if (to) conditions.active_to = to;
 

@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { SEED_RULE_IDS } from "@sail/shared";
+import { localParts, SEED_RULE_IDS } from "@sail/shared";
 import "../src/modules.js";
 import { buildApp, type App } from "../src/app.js";
 import { withTransaction } from "../src/db/client.js";
 import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
 import { AdmissionGate } from "../src/lib/gate.js";
-import { localParts } from "../src/lib/time.js";
 import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb, sgSeedRules } from "./helpers.js";
 
 /**
