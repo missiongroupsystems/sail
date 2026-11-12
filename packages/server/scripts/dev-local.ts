@@ -93,10 +93,20 @@ serve({ fetch: app.fetch, port }, () => {
   console.log("\nSail API (local) ready:\n" + JSON.stringify(info, null, 2) + "\n\nGet a sign-in token: curl -X POST localhost:" + port + `/v1/auth/sign-in -H 'content-type: application/json' -d '{"email":"admin@sail.local","password":"${DEMO_PASSWORD}"}'\n`);
 });
 
+let stopping = false;
 const shutdown = async () => {
+  if (stopping) return;
+  stopping = true;
   await sim.stop();
   await pg.stop();
   process.exit(0);
 };
 process.on("SIGINT", () => void shutdown());
 process.on("SIGTERM", () => void shutdown());
+process.on("SIGHUP", () => void shutdown());
+// The parent (pnpm, a terminal, Playwright) went away without signalling: this process was reparented, so stop too.
+// A kill that leaves no chance to run this is covered by the embedded Postgres's own watchdog.
+const parent = process.ppid;
+setInterval(() => {
+  if (process.ppid !== parent) void shutdown();
+}, 1000).unref();

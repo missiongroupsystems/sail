@@ -60,12 +60,18 @@ export async function startEmbeddedPostgres(): Promise<EmbeddedPg> {
   const start = spawnSync(join(native, "bin", "pg_ctl"), ["-D", dataDir, "-o", pgOpts, "-w", "-t", "60", "-l", join(dataDir, "server.log"), "start"], { env, encoding: "utf8" });
   if (start.status !== 0) throw new Error(`pg_ctl start failed: ${start.stderr}\n${start.stdout}`);
   const adminUrl = `postgres://postgres@127.0.0.1:${port}/postgres`;
+  // pg_ctl leaves the server running on its own, so a process killed before its cleanup (SIGKILL, a test runner or
+  // Playwright tearing it down) would leave the server and its directories behind. A detached watchdog outlives this
+  // process, and once it has gone stops the server and removes the directories.
+  const watchdog = spawn(process.execPath, ["-e", WATCHDOG, String(process.pid), join(native, "bin", "pg_ctl"), dataDir, sockDir], { env, detached: true, stdio: "ignore" });
+  watchdog.unref();
   return {
     url: adminUrl,
     adminUrl,
     port,
     dataDir,
     stop: async () => {
+      watchdog.kill();
       await new Promise<void>((resolve) => {
         const p = spawn(join(native, "bin", "pg_ctl"), ["-D", dataDir, "-m", "immediate", "stop"], { env, stdio: "ignore" });
         p.on("exit", () => resolve());
@@ -76,6 +82,20 @@ export async function startEmbeddedPostgres(): Promise<EmbeddedPg> {
     },
   };
 }
+
+/** Run as `node -e WATCHDOG <pid> <pg_ctl> <dataDir> <sockDir>`: waits for the process to exit, then cleans up after it. */
+const WATCHDOG = `
+const { spawnSync } = require("node:child_process");
+const { rmSync } = require("node:fs");
+const [pid, pgCtl, dataDir, sockDir] = process.argv.slice(1);
+const timer = setInterval(() => {
+  try { process.kill(Number(pid), 0); return; } catch {}
+  clearInterval(timer);
+  spawnSync(pgCtl, ["-D", dataDir, "-m", "immediate", "stop"], { stdio: "ignore" });
+  rmSync(dataDir, { recursive: true, force: true });
+  rmSync(sockDir, { recursive: true, force: true });
+}, 500);
+`;
 
 export function listMigrationFiles(folder: string): string[] {
   return readdirSync(folder).filter((f) => f.endsWith(".sql")).sort();
