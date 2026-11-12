@@ -308,6 +308,21 @@ describe("ceilings and proposals", () => {
     await expect(as(`update products set name = 'x'`)).rejects.toMatchObject({ code: "42501" }); // no configuration writes
   });
 
+  it("a provider's webhook secret is never stored in a proposal, and the operations that take or check it are not on MCP", async () => {
+    await db.sql`update staff set risk_ceiling = 'T1' where id = ${A.admin.id}`;
+    try {
+      const r = await call<{ code: string }>("PUT", "/v1/payment-providers/simulator", { token: A.admin.token, body: { webhook_secret: "s".repeat(32) } });
+      expect(r.status, JSON.stringify(r.body)).toBe(403);
+      expect(r.body.code).toBe("permission_denied");
+    } finally {
+      await db.sql`update staff set risk_ceiling = null where id = ${A.admin.id}`;
+    }
+    expect((await db.sql`select count(*)::int as n from proposals where operation_id = 'payment_providers.configure'`)[0]!.n).toBe(0);
+    expect((await db.sql`select count(*)::int as n from payment_provider_accounts where merchant_id = ${A.merchantId}`)[0]!.n).toBe(0);
+    const tools = await loadCatalog(buildApp());
+    expect(tools.filter((t) => t.op === "payment_providers.configure" || t.op === "payments.webhook")).toEqual([]);
+  });
+
   it("a pairing code or an agent credential is never stored in a proposal: a caller above its ceiling is refused", async () => {
     const relay = await call<{ data: { id: string } }>("POST", "/v1/relays", { token: A.admin.token, body: { outlet_id: A.outletId, name: "Relay" } });
     expect(relay.status, JSON.stringify(relay.body)).toBe(201);

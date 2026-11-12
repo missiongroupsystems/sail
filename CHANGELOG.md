@@ -41,7 +41,7 @@ Notable changes to Sail, newest first. Field and operation names are as in `pack
 - Reference set at 162 pricing cases, adding US, EU, Japanese, three-decimal and cash-rounding cases.
 
 ### Security
-- Issuing a station or relay pairing code and creating or rotating an agent credential cannot become proposals (`proposable: false`): a caller above its risk ceiling is refused, so a stored proposal never holds a secret.
+- Issuing a station or relay pairing code, creating or rotating an agent credential and setting a payment provider's webhook secret cannot become proposals (`proposable: false`): a caller above its risk ceiling is refused, so a stored proposal never holds a secret.
 - A manager approval (override grant) covers exactly what the manager approved: the void quantity, open price, rule and entered value, payment or refund and its total. It is bound to the requester's PIN session and station, spent once by a conditional update, and its id is returned only to the requester. A manual rule's own minimum role decides who may approve it.
 - Wrong manager-approval PINs count towards the station's lockout with sign-in PINs, and each attempt is counted before it is checked. The PIN lockout and the guest rate limits are stored in Postgres, so they hold across API machines.
 - A proposal stores the order's version and total and executes only on the order the approver saw.
