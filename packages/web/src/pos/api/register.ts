@@ -70,8 +70,8 @@ const asResult = (r: unknown) => r as MutationResult;
 
 /* ---- Station and session ------------------------------------------------ */
 
-export async function pairStation(api: PosApi, code: string, deviceLabel: string): Promise<{ station_token: string; station: Station }> {
-  const res = await req(api.POST("/v1/stations/pair", { body: { code, device_label: deviceLabel }, headers: headers() }));
+export async function pairStation(api: PosApi, code: string, deviceLabel: string, kind?: Station["kind"]): Promise<{ station_token: string; station: Station }> {
+  const res = await req(api.POST("/v1/stations/pair", { body: { code, device_label: deviceLabel, ...(kind ? { kind } : {}) }, headers: headers() }));
   return { station_token: res.data.station_token, station: res.data.station as unknown as Station };
 }
 

@@ -9,6 +9,7 @@ Notable changes to Sail, newest first. Field and operation names are as in `pack
 - Display destinations (`display_destinations.*`, on Printing > Printers) route like kitchen printers; stations take `kind` and `display_destination_ids`. A fire creates one ticket per destination in the same transaction as the print jobs. A later fire makes a new ticket, a void after sending strikes the line and flags the ticket changed, and an order cancel cancels its tickets.
 - New operations `kitchen_tickets.list`, `kitchen_tickets.all_day` (staff, displays, agents) and `kitchen_tickets.start`, `kitchen_tickets.bump`, `kitchen_tickets.recall` (displays and staff; not for agents, not on MCP). A double bump or two displays on one ticket change it once.
 - The POS shows a sent line as ready once the kitchen has bumped every ticket carrying it. `dev:local` seeds one kitchen display per demo merchant.
+- `stations.pair` takes an optional `kind`; the display sends `display`, so a POS station's code is refused before it is used and that iPad stays paired.
 - Merchants without a display destination print exactly as before and create no tickets.
 
 ### Any country by configuration

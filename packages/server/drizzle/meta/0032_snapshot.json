@@ -1,5 +1,5 @@
 {
-  "id": "71f3f208-ea80-4c28-a95e-a4c5445754ef",
+  "id": "efb08904-baf5-49b5-93fb-0b46da852fbf",
   "prevId": "287ad3b9-8a3d-4c2e-a4d7-2d11101c3e2f",
   "version": "7",
   "dialect": "postgresql",
@@ -9860,6 +9860,36 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "order_no": {
+          "name": "order_no",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "order_type": {
+          "name": "order_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "table_name": {
+          "name": "table_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pax": {
+          "name": "pax",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "customer_name": {
+          "name": "customer_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "server_name": {
           "name": "server_name",

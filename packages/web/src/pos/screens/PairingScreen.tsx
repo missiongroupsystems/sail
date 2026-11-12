@@ -12,12 +12,14 @@ export type PairingScreenProps = {
   /** What is being paired, in the copy: "iPad", or "screen" for a kitchen display. */
   device?: string;
   hint?: string;
+  /** The station kind this device must pair with; the register refuses another kind before using the code. */
+  kind?: Station["kind"];
   /** Where the token goes; the POS keeps it in its station store. The kitchen display passes its own. */
   onPaired?: (token: string, station: Station, label: string) => void;
 };
 
 /** First run: the 6-digit pairing code from the back office and a label for this iPad. */
-export function PairingScreen({ device = "iPad", hint = "In the back office, open Settings › Stations, choose the station and tap “Pair an iPad”. Enter the 6 digits here.", onPaired }: PairingScreenProps = {}) {
+export function PairingScreen({ device = "iPad", hint = "In the back office, open Settings › Stations, choose the station and tap “Pair an iPad”. Enter the 6 digits here.", kind, onPaired }: PairingScreenProps = {}) {
   const api = useApi();
   const setPaired = useStationStore((s) => s.setPaired);
   const [code, setCode] = useState("");
@@ -30,7 +32,7 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
     setPending(true);
     setError(null);
     try {
-      const res = await pairStation(api, code, label.trim());
+      const res = await pairStation(api, code, label.trim(), kind);
       (onPaired ?? setPaired)(res.station_token, res.station, label.trim());
     } catch (e) {
       setError(toApiError(e));

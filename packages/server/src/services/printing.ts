@@ -138,14 +138,19 @@ export async function insertJob(input: { merchantId: string; outletId: string; p
  */
 export async function createKitchenJobs(input: { order: typeof orders.$inferSelect; lines: (typeof orderLines.$inferSelect)[]; round: number; stationId: string | null; principal: Principal; correlationId: string; operationId?: string }): Promise<{ jobs: CreatedJob[]; warnings: string[] }> {
   // The printers, the display destinations and the business day are read together: pipelined, one round trip.
-  const [all, displays, bd] = await Promise.all([db().select().from(printers).where(and(eq(printers.outletId, input.order.outletId), isNull(printers.archivedAt))), activeDestinations(input.order.outletId), ticketBusinessDay(input.order.outletId)]);
+  const [all, displays, bd, table] = await Promise.all([
+    db().select().from(printers).where(and(eq(printers.outletId, input.order.outletId), isNull(printers.archivedAt))),
+    activeDestinations(input.order.outletId),
+    ticketBusinessDay(input.order.outletId),
+    input.order.tableId ? db().select({ name: tables.name }).from(tables).where(eq(tables.id, input.order.tableId)).limit(1) : Promise.resolve([]),
+  ]);
   const routed = routeLines(all, input.lines, input.order, input.stationId);
   const shown = routeLines(displays, input.lines, input.order, null);
   const warnings: string[] = [];
   const routedIds = new Set([...routed, ...shown].flatMap((r) => r.lines.map((l) => l.id)));
   const unrouted = input.lines.filter((l) => !routedIds.has(l.id));
   if (unrouted.length) warnings.push(`${unrouted.length} item${unrouted.length === 1 ? "" : "s"} route to no printer and no default kitchen printer is set: ${unrouted.map((l) => l.name).join(", ")}`);
-  await createKitchenTickets({ order: input.order, routed: shown, round: input.round, principal: input.principal, correlationId: input.correlationId, operationId: input.operationId ?? "orders.fire", bd });
+  await createKitchenTickets({ order: input.order, tableName: table[0]?.name ?? null, routed: shown, round: input.round, principal: input.principal, correlationId: input.correlationId, operationId: input.operationId ?? "orders.fire", bd });
   const jobs: CreatedJob[] = [];
   for (const r of routed) {
     for (let copy = 1; copy <= Math.max(1, r.printer.copies); copy++) {

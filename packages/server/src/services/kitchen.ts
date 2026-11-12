@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql, type SQL } from "drizzle-orm";
 import { db, isDryRun, tx } from "../db/client.js";
-import { displayDestinations, kitchenTicketLines, kitchenTickets, merchantSettings, orderLines, orders, outlets, stations, tables } from "../db/schema/index.js";
+import { displayDestinations, kitchenTicketLines, kitchenTickets, merchantSettings, orderLines, orders, outlets, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { appendEvent, type AppendedEvent } from "../lib/events.js";
 import type { Principal } from "../auth/principal.js";
@@ -49,18 +49,24 @@ export function ticketBusinessDay(outletId: string): Promise<BusinessDayInputs> 
     });
 }
 
-function event(order: { merchantId: string; outletId: string }, type: string, ticketId: string, payload: Record<string, unknown>, ctx: { principal: Principal; correlationId: string; operationId: string; idempotencyKey?: string | null; bd?: BusinessDayInputs }): Promise<AppendedEvent> {
-  return appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type, aggregate: { kind: "kitchen_ticket", id: ticketId }, operationId: ctx.operationId, payload, correlationId: ctx.correlationId, idempotencyKey: ctx.idempotencyKey ?? null, businessDay: ctx.bd }, ctx.principal);
+/**
+ * One `kitchen_ticket.*` event. A change made by an order event (a fire, a void, a cancel) is one event on the order
+ * listing every ticket it touched, so the fire path appends one event however many displays it reaches; a display's own
+ * action is an event on its ticket.
+ */
+function event(at: { merchantId: string; outletId: string }, type: string, aggregate: { kind: "order" | "kitchen_ticket"; id: string }, payload: Record<string, unknown>, ctx: { principal: Principal; correlationId: string; operationId: string; idempotencyKey?: string | null; bd: BusinessDayInputs }): Promise<AppendedEvent> {
+  return appendEvent({ merchantId: at.merchantId, outletId: at.outletId, type, aggregate, operationId: ctx.operationId, payload, correlationId: ctx.correlationId, idempotencyKey: ctx.idempotencyKey ?? null, businessDay: ctx.bd }, ctx.principal);
 }
 
-/** Insert one ticket per routed destination with its lines (two statements, pipelined) and emit `kitchen_ticket.created` for each. */
-export async function createKitchenTickets(input: { order: OrderRow; routed: { printer: DestinationRow; lines: LineRow[] }[]; round: number; principal: Principal; correlationId: string; operationId: string; bd: BusinessDayInputs }): Promise<string[]> {
+/** Insert one ticket per routed destination with its lines (two statements, pipelined) and emit one `kitchen_ticket.created` for the fire. */
+export async function createKitchenTickets(input: { order: OrderRow; tableName: string | null; routed: { printer: DestinationRow; lines: LineRow[] }[]; round: number; principal: Principal; correlationId: string; operationId: string; bd: BusinessDayInputs }): Promise<string[]> {
   if (input.routed.length === 0) return [];
   const firedAt = new Date();
   const serverName = "name" in input.principal ? input.principal.name : null;
   const tickets = input.routed.map((r) => ({ id: randomUUID(), destination: r.printer, lines: r.lines }));
   if (!isDryRun()) {
-    const ticketRows = tickets.map((t) => ({ id: t.id, merchantId: input.order.merchantId, outletId: input.order.outletId, destinationId: t.destination.id, orderId: input.order.id, roundNo: input.round, serverName, firedAt }));
+    const o = input.order;
+    const ticketRows = tickets.map((t) => ({ id: t.id, merchantId: o.merchantId, outletId: o.outletId, destinationId: t.destination.id, orderId: o.id, roundNo: input.round, orderNo: o.orderNo, orderType: o.orderType, tableName: input.tableName, pax: o.pax, customerName: o.customerRef?.name ?? null, serverName, firedAt }));
     const lineRows = tickets.flatMap((t) =>
       t.lines.map((l) => ({
         merchantId: input.order.merchantId,
@@ -80,9 +86,7 @@ export async function createKitchenTickets(input: { order: OrderRow; routed: { p
     // Pipelined on the transaction's connection: the lines follow the tickets in order, in one round trip.
     await Promise.all([db().insert(kitchenTickets).values(ticketRows), db().insert(kitchenTicketLines).values(lineRows)]);
   }
-  for (const t of tickets) {
-    await event(input.order, "kitchen_ticket.created", t.id, { ticket_id: t.id, destination_id: t.destination.id, order_id: input.order.id, round_no: input.round, line_ids: t.lines.map((l) => l.id) }, input);
-  }
+  await event(input.order, "kitchen_ticket.created", { kind: "order", id: input.order.id }, { order_id: input.order.id, round_no: input.round, tickets: tickets.map((t) => ({ ticket_id: t.id, destination_id: t.destination.id, line_ids: t.lines.map((l) => l.id) })) }, input);
   return tickets.map((t) => t.id);
 }
 
@@ -90,7 +94,8 @@ export async function createKitchenTickets(input: { order: OrderRow; routed: { p
 export async function strikeVoidedLine(input: { order: OrderRow; lineId: string; quantity: number; principal: Principal; correlationId: string; operationId: string; idempotencyKey?: string | null }): Promise<void> {
   if (isDryRun()) return;
   // One statement: the line update and the ticket flag together, so the void path gains a single round trip.
-  const changed = await tx()<{ id: string; destination_id: string }[]>`
+  const [changed, bd] = await Promise.all([
+    tx()<{ id: string; destination_id: string }[]>`
     with struck as (
       update kitchen_ticket_lines set voided_quantity = least(quantity, voided_quantity + ${input.quantity})
       where order_line_id = ${input.lineId} and voided_quantity < quantity
@@ -98,33 +103,41 @@ export async function strikeVoidedLine(input: { order: OrderRow; lineId: string;
     )
     update kitchen_tickets set changed = true, changed_at = now()
     where id in (select ticket_id from struck)
-    returning id, destination_id`;
-  for (const t of changed) {
-    await event(input.order, "kitchen_ticket.changed", t.id, { ticket_id: t.id, destination_id: t.destination_id, order_id: input.order.id, line_id: input.lineId, voided_quantity: input.quantity }, input);
-  }
+    returning id, destination_id`,
+    ticketBusinessDay(input.order.outletId),
+  ]);
+  if (changed.length === 0) return;
+  await event(input.order, "kitchen_ticket.changed", { kind: "order", id: input.order.id }, { order_id: input.order.id, line_id: input.lineId, voided_quantity: input.quantity, tickets: changed.map((t) => ({ ticket_id: t.id, destination_id: t.destination_id })) }, { ...input, bd });
 }
 
 /** The order was cancelled: every ticket of it that is not already cancelled is. */
 export async function cancelOrderTickets(input: { order: OrderRow; principal: Principal; correlationId: string; operationId: string; idempotencyKey?: string | null }): Promise<void> {
   if (isDryRun()) return;
-  const rows = await db()
-    .update(kitchenTickets)
-    .set({ status: "cancelled", cancelledAt: new Date() })
-    .where(and(eq(kitchenTickets.orderId, input.order.id), ne(kitchenTickets.status, "cancelled")))
-    .returning({ id: kitchenTickets.id, destinationId: kitchenTickets.destinationId });
-  for (const t of rows) await event(input.order, "kitchen_ticket.cancelled", t.id, { ticket_id: t.id, destination_id: t.destinationId, order_id: input.order.id }, input);
+  const [rows, bd] = await Promise.all([
+    db()
+      .update(kitchenTickets)
+      .set({ status: "cancelled", cancelledAt: new Date() })
+      .where(and(eq(kitchenTickets.orderId, input.order.id), ne(kitchenTickets.status, "cancelled")))
+      .returning({ id: kitchenTickets.id, destinationId: kitchenTickets.destinationId }),
+    ticketBusinessDay(input.order.outletId),
+  ]);
+  if (rows.length === 0) return;
+  await event(input.order, "kitchen_ticket.cancelled", { kind: "order", id: input.order.id }, { order_id: input.order.id, tickets: rows.map((t) => ({ ticket_id: t.id, destination_id: t.destinationId })) }, { ...input, bd });
 }
 
 /* ---- Reading and acting from a display ------------------------------------ */
 
 /**
  * The destinations a caller may see: a display station sees only the ones it is
- * assigned; staff and agents see every destination their outlet scope (RLS) allows.
- * A POS station without a PIN session sees none.
+ * assigned, and so does anyone signed in on it; other staff and agents see every
+ * destination their outlet scope (RLS) allows. A POS station without a PIN
+ * session sees none.
  */
 export async function destinationScope(p: Principal): Promise<string[] | null> {
-  if (p.type !== "station") return null;
-  const [st] = await db().select({ kind: stations.kind, ids: stations.displayDestinationIds }).from(stations).where(eq(stations.id, p.stationId)).limit(1);
+  const stationId = p.type === "station" ? p.stationId : p.type === "staff" ? (p.stationId ?? null) : null;
+  if (!stationId) return null;
+  const [st] = await db().select({ kind: stations.kind, ids: stations.displayDestinationIds }).from(stations).where(eq(stations.id, stationId)).limit(1);
+  if (p.type === "staff") return st?.kind === "display" ? st.ids : null;
   if (!st || st.kind !== "display") throw new AppError("permission_denied", "Only a kitchen display station reads tickets without a PIN", { remedy: "Pair this screen to a display station, or sign in with a PIN." });
   return st.ids;
 }
@@ -138,17 +151,15 @@ function scopeConds(scope: string[] | null, destinationId?: string): SQL[] {
 
 export type TicketView = Awaited<ReturnType<typeof loadTickets>>[number];
 
-/** Tickets with their order, table, destination and lines, oldest fire first. */
-async function loadTickets(where: SQL[], order: "fired" | "bumped" = "fired", limit = 200) {
-  const rows = await db()
-    .select({ t: kitchenTickets, orderNo: orders.orderNo, orderType: orders.orderType, pax: orders.pax, customerName: sql<string | null>`${orders.customerRef}->>'name'`, tableName: tables.name, destinationName: displayDestinations.name })
+/** Tickets with their destination and lines, oldest fire first (or the latest bump first); every open ticket unless limited. */
+async function loadTickets(where: SQL[], order: "fired" | "bumped" = "fired", limit?: number) {
+  const query = db()
+    .select({ t: kitchenTickets, destinationName: displayDestinations.name })
     .from(kitchenTickets)
-    .innerJoin(orders, eq(orders.id, kitchenTickets.orderId))
     .innerJoin(displayDestinations, eq(displayDestinations.id, kitchenTickets.destinationId))
-    .leftJoin(tables, eq(tables.id, orders.tableId))
     .where(and(...where))
-    .orderBy(...(order === "fired" ? [asc(kitchenTickets.firedAt), asc(kitchenTickets.id)] : [desc(kitchenTickets.bumpedAt)]))
-    .limit(limit);
+    .orderBy(...(order === "fired" ? [asc(kitchenTickets.firedAt), asc(kitchenTickets.id)] : [desc(kitchenTickets.bumpedAt)]));
+  const rows = limit ? await query.limit(limit) : await query;
   const lines = rows.length ? await db().select().from(kitchenTicketLines).where(inArray(kitchenTicketLines.ticketId, rows.map((r) => r.t.id))).orderBy(asc(kitchenTicketLines.sort)) : [];
   return rows.map((r) => ({
     id: r.t.id,
@@ -156,11 +167,11 @@ async function loadTickets(where: SQL[], order: "fired" | "bumped" = "fired", li
     destination_id: r.t.destinationId,
     destination_name: r.destinationName,
     order_id: r.t.orderId,
-    order_no: r.orderNo,
-    order_type: r.orderType,
-    table_name: r.tableName,
-    customer_name: r.customerName,
-    pax: r.pax,
+    order_no: r.t.orderNo,
+    order_type: r.t.orderType,
+    table_name: r.t.tableName,
+    customer_name: r.t.customerName,
+    pax: r.t.pax,
     round_no: r.t.roundNo,
     server_name: r.t.serverName,
     status: r.t.status,
@@ -219,18 +230,24 @@ export async function actOnTicket(action: TicketAction, ticketId: string, p: Pri
       : action === "bump"
         ? // A cancelled ticket stays cancelled; bumping it only takes it off the display.
           await db().update(kitchenTickets).set({ status: sql`case when ${kitchenTickets.status} = 'cancelled' then 'cancelled'::kitchen_ticket_status else 'ready'::kitchen_ticket_status end`, bumpedAt: now }).where(and(...visible, isNull(kitchenTickets.bumpedAt))).returning()
-        : await db().update(kitchenTickets).set({ status: "recalled", bumpedAt: null, recalledAt: now }).where(and(...visible, eq(kitchenTickets.status, "ready"), isNotNull(kitchenTickets.bumpedAt))).returning();
+        : // Only the last ticket bumped at its destination comes back; recalling again walks back one at a time.
+          await db()
+            .update(kitchenTickets)
+            .set({ status: "recalled", bumpedAt: null, recalledAt: now })
+            .where(and(...visible, eq(kitchenTickets.status, "ready"), isNotNull(kitchenTickets.bumpedAt), sql`not exists (select 1 from kitchen_tickets later where later.destination_id = ${kitchenTickets.destinationId} and later.status = 'ready' and later.bumped_at > ${kitchenTickets.bumpedAt})`))
+            .returning();
   if (!row) {
     const [current] = await loadTickets(visible);
     if (!current) throw AppError.notFound("kitchen ticket", ticketId);
     // Already where the action leaves it: a double tap or the other display got there first.
     const settled = action === "start" ? current.status === "in_progress" : action === "bump" ? current.bumped_at !== null : current.bumped_at === null && current.status !== "cancelled";
     if (settled) return { ticket: current, changed: false, events: [] };
+    if (action === "recall" && current.status === "ready") throw AppError.state("A ticket bumped later at this destination comes back first", ["kitchen_tickets.recall on the last bumped ticket"], "Recall the last bumped ticket.");
     const allowed = current.status === "cancelled" ? ["kitchen_tickets.bump"] : current.status === "ready" ? ["kitchen_tickets.recall"] : ["kitchen_tickets.bump"];
     throw AppError.state(`The ticket is ${current.status.replace("_", " ")}`, allowed);
   }
   const type = action === "start" ? "kitchen_ticket.started" : action === "bump" ? "kitchen_ticket.bumped" : "kitchen_ticket.recalled";
-  const ev = await event(row, type, row.id, { ticket_id: row.id, destination_id: row.destinationId, order_id: row.orderId, status: row.status }, { principal: p, correlationId: ctx.correlationId, idempotencyKey: ctx.idempotencyKey, operationId: `kitchen_tickets.${action}` });
+  const ev = await event(row, type, { kind: "kitchen_ticket", id: row.id }, { ticket_id: row.id, destination_id: row.destinationId, order_id: row.orderId, status: row.status }, { principal: p, correlationId: ctx.correlationId, idempotencyKey: ctx.idempotencyKey, operationId: `kitchen_tickets.${action}`, bd: await ticketBusinessDay(row.outletId) });
   const [ticket] = await loadTickets([eq(kitchenTickets.id, row.id)]);
   return { ticket: ticket!, changed: true, events: [ev] };
 }

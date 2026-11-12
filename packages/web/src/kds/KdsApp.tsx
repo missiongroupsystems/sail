@@ -45,23 +45,10 @@ export default function KdsApp() {
   );
 }
 
+/** Pairing asks the register for a display station, so a POS station's code is refused and its iPad stays paired. */
 function Pairing() {
   const setPaired = useDisplayStore((s) => s.setPaired);
-  const [notDisplay, setNotDisplay] = useState<string | null>(null);
-  return (
-    <>
-      {notDisplay ? (
-        <p role="alert" className="absolute inset-x-0 top-0 bg-surface px-8 py-3 text-body text-status-alert hairline-b">
-          {notDisplay} is a POS station. Pair this screen with a kitchen display station, or open /pos on the iPad.
-        </p>
-      ) : null}
-      <PairingScreen
-        device="screen"
-        hint="In the back office, open Settings › Stations, choose the kitchen display station and press “Pair an iPad”. Enter the 6 digits here."
-        onPaired={(token, station: Station) => (station.kind === "display" ? setPaired(token, station) : setNotDisplay(station.name))}
-      />
-    </>
-  );
+  return <PairingScreen device="screen" kind="display" hint="In the back office, open Settings › Stations, choose the kitchen display station and press “Pair an iPad”. Enter the 6 digits here." onPaired={(token, station: Station) => setPaired(token, station)} />;
 }
 
 function Board({ station }: { station: Station }) {
@@ -108,9 +95,9 @@ function useTicketStream(outletId: string): ConnectionStatus {
       outletId,
       getToken: () => useDisplayStore.getState().token,
       fetchEvents: (after) => listEvents(api, outletId, after),
-      // Ticket changes, and order changes that show on a ticket (a table move, a new type).
+      // Tickets keep the order as it was sent, so only ticket events change the board.
       onEvents: (events) => {
-        if (events.some((e) => e.aggregate.kind === "kitchen_ticket" || e.type === "order.moved" || e.type === "order.type_changed")) refresh();
+        if (events.some((e) => e.type.startsWith("kitchen_ticket."))) refresh();
       },
       onStatus: (s) => setStatus(s),
       onConnected: (first) => {

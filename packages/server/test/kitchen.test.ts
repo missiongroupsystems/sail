@@ -113,6 +113,10 @@ describe("tickets from the fire", () => {
   it("one ticket per destination the routing reaches, beside unchanged print jobs: a display and a printer share a tag", async () => {
     first = await sendOrder([{ product_id: ids.laksa, quantity: 2, notes: "less spicy", seat_no: 1 }, { product_id: ids.kopi }, { product_id: ids.bread }], undefined, true);
     expect(first.warnings).toEqual([]);
+    // The fire appends one event for both tickets, so the fire path gains one append however many displays it reaches.
+    const created = (await ticketEvents(0)).filter((e) => e.type === "kitchen_ticket.created");
+    expect(created).toHaveLength(1);
+    expect((created[0]!.payload.tickets as unknown[]).length).toBe(2);
     const tickets = (await list(tokens.d1)).body.data.filter((x) => x.order_id === first.orderId);
     expect(tickets.map((x) => x.destination_id).sort()).toEqual([ids.hot, ids.bar].sort());
     hotTicket = tickets.find((x) => x.destination_id === ids.hot)!;
@@ -126,6 +130,20 @@ describe("tickets from the fire", () => {
     const jobs = (await must<{ data: { printer_id: string; text: string }[] }>("GET", `/v1/outlets/${A.outletId}/print-jobs?order_id=${first.orderId}`, A.admin.token)).data;
     expect(jobs.filter((j) => j.printer_id === ids.kitchenPrinter).map((j) => /LAKSA/.test(j.text))).toEqual([true]);
     expect(jobs.filter((j) => j.printer_id === ids.passPrinter)).toHaveLength(1);
+  });
+
+  it("a ticket keeps the table it was sent to when the order moves", async () => {
+    const moved = await sendOrder([{ product_id: ids.bread }], undefined, false);
+    const table2 = randomUUID();
+    await must("POST", "/v1/tables", A.admin.token, { id: table2, outlet_id: A.outletId, area_id: ids.area, name: "14" });
+    const dineIn = await must<{ data: { id: string } }>("POST", "/v1/orders", tokens.server, { order_id: randomUUID(), order_type: "dine_in", table_id: table2, pax: 2 });
+    const sent = await sendOrder([{ product_id: ids.bread }], dineIn.data.id);
+    const table3 = randomUUID();
+    await must("POST", "/v1/tables", A.admin.token, { id: table3, outlet_id: A.outletId, area_id: ids.area, name: "15" });
+    await must("POST", `/v1/orders/${sent.orderId}/move-table`, tokens.server, { table_id: table3 });
+    const t = (await list(tokens.d2)).body.data.find((x) => x.order_id === sent.orderId)!;
+    expect(t.table_name).toBe("14");
+    for (const x of (await list(tokens.d2)).body.data.filter((y) => y.order_id === sent.orderId || y.order_id === moved.orderId)) await act(tokens.d2, x.id, "bump");
   });
 
   it("a second fire on the order makes a second ticket and leaves the first as it was", async () => {
@@ -150,7 +168,8 @@ describe("tickets from the fire", () => {
     t = (await list(tokens.d1)).body.data.find((x) => x.id === hotTicket.id)!;
     expect(t.lines[0]).toMatchObject({ quantity: 2, voided_quantity: 2 });
     const evs = await ticketEvents(after);
-    expect(evs.map((e) => [e.type, e.aggregate.id])).toEqual([["kitchen_ticket.changed", hotTicket.id], ["kitchen_ticket.changed", hotTicket.id]]);
+    // One event per void, naming the tickets it changed: only Hot carries the laksa.
+    expect(evs.map((e) => [e.type, (e.payload.tickets as { ticket_id: string }[]).map((x) => x.ticket_id)])).toEqual([["kitchen_ticket.changed", [hotTicket.id]], ["kitchen_ticket.changed", [hotTicket.id]]]);
     // The all-day count no longer asks for the struck laksa: one laksa from round 2, one bread, one kopi.
     const day = (await must<{ data: { name: string; quantity: number }[] }>("GET", `/v1/outlets/${A.outletId}/kitchen-tickets/all-day`, tokens.d1)).data;
     expect(Object.fromEntries(day.map((d) => [d.name, d.quantity]))).toEqual({ LAKSA: 1, Bread: 1, Kopi: 1 });
@@ -221,6 +240,23 @@ describe("start, bump and recall", () => {
     expect((await act(tokens.d1, hotTicket.id, "bump")).body.data.status).toBe("ready");
   });
 
+  it("only the last ticket bumped at a destination can be recalled; recalling again walks back one at a time", async () => {
+    const a = await sendOrder([{ product_id: ids.bread }]);
+    const b = await sendOrder([{ product_id: ids.bread }]);
+    const open = (await list(tokens.d2)).body.data;
+    const ta = open.find((x) => x.order_id === a.orderId)!;
+    const tb = open.find((x) => x.order_id === b.orderId)!;
+    await act(tokens.d2, ta.id, "bump");
+    await act(tokens.d2, tb.id, "bump");
+    expect((await list(tokens.d2)).body.last_bumped?.id).toBe(tb.id);
+    const early = await act(tokens.d2, ta.id, "recall");
+    expect(early.status).toBe(409);
+    expect((await act(tokens.d2, tb.id, "recall")).body.data.status).toBe("recalled");
+    expect((await act(tokens.d2, ta.id, "recall")).body.data.status).toBe("recalled");
+    await act(tokens.d2, ta.id, "bump");
+    await act(tokens.d2, tb.id, "bump");
+  });
+
   it("the POS reads every ticket of an order, so it can show a line ready when its tickets are bumped", async () => {
     const r = await list(tokens.server, `?order_id=${first.orderId}`);
     expect(r.status).toBe(200);
@@ -281,6 +317,21 @@ describe("who may see and bump", () => {
     expect(names.some((n) => /kitchen_tickets_(start|bump|recall)/.test(n))).toBe(false);
   });
 
+  it("staff signed in on a display station see only that display's destinations", async () => {
+    const session = await call<{ data: { session_token: string } }>("POST", "/v1/stations/sessions", { token: tokens.d2, body: { pin: "444444" } });
+    expect(session.status).toBe(201);
+    const seen = (await list(session.body.data.session_token)).body.data;
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((x) => x.destination_id === ids.hot)).toBe(true);
+  });
+
+  it("a kitchen display cannot pair with a POS station's code, and the POS iPad stays paired", async () => {
+    const code = await must<{ data: { code: string } }>("POST", `/v1/stations/${ids.pos}/pairing-code`, A.admin.token, {});
+    const r = await call<{ code: string }>("POST", "/v1/stations/pair", { body: { code: code.data.code, device_label: "Wall screen", kind: "display" }, idempotencyKey: null });
+    expect(r.status).toBe(400);
+    expect((await call("GET", "/v1/merchant", { token: tokens.pos })).status).toBe(200);
+  });
+
   it("a display station may only show destinations of its own outlet, and a POS station none", async () => {
     expect((await call("PATCH", `/v1/stations/${ids.d1}`, { token: A.admin.token, body: { display_destination_ids: [ids.hotOutlet2] } })).status).toBe(404);
     expect((await call("PATCH", `/v1/stations/${ids.pos}`, { token: A.admin.token, body: { display_destination_ids: [ids.hot] } })).status).toBe(400);
@@ -299,7 +350,7 @@ describe("events", () => {
     // On reconnect the display asks for everything after the last sequence it applied.
     const missed = await must<{ data: Ev[] }>("GET", `/v1/outlets/${A.outletId}/events?after=${before}`, tokens.d1);
     expect(missed.data.filter((e) => e.type.startsWith("kitchen_ticket.")).map((e) => e.type)).toEqual(["kitchen_ticket.created", "kitchen_ticket.started", "kitchen_ticket.bumped"]);
-    expect(missed.data.find((e) => e.type === "kitchen_ticket.created")!.payload).toMatchObject({ ticket_id: t.id, destination_id: ids.bar, order_id: sent.orderId });
+    expect(missed.data.find((e) => e.type === "kitchen_ticket.created")!.payload).toMatchObject({ order_id: sent.orderId, tickets: [{ ticket_id: t.id, destination_id: ids.bar }] });
     // Live: the display's stream says something changed when a ticket is recalled.
     const stream = await app.request(`/v1/outlets/${A.outletId}/stream`, { headers: { authorization: `Bearer ${tokens.d1}` } });
     expect(stream.status).toBe(200);

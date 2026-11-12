@@ -53,6 +53,12 @@ export const kitchenTickets = pgTable(
       .references(() => orders.id, { onDelete: "cascade" }),
     /** The order's fire round this ticket carries. */
     roundNo: integer("round_no").notNull(),
+    /* The order as it was when the round was sent, so a later move or type change never edits a ticket silently. */
+    orderNo: text("order_no").notNull(),
+    orderType: text("order_type").notNull(),
+    tableName: text("table_name"),
+    pax: integer("pax"),
+    customerName: text("customer_name"),
     serverName: text("server_name"),
     status: kitchenTicketStatusEnum("status").notNull().default("new"),
     /** Set when a later event (a void) changed the ticket after it reached the display. */

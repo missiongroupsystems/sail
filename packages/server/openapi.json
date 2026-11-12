@@ -43190,6 +43190,14 @@
                     "minLength": 1,
                     "maxLength": 80,
                     "x-sail-untrusted": true
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "pos",
+                      "display"
+                    ],
+                    "description": "The kind of station this device expects (the kitchen display sends display). Another kind is refused before the code is used, so the station's current device stays paired."
                   }
                 },
                 "required": [

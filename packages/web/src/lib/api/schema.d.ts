@@ -17896,6 +17896,11 @@ export interface operations {
                 "application/json": {
                     code: string;
                     device_label: string;
+                    /**
+                     * @description The kind of station this device expects (the kitchen display sends display). Another kind is refused before the code is used, so the station's current device stays paired.
+                     * @enum {string}
+                     */
+                    kind?: "pos" | "display";
                 };
             };
         };
