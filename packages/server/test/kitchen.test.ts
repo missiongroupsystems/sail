@@ -332,6 +332,16 @@ describe("who may see and bump", () => {
     expect((await call("GET", "/v1/merchant", { token: tokens.pos })).status).toBe(200);
   });
 
+  it("the POS cannot pair with a kitchen display's code, which stays unused, and the display stays paired", async () => {
+    const code = await must<{ data: { code: string } }>("POST", `/v1/stations/${ids.d2}/pairing-code`, A.admin.token, {});
+    const r = await call<{ code: string; message: string }>("POST", "/v1/stations/pair", { body: { code: code.data.code, device_label: "Bar iPad", kind: "pos" }, idempotencyKey: null });
+    expect(r.status).toBe(400);
+    expect(r.body.message).toBe("This code is for a kitchen display station");
+    const [latest] = await db.sql<{ used_at: Date | null }[]>`select used_at from station_pairing_codes where station_id = ${ids.d2} order by created_at desc limit 1`;
+    expect(latest!.used_at).toBeNull();
+    expect((await list(tokens.d2)).status).toBe(200);
+  });
+
   it("a display runs on its station token alone: the back-office session that paired it can sign out", async () => {
     const session = await backOfficeSession(db.sql, A.merchantId, A.admin.id);
     const id = randomUUID();

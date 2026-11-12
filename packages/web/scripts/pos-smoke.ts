@@ -103,7 +103,7 @@ const code = await adminJson<{ data: { code: string } }>(`/v1/stations/${devLoca
 }
 
 // 1. Pair, then sign in as Sam Server (444444).
-const paired = await step("stations.pair", () => reg.pairStation(api, code.data.code, "Smoke iPad"), (p) => `station ${p.station.name}, home ${p.station.home}, seats ${p.station.seats_enabled}`);
+const paired = await step("stations.pair", () => reg.pairStation(api, code.data.code, "Smoke iPad", "pos"), (p) => `station ${p.station.name}, home ${p.station.home}, seats ${p.station.seats_enabled}`);
 if (!paired) process.exit(1);
 token = paired.station_token;
 

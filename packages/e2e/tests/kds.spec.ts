@@ -17,8 +17,15 @@ test("kitchen display: pair a screen, see a sent order, bump it to ready on the 
   watch.attach(kds);
   const tickets = kds.getByRole("region", { name: "Tickets" });
 
-  await test.step("pair the screen to the kitchen display station with a one-time code", async () => {
+  await test.step("pair the screen to the kitchen display station with a one-time code the POS refused", async () => {
     const { data } = await register<{ data: { code: string } }>("POST", `/v1/stations/${display.id}/pairing-code`, {});
+    // The POS refuses a display's code before using it, so the same code still pairs the screen.
+    watch.allow({ status: 400, url: /\/v1\/stations\/pair$/, why: "the POS is given the display's code on purpose" });
+    await page.goto(`${WEB}/pos`);
+    await expect(page.getByRole("heading", { name: "Pair this iPad to a station" })).toBeVisible({ timeout: 180_000 });
+    await keyIn(page, "PIN keys", data.code);
+    await page.getByRole("button", { name: "Pair this iPad" }).click();
+    await expect(page.getByText("This code is for a kitchen display station")).toBeVisible();
     await kds.goto(`${WEB}/kds`);
     await expect(kds.getByRole("heading", { name: "Pair this screen to a station" })).toBeVisible({ timeout: 180_000 });
     await keyIn(kds, "PIN keys", data.code);

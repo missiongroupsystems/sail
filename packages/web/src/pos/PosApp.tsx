@@ -40,7 +40,7 @@ export default function PosApp() {
       {/* An unpaired iPad cannot read the merchant's settings, so pairing uses the iPad's own locale and zone. */}
       <LocaleProvider settings={DEVICE_LOCALE}>
         {!stationToken ? (
-          <PairingScreen />
+          <PairingScreen kind="pos" />
         ) : !sessionToken ? (
           <StationLocale>
             <LockScreen />
