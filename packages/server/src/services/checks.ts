@@ -91,9 +91,11 @@ export async function syncAllocations(orderId: string, opts: { sharesByLine?: Ma
     const rebuilt = comps.filter((l) => !fixedLines.has(l.id));
     const fixed = [...fixedLines];
     await db().delete(checkAllocations).where(and(inArray(checkAllocations.checkId, unlockedCheckIds), fixed.length ? notInArray(checkAllocations.orderLineId, fixed) : sql`true`));
+    // One balance for the whole split: each line's odd cents go to the bill that has had the fewest, so even bills stay within a cent.
+    const balance = chks.map(() => 0);
     const values = rebuilt.flatMap((line) => {
       const shares = sharesFor(line);
-      const parts = allocateLine({ base: line.base, discount: line.discount, fee: line.fee, taxes: line.taxes, adjustments: line.adjustments }, shares, { taxAddsToTotal: taxAdds });
+      const parts = allocateLine({ base: line.base, discount: line.discount, fee: line.fee, taxes: line.taxes, adjustments: line.adjustments }, shares, { taxAddsToTotal: taxAdds, balance });
       return chks
         .map((c, i) => ({ c, p: parts[i]!, s: shares[i]! }))
         .filter(({ s }) => s.num > 0)

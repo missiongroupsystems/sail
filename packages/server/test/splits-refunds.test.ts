@@ -72,9 +72,9 @@ describe("bill splitting", () => {
       expect(r.body.data.checks).toHaveLength(n);
       expect(sumChecks(r.body.data)).toBe(total);
       expect(r.body.data.checks.every((c) => c.allocations.every((a) => a.share === `1/${n}`))).toBe(true);
-      // Ties go to earlier bills: totals are non-increasing by index.
+      // Odd cents are spread across the bills, not stacked on the first: two guests sharing evenly pay a cent apart at most.
       const totals = r.body.data.checks.map((c) => c.totals.total);
-      for (let i = 1; i < totals.length; i++) expect(totals[i - 1]!).toBeGreaterThanOrEqual(totals[i]!);
+      expect(Math.max(...totals) - Math.min(...totals), JSON.stringify(totals)).toBeLessThanOrEqual(1);
       const tax = r.body.data.checks.reduce((a, c) => a + c.totals.tax_total, 0);
       expect(tax).toBe(added.body.data.totals.tax_total);
     }
