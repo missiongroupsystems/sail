@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { inflateSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { renderBill, type BillDocument } from "@sail/shared";
+import { buildBillDocument, documentToText, renderBill, type BillDocument } from "@sail/shared";
 import { withTransaction } from "../src/db/client.js";
 import { billDocumentFor } from "../src/services/checks.js";
 import { renderInvoicePdf, type InvoiceDocument } from "../src/services/documents.js";
@@ -113,6 +113,11 @@ describe("documents of a paid bill", () => {
       const before = await receipt();
       expect(before.adjustments.map((a) => a.name)).toEqual(["% off bill"]);
       expect(rowsAddUp(before)).toBe(before.totals.total);
+      // The POS shows each line of a bill at its share of the menu price (the allocation's base): the receipt's line amounts.
+      const shownOnPos = async () => (await call<{ data: { checks: { id: string; allocations: { base: number }[] }[] } }>("GET", `/v1/orders/${s.id}`, { token: mgr() })).body.data.checks.find((c) => c.id === bill1.id)!.allocations.map((a) => a.base).sort((a, b) => a - b);
+      const shownBefore = await shownOnPos();
+      expect(shownBefore).toEqual(before.lines.map((l) => l.amount).sort((a, b) => a - b));
+      expect(shownBefore.reduce((a, b) => a + b, 0)).toBe(before.totals.subtotal);
 
       // Re-price the order in several ways: a line for the second guest, an item discount on it, and taking it off again.
       const add = await h.add(mgr(), s.id, [{ product_id: w.ids.kopi, quantity: 1 }]);
@@ -124,6 +129,7 @@ describe("documents of a paid bill", () => {
       expect((await call("DELETE", `/v1/orders/${s.id}/adjustments/${app}`, { token: mgr(), body: { reason: "x" } })).status).toBe(200);
       const after = await receipt();
 
+      expect(await shownOnPos()).toEqual(shownBefore);
       for (const d of [mid, after]) {
         expect(JSON.stringify(d)).toBe(JSON.stringify(before));
         expect(Buffer.from(renderBill(d, PROFILE).bytes).equals(Buffer.from(renderBill(before, PROFILE).bytes))).toBe(true);
@@ -188,6 +194,17 @@ describe("currencies on PDF documents", () => {
       expect(strings.filter((x) => x.includes("?"))).toEqual([]);
     });
   }
+  it("a cash payment's rounding, tip and change are rows on the PDF, as on the thermal and the digital receipt", async () => {
+    const doc = { ...invoice("CHF", 2, "de-CH"), payments: [{ tender: "Cash", amount: 2125, rounding_cents: 0, tip: 300, change: 575 }] };
+    const pdf = pdfStrings(await renderInvoicePdf(doc));
+    const thermal = documentToText(buildBillDocument(doc, 48), 48);
+    for (const label of ["Tip", "Change"]) {
+      expect(pdf, label).toContain(label);
+      expect(thermal, label).toContain(label);
+    }
+    expect(pdf.indexOf("Tip")).toBeLessThan(pdf.indexOf("Change"));
+    expect(thermal.indexOf("Tip")).toBeLessThan(thermal.indexOf("Change"));
+  });
 });
 
 describe("split bills print rows that add up", () => {
