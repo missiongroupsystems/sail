@@ -77,6 +77,8 @@ test("back office: an Admin invites a staff member, who sets a password in anoth
     const field = edit.getByLabel("Link for this person (shown once)");
     await expect(field).toHaveValue(/\/set-password#token=/);
     link = await field.inputValue();
+    // The link opens the back office that made it, not a localhost:3000 default nobody runs.
+    expect(link.startsWith(`${WEB}/set-password#token=`), link).toBe(true);
     await expect(edit.getByText(/^Invited; the link works until/)).toBeVisible();
   });
 

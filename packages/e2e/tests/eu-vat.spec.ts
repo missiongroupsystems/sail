@@ -48,6 +48,9 @@ test("EU VAT café: the POS bill and the guest receipt show both VAT rates in eu
     await page.getByRole("button", { name: "Bill", exact: true }).click();
     const bill = page.getByRole("region", { name: "Bill 1" });
     await expect(bill.getByText("VAT 20% (included)", { exact: true })).toBeVisible();
+    // Lines show the menu price (Pils 4,90 €, not 3,92 € after happy hour): the discount is its own row below.
+    await expect(bill.getByText("4,90 €", { exact: true })).toBeVisible();
+    await expect(bill.getByText("3,92 €", { exact: true })).toHaveCount(0);
     const rows = await totalsRows(bill.locator("dl > div"));
     expect(rows.slice(rows.findIndex(([label]) => label === "Total"))).toEqual(FROM_TOTAL);
     await expect(bill.getByRole("button", { name: /^Pay 20,82\s€/ })).toBeVisible();
