@@ -95,3 +95,33 @@ describe("A9: an override header means nothing for an agent", () => {
     expect((await call("POST", `/v1/orders/${o.body.data.id}/reopen`, { token: tok, body: { reason: "x" }, headers: { "x-override-id": "anything" } })).status).toBe(403);
   });
 });
+
+describe("A4: operation and proposal budgets hold under failures, concurrency and new sessions", () => {
+  it("failed calls count, concurrent calls cannot overshoot, and a new session does not reset the hour's budget", async () => {
+    const id = await identity({ role: "cashier", toolsets: ["pos.read"], risk_ceiling: "T1", max_ops_per_hour: 5 });
+    const tok = await session(id.credential);
+    for (let i = 0; i < 3; i++) expect((await call("GET", `/v1/orders/${randomUUID()}`, { token: tok })).status).toBe(404);
+    const rs = await Promise.all(Array.from({ length: 10 }, () => call("GET", `/v1/outlets/${w.m.outletId}/floor`, { token: tok })));
+    expect(rs.filter((r) => r.status === 200).length).toBe(2);
+    expect(rs.filter((r) => r.status === 429).length).toBe(8);
+    const tok2 = await session(id.credential);
+    expect((await call("GET", `/v1/outlets/${w.m.outletId}/floor`, { token: tok2 })).status).toBe(429);
+  });
+
+  it("max_proposals_per_day holds when proposals arrive at once", async () => {
+    const id = await identity({ role: "cashier", toolsets: ["pos.order"], risk_ceiling: "T1", max_proposals_per_day: 1 });
+    const tok = await session(id.credential);
+    const orders: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const o = await openTakeaway(w.pins.cashier);
+      await addLine(w.pins.cashier, o.body.data.id, { product_id: w.ids.kopi });
+      orders.push(o.body.data.id);
+    }
+    const rs = await Promise.all(orders.map((oid) => call("POST", `/v1/orders/${oid}/fire`, { token: tok, body: {} })));
+    expect(rs.filter((r) => r.status === 202).length).toBe(1);
+    const [n] = await db.sql<{ n: number }[]>`select count(*)::int as n from proposals where agent_identity_id = ${id.id}`;
+    expect(n!.n).toBe(1);
+    const tok2 = await session(id.credential);
+    expect((await call("POST", `/v1/orders/${orders[0]}/fire`, { token: tok2, body: {} })).status).toBe(429);
+  });
+});

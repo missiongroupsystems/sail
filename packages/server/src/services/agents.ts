@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { roleAtLeast, type OperationSpec, type Role } from "@sail/shared";
-import { db, tx, type RequestTx } from "../db/client.js";
+import { db, tx, withOwnTransaction, type RequestTx } from "../db/client.js";
 import { agentDelegations, agentIdentities, agentSessions, backofficeSessions, checks, orders, paymentIntents, payments, proposals, staff, staffSessions, type OnBehalfOf, type ProposalStatus } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { hashSecret, randomToken, sha256, signSailToken, verifySailToken, verifySecret } from "../auth/tokens.js";
@@ -115,8 +115,8 @@ export async function resolveAgentPrincipal(token: string, t: RequestTx): Promis
   if (!row || row.s.revokedAt || row.s.expiresAt.getTime() < Date.now()) throw new AppError("unauthenticated", "This agent session has ended", { remedy: "Start a new agent session." });
   if (!row.i.enabled) throw new AppError("permission_denied", `Agent "${row.i.name}" is switched off`);
   if (row.s.onBehalfOf) await assertPersonPresent(row.s.onBehalfOf, t);
-  if (row.s.opsCount >= row.i.maxOpsPerHour) throw new AppError("rate_limited", `Agent "${row.i.name}" has used its operation budget for this session`, { remedy: "Wait for the session to expire or raise the identity's limit.", details: { retry_after_seconds: Math.max(1, Math.ceil((row.s.expiresAt.getTime() - Date.now()) / 1000)) } });
-  await t.sql`update agent_sessions set last_seen_at = now(), ops_count = ops_count + 1 where id in (select id from agent_sessions where id = ${row.s.id} for update skip locked)`;
+  await takeAgentBudget(row.i, "ops");
+  await t.sql`update agent_sessions set last_seen_at = now() where id in (select id from agent_sessions where id = ${row.s.id} for update skip locked)`;
   return {
     type: "agent",
     id: row.i.id,
@@ -131,6 +131,33 @@ export async function resolveAgentPrincipal(token: string, t: RequestTx): Promis
     riskCeiling: row.i.riskCeiling,
     toolsets: row.i.toolsets,
   };
+}
+
+type BudgetHolder = Pick<typeof agentIdentities.$inferSelect, "id" | "merchantId" | "name" | "maxOpsPerHour" | "maxProposalsPerDay">;
+const BUDGETS = {
+  ops: { window: "hour", max: (i: BudgetHolder) => i.maxOpsPerHour, what: "operations this hour" },
+  proposals: { window: "day", max: (i: BudgetHolder) => i.maxProposalsPerDay, what: "proposals today" },
+} as const;
+
+/**
+ * Count one use of an identity's budget, across all its sessions, in one atomic statement on a connection of its own:
+ * the count commits whatever happens to the request, and concurrent calls can never take more than the limit.
+ */
+export async function takeAgentBudget(identity: BudgetHolder, kind: keyof typeof BUDGETS): Promise<void> {
+  const b = BUDGETS[kind];
+  const max = b.max(identity);
+  const rows =
+    max <= 0
+      ? []
+      : await withOwnTransaction(
+          (q) => q<{ retry: number }[]>`insert into agent_usage (identity_id, merchant_id, kind, window_start, count) values (${identity.id}, ${identity.merchantId}, ${kind}, date_trunc(${b.window}, now(), 'UTC'), 1)
+            on conflict (identity_id, kind, window_start) do update set count = agent_usage.count + 1 where agent_usage.count < ${max}
+            returning 0 as retry`,
+        );
+  if (rows.length === 0) {
+    const [r] = await withOwnTransaction((q) => q<{ retry: number }[]>`select ceil(extract(epoch from date_trunc(${b.window}, now(), 'UTC') + ${`1 ${b.window}`}::interval - now()))::int as retry`);
+    throw new AppError("rate_limited", `Agent "${identity.name}" has used its ${b.what} (${max})`, { remedy: "Wait for the next window, or ask an Admin to raise the identity's limit.", details: { retry_after_seconds: Math.max(1, r!.retry) } });
+  }
 }
 
 /* ---- Proposals ---- */
@@ -178,9 +205,8 @@ export async function inferTarget(path: string, body: unknown): Promise<{ target
 export async function createProposal(input: { principal: Principal; spec: OperationSpec; method: string; path: string; body: unknown; idempotencyKey: string | null; rationale: string | null; correlationId: string }) {
   const { principal: p, spec } = input;
   if (p.type === "agent") {
-    const [n] = await db().select({ n: sql<number>`count(*)::int` }).from(proposals).where(and(eq(proposals.agentIdentityId, p.identityId), gt(proposals.createdAt, sql`now() - interval '1 day'`)));
-    const [identity] = await db().select({ max: agentIdentities.maxProposalsPerDay }).from(agentIdentities).where(eq(agentIdentities.id, p.identityId)).limit(1);
-    if ((n?.n ?? 0) >= (identity?.max ?? 50)) throw new AppError("rate_limited", `Agent "${p.name}" has reached its daily proposal limit`, { remedy: "A Manager can review today's proposals; an Admin can raise the limit." });
+    const [identity] = await db().select({ id: agentIdentities.id, merchantId: agentIdentities.merchantId, name: agentIdentities.name, maxOpsPerHour: agentIdentities.maxOpsPerHour, maxProposalsPerDay: agentIdentities.maxProposalsPerDay }).from(agentIdentities).where(eq(agentIdentities.id, p.identityId)).limit(1);
+    await takeAgentBudget(identity!, "proposals");
   }
   const { targetKind, targetId, outletId, orderId } = await inferTarget(input.path, input.body);
   const scope = p.type === "agent" ? p.outletIds : p.type === "staff" ? (p.outletId ? [p.outletId] : p.outletIds) : [];

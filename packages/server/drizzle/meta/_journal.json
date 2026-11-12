@@ -281,6 +281,20 @@
       "when": 1794514250397,
       "tag": "0039_rls_agent_delegations",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794514828284,
+      "tag": "0040_agent_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1794514837771,
+      "tag": "0041_rls_agent_usage",
+      "breakpoints": true
     }
   ]
 }

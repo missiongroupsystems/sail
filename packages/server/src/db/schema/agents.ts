@@ -1,4 +1,4 @@
-import { boolean, index, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { merchants } from "./org.js";
 
 /**
@@ -80,9 +80,26 @@ export const agentSessions = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
-    opsCount: integer("ops_count").notNull().default(0),
   },
   (t) => [index("agent_sessions_identity_idx").on(t.identityId, t.expiresAt)],
+);
+
+/**
+ * An identity's use of a budget in one window (operations per clock hour, proposals per UTC day), across all its
+ * sessions. Counted on a connection of its own, so a refused or failed call still counts.
+ */
+export const agentUsage = pgTable(
+  "agent_usage",
+  {
+    identityId: uuid("identity_id")
+      .notNull()
+      .references(() => agentIdentities.id, { onDelete: "cascade" }),
+    merchantId: uuid("merchant_id").notNull(),
+    kind: text("kind").notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    count: integer("count").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.identityId, t.kind, t.windowStart] })],
 );
 
 export type ProposalStatus = "pending" | "approved" | "rejected" | "failed" | "expired";

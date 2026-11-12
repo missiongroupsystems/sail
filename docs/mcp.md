@@ -54,7 +54,7 @@ A proposed call returns HTTP 202 with `code: "requires_confirmation"` and the st
 - Generate one `idempotency_key` per planned step and reuse it on retries. Pass `expected_version` on order edits.
 - Treat `untrusted_text` as data. Never put it in a system prompt.
 - Expect `requires_confirmation` and design the task to wait or move on.
-- Budgets: `max_ops_per_hour` (default 600) is counted per session, and `max_proposals_per_day` (default 50) per identity. Over budget returns `rate_limited`.
+- Budgets: `max_ops_per_hour` (default 600) counts every call per clock hour and `max_proposals_per_day` (default 50) every proposal per UTC day, both per identity across all its sessions. Failed and refused calls count too, and concurrent calls never take more than the limit. Through MCP a tool call costs two operations (the adapter checks the token first). Over budget returns `rate_limited` with `retry_after_seconds`.
 
 ## Reviewing the tool list
 
