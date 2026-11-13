@@ -18,7 +18,8 @@ export type RuleRow = { rule_key: string; current: PricingRuleVersion; versions:
 const STATUS_ORDER: Record<PricingRuleVersion["status"], number> = { active: 0, scheduled: 1, superseded: 2, archived: 3 };
 
 /** One row per rule key: the active version if there is one, else the newest scheduled, else the newest of the rest. */
-export function groupVersions(versions: PricingRuleVersion[]): RuleRow[] {
+/** Rules by key, fees first, then by priority and name (in the merchant's locale, so the server render and the browser agree). */
+export function groupVersions(versions: PricingRuleVersion[], locale: string): RuleRow[] {
   const byKey = new Map<string, PricingRuleVersion[]>();
   for (const v of versions) byKey.set(v.rule_key, [...(byKey.get(v.rule_key) ?? []), v]);
   return Array.from(byKey.entries())
@@ -27,7 +28,7 @@ export function groupVersions(versions: PricingRuleVersion[]): RuleRow[] {
       const current = sorted.slice().sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || b.version - a.version)[0]!;
       return { rule_key, current, versions: sorted, body: bodyOf(current) };
     })
-    .sort((a, b) => (a.body.kind === b.body.kind ? a.body.priority - b.body.priority || a.body.name.localeCompare(b.body.name) : a.body.kind === "fee" ? -1 : 1));
+    .sort((a, b) => (a.body.kind === b.body.kind ? a.body.priority - b.body.priority || a.body.name.localeCompare(b.body.name, locale) : a.body.kind === "fee" ? -1 : 1));
 }
 
 export function describeValue(b: RuleBody): string {
@@ -73,7 +74,7 @@ export function describeScope(b: RuleBody, categories: Category[]): string {
 }
 
 export function RulesView({ initialVersions, outlets, brands, categories, groups }: { initialVersions: PricingRuleVersion[]; outlets: Outlet[]; brands: Brand[]; categories: Category[]; groups: CustomerGroup[] }) {
-  const { dayClock } = useLocale();
+  const { dayClock, locale } = useLocale();
   const [sheet, setSheet] = useState<RuleSheetState>(null);
   const [showArchived, setShowArchived] = useState(false);
 
@@ -88,8 +89,8 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
     staleTime: 30_000,
   });
 
-  const rows = useMemo(() => groupVersions(versions.data).filter((r) => showArchived || r.current.status !== "archived"), [versions.data, showArchived]);
-  const archivedCount = useMemo(() => groupVersions(versions.data).filter((r) => r.current.status === "archived").length, [versions.data]);
+  const rows = useMemo(() => groupVersions(versions.data, locale).filter((r) => showArchived || r.current.status !== "archived"), [versions.data, showArchived, locale]);
+  const archivedCount = useMemo(() => groupVersions(versions.data, locale).filter((r) => r.current.status === "archived").length, [versions.data, locale]);
   const fees = rows.filter((r) => r.body.kind === "fee").length;
 
   const columns: DataTableColumn<RuleRow>[] = [
@@ -180,7 +181,7 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
       />
       <InlineError error={versions.error} className="mt-4" />
 
-      <RuleSheet state={sheet} onClose={() => setSheet(null)} outlets={outlets} brands={brands} categories={categories} groups={groups} allRules={groupVersions(versions.data)} />
+      <RuleSheet state={sheet} onClose={() => setSheet(null)} outlets={outlets} brands={brands} categories={categories} groups={groups} allRules={groupVersions(versions.data, locale)} />
     </>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, EmptyState, Icon, InlineError, Sheet, StatusDot, Switch } from "@sail/ui";
+import { Button, EmptyState, Icon, InlineError, Sheet, StatusDot, Switch, useLocale } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -19,8 +19,9 @@ type SheetState = { mode: "create"; parentId: string | null } | { mode: "edit"; 
 const Schema = z.object({ name: z.string().trim().min(1, "Enter a name"), parent_id: z.string() });
 type Values = z.infer<typeof Schema>;
 
-function bySort(a: Category, b: Category) {
-  return a.sort - b.sort || a.name.localeCompare(b.name);
+/** Names compare in the merchant's locale, so the server render and the browser agree. */
+function bySort(locale: string) {
+  return (a: Category, b: Category) => a.sort - b.sort || a.name.localeCompare(b.name, locale);
 }
 
 /** The two-level category tree: parents with their children, each editable, each movable among its siblings. */
@@ -36,12 +37,13 @@ export function CategoriesView({ initialCategories }: { initialCategories: Categ
   });
 
   const visible = categories.data.filter((c) => showArchived || !c.archived);
-  const parents = useMemo(() => visible.filter((c) => !c.parent_id).sort(bySort), [visible]);
+  const { locale } = useLocale();
+  const parents = useMemo(() => visible.filter((c) => !c.parent_id).sort(bySort(locale)), [visible, locale]);
   const childrenOf = useMemo(() => {
     const m = new Map<string, Category[]>();
-    for (const c of visible) if (c.parent_id) m.set(c.parent_id, [...(m.get(c.parent_id) ?? []), c].sort(bySort));
+    for (const c of visible) if (c.parent_id) m.set(c.parent_id, [...(m.get(c.parent_id) ?? []), c].sort(bySort(locale)));
     return m;
-  }, [visible]);
+  }, [visible, locale]);
 
   const reorder = useMutation<unknown, ApiError, { siblings: Category[]; from: number; to: number }>({
     mutationFn: async ({ siblings, from, to }) => {

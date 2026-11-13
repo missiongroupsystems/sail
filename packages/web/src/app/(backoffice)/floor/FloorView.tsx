@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Dialog, EmptyState, InlineError, SectionHeading, Select, StatusDot, Switch, TextField, cx } from "@sail/ui";
+import { Button, Dialog, EmptyState, InlineError, SectionHeading, Select, StatusDot, Switch, TextField, cx, useLocale } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
@@ -34,6 +34,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
   const qc = useQueryClient();
   const { me } = useSession();
   const admin = roleIs(me, "admin");
+  const { locale } = useLocale();
   const { outletId, setOutletId } = useOutletChoice(outlets, scope, initialOutletId);
   const outlet = outlets.find((o) => o.id === outletId) ?? null;
   const [areaId, setAreaId] = useState<string | null>(null);
@@ -55,7 +56,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
     initialData: outletId === initialOutletId ? initialTables : undefined,
   });
 
-  const sortedAreas = useMemo(() => (areas.data ?? []).slice().sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name)), [areas.data]);
+  const sortedAreas = useMemo(() => (areas.data ?? []).slice().sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, locale)), [areas.data, locale]);
   const area = sortedAreas.find((a) => a.id === areaId) ?? sortedAreas[0] ?? null;
   const areaTables = useMemo(() => (tables.data ?? []).filter((t) => t.area_id === area?.id && (showArchived || !t.archived)), [tables.data, area, showArchived]);
   const selectedTable = areaTables.find((t) => t.id === selected) ?? null;

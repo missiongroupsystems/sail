@@ -4,7 +4,7 @@ import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, us
 import type { SyntheticListenerMap } from "@dnd-kit/core/dist/hooks/utilities";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Badge, Button, Dialog, EmptyState, Icon, InlineError, Money, Select, Skeleton, StatusDot, Switch, TextField } from "@sail/ui";
+import { Badge, Button, Dialog, EmptyState, Icon, InlineError, Money, Select, Skeleton, StatusDot, Switch, TextField, useLocale } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { GripVertical, Pencil, Plus, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -21,10 +21,10 @@ import { keys } from "@/lib/query";
 /** Local editing shape: one level of sub-sections, items in order. */
 type Draft = { id: string; name: string; parent_id: string | null; items: string[] };
 
-function toDraft(sections: MenuSection[]): Draft[] {
+function toDraft(sections: MenuSection[], locale: string): Draft[] {
   return sections
     .slice()
-    .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name))
+    .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, locale))
     .map((s) => ({ id: s.id, name: s.name, parent_id: s.parent_id, items: s.items.slice().sort((a, b) => a.sort - b.sort).map((i) => i.product_id) }));
 }
 
@@ -130,12 +130,13 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
   });
   const [draft, setDraft] = useState<Draft[] | null>(null);
   const [dirty, setDirty] = useState(false);
+  const { locale } = useLocale();
   const [warnings, setWarnings] = useState<string[]>([]);
   const [renaming, setRenaming] = useState(false);
   const [menuName, setMenuName] = useState(summary.name);
   useEffect(() => {
-    if (menu.data && !dirty) setDraft(toDraft(menu.data.sections));
-  }, [menu.data, dirty]);
+    if (menu.data && !dirty) setDraft(toDraft(menu.data.sections, locale));
+  }, [menu.data, dirty, locale]);
 
   const products = useAllProducts({ brand_id: undefined, include_archived: "true" });
   const sections = draft ?? [];
@@ -178,7 +179,7 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
       setWarnings(r.warnings);
       setDirty(false);
       qc.setQueryData(keys.menu(summary.id), r.data);
-      setDraft(toDraft(r.data.sections));
+      setDraft(toDraft(r.data.sections, locale));
     },
   });
   const patchMenu = useMutation<{ data: Menu; warnings: string[] }, ApiError, { name?: string; archived?: boolean }>({
