@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Icon, Menu, MenuItem, MenuSeparator, MenuTrigger, ReasonPicker, Sheet, TableShape, TextField } from "@sail/ui";
+import { Button, Icon, Menu, MenuItem, MenuSeparator, MenuTrigger, ReasonPicker, Sheet, TableShape, TextField, useLocale } from "@sail/ui";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -126,7 +126,8 @@ function ChangeTypeSheet({ isOpen, onClose, order, actions }: SheetProps) {
 
   const freeTables = (floor?.tables ?? []).filter((t) => t.status === "free" || t.id === order.table_id);
   const needsCustomer = type === "pickup" || type === "delivery";
-  const ready = readyBy ? todayAt(readyBy) : null;
+  const { timeZone } = useLocale();
+  const ready = readyBy ? todayAt(readyBy, timeZone) : null;
   const valid =
     type !== order.order_type &&
     (type !== "dine_in" || tableId) &&

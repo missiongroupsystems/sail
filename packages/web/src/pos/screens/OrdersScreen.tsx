@@ -151,7 +151,8 @@ export function NewOrderSheet({ type, onClose, onCreate }: { type: OrderType | n
   };
 
   const needsCustomer = type === "pickup" || type === "delivery";
-  const ready = readyBy ? todayAt(readyBy) : null;
+  const { timeZone } = useLocale();
+  const ready = readyBy ? todayAt(readyBy, timeZone) : null;
   const valid = type === "takeaway" || (needsCustomer && (name.trim() || mobile.trim()) && (!readyBy || ready) && (type !== "delivery" || address.trim()));
 
   const submit = async () => {

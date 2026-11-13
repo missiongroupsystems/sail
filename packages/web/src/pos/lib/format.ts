@@ -1,3 +1,4 @@
+import { localParts, zonedToUtc } from "@sail/shared";
 import { formatBpsText, type LocaleFormat } from "@sail/ui";
 import type { ManualRule, OrderStatus, OrderType } from "../api/types";
 
@@ -38,12 +39,14 @@ export function initialsOf(name: string | null | undefined): string {
     .join("");
 }
 
-/** A local time "HH:MM" today as an ISO string (ready-by entry). */
-export function todayAt(hhmm: string): string | null {
+/** A time "HH:MM" today in the outlet's zone (not the iPad's) as an ISO string, tomorrow once it has passed (ready-by entry). */
+export function todayAt(hhmm: string, timeZone: string, now = new Date()): string | null {
   const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
-  if (!m) return null;
-  const d = new Date();
-  d.setHours(Number(m[1]), Number(m[2]), 0, 0);
-  if (d.getTime() < Date.now() - 60_000) d.setDate(d.getDate() + 1);
-  return d.toISOString();
+  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return null;
+  const time = `${m[1]!.padStart(2, "0")}:${m[2]}`;
+  const today = localParts(now, timeZone).date;
+  const at = zonedToUtc(today, time, timeZone);
+  if (at.getTime() >= now.getTime() - 60_000) return at.toISOString();
+  const tomorrow = new Date(Date.parse(`${today}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+  return zonedToUtc(tomorrow, time, timeZone).toISOString();
 }

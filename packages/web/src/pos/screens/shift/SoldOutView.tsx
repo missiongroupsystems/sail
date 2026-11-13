@@ -17,7 +17,7 @@ import { useUiStore } from "../../state/ui";
 
 /** Sold-out list: search or browse, tap the item, then Today / Until… / Indefinitely; Restore; a daily cap for Managers. */
 export function SoldOutView() {
-  const { clock } = useLocale();
+  const { clock, timeZone } = useLocale();
   const api = useApi();
   const qc = useQueryClient();
   const { station, menu, staff, offline } = usePos();
@@ -56,7 +56,7 @@ export function SoldOutView() {
   };
 
   const entry = picked ? entries.get(picked.id) : undefined;
-  const untilIso = until ? todayAt(until) : null;
+  const untilIso = until ? todayAt(until, timeZone) : null;
 
   const row = (p: CompiledProduct, e: StockEntry | undefined) => (
     <li key={p.id}>
