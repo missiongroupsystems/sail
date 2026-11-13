@@ -140,6 +140,17 @@ function dryRunFrom(c: Ctx, body: { dry_run?: boolean }) {
   }
 }
 
+/**
+ * A line that shares an order-level discount or fee frozen at the first payment keeps its size: the frozen share was
+ * worked out on the whole line, so on a smaller one a half-price bill discount would take the line whole (and a
+ * service charge would charge for what was taken off). Voiding the whole line is fine, since its share goes with it.
+ */
+function assertNoFrozenShare(o: typeof orders.$inferSelect, lineId: string) {
+  if (!o.pricingFrozenAt) return;
+  const shares = (o.frozenAdjustments ?? []).some((f) => (f as { lines?: { line_id: string }[] }).lines?.some((l) => l.line_id === lineId));
+  if (shares) throw AppError.invariant("pricing_frozen", "This item shares an order-level discount or fee that was fixed when the first bill was paid, so it cannot be made smaller", "Void the whole line and add the right quantity again, or refund after payment.");
+}
+
 async function todayFor(merchantId: string, outletId: string) {
   const bd = await businessDayInputs(merchantId, outletId);
   return businessDateFor(new Date(), bd.cutoff, bd.timeZone);
@@ -398,6 +409,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     if (line.status === "fired" || line.status === "voided") throw AppError.state(`A ${line.status === "fired" ? "sent" : "removed"} line cannot be changed`, line.status === "fired" ? ["lines.void (Manager approval)"] : [], line.status === "fired" ? "Void the line with manager approval and add it again." : undefined);
     // Quantity and modifiers change the amount of a line; on a paid bill that is a refund, not an edit (a pay-before-sending station pays pending lines).
     if ((b.quantity != null && b.quantity !== line.quantity) || b.modifiers) await assertLineUnlocked(line_id);
+    if ((b.quantity != null && b.quantity < line.quantity) || b.modifiers) assertNoFrozenShare(o, line_id);
     const today = await todayFor(o.merchantId, o.outletId);
     if (b.quantity != null && b.quantity !== line.quantity) {
       const { consumeDailyCap } = await import("./catalogue.js");
@@ -450,6 +462,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       approval = await requireRoleOrOverride(p, principalRole(p), perm.minRole, { action: "lines.void_fired", targetId: line_id, args: { quantity: qty }, overrideId: b.override_id, overrideAllowed: perm.overrideAllowed });
     }
     await assertLineUnlocked(line_id);
+    if (qty < line.quantity) assertNoFrozenShare(o, line_id);
     const now = new Date();
     if (qty < line.quantity) {
       // Partial void: keep the remainder on the original line; record the voided quantity on a new line.

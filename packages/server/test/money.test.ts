@@ -77,11 +77,12 @@ describe("frozen discounts after a payment", () => {
     const bill1 = moved.body.data.checks[0]!;
     expect((await h.pay(mgr(), bill1.id, { tender_type_id: w.ids.card, amount: bill1.balance })).status).toBe(200);
 
-    expect((await call("PATCH", `/v1/orders/${s.id}/lines/${kopi}`, { token: mgr(), body: { quantity: 1 } })).status).toBe(200);
+    // Cutting the kopi from 5 to 1 would leave the frozen half-price share of five on one: a free kopi. Refused.
+    const cut = await call<{ code: string }>("PATCH", `/v1/orders/${s.id}/lines/${kopi}`, { token: mgr(), body: { quantity: 1 } });
+    expect([cut.status, cut.body.code]).toEqual([422, "invariant_violation"]);
     let after = await snapshot(s.id);
-    const kopiAfterCut = after.lines.find((l) => l.id === kopi)!.amounts;
-    expect(kopiAfterCut.net).toBe(0);
-    expect(kopiAfterCut.total).toBe(0);
+    const kopiNow = after.lines.find((l) => l.id === kopi)!.amounts;
+    expect(-kopiNow.discount * 2).toBeLessThanOrEqual(kopiNow.base);
 
     expect((await call("POST", `/v1/orders/${s.id}/adjustments`, { token: mgr(), body: { application_id: randomUUID(), rule_key: "seed:manager-comp", line_ids: [kopi], reason: "spilt" } })).status).toBe(200);
     after = await snapshot(s.id);
@@ -99,6 +100,26 @@ describe("frozen discounts after a payment", () => {
 /** What a bill's printed rows add up to: subtotal, the adjustment rows and, in exclusive mode, the tax rows. */
 const PROFILE = { width: "80mm", code_page_cjk: false, cut: true } as const;
 const rowsAddUp = (d: BillDocument) => d.totals.subtotal + d.adjustments.reduce((x, a) => x + a.amount, 0) + (d.totals.tax_mode === "exclusive" ? d.totals.tax_total : 0);
+
+describe("a bill discount frozen by a payment keeps its rate on the unpaid bills", () => {
+  it("a sent line on an unpaid bill cannot be part-voided down to its frozen discount either; voiding it whole is fine", async () => {
+    const s = await h.orderWith(mgr(), [{ product_id: w.ids.laksa, quantity: 1 }, { product_id: w.ids.kopi, quantity: 4 }, { product_id: w.ids.laksa, quantity: 1 }]);
+    const kopi = s.lines[1]!.id;
+    expect((await call("POST", `/v1/orders/${s.id}/adjustments`, { token: mgr(), body: { application_id: randomUUID(), rule_key: "seed:percent-off-bill", entered_value: 5000, reason: "regular" } })).status).toBe(200);
+    await call("POST", `/v1/orders/${s.id}/checks/allocate`, { token: mgr(), body: { moves: [], add_checks: 1 } });
+    const bill2 = (await snapshot(s.id)).checks[1]!.id;
+    const moved = await call<{ data: Snap }>("POST", `/v1/orders/${s.id}/checks/allocate`, { token: mgr(), body: { moves: [{ line_id: kopi, check_ids: [bill2] }, { line_id: s.lines[2]!.id, check_ids: [bill2] }] } });
+    const bill1 = moved.body.data.checks[0]!;
+    expect((await h.fire(mgr(), s.id)).status).toBe(200);
+    expect((await h.pay(mgr(), bill1.id, { tender_type_id: w.ids.card, amount: bill1.balance })).status).toBe(200);
+    const part = await call<{ code: string }>("POST", `/v1/orders/${s.id}/lines/${kopi}/void`, { token: mgr(), body: { quantity: 3, reason_text: "sent back" } });
+    expect(part.status).toBe(422);
+    for (const l of (await snapshot(s.id)).lines) if (l.amounts.base > 0) expect(-l.amounts.discount * 2).toBeLessThanOrEqual(l.amounts.base);
+    expect((await call("POST", `/v1/orders/${s.id}/lines/${kopi}/void`, { token: mgr(), body: { reason_text: "sent back" } })).status).toBe(200);
+    const after = await snapshot(s.id);
+    expect(after.checks[1]!.totals.total).toBe(Math.round(800 * 1.09));
+  });
+});
 
 describe("documents of a paid bill", () => {
   it("the receipt, tax invoice and refund receipt of a paid bill do not change when the rest of the order is re-priced", async () => {

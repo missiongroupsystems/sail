@@ -71,7 +71,8 @@ price(order, rules, context) → { lines, adjustments, totals, trace, warnings, 
 - `freezeFrom(result, rules)` extracts the freezable adjustments from a live result; the server stores them at the first payment.
 - With `context.frozen` set:
   - a freezable rule that **was** applied at the freeze is re-emitted with its stored per-line amounts (lines that no longer exist are dropped), marked `frozen: true`;
-  - a frozen **discount** takes at most what the line is now worth: on a line cut in quantity, comped or discounted since the freeze, its share is capped at the line's running amount, and a line an exclusive discount took since the freeze gets none of it. The stored amounts stay as they were, so a line that grows back gets its share back. No line, bill or tax component goes below zero;
+  - a frozen **discount** takes at most what the line is now worth: on a line comped or discounted since the freeze, its share is capped at the line's running amount, and a line an exclusive discount took since the freeze gets none of it. The stored amounts stay as they were, so a line that grows back gets its share back. No line, bill or tax component goes below zero;
+  - the register refuses to make a line with a frozen share smaller (a quantity cut, a part void or a change of options): the share was worked out on the whole line, so on a smaller one a half-price bill discount would take the line whole. Voiding the whole line is allowed, and its share goes with it;
   - a freezable rule that **was not** applied stays off, even if its conditions now hold;
   - lines added after the freeze receive line-level rules only (minus any with minimum spend);
   - fees recompute on the current discounted amounts, so a frozen discount keeps a paid check stable.

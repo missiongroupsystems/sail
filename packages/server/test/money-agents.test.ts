@@ -116,7 +116,7 @@ describe("the agent money rule and the money fixes", () => {
     expect(after).toBe(before);
   });
 
-  it("after a payment, the capped frozen discount is what the agent rule reports, and what approval leaves on the bill", async () => {
+  it("after a payment, an agent cannot shrink a line under the frozen discount; voiding it whole is a proposal whose approval leaves what it showed", async () => {
     const mgr = w.pins.manager;
     const s = await h.orderWith(mgr, [{ product_id: w.ids.laksa }, { product_id: w.ids.kopi, quantity: 5 }, { product_id: w.ids.laksa }]);
     const kopi = s.lines[1]!.id;
@@ -128,13 +128,17 @@ describe("the agent money rule and the money fixes", () => {
     // Paying bill 1 freezes the bill discount with its per-line shares.
     expect((await h.pay(mgr, bill1.id, { tender_type_id: w.ids.card, amount: bill1.balance })).status).toBe(200);
     const frozen = await snap(s.id);
-    // Cutting the kopi from five to one: its frozen share is capped at what the line is now worth, so it goes to zero, not below.
-    const cut = await call<{ data: Proposal }>("PATCH", `/v1/orders/${s.id}/lines/${kopi}`, { token: await agent(), body: { quantity: 1 } });
-    expect(cut.status, JSON.stringify(cut.body)).toBe(202);
-    const { before, after } = cut.body.data.effect!;
+    // Cutting the kopi from five to one would leave the frozen half-price share of five on one: refused, nothing proposed.
+    const tok = await agent();
+    const cut = await call<{ code: string }>("PATCH", `/v1/orders/${s.id}/lines/${kopi}`, { token: tok, body: { quantity: 1 } });
+    expect([cut.status, cut.body.code]).toEqual([422, "invariant_violation"]);
+    expect((await db.sql`select id from proposals where order_id = ${s.id}`).length).toBe(0);
+    const gone = await voidLine(tok, s.id, kopi);
+    expect(gone.status, JSON.stringify(gone.body)).toBe(202);
+    const { before, after } = gone.body.data.effect!;
     expect(money(before!)).toEqual(money(frozen.totals));
     expect(after!.total).toBeLessThan(before!.total);
-    expect((await approve(cut.body.data.id)).body.data.status).toBe("approved");
+    expect((await approve(gone.body.data.id)).body.data.status).toBe("approved");
     const done = await snap(s.id);
     expect(money(done.totals)).toEqual(money(after!));
     const [neg] = await db.sql<{ n: number }[]>`select count(*)::int as n from order_lines where order_id = ${s.id} and (net_amount < 0 or tax_amount < 0 or total < 0)`;
