@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { ApiError, createApi, type ApiClient } from "./api";
+import { ApiError, createApi, req, type ApiClient } from "./api";
 import { parseScope, parseTheme, SCOPE_COOKIE, SESSION_COOKIE, THEME_COOKIE, type Scope, type Theme } from "./cookies";
 
 /** Server side only: the register's address. The browser goes through /api/v1 instead. */
@@ -31,6 +31,13 @@ export async function requireApi(): Promise<ApiClient> {
   const token = await getSessionToken();
   if (!token) redirect("/login");
   return createApi({ baseUrl: API_URL, token });
+}
+
+/** The business date the register dates new orders on at this outlet, for a page's first render: never the server's or the browser's clock. */
+export async function registerToday(api: ApiClient, outletId: string | null): Promise<string | null> {
+  if (!outletId) return null;
+  const floor = await orSignIn(req(api.GET("/v1/outlets/{id}/floor", { params: { path: { id: outletId } } })));
+  return (floor.data as unknown as { business_date: string }).business_date;
 }
 
 /** Runs a server-side call; an expired or revoked session goes back to sign in instead of erroring. */

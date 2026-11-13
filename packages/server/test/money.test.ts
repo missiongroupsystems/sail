@@ -466,6 +466,10 @@ describe("shifts, business days and the Z-report", () => {
     expect(row!.order_day).not.toBe(day);
     expect(row!.pay_day).toBe(row!.order_day);
     expect(shift.data.business_date).toBe(row!.order_day);
+    // The POS lists today's orders and the back office its reports by the floor's business date: it must be the day the
+    // late order is dated on, or the order taken after the early close cannot be found to reprint, refund or reopen.
+    const floor = await r.must<{ data: { business_date: string } }>("GET", `/v1/outlets/${r.m.outletId}/floor`);
+    expect(floor.data.business_date).toBe(row!.order_day);
     const stored = await r.must<{ data: Z }>("GET", `/v1/outlets/${r.m.outletId}/z-report?business_date=${day}`);
     expect(stored.data.sales.total).toBe(closed.data.report.sales.total);
     expect(tendersOf(stored.data)).toBe(tendersOf(closed.data.report));

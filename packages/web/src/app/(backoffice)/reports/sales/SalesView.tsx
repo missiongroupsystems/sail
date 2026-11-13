@@ -45,8 +45,8 @@ const categoryColumns: DataTableColumn<SalesSummary["by_category"][number]>[] = 
   { key: "net", header: "Net sales", numeric: true, render: (c) => <Money cents={c.net} /> },
 ];
 
-export function SalesView({ outlets, scope, initialOutletId }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null }) {
-  const range = useReportRange(outlets, scope, initialOutletId);
+export function SalesView({ outlets, scope, initialOutletId, today }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; today: string | null }) {
+  const range = useReportRange(outlets, scope, initialOutletId, today);
   const report = useQuery<SalesSummary, ApiError>({
     queryKey: ["reports", "sales", range.query],
     queryFn: () => req(api.GET("/v1/reports/sales-summary", { params: { query: range.query } })).then((r) => (r as { data: SalesSummary }).data),

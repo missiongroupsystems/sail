@@ -616,8 +616,8 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     const data = {
       outlet_id: id,
       as_of: new Date(now).toISOString(),
-      /** Today's business date at this outlet (after the cutoff), so clients never work it out from the clock. */
-      business_date: await todayFor(p.merchantId, id),
+      /** The business date new orders here are dated on (after the cutoff, and the next day once today closed early), so clients never work it out from the clock. */
+      business_date: await currentBusinessDate(p.merchantId, id),
       areas: areaRows.map((a) => ({ id: a.id, name: a.name, sort: a.sort })),
       tables: tableRows.map((t) => {
         const o = byTable.get(t.id);

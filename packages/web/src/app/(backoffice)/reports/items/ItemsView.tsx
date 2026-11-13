@@ -34,8 +34,8 @@ const columns: DataTableColumn<MixRow>[] = [
   { key: "share_bps", header: "Share of net", numeric: true, sortable: true, render: (r) => <Share bps={r.share_bps} /> },
 ];
 
-export function ItemsView({ outlets, scope, initialOutletId }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null }) {
-  const range = useReportRange(outlets, scope, initialOutletId);
+export function ItemsView({ outlets, scope, initialOutletId, today }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; today: string | null }) {
+  const range = useReportRange(outlets, scope, initialOutletId, today);
   const [groupBy, setGroupBy] = useState<GroupBy>("item");
   const query = { ...range.query, group_by: groupBy };
   const report = useQuery<MixRow[], ApiError>({

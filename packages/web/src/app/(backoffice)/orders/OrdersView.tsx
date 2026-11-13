@@ -3,6 +3,7 @@
 import { Badge, Button, DataTable, EmptyState, InlineError, Money, Select, TextField, type DataTableColumn, useLocale } from "@sail/ui";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import { useBusinessDate } from "@/lib/business-date";
 import { label, ORDER_STATUSES, ORDER_STATUS_LABEL, ORDER_TYPES, ORDER_TYPE_LABEL } from "@/components/backoffice/labels";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
 import { req } from "@/lib/api";
@@ -50,8 +51,9 @@ export function whoFor(o: OrderSnapshot, tableName: (id: string | null) => strin
 
 /** Orders: today and all, per outlet, with a read-only detail drawer. Amounts are the register's. */
 export function OrdersView({ outlets, scope, initialOutletId }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null }) {
-  const { clock, dayClock, isoDate } = useLocale();
+  const { clock, dayClock } = useLocale();
   const { outletId, setOutletId } = useOutletChoice(outlets, scope, initialOutletId);
+  const today = useBusinessDate(outletId);
   const [range, setRange] = useState<Range>("today");
   const [status, setStatus] = useState<string | null>(null);
   const [orderType, setOrderType] = useState<string | null>(null);
@@ -64,17 +66,17 @@ export function OrdersView({ outlets, scope, initialOutletId }: { outlets: Outle
     () => ({
       status: status ?? undefined,
       order_type: orderType ?? undefined,
-      business_date: range === "today" ? isoDate() : date || undefined,
+      business_date: range === "today" ? (today ?? undefined) : date || undefined,
       q: dq || undefined,
     }),
-    [status, orderType, range, date, dq, isoDate],
+    [status, orderType, range, date, dq, today],
   );
 
   const orders = useQuery({
     queryKey: keys.orders(outletId ?? "", filters),
     queryFn: () =>
       req(api.GET("/v1/outlets/{id}/orders", { params: { path: { id: outletId! }, query: { ...filters, order_type: filters.order_type as (typeof ORDER_TYPES)[number] | undefined, limit: 200 } } })).then((r) => r.data as unknown as OrderSnapshot[]),
-    enabled: outletId !== null,
+    enabled: outletId !== null && (range !== "today" || today !== null),
     placeholderData: keepPreviousData,
     refetchInterval: range === "today" ? 15_000 : false,
   });

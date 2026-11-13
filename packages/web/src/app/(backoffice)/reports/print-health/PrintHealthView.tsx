@@ -29,8 +29,8 @@ const columns: DataTableColumn<PrintHealthRow>[] = [
   { key: "p95_seconds", header: "95th percentile", numeric: true, sortable: true, render: (r) => <Seconds value={r.p95_seconds} /> },
 ];
 
-export function PrintHealthView({ outlets, scope, initialOutletId }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null }) {
-  const range = useReportRange(outlets, scope, initialOutletId);
+export function PrintHealthView({ outlets, scope, initialOutletId, today }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; today: string | null }) {
+  const range = useReportRange(outlets, scope, initialOutletId, today);
   const { outlet_id, from, to } = range.query;
   const report = useQuery<PrintHealthRow[], ApiError>({
     queryKey: ["reports", "print-health", range.query],

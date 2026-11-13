@@ -25,7 +25,7 @@ const POLL = 15_000;
  * day's figures last and quiet. Everything polls the register every 15 s.
  */
 export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null }) {
-  const { clock, dayClock, isoDate } = useLocale();
+  const { clock, dayClock } = useLocale();
   const { me, merchant } = useSession();
   const qc = useQueryClient();
   const { outletId, setOutletId } = useOutletChoice(outlets, scope, initialOutletId);
@@ -46,7 +46,8 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
       { queryKey: boKeys.printJobs(id, { late: "true" }), queryFn: () => req(api.GET("/v1/outlets/{id}/print-jobs", { params: { path: { id }, query: { late: "true", limit: 100 } } })).then((r) => r.data), enabled, refetchInterval: POLL },
       { queryKey: boKeys.relays(id), queryFn: () => req(api.GET("/v1/relays", { params: { query: { outlet_id: id } } })).then((r) => r.data), enabled, refetchInterval: POLL },
       { queryKey: boKeys.shifts(id, { status: "open" }), queryFn: () => req(api.GET("/v1/outlets/{id}/shifts", { params: { path: { id }, query: { status: "open" } } })).then((r) => r.data as unknown as Shift[]), enabled, refetchInterval: POLL },
-      { queryKey: boKeys.zReport(id, isoDate(), null), queryFn: () => req(api.GET("/v1/outlets/{id}/z-report", { params: { path: { id }, query: { business_date: isoDate() } } })).then((r) => r.data as unknown as ZReport), enabled, refetchInterval: POLL },
+      // The register's current business day (its cutoff, and the next day after an early close), not the browser's date.
+      { queryKey: boKeys.zReport(id, "current", null), queryFn: () => req(api.GET("/v1/outlets/{id}/z-report", { params: { path: { id } } })).then((r) => r.data as unknown as ZReport), enabled, refetchInterval: POLL },
     ],
   });
   const printers = useQuery({

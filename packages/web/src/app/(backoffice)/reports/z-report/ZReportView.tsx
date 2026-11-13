@@ -3,6 +3,7 @@
 import { Button, Dialog, EmptyState, InlineError, Select, Skeleton, TextField, useLocale } from "@sail/ui";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useBusinessDate } from "@/lib/business-date";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
 import { boKeys, can, rolesFor, type BusinessDayClose, type ZReport } from "@/components/backoffice/register";
 import { ZReportBody } from "@/components/backoffice/ZReportBody";
@@ -14,13 +15,15 @@ import { useSession } from "@/lib/session-context";
 
 const ALL = "__all__";
 
-export function ZReportView({ outlets, scope, initialOutletId }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null }) {
-  const { dayClock, isoDate, money } = useLocale();
+export function ZReportView({ outlets, scope, initialOutletId, today }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; today: string | null }) {
+  const { dayClock, money } = useLocale();
   const { me } = useSession();
   const qc = useQueryClient();
   const canClose = can(me, "business_days.close");
   const { outletId, setOutletId } = useOutletChoice(outlets, scope, initialOutletId);
-  const [date, setDate] = useState(isoDate());
+  // The register's business day, read by the page: not the clock, so the server render and the browser agree.
+  const [date, setDate] = useState(today ?? "");
+  const current = useBusinessDate(outletId);
   const [stationId, setStationId] = useState<string | null>(null);
   const [closed, setClosed] = useState<BusinessDayClose | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -37,14 +40,14 @@ export function ZReportView({ outlets, scope, initialOutletId }: { outlets: Outl
     queryFn: () => req(api.GET("/v1/outlets/{id}/z-report", { params: { path: { id: outletId! }, query: { business_date: date, station_id: stationId ?? undefined } } })).then((r) => r.data as unknown as ZReport),
     enabled: outletId !== null && validDate,
     placeholderData: keepPreviousData,
-    refetchInterval: date === isoDate() ? 30_000 : false,
+    refetchInterval: date === current ? 30_000 : false,
   });
   const close = useMutation<{ data: BusinessDayClose; warnings: string[] }, ApiError>({
     mutationFn: () => req(api.POST("/v1/outlets/{id}/business-days/close", { params: { path: { id: outletId! } }, body: { business_date: date } })).then((r) => r as unknown as { data: BusinessDayClose; warnings: string[] }),
     onSuccess: async (r) => {
       setClosed(r.data);
       setConfirming(false);
-      await qc.invalidateQueries({ queryKey: ["z-report"] });
+      await Promise.all([qc.invalidateQueries({ queryKey: ["z-report"] }), qc.invalidateQueries({ queryKey: ["business-date"] })]);
     },
   });
   // What is still open on that business day, listed before the day is closed.

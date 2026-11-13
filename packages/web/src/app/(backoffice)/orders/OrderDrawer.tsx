@@ -3,6 +3,7 @@
 import { Badge, Button, DescriptionList, Dialog, InlineError, Money, SectionHeading, Sheet, Skeleton, taxRows, TextField, useLocale } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import { useBusinessDate } from "@/lib/business-date";
 import { label, LINE_STATUS_LABEL, ORDER_STATUS_LABEL, ORDER_TYPE_LABEL, CHANNEL_LABEL } from "@/components/backoffice/labels";
 import { isWaiting, JobRowActions, JobStatus } from "@/components/backoffice/PrintJobActions";
 import { boKeys, can, CHECK_STATUS_LABEL, formatElapsed, openPdf, PRINT_JOB_KIND_LABEL, rolesFor, type CheckSnapshot, type InvoiceIssued, type Refund } from "@/components/backoffice/register";
@@ -24,7 +25,7 @@ const REFUND_KIND_LABEL: Record<string, string> = { full: "Whole bill", lines: "
  * their role allows; the register enforces every one of them again.
  */
 export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId: string | null; outletId: string | null; tableName: (id: string | null) => string; onClose: () => void }) {
-  const { dayClock, fullStamp, isoDate, money } = useLocale();
+  const { dayClock, fullStamp, money } = useLocale();
   const { me } = useSession();
   const qc = useQueryClient();
   const readOnly = me.role === "server" || !me.role;
@@ -77,7 +78,9 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
   const lines = useMemo(() => (o?.lines ?? []).slice().sort((a, b) => (a.seat_no ?? 0) - (b.seat_no ?? 0) || a.sort - b.sort), [o]);
   const checks = useMemo(() => ((o?.checks ?? []) as CheckSnapshot[]).slice().sort((a, b) => a.index - b.index), [o]);
   const refundable = useMemo(() => refundableChecks(checks), [checks]);
-  const sameDay = o ? o.business_date === isoDate() : false;
+  // Reopening is for the register's current business day, not the browser's calendar day.
+  const today = useBusinessDate(outletId);
+  const sameDay = o ? o.business_date === today : false;
 
   const settle = async (text: string, warnings: string[] = []) => {
     setNote({ text, warnings });
