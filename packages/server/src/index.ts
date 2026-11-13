@@ -1,13 +1,13 @@
 import { serve } from "@hono/node-server";
 import { config } from "./config.js";
-import { logger } from "./logger.js";
+import { logger, processRole } from "./logger.js";
 import { closePool } from "./db/client.js";
 import { startListener, stopListener } from "./sse/listener.js";
 
 /**
  * One image, role flags: `node dist/index.js --role=app|worker|mcp`.
  */
-const role = (process.argv.find((a) => a.startsWith("--role="))?.slice("--role=".length) ?? process.env.SAIL_ROLE ?? "app") as "app" | "worker" | "mcp";
+const role = processRole() as "app" | "worker" | "mcp";
 process.env.SAIL_ROLE = role;
 
 async function main() {
