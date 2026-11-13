@@ -67,7 +67,7 @@ export const test = base.extend<{ watch: { allow: (a: Allowed) => void; /** A co
           // The browser logs every 4xx/5xx response as a console error too; the response handler judges those.
           if (/Failed to load resource: the server responded with a status of \d+/.test(m.text())) return;
           if (allowedConsole.some((r) => r.test(m.text()))) return;
-          problems.push(`console error on ${p.url()}: ${m.text().slice(0, 400)}`);
+          problems.push(`console error on ${p.url()}: ${m.text().slice(0, 4000)}`);
         });
         p.on("pageerror", (e) => {
           if (!allowedConsole.some((r) => r.test(e.message))) problems.push(`uncaught on ${p.url()}: ${e.message}`);
