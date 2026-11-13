@@ -39,12 +39,14 @@ function rng(seed: number) {
 }
 type R = ReturnType<typeof rng>;
 
-type Regime = { key: string; preset: RegionPresetKey; currency?: string; locale?: string; timeZone: string; cashRounding?: number; products: { code: string; price: number; cls: string; tags?: string[] }[]; feeClass: string };
+type Regime = { key: string; preset: RegionPresetKey; currency?: string; locale?: string; timeZone: string; cashRounding?: number; products: { code: string; price: number; cls: string; tags?: string[] }[]; feeClass: string; /** The largest open price the walk enters. */ openMax?: number };
 const REGIMES: Regime[] = [
   { key: "sg", preset: "sg", timeZone: "Asia/Singapore", feeClass: "standard", products: [{ code: "laksa", price: 1650, cls: "standard" }, { code: "kopi", price: 185, cls: "standard" }, { code: "wine", price: 12005, cls: "standard" }, { code: "sweet", price: 5, cls: "standard", tags: ["promo"] }, { code: "cake", price: 333, cls: "standard", tags: ["promo"] }] },
   { key: "eu", preset: "eu-vat", timeZone: "Europe/Dublin", cashRounding: 5, feeClass: "standard", products: [{ code: "wine", price: 900, cls: "standard" }, { code: "water", price: 350, cls: "standard" }, { code: "pasta", price: 1450, cls: "reduced" }, { code: "bread", price: 3, cls: "reduced", tags: ["promo"] }, { code: "book", price: 1299, cls: "exempt" }, { code: "shot", price: 5, cls: "standard" }] },
   { key: "us", preset: "us", timeZone: "America/New_York", feeClass: "prepared_food", products: [{ code: "burger", price: 1299, cls: "prepared_food" }, { code: "fries", price: 349, cls: "prepared_food" }, { code: "soda", price: 249, cls: "prepared_food", tags: ["promo"] }, { code: "apples", price: 199, cls: "exempt" }, { code: "gum", price: 3, cls: "prepared_food" }] },
   { key: "jp", preset: "jp", timeZone: "Asia/Tokyo", cashRounding: 10, feeClass: "food", products: [{ code: "ramen", price: 980, cls: "food" }, { code: "beer", price: 580, cls: "alcohol" }, { code: "gyoza", price: 1, cls: "food", tags: ["promo"] }, { code: "onigiri", price: 155, cls: "food" }, { code: "sake", price: 12345, cls: "alcohol" }] },
+  // Amounts past 2^31 minor units on every line, bill, payment and report: the walk would hit any 32-bit path left.
+  { key: "id", preset: "sg", currency: "IDR", locale: "id-ID", timeZone: "Asia/Jakarta", feeClass: "standard", openMax: 3_000_000_000, products: [{ code: "banquet", price: 1_234_567_891, cls: "standard" }, { code: "teh", price: 1_500_000, cls: "standard" }, { code: "kerupuk", price: 7, cls: "standard", tags: ["promo"] }, { code: "rendang", price: 2_147_483_647, cls: "standard", tags: ["promo"] }] },
   { key: "kw", preset: "us", currency: "KWD", locale: "ar-KW", timeZone: "Asia/Kuwait", cashRounding: 5, feeClass: "prepared_food", products: [{ code: "burger", price: 2125, cls: "prepared_food" }, { code: "fries", price: 755, cls: "prepared_food", tags: ["promo"] }, { code: "soda", price: 333, cls: "prepared_food" }, { code: "dates", price: 1999, cls: "exempt" }, { code: "mint", price: 7, cls: "prepared_food" }] },
 ];
 
@@ -272,7 +274,7 @@ const actions: { name: string; w: number; run: (c: Ctx, g: R) => Promise<Res | n
     if (!o) return null;
     const lines = Array.from({ length: g.int(1, 3) }, () =>
       g.chance(0.12)
-        ? { line_id: randomUUID(), product_id: c.products.open, quantity: g.int(1, 3), open_price: g.int(1, 99_999), seat_no: g.chance(0.5) ? g.int(1, 3) : null }
+        ? { line_id: randomUUID(), product_id: c.products.open, quantity: g.int(1, 3), open_price: g.int(1, c.r.openMax ?? 99_999), seat_no: g.chance(0.5) ? g.int(1, 3) : null }
         : { line_id: randomUUID(), product_id: c.products[g.pick(c.r.products).code], quantity: g.int(1, 5), seat_no: g.chance(0.5) ? g.int(1, 3) : null },
     );
     return c.call("POST", `/v1/orders/${o}/lines`, { token: c.pin, body: { lines } });
