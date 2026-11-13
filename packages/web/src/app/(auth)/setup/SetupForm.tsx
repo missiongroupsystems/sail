@@ -37,11 +37,17 @@ export function SetupForm({ withPassword }: { withPassword: boolean }) {
   const [error, setError] = useState<ApiError | null>(null);
   const form = useForm<Values>({
     resolver: zodResolver(Schema),
-    // The region whose suggested time zone is the device's, otherwise blank: no country is the default.
-    defaultValues: { business_name: "", preset: PRESETS.find((p) => p.time_zone_suggestion === deviceTimeZone())?.key ?? "blank", time_zone: deviceTimeZone(), currency: "", locale: "", outlet_name: "", name: "", email: "", password: "", withPassword },
+    defaultValues: { business_name: "", preset: "blank", time_zone: "", currency: "", locale: "", outlet_name: "", name: "", email: "", password: "", withPassword },
   });
   const preset = form.watch("preset");
   const setValue = form.setValue;
+  // The device's zone is known only in the browser, so the suggestion comes after the server render: the region whose
+  // suggested zone is the device's, otherwise blank (no country is the default), and the device's zone.
+  useEffect(() => {
+    const zone = deviceTimeZone();
+    setValue("time_zone", zone);
+    setValue("preset", PRESETS.find((p) => p.time_zone_suggestion === zone)?.key ?? "blank");
+  }, [setValue]);
   // A region suggests its time zone; the field stays editable.
   useEffect(() => {
     const zone = REGION_PRESETS[preset].time_zone_suggestion;
