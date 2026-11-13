@@ -1,31 +1,25 @@
 "use client";
 
-import { AttributionChip, Button, Icon, Menu, MenuItem, MenuSeparator, MenuTrigger } from "@sail/ui";
+import { Button, Icon, Menu, MenuItem, MenuSeparator, MenuTrigger } from "@sail/ui";
 import { ChevronDown } from "lucide-react";
-import { endSession } from "../api/register";
+import { lockStation } from "../lib/lock";
 import { useApi } from "../hooks/useApi";
-import { initialsOf, ROLE_LABEL } from "../lib/format";
+import { ROLE_LABEL } from "../lib/format";
 import { useNavStore } from "../state/nav";
 import { useSessionStore } from "../state/session";
 import { useThemeStore } from "../state/ui";
 
-/** Initials in the top bar: Switch user, theme, Sign out. */
+/** Name and role in the top bar: Switch user, theme, Sign out. */
 export function UserMenu() {
   const api = useApi();
   const staff = useSessionStore((s) => s.staff);
-  const lock = useSessionStore((s) => s.lock);
   const mode = useThemeStore((s) => s.mode);
   const setMode = useThemeStore((s) => s.setMode);
   if (!staff) return null;
 
   const end = async (note: string | null, resetNav: boolean) => {
-    try {
-      await endSession(api);
-    } catch {
-      // The register may already have ended it; the station locks either way.
-    }
     if (resetNav) useNavStore.getState().go({ kind: "floor" });
-    lock(note);
+    await lockStation(api, note);
   };
 
   const onAction = (key: React.Key) => {
@@ -45,8 +39,11 @@ export function UserMenu() {
 
   return (
     <MenuTrigger>
-      <Button variant="quiet" size="lg" aria-label={`${staff.name}, ${ROLE_LABEL[staff.role] ?? staff.role}. Open user menu`} className="gap-2 px-2">
-        <AttributionChip who={{ kind: "person", initials: staff.initials ?? initialsOf(staff.name) }} />
+      <Button variant="quiet" size="md" aria-label={`${staff.name}, ${ROLE_LABEL[staff.role] ?? staff.role}. Open user menu`} className="gap-1.5! pr-2! pl-3!">
+        <span className="flex flex-col items-end leading-tight">
+          <span className="text-[14px] font-medium text-ink">{staff.name}</span>
+          <span className="text-[12px] font-normal text-ink-3">{ROLE_LABEL[staff.role] ?? staff.role}</span>
+        </span>
         <Icon icon={ChevronDown} size={16} className="text-ink-2" />
       </Button>
       <Menu minWidth={260} onAction={onAction}>

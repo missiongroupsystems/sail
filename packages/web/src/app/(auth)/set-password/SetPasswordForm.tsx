@@ -14,7 +14,7 @@ const Schema = z
   .refine((v) => v.password === v.confirm, { path: ["confirm"], message: "The two passwords differ" });
 type Values = z.infer<typeof Schema>;
 
-export function SetPasswordForm() {
+export function SetPasswordForm({ signedInAs }: { signedInAs: string | null }) {
   const router = useRouter();
   const [token, setToken] = useState<string | null | undefined>(undefined);
   const [error, setError] = useState<ApiError | null>(null);
@@ -44,11 +44,16 @@ export function SetPasswordForm() {
 
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+      {signedInAs ? (
+        <p className="rounded-tile bg-surface-2 px-4 py-3 text-[14px] leading-5 text-ink" role="status">
+          This browser is signed in as {signedInAs}. The link sets the password of the account it was made for, and signs {signedInAs} out here.
+        </p>
+      ) : null}
       <RhfTextField control={form.control} name="password" label="New password" type="password" autoComplete="new-password" autoFocus />
       <RhfTextField control={form.control} name="confirm" label="Type it again" type="password" autoComplete="new-password" />
       <InlineError error={error} />
-      <Button type="submit" variant="primary" isPending={form.formState.isSubmitting} className="mt-2 w-full">
-        Set password and sign in
+      <Button type="submit" variant="primary" isPending={form.formState.isSubmitting} className="mt-4 w-full">
+        {signedInAs ? `Sign out of ${signedInAs} and set the password` : "Set password and sign in"}
       </Button>
     </form>
   );

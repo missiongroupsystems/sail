@@ -1,11 +1,14 @@
 "use client";
 
-import { BrandButton, InlineError, Money, TextField } from "@sail/ui";
-import { ArrowLeft } from "lucide-react";
+import { BrandButton, GuestStepper, Icon, InlineError, Money } from "@sail/ui";
+import { ShoppingBag, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Button as AriaButton, Input, Label, Text, TextField as AriaTextField } from "react-aria-components";
 import type { BasketItem } from "@/lib/basket";
 import { offendingKey, type SendError } from "@/lib/send-errors";
+import { billNote } from "@/lib/status";
 import type { CompiledMenu, GuestSession } from "@/lib/types";
+import { Dock, PageHeader } from "./Shell";
 import { StaffBanner } from "./StaffBanner";
 
 export type { SendError };
@@ -21,17 +24,29 @@ export type ReviewViewProps = {
   error: SendError | null;
   onEdit: (key: string) => void;
   onRemove: (key: string) => void;
+  /** A new quantity for a line (1 or more; Remove takes it off). */
+  onQuantity: (key: string, quantity: number) => void;
   onSend: () => void;
   onBack: () => void;
   onClearError: () => void;
+  /** The register's tax mode for the table's order, once there is one. */
+  taxMode?: string | null;
 };
 
 /**
- * The review page: the items with quantities and choices, edit
- * and remove, an optional name so staff know whose order it is, the plain note
+ * The review page: the items with their choices, a quantity stepper and Remove on each (tap the item to change its
+ * choices), an optional name so staff know whose order it is, the plain note
  * about service charge and discounts, then "Send to kitchen".
  */
-export function ReviewView({ session, menu, items, guestName, onGuestName, canOrder, sending, error, onEdit, onRemove, onSend, onBack, onClearError }: ReviewViewProps) {
+/** The most of one item a guest may send: the day's cap where there is one, otherwise 50 (as on the item sheet). */
+function maxQuantity(menu: CompiledMenu, productId: string): number {
+  const cap = menu.products[productId]?.cap_remaining;
+  return cap != null ? Math.max(1, Math.min(50, cap)) : 50;
+}
+
+export function ReviewView({ session, menu, items, guestName, onGuestName, canOrder, sending, error, onEdit, onRemove, onQuantity, onSend, onBack, onClearError, taxMode }: ReviewViewProps) {
+  // How many things go to the kitchen, as on the cart bar (a count, not a figure the register prices).
+  const count = items.reduce((n, item) => n + item.quantity, 0);
   const badKey = offendingKey(error, items, menu);
   const [retryIn, setRetryIn] = useState<number>(0);
   const clearError = useRef(onClearError);
@@ -61,65 +76,65 @@ export function ReviewView({ session, menu, items, guestName, onGuestName, canOr
 
   return (
     <>
-      <header className="sticky top-0 z-20 bg-bg/95 backdrop-blur-sm hairline-b">
-        <div className="mx-auto flex w-full max-w-[560px] items-center gap-2 px-2 pb-2 pt-[max(8px,env(safe-area-inset-top))]">
-          <BrandButton variant="quiet" onPress={onBack} aria-label="Back to the menu" className="px-3">
-            <ArrowLeft size={22} aria-hidden />
-            <span>Menu</span>
-          </BrandButton>
-          <div className="min-w-0 flex-1 text-right">
-            <h1 tabIndex={-1} className="truncate font-display text-heading text-ink outline-none">
-              Review your order
-            </h1>
-            <p className="text-caption text-ink-2">Table {session.table.name}</p>
-          </div>
-        </div>
-      </header>
+      <PageHeader title="Your order" subtitle={`Table ${session.table.name}`} onBack={onBack} backLabel="Back to the menu" />
 
-      <main className="mx-auto flex w-full max-w-[560px] flex-col gap-6 px-4 pb-40 pt-4">
-        {!canOrder ? <StaffBanner /> : null}
-        {generalError ? <InlineError error={generalError} /> : null}
+      <main className="flex w-full flex-col gap-7 px-4 pb-40 pt-2">
+        {!canOrder ? <StaffBanner className="mt-2" /> : null}
+        {generalError ? <InlineError error={generalError} className="mt-2" /> : null}
 
         {items.length === 0 ? (
-          <div className="flex flex-col items-start gap-3 py-8">
-            <p className="text-body text-ink-2">Nothing to review yet. Add something from the menu.</p>
-            <BrandButton onPress={onBack}>Back to the menu</BrandButton>
+          <div className="flex flex-col items-center gap-4 px-4 py-24 text-center">
+            <span className="flex size-14 items-center justify-center rounded-full bg-surface-2 text-ink">
+              <Icon icon={ShoppingBag} size={24} />
+            </span>
+            <p className="max-w-[32ch] text-[15.5px] leading-relaxed text-ink-2">Nothing to review yet. Add something from the menu.</p>
+            <BrandButton variant="accent" onPress={onBack} className="px-6">
+              Back to the menu
+            </BrandButton>
           </div>
         ) : (
-          <ul className="flex flex-col hairline-t" aria-label="Your items">
+          <ul className="flex flex-col divide-y divide-rule-subtle" aria-label="Your items">
             {items.map((item) => {
               const itemError = badKey === item.key && error ? error.error : null;
               return (
-                <li key={item.key} className="flex flex-col gap-2 py-4 hairline-b">
-                  <div className="flex items-baseline gap-3">
-                    <span className="w-7 shrink-0 text-body tabular text-ink-2">{item.quantity}×</span>
-                    <span className="min-w-0 flex-1 font-display text-line text-ink wrap-anywhere">{item.name}</span>
-                    <span className="shrink-0 text-body text-ink">
-                      <Money cents={item.unit_price} />
-                      {item.quantity > 1 ? <span className="text-ink-2"> each</span> : null}
-                    </span>
+                <li key={item.key} className="flex flex-col gap-2 py-4">
+                  <div className="flex items-start justify-between gap-4">
+                    {/* The item's words are a button: it opens the item sheet to change choices or the note. */}
+                    <AriaButton
+                      onPress={() => onEdit(item.key)}
+                      isDisabled={sending}
+                      aria-label={`Change ${item.name}`}
+                      className="min-w-0 flex-1 rounded-chip text-left outline-none data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus"
+                    >
+                      <p className="font-display text-[16px] leading-snug font-medium text-ink wrap-anywhere">{item.name}</p>
+                      {item.modifiers.length ? (
+                        <ul className="flex flex-col" aria-label="Choices">
+                          {item.modifiers.map((m) => (
+                            <li key={`${m.group_id}:${m.product_id}`} className="text-[14px] leading-snug text-ink-2 wrap-anywhere">
+                              {m.quantity > 1 ? `${m.quantity}× ` : ""}
+                              {m.name}
+                              {m.price ? (
+                                <>
+                                  {" "}
+                                  <Money cents={m.price} signed size="caption" className="text-[14px] text-ink-2" />
+                                </>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {/* A pasted link or a long unbroken run wraps instead of widening the page past the send button. */}
+                      {item.notes ? <p className="mt-0.5 text-[14px] leading-snug text-ink-2 italic wrap-anywhere">Note: {item.notes}</p> : null}
+                    </AriaButton>
+                    <p className="shrink-0 text-right text-[14px] whitespace-nowrap text-ink-2">
+                      <Money cents={item.unit_price} className="text-[15.5px] font-medium text-ink" /> each
+                    </p>
                   </div>
-                  {item.modifiers.length ? (
-                    <ul className="flex flex-col gap-0.5 pl-10 text-body text-ink-2" aria-label="Choices">
-                      {item.modifiers.map((m) => (
-                        <li key={`${m.group_id}:${m.product_id}`} className="flex items-baseline justify-between gap-3">
-                          <span>
-                            {m.quantity > 1 ? `${m.quantity}× ` : ""}
-                            {m.name}
-                          </span>
-                          {m.price ? <Money cents={m.price} signed /> : null}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  {/* A pasted link or a long unbroken run wraps instead of widening the page past Send to kitchen. */}
-                  {item.notes ? <p className="pl-10 text-body text-ink-2 wrap-anywhere">Note: {item.notes}</p> : null}
-                  {itemError ? <InlineError error={{ message: itemError.message, remedy: itemError.remedy ?? (error?.kind === "group" ? "Tap Edit to choose." : null) }} className="ml-10" /> : null}
-                  <div className="flex gap-2 pl-10 pt-1">
-                    <BrandButton onPress={() => onEdit(item.key)} isDisabled={sending}>
-                      Edit
-                    </BrandButton>
-                    <BrandButton variant="destructive" onPress={() => onRemove(item.key)} isDisabled={sending}>
+                  {itemError ? <InlineError error={{ message: itemError.message, remedy: itemError.remedy ?? (error?.kind === "group" ? "Tap the item to choose." : null) }} /> : null}
+                  <div className="flex items-center justify-between gap-3">
+                    <GuestStepper value={item.quantity} onChange={(q) => (sending ? undefined : onQuantity(item.key, q))} min={1} max={maxQuantity(menu, item.product_id)} label={`Quantity of ${item.name}`} />
+                    <BrandButton variant="quiet" onPress={() => onRemove(item.key)} isDisabled={sending} aria-label={`Remove ${item.name}`} className="min-h-11 gap-1.5 px-3 text-[14.5px] text-ink-2">
+                      <Icon icon={Trash2} size={18} />
                       Remove
                     </BrandButton>
                   </div>
@@ -131,25 +146,41 @@ export function ReviewView({ session, menu, items, guestName, onGuestName, canOr
 
         {items.length > 0 ? (
           <>
-            <TextField label="Your name (optional)" description="So staff know whose order it is" value={guestName} onChange={onGuestName} maxLength={40} autoComplete="given-name" inputClassName="min-h-12" isDisabled={sending} />
-            <p className="text-body text-ink-2">Service charge and any discounts are added to your bill.</p>
+            <BrandButton variant="secondary" block onPress={onBack} isDisabled={sending} className="-mt-3">
+              Add more items
+            </BrandButton>
+            <AriaTextField value={guestName} onChange={onGuestName} maxLength={40} autoComplete="given-name" isDisabled={sending} className="flex flex-col gap-3">
+              <Label className="flex items-baseline justify-between gap-3">
+                <span className="font-display text-[16px] font-semibold tracking-tight text-ink">
+                  Your name<span className="sr-only"> (optional)</span>
+                </span>
+                <span aria-hidden className="text-[13px] text-ink-3">
+                  Optional
+                </span>
+              </Label>
+              <Text slot="description" className="sr-only">
+                So staff know whose order it is
+              </Text>
+              <Input placeholder="So staff know whose order it is" className="h-12 w-full rounded-sheet border border-transparent bg-surface-2 px-4 text-[16px] text-ink outline-none placeholder:text-ink-3 focus:border-rule-strong focus:bg-surface disabled:text-ink-disabled" />
+            </AriaTextField>
+            <p className="text-[13.5px] leading-relaxed text-ink-3">{billNote(taxMode)}</p>
           </>
         ) : null}
       </main>
 
       {items.length > 0 ? (
-        <div className="fixed inset-x-0 bottom-0 z-30 bg-bg/95 backdrop-blur-sm hairline-t">
-          <div className="mx-auto flex w-full max-w-[560px] flex-col gap-2 px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-3">
+        <Dock>
+          <div className="flex flex-col gap-2">
             {error?.kind === "rate_limited" && retryIn > 0 ? (
               <p role="status" className="text-caption text-ink-2">
                 {error.error.message} · Try again in {retryIn} s
               </p>
             ) : null}
-            <BrandButton variant="accent" block className="min-h-14" onPress={onSend} isPending={sending} isDisabled={!canOrder || retryIn > 0}>
-              {canOrder ? "Send to kitchen" : "Waiting for staff to seat you"}
+            <BrandButton variant="accent" block className="min-h-14 text-[16.5px]" onPress={onSend} isPending={sending} isDisabled={!canOrder || retryIn > 0}>
+              {canOrder ? `Send ${count} ${count === 1 ? "item" : "items"} to the kitchen` : "Waiting for staff to seat you"}
             </BrandButton>
           </div>
-        </div>
+        </Dock>
       ) : null}
     </>
   );

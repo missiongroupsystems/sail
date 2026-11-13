@@ -17,6 +17,10 @@ export type AmountPadProps = {
   /** Shown under the figure: the rule's range or a hint. */
   hint?: string | null;
   isDisabled?: boolean;
+  /** `centre`: the figure large over the keys (sheets); `field`: the figure right-aligned in a grey field and keys that fill the width (the pay screen's keypad). */
+  display?: "centre" | "field";
+  /** The field shows a prefilled figure the next key replaces: grey until typed over. */
+  muted?: boolean;
   className?: string;
 };
 
@@ -50,7 +54,7 @@ export function padDigits(digits: string, key: string, mode: AmountPadProps["mod
  * An amount pad. Money is typed right to left like a till (1, 2, 5, 0 is 12.50); a percentage is typed as it reads
  * (1, 0 is 10%, and 1, 2, ., 5 is 12.5%), because a till's implied decimals turned "10" into 0.10%.
  */
-export function AmountPad({ digits, onChange, mode, hint, isDisabled, className }: AmountPadProps) {
+export function AmountPad({ digits, onChange, mode, hint, isDisabled, display = "centre", muted = false, className }: AmountPadProps) {
   const { money } = useLocale();
   const n = Number(digits || "0");
   // The percentage as typed, so "12." survives until the next digit; it follows the caller when the value is reset.
@@ -73,21 +77,30 @@ export function AmountPad({ digits, onChange, mode, hint, isDisabled, className 
     if (next !== null) onChange(next);
   };
   return (
-    <div className={cx("flex flex-col items-center gap-4 pos-touch", className)}>
-      <div className="flex flex-col items-center">
-        <output className="text-amount-xl tabular text-ink" aria-live="polite">
-          {text}
-        </output>
-        {hint ? <span className="text-caption text-ink-2">{hint}</span> : null}
-      </div>
-      <div className="grid grid-cols-3 gap-2" role="group" aria-label="Amount keys">
+    <div className={cx("flex flex-col gap-4 pos-touch", display === "centre" ? "items-center" : "items-stretch gap-3!", className)}>
+      {display === "centre" ? (
+        <div className="flex flex-col items-center">
+          <output className="font-heading text-amount-xl tabular text-ink" aria-live="polite">
+            {text}
+          </output>
+          {hint ? <span className="text-caption text-ink-3">{hint}</span> : null}
+        </div>
+      ) : (
+        <div className="flex min-h-[60px] flex-col items-end justify-center rounded-tile bg-surface-2 px-4 py-2">
+          <output className={cx("font-heading text-[30px] leading-none font-medium tabular", muted ? "text-ink-2" : "text-ink")} aria-live="polite">
+            {text}
+          </output>
+          {hint ? <span className="mt-1 text-caption text-ink-2">{hint}</span> : null}
+        </div>
+      )}
+      <div className={cx("grid grid-cols-3 gap-2", display === "field" && "w-full")} role="group" aria-label="Amount keys">
         {(mode === "percent" ? PERCENT_KEYS : KEYS).map((k) => (
           <AriaButton
             key={k}
             onPress={() => press(k)}
             isDisabled={isDisabled}
             aria-label={k === "⌫" ? "Delete last digit" : k === "." ? "Decimal point" : k}
-            className="press flex h-16 w-[88px] items-center justify-center rounded-tile bg-surface-2 text-title tabular text-ink outline-none data-[pressed]:scale-[0.97] data-[pressed]:brightness-90 data-[disabled]:opacity-40 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated"
+            className={cx(display === "field" ? "w-full" : "w-[88px]", "press flex h-16 items-center justify-center rounded-tile bg-surface-2 font-heading text-[24px] font-medium tabular text-ink outline-none transition-colors duration-[80ms] data-[pressed]:scale-[0.97] data-[pressed]:bg-surface-3 data-[disabled]:text-ink-disabled data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus")}
           >
             {k === "⌫" ? <Icon icon={Delete} size={24} /> : k}
           </AriaButton>

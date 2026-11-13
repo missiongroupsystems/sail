@@ -1,9 +1,10 @@
 "use client";
 
 import { zonedInputToIso } from "@sail/shared";
-import { Badge, Button, DataTable, EmptyState, InlineError, Select, Sheet, TextField, type DataTableColumn, type LocaleFormat, useLocale } from "@sail/ui";
+import { Button, DataTable, EmptyState, InlineError, Select, Sheet, TextField, type DataTableColumn, Pill, soldOutText, useLocale, DateField } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { greyPill, SheetSection, TwoLine } from "@/components/office/parts";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
 import { ProductSearch } from "@/components/backoffice/ProductSearch";
 import { Warnings } from "@/components/backoffice/Warnings";
@@ -16,12 +17,6 @@ import { keys } from "@/lib/query";
 
 type Until = "today" | "indefinite" | "at";
 type Mode = { kind: "sold_out"; product: Product | null } | { kind: "cap"; product: Product | null } | null;
-
-function soldOutLabel(e: StockEntry, dayClock: LocaleFormat["dayClock"]): string {
-  if (!e.sold_out) return "";
-  if (!e.sold_out_until) return "Sold out indefinitely";
-  return `Sold out until ${dayClock(e.sold_out_until)}`;
-}
 
 /** Sold out ("86" is the staff word). Per outlet: what is sold out or capped today, and the actions to change it. */
 export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; initialStock: StockEntry[] }) {
@@ -64,18 +59,22 @@ export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: {
 
   const columns: DataTableColumn<StockEntry>[] = useMemo(
     () => [
-      { key: "product", header: "Product", isRowHeader: true, render: (e) => <span className="text-ink">{productName(byId, e.product_id)}</span> },
+      { key: "product", header: "Product", isRowHeader: true, width: "2fr", render: (e) => <TwoLine primary={productName(byId, e.product_id)} /> },
       {
         key: "status",
         header: "Status",
         render: (e) => (
           <span className="flex flex-wrap gap-1">
-            {e.sold_out ? <Badge tone="alert">{soldOutLabel(e, dayClock)}</Badge> : null}
+            {e.sold_out ? (
+              <Pill size="sm" tone="alert">
+                {soldOutText(e, dayClock)}
+              </Pill>
+            ) : null}
             {e.daily_cap !== null ? (
-              <Badge tone={e.cap_remaining === 0 ? "alert" : "sent"}>
+              <Pill size="sm" tone={e.cap_remaining === 0 ? "alert" : "sent"}>
                 Daily cap {e.daily_cap}
                 {e.cap_remaining !== null ? ` · ${e.cap_remaining} left` : ""}
-              </Badge>
+              </Pill>
             ) : null}
           </span>
         ),
@@ -85,7 +84,7 @@ export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: {
         header: "",
         align: "end",
         render: (e) => (
-          <span className="flex justify-end gap-1">
+          <span className="flex flex-wrap justify-end gap-1">
             {e.sold_out ? (
               <Button onPress={() => restore.mutate(e.product_id)} isPending={restore.isPending && restore.variables === e.product_id}>
                 Restore
@@ -94,11 +93,11 @@ export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: {
               <Button onPress={() => setMode({ kind: "sold_out", product: byId.get(e.product_id) ?? null })}>Mark sold out</Button>
             )}
             {e.daily_cap !== null ? (
-              <Button variant="quiet" onPress={() => dailyCap.mutate({ product_id: e.product_id, quantity: null })}>
+              <Button variant="secondary" className={greyPill} onPress={() => dailyCap.mutate({ product_id: e.product_id, quantity: null })}>
                 Remove cap
               </Button>
             ) : (
-              <Button variant="quiet" onPress={() => { setCap(""); setMode({ kind: "cap", product: byId.get(e.product_id) ?? null }); }}>
+              <Button variant="secondary" className={greyPill} onPress={() => { setCap(""); setMode({ kind: "cap", product: byId.get(e.product_id) ?? null }); }}>
                 Set daily cap
               </Button>
             )}
@@ -114,13 +113,13 @@ export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: {
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <OutletChoice outlets={outlets} scope={scope} outletId={outletId} onChange={setOutletId} />
-        <div className="flex gap-2">
-          <Button onPress={() => { setCap(""); setMode({ kind: "cap", product: null }); }} isDisabled={!outletId}>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onPress={() => { setCap(""); setMode({ kind: "cap", product: null }); }} isDisabled={!outletId}>
             Set a daily cap
           </Button>
-          <Button variant="primary" onPress={() => setMode({ kind: "sold_out", product: null })} isDisabled={!outletId}>
+          <Button size="sm" variant="primary" onPress={() => setMode({ kind: "sold_out", product: null })} isDisabled={!outletId}>
             Mark sold out
           </Button>
         </div>
@@ -135,7 +134,7 @@ export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: {
           rows={entries}
           rowKey={(e) => e.product_id}
           isLoading={stock.isPending}
-          emptyState={<EmptyState variant="quiet" title="Everything is available" hint="Tap Mark sold out when the kitchen runs out of something." />}
+          emptyState={<EmptyState variant="centred" title="Everything is available" hint="Tap Mark sold out when the kitchen runs out of something." />}
         />
       )}
       <InlineError error={stock.error ?? restore.error ?? dailyCap.error} className="mt-4" />
@@ -148,7 +147,7 @@ export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: {
         description={mode?.kind === "cap" ? "The item stops selling at this outlet once the quantity is reached today." : "The item shows as sold out on every station and in Scan to order at this outlet."}
         footer={
           <>
-            <Button variant="quiet" onPress={() => setMode(null)}>
+            <Button variant="secondary" className={greyPill} onPress={() => setMode(null)}>
               Cancel
             </Button>
             {mode?.kind === "cap" ? (
@@ -163,11 +162,11 @@ export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: {
           </>
         }
       >
-        <div className="flex flex-col gap-6">
+        <SheetSection title={mode?.kind === "cap" ? "Cap" : "Sold out"}>
           {picked ? (
-            <div className="flex items-center justify-between gap-3 rounded-tile bg-surface-2 px-3 py-2">
-              <span className="text-ink">{picked.name}</span>
-              <Button variant="quiet" onPress={() => setMode(mode ? { ...mode, product: null } : null)}>
+            <div className="flex items-center justify-between gap-3 rounded-field bg-surface-2 py-1 pr-1 pl-3">
+              <span className="min-w-0 font-medium text-ink [overflow-wrap:anywhere]">{picked.name}</span>
+              <Button variant="secondary" onPress={() => setMode(mode ? { ...mode, product: null } : null)}>
                 Change
               </Button>
             </div>
@@ -188,11 +187,11 @@ export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: {
                   { id: "at", label: "A time I choose" },
                 ]}
               />
-              {until === "at" ? <TextField label="Comes back at" type="datetime-local" numeric value={untilAt} onChange={setUntilAt} className="sm:max-w-[260px]" /> : null}
+              {until === "at" ? <DateField label="Comes back at" type="datetime" size="md" value={untilAt} onChange={setUntilAt} placeholder="Choose a time" className="sm:max-w-[300px]" /> : null}
             </>
           )}
-          <InlineError error={soldOut.error ?? dailyCap.error} />
-        </div>
+        </SheetSection>
+        <InlineError error={soldOut.error ?? dailyCap.error} className="mt-4" />
       </Sheet>
     </>
   );

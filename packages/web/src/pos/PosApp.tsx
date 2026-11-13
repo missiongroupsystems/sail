@@ -2,13 +2,14 @@
 
 import { deviceLocale, deviceTimeZone, LocaleProvider, type LocaleSettings } from "@sail/ui";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ApiError } from "@/lib/api";
 import { merchantLocale } from "@/lib/locale";
 import { PosShell } from "./components/PosShell";
 import { useMerchant } from "./hooks/queries";
 import { LockScreen } from "./screens/LockScreen";
 import { PairingScreen } from "./screens/PairingScreen";
+import { useNavStore } from "./state/nav";
 import { useSessionStore } from "./state/session";
 import { useStationStore } from "./state/station";
 
@@ -35,6 +36,7 @@ export default function PosApp() {
   const [client] = useState(makeClient);
   const stationToken = useStationStore((s) => s.token);
   const sessionToken = useSessionStore((s) => s.token);
+  useStayOnPos();
   return (
     <QueryClientProvider client={client}>
       {/* An unpaired iPad cannot read the merchant's settings, so pairing uses the iPad's own locale and zone. */}
@@ -51,6 +53,23 @@ export default function PosApp() {
       </LocaleProvider>
     </QueryClientProvider>
   );
+}
+
+/**
+ * The browser's back gesture or button stays inside the POS: it goes back one screen (Pay → Bill → Order → Floor)
+ * instead of leaving /pos for the page before it, often the back office's sign-in (live-test A-5).
+ */
+function useStayOnPos() {
+  useEffect(() => {
+    const hold = () => window.history.pushState({ sailPos: true }, "", window.location.href);
+    hold();
+    const onPop = () => {
+      hold();
+      useNavStore.getState().back();
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 }
 
 const DEVICE_LOCALE: LocaleSettings = { currency: null, currencyExponent: null, locale: deviceLocale(), timeZone: deviceTimeZone() };

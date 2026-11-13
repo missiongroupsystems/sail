@@ -91,9 +91,16 @@ export const test = base.extend<{ watch: { allow: (a: Allowed) => void; /** A co
 
 export { expect };
 
-/** WCAG 2 contrast ratio of an element's text colour against the first opaque background behind it. */
+/**
+ * WCAG 2 contrast ratio of an element's text colour against the first opaque background behind it.
+ * The element is looked up and read in one evaluation: a table replaces its body once after hydration, and an element
+ * handle resolved a moment earlier can by then be detached, with empty computed colours.
+ */
 export async function textContrast(page: Page, selector: string): Promise<{ ratio: number; color: string; background: string }> {
-  return page.locator(selector).first().evaluate((el) => {
+  await page.locator(selector).first().waitFor({ state: "attached" });
+  return page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    if (!el) throw new Error(`No element matches ${sel}`);
     const parse = (c: string) => {
       const m = c.match(/rgba?\(([^)]+)\)/);
       if (!m) throw new Error(`Unexpected colour ${c}`);
@@ -120,7 +127,7 @@ export async function textContrast(page: Page, selector: string): Promise<{ rati
     }
     const [l1, l2] = [lum(parse(color)), lum(parse(background))].sort((a, b) => b - a);
     return { ratio: (l1! + 0.05) / (l2! + 0.05), color, background };
-  });
+  }, selector);
 }
 
 /** Tap digits on a keypad (the PIN pad or an amount pad). */

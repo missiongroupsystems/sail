@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, DescriptionList, InlineError, Money, MoneyField, Sheet, Steps, Switch, taxRows, TextField, cx, useLocale } from "@sail/ui";
+import { Badge, Button, DescriptionList, InlineError, Money, MoneyField, Sheet, Steps, Switch, taxRows, TextField, cx, useLocale, refundableQuantity } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { label } from "@/components/backoffice/labels";
@@ -233,13 +233,16 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
                 <ul className="flex flex-col" aria-label="Items on the bill">
                   {billLines.map(({ alloc, line }) => {
                     const q = qty[alloc.line_id] ?? 0;
-                    const max = line!.quantity;
+                    // Units this bill already refunded cannot be refunded again (the register reports them per bill).
+                    const refunded = alloc.refunded_quantity ?? 0;
+                    const max = refundableQuantity(line!.quantity, refunded);
                     return (
                       <li key={alloc.line_id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2 hairline-b">
                         <span className="min-w-0 flex-1">
                           <span className="text-ink">{line!.name}</span>
                           <span className="ml-2 text-caption text-ink-2 tabular">
                             {line!.quantity}× · <Money cents={alloc.total} size="caption" /> on this bill{alloc.share !== "1" && alloc.share !== "1/1" ? ` · share ${alloc.share}` : ""}
+                            {refunded > 0 ? ` · ${refunded} already refunded` : ""}
                           </span>
                           {line!.modifiers.length ? <span className="block text-caption text-ink-2">{line!.modifiers.map((m) => m.name).join(", ")}</span> : null}
                         </span>

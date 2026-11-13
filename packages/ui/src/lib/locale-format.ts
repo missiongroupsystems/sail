@@ -67,6 +67,8 @@ export type LocaleFormat = LocaleSettings & {
   stamp: (d: string | Date) => string;
   /** The calendar date in the merchant's zone, as YYYY-MM-DD. */
   isoDate: (d?: Date) => string;
+  /** A business date the register sends as YYYY-MM-DD, for people: "Fri 13 Nov 2026" (anything else is shown as sent). */
+  businessDay: (ymd: string) => string;
 };
 
 const MINUS = "−"; // true minus sign
@@ -80,6 +82,14 @@ function toDate(d: string | Date): Date {
  * narrow no-break space before the day period where browsers put a plain space, so server-rendered times would not
  * hydrate; the narrow space is written as a plain one on both sides.
  */
+function safeHourCycle(locale: string, timeZone: string): string | undefined {
+  try {
+    return new Intl.DateTimeFormat(locale, { hour: "numeric", timeZone }).resolvedOptions().hourCycle;
+  } catch {
+    return undefined;
+  }
+}
+
 function dateFormatter(locale: string, opts: Intl.DateTimeFormatOptions): (d: Date) => string {
   const f = new Intl.DateTimeFormat(locale, opts);
   return (d) =>
@@ -142,11 +152,15 @@ export function makeLocaleFormat(settings: LocaleSettings): LocaleFormat {
     }
   };
 
-  const clockF = dateFormatter(locale, { hour: "numeric", minute: "2-digit", timeZone });
-  const dayClockF = dateFormatter(locale, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone });
+  // A 24-hour clock writes the hour with two digits ("09:05" in Ireland or Germany); a 12-hour one keeps "9:05 am".
+  const hour: "numeric" | "2-digit" = /^h2[34]$/.test(safeHourCycle(locale, timeZone) ?? "") ? "2-digit" : "numeric";
+  const clockF = dateFormatter(locale, { hour, minute: "2-digit", timeZone });
+  const dayClockF = dateFormatter(locale, { day: "numeric", month: "short", hour, minute: "2-digit", timeZone });
   const longDateF = dateFormatter(locale, { weekday: "long", day: "numeric", month: "long", timeZone });
   const fullStampF = dateFormatter(locale, { dateStyle: "medium", timeStyle: "medium", timeZone });
-  const stampF = dateFormatter(locale, { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", timeZone });
+  const stampF = dateFormatter(locale, { day: "numeric", month: "short", year: "numeric", hour, minute: "2-digit", timeZone });
+  // A business date is a calendar day, not a moment: formatted in UTC so no zone moves it to the day before.
+  const businessDayF = dateFormatter(locale, { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
   const isoDateF = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
 
   return {
@@ -165,5 +179,9 @@ export function makeLocaleFormat(settings: LocaleSettings): LocaleFormat {
     stamp: (d) => stampF(toDate(d)),
     // en-CA writes dates as YYYY-MM-DD; this is a machine format, not shown to people.
     isoDate: (d = new Date()) => isoDateF.format(d),
+    businessDay: (ymd) => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+      return m ? businessDayF(new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))) : ymd;
+    },
   };
 }

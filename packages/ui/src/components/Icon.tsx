@@ -9,12 +9,12 @@ export type IconProps = Omit<LucideProps, "ref"> & {
   label?: string;
 };
 
-/** Lucide at a 1.75 stroke. Decorative unless a `label` is given. */
+/** Lucide at a 1.6 stroke. Decorative unless a `label` is given. */
 export function Icon({ icon: Glyph, size = 20, label, className, ...rest }: IconProps) {
   return (
     <Glyph
       size={size}
-      strokeWidth={1.75}
+      strokeWidth={1.6}
       absoluteStrokeWidth
       aria-hidden={label ? undefined : true}
       aria-label={label}

@@ -166,7 +166,7 @@ describe("the register decides whether a tip is taken", () => {
 
 describe("tips with refunds and the Z-report, in 0, 2 and 3 decimals", () => {
   for (const [currency, rounding, price, tip] of [["JPY", 10, 1234, 100], ["CHF", 5, 1743, 50], ["KWD", null, 2750, 250]] as const) {
-    it(`${currency}: a full refund gives back the bill, not the tip, and the drawer and the tenders still reconcile`, async () => {
+    it(`${currency}: a full refund gives back the bill and the tip, and the drawer and the tenders still reconcile`, async () => {
       const w = await merchant(`Refund ${currency}`, currency, rounding, price);
       const sale = await tippedCashSale(w, { tip, tendered: 100_000 });
       expect(sale.paid.status, JSON.stringify(sale.paid.body)).toBe(200);
@@ -174,9 +174,9 @@ describe("tips with refunds and the Z-report, in 0, 2 and 3 decimals", () => {
       const refund = await call<{ refund: { quote: { cash_out: number } } }>("POST", `/v1/checks/${sale.checkId}/refunds`, { token: w.m.manager.token, body: { refund_id: randomUUID(), request: { kind: "full" }, reason: "returned", print: false } });
       expect(refund.status, JSON.stringify(refund.body)).toBe(201);
       const cashOut = refund.body.refund.quote.cash_out;
-      // Cash back is the bill as taken (rounded on the payment's running total), never the tip, never more than was taken.
-      expect(cashOut).toBeLessThanOrEqual(p.amount + p.rounding_cents);
-      expect(cashOut).toBeGreaterThanOrEqual(p.amount + p.rounding_cents - (rounding ?? 1));
+      // Cash back is the bill as taken (rounded on the payment's running total) plus the tip, never more than was taken.
+      expect(cashOut).toBeLessThanOrEqual(p.amount + p.rounding_cents + tip);
+      expect(cashOut).toBeGreaterThanOrEqual(p.amount + p.rounding_cents + tip - (rounding ?? 1));
       const z = (await call<{ data: { cash: Cash; reconciliation: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number }; tenders_summary: { tips: number } } }>("GET", `/v1/outlets/${w.m.outletId}/z-report`, { token: w.token })).body.data;
       expect(z.tenders_summary.tips).toBe(tip);
       expect(z.cash.expected).toBe(10_000 + p.amount + p.rounding_cents + tip - cashOut);

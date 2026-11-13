@@ -1,11 +1,11 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { AmountSchema, ChannelTypeSchema, OrderTypeSchema, PricingContextSchema, PricingLineSchema, PricingResultSchema, PricingRuleSchema, ManualApplicationSchema, MAX_AMOUNT, price, registerOperations, sumCents, validateRuleSet, type PricingRuleInput } from "@sail/shared";
-import { db } from "../db/client.js";
+import { db, tx } from "../db/client.js";
 import { products, reportCategories } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
-import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
+import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, plainIssue, z, untrusted } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { activeRules, archiveRule, createRuleVersion, ruleVersions } from "../services/pricing-rules.js";
@@ -56,8 +56,9 @@ export function pricingRoutes(app: OpenAPIHono<AppEnv>) {
       const p = c.get("principal");
       const b = c.req.valid("json");
       const parsed = PricingRuleSchema.safeParse({ ...b.body, id: b.rule_key, version: 1 });
-      if (!parsed.success) throw AppError.validation(`Invalid rule: ${parsed.error.issues[0]?.path.join(".")}: ${parsed.error.issues[0]?.message}`, { issues: parsed.error.issues });
+      if (!parsed.success) throw AppError.validation(`The rule is not valid: ${plainIssue(parsed.error.issues[0]!)}`, { issues: parsed.error.issues });
       if (parsed.data.tax_class_id) await assertTaxClass(p.merchantId, parsed.data.tax_class_id, "body.tax_class_id");
+      await assertRuleRefs(p.merchantId, parsed.data);
       const effectiveFrom = b.effective_from ? new Date(b.effective_from) : new Date();
       const row = await createRuleVersion(p.merchantId, { rule_key: b.rule_key, body: parsed.data as PricingRuleInput, effective_from: effectiveFrom, note: b.note ?? null, created_by: p.id });
       // Validation warnings for the resulting set (advisory; the version is still created).
@@ -111,6 +112,29 @@ export function pricingRoutes(app: OpenAPIHono<AppEnv>) {
     const catalogue = prods.map((x) => ({ product_id: x.id, category_id: x.categoryId, parent_category_id: x.categoryId ? (parent.get(x.categoryId) ?? null) : null, tags: x.tags, has_deposit: x.hasDeposit }));
     return c.json({ data: { warnings: validateRuleSet(rules, catalogue) } }, 200);
   });
+}
+
+/**
+ * Every record a rule names (scope, exclusions, conditions) is one of this merchant's. An unknown id and another
+ * merchant's id are refused alike, so a rule can neither point across merchants nor confirm that an id exists.
+ */
+async function assertRuleRefs(merchantId: string, r: z.infer<typeof PricingRuleSchema>) {
+  const refs: [field: string, table: string, ids: string[] | undefined][] = [
+    ["body.scope.product_ids", "products", r.scope.type === "products" ? r.scope.product_ids : undefined],
+    ["body.scope.category_ids", "report_categories", r.scope.type === "categories" ? r.scope.category_ids : undefined],
+    ["body.exclusions.product_ids", "products", r.exclusions.product_ids],
+    ["body.exclusions.category_ids", "report_categories", r.exclusions.category_ids],
+    ["body.conditions.outlet_ids", "outlets", r.conditions.outlet_ids],
+    ["body.conditions.excluded_outlet_ids", "outlets", r.conditions.excluded_outlet_ids],
+    ["body.conditions.brand_ids", "brands", r.conditions.brand_ids],
+    ["body.conditions.customer_group_ids", "customer_groups", r.conditions.customer_group_ids],
+  ];
+  for (const [field, table, ids] of refs) {
+    const want = [...new Set(ids ?? [])];
+    if (!want.length) continue;
+    const found = await tx().unsafe<{ id: string }[]>(`select id::text as id from ${table} where merchant_id = $1 and id::text = any($2::text[])`, [merchantId, want]);
+    if (found.length !== want.length) throw AppError.validation(`${field} names a record this business does not have`, { remedy: "Pick the records from this business's own lists.", details: { field } });
+  }
 }
 
 /** Expand `{product_id, quantity}` references into full pricing lines from the catalogue. */

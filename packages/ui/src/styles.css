@@ -10,25 +10,56 @@
 
 /* Component source for Tailwind's scanner; the consuming app adds its own files. */
 @source "./components";
+@source "./lib";
 
-/* ---- 7.3 Colour: Day --------------------------------------------------- */
+/* ---- 7.3 Colour: Day ---------------------------------------------------
+ * Neutral greys, a near-black ink and one deep green. Lines are ink at low
+ * alpha, so a hairline reads the same on the white sheet, the page and a fill.
+ */
 :root {
   color-scheme: light;
 
-  --bg: #f6f3ee;
+  --bg: #f9f9f9;
   --surface: #ffffff;
-  --surface-2: #efebe4;
-  --line: #ddd7cd;
-  --ink: #1c1d1f;
-  --ink-2: #5e5a53;
-  --primary: #1c1d1f;
-  --on-primary: #f6f3ee;
-  --status-seated: #2563eb;
-  --status-sent: #b26b00;
-  --status-bill: #b4235e;
-  --status-paid: #1e7f4f;
-  --status-alert: #c62d1f;
-  --agent: #5b4cd6;
+  --surface-2: #f4f4f4;
+  /* One step past surface-2: a pressed key, a selected row, the skeleton bar. */
+  --surface-3: #ececec;
+  --line: rgba(17, 20, 19, 0.1);
+  --line-subtle: rgba(17, 20, 19, 0.06);
+  --line-strong: rgba(17, 20, 19, 0.14);
+  --line-dashed: rgba(17, 20, 19, 0.16);
+  /* The edge of a control that must read on its own (a checkbox box): 3:1 on white. */
+  --line-input: #8a8a8a;
+  --ink: #0d0d0d;
+  --ink-2: #5d5d5d;
+  /* Tertiary ink: hints and counts. Still 4.6:1 on surface-2. */
+  --ink-3: #6a6a6a;
+  --ink-disabled: #b4b4b4;
+  --primary: #0d0d0d;
+  --on-primary: #ffffff;
+  /* Toasts and one-line notices: a dark bar in both themes (a light one glares on the Service screen). */
+  --toast: #1f1f1f;
+  --on-toast: #ffffff;
+  /* The deep green: links, the guest app's default accent. */
+  --accent: #173527;
+  --on-accent: #ffffff;
+  /* Keyboard focus: ink, never a status hue. */
+  --focus: #0d0d0d;
+  /* The switch's off track: 3:1 on white, so the control reads without its label. */
+  --control-off: #949494;
+  --status-seated: #2b6cb0;
+  --status-sent: #8f6410;
+  --status-bill: #9c3f78;
+  --status-paid: #2a7448;
+  --status-alert: #c2362b;
+  --agent: #5b50c8;
+  /* Tints behind a status word (badges, banners). Each status ink clears 4.5:1 on its own tint. */
+  --status-seated-tint: #e8f0fa;
+  --status-sent-tint: #fbf3df;
+  --status-bill-tint: #f8ebf3;
+  --status-paid-tint: #e9f4ed;
+  --status-alert-tint: #fbeeeb;
+  --agent-tint: #efeefc;
 
   /* Brand layer (section 9). Only the accent is themeable; controls never change. */
   --brand-accent: var(--agent);
@@ -43,8 +74,10 @@
   --space-12: 48px;
   --space-16: 64px;
 
-  /* ---- 7.6 Shape */
-  --radius-tile: 10px;
+  /* ---- 7.6 Shape: 12 for tiles and keys, 10 for fields, 14 for panels, 16 for sheets, pills for buttons. */
+  --radius-tile: 12px;
+  --radius-field: 10px;
+  --radius-panel: 14px;
   --radius-sheet: 16px;
   --radius-chip: 9999px;
   --hairline: 1px;
@@ -56,84 +89,120 @@
   --topbar-height: 56px;
   --banner-height: 48px;
 
-  /* ---- 7.4 Type scale (POS sizes). The back office sets data-scale="compact". */
+  /* ---- 7.4 Type scale (POS sizes). The back office sets data-scale="compact".
+   * Weights are for the variable text face, which runs heavy: 460 reads as medium, 530 as semibold. */
   --fs-display: 48px;
   --lh-display: 56px;
   --fw-display: 500;
-  --fs-amount-xl: 34px;
+  --fs-amount-xl: 36px;
   --lh-amount-xl: 40px;
   --fw-amount-xl: 600;
-  --fs-title: 24px;
-  --lh-title: 30px;
+  --fs-title: 22px;
+  --lh-title: 28px;
   --fw-title: 600;
-  --fs-heading: 20px;
-  --lh-heading: 26px;
+  --fs-heading: 18px;
+  --lh-heading: 24px;
   --fw-heading: 600;
-  --fs-line: 17px;
-  --lh-line: 24px;
-  --fw-line: 500;
+  --fs-line: 15px;
+  --lh-line: 22px;
+  --fw-line: 460;
   --fs-body: 15px;
   --lh-body: 22px;
   --fw-body: 400;
   --fs-caption: 13px;
   --lh-caption: 18px;
-  --fw-caption: 500;
+  --fw-caption: 400;
+  --tracking-title: -0.015em;
 
   /* ---- 7.7 Motion */
-  --ease-enter: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter: cubic-bezier(0.2, 0.8, 0.2, 1);
   --ease-leave: cubic-bezier(0.4, 0, 1, 1);
   --dur-press: 80ms;
-  --dur-line: 140ms;
+  --dur-line: 120ms;
   --dur-move: 200ms;
   --dur-sheet-open: 200ms;
-  --dur-sheet-close: 160ms;
+  --dur-sheet-close: 150ms;
   --dur-highlight: 400ms;
   --dur-banner: 160ms;
 
-  /* Elevation: one soft shadow, only for sheets over content; scrim at 40%. */
-  --shadow-sheet: 0 12px 40px rgba(28, 29, 31, 0.18);
-  --scrim: rgba(28, 29, 31, 0.4);
+  /* Elevation: ink-tinted, never black. Floating surfaces carry a 1px ring as their edge. */
+  --shadow-e1: 0 1px 2px rgba(17, 20, 19, 0.05), 0 1px 1px rgba(17, 20, 19, 0.04);
+  --shadow-e2: 0 4px 12px rgba(17, 20, 19, 0.08), 0 1px 3px rgba(17, 20, 19, 0.06);
+  --shadow-popover: 0 16px 40px -12px rgba(17, 20, 19, 0.28), 0 0 0 1px rgba(17, 20, 19, 0.08);
+  --shadow-sheet: 0 24px 48px -12px rgba(17, 20, 19, 0.28), 0 0 0 1px rgba(17, 20, 19, 0.08);
+  --shadow-modal: 0 24px 60px -16px rgba(17, 20, 19, 0.36), 0 0 0 1px rgba(17, 20, 19, 0.08);
+  --shadow-float: 0 12px 32px -8px rgba(17, 20, 19, 0.35);
+  --shadow-segment: 0 1px 2px rgba(17, 20, 19, 0.08), 0 0 0 1px rgba(17, 20, 19, 0.08);
+  --shadow-thumb: 0 1px 2px rgba(17, 20, 19, 0.2);
+  --scrim: rgba(20, 20, 20, 0.24);
 }
 
-/* ---- 7.3 Colour: Service (dim dining rooms; charcoal, never pure black) */
+/* ---- 7.3 Colour: Service (dim dining rooms; a green-black, never pure black) */
 [data-theme="service"] {
   color-scheme: dark;
 
-  --bg: #121315;
-  --surface: #1b1d20;
-  --surface-2: #24272b;
-  --line: #33373c;
-  --ink: #ece8e1;
-  --ink-2: #a9a49b;
-  --primary: #ece8e1;
-  --on-primary: #121315;
-  --status-seated: #5b9bff;
-  --status-sent: #f0b44a;
-  --status-bill: #f27aa5;
-  --status-paid: #4dc98c;
-  --status-alert: #ff6b5e;
+  --bg: #0f1311;
+  --surface: #141816;
+  --surface-2: #202422;
+  --surface-3: #2a2f2d;
+  --line: rgba(255, 255, 255, 0.12);
+  --line-subtle: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.18);
+  --line-dashed: rgba(255, 255, 255, 0.2);
+  --line-input: rgba(255, 255, 255, 0.4);
+  --ink: #e9ece9;
+  --ink-2: #b4bab5;
+  --ink-3: #9aa19c;
+  --ink-disabled: #858c87;
+  --primary: #e9ece9;
+  --on-primary: #0f1611;
+  --toast: #2a2f2d;
+  --on-toast: #e9ece9;
+  --accent: #7fc79a;
+  --on-accent: #0f1611;
+  --focus: #e9ece9;
+  --control-off: #6b736f;
+  --status-seated: #86b0cf;
+  --status-sent: #d6a85a;
+  --status-bill: #e27ad8;
+  --status-paid: #6fc88c;
+  --status-alert: #f27a6c;
   --agent: #a99cff;
+  --status-seated-tint: #14212a;
+  --status-sent-tint: #2a2114;
+  --status-bill-tint: #2a1a24;
+  --status-paid-tint: #15241b;
+  --status-alert-tint: #2a1815;
+  --agent-tint: #1d1b2e;
 
-  --shadow-sheet: 0 12px 40px rgba(0, 0, 0, 0.5);
-  --scrim: rgba(0, 0, 0, 0.4);
+  --shadow-e1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 1px rgba(0, 0, 0, 0.3);
+  --shadow-e2: 0 4px 12px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-popover: 0 16px 40px -12px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  --shadow-sheet: 0 24px 48px -12px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  --shadow-modal: 0 24px 60px -16px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  --shadow-float: 0 12px 32px -8px rgba(0, 0, 0, 0.6);
+  --shadow-segment: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  --shadow-thumb: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --scrim: rgba(0, 0, 0, 0.42);
 }
 
-/* Back office: the same family one step smaller (14pt body). */
-[data-scale="compact"] {
-  --fs-display: 40px;
-  --lh-display: 48px;
-  --fs-amount-xl: 28px;
+/* Back office: the same family at desk density (13pt body, 24pt page titles). */
+[data-scale="compact"],
+:root[data-surface="office"] {
+  --fs-display: 38px;
+  --lh-display: 42px;
+  --fs-amount-xl: 31px;
   --lh-amount-xl: 34px;
-  --fs-title: 20px;
-  --lh-title: 26px;
-  --fs-heading: 17px;
-  --lh-heading: 24px;
-  --fs-line: 15px;
-  --lh-line: 22px;
-  --fs-body: 14px;
-  --lh-body: 20px;
+  --fs-title: 24px;
+  --lh-title: 30px;
+  --fs-heading: 16px;
+  --lh-heading: 22px;
+  --fs-line: 14.5px;
+  --lh-line: 21px;
+  --fs-body: 13px;
+  --lh-body: 19px;
   --fs-caption: 12px;
-  --lh-caption: 16px;
+  --lh-caption: 17px;
 }
 
 /* ---- Tailwind registration ----------------------------------------------
@@ -145,37 +214,65 @@
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
   --color-rule: var(--line);
+  --color-rule-subtle: var(--line-subtle);
+  --color-rule-strong: var(--line-strong);
+  --color-rule-dashed: var(--line-dashed);
+  --color-rule-input: var(--line-input);
   --color-ink: var(--ink);
   --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-disabled: var(--ink-disabled);
   --color-primary: var(--primary);
   --color-on-primary: var(--on-primary);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-focus: var(--focus);
+  --color-control-off: var(--control-off);
   --color-status-seated: var(--status-seated);
   --color-status-sent: var(--status-sent);
   --color-status-bill: var(--status-bill);
   --color-status-paid: var(--status-paid);
   --color-status-alert: var(--status-alert);
+  --color-status-seated-tint: var(--status-seated-tint);
+  --color-status-sent-tint: var(--status-sent-tint);
+  --color-status-bill-tint: var(--status-bill-tint);
+  --color-status-paid-tint: var(--status-paid-tint);
+  --color-status-alert-tint: var(--status-alert-tint);
   --color-agent: var(--agent);
+  --color-agent-tint: var(--agent-tint);
   --color-brand-accent: var(--brand-accent);
   --color-transparent: transparent;
   --color-current: currentColor;
   --color-white: #ffffff;
   --color-black: #000000;
 
-  --font-sans: var(--font-plex-sans, "IBM Plex Sans"), "IBM Plex Sans", -apple-system, "PingFang SC", "PingFang TC",
-    "Hiragino Sans", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", system-ui, sans-serif;
-  --font-mono: var(--font-plex-mono, "IBM Plex Mono"), "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  /* Text in Instrument Sans, headings and figures-as-headlines in Geist, codes in Geist Mono. The apps put the
+   * three variables on <html> with next/font; CJK falls back to the device's system faces. */
+  --font-sans: var(--font-ui-body, "Instrument Sans"), -apple-system, "PingFang SC", "PingFang TC", "Hiragino Sans",
+    "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-heading: var(--font-ui-headline, "Geist"), var(--font-sans);
+  --font-mono: var(--font-ui-code, "Geist Mono"), ui-monospace, "SF Mono", Menlo, monospace;
+
+  --font-weight-book: 450;
+  --font-weight-medium: 460;
+  --font-weight-semibold: 530;
+  --font-weight-bold: 600;
 
   --text-*: initial;
   --text-display: var(--fs-display);
   --text-display--line-height: var(--lh-display);
   --text-display--font-weight: var(--fw-display);
+  --text-display--letter-spacing: -0.02em;
   --text-amount-xl: var(--fs-amount-xl);
   --text-amount-xl--line-height: var(--lh-amount-xl);
   --text-amount-xl--font-weight: var(--fw-amount-xl);
+  --text-amount-xl--letter-spacing: -0.02em;
   --text-title: var(--fs-title);
   --text-title--line-height: var(--lh-title);
   --text-title--font-weight: var(--fw-title);
+  --text-title--letter-spacing: var(--tracking-title);
   --text-heading: var(--fs-heading);
   --text-heading--line-height: var(--lh-heading);
   --text-heading--font-weight: var(--fw-heading);
@@ -192,12 +289,21 @@
   --radius-*: initial;
   --radius-none: 0;
   --radius-tile: var(--radius-tile);
+  --radius-field: var(--radius-field);
+  --radius-panel: var(--radius-panel);
   --radius-sheet: var(--radius-sheet);
   --radius-chip: var(--radius-chip);
   --radius-full: 9999px;
 
   --shadow-*: initial;
+  --shadow-e1: var(--shadow-e1);
+  --shadow-e2: var(--shadow-e2);
+  --shadow-popover: var(--shadow-popover);
   --shadow-sheet: var(--shadow-sheet);
+  --shadow-modal: var(--shadow-modal);
+  --shadow-float: var(--shadow-float);
+  --shadow-segment: var(--shadow-segment);
+  --shadow-thumb: var(--shadow-thumb);
 
   --ease-enter: var(--ease-enter);
   --ease-leave: var(--ease-leave);
@@ -279,6 +385,38 @@
   }
 }
 
+/* ---- Back-office fields ---------------------------------------------- */
+/* The back-office text field: white with a 1px border and a 14px ink label. Unlayered, so it wins over the POS
+   grey fill the utilities draw; sheets render outside the shell, so the page also carries data-surface="office". */
+:is([data-scale="compact"], [data-surface="office"]) .sail-field {
+  font-size: 14px;
+  background-color: var(--surface);
+  border-color: color-mix(in oklab, var(--line-input) 50%, transparent);
+}
+:is([data-scale="compact"], [data-surface="office"]) .sail-field[data-hovered] {
+  background-color: var(--surface);
+  border-color: var(--line-input);
+}
+:is([data-scale="compact"], [data-surface="office"]) .sail-field:has(:hover) {
+  border-color: var(--line-input);
+}
+:is([data-scale="compact"], [data-surface="office"]) .sail-field:has(:focus-visible),
+:is([data-scale="compact"], [data-surface="office"]) .sail-field[data-focused] {
+  background-color: var(--surface);
+  border-color: var(--ink);
+}
+:is([data-scale="compact"], [data-surface="office"]) .sail-field[data-invalid] {
+  border-color: var(--status-alert);
+}
+:is([data-scale="compact"], [data-surface="office"]) .sail-field[data-disabled] {
+  background-color: var(--surface-2);
+  border-color: transparent;
+}
+:is([data-scale="compact"], [data-surface="office"]) .sail-field-label {
+  font-size: 14px;
+  color: var(--ink);
+}
+
 /* ---- Base ------------------------------------------------------------- */
 @layer base {
   html {
@@ -324,11 +462,27 @@
   }
   /* Keyboard focus is always visible (section 10). */
   :focus-visible {
-    outline: 2px solid var(--status-seated);
+    outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
   ::selection {
-    background: color-mix(in srgb, var(--status-seated) 25%, transparent);
+    background: var(--surface-3);
+    color: var(--ink);
+  }
+  ::placeholder {
+    color: var(--ink-3);
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-heading);
+    text-wrap: pretty;
+  }
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--font-mono);
   }
   hr {
     border: 0;
@@ -360,9 +514,9 @@
 }
 /* The agent treatment (2.1): dashed outline, agent hue at low opacity. */
 @utility agent-treatment {
-  outline: 1.5px dashed var(--agent);
+  outline: 1.5px dashed color-mix(in oklab, var(--agent) 55%, transparent);
   outline-offset: -1.5px;
-  background-color: color-mix(in srgb, var(--agent) 8%, transparent);
+  background-color: color-mix(in oklab, var(--agent) 5%, transparent);
 }
 @utility target-min {
   min-height: var(--target-min);
@@ -395,16 +549,16 @@
 :root {
   --tile-slate: #5b6b82;
   --tile-stone: #857b6c;
-  --tile-brass: #a8822e;
-  --tile-amber: #cf8400;
+  --tile-brass: #a3731f;
+  --tile-amber: #d9702a;
   --tile-olive: #6f7f1f;
-  --tile-sage: #4f8a66;
-  --tile-teal: #1c8080;
-  --tile-sky: #2f80c9;
-  --tile-indigo: #4c57c4;
+  --tile-sage: #2f9e5b;
+  --tile-teal: #0f9b8e;
+  --tile-sky: #3d7bd6;
+  --tile-indigo: #6f63e0;
   --tile-plum: #8a4596;
-  --tile-rose: #c84b6e;
-  --tile-brick: #b64b31;
+  --tile-rose: #c9509a;
+  --tile-brick: #e2664c;
 }
 [data-theme="service"] {
   --tile-slate: #8c9bb3;
@@ -442,7 +596,7 @@
 }
 @keyframes pos-flash {
   from {
-    background-color: color-mix(in srgb, var(--status-seated) 22%, transparent);
+    background-color: var(--surface-3);
   }
   to {
     background-color: transparent;
@@ -507,6 +661,8 @@
 @source "./guest";
 
 [data-surface="guest"] {
+  /* A phone page is one white sheet, not a page with cards on it. */
+  --bg: #ffffff;
   --fs-body: 16px;
   --lh-body: 24px;
   --fs-line: 17px;
@@ -517,13 +673,17 @@
   --lh-title: 32px;
   --fs-caption: 13px;
   --lh-caption: 18px;
-  --brand-accent: #1c1d1f;
-  --on-brand-accent: #f6f3ee;
-  --brand-display-font: var(--font-sans);
+  /* Ink until a brand sets its own accent (brand.ts picks the ink on it). */
+  --brand-accent: #0d0d0d;
+  --on-brand-accent: #ffffff;
+  /* The accent when it is the text itself (a link on the sheet): brand.ts darkens a light accent to 4.5:1. */
+  --brand-accent-text: #0d0d0d;
+  --brand-display-font: var(--font-heading);
 }
 
 @theme inline {
   --color-on-brand-accent: var(--on-brand-accent);
+  --color-brand-accent-text: var(--brand-accent-text);
   --font-display: var(--brand-display-font);
   --animate-sheet-up: sheet-up var(--dur-sheet-open) var(--ease-enter);
   --animate-sheet-down: sheet-down var(--dur-sheet-close) var(--ease-leave) forwards;
@@ -548,6 +708,15 @@
       opacity: 0;
     }
   }
+}
+
+/* Keyboard focus survives `outline-none`. Tailwind 4's `outline-none` sets --tw-outline-style to none, and
+ * `outline-2` reads that variable, so `outline-none data-[focus-visible]:outline-2` would draw no ring at all.
+ * Unlayered, this beats every utility and gives a focused control its solid style back; the width, colour and
+ * offset still come from the component's own focus classes. */
+[data-focus-visible],
+:focus-visible {
+  --tw-outline-style: solid;
 }
 
 /* Section tabs scroll sideways without a visible bar. */

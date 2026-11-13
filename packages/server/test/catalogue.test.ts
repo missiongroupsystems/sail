@@ -125,7 +125,7 @@ describe("catalogue", () => {
     expect((await call("POST", "/v1/modifier-groups", { token: A.admin.token, body: { id: g3, name: "L3", options: [{ product_id: p }] } })).status).toBe(201);
     expect((await call("POST", "/v1/modifier-groups", { token: A.admin.token, body: { id: g2, name: "L2", options: [{ product_id: p, child_group_id: g3 }] } })).status).toBe(201);
     const r = await call<{ code: string; message: string }>("POST", "/v1/modifier-groups", { token: A.admin.token, body: { id: g1, name: "L1", options: [{ product_id: p, child_group_id: g2 }] } });
-    expect(r.status).toBe(422);
+    expect(r.status).toBe(400);
     expect(r.body.message).toMatch(/2 levels/);
   });
 

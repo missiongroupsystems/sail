@@ -386,6 +386,19 @@ describe("templates (golden text at both widths)", () => {
     expect(us).toMatch(/Local sales tax +\$2\.20/);
   });
 
+  it("prints taxes lowest rate first, then by name, whatever order the register sent them in (C-8)", () => {
+    const base: BillDocument = { ...receiptInclusiveCash, adjustments: [], totals: { subtotal: 4880, discount_total: 0, fee_total: 0, tax_total: 643, total: 4880, tax_mode: "inclusive", taxes: [{ name: "VAT 19%", bps: 1900, amount: 543 }, { name: "VAT 7%", bps: 700, amount: 100 }] } };
+    const out = renderBill(base, PROFILES["80mm"]).text;
+    expect(out.indexOf("VAT 7% (included)")).toBeGreaterThan(-1);
+    expect(out.indexOf("VAT 7% (included)")).toBeLessThan(out.indexOf("VAT 19% (included)"));
+    const same: BillDocument = { ...base, totals: { ...base.totals, tax_mode: "exclusive", taxes: [{ name: "State sales tax", bps: 400, amount: 195 }, { name: "Local sales tax", bps: 400, amount: 220 }, { name: "City tax", bps: 100, amount: 50 }] } };
+    const us = renderBill(same, PROFILES["58mm"]).text;
+    const at = (n: string) => us.indexOf(n);
+    expect(at("City tax")).toBeGreaterThan(-1);
+    expect(at("City tax")).toBeLessThan(at("Local sales tax"));
+    expect(at("Local sales tax")).toBeLessThan(at("State sales tax"));
+  });
+
   it("prints a time zone other than Singapore when the header says so", () => {
     expect(formatDateTime("2026-11-04T19:42:00+08:00", "Asia/Singapore", "en-SG")).toBe("4 Nov 2026, 7:42 pm");
     expect(formatDateTime("2026-11-04T19:42:00+08:00", "Asia/Kuala_Lumpur", "en-SG")).toBe("4 Nov 2026, 7:42 pm");

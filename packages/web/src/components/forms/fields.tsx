@@ -99,13 +99,16 @@ export function RhfCheckboxGroup<T extends FieldValues>({
   );
 }
 
-/** A labelled group of fields inside a sheet. */
-export function FormSection({ title, hint, children }: { title?: ReactNode; hint?: ReactNode; children: ReactNode }) {
+/**
+ * A labelled group of fields inside a sheet. `variant="label"` gives the title as a small upper-case section label
+ * ("TOTALS", "BILLS") instead of a line heading; the default is unchanged.
+ */
+export function FormSection({ title, hint, children, variant = "heading" }: { title?: ReactNode; hint?: ReactNode; children: ReactNode; variant?: "heading" | "label" }) {
   return (
     <section className="flex flex-col gap-4">
       {title ? (
         <div>
-          <h3 className="text-line text-ink">{title}</h3>
+          <h3 className={variant === "label" ? "text-[12px] leading-4 font-semibold tracking-[0.06em] text-ink-3 uppercase" : "text-line text-ink"}>{title}</h3>
           {hint ? <p className="text-caption text-ink-2">{hint}</p> : null}
         </div>
       ) : null}

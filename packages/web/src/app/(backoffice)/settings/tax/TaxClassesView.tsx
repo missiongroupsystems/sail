@@ -1,15 +1,17 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Badge, Button, DataTable, EmptyState, Icon, InlineError, PercentField, Sheet, StatusDot, Switch, TextField, type DataTableColumn } from "@sail/ui";
+import { Button, DataTable, EmptyState, Icon, InlineError, parsePercent, percentText, Sheet, Switch, TextField, type DataTableColumn, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Controller, useForm, type FieldErrors } from "react-hook-form";
 import { z } from "zod";
+import { greyPill, greyPillAlert, SheetSection, TwoLine } from "@/components/office/parts";
+import { applyServerErrors } from "@/components/office/server-errors";
 import { ORDER_TYPES, ORDER_TYPE_LABEL } from "@/components/backoffice/labels";
 import { componentsText, defaultRate } from "@/components/backoffice/tax-classes";
-import { FormSection, RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
+import { RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Outlet, TaxClass, TaxRate } from "@/lib/api/types";
@@ -31,6 +33,23 @@ const ComponentSchema = z.object({
 const ComponentsSchema = z.array(ComponentSchema);
 type ComponentValues = z.infer<typeof ComponentsSchema>;
 const toComponents = (list: ComponentValues) => list.map((c) => ({ name: c.name.trim(), bps: c.bps ?? 0 }));
+/** The fields a refusal can point at: each component's name and rate. */
+const componentFields = (list: ComponentValues) => list.flatMap((_, i) => [`components.${i}.name`, `components.${i}.bps`]);
+
+/** "-5" -> -500 basis points: the sign is kept and sent as typed, so the register (not the form) decides what it accepts. */
+/** -50 -> "-0.5": percentText alone loses the sign below 1% (the whole part is -0). */
+const signedPercentText = (bps: number | null) => (bps !== null && bps < 0 ? `-${percentText(-bps)}` : percentText(bps));
+
+export function parseSignedPercent(text: string): number | null | undefined {
+  const t = text.trim();
+  // Hyphen, minus sign or en dash: whichever a keyboard gives.
+  const negative = /^[-\u2212\u2013]/.test(t);
+  // A sign anywhere but the front is a typo, not a positive rate.
+  if (/[-\u2212\u2013]/.test(t.slice(negative ? 1 : 0))) return undefined;
+  const bps = parsePercent(negative ? t.slice(1) : t);
+  if (bps === null || bps === undefined) return bps;
+  return negative ? -bps : bps;
+}
 
 const ClassSchema = z.object({ name: z.string().trim().min(1, "Enter a name"), components: ComponentsSchema, is_default: z.boolean() });
 type ClassValues = z.infer<typeof ClassSchema>;
@@ -57,26 +76,30 @@ export function TaxClassesView({ initialClasses, outlets }: { initialClasses: Ta
       isRowHeader: true,
       sortable: true,
       render: (c) => (
-        <span className="inline-flex items-center gap-2 text-ink">
-          {c.name}
-          {c.is_default ? <Badge tone="paid">Default</Badge> : null}
+        <span className="inline-flex flex-wrap items-center gap-2">
+          <TwoLine primary={c.name} />
+          {c.is_default ? (
+            <Pill size="sm" tone="paid">
+              Default
+            </Pill>
+          ) : null}
         </span>
       ),
     },
     { key: "rate", header: "Rate", render: (c) => componentsText(defaultRate(c)?.components ?? []) },
     { key: "rates", header: "Outlet and order-type rates", numeric: true, render: (c) => c.rates.length - 1 || "—" },
-    { key: "archived", header: "Status", sortable: true, sortValue: (c) => (c.archived ? 1 : 0), render: (c) => (c.archived ? <StatusDot status="neutral" label="Archived" muted /> : <StatusDot status="paid" label="Active" />) },
+    { key: "archived", header: "Status", sortable: true, sortValue: (c) => (c.archived ? 1 : 0), render: (c) => (c.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <Pill size="sm" tone="paid">Active</Pill>) },
   ];
 
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-ink-2">What products and fees are taxed at. A product without a class uses the default.</p>
-        <div className="flex items-center gap-4">
+        <p className="text-[14px] text-ink-2">What products and fees are taxed at. A product without a class uses the default.</p>
+        <div className="flex flex-wrap items-center gap-4">
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
           </Switch>
-          <Button variant="primary" onPress={() => setSheet({ mode: "create" })}>
+          <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
             Add tax class
           </Button>
         </div>
@@ -89,7 +112,7 @@ export function TaxClassesView({ initialClasses, outlets }: { initialClasses: Ta
         defaultSort={{ column: "name", direction: "ascending" }}
         onRowAction={(c) => setSheet({ mode: "edit", id: c.id })}
         rowClassName={(c) => (c.archived ? "text-ink-2" : undefined)}
-        emptyState={<EmptyState variant="quiet" title="No tax classes" hint="Add one for each way your items are taxed." />}
+        emptyState={<EmptyState variant="centred" title="No tax classes" hint="Add one for each way your items are taxed." />}
       />
       <TaxClassSheet isOpen={sheet !== null} taxClass={editing} outlets={outlets} onClose={() => setSheet(null)} />
     </>
@@ -114,6 +137,7 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
       await refresh();
       onClose();
     },
+    onError: (e, v) => applyServerErrors(form.setError, e, ["name", ...componentFields(v.components)]),
   });
   const makeDefault = useMutation<unknown, ApiError>({
     mutationFn: () => req(api.PATCH("/v1/tax-classes/{id}", { params: { path: { id: taxClass!.id } }, body: { is_default: true } })),
@@ -159,7 +183,7 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
       footer={
         <>
           {taxClass ? (
-            <Button variant={taxClass.archived ? "secondary" : "destructive"} onPress={() => archive.mutate(!taxClass.archived)} isPending={archive.isPending} isDisabled={taxClass.is_default || save.isPending} className="mr-auto">
+            <Button variant="secondary" onPress={() => archive.mutate(!taxClass.archived)} isPending={archive.isPending} isDisabled={taxClass.is_default || save.isPending} className={`mr-auto ${taxClass.archived ? greyPill : greyPillAlert}`}>
               {taxClass.archived ? "Restore" : "Archive"}
             </Button>
           ) : null}
@@ -168,7 +192,7 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
               Make default
             </Button>
           ) : null}
-          <Button variant="quiet" onPress={onClose} isDisabled={busy}>
+          <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={busy}>
             Cancel
           </Button>
           <Button variant="primary" type="submit" form="tax-class-form" isPending={save.isPending}>
@@ -179,14 +203,14 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
     >
       <div className="flex flex-col gap-8">
         <form id="tax-class-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
-          <FormSection>
+          <SheetSection>
             <RhfTextField control={form.control} name="name" label="Name" placeholder="Standard rate" autoFocus={!taxClass} description="Shown in the back office only; receipts print the component names." />
-          </FormSection>
+          </SheetSection>
           {taxClass ? null : (
             <>
-              <FormSection title="Default rate" hint="Applies at every outlet and order type. No components means exempt.">
+              <SheetSection title="Default rate" hint="Applies at every outlet and order type. No components means exempt.">
                 <Controller control={form.control} name="components" render={({ field }) => <ComponentsEditor value={field.value} onChange={field.onChange} errors={form.formState.errors.components} />} />
-              </FormSection>
+              </SheetSection>
               <RhfSwitch control={form.control} name="is_default" description="Products without a class use the default.">
                 Make this the default class
               </RhfSwitch>
@@ -196,7 +220,7 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
         </form>
 
         {taxClass ? (
-          <FormSection title="Rates" hint="The most specific rate applies: outlet and order type, then outlet, then order type, then the default. Orders already open keep their rates.">
+          <SheetSection title="Rates" hint="The most specific rate applies: outlet and order type, then outlet, then order type, then the default. Orders already open keep their rates.">
             {rate ? (
               <RateEditor key={rate === "new" ? "new" : rate.id} taxClass={taxClass} rate={rate === "new" ? null : rate} outlets={outlets} onDone={() => setRate(null)} />
             ) : (
@@ -205,7 +229,7 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
                   {taxClass.rates.map((r) => {
                     const isDefault = r.outlet_id === null && r.order_type === null;
                     return (
-                      <li key={r.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2 hairline-b">
+                      <li key={r.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-rule-subtle py-2 last:border-b-0">
                         <span className="min-w-0 flex-1">
                           <span className="block text-ink">{scopeText(r)}</span>
                           <span className="block text-caption text-ink-2">{componentsText(r.components)}</span>
@@ -228,7 +252,7 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
                 <InlineError error={removeRate.error} />
               </>
             )}
-          </FormSection>
+          </SheetSection>
         ) : null}
       </div>
     </Sheet>
@@ -254,9 +278,10 @@ function RateEditor({ taxClass, rate, outlets, onDone }: { taxClass: TaxClass; r
       await qc.invalidateQueries({ queryKey: keys.taxClasses });
       onDone();
     },
+    onError: (e, v) => applyServerErrors(form.setError, e, componentFields(v.components)),
   });
   return (
-    <form noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} aria-label={rate ? "Edit rate" : "New rate"} className="flex flex-col gap-4 rounded-tile p-4 hairline">
+    <form noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} aria-label={rate ? "Edit rate" : "New rate"} className="flex flex-col gap-4 rounded-panel border border-rule bg-surface-2/40 p-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <RhfSelect control={form.control} name="outlet_id" label="Outlet" isDisabled={rate !== null} items={[{ id: NONE, label: "Every outlet" }, ...outlets.map((o) => ({ id: o.id, label: o.name }))]} />
         <RhfSelect control={form.control} name="order_type" label="Order type" isDisabled={rate !== null} items={[{ id: NONE, label: "Every order type" }, ...ORDER_TYPES.map((t) => ({ id: t, label: ORDER_TYPE_LABEL[t]! }))]} />
@@ -264,7 +289,7 @@ function RateEditor({ taxClass, rate, outlets, onDone }: { taxClass: TaxClass; r
       <Controller control={form.control} name="components" render={({ field }) => <ComponentsEditor value={field.value} onChange={field.onChange} errors={form.formState.errors.components} />} />
       <InlineError error={save.error} />
       <div className="flex justify-end gap-2">
-        <Button variant="quiet" onPress={onDone} isDisabled={save.isPending}>
+        <Button variant="secondary" className={greyPill} onPress={onDone} isDisabled={save.isPending}>
           Cancel
         </Button>
         <Button variant="primary" type="submit" isPending={save.isPending}>
@@ -284,7 +309,7 @@ function ComponentsEditor({ value, onChange, errors }: { value: ComponentValues;
       {value.map((c, i) => (
         <div key={i} className="grid items-start gap-3 sm:grid-cols-[1fr_140px_auto]">
           <TextField label={i === 0 ? "Name on receipts" : undefined} aria-label={i === 0 ? undefined : `Component ${i + 1} name`} placeholder="VAT 20%" value={c.name} onChange={(name) => update(i, { name })} isInvalid={!!errors?.[i]?.name} errorMessage={errors?.[i]?.name?.message} />
-          <PercentField label={i === 0 ? "Rate" : undefined} aria-label={i === 0 ? undefined : `Component ${i + 1} rate`} value={c.bps} onChange={(bps) => update(i, { bps })} isInvalid={!!errors?.[i]?.bps} errorMessage={errors?.[i]?.bps?.message} />
+          <RateField label={i === 0 ? "Rate" : undefined} aria-label={i === 0 ? undefined : `Component ${i + 1} rate`} value={c.bps} onChange={(bps) => update(i, { bps })} isInvalid={!!errors?.[i]?.bps} errorMessage={errors?.[i]?.bps?.message} />
           <Button variant="quiet" iconOnly aria-label={`Remove ${c.name || `component ${i + 1}`}`} onPress={() => onChange(value.filter((_, j) => j !== i))} className={i === 0 ? "sm:mt-7" : undefined}>
             <Icon icon={X} size={16} />
           </Button>
@@ -294,5 +319,40 @@ function ComponentsEditor({ value, onChange, errors }: { value: ComponentValues;
         <Icon icon={Plus} size={16} /> Add a component
       </Button>
     </div>
+  );
+}
+
+/**
+ * A rate in percent that keeps a minus sign: "-5" is sent as -500, so a register that refuses negative rates says so
+ * under this field, instead of the form quietly saving 5%.
+ */
+function RateField({ value, onChange, isInvalid, errorMessage, ...rest }: { value: number | null; onChange: (bps: number | null) => void; isInvalid?: boolean; errorMessage?: string; label?: string; "aria-label"?: string }) {
+  const [text, setText] = useState(() => signedPercentText(value));
+  const [malformed, setMalformed] = useState(false);
+  useEffect(() => {
+    if (parseSignedPercent(text) !== value) setText(signedPercentText(value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  return (
+    <TextField
+      {...rest}
+      value={text}
+      onChange={(next) => {
+        setText(next);
+        const parsed = parseSignedPercent(next);
+        setMalformed(parsed === undefined);
+        if (parsed !== undefined) onChange(parsed);
+      }}
+      onBlur={() => {
+        const parsed = parseSignedPercent(text);
+        if (parsed !== undefined) setText(signedPercentText(parsed));
+      }}
+      inputMode="decimal"
+      numeric
+      suffix="%"
+      placeholder="0"
+      isInvalid={isInvalid || malformed}
+      errorMessage={malformed ? "Enter a percentage like 9.5" : errorMessage}
+    />
   );
 }

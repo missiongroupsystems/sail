@@ -32,32 +32,37 @@ export type MenuItemRowProps = {
   className?: string;
 };
 
-const shell = "flex w-full items-start gap-4 py-4 text-left hairline-b";
+const shell = "flex min-h-[68px] w-full items-center gap-3 px-4 py-3 text-left";
 
 /**
- * A typography-led menu item: name, price, one-line description
- * and a 48px "+" when the table can order. Sold-out items stay listed, greyed,
- * with the word "Sold out" where the price was.
+ * A typography-led menu item: name, one-line description and price, and a 44px
+ * add control when the table can order (it carries the count once the item is in
+ * the order). Sold-out items stay listed, greyed, with "Sold out" in place of the
+ * price. The parent draws the hairline between rows.
  */
 export function MenuItemRow({ name, description, price, state, reason, note, inBasket, onPress, className }: MenuItemRowProps) {
   const { money } = useLocale();
   const dim = state === "sold_out" || state === "unavailable";
   const body = (
     <>
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="flex items-baseline justify-between gap-3">
-          <span className={cx("font-display text-line text-ink", dim && "text-ink-2")}>{name}</span>
-          {state === "sold_out" ? <span className="shrink-0 text-body text-ink-2">Sold out</span> : <Money cents={price} size="body" className={dim ? "text-ink-2" : "text-ink"} />}
-        </span>
-        {description ? <span className={cx("line-clamp-2 text-body text-ink-2", dim && "opacity-70")}>{description}</span> : null}
-        {state === "unavailable" && reason ? <span className="text-caption text-ink-2">{reason}</span> : null}
-        {note && !dim ? <span className="text-caption text-status-sent">{note}</span> : null}
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className={cx("font-display text-[16px] leading-snug font-medium break-words", dim ? "text-ink-3" : "text-ink")}>{name}</span>
+        {description ? <span className="line-clamp-2 text-[13.5px] leading-snug text-ink-3">{description}</span> : null}
+        {state === "unavailable" && reason ? <span className="text-caption text-ink-3">{reason}</span> : null}
+        {note && !dim ? <span className="text-caption font-medium text-status-sent">{note}</span> : null}
+        {state === "sold_out" ? null : <Money cents={price} size="body" className={cx("mt-0.5 text-[15px]", dim ? "text-ink-3" : "text-ink-2")} />}
       </span>
+      {state === "sold_out" ? <span className="shrink-0 rounded-chip bg-surface-2 px-3 py-1.5 text-[12.5px] font-medium text-ink-2">Sold out</span> : null}
       {state === "orderable" ? (
-        <span aria-hidden className={cx("relative mt-0.5 inline-flex size-12 shrink-0 items-center justify-center rounded-full hairline text-brand-accent group-data-[pressed]:bg-surface-2", inBasket && "border-brand-accent bg-brand-accent text-on-brand-accent")}>
-          <Icon icon={Plus} size={22} strokeWidth={2.25} />
-          {inBasket ? <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-ink px-1 text-center text-caption tabular text-surface">{inBasket}</span> : null}
-        </span>
+        inBasket ? (
+          <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-accent text-[16px] font-semibold tabular text-on-brand-accent">
+            {inBasket}
+          </span>
+        ) : (
+          <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-full bg-surface-2 text-ink transition-colors duration-[120ms] group-data-[pressed]:bg-surface-3">
+            <Icon icon={Plus} size={20} strokeWidth={2} />
+          </span>
+        )
       ) : null}
     </>
   );
@@ -69,7 +74,7 @@ export function MenuItemRow({ name, description, price, state, reason, note, inB
         onPress={onPress}
         aria-label={`${name}, ${money(price)}${inBasket ? `, ${inBasket} in your order` : ""}`}
         aria-description={description ?? undefined}
-        className={cx("group press cursor-default rounded-none outline-none touch-manipulation data-[pressed]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:-outline-offset-2 data-[focus-visible]:outline-status-seated", shell, className)}
+        className={cx("group cursor-default rounded-none outline-none touch-manipulation transition-colors duration-[120ms] data-[pressed]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:-outline-offset-2 data-[focus-visible]:outline-focus", shell, className)}
       >
         {body}
       </AriaButton>

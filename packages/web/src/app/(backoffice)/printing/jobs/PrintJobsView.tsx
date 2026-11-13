@@ -1,5 +1,6 @@
 "use client";
 
+import { Printer as PrinterIcon } from "lucide-react";
 import { Badge, Button, DataTable, EmptyState, InlineError, Select, Switch, type DataTableColumn, useLocale } from "@sail/ui";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -95,14 +96,14 @@ export function PrintJobsView({ outlets, scope, initialOutletId, initialPrinters
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-3">
           <OutletChoice outlets={outlets} scope={scope} outletId={outletId} onChange={setOutletId} />
-          <Select aria-label="Status" variant="toolbar" selectedKey={status ?? ANY} onSelectionChange={(k) => setStatus(k === ANY ? null : k)} items={[{ id: ANY, label: "Any status" }, ...PRINT_JOB_STATUSES.map((s) => ({ id: s, label: PRINT_JOB_STATUS_LABEL[s]! }))]} />
-          <Select aria-label="Printer" variant="toolbar" selectedKey={printerId ?? ANY} onSelectionChange={(k) => setPrinterId(k === ANY ? null : k)} items={[{ id: ANY, label: "Any printer" }, ...(printers.data ?? []).map((p) => ({ id: p.id, label: p.name }))]} />
+          <Select aria-label="Status" variant="toolbar" size="sm" selectedKey={status ?? ANY} onSelectionChange={(k) => setStatus(k === ANY ? null : k)} items={[{ id: ANY, label: "Any status" }, ...PRINT_JOB_STATUSES.map((s) => ({ id: s, label: PRINT_JOB_STATUS_LABEL[s]! }))]} />
+          <Select aria-label="Printer" variant="toolbar" size="sm" selectedKey={printerId ?? ANY} onSelectionChange={(k) => setPrinterId(k === ANY ? null : k)} items={[{ id: ANY, label: "Any printer" }, ...(printers.data ?? []).map((p) => ({ id: p.id, label: p.name }))]} />
           <Switch isSelected={lateOnly} onChange={setLateOnly} className="min-h-11 py-0">
             Late only
           </Switch>
         </div>
         {waiting.length > 0 ? (
-          <Button onPress={() => setRerouteAll(true)}>
+          <Button size="sm" onPress={() => setRerouteAll(true)}>
             Reroute {plural(waiting.length, "waiting ticket")}
           </Button>
         ) : null}
@@ -115,7 +116,7 @@ export function PrintJobsView({ outlets, scope, initialOutletId, initialPrinters
         </p>
       ) : null}
       {note ? (
-        <div className="mb-4 flex flex-col gap-2" role="status">
+        <div className="mb-4 flex flex-col gap-2 rounded-[14px] bg-surface-2 px-5 py-3" role="status">
           <p className="text-body text-ink">{note.text}.</p>
           <Warnings warnings={note.warnings} />
         </div>
@@ -131,7 +132,7 @@ export function PrintJobsView({ outlets, scope, initialOutletId, initialPrinters
           rowKey={(j) => j.id}
           isLoading={jobs.isPending}
           className={jobs.isPlaceholderData ? "opacity-60" : undefined}
-          emptyState={<EmptyState variant="quiet" title={lateOnly ? "Nothing late" : "No print jobs"} hint={lateOnly ? "Every ticket printed within 10 seconds." : "Tickets appear here as orders are sent to the kitchen."} />}
+          emptyState={<EmptyState variant="centred" icon={PrinterIcon} title={lateOnly ? "Nothing late" : "No print jobs"} hint={lateOnly ? "Every ticket printed within 10 seconds." : "Tickets appear here as orders are sent to the kitchen."} />}
         />
       )}
       <InlineError error={jobs.error} className="mt-4" />

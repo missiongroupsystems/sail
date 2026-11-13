@@ -1,7 +1,9 @@
 "use client";
 
-import { Button, NowRail, QuantityStepper, Sheet, Skeleton, StatusLegend, TableShape, type NowItem, useLocale } from "@sail/ui";
+import { Plus } from "lucide-react";
+import { Button, Icon, NowRail, QuantityStepper, Sheet, Skeleton, StatusLegend, TableShape, type NowItem, useLocale } from "@sail/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Button as AriaButton } from "react-aria-components";
 import { idempotencyKey, toApiError } from "@/lib/api";
 import { openOrder } from "../api/register";
 import type { FloorTable, GuestRound } from "../api/types";
@@ -49,7 +51,7 @@ function tone(kind: "new" | "alert") {
 export function FloorScreen() {
   const { clock } = useLocale();
   const api = useApi();
-  const { outlet, station, offline } = usePos();
+  const { station, offline } = usePos();
   const floor = useFloor(station.outlet_id);
   const rounds = usePendingRounds(station.outlet_id);
   const requests = useOpenServiceRequests(station.outlet_id);
@@ -136,7 +138,8 @@ export function FloorScreen() {
         at: new Date(r.submitted_at).getTime(),
         title: `Table ${r.table_name ?? "?"} · QR order`,
         detail: `${r.lines.length} ${r.lines.length === 1 ? "item" : "items"} · ${clock(r.submitted_at)}${r.guest_name ? ` · ${r.guest_name}` : ""}`,
-        lines: r.lines.slice(0, 4).map((l) => `${l.quantity} ${l.name}${l.modifiers.length ? ` · ${l.modifiers.join(", ")}` : ""}`).concat(r.lines.length > 4 ? [`+${r.lines.length - 4} more`] : []),
+        // The guest's kitchen note goes with its line, so whoever accepts the round reads it (live-test D-9).
+        lines: r.lines.slice(0, 4).map((l) => `${l.quantity} ${l.name}${l.modifiers.length ? ` · ${l.modifiers.join(", ")}` : ""}${l.notes ? ` · Note: ${l.notes}` : ""}`).concat(r.lines.length > 4 ? [`+${r.lines.length - 4} more`] : []).concat(r.notes ? [`Note: ${r.notes}`] : []),
         actions: [
           { id: "accept", label: "Accept", variant: "primary", onPress: () => void nowActions.acceptRound(r.id), isDisabled: offline || busy !== null, isPending: busy === r.id },
           { id: "view", label: "View", onPress: () => openOrderScreen(r.order_id, "floor") },
@@ -182,56 +185,91 @@ export function FloorScreen() {
   }, [snapshot, rounds.data, requests.data, nowActions, offline, openOrderScreen]);
 
   return (
-    <Frame title={`${outlet?.name ?? ""}${area ? ` · ${area.name}` : ""}`}>
-      <div className="flex min-h-0 flex-1">
-        <section className="flex min-w-0 flex-1 flex-col px-5 pt-3 pb-3">
-          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Areas">
-            {(snapshot?.areas ?? []).map((a) => (
-              <Button key={a.id} size="lg" variant={a.id === area?.id ? "primary" : "secondary"} onPress={() => setAreaId(a.id)} aria-pressed={a.id === area?.id}>
-                {a.name}
-              </Button>
-            ))}
-            {!snapshot && floor.isLoading ? <Skeleton className="h-14 w-40" /> : null}
-            {snapshot && snapshot.areas.length === 0 ? <p className="text-body text-ink-2">No areas yet. Add tables in the back office under Floor &amp; QR.</p> : null}
+    <Frame>
+      {/* Portrait: the Now rail sits under the plan at full width, so the tables keep their size and Reject its line. */}
+      <div className="flex min-h-0 flex-1 gap-4 p-4 max-[960px]:flex-col">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3" aria-label="Floor plan">
+          <div className="flex min-h-[52px] shrink-0 items-center justify-between gap-3">
+            <div className="inline-flex min-h-[52px] flex-wrap items-center gap-0.5 rounded-chip bg-surface-2 p-1" role="group" aria-label="Areas">
+              {(snapshot?.areas ?? []).map((a) => {
+                const selected = a.id === area?.id;
+                const busy = (snapshot?.tables ?? []).filter((t) => t.area_id === a.id && t.status !== "free").length;
+                return (
+                  <AriaButton
+                    key={a.id}
+                    onPress={() => setAreaId(a.id)}
+                    aria-pressed={selected}
+                    className={
+                      "press pos-touch flex min-h-11 items-center gap-2 rounded-chip px-4 text-[15px] font-medium outline-none transition-colors duration-[120ms] data-[pressed]:scale-[0.97] data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus " +
+                      (selected ? "bg-surface text-ink shadow-segment" : "text-ink-2 data-[hovered]:text-ink")
+                    }
+                  >
+                    {a.name}
+                    <span className="text-[12.5px] text-ink-3 tabular">{busy}</span>
+                  </AriaButton>
+                );
+              })}
+              {!snapshot && floor.isLoading ? <Skeleton className="h-11 w-40" /> : null}
+              {snapshot && snapshot.areas.length === 0 ? <p className="px-3 text-body text-ink-2">No areas yet. Add tables in the back office under Floor &amp; QR.</p> : null}
+            </div>
+            {/* White with a border, so it reads as a button beside the grey area tabs. */}
+            <Button size="lg" variant="secondary" onPress={newTakeaway} isDisabled={offline || opening} isPending={opening} className="border-rule-strong! bg-surface! data-[hovered]:bg-surface-2!">
+              {offline ? (
+                "Offline"
+              ) : (
+                <>
+                  <Icon icon={Plus} size={18} />
+                  Takeaway order
+                </>
+              )}
+            </Button>
           </div>
           <FloorCanvas tables={tables} now={now} receivedAt={receivedAt} disabled={opening} onTable={(t) => (t.order ? openOrderScreen(t.order.id, "floor") : offline ? notify({ text: "Offline", remedy: "Seating a table needs the register. Reconnecting…", tone: "alert" }) : setSeating(t))} />
-          <StatusLegend className="pt-2" />
+          <StatusLegend className="min-h-8 shrink-0" />
         </section>
         <NowRail
+          className="max-[960px]:h-[300px] max-[960px]:w-auto"
           items={nowItems}
           footer={
-            <>
-              <Button size="lg" variant="secondary" onPress={newTakeaway} isDisabled={offline || opening} isPending={opening}>
-                {offline ? "Offline" : "+ Takeaway order"}
-              </Button>
-              <Button
-                size="md"
-                variant="quiet"
-                onPress={() => {
-                  const next = !sound;
-                  setSound(next);
-                  if (next) tone("new");
-                }}
-                aria-pressed={sound}
-                className="text-ink-2"
-              >
-                {sound ? "Sound on · tap to turn off" : "Sound off · tap to turn on"}
-              </Button>
-            </>
+            <Button
+              size="md"
+              variant="quiet"
+              onPress={() => {
+                const next = !sound;
+                setSound(next);
+                if (next) tone("new");
+              }}
+              aria-pressed={sound}
+              className="text-ink-2"
+            >
+              {sound ? "Sound on · tap to turn off" : "Sound off · tap to turn on"}
+            </Button>
           }
         />
       </div>
 
-      <Sheet
+      <Sheet labelledClose
         isOpen={Boolean(seating)}
         onOpenChange={(o) => {
           if (o) return;
           setSeating(null);
           seatingOrderId.current = idempotencyKey();
         }}
-        title={seating ? `Table ${seating.name}` : ""}
+        title={seating ? `Seat table ${seating.name}` : ""}
         description="How many guests?"
         isDismissable={!opening}
+        footer={
+          seating ? (
+            <>
+              <span className="mr-auto text-body text-ink-2 tabular">
+                {seating.seats} {seating.seats === 1 ? "guest" : "guests"}
+              </span>
+              <Button variant="primary" size="lg" isPending={opening} onPress={() => void seat(seating, seating.seats)} className="min-w-[160px]">
+                Open order
+              </Button>
+            </>
+          ) : null
+        }
       >
         {seating ? <PaxPicker suggested={seating.seats} isPending={opening} onPick={(pax) => void seat(seating, pax)} /> : null}
       </Sheet>
@@ -255,23 +293,47 @@ function PaxPicker({ suggested, isPending, onPick }: { suggested: number; isPend
     );
   }
   return (
-    <div className="grid grid-cols-3 gap-3">
-      {Array.from({ length: 8 }, (_, i) => i + 1).map((p) => (
-        <Button key={p} size="lg" variant={p === suggested ? "primary" : "secondary"} isDisabled={isPending} onPress={() => onPick(p)} className="h-20 text-title tabular" aria-label={`${p} ${p === 1 ? "guest" : "guests"}`}>
-          {p}
-        </Button>
-      ))}
-      <Button size="lg" variant="quiet" isDisabled={isPending} onPress={() => setMore(true)} className="h-20">
-        More…
+    <div className="flex flex-col gap-3">
+      {/* One tap seats the table with that many guests; Open order in the footer takes the table's own seat count. */}
+      <div className="grid grid-cols-4 gap-3">
+        {Array.from({ length: 8 }, (_, i) => i + 1).map((p) => (
+          <Button
+            key={p}
+            size="lg"
+            variant={p === suggested ? "primary" : "secondary"}
+            isDisabled={isPending}
+            onPress={() => onPick(p)}
+            className="h-20 rounded-[14px]! font-heading text-[28px]! font-medium tabular"
+            aria-label={`${p} ${p === 1 ? "guest" : "guests"}`}
+          >
+            {p}
+          </Button>
+        ))}
+      </div>
+      <Button size="lg" variant="quiet" isDisabled={isPending} onPress={() => setMore(true)} className="self-start text-ink-2!">
+        More than 8…
       </Button>
     </div>
   );
+}
+
+/** A table's box on the plan; a round table stays round (its smaller side, centred in its slot). */
+function tableBox(t: FloorTable, cell: number, cellH: number, gap: number) {
+  const left = t.x * (cell + gap);
+  const top = t.y * (cellH + gap);
+  const width = t.w * cell + (t.w - 1) * gap;
+  const height = t.h * cellH + (t.h - 1) * gap;
+  if (t.shape !== "round") return { left, top, width, height };
+  const d = Math.min(width, height);
+  return { left: left + (width - d) / 2, top: top + (height - d) / 2, width: d, height: d };
 }
 
 /** Gap to cell, as at the largest cell (12 pt to 76 pt): the gap shrinks with the cell. */
 const GAP_RATIO = 12 / 76;
 /** The smallest table stays at least this big (pt), so it is still a comfortable tap target. */
 const MIN_TABLE = 48;
+/** The largest grid cell: a one-cell table is at most this many points across on a big screen. */
+const MAX_CELL = 120;
 
 /**
  * Tables on a grid from x/y/w/h. The cell (and the gap) shrink with the width so a plan laid across the back office's
@@ -279,7 +341,7 @@ const MIN_TABLE = 48;
  */
 function FloorCanvas({ tables, now, receivedAt, disabled, onTable }: { tables: FloorTable[]; now: number; receivedAt: number; disabled: boolean; onTable: (t: FloorTable) => void }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(800);
+  const [box, setBox] = useState({ width: 800, height: 500 });
   const [overflow, setOverflow] = useState<{ x: boolean; y: boolean }>({ x: false, y: false });
   const measure = () => {
     const el = ref.current;
@@ -292,28 +354,34 @@ function FloorCanvas({ tables, now, receivedAt, disabled, onTable }: { tables: F
     const el = ref.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect.width;
-      if (w) setWidth(w);
+      const r = entries[0]?.contentRect;
+      if (r?.width) setBox({ width: r.width, height: r.height });
     });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const cols = Math.max(8, ...tables.map((t) => t.x + t.w));
-  const rows = Math.max(4, ...tables.map((t) => t.y + t.h));
+  const cols = Math.max(4, ...tables.map((t) => t.x + t.w));
+  const rows = Math.max(3, ...tables.map((t) => t.y + t.h));
   const span = Math.min(...tables.map((t) => Math.min(t.w, t.h)));
   const minCell = tables.length ? Math.ceil(MIN_TABLE / (span + (span - 1) * GAP_RATIO)) : 1;
-  const cell = Math.max(minCell, Math.min(76, Math.floor(width / (cols + (cols - 1) * GAP_RATIO))));
+  // The plan fills the canvas: the largest cell that fits both across and down (up to MAX_CELL), never below a 48pt table.
+  const byWidth = Math.floor(box.width / (cols + (cols - 1) * GAP_RATIO));
+  const byHeight = Math.floor(box.height / (rows + (rows - 1) * GAP_RATIO));
+  const cell = Math.max(minCell, Math.min(MAX_CELL, byWidth, byHeight));
   const gap = Math.round(cell * GAP_RATIO);
-  const height = rows * cell + (rows - 1) * gap;
+  // Down the screen the plan stretches to the canvas (tall cards), up to 1.6 times a cell's width, so a plan
+  // laid out in the top rows no longer leaves the lower half of the floor empty.
+  const cellH = Math.max(cell, Math.min(Math.floor((box.height - (rows - 1) * gap) / rows), Math.round(cell * 1.6)));
+  const height = rows * cellH + (rows - 1) * gap;
   // Re-check after every render: tables added, moved or resized, or a new width, change what fits.
   useEffect(measure);
   return (
-    <div className="relative mt-3 flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-panel border border-rule bg-bg bg-[radial-gradient(var(--line)_1px,transparent_1px)] [background-size:16px_16px]">
       {/* iPad scrollbars stay hidden until a swipe, so a plan bigger than the screen says so (one stable line, no jump while scrolling). */}
-      <p className="min-h-6 pb-1 text-body text-ink-2" role="status">
+      <p className={overflow.x || overflow.y ? "pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-chip bg-surface px-3 py-1 text-body whitespace-nowrap text-ink-2 shadow-e2" : "sr-only"} role="status">
         {overflow.x || overflow.y ? `Some tables are off screen. Swipe ${overflow.x && overflow.y ? "across and down" : overflow.x ? "across" : "down"} to see them all.` : ""}
       </p>
-      <div ref={ref} className="relative min-h-0 flex-1 overflow-auto">
+      <div ref={ref} className="relative min-h-0 flex-1 overflow-auto p-5">
         <div className="relative" style={{ height, minWidth: cols * cell + (cols - 1) * gap }}>
           {tables.map((t) => {
             const elapsed = t.order ? t.order.elapsed_seconds + Math.max(0, (now - receivedAt) / 1000) : null;
@@ -328,7 +396,8 @@ function FloorCanvas({ tables, now, receivedAt, disabled, onTable }: { tables: F
                 needsYou={t.requests_waiting > 0 || (t.order?.pending_rounds ?? 0) > 0}
                 isDisabled={disabled}
                 onPress={() => onTable(t)}
-                style={{ left: t.x * (cell + gap), top: t.y * (cell + gap), width: t.w * cell + (t.w - 1) * gap, height: t.h * cell + (t.h - 1) * gap }}
+                layout={t.shape !== "round" && t.h * cellH >= 84 && t.w * cell >= 84 ? "card" : "compact"}
+                style={tableBox(t, cell, cellH, gap)}
               />
             );
           })}

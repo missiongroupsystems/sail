@@ -1,11 +1,11 @@
 "use client";
 
-import { Button, DataTable, Dialog, EmptyState, InlineError, Sheet, StatusDot, Switch, TextField, type DataTableColumn, useLocale } from "@sail/ui";
+import { Button, Dialog, EmptyState, Group, InlineError, Sheet, Skeleton, StatusDot, Switch, TextField, useLocale } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
 import { boKeys, can, roleIs, type Printer, type Relay } from "@/components/backoffice/register";
-import { RelayPairingPanel, RelayStatus } from "@/components/backoffice/RelayPairingPanel";
+import { RelayCard, RelayPairingPanel, RelayStatus } from "@/components/backoffice/RelayPairingPanel";
 import { FormSection } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
@@ -14,7 +14,7 @@ import type { Scope } from "@/lib/cookies";
 import { useSession } from "@/lib/session-context";
 
 export function RelaysView({ outlets, scope, initialOutletId, initialRelays, initialPrinters }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; initialRelays: Relay[]; initialPrinters: Printer[] }) {
-  const { dayClock } = useLocale();
+  const { dayClock, locale } = useLocale();
   const { me } = useSession();
   const qc = useQueryClient();
   const admin = roleIs(me, "admin");
@@ -39,7 +39,7 @@ export function RelaysView({ outlets, scope, initialOutletId, initialRelays, ini
     initialData: outletId === initialOutletId ? initialPrinters : undefined,
   });
 
-  const rows = (relays.data ?? []).filter((r) => showArchived || !r.archived);
+  const rows = (relays.data ?? []).filter((r) => showArchived || !r.archived).sort((a, b) => a.name.localeCompare(b.name, locale, { sensitivity: "base", numeric: true }));
   const open = (relays.data ?? []).find((r) => r.id === openId) ?? null;
   const invalidate = () => qc.invalidateQueries({ queryKey: ["relays"] });
 
@@ -52,29 +52,6 @@ export function RelaysView({ outlets, scope, initialOutletId, initialRelays, ini
     },
   });
 
-  const reachable = (r: Relay) => {
-    const entries = Object.values(r.printer_status);
-    if (entries.length === 0) return null;
-    return { ok: entries.filter((s) => s.ok).length, total: entries.length };
-  };
-
-  const columns: DataTableColumn<Relay>[] = [
-    { key: "name", header: "Name", sortable: true, isRowHeader: true, render: (r) => <span className="text-ink">{r.name}</span> },
-    { key: "online", header: "Status", sortable: true, sortValue: (r) => (r.archived ? 3 : !r.paired ? 2 : r.online ? 0 : 1), render: (r) => <RelayStatus relay={r} /> },
-    { key: "last_seen_at", header: "Last seen", sortable: true, render: (r) => <span className="tabular whitespace-nowrap text-ink-2">{r.last_seen_at ? dayClock(r.last_seen_at) : "Never"}</span> },
-    { key: "version", header: "Version", sortable: true, render: (r) => <span className="font-mono text-caption text-ink-2">{r.version ?? "—"}</span> },
-    { key: "paired_at", header: "Paired", sortable: true, render: (r) => <span className="tabular whitespace-nowrap text-ink-2">{r.paired_at ? dayClock(r.paired_at) : "—"}</span> },
-    {
-      key: "printers",
-      header: "Printers reachable",
-      render: (r) => {
-        const c = reachable(r);
-        if (!c) return <span className="text-ink-2">No report yet</span>;
-        return <StatusDot status={c.ok === c.total ? "paid" : c.ok === 0 ? "alert" : "sent"} label={`${c.ok} of ${c.total}`} />;
-      },
-    },
-  ];
-
   return (
     <>
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
@@ -84,7 +61,7 @@ export function RelaysView({ outlets, scope, initialOutletId, initialRelays, ini
             Show archived
           </Switch>
         </div>
-        <Button variant="primary" onPress={() => { setNewName(""); setCreating(true); }} isDisabled={!outletId || !admin}>
+        <Button size="sm" variant="primary" onPress={() => { setNewName(""); setCreating(true); }} isDisabled={!outletId || !admin}>
           Add relay
         </Button>
       </div>
@@ -92,17 +69,31 @@ export function RelaysView({ outlets, scope, initialOutletId, initialRelays, ini
       {outlets.length === 0 ? (
         <EmptyState title="No outlets yet" hint="A relay belongs to an outlet. Add an outlet first." />
       ) : (
-        <DataTable
-          aria-label="Print relays"
-          columns={columns}
-          rows={rows}
-          rowKey={(r) => r.id}
-          isLoading={relays.isPending}
-          defaultSort={{ column: "name", direction: "ascending" }}
-          onRowAction={(r) => setOpenId(r.id)}
-          rowClassName={(r) => (r.archived ? "text-ink-2" : undefined)}
-          emptyState={<EmptyState variant="quiet" title="No relay at this outlet" hint={admin ? "Tap Add relay, then Pair: the device takes a 6-digit code on first start." : "An Admin adds and pairs relays."} />}
-        />
+        <section aria-label="Print relays">
+          {relays.isPending ? (
+            <Skeleton lines={3} />
+          ) : rows.length === 0 ? (
+            <EmptyState variant="quiet" title="No relay at this outlet" hint={admin ? "Tap Add relay, then Pair: the device takes a 6-digit code on first start." : "An Admin adds and pairs relays."} />
+          ) : (
+            <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {rows.map((r) => (
+                <li key={r.id}>
+                  <button
+                    type="button"
+                    onClick={() => setOpenId(r.id)}
+                    className="press block h-full w-full rounded-[14px] text-left outline-none transition-colors duration-[120ms] hover:[&>span]:border-rule-strong hover:[&>span]:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                  >
+                    <RelayCard
+                      relay={r}
+                      className="h-full"
+                      detail={<span className="text-caption text-ink-3 tabular">{r.paired_at ? `Paired ${dayClock(r.paired_at)}` : "Not paired yet"}</span>}
+                    />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
       <InlineError error={relays.error} className="mt-4" />
       <p className="mt-3 text-caption text-ink-2">A relay silent for 2 minutes shows Offline. Refreshes every 15 s.</p>
@@ -178,16 +169,17 @@ function RelaySheet({ relay, printers, canEdit, canPair, onClose }: { relay: Rel
           <FormSection>
             <TextField label="Name" value={name} onChange={setName} isDisabled={!canEdit} />
           </FormSection>
-          <FormSection title="Pairing" hint="The device exchanges the code for a token on first start. Codes expire in 15 minutes and work once.">
+          <FormSection variant="label" title="Pairing" hint="The device exchanges the code for a token on first start. Codes expire in 15 minutes and work once.">
             <RelayPairingPanel relay={relay} canPair={canPair && !relay.archived} />
           </FormSection>
-          <FormSection title="Printers" hint="Reachability as the relay last reported it (every 30 s).">
+          <FormSection variant="label" title="Printers" hint="Reachability as the relay last reported it (every 30 s).">
             {statuses.length === 0 ? (
               <p className="text-ink-2">No report yet. The relay reports each printer once it is online.</p>
             ) : (
-              <ul className="flex flex-col">
+              <Group>
+              <ul className="flex flex-col divide-y divide-rule-subtle">
                 {statuses.map(([id, s]) => (
-                  <li key={id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 py-2 hairline-b">
+                  <li key={id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-4 py-2.5">
                     <span className="text-ink">{printerName(id)}</span>
                     <span className="inline-flex items-baseline gap-3">
                       <StatusDot status={s.ok ? "paid" : "alert"} label={s.ok ? "Reachable" : s.error || "Not reachable"} />
@@ -196,6 +188,7 @@ function RelaySheet({ relay, printers, canEdit, canPair, onClose }: { relay: Rel
                   </li>
                 ))}
               </ul>
+              </Group>
             )}
           </FormSection>
           <InlineError error={patch.error} />

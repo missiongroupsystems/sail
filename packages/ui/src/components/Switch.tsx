@@ -17,23 +17,26 @@ export function Switch({ children, description, className, ...rest }: SwitchProp
     <AriaSwitch
       {...rest}
       className={cx(
-        "group flex min-h-11 cursor-default items-start gap-3 py-2 text-body text-ink outline-none data-[disabled]:opacity-50",
+        // One line of label centres on the toggle; with a description under it, the toggle sits by the first line.
+        "group flex min-h-11 cursor-default gap-3 py-2 text-body text-ink outline-none data-[disabled]:text-ink-disabled",
+        description ? "items-start" : "items-center",
         className,
       )}
     >
       <span
         aria-hidden
         className={cx(
-          "mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-chip border border-transparent bg-rule p-0.5 press",
-          "group-data-[selected]:bg-status-paid group-data-[pressed]:scale-[0.97]",
-          "group-data-[focus-visible]:outline-2 group-data-[focus-visible]:outline-offset-2 group-data-[focus-visible]:outline-status-seated",
+          description ? "mt-0.5" : null,
+          "inline-flex h-5 w-[34px] shrink-0 items-center rounded-chip bg-control-off p-0.5 transition-colors duration-[120ms]",
+          "group-data-[selected]:bg-primary group-data-[disabled]:bg-surface-3 group-data-[selected]:group-data-[disabled]:bg-ink-disabled",
+          "group-data-[focus-visible]:outline-2 group-data-[focus-visible]:outline-offset-2 group-data-[focus-visible]:outline-focus",
         )}
       >
-        <span className="size-5 rounded-full bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.25)] transition-transform duration-[120ms] ease-(--ease-enter) group-data-[selected]:translate-x-5" />
+        <span className="size-4 rounded-full bg-surface shadow-thumb transition-transform duration-[120ms] ease-(--ease-enter) group-data-[selected]:translate-x-[14px]" />
       </span>
       <span className="flex flex-col">
         <span>{children}</span>
-        {description ? <span className="text-caption text-ink-2">{description}</span> : null}
+        {description ? <span className="text-caption text-ink-3">{description}</span> : null}
       </span>
     </AriaSwitch>
   );

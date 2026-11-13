@@ -1,5 +1,5 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { AmountSchema, PERMISSIONS, RoleSchema, registerOperations, type Role } from "@sail/shared";
 import { db, withTransaction } from "../db/client.js";
 import { auditLog, orderManualApplications, staff, staffSessions, stationPairingCodes, stations } from "../db/schema/index.js";
@@ -34,7 +34,7 @@ const GrantRequest = z.discriminatedUnion("action", [
   z.object({ action: z.literal("adjustments.apply_manual"), target_kind: z.literal("order"), ...grantBase, args: z.object({ rule_key: z.string().min(1), entered_value: z.number().int().min(0).nullable(), line_ids: z.array(z.uuid()).min(1).nullable() }) }),
   z.object({ action: z.literal("adjustments.remove"), target_kind: z.literal("order"), ...grantBase, args: z.object({ application_id: z.uuid() }) }),
   z.object({ action: z.literal("payments.record"), target_kind: z.literal("order"), ...grantBase, args: z.object({ check_id: z.uuid(), tender_type_id: z.uuid(), amount: AmountSchema.min(1), tip_cents: AmountSchema, reference: untrusted(z.string().max(80).nullable().default(null)) }) }),
-  z.object({ action: z.literal("refunds.create"), target_kind: z.literal("check"), ...grantBase, args: z.object({ request: RefundRequestSchema, tender_split: TenderSplit, total: AmountSchema }) }),
+  z.object({ action: z.literal("refunds.create"), target_kind: z.literal("check"), ...grantBase, args: z.object({ request: RefundRequestSchema, tender_split: TenderSplit, total: AmountSchema, tip: AmountSchema.min(1).optional() }) }),
   z.object({ action: z.literal("orders.reopen"), target_kind: z.literal("order"), ...grantBase, args: z.object({}) }),
   z.object({ action: z.literal("payments.void"), target_kind: z.literal("payment"), ...grantBase, args: z.object({ amount: AmountSchema.min(1) }) }),
 ]);
@@ -47,6 +47,8 @@ export function stationRoutes(app: OpenAPIHono<AppEnv>) {
     if (!st) throw AppError.notFound("station", id);
     const code = randomDigits(6);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    // A new code replaces any the station still has unused, so only the code shown last can pair it.
+    await db().update(stationPairingCodes).set({ expiresAt: sql`now()` }).where(and(eq(stationPairingCodes.stationId, id), isNull(stationPairingCodes.usedAt), gt(stationPairingCodes.expiresAt, sql`now()`)));
     await db().insert(stationPairingCodes).values({ merchantId: p.merchantId, stationId: id, codeHash: hashSecret(code), createdBy: p.id, expiresAt });
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: st.outletId, type: "station.pairing_code_issued", aggregate: { kind: "station", id }, operationId: "stations.pairing_code", payload: { expires_at: expiresAt.toISOString() }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(p.merchantId, st.outletId) }, p);
     await recordAudit(p, { action: "stations.pairing_code", targetKind: "station", targetId: id, outletId: st.outletId });
@@ -57,7 +59,7 @@ export function stationRoutes(app: OpenAPIHono<AppEnv>) {
     const { code, device_label, kind } = c.req.valid("json");
     // Public route: runs its own transaction as the connection owner (no principal yet).
     const result = await withTransaction(async (t) => {
-      const candidates = await t.db.select().from(stationPairingCodes).where(and(isNull(stationPairingCodes.usedAt), gt(stationPairingCodes.expiresAt, new Date())));
+      const candidates = await t.db.select().from(stationPairingCodes).where(and(isNull(stationPairingCodes.usedAt), gt(stationPairingCodes.expiresAt, sql`now()`)));
       const match = candidates.find((x) => verifySecret(code, x.codeHash));
       if (!match) throw new AppError("unauthenticated", "Pairing code not recognised or expired", { remedy: "Ask an Admin for a new code from the station's page in the back office." });
       if (kind) {
@@ -66,7 +68,11 @@ export function stationRoutes(app: OpenAPIHono<AppEnv>) {
       }
       const token = await signSailToken({ typ: "station", merchant_id: match.merchantId, station_id: match.stationId }, null);
       await t.db.update(stationPairingCodes).set({ usedAt: new Date() }).where(eq(stationPairingCodes.id, match.id));
-      const [st] = await t.db.update(stations).set({ tokenHash: sha256(token), pairedAt: new Date(), deviceLabel: device_label }).where(eq(stations.id, match.stationId)).returning();
+      // The new token replaces the old device's, and the PIN sessions started on that device end with it (resolve.ts
+      // also refuses any session that started before this pairing). clock_timestamp: later than any session already open.
+      const [st] = await t.db.update(stations).set({ tokenHash: sha256(token), pairedAt: sql`clock_timestamp()`, deviceLabel: device_label }).where(and(eq(stations.id, match.stationId), isNull(stations.archivedAt))).returning();
+      if (!st) throw new AppError("unauthenticated", "Pairing code not recognised or expired", { remedy: "Ask an Admin for a new code from the station's page in the back office." });
+      await t.db.update(staffSessions).set({ endedAt: new Date() }).where(and(eq(staffSessions.stationId, st.id), isNull(staffSessions.endedAt)));
       await appendEvent({ merchantId: st!.merchantId, outletId: st!.outletId, type: "station.paired", aggregate: { kind: "station", id: st!.id }, operationId: "stations.pair", payload: { device_label }, actor: { principal_type: "station", principal_id: st!.id, role: null }, correlationId: c.get("correlationId") });
       await t.db.insert(auditLog).values({ merchantId: st!.merchantId, outletId: st!.outletId, actorType: "station", actorId: st!.id, action: "stations.pair", targetKind: "station", targetId: st!.id, details: { device_label } });
       return { token, station: st! };

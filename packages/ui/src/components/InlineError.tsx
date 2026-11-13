@@ -19,7 +19,7 @@ export function InlineError({ error, className }: InlineErrorProps) {
   const message = typeof error === "string" ? error : error.message;
   const remedy = typeof error === "string" ? null : error.remedy;
   return (
-    <div role="alert" className={cx("flex items-start gap-2 rounded-tile px-3 py-2 text-body bg-[color-mix(in_srgb,var(--status-alert)_8%,transparent)]", className)}>
+    <div role="alert" className={cx("flex items-start gap-2 rounded-field bg-status-alert-tint px-3 py-2.5 text-body", className)}>
       <Icon icon={AlertTriangle} size={18} className="mt-0.5 text-status-alert" />
       <div className="min-w-0">
         <p className="text-ink">{message}</p>

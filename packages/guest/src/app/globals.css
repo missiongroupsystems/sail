@@ -1,2 +1,8 @@
-/* Tokens, themes and the Tailwind layer come from the ui package; the guest app adds nothing to the system. */
+/* Tokens, themes and the Tailwind layer come from the ui package. */
 @import "@sail/ui/styles.css";
+
+/* A phone page: no grey flash on tap, and iOS keeps the type size it was given. */
+[data-surface="guest"] {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}

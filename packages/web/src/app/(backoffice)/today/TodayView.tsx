@@ -1,6 +1,7 @@
 "use client";
 
-import { Badge, Button, Dialog, EmptyState, InlineError, Money, SectionHeading, Stat, StatusDot, taxRows, TextField, useLocale } from "@sail/ui";
+import { BellRing, Printer, QrCode } from "lucide-react";
+import { BusinessDay, Badge, Button, Dialog, EmptyState, InlineError, Money, Panel, Stat, StatusDot, taxRows, TextField, useLocale } from "@sail/ui";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -10,6 +11,7 @@ import { isLate, JobRowActions, RerouteDialog, useJobMutations } from "@/compone
 import { boKeys, can, formatElapsed, plural, REQUEST_TYPE_LABEL, type FloorSnapshot, type GuestRound, type PrintJob, type ServiceRequest, type Shift, type ZReport } from "@/components/backoffice/register";
 import { RelayStatus } from "@/components/backoffice/RelayPairingPanel";
 import { SetupChecklist } from "@/components/backoffice/SetupChecklist";
+import { StatTile, StatTiles } from "@/components/backoffice/StatTiles";
 import { Warnings } from "@/components/backoffice/Warnings";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
@@ -90,7 +92,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
 
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <OutletChoice outlets={outlets} scope={scope} outletId={outletId} onChange={setOutletId} />
         {floor.data ? (
           <p className="text-caption text-ink-2 tabular">
@@ -115,28 +117,35 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
       ) : null}
       <InlineError error={firstError as ApiError | null} className="mb-4" />
       {note ? (
-        <div className="mb-6 flex flex-col gap-2" role="status">
+        <div className="mb-6 flex flex-col gap-2 rounded-[14px] bg-surface-2 px-5 py-3" role="status">
           <p className="text-body text-ink">{note.text}</p>
           <Warnings warnings={note.warnings} />
         </div>
       ) : null}
 
+      {outlet ? (
+        <StatTiles className="mb-6">
+          <StatTile label="Net sales, completed orders" value={z.data ? <Money cents={z.data.sales.net} size="title" /> : "—"} />
+          <StatTile label="Orders completed" value={z.data ? z.data.orders.count : "—"} caption={z.data ? <>business day <BusinessDay value={z.data.scope.business_date} /></> : undefined} />
+          <StatTile label="Covers" value={z.data ? z.data.orders.covers : "—"} caption={z.data?.orders.open_count ? `${z.data.orders.open_count} still open` : undefined} />
+          <StatTile label="Open now" value={floor.data ? floor.data.open_orders : "—"} />
+        </StatTiles>
+      ) : null}
       {outlet ? <SetupChecklist outletId={outlet.id} tableCount={floor.data ? floor.data.tables.length : null} /> : null}
       {outlet ? (
-        <div className="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-          <div className="flex flex-col gap-10">
-            <section>
-              <SectionHeading title="Service" aside={floor.data ? `${plural(floor.data.open_orders, "open order")} · ${seated.length} of ${floor.data.tables.length} tables seated` : "loading"} />
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <div className="flex flex-col gap-6">
+            <Panel title="Service" body="flush" aside={floor.data ? `${plural(floor.data.open_orders, "open order")} · ${seated.length} of ${floor.data.tables.length} tables seated` : "loading"}>
               {floor.data ? (
                 seated.length === 0 && floor.data.other_orders.length === 0 ? (
-                  <EmptyState variant="quiet" title="No open orders" hint="Tables and takeaway orders appear here as stations open them." />
+                  <EmptyState variant="quiet" className="px-5 py-4" title="No open orders" hint="Tables and takeaway orders appear here as stations open them." />
                 ) : (
-                  <ul className="flex flex-col">
+                  <ul className="flex flex-col divide-y divide-rule-subtle">
                     {seated
                       .slice()
                       .sort((a, b) => (b.requests_waiting - a.requests_waiting) || ((b.order?.pending_rounds ?? 0) - (a.order?.pending_rounds ?? 0)) || ((b.order?.elapsed_seconds ?? 0) - (a.order?.elapsed_seconds ?? 0)))
                       .map((t) => (
-                        <li key={t.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 py-2 hairline-b">
+                        <li key={t.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-5 py-3">
                           <span className="inline-flex flex-wrap items-baseline gap-2">
                             <span className="text-line text-ink">{t.name}</span>
                             <StatusDot status={t.status === "bill_requested" ? "bill" : t.status === "sent" ? "sent" : t.status === "paid" ? "paid" : "seated"} label={t.status === "bill_requested" ? "Bill requested" : t.status === "sent" ? "Sent" : t.status === "paid" ? "Paid" : "Seated"} muted />
@@ -145,40 +154,39 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                             {t.requests_waiting ? <Badge tone="alert">{plural(t.requests_waiting, "request")}</Badge> : null}
                           </span>
                           <span className="tabular text-ink-2">
-                            {t.order ? <><span className="font-mono text-caption">{t.order.order_no}</span> · {formatElapsed(t.order.elapsed_seconds)} · </> : null}
+                            {t.order ? <><span className="text-caption tabular">{t.order.order_no}</span> · {formatElapsed(t.order.elapsed_seconds)} · </> : null}
                             {t.order ? <Money cents={t.order.total} /> : null}
                           </span>
                         </li>
                       ))}
                     {floor.data.other_orders.map((o) => (
-                      <li key={o.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 py-2 hairline-b">
+                      <li key={o.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-5 py-3">
                         <span className="inline-flex flex-wrap items-baseline gap-2">
                           <span className="text-line text-ink">{label(ORDER_TYPE_LABEL, o.order_type)}</span>
                           <span className="text-ink-2">{o.customer_ref?.name || o.customer_ref?.mobile || ""}</span>
                           {o.ready_by ? <span className="text-caption text-ink-2">ready by {clock(o.ready_by)}</span> : null}
                         </span>
                         <span className="tabular text-ink-2">
-                          <span className="font-mono text-caption">{o.order_no}</span> · <Money cents={o.total} />
+                          <span className="text-caption tabular">{o.order_no}</span> · <Money cents={o.total} />
                         </span>
                       </li>
                     ))}
                   </ul>
                 )
               ) : null}
-              <p className="mt-2 text-caption text-ink-2">
+              <p className="border-t border-rule-subtle px-5 py-3 text-caption text-ink-2">
                 <Link href="/orders" className="text-ink underline underline-offset-4">
                   Open Orders
                 </Link>{" "}
                 for the detail drawer.
               </p>
-            </section>
+            </Panel>
 
-            <section>
-              <SectionHeading title="QR orders waiting" aside={rounds.data ? `${rounds.data.length}` : "loading"} />
-              {rounds.data && rounds.data.length === 0 ? <EmptyState variant="quiet" title="Nothing waiting" hint="Rounds guests submit from their phones land here until a person accepts them." /> : null}
-              <ul className="flex flex-col">
+            <Panel title="QR orders waiting" body="flush" aside={rounds.data ? `${rounds.data.length}` : "loading"}>
+              {rounds.data && rounds.data.length === 0 ? <EmptyState variant="centred" icon={QrCode} className="py-8" title="Nothing waiting" hint="Rounds guests submit from their phones land here until a person accepts them." /> : null}
+              <ul className="flex flex-col divide-y divide-rule-subtle">
                 {(rounds.data ?? []).map((r) => (
-                  <li key={r.id} className="flex flex-col gap-1 py-3 hairline-b">
+                  <li key={r.id} className="flex flex-col gap-1 px-5 py-3">
                     <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                       <span className="inline-flex flex-wrap items-baseline gap-2">
                         <span className="text-line text-ink">{r.table_name ?? "Table"}</span>
@@ -203,15 +211,14 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                   </li>
                 ))}
               </ul>
-              <InlineError error={accept.error} className="mt-2" />
-            </section>
+              <InlineError error={accept.error} className="mx-5 my-3" />
+            </Panel>
 
-            <section>
-              <SectionHeading title="Table requests" aside={requests.data ? `${requests.data.length}` : "loading"} />
-              {requests.data && requests.data.length === 0 ? <EmptyState variant="quiet" title="Nothing waiting" hint="Call-staff and bill requests from guests' phones land here." /> : null}
-              <ul className="flex flex-col">
+            <Panel title="Table requests" body="flush" aside={requests.data ? `${requests.data.length}` : "loading"}>
+              {requests.data && requests.data.length === 0 ? <EmptyState variant="centred" icon={BellRing} className="py-8" title="Nothing waiting" hint="Call-staff and bill requests from guests' phones land here." /> : null}
+              <ul className="flex flex-col divide-y divide-rule-subtle">
                 {(requests.data ?? []).map((r) => (
-                  <li key={r.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2 hairline-b">
+                  <li key={r.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-5 py-3">
                     <span className="inline-flex flex-wrap items-baseline gap-2">
                       <span className="text-line text-ink">{r.table_name ?? "Table"}</span>
                       <Badge tone="bill">{label(REQUEST_TYPE_LABEL, r.type)}</Badge>
@@ -226,15 +233,15 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                   </li>
                 ))}
               </ul>
-              <InlineError error={acknowledge.error} className="mt-2" />
-            </section>
+              <InlineError error={acknowledge.error} className="mx-5 my-3" />
+            </Panel>
           </div>
 
-          <div className="flex flex-col gap-10">
-            <section>
-              <SectionHeading
-                title="Tickets not printed"
-                aside={
+          <div className="flex flex-col gap-6">
+            <Panel
+              title="Tickets not printed"
+              body="flush"
+              aside={
                   lateJobs.length > 1 ? (
                     <Button variant="quiet" className="min-h-9 px-2.5 text-caption" onPress={() => setRerouteLate(true)}>
                       Reroute all {lateJobs.length}
@@ -245,11 +252,11 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                     "loading"
                   )
                 }
-              />
-              {late.data && lateJobs.length === 0 ? <EmptyState variant="quiet" title="Nothing waiting" hint="Every ticket printed within 10 seconds." /> : null}
-              <ul className="flex flex-col">
+              >
+              {late.data && lateJobs.length === 0 ? <EmptyState variant="centred" icon={Printer} className="py-8" title="Nothing waiting" hint="Every ticket printed within 10 seconds." /> : null}
+              <ul className="flex flex-col divide-y divide-rule-subtle">
                 {lateJobs.map((j: PrintJob) => (
-                  <li key={j.id} className="flex flex-col gap-1 py-2 hairline-b">
+                  <li key={j.id} className="flex flex-col gap-1 px-5 py-3">
                     <div className="flex flex-wrap items-baseline justify-between gap-x-4">
                       <span className="text-ink">
                         {(printers.data ?? []).find((p) => p.id === j.printer_id)?.name ?? "Printer"}
@@ -267,13 +274,13 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                   </li>
                 ))}
               </ul>
-            </section>
+            </Panel>
 
-            <section>
-              <SectionHeading title="Relays" aside={relays.data ? `${relays.data.filter((r) => !r.archived).length}` : "loading"} />
+            <Panel title="Relays" body="flush" aside={relays.data ? `${relays.data.filter((r) => !r.archived).length}` : "loading"}>
               {relays.data && relays.data.filter((r) => !r.archived).length === 0 ? (
                 <EmptyState
                   variant="quiet"
+                  className="px-5 py-4"
                   title="No relay at this outlet"
                   hint={
                     <>
@@ -286,10 +293,10 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                   }
                 />
               ) : null}
-              {relays.data && offline.length === 0 && unpaired.length === 0 && relays.data.filter((r) => !r.archived).length > 0 ? <EmptyState variant="quiet" title="Nothing waiting" hint={`${plural(relays.data.filter((r) => !r.archived).length, "relay")} online.`} /> : null}
-              <ul className="flex flex-col">
+              {relays.data && offline.length === 0 && unpaired.length === 0 && relays.data.filter((r) => !r.archived).length > 0 ? <EmptyState variant="quiet" className="px-5 py-4" title="Nothing waiting" hint={`${plural(relays.data.filter((r) => !r.archived).length, "relay")} online.`} /> : null}
+              <ul className="flex flex-col divide-y divide-rule-subtle">
                 {[...offline, ...unpaired].map((r) => (
-                  <li key={r.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 py-2 hairline-b">
+                  <li key={r.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-5 py-3">
                     <span className="inline-flex flex-wrap items-baseline gap-2">
                       <span className="text-line text-ink">{r.name}</span>
                       <RelayStatus relay={r} />
@@ -298,15 +305,14 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                   </li>
                 ))}
               </ul>
-              {offline.length ? <p className="mt-2 text-caption text-ink-2">Check the print box is powered and on the network. Tickets stay queued until it returns.</p> : null}
-            </section>
+              {offline.length ? <p className="border-t border-rule-subtle px-5 py-3 text-caption text-ink-2">Check the print box is powered and on the network. Tickets stay queued until it returns.</p> : null}
+            </Panel>
 
-            <section>
-              <SectionHeading title="Open shifts" aside={shifts.data ? `${shifts.data.length}` : "loading"} />
-              {shifts.data && shifts.data.length === 0 ? <EmptyState variant="quiet" title="No open shift" hint="Stations open a shift with a counted float." /> : null}
-              <ul className="flex flex-col">
+            <Panel title="Open shifts" body="flush" aside={shifts.data ? `${shifts.data.length}` : "loading"}>
+              {shifts.data && shifts.data.length === 0 ? <EmptyState variant="quiet" className="px-5 py-4" title="No open shift" hint="Stations open a shift with a counted float." /> : null}
+              <ul className="flex flex-col divide-y divide-rule-subtle">
                 {(shifts.data ?? []).map((s) => (
-                  <li key={s.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 py-2 hairline-b">
+                  <li key={s.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-5 py-3">
                     <span className="inline-flex flex-wrap items-baseline gap-2">
                       <span className="text-line text-ink">{s.name ?? (s.station_id ? "Station shift" : "Outlet shift")}</span>
                       <span className="text-caption text-ink-2">{s.opened_by ? `${s.opened_by} · ` : ""}since {clock(s.opened_at)}</span>
@@ -317,21 +323,18 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                   </li>
                 ))}
               </ul>
-              <p className="mt-2 text-caption text-ink-2">
+              <p className="border-t border-rule-subtle px-5 py-3 text-caption text-ink-2">
                 <Link href="/reports/shifts" className="text-ink underline underline-offset-4">
                   Shifts
                 </Link>{" "}
                 has the closed ones with expected, counted and variance.
               </p>
-            </section>
+            </Panel>
 
-            <section>
-              <SectionHeading title="Today so far" aside={z.data ? `business day ${z.data.scope.business_date}` : "loading"} />
+            <Panel title="Today so far" body="flush" aside={z.data ? <>business day <BusinessDay value={z.data.scope.business_date} /></> : "loading"}>
               {z.data ? (
-                <div className="flex flex-col gap-4 pt-3">
+                <div className="flex flex-col gap-4 px-5 py-4">
                   <div className="flex flex-wrap gap-x-10 gap-y-4">
-                    <Stat label="Net sales" value={<Money cents={z.data.sales.net} size="heading" />} hint={`${plural(z.data.orders.count, "completed order")}`} />
-                    <Stat label="Covers" value={z.data.orders.covers} hint={z.data.orders.open_count ? `${z.data.orders.open_count} still open` : undefined} />
                     {[...taxRows(z.data.sales.taxes, merchant.settings.tax_mode).before, ...taxRows(z.data.sales.taxes, merchant.settings.tax_mode).after].map((t) => (
                       <Stat key={t.key} label={t.label} value={<Money cents={t.amount} size="heading" />} />
                     ))}
@@ -356,7 +359,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                   </p>
                 </div>
               ) : null}
-            </section>
+            </Panel>
           </div>
         </div>
       ) : null}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, InlineError, PinPad, TextField } from "@sail/ui";
+import { Button, cx, PinPad, SailLogo, TextField } from "@sail/ui";
 import { useState } from "react";
 import { toApiError, type ApiError } from "@/lib/api";
 import { pairStation } from "../api/register";
@@ -23,7 +23,7 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
   const api = useApi();
   const setPaired = useStationStore((s) => s.setPaired);
   const [code, setCode] = useState("");
-  const [label, setLabel] = useState(device);
+  const [label, setLabel] = useState(kind === "display" ? "Kitchen display" : device);
   const [error, setError] = useState<ApiError | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -35,8 +35,8 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
       const res = await pairStation(api, code, label.trim(), kind);
       (onPaired ?? setPaired)(res.station_token, res.station, label.trim());
     } catch (e) {
+      // The code stays on the pad, so a slip can be corrected rather than typed again.
       setError(toApiError(e));
-      setCode("");
     } finally {
       setPending(false);
     }
@@ -45,19 +45,37 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
   return (
     <main className="flex h-dvh w-full items-center justify-center bg-bg px-8">
       <div className="grid w-full max-w-[880px] grid-cols-[1fr_auto] items-center gap-16">
-        <section className="flex flex-col gap-6">
+        <section className="flex max-w-[420px] flex-col gap-6">
           <div>
-            <p className="text-caption text-ink-2 uppercase tracking-[0.04em]">Sail</p>
-            <h1 className="text-title text-ink">Pair this {device} to a station</h1>
-            <p className="mt-2 text-body text-ink-2">{hint}</p>
+            <SailLogo size="card" />
+            <h1 className="mt-5 font-heading text-[26px] leading-tight font-semibold tracking-[-0.02em] text-ink">Pair this {device} to a station</h1>
+            <p className="mt-2 text-[14.5px] text-ink-2">{hint}</p>
           </div>
           <TextField label={`Name for this ${device}`} value={label} onChange={setLabel} placeholder="Bar iPad" inputClassName="min-h-14 text-line" maxLength={80} />
-          <InlineError error={error} />
-          <Button variant="primary" size="lg" isDisabled={code.length !== 6 || !label.trim()} isPending={pending} onPress={pair} className="self-start min-w-[220px]">
+          {/* The error once, in one line; the code card turns red. How to get a code is the line above. */}
+          {error ? (
+            <p role="alert" className="text-body text-status-alert">
+              {error.message.replace(/([^.!?])$/, "$1.")}
+            </p>
+          ) : null}
+          <Button variant="primary" size="lg" isDisabled={code.length !== 6 || !label.trim()} isPending={pending} onPress={pair} className="w-full data-[disabled]:bg-transparent!">
             Pair this {device}
           </Button>
         </section>
-        <PinPad value={code} onChange={setCode} onComplete={() => void 0} unlockHint={false} error={null} />
+        <div className={cx("flex flex-col items-center gap-2 rounded-[20px] border bg-surface px-10 pt-9 pb-10 shadow-e2", error ? "border-status-alert" : "border-transparent")}>
+          <p className="text-[14.5px] text-ink-2">Pairing code</p>
+          <PinPad
+            value={code}
+            onChange={(v) => {
+              setCode(v);
+              setError(null);
+            }}
+            onComplete={() => void 0}
+            unlockHint={false}
+            error={error ? error.message : null}
+            showErrorText={false}
+          />
+        </div>
       </div>
     </main>
   );

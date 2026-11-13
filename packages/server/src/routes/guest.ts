@@ -187,7 +187,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     const lineIds = rows.flatMap((r) => r.lineIds);
     const lines = lineIds.length ? await db().select().from(orderLines).where(inArray(orderLines.id, lineIds)) : [];
     const tableRows = rows.length ? await db().select({ id: tables.id, name: tables.name }).from(tables).where(inArray(tables.id, rows.map((r) => r.tableId))) : [];
-    return c.json({ data: rows.map((r) => ({ ...toRound(r), table_name: tableRows.find((t) => t.id === r.tableId)?.name ?? null, lines: lines.filter((l) => r.lineIds.includes(l.id)).map((l) => ({ id: l.id, name: l.name, quantity: l.quantity, modifiers: l.modifiers.map((m) => m.name), notes: l.notes, status: l.status })) })), next_cursor: null }, 200);
+    return c.json({ data: rows.map((r) => ({ ...toRound(r), table_name: tableRows.find((t) => t.id === r.tableId)?.name ?? null, lines: r.lineIds.flatMap((lid) => lines.filter((l) => l.id === lid)).map((l) => ({ id: l.id, name: l.name, quantity: l.quantity, modifiers: l.modifiers.map((m) => m.name), notes: l.notes, status: l.status })) })), next_cursor: null }, 200);
   });
 
   const decide = async (c: Parameters<Parameters<typeof defineOp>[2]>[0], roundId: string, action: "accept" | "reject", reason?: string) => {

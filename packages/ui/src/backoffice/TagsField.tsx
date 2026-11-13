@@ -59,21 +59,21 @@ export function TagsField({ label, description, errorMessage, value, onChange, p
       className={cx(fieldWrap, className)}
     >
       {label ? <Label className={fieldLabel}>{label}</Label> : null}
-      <div className={cx(fieldControl, "flex min-h-11 flex-wrap items-center gap-1.5 py-1.5", isDisabled && "opacity-50")}>
+      <div className={cx(fieldControl, "flex min-h-11 flex-wrap items-center gap-1.5 py-1.5 focus-within:bg-surface-3", isDisabled && "text-ink-disabled")}>
         {value.map((tag) => (
-          <span key={tag} className="inline-flex h-7 items-center gap-1 rounded-chip bg-surface-2 pr-1 pl-2.5 text-caption text-ink">
+          <span key={tag} className="inline-flex h-7 items-center gap-1 rounded-chip bg-surface pr-1 pl-2.5 text-caption font-medium text-ink shadow-segment">
             {tag}
             <AriaButton
               aria-label={`Remove ${tag}`}
               isDisabled={isDisabled}
               onPress={() => onChange(value.filter((t) => t !== tag))}
-              className="press inline-flex size-5 items-center justify-center rounded-full text-ink-2 outline-none data-[hovered]:bg-rule data-[hovered]:text-ink data-[focus-visible]:outline-2 data-[focus-visible]:outline-status-seated"
+              className="press inline-flex size-5 items-center justify-center rounded-full text-ink-2 outline-none data-[hovered]:bg-surface-2 data-[hovered]:text-ink data-[focus-visible]:outline-2 data-[focus-visible]:outline-focus"
             >
               <Icon icon={X} size={12} />
             </AriaButton>
           </span>
         ))}
-        <Input placeholder={value.length ? "" : placeholder} className="min-w-[8ch] flex-1 bg-transparent py-1 text-body text-ink outline-none placeholder:text-ink-2/70" />
+        <Input placeholder={value.length ? "" : placeholder} className="min-w-[8ch] flex-1 bg-transparent py-1 text-body text-ink outline-none placeholder:text-ink-3" />
       </div>
       {description ? (
         <Text slot="description" className={fieldDescription}>

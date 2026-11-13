@@ -52,7 +52,8 @@ export function ruleText(g: CompiledGroup): string {
 export function unmetRequirement(menu: CompiledMenu, product: CompiledProduct, selection: Selection): { group: CompiledGroup; message: string } | null {
   for (const group of activeGroups(menu, product, selection)) {
     const n = (selection[group.id] ?? []).length;
-    if (n < group.min_select) return { group, message: `Choose ${group.min_select - n} more: ${group.name}` };
+    // Nothing chosen yet reads as the rule ("Choose 1: Protein"); part of the way there says how many more.
+    if (n < group.min_select) return { group, message: n === 0 ? `Choose ${group.min_select}: ${group.name}` : `Choose ${group.min_select - n} more: ${group.name}` };
   }
   return null;
 }

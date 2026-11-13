@@ -35,3 +35,39 @@ describe("money fields read back what they show", () => {
     }
   });
 });
+
+describe("clock times", () => {
+  it("a 24-hour locale writes the hour with two digits (C-7: en-IE showed 9:05), a 12-hour one does not", () => {
+    const at = new Date("2026-11-13T09:05:00Z");
+    expect(fmt("EUR", "en-IE").clock(at)).toBe("09:05");
+    expect(fmt("EUR", "de-DE").clock(at)).toBe("09:05");
+    expect(fmt("USD", "en-US").clock(at)).toMatch(/^9:05\s?am$/i);
+  });
+});
+
+describe("business dates", () => {
+  it("are written for people, not as the register's YYYY-MM-DD (C-8, F-10)", () => {
+    expect(fmt("SGD", "en-SG").businessDay("2026-11-13")).toMatch(/^Fri,? 13 Nov 2026$/);
+    expect(makeLocaleFormat({ currency: "USD", currencyExponent: null, locale: "en-US", timeZone: "Pacific/Honolulu" }).businessDay("2026-11-13")).toMatch(/Fri.*Nov.*13.*2026/);
+    expect(fmt("SGD", "en-SG").businessDay("not a date")).toBe("not a date");
+  });
+});
+
+describe("dates: the weekday always belongs to the date shown", () => {
+  it("a business day names its own weekday in every zone and on every device clock", () => {
+    for (const timeZone of ["Pacific/Kiritimati", "Asia/Singapore", "UTC", "America/Los_Angeles", "Pacific/Pago_Pago"]) {
+      const f = makeLocaleFormat({ currency: "SGD", currencyExponent: 2, locale: "en-SG", timeZone });
+      expect(f.businessDay("2026-11-13"), timeZone).toBe("Fri, 13 Nov 2026");
+      expect(f.businessDay("2026-11-14"), timeZone).toBe("Sat, 14 Nov 2026");
+    }
+  });
+
+  it("the lock screen's today is the outlet's calendar day, with its own weekday, in the same form", () => {
+    // 02:33 in Singapore on Saturday 14 November is 18:33 UTC on Friday 13 November.
+    const at = new Date("2026-11-13T18:33:00Z");
+    const sg = makeLocaleFormat({ currency: "SGD", currencyExponent: 2, locale: "en-SG", timeZone: "Asia/Singapore" });
+    expect(sg.businessDay(sg.isoDate(at))).toBe("Sat, 14 Nov 2026");
+    const la = makeLocaleFormat({ currency: "USD", currencyExponent: 2, locale: "en-US", timeZone: "America/Los_Angeles" });
+    expect(la.businessDay(la.isoDate(at))).toBe("Fri, Nov 13, 2026");
+  });
+});

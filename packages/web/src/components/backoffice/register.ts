@@ -58,7 +58,7 @@ export type CheckSnapshot = {
   balance: number;
   locked: boolean;
   invoice_no: string | null;
-  allocations: { line_id: string; share: string; base: number; discount: number; fee: number; tax: number; taxes: TaxAmount[]; total: number }[];
+  allocations: { line_id: string; share: string; base: number; discount: number; fee: number; tax: number; taxes: TaxAmount[]; total: number; refunded_quantity?: number }[];
   payments: CheckPayment[];
 };
 export const CHECK_STATUS_LABEL: Record<string, string> = { open: "Unpaid", paid: "Paid", partially_refunded: "Partly refunded", refunded: "Refunded" };
@@ -152,12 +152,15 @@ export type ZReport = {
   scope: { outlet_id: string; station_id: string | null; business_date: string; shift_id: string | null };
   orders: { count: number; by_type: Record<string, number>; covers: number; open_count: number };
   /** `net` is net sales: items after discounts, without tax and fees, less `refunds` (the refunds' net). `fees` excludes tax; `total` is what was collected before refunds. */
-  sales: { gross: number; discounts: number; fees: number; tax: number; taxes: TaxBreakdown[]; refunds: number; net: number; total: number };
+  sales: { gross: number; discounts: number; fees: number; tax: number; taxes: TaxBreakdown[]; refunds: number; net: number; total: number; net_before_refunds?: number; total_after_refunds?: number };
   adjustments: { rule_key: string; name: string; kind: string; report_class: string; total: number; count: number }[];
   tenders: { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number }[];
   cash: { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number; counted: number | null; variance: number | null };
   voids: { count: number; quantity: number; value: number };
-  refunds: { count: number; amount: number };
+  /** `net`, `fees`, `tax`, `tips` and `taxes` arrive with the before/after-refunds figures; until then only `count` and `amount`. */
+  refunds: { count: number; amount: number; net?: number; fees?: number; tax?: number; tips?: number; taxes?: TaxAmount[] };
+  /** The tax due by component (`sales.taxes` less `refunds.taxes`), as the register computed it; absent on older stored reports. */
+  tax_due?: TaxAmount[];
   generated_at: string;
 };
 /** GET /v1/outlets/{id}/shifts (routes/payments.ts toShift). */

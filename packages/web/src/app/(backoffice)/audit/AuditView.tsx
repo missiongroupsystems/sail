@@ -1,27 +1,38 @@
 "use client";
 
-import { AttributionChip, Button, DataTable, EmptyState, InlineError, initialsOf, Select, TextField, type DataTableColumn, useLocale } from "@sail/ui";
+import { ScrollText } from "lucide-react";
+import { AttributionChip, Button, DataTable, EmptyState, InlineError, initialsOf, Select, type DataTableColumn, useLocale, DateField } from "@sail/ui";
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { req } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { AuditEntry, AuditPage, Staff } from "@/lib/api/types";
-import { shortId } from "@/lib/format";
+import { auditActionLabel, auditTargetLabel, shortId } from "@/lib/format";
 import { keys } from "@/lib/query";
 
 const ANY = "__any__";
 const PAGE = 50;
 
 /** Actions the register records in this phase (server routes). Later phases extend the list. */
-const ACTIONS = ["merchants.update_settings", "brands.create", "brands.update", "outlets.create", "outlets.update", "stations.create", "stations.update", "staff.create", "staff.update"];
-const TARGET_KINDS = ["merchant", "brand", "outlet", "station", "staff"];
+// Every action and target kind the register audits, not only settings ones (live-test E-L13).
+const ACTIONS = [
+  "merchants.update_settings", "brands.create", "brands.update", "outlets.create", "outlets.update", "stations.create", "stations.update", "stations.pairing_code",
+  "staff.create", "staff.update", "staff.invite", "staff.reset_password", "staff.revoke_access", "products.create", "products.update", "products.bulk_price",
+  "modifier_groups.create", "modifier_groups.update", "menus.create", "menus.update", "pricing_rules.create_version", "pricing_rules.archive", "tax_rates.set",
+  "stock.mark_sold_out", "stock.restore", "tables.rotate_qr_token", "orders.open", "orders.cancel", "orders.reopen", "adjustments.apply_manual", "adjustments.remove",
+  "payments.record", "payments.cancel", "refunds.create", "overrides.grant", "shifts.open", "shifts.close", "business_days.close", "imports.apply",
+];
+const TARGET_KINDS = ["merchant", "brand", "outlet", "station", "staff", "order", "check", "payment", "product", "modifier_group", "menu", "pricing_rule", "table", "tax_class", "shift", "business_day", "printer", "relay"];
+
+/** Keys the register writes in minor units: shown as money, never as raw cents. Not `entered_value`: a percentage is in basis points. */
+const MONEY_KEY = /(^|_)(amount|total|price|tip|tips|float|change|rounding|cents)(_cents)?$/;
 
 type Filters = { action?: string; actor_id?: string; target_kind?: string; from?: string; to?: string };
 
-function compact(details: Record<string, unknown>): string {
+function compact(details: Record<string, unknown>, money: (cents: number) => string): string {
   const parts = Object.entries(details)
     .filter(([, v]) => v !== null && v !== undefined && typeof v !== "object")
-    .map(([k, v]) => `${k}: ${String(v)}`);
+    .map(([k, v]) => `${k.replace(/_cents$/, "").replace(/_/g, " ")}: ${typeof v === "number" && Number.isInteger(v) && MONEY_KEY.test(k) ? money(v) : String(v)}`);
   const nested = Object.entries(details).filter(([, v]) => v && typeof v === "object").length;
   if (nested) parts.push(`+${nested} more`);
   const text = parts.join(" · ");
@@ -33,6 +44,16 @@ function who(a: AuditEntry) {
   if (a.actor_type === "guest") return <AttributionChip who={{ kind: "guest" }} />;
   if (a.actor_type === "station" || a.actor_type === "relay") return <AttributionChip who={{ kind: "system", label: a.actor_type === "station" ? "Station" : "Print relay" }} />;
   return <AttributionChip who={{ kind: "person", initials: initialsOf(a.actor_name) }} />;
+}
+
+function Details({ entry: a }: { entry: AuditEntry }) {
+  const { money } = useLocale();
+  return (
+    <span className="text-ink-2 break-words" title={JSON.stringify(a.details, null, 2)}>
+      {a.reason ? `${a.reason} · ` : ""}
+      {compact(a.details, (c) => money(c))}
+    </span>
+  );
 }
 
 function When({ iso }: { iso: string }) {
@@ -50,27 +71,32 @@ const columns: DataTableColumn<AuditEntry>[] = [
     key: "actor",
     header: "Who",
     render: (a) => (
-      <span className="inline-flex items-center gap-2">
+      <span className="flex min-w-0 items-center gap-2">
         {who(a)}
-        <span>
-          <span className="text-ink">{a.actor_name ?? a.actor_type}</span>
-          {a.actor_role ? <span className="text-caption text-ink-2"> · {a.actor_role}</span> : null}
-        </span>
+        {/* A station or relay without a name is said once, by its chip. */}
+        {/* The name on one line, the role in grey after it, so a row is one line high. */}
+        {a.actor_name || !["station", "relay", "agent", "guest"].includes(a.actor_type) ? (
+          <span className="min-w-0 truncate whitespace-nowrap text-ink" title={[a.actor_name, a.actor_role].filter(Boolean).join(" · ")}>
+            {a.actor_name ?? a.actor_type}
+            {a.actor_role ? <span className="text-ink-2"> · {a.actor_role}</span> : null}
+          </span>
+        ) : null}
       </span>
     ),
   },
-  { key: "action", header: "Action", render: (a) => <span className="font-mono text-caption">{a.action}</span> },
+  { key: "action", header: "Action", render: (a) => <span className="text-ink" title={a.action}>{auditActionLabel(a.action)}</span> },
   {
     key: "target",
     header: "Target",
     render: (a) => (
-      <span>
-        {a.target_kind} <span className="font-mono text-caption text-ink-2" title={a.target_id ?? undefined}>{shortId(a.target_id)}</span>
+      <span className="block min-w-0 whitespace-nowrap">
+        <span className="text-ink">{auditTargetLabel(a.target_kind)}</span>
+        {a.target_id ? <span className="text-ink-3 tabular" title={a.target_id}> {shortId(a.target_id)}</span> : null}
       </span>
     ),
   },
-  { key: "approval", header: "Approved by", render: (a) => (a.approver_name ? a.approver_name : <span className="text-ink-2">—</span>) },
-  { key: "details", header: "Details", render: (a) => <span className="text-ink-2" title={JSON.stringify(a.details, null, 2)}>{a.reason ? `${a.reason} · ` : ""}{compact(a.details)}</span> },
+  { key: "approval", header: "Approved by", render: (a) => (a.approver_name ? <span className="whitespace-nowrap">{a.approver_name}</span> : <span className="text-ink-2">—</span>) },
+  { key: "details", header: "Details", render: (a) => <Details entry={a} /> },
 ];
 
 function toQuery(f: Filters) {
@@ -111,20 +137,20 @@ export function AuditView({ initialPage, staff }: { initialPage: AuditPage; staf
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-end gap-3">
-        <Select aria-label="Action" variant="toolbar" selectedKey={filters.action ?? ANY} onSelectionChange={set("action")} items={[{ id: ANY, label: "Any action" }, ...ACTIONS.map((a) => ({ id: a, label: a }))]} />
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <Select aria-label="Action" variant="toolbar" size="sm" selectedKey={filters.action ?? ANY} onSelectionChange={set("action")} items={[{ id: ANY, label: "Any action" }, ...ACTIONS.map((a) => ({ id: a, label: auditActionLabel(a) }))]} />
         <Select
           aria-label="Actor"
-          variant="toolbar"
+          variant="toolbar" size="sm"
           selectedKey={filters.actor_id ?? ANY}
           onSelectionChange={set("actor_id")}
           items={[{ id: ANY, label: "Anyone" }, ...staff.map((s) => ({ id: s.id, label: s.name, description: s.active ? undefined : "Inactive" }))]}
         />
-        <Select aria-label="Target" variant="toolbar" selectedKey={filters.target_kind ?? ANY} onSelectionChange={set("target_kind")} items={[{ id: ANY, label: "Any target" }, ...TARGET_KINDS.map((t) => ({ id: t, label: t }))]} />
-        <TextField aria-label="From date" type="date" numeric value={fromDate} onChange={(v) => applyDates(v, toDate)} className="w-[170px]" />
-        <TextField aria-label="To date" type="date" numeric value={toDate} onChange={(v) => applyDates(fromDate, v)} className="w-[170px]" />
+        <Select aria-label="Target" variant="toolbar" size="sm" selectedKey={filters.target_kind ?? ANY} onSelectionChange={set("target_kind")} items={[{ id: ANY, label: "Any target" }, ...TARGET_KINDS.map((t) => ({ id: t, label: auditTargetLabel(t) }))]} />
+        <DateField aria-label="From date" prefix="From" value={fromDate} onChange={(v) => applyDates(v, toDate)} className="w-[240px]" />
+        <DateField aria-label="To date" prefix="To" value={toDate} onChange={(v) => applyDates(fromDate, v)} className="w-[240px]" />
         {!unfiltered ? (
-          <Button variant="quiet" onPress={() => { setFilters({}); setFromDate(""); setToDate(""); }}>
+          <Button size="sm" variant="quiet" onPress={() => { setFilters({}); setFromDate(""); setToDate(""); }}>
             Clear filters
           </Button>
         ) : null}
@@ -137,7 +163,7 @@ export function AuditView({ initialPage, staff }: { initialPage: AuditPage; staf
         rowKey={(a) => a.id}
         isLoading={pages.isPending}
         className={pages.isPlaceholderData ? "opacity-60" : undefined}
-        emptyState={<EmptyState variant="quiet" title="No entries match" hint="Widen the filters or the date range." />}
+        emptyState={<EmptyState variant="centred" icon={ScrollText} title="No entries match" hint="Widen the filters or the date range." />}
       />
       <InlineError error={pages.error} className="mt-4" />
 
@@ -147,7 +173,7 @@ export function AuditView({ initialPage, staff }: { initialPage: AuditPage; staf
             Show older entries
           </Button>
         ) : null}
-        <span className="text-caption text-ink-2 tabular">
+        <span className="text-[13px] text-ink-2 tabular">
           {rows.length} {rows.length === 1 ? "entry" : "entries"}
           {pages.hasNextPage ? " shown" : rows.length ? " · that is everything" : ""}
         </span>

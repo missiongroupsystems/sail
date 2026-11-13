@@ -46,6 +46,32 @@ describe("a manager approval is bound to what the manager approved", () => {
     const ok = await applyRule(w.pins.server, s.id, SEED_RULE_IDS.managerComp, [wine!.id], g.body.data.override_id);
     expect(ok.status, JSON.stringify(ok.body)).toBe(200);
     expect(ok.body.data.totals.total).toBeLessThan(s.totals.total);
+    // C-5: the order names who applied the comp and who approved it, not their staff ids.
+    const apps = (ok.body.data as unknown as { manual_applications: { applied_by: string | null; approved_by: string | null }[] }).manual_applications;
+    expect(apps.at(-1)).toMatchObject({ applied_by: "Sam Server", approved_by: "Mia Manager" });
+  });
+
+  it("an approved payment and an approved removal name the approver in the audit trail and on the event", async () => {
+    const s = await h.orderWith(w.pins.server, [{ product_id: w.ids.wine }, { product_id: w.ids.kopi }]);
+    const comp = await grant(w.pins.server, "adjustments.apply_manual", "order", s.id, "222222", { rule_key: SEED_RULE_IDS.managerComp, entered_value: null, line_ids: [s.lines[1]!.id] });
+    const applicationId = randomUUID();
+    expect((await applyRule(w.pins.server, s.id, SEED_RULE_IDS.managerComp, [s.lines[1]!.id], comp.body.data.override_id, applicationId)).status).toBe(200);
+    const removal = await grant(w.pins.server, "adjustments.remove", "order", s.id, "222222", { application_id: applicationId });
+    const removed = await call<{ data: Snap }>("DELETE", `/v1/orders/${s.id}/adjustments/${applicationId}`, { token: w.pins.server, body: { override_id: removal.body.data.override_id } });
+    expect(removed.status, JSON.stringify(removed.body)).toBe(200);
+    await h.fire(w.pins.server, s.id);
+    const args = { check_id: removed.body.data.checks[0]!.id, tender_type_id: w.ids.card, amount: removed.body.data.balance, tip_cents: 0, reference: null };
+    const pay = await grant(w.pins.server, "payments.record", "order", s.id, "222222", args);
+    expect(pay.status, JSON.stringify(pay.body)).toBe(201);
+    const paid = await h.pay(w.pins.server, args.check_id, { tender_type_id: w.ids.card, amount: args.amount, override_id: pay.body.data.override_id });
+    expect(paid.status, JSON.stringify(paid.body)).toBe(200);
+    const audit = await db.sql<{ action: string; approver_id: string | null; override_id: string | null }[]>`select action, approver_id::text, override_id::text from audit_log where target_id = ${s.id} and action in ('adjustments.remove', 'payments.record') order by action`;
+    expect(audit).toEqual([
+      { action: "adjustments.remove", approver_id: w.m.manager.id, override_id: removal.body.data.override_id },
+      { action: "payments.record", approver_id: w.m.manager.id, override_id: pay.body.data.override_id },
+    ]);
+    const events = await db.sql<{ type: string; approver: string | null }[]>`select type, approval->>'approver_id' as approver from events where aggregate_id = ${s.id} and type in ('adjustment.removed', 'payment.recorded') order by type`;
+    expect(events).toEqual([{ type: "adjustment.removed", approver: w.m.manager.id }, { type: "payment.recorded", approver: w.m.manager.id }]);
   });
 
   it("a rule that does not allow manager approval cannot be approved", async () => {

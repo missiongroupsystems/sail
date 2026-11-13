@@ -6,12 +6,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, X } from "lucide-react";
 import { Icon } from "@sail/ui";
 import { useEffect, useMemo, useState } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { Warnings } from "@/components/backoffice/Warnings";
+import { useAllProducts } from "@/components/backoffice/products";
 import { ORDER_TYPES, ORDER_TYPE_LABEL } from "@/components/backoffice/labels";
 import { taxClassItems, useTaxClasses } from "@/components/backoffice/tax-classes";
-import { FormSection, RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
+import { RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
+import { greyPill, greyPillAlert, SheetSection } from "@/components/office/parts";
+import { applyServerErrors } from "@/components/office/server-errors";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Brand, Category, PricesByOrderType, Product, ProductCreate } from "@/lib/api/types";
@@ -90,6 +93,10 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
   const qc = useQueryClient();
   const product = state?.mode === "edit" ? state.product : null;
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(product) });
+  // A second product of the same name is allowed but said, rather than saved silently (live-test E-L15).
+  const all = useAllProducts({ include_archived: "false" }, state !== null);
+  const typedName = (useWatch({ control: form.control, name: "name" }) ?? "").trim();
+  const sameName = typedName ? ((all.data ?? []).find((p) => p.id !== product?.id && p.name.trim().toLowerCase() === typedName.toLowerCase())?.name ?? null) : null;
   const [warnings, setWarnings] = useState<string[]>([]);
   const reset = form.reset;
   useEffect(() => {
@@ -123,6 +130,8 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
       return product ? req(api.PATCH("/v1/products/{id}", { params: { path: { id: product.id } }, body })) : req(api.POST("/v1/products", { body }));
     },
     onSuccess: (res) => settle(res.warnings),
+    // A refusal that names a field shows under it; the message also stays at the foot of the form.
+    onError: (e) => applyServerErrors(form.setError, e, Object.keys(form.getValues())),
   });
   const archive = useMutation<{ data: Product; warnings: string[] }, ApiError, boolean>({
     mutationFn: (archived) => req(api.PATCH("/v1/products/{id}", { params: { path: { id: product!.id } }, body: { archived } })),
@@ -135,17 +144,16 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
       isOpen={state !== null}
       onOpenChange={(open) => !open && onClose()}
       isDismissable={!busy}
-      width="lg"
       title={product ? product.name : "New product"}
       description={product ? (product.archived ? "Archived. Restore it to sell it again." : `Updated ${stamp(product.updated_at)}`) : "A product is anything that can be sold or added as a modifier."}
       footer={
         <>
           {product ? (
-            <Button variant={product.archived ? "secondary" : "destructive"} onPress={() => archive.mutate(!product.archived)} isPending={archive.isPending} isDisabled={save.isPending} className="mr-auto">
+            <Button variant="secondary" onPress={() => archive.mutate(!product.archived)} isPending={archive.isPending} isDisabled={save.isPending} className={`mr-auto ${product.archived ? greyPill : greyPillAlert}`}>
               {product.archived ? "Restore product" : "Archive product"}
             </Button>
           ) : null}
-          <Button variant="quiet" onPress={onClose} isDisabled={busy}>
+          <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={busy}>
             Cancel
           </Button>
           <Button variant="primary" type="submit" form="product-form" isPending={save.isPending} isDisabled={archive.isPending}>
@@ -154,11 +162,11 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
         </>
       }
     >
-      <form id="product-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
-        <FormSection>
+      <form id="product-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-7">
+        <SheetSection title="Details">
           <div className="grid gap-4 sm:grid-cols-[1fr_180px]">
-            <RhfTextField control={form.control} name="name" label="Name" placeholder="Iced tea" autoFocus={!product} />
-            <RhfTextField control={form.control} name="sku" label="SKU" mono description="Matches rows on import." />
+            <RhfTextField control={form.control} name="name" label="Name" placeholder="Iced tea" autoFocus={!product} description={sameName ? `Another product is already called ${sameName}. Two items of one name are hard to tell apart on the POS.` : undefined} />
+            <RhfTextField control={form.control} name="sku" label="SKU" description="Matches rows on import." />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <RhfSelect
@@ -182,16 +190,16 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
               items={[{ id: NONE, label: "No category" }, ...categories.filter((c) => !c.archived).map((c) => ({ id: c.id, label: catLabel.get(c.id) ?? c.name }))]}
             />
           </div>
-        </FormSection>
+        </SheetSection>
 
-        <FormSection title="Prices" hint="The base price applies unless an order type has its own. Open-price items ask for the amount at the register.">
-          <div className="grid gap-4 sm:grid-cols-[200px_1fr]">
+        <SheetSection title="Prices" hint="The base price applies unless an order type has its own. Open-price items ask for the amount at the register.">
+          <div className="grid gap-4">
             <Controller
               control={form.control}
               name="price"
               render={({ field, fieldState }) => <MoneyField label="Base price" value={field.value} onChange={field.onChange} onBlur={field.onBlur} isInvalid={!!fieldState.error} errorMessage={fieldState.error?.message} />}
             />
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3">
               {ORDER_TYPES.map((t) => (
                 <Controller
                   key={t}
@@ -212,9 +220,9 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
               Deposit item
             </RhfSwitch>
           </div>
-        </FormSection>
+        </SheetSection>
 
-        <FormSection title="Tax">
+        <SheetSection title="Tax">
           <RhfSelect
             control={form.control}
             name="tax_class_id"
@@ -223,13 +231,13 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
             description="Sets the tax rates this item is charged at."
             className="sm:max-w-[360px]"
           />
-        </FormSection>
+        </SheetSection>
 
-        <FormSection title="Tags" hint="Tags drive pricing scopes and menu filters.">
+        <SheetSection title="Tags" hint="Tags drive pricing scopes and menu filters.">
           <Controller control={form.control} name="tags" render={({ field }) => <TagsField aria-label="Tags" value={field.value} onChange={field.onChange} />} />
-        </FormSection>
+        </SheetSection>
 
-        <FormSection title="Modifier groups" hint="Shown in this order when the item is added. Required groups come first on the POS.">
+        <SheetSection flat title="Modifier groups" hint="Shown in this order when the item is added. Required groups come first on the POS.">
           <Controller
             control={form.control}
             name="modifier_group_ids"
@@ -244,11 +252,11 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
               };
               return (
                 <div className="flex flex-col gap-3">
-                  {ids.length === 0 ? <p className="text-caption text-ink-2">No modifier groups attached.</p> : null}
-                  <ol className="flex flex-col">
+                  {ids.length === 0 ? <p className="rounded-panel border border-dashed border-rule-dashed px-4 py-3 text-[13px] text-ink-3">No modifier groups attached.</p> : null}
+                  {ids.length > 0 ? <ol className="flex flex-col rounded-panel border border-rule">
                     {ids.map((id, i) => (
-                      <li key={id} className="flex items-center gap-2 py-1 hairline-b last:border-b-0">
-                        <span className="w-6 text-caption text-ink-2 tabular">{i + 1}.</span>
+                      <li key={id} className="flex items-center gap-2 border-b border-rule-subtle py-1 pr-2 pl-4 last:border-b-0">
+                        <span className="w-6 text-[13px] text-ink-3 tabular">{i + 1}.</span>
                         <span className="min-w-0 flex-1 truncate text-ink">{groupName.get(id) ?? id}</span>
                         <Button variant="quiet" iconOnly aria-label="Move up" onPress={() => move(i, -1)} isDisabled={i === 0}>
                           <Icon icon={ArrowUp} size={16} />
@@ -261,7 +269,7 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
                         </Button>
                       </li>
                     ))}
-                  </ol>
+                  </ol> : null}
                   <Select
                     aria-label="Attach a modifier group"
                     placeholder="Attach a modifier group…"
@@ -274,7 +282,7 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
               );
             }}
           />
-        </FormSection>
+        </SheetSection>
 
         <Warnings warnings={warnings} />
         <InlineError error={save.error ?? archive.error} />

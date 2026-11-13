@@ -23,7 +23,8 @@ export function middleware(request: NextRequest) {
   if (pathname === "/setup" || pathname === "/set-password") return NextResponse.next();
   if (!signedIn) {
     const login = new URL("/login", request.url);
-    if (pathname !== "/") login.searchParams.set("next", pathname);
+    // The deep link keeps its query (a report's date, a filter), so signing in lands where the link pointed.
+    if (pathname !== "/") login.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(login);
   }
   return NextResponse.next();

@@ -1,6 +1,8 @@
 "use client";
 
-import { Button, InlineError, StatusDot, useLocale } from "@sail/ui";
+import { Badge, Button, cx, Icon, InlineError, useLocale } from "@sail/ui";
+import { Check, CircleAlert } from "lucide-react";
+import type { ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { req, type ApiError } from "@/lib/api";
@@ -36,10 +38,42 @@ export function relayDockerCommand(code: string): string {
 }
 
 export function RelayStatus({ relay }: { relay: Relay }) {
-  if (relay.archived) return <StatusDot status="neutral" label="Archived" muted />;
-  if (!relay.paired) return <StatusDot status="neutral" label="Not paired" muted />;
-  if (relay.online) return <StatusDot status="paid" label="Online" />;
-  return <StatusDot status="alert" label="Offline" />;
+  if (relay.archived) return <Badge>Archived</Badge>;
+  if (!relay.paired) return <Badge>Not paired</Badge>;
+  if (relay.online)
+    return (
+      <Badge tone="paid">
+        <Icon icon={Check} size={12} strokeWidth={2.25} />
+        Online
+      </Badge>
+    );
+  return (
+    <Badge tone="alert">
+      <Icon icon={CircleAlert} size={12} strokeWidth={2.25} />
+      Offline
+    </Badge>
+  );
+}
+
+/** One relay as a card: its name and status pill, then when it was last heard, its printers and its version. Phrasing content only, so it can sit inside a button. */
+export function RelayCard({ relay, detail, className }: { relay: Relay; detail?: ReactNode; className?: string }) {
+  const { dayClock } = useLocale();
+  const reports = Object.values(relay.printer_status);
+  const ok = reports.filter((r) => r.ok).length;
+  return (
+    <span className={cx("flex min-w-0 flex-col gap-2 rounded-[14px] border border-rule bg-surface px-5 py-4 text-left", relay.archived && "opacity-70", className)}>
+      <span className="flex items-center justify-between gap-3">
+        <span className="min-w-0 truncate text-[14.5px] font-medium text-ink">{relay.name}</span>
+        <RelayStatus relay={relay} />
+      </span>
+      <span className="text-[13px] leading-5 text-ink-2 tabular">
+        {relay.last_seen_at ? `Last heard ${dayClock(relay.last_seen_at)}` : "Never heard from"}
+        {reports.length ? ` · ${ok} of ${reports.length} printers reachable` : ""}
+        {relay.version ? ` · version ${relay.version}` : ""}
+      </span>
+      {detail}
+    </span>
+  );
 }
 
 /**
@@ -78,7 +112,7 @@ export function RelayPairingPanel({ relay, canPair }: { relay: Relay; canPair: b
 
       {live ? (
         <div className="flex flex-col gap-4">
-          <div className="flex flex-col items-start gap-2 rounded-tile bg-surface-2 px-5 py-4">
+          <div className="flex flex-col items-start gap-2 rounded-[14px] bg-surface-2 px-5 py-4">
             <p className="text-caption text-ink-2">On the relay device, start the container with this code</p>
             <p className="font-mono text-display text-ink tabular tracking-[0.18em]" aria-label={`Pairing code ${code.data!.code.split("").join(" ")}`}>
               {code.data!.code}
@@ -94,7 +128,7 @@ export function RelayPairingPanel({ relay, canPair }: { relay: Relay; canPair: b
                 {copied ? "Copied" : "Copy command"}
               </Button>
             </div>
-            <pre className="overflow-x-auto rounded-tile bg-surface-2 px-4 py-3 font-mono text-caption leading-[20px] text-ink whitespace-pre">{relayDockerCommand(code.data!.code)}</pre>
+            <pre className="overflow-x-auto rounded-[12px] bg-surface-2 px-4 py-3 font-mono text-caption leading-[20px] text-ink whitespace-pre">{relayDockerCommand(code.data!.code)}</pre>
           </div>
         </div>
       ) : null}

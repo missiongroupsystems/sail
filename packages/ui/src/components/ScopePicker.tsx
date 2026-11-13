@@ -38,36 +38,35 @@ export function ScopePicker({ merchantName, brands, outlets, value, onChange, co
       <AriaButton
         aria-label={`Scope: ${summary}`}
         className={cx(
-          "press flex w-full min-h-11 items-center gap-3 rounded-tile px-2 text-left outline-none",
-          "data-[hovered]:bg-surface-2 data-[pressed]:bg-surface-2 data-[pressed]:scale-[0.99]",
-          "data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated",
+          "press flex w-full min-h-11 items-center gap-2 rounded-[10px] bg-surface px-3 py-2 text-left shadow-[inset_0_0_0_1px_var(--line)] outline-none transition-shadow duration-[120ms]",
+          "data-[hovered]:shadow-[inset_0_0_0_1px_var(--line-strong)] data-[pressed]:bg-surface-2",
+          "data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus",
           collapsed && "justify-center px-0",
           className,
         )}
       >
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-tile bg-surface-2 text-ink">
-          <Icon icon={Store} size={18} />
-        </span>
-        {!collapsed ? (
+        {collapsed ? (
+          <Icon icon={Store} size={18} className="text-ink" />
+        ) : (
           <>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-line text-ink">{merchantName}</span>
-              <span className="block truncate text-caption text-ink-2">
-                {brandLabel} ▸ {outletLabel}
+              <span className="block truncate text-[11.5px] leading-4 text-ink-3">{merchantName}</span>
+              <span className="block truncate text-[14px] leading-5 font-medium text-ink">
+                {brandLabel} · {outletLabel}
               </span>
             </span>
-            <Icon icon={ChevronDown} size={16} className="text-ink-2" />
+            <Icon icon={ChevronDown} size={16} className="shrink-0 text-ink-3" />
           </>
-        ) : null}
+        )}
       </AriaButton>
       <Popover
         placement="bottom start"
         offset={4}
-        className="w-[320px] rounded-tile bg-surface hairline shadow-sheet outline-none data-[entering]:animate-rise-in data-[exiting]:animate-rise-out"
+        className="w-[320px] rounded-[14px] bg-surface shadow-popover outline-none data-[entering]:animate-rise-in data-[exiting]:animate-rise-out"
       >
         <AriaDialog aria-label="Change scope" className="flex flex-col gap-4 p-4 outline-none">
           <div>
-            <p className="text-caption text-ink-2">Merchant</p>
+            <p className="text-caption text-ink-3">Merchant</p>
             <p className="text-line text-ink">{merchantName}</p>
           </div>
           <Select

@@ -80,8 +80,8 @@ export function SetupForm({ withPassword }: { withPassword: boolean }) {
   });
 
   return (
-    <form onSubmit={submit} noValidate className="flex flex-col gap-8">
-      <FormSection title="Business">
+    <form onSubmit={submit} noValidate className="flex flex-col gap-7">
+      <FormSection variant="label" title="Business">
         <RhfTextField control={form.control} name="business_name" label="Business name" autoFocus />
         <RhfSelect
           control={form.control}
@@ -99,7 +99,8 @@ export function SetupForm({ withPassword }: { withPassword: boolean }) {
         ) : null}
         <RhfTextField control={form.control} name="outlet_name" label="First outlet" />
       </FormSection>
-      <FormSection title="You, the first Admin">
+      <div aria-hidden className="h-px bg-rule-subtle" />
+      <FormSection variant="label" title="You, the first Admin">
         <RhfTextField control={form.control} name="name" label="Your name" autoComplete="name" />
         <RhfTextField control={form.control} name="email" label="Email" type="email" inputMode="email" autoComplete="username" />
         {withPassword ? <RhfTextField control={form.control} name="password" label="Password" type="password" autoComplete="new-password" description="At least 12 characters." /> : <p className="text-ink-2">You will sign in through your organisation's identity provider with this email.</p>}

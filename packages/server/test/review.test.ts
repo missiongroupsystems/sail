@@ -258,7 +258,9 @@ describe("tokens and settings", () => {
     expect((await signIn(old, "444444")).status).toBe(401);
     expect((await signIn(fresh, "444444")).status).toBe(201);
     stationToken = fresh;
-    // Sessions signed in before re-pairing keep working (the staff member, not the iPad, is the principal).
+    // PIN sessions signed in on the old device end with its pairing: a lost or replaced iPad keeps no access.
+    expect((await call("GET", "/v1/me", { token: cashierPin })).status).toBe(401);
+    cashierPin = (await signIn(fresh, "333333")).body.data.session_token;
     expect((await call("GET", "/v1/me", { token: cashierPin })).status).toBe(200);
   });
 

@@ -15,10 +15,10 @@ export function Skeleton({ className, lines, delayMs = 300 }: SkeletonProps) {
     return (
       <div className={cx("flex flex-col gap-2", className)} aria-busy="true" aria-live="polite">
         {Array.from({ length: lines }, (_, i) => (
-          <div key={i} className={cx("h-4 rounded-sm bg-surface-2 opacity-0 animate-skeleton [animation-fill-mode:both]", i === lines - 1 && "w-2/3")} style={style} />
+          <div key={i} className={cx("h-3 rounded-[5px] bg-surface-3 opacity-0 animate-skeleton [animation-fill-mode:both]", i === lines - 1 && "w-2/3")} style={style} />
         ))}
       </div>
     );
   }
-  return <div className={cx("h-4 rounded-sm bg-surface-2 opacity-0 animate-skeleton [animation-fill-mode:both]", className)} style={style} aria-busy="true" />;
+  return <div className={cx("h-3 rounded-[5px] bg-surface-3 opacity-0 animate-skeleton [animation-fill-mode:both]", className)} style={style} aria-busy="true" />;
 }

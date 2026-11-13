@@ -25,7 +25,7 @@ const DestinationSchema = z.object({ id: z.string(), outlet_id: z.string(), name
 const DestinationCreate = z.object({
   id: z.uuid().optional(),
   outlet_id: z.uuid(),
-  name: z.string().min(1).max(80),
+  name: z.string().trim().min(1).max(80),
   include_tags: z.array(z.string()).optional(),
   exclude_tags: z.array(z.string()).optional(),
   order_types: z.array(z.enum(["dine_in", "takeaway", "pickup", "delivery"])).optional(),

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, isNull, lt, sql } from "drizzle-orm";
-import type { Role } from "@sail/shared";
+import { formatMoney, type Role } from "@sail/shared";
 import { db, settleInvariants, tx, withOwnTransaction, withTransaction } from "../db/client.js";
 import { businessDayCloses, checks, merchantSettings, paymentIntents, paymentOutbox, paymentProviderAccounts, payments, refunds, tenderTypes, type EventActor, type PaymentIntent } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -10,7 +10,7 @@ import { actorOf, type Principal } from "../auth/principal.js";
 import { logger } from "../logger.js";
 import { paymentProvider, WebhookRejected, type PaymentProvider, type ProviderAccount, type ProviderPaymentStatus } from "../payments/provider.js";
 import { bumpVersion, lockOrder } from "./orders.js";
-import { assertTipAllowed, recordPayment, reversePayment } from "./payments.js";
+import { assertTipAllowed, recordPayment, reversePayment, tipsOn } from "./payments.js";
 import { businessDayInputs } from "./business-day.js";
 import { enforceLimit } from "./guest.js";
 
@@ -98,14 +98,14 @@ export async function startIntent(order: Awaited<ReturnType<typeof lockOrder>>, 
   if (!Number.isInteger(input.tipCents) || input.tipCents < 0) throw AppError.validation("tip_cents must be zero or a positive number of minor units");
   const balance = check.total - check.paidTotal;
   if (balance <= 0) throw AppError.state(`${check.label} is already paid`, [], "Nothing is owed on this bill.");
-  if (input.amount > balance) throw AppError.validation(`${tender.name} payments cannot exceed the balance`, { remedy: "Enter the balance or a smaller part payment.", details: { balance, check_id: check.id } });
+  const [settings] = await db().select({ currency: merchantSettings.currency, locale: merchantSettings.locale, tipsEnabled: merchantSettings.tipsEnabled }).from(merchantSettings).where(eq(merchantSettings.merchantId, order.merchantId)).limit(1);
+  if (!settings) throw AppError.notFound("merchant settings", order.merchantId);
+  if (input.amount > balance) throw AppError.validation(`${tender.name} payments cannot exceed the balance of ${formatMoney(balance, settings)}`, { remedy: `Enter ${formatMoney(balance, settings)} or a smaller part payment.`, details: { balance, check_id: check.id } });
   const [existing] = await db().select().from(paymentIntents).where(eq(paymentIntents.id, input.intentId)).limit(1);
   if (existing) throw new AppError("state_conflict", "This payment was already sent to the terminal", { remedy: "Use a new intent_id for a new payment.", details: { intent_id: existing.id, state: existing.state } });
   const [pending] = await db().select({ id: paymentIntents.id }).from(paymentIntents).where(and(eq(paymentIntents.checkId, check.id), eq(paymentIntents.state, "pending"))).limit(1);
   if (pending) throw new AppError("state_conflict", `A payment for ${check.label} is already on the terminal`, { remedy: "Wait for the terminal, or cancel the payment that is waiting.", details: { intent_id: pending.id } });
-  const [settings] = await db().select({ currency: merchantSettings.currency, tipsEnabled: merchantSettings.tipsEnabled }).from(merchantSettings).where(eq(merchantSettings.merchantId, order.merchantId)).limit(1);
-  if (!settings) throw AppError.notFound("merchant settings", order.merchantId);
-  assertTipAllowed(settings.tipsEnabled, input.tipCents);
+  assertTipAllowed(settings, input.tipCents, check.total, await tipsOn(check.id));
   const [intent] = await db()
     .insert(paymentIntents)
     .values({

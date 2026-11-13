@@ -1,6 +1,6 @@
 "use client";
 
-import { AmountPad, Button, FolderTile, PanelSheet, QuantityStepper, SearchField, SectionRail, Skeleton, TextField, Tile, useLocale } from "@sail/ui";
+import { AmountPad, Button, FolderTile, QuantityStepper, Sheet, SearchField, SectionRail, Skeleton, TextField, Tile, useLocale } from "@sail/ui";
 import { useMemo, useState } from "react";
 import type { CompiledProduct, FolderTile as FolderTileData, OrderSnapshot, ProductTile } from "../api/types";
 import type { useOrderActions } from "../hooks/useOrderActions";
@@ -8,6 +8,7 @@ import { needsChoices, priceFor, searchMenu, tileIndex, tileRestriction } from "
 import { useUiStore } from "../state/ui";
 import { defaultSelection, ModifierPicker, QUICK_NOTES, toModifiers, unmetRequirement, type Selection } from "./ModifierPicker";
 import { usePos } from "./PosContext";
+import { GREY_PILL } from "./styles";
 
 type Panel = { kind: "modifiers"; product: CompiledProduct } | { kind: "open-price"; product: CompiledProduct } | null;
 
@@ -32,6 +33,12 @@ export function Catalogue({ order, actions, activeSeat }: CatalogueProps) {
   const page = layout?.pages.find((p) => p.id === pageId) ?? layout?.pages[0] ?? null;
   const layoutTiles = useMemo(() => tileIndex(layout), [layout]);
   const results = useMemo(() => (menu && query.trim() ? searchMenu(menu, query) : null), [menu, query]);
+  // How many of each item the order holds (voided ones out): a count on its tile.
+  const onOrder = useMemo(() => {
+    const n = new Map<string, number>();
+    for (const l of order.lines) if (l.status !== "voided") n.set(l.product_id, (n.get(l.product_id) ?? 0) + l.quantity);
+    return n;
+  }, [order.lines]);
 
   // Search results keep the layout's colour and access level, so search is never a way around a restricted tile.
   const tiles: ProductTile[] | null = results ? results.map((p) => ({ id: `s:${p.id}`, kind: "product", label: p.name, color: layoutTiles.get(p.id)?.color ?? "stone", access_level: layoutTiles.get(p.id)?.access_level ?? "everyone", product_id: p.id })) : null;
@@ -52,7 +59,7 @@ export function Catalogue({ order, actions, activeSeat }: CatalogueProps) {
   };
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 pl-3">
+    <div className="flex min-h-0 min-w-0 flex-1 gap-3">
       <SectionRail
         items={(layout?.pages ?? []).map((p) => ({ id: p.id, label: p.name }))}
         selectedId={query ? null : (page?.id ?? null)}
@@ -62,10 +69,10 @@ export function Catalogue({ order, actions, activeSeat }: CatalogueProps) {
           setQuery("");
         }}
         folder={folder ? { label: folder.label, onBack: () => setFolder(null) } : null}
-        footer={<SearchField value={query} onChange={setQuery} />}
       />
-      <div className="relative min-h-0 min-w-0 flex-1">
-        <div className="h-full overflow-y-auto px-3 py-3">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+        <SearchField value={query} onChange={setQuery} placeholder="Search the menu" className="shrink-0" />
+        <div className="min-h-0 flex-1 overflow-y-auto pb-2">
           {!menu || !layout ? (
             <div className="grid grid-cols-4 gap-4">
               {Array.from({ length: 8 }, (_, i) => (
@@ -75,7 +82,7 @@ export function Catalogue({ order, actions, activeSeat }: CatalogueProps) {
           ) : (
             <>
               {query && results?.length === 0 ? <p className="px-1 py-2 text-body text-ink-2">Nothing on this menu matches “{query}”.</p> : null}
-              <div className="grid grid-cols-[repeat(auto-fill,136px)] content-start gap-4" role="list" aria-label={folder ? folder.label : (page?.name ?? "Catalogue")}>
+              <div className="grid grid-cols-[repeat(auto-fill,136px)] content-start gap-4 max-[900px]:grid-cols-[repeat(auto-fill,minmax(120px,1fr))] max-[900px]:gap-3" role="list" aria-label={folder ? folder.label : (page?.name ?? "Catalogue")}>
                 {shown.map((tile) => {
                   if (tile.kind === "folder") return <FolderTile key={tile.id} label={tile.label} colour={tile.color} count={tile.tiles.length} onPress={() => setFolder(tile)} />;
                   const product = menu.products[tile.product_id];
@@ -89,6 +96,7 @@ export function Catalogue({ order, actions, activeSeat }: CatalogueProps) {
                       unavailableReason={product ? (product.available_now ? null : product.unavailable_reason) : "Not on menu"}
                       capRemaining={product?.cap_remaining}
                       restrictedTo={tileRestriction(tile.access_level, staff.role)}
+                      onOrder={onOrder.get(tile.product_id) || undefined}
                       onPress={() => press(tile)}
                     />
                   );
@@ -99,7 +107,7 @@ export function Catalogue({ order, actions, activeSeat }: CatalogueProps) {
         </div>
 
         {menu && panel?.kind === "modifiers" ? (
-          <ModifierSheet product={panel.product} onClose={() => setPanel(null)} onAdd={async (input) => {
+          <ModifierSheet product={panel.product} orderType={order.order_type} onClose={() => setPanel(null)} onAdd={async (input) => {
             setPanel(null);
             await actions.addLine({ ...input, orderType: order.order_type, seat: activeSeat });
           }} />
@@ -118,8 +126,9 @@ export function Catalogue({ order, actions, activeSeat }: CatalogueProps) {
 type AddInput = { product: CompiledProduct; quantity: number; modifiers: ReturnType<typeof toModifiers>; notes: string | null };
 
 /** The modifier sheet: over the catalogue, required groups first; Add stays disabled with the reason on the button. */
-function ModifierSheet({ product, onClose, onAdd }: { product: CompiledProduct; onClose: () => void; onAdd: (input: AddInput) => Promise<void> }) {
+function ModifierSheet({ product, orderType, onClose, onAdd }: { product: CompiledProduct; orderType: Parameters<typeof priceFor>[1]; onClose: () => void; onAdd: (input: AddInput) => Promise<void> }) {
   const { menu } = usePos();
+  const { money } = useLocale();
   const [selection, setSelection] = useState<Selection>(() => (menu ? defaultSelection(menu, product) : {}));
   const [quantity, setQuantity] = useState(1);
   const [notes, setNotes] = useState("");
@@ -127,9 +136,9 @@ function ModifierSheet({ product, onClose, onAdd }: { product: CompiledProduct; 
   const unmet = unmetRequirement(menu, product, selection);
   const addNote = (chip: string) => setNotes((n) => (n.split(", ").includes(chip) ? n : n ? `${n}, ${chip}` : chip));
   return (
-    <PanelSheet
+    <Sheet labelledClose
       isOpen
-      onClose={onClose}
+      onOpenChange={(o) => (!o ? onClose() : undefined)}
       title={product.name}
       description={product.description ?? undefined}
       footer={
@@ -141,26 +150,31 @@ function ModifierSheet({ product, onClose, onAdd }: { product: CompiledProduct; 
             size="lg"
             isDisabled={Boolean(unmet)}
             onPress={() => void onAdd({ product, quantity, modifiers: toModifiers(menu, product, selection), notes: notes.trim() || null })}
-            className="min-w-[220px] min-h-16"
+            className="min-w-[220px] text-[17px]"
           >
             {unmet ?? `Add ${quantity > 1 ? `${quantity} × ` : ""}${product.name}`}
           </Button>
         </>
       }
     >
+      {/* The item's section and its price before choices (the "Mains · $16.00" row). */}
+      <div className="mb-5 flex items-baseline justify-between gap-3">
+        <span className="text-body text-ink-2">{menu.menu.sections.find((sec) => sec.items.some((i) => i.product_id === product.id))?.name ?? ""}</span>
+        <span className="font-heading text-[17px] font-semibold text-ink tabular">{money(priceFor(product, orderType))}</span>
+      </div>
       <ModifierPicker menu={menu} product={product} selection={selection} onChange={setSelection} />
       <section className="mt-6" aria-label="Notes for the kitchen">
-        <h3 className="mb-2 text-line text-ink">Notes</h3>
+        <h3 className="mb-2 text-[16px] font-medium text-ink">Notes</h3>
         <div className="mb-2 flex flex-wrap gap-2">
           {QUICK_NOTES.map((c) => (
-            <Button key={c} size="md" variant="secondary" onPress={() => addNote(c)} className="rounded-chip">
+            <Button key={c} size="md" variant="quiet" onPress={() => addNote(c)} className={GREY_PILL + " text-[14.5px] font-normal"}>
               {c}
             </Button>
           ))}
         </div>
         <TextField aria-label="Note" value={notes} onChange={setNotes} placeholder="Note for the kitchen" inputClassName="min-h-14 text-line" maxLength={200} />
       </section>
-    </PanelSheet>
+    </Sheet>
   );
 }
 
@@ -172,13 +186,13 @@ function OpenPriceSheet({ product, onClose, onAdd }: { product: CompiledProduct;
   const cents = Number(digits || "0");
   const needsApproval = !["manager", "finance", "admin"].includes(staff.role);
   return (
-    <PanelSheet
+    <Sheet labelledClose
       isOpen
-      onClose={onClose}
+      onOpenChange={(o) => (!o ? onClose() : undefined)}
       title={product.name}
       description="Enter the price"
       footer={
-        <Button variant="primary" size="lg" isDisabled={cents <= 0} onPress={() => void onAdd(cents)} className="min-w-[260px] min-h-16">
+        <Button variant="primary" size="lg" isDisabled={cents <= 0} onPress={() => void onAdd(cents)} className="min-w-[260px]">
           Add {product.name} at {money(cents)}
           {needsApproval ? <span className="ml-2 rounded-chip bg-[color-mix(in_srgb,var(--status-bill)_14%,transparent)] px-2 text-caption text-status-bill">Manager approval</span> : null}
         </Button>
@@ -187,6 +201,6 @@ function OpenPriceSheet({ product, onClose, onAdd }: { product: CompiledProduct;
       <div className="flex justify-center pt-2">
         <AmountPad digits={digits} onChange={setDigits} mode="cents" hint="Open price · a manager approves it" />
       </div>
-    </PanelSheet>
+    </Sheet>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
-import { BottomSheet, BrandButton, ChoiceGroup, GuestStepper, Money, TextField, type ChoiceValue, useLocale } from "@sail/ui";
+import { BottomSheet, BrandButton, ChoiceGroup, cx, GuestStepper, Money, type ChoiceValue, useLocale } from "@sail/ui";
 import { useState } from "react";
+import { Input, Label, TextField as AriaTextField } from "react-aria-components";
 import type { BasketItem } from "@/lib/basket";
 import { childGroup, defaultSelection, ruleText, selectionFromModifiers, setGroupValue, toModifiers, topGroups, unmetRequirement, type Selection } from "@/lib/modifiers";
 import type { CompiledGroup, CompiledMenu, CompiledProduct } from "@/lib/types";
@@ -24,8 +25,8 @@ const MAX_QTY = 50;
 /**
  * The item sheet: required choices first, the same rules as the
  * POS modifier picker, nested choices inline under the option that opens them,
- * a note for the kitchen, a quantity stepper, and one "Add to order" button
- * that carries the menu price and stays disabled, with the reason, until every
+ * a note for the kitchen, and a footer with the quantity stepper and one
+ * "Add to order" button that carries the menu price and stays disabled, with the reason, until every
  * minimum is met.
  */
 export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupError, onAdd, onUpdate }: ItemSheetProps) {
@@ -38,6 +39,8 @@ export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupE
   const [showErrorFor, setShowErrorFor] = useState<string | null>(null);
 
   const groups = topGroups(menu, product);
+  // The menu section the item sits in ("Noodles"), under its name.
+  const category = menu.menu.sections.find((sec) => sec.items.some((i) => i.product_id === product.id))?.name ?? null;
   const unmet = unmetRequirement(menu, product, selection);
   const maxQty = product.cap_remaining != null ? Math.max(1, Math.min(MAX_QTY, product.cap_remaining)) : MAX_QTY;
 
@@ -103,7 +106,9 @@ export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupE
   // extra included); the phone never adds them up, so the button shows the parts, as the review page does.
   const extras = toModifiers(menu, product, selection).filter((m) => m.price !== 0).map((m) => (m.quantity > 1 ? `${m.quantity} × ${money(m.price)}` : money(m.price)));
   const price = [money(product.price), ...extras].join(" + ");
-  const addLabel = editing ? "Update item" : quantity > 1 ? `Add ${quantity} to order · ${price} each` : `Add to order · ${price}`;
+  const verb = editing ? "Update item" : quantity > 1 ? `Add ${quantity} to order` : "Add to order";
+  const priceLine = editing ? null : quantity > 1 ? `${price} each` : price;
+  const addLabel = priceLine ? `${verb} · ${priceLine}` : verb;
   const label = unmet ? unmet.message : addLabel;
 
   return (
@@ -112,25 +117,46 @@ export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupE
       onOpenChange={onOpenChange}
       title={product.name}
       description={
-        <span className="flex flex-col gap-1">
-          {product.description ? <span>{product.description}</span> : null}
-          <Money cents={product.price} size="heading" className="text-ink" />
-        </span>
+        category || product.description ? (
+          <span className="flex flex-col gap-1">
+            {category ? <span className="text-ink-3">{category}</span> : null}
+            {product.description ? <span className="wrap-anywhere">{product.description}</span> : null}
+          </span>
+        ) : undefined
       }
+      className={groups.length ? "h-[92dvh]" : undefined}
       footer={
-        <BrandButton variant={unmet ? "secondary" : "accent"} block onPress={commit}>
-          {label}
-        </BrandButton>
+        <div className="flex items-center gap-3">
+          <GuestStepper value={quantity} onChange={setQuantity} min={1} max={maxQty} label="Quantity" />
+          {/* The accessible name is the whole sentence. While a choice is missing the button looks disabled but stays pressable,
+              so a VoiceOver user can reach it; pressing takes them to the group. */}
+          <BrandButton variant={unmet ? "secondary" : "accent"} onPress={commit} aria-label={label} className={cx("min-h-14 min-w-0 flex-1 px-4 py-1.5 text-[16px] leading-tight", unmet && "text-ink-3")}>
+            {/* Each part keeps to one line; a wrap only ever falls between the verb and the price, the dot staying with the verb. */}
+            {unmet ? (
+              <span className="max-w-full truncate whitespace-nowrap">{unmet.message}</span>
+            ) : (
+              <span className="flex max-w-full flex-wrap items-baseline justify-center gap-x-1.5 text-center">
+                <span className="whitespace-nowrap">{priceLine ? `${verb} ·` : verb}</span>
+                {priceLine ? <span className="whitespace-nowrap tabular">{priceLine}</span> : null}
+              </span>
+            )}
+          </BrandButton>
+        </div>
       }
     >
       <div className="flex flex-col gap-6">
-        {groups.map((g) => renderGroup(g))}
-        <TextField label="Note for the kitchen" value={notes} onChange={setNotes} maxLength={200} placeholder="Allergies, less spicy, no ice…" inputClassName="min-h-12" />
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-line text-ink">Quantity</span>
-          <GuestStepper value={quantity} onChange={setQuantity} min={1} max={maxQty} label="Quantity" />
+        <div className="flex items-baseline gap-2 text-[15px] text-ink-2">
+          <Money cents={product.price} size="heading" className="font-heading text-[18px] font-semibold text-ink" />
+          <span>each</span>
         </div>
-        {product.cap_remaining != null && product.cap_remaining <= 5 ? <p className="text-caption text-ink-2">Only {product.cap_remaining} left today.</p> : null}
+        {groups.map((g) => renderGroup(g))}
+        <AriaTextField value={notes} onChange={setNotes} maxLength={200} className="flex flex-col gap-2">
+          <Label className="flex items-baseline justify-between gap-3">
+            <span className="font-display text-[16px] font-semibold text-ink">Note for the kitchen</span>
+          </Label>
+          <Input placeholder="Allergies, less spicy, no ice…" className="h-12 w-full rounded-sheet border border-transparent bg-surface-2 px-4 text-[16px] text-ink outline-none placeholder:text-ink-3 focus:border-rule-strong focus:bg-surface" />
+        </AriaTextField>
+        {product.cap_remaining != null && product.cap_remaining <= 5 ? <p className="text-caption text-ink-3">Only {product.cap_remaining} left today.</p> : null}
       </div>
     </BottomSheet>
   );

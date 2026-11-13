@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, DataTable, EmptyState, Icon, InlineError, Money, type DataTableColumn, useLocale } from "@sail/ui";
+import { Badge, Button, DataTable, EmptyState, Icon, InlineError, Money, type DataTableColumn, useLocale, kindTone } from "@sail/ui";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Info } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -74,7 +74,7 @@ export function describeScope(b: RuleBody, categories: Category[]): string {
 }
 
 export function RulesView({ initialVersions, outlets, brands, categories, groups }: { initialVersions: PricingRuleVersion[]; outlets: Outlet[]; brands: Brand[]; categories: Category[]; groups: CustomerGroup[] }) {
-  const { dayClock, locale } = useLocale();
+  const { locale, stamp, businessDay, isoDate } = useLocale();
   const [sheet, setSheet] = useState<RuleSheetState>(null);
   const [showArchived, setShowArchived] = useState(false);
 
@@ -99,17 +99,20 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
       header: "Rule",
       isRowHeader: true,
       render: (r) => (
-        <span>
+        <span className="flex flex-col leading-5">
           <span className="text-ink">{r.body.name}</span>
-          <span className="ml-2 font-mono text-caption text-ink-2">{r.rule_key}</span>
+          <span className="text-[12.5px] leading-4 text-ink-2">
+            Priority {r.body.priority} · <span>{r.rule_key}</span>
+          </span>
         </span>
       ),
     },
-    { key: "kind", header: "Kind", render: (r) => (r.body.kind === "fee" ? <Badge tone="sent">Fee</Badge> : <Badge tone="seated">Discount</Badge>) },
+    { key: "kind", header: "Kind", render: (r) => <Badge tone={kindTone(r.body.kind)}>{r.body.kind === "fee" ? "Fee" : "Discount"}</Badge> },
     {
       key: "value",
       header: "Value",
-      numeric: true,
+      // Left-aligned with the other words: a value is "25%" or "$5.00 per order", not a column of figures.
+      className: "tabular whitespace-nowrap",
       render: (r) =>
         r.body.calc === "percent" || r.body.value.type === "open" ? (
           <span>{describeValue(r.body)}</span>
@@ -125,17 +128,18 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
       header: "How",
       render: (r) => (r.body.application === "auto" ? <span className="text-ink-2">Automatic</span> : <span className="text-ink-2">Manual · {label(ROLE_LABEL, r.body.min_role)}+</span>),
     },
-    { key: "report_class", header: "Reports as", render: (r) => <span className="text-ink-2">{label(REPORT_CLASS_LABEL, r.body.report_class)}</span> },
-    { key: "priority", header: "Priority", numeric: true, render: (r) => r.body.priority },
+    { key: "report_class", header: "Reports as", hideBelow: "xl", render: (r) => <span className="text-ink-2">{label(REPORT_CLASS_LABEL, r.body.report_class)}</span> },
     {
       key: "status",
       header: "Status",
       render: (r) => (
-        <span className="inline-flex items-center gap-2">
+        <span className="inline-flex flex-col items-start gap-0.5">
           {statusBadge(r.current)}
-          <span className="text-caption text-ink-2 tabular">
+          {/* The day with its year on one line; the time is in the tooltip. */}
+          <span className="text-[12.5px] leading-4 whitespace-nowrap text-ink-2 tabular" title={stamp(r.current.effective_from)}>
             v{r.current.version} · {r.current.status === "scheduled" ? "from " : ""}
-            {dayClock(r.current.effective_from)}
+            {/* A database seeded before the fix holds the epoch for "from the start"; it is not a date anyone set. */}
+            {new Date(r.current.effective_from).getTime() <= 0 ? "from the start" : businessDay(isoDate(new Date(r.current.effective_from)))}
           </span>
         </span>
       ),
@@ -161,8 +165,8 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
           ) : null}
         </p>
         <div className="flex items-center gap-2">
-          <Button onPress={() => setSheet({ mode: "create", kind: "discount" })}>Add discount</Button>
-          <Button variant="primary" onPress={() => setSheet({ mode: "create", kind: "fee" })}>
+          <Button size="sm" onPress={() => setSheet({ mode: "create", kind: "discount" })}>Add discount</Button>
+          <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create", kind: "fee" })}>
             Add fee
           </Button>
         </div>
@@ -177,7 +181,7 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
         rowKey={(r) => r.rule_key}
         onRowAction={(r) => setSheet({ mode: "edit", row: r })}
         rowClassName={(r) => (r.current.status === "archived" ? "text-ink-2" : undefined)}
-        emptyState={<EmptyState variant="quiet" title="No pricing rules" hint="Tap Add fee or Add discount. A service charge or a deposit usually comes first." />}
+        emptyState={<EmptyState variant="centred" title="No pricing rules" hint="Tap Add fee or Add discount. A service charge or a deposit usually comes first." />}
       />
       <InlineError error={versions.error} className="mt-4" />
 
@@ -193,9 +197,9 @@ function ValidationPanel({ blocking, advisory, rows, isPending, error, onOpen }:
   if (error) return <InlineError error={error} className="mb-4" />;
   const total = blocking.length + advisory.length;
   return (
-    <div className="mb-4 rounded-tile hairline">
-      <div className="flex flex-wrap items-center gap-3 px-4 py-2.5">
-        <span className="text-caption uppercase tracking-[0.06em] text-ink-2">Checks</span>
+    <div className="mb-6 rounded-[14px] border border-rule bg-surface">
+      <div className="flex flex-wrap items-center gap-3 px-5 py-2.5">
+        <span className="text-[12px] font-medium tracking-[0.04em] text-ink-3 uppercase">Checks</span>
         {total === 0 ? (
           <span className="text-ink">No issues in the active rule set</span>
         ) : (
@@ -217,13 +221,13 @@ function ValidationPanel({ blocking, advisory, rows, isPending, error, onOpen }:
         )}
       </div>
       {open && total ? (
-        <ul className="flex flex-col hairline-t">
+        <ul className="flex flex-col border-t border-rule-subtle">
           {[...blocking, ...advisory].map((w, i) => (
-            <li key={`${w.code}-${i}`} className="flex flex-wrap items-start gap-3 px-4 py-2 hairline-b last:border-b-0">
+            <li key={`${w.code}-${i}`} className="flex flex-wrap items-start gap-3 border-b border-rule-subtle px-5 py-2.5 last:border-b-0">
               <Icon icon={w.severity === "blocking" ? AlertTriangle : Info} size={16} className={`mt-0.5 ${w.severity === "blocking" ? "text-status-alert" : "text-ink-2"}`} />
               <span className="min-w-0 flex-1">
                 <span className="text-ink">{w.message}</span>
-                <span className="ml-2 font-mono text-caption text-ink-2">{w.code}</span>
+                <span className="ml-2 text-caption text-ink-2">{w.code}</span>
                 {w.product_ids?.length ? <span className="ml-2 text-caption text-ink-2">{w.product_ids.length} products</span> : null}
               </span>
               <span className="flex flex-wrap gap-1">

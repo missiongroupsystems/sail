@@ -28,7 +28,7 @@ registerOperations({
   "payment_providers.configure": op({ op: "payment_providers.configure", summary: "Set a payment provider's webhook secret", description: "Admin. Stores the secret the provider signs this merchant's webhooks with, and returns the webhook URL path to give the provider. The secret is never returned.", tier: "T3", minRole: "admin", principals: ["staff"], mcp: { expose: false, toolsets: [] }, emits: ["payment_provider.configured"], permission: "config.edit" }),
 });
 
-const Mutation = z.object({ expected_version: z.number().int().optional(), dry_run: z.boolean().optional(), override_id: z.uuid().optional() });
+const Mutation = z.object({ expected_version: z.number().int().min(0).max(2_147_483_647).optional(), dry_run: z.boolean().optional(), override_id: z.uuid().optional() });
 const Intent = z.record(z.string(), z.unknown());
 const Events = z.array(z.object({ id: z.string(), seq: z.number().int(), type: z.string(), occurredAt: z.string(), businessDate: z.string() }));
 
@@ -40,7 +40,7 @@ export function paymentIntentRoutes(app: OpenAPIHono<AppEnv>) {
       method: "post",
       path: "/v1/checks/{id}/payment-intents",
       tags: ["payments"],
-      request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({ expected_version: z.number().int().optional(), intent_id: z.uuid(), tender_type_id: z.uuid(), amount: AmountSchema.min(1), tip_cents: AmountSchema.optional() })) },
+      request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({ expected_version: z.number().int().min(0).max(2_147_483_647).optional(), intent_id: z.uuid(), tender_type_id: z.uuid(), amount: AmountSchema.min(1), tip_cents: AmountSchema.optional() })) },
       responses: { 201: jsonResponse(mutationResponse(Intent)), ...errorResponses },
     },
     async (c) => {

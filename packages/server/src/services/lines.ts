@@ -1,3 +1,4 @@
+import { PERMISSIONS, roleAtLeast, type Role } from "@sail/shared";
 import { AppError } from "../lib/errors.js";
 import type { CompiledMenu } from "./menu.js";
 import type { LineModifier, orderLines } from "../db/schema/index.js";
@@ -54,14 +55,16 @@ export function resolveModifiers(menu: CompiledMenu, product: CompiledMenu["prod
 export type BuiltLine = Omit<typeof orderLines.$inferInsert, "orderId" | "merchantId" | "outletId">;
 
 /** Build line rows from inputs against the compiled menu, enforcing availability, 86 and daily caps. */
-export async function buildLines(menu: CompiledMenu, inputs: LineInput[], ctx: { orderType: string; outletId: string; today: string; source: "pos" | "guest"; addedBy: string | null; addedByName: string | null; allowOpenPrice: boolean; startSort: number }): Promise<BuiltLine[]> {
+export async function buildLines(menu: CompiledMenu, inputs: LineInput[], ctx: { orderType: string; outletId: string; today: string; source: "pos" | "guest"; addedBy: string | null; addedByName: string | null; allowOpenPrice: boolean; startSort: number; role?: Role | null }): Promise<BuiltLine[]> {
   const built: BuiltLine[] = [];
   let sort = ctx.startSort;
   for (const input of inputs) {
     const product = menu.products[input.product_id];
     if (!product) throw AppError.notFound("product on this menu", input.product_id);
     if (!product.available_now) {
-      throw new AppError("unavailable", `${product.name}: ${product.unavailable_reason ?? "not available"}`, { remedy: product.sold_out ? "Choose something else, or restore it from the sold-out list." : "Choose something else.", details: { product_id: product.id, reason: product.unavailable_reason, cap_remaining: product.cap_remaining, sold_out_until: product.sold_out_until } });
+      // Only staff who may restore an item are told they can; a guest or a Server is told to choose again.
+      const canRestore = product.sold_out && ctx.source === "pos" && ctx.role != null && roleAtLeast(ctx.role, PERMISSIONS["stock.restore"].minRole);
+      throw new AppError("unavailable", `${product.name}: ${product.unavailable_reason ?? "not available"}`, { remedy: canRestore ? "Choose something else, or restore it from the sold-out list." : "Choose something else.", details: { product_id: product.id, reason: product.unavailable_reason, cap_remaining: product.cap_remaining, sold_out_until: product.sold_out_until } });
     }
     if (input.open_price != null && !product.open_price) throw AppError.validation(`${product.name} does not allow an open price`);
     if (product.open_price && input.open_price == null) throw AppError.validation(`${product.name} needs a price`, { remedy: "Enter the price for this open item." });

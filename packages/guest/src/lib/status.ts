@@ -35,3 +35,14 @@ export function lineStatusTone(line: Pick<GuestLine, "status">, order: Pick<Gues
   if (line.status === "pending") return "seated";
   return "ink-2";
 }
+
+/**
+ * The note under the prices: whether tax is in them (from the register's figures for the table, once it has an order)
+ * and what the bill adds. Before anything is ordered the phone does not know the tax mode, so it says both cases
+ * plainly (live-test D-4: diners were never told sales tax is added).
+ */
+export function billNote(taxMode: string | null | undefined): string {
+  if (taxMode === "exclusive") return "Prices are before tax. Tax, service charge and any discounts are added to your bill.";
+  if (taxMode === "inclusive") return "Prices include tax. Service charge and any discounts are added to your bill.";
+  return "Prices are menu prices. Your bill adds service charge, any discounts and any tax not in these prices.";
+}

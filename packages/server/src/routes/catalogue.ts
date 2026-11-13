@@ -47,7 +47,7 @@ ops({
 /* ---- Schemas ----------------------------------------------------------- */
 
 const CategorySchema = z.object({ id: z.string(), name: z.string(), parent_id: z.string().nullable(), sort: z.number().int(), legacy_id: z.string().nullable(), archived: z.boolean() });
-const CategoryCreate = z.object({ id: z.uuid().optional(), name: z.string().min(1), parent_id: z.uuid().nullable().optional(), sort: z.number().int().optional(), legacy_id: z.string().nullable().optional() });
+const CategoryCreate = z.object({ id: z.uuid().optional(), name: z.string().trim().min(1), parent_id: z.uuid().nullable().optional(), sort: z.number().int().min(0).max(1_000_000).optional(), legacy_id: z.string().nullable().optional() });
 const CategoryPatch = CategoryCreate.omit({ id: true }).partial();
 
 export const ProductSchema = z.object({
@@ -76,7 +76,7 @@ const ProductCreate = z.object({
   id: z.uuid().optional(),
   brand_id: z.uuid().nullable().optional(),
   kind: z.enum(["product", "component"]).optional(),
-  name: z.string().min(1),
+  name: z.string().trim().min(1),
   kitchen_name: z.string().nullable().optional(),
   sku: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
@@ -93,16 +93,16 @@ const ProductCreate = z.object({
 const ProductPatch = ProductCreate.omit({ id: true }).partial().extend({ archived: z.boolean().optional() });
 
 const OptionSchema = z.object({ product_id: z.string(), price_override: z.number().int().nullable(), child_group_id: z.string().nullable(), is_default: z.boolean(), sort: z.number().int() });
-const OptionInput = z.object({ product_id: z.uuid(), price_override: AmountSchema.nullable().optional(), child_group_id: z.uuid().nullable().optional(), is_default: z.boolean().optional(), sort: z.number().int().optional() });
+const OptionInput = z.object({ product_id: z.uuid(), price_override: AmountSchema.nullable().optional(), child_group_id: z.uuid().nullable().optional(), is_default: z.boolean().optional(), sort: z.number().int().min(0).max(1_000_000).optional() });
 const GroupSchema = z.object({ id: z.string(), name: z.string(), min_select: z.number().int(), max_select: z.number().int().nullable(), max_per_modifier: z.number().int(), options: z.array(OptionSchema), legacy_id: z.string().nullable(), archived: z.boolean() });
-const GroupCreate = z.object({ id: z.uuid().optional(), name: z.string().min(1), min_select: z.number().int().min(0).optional(), max_select: z.number().int().min(1).nullable().optional(), max_per_modifier: z.number().int().min(1).optional(), options: z.array(OptionInput).optional(), legacy_id: z.string().nullable().optional() });
+const GroupCreate = z.object({ id: z.uuid().optional(), name: z.string().trim().min(1), min_select: z.number().int().min(0).max(100).optional(), max_select: z.number().int().min(1).max(100).nullable().optional(), max_per_modifier: z.number().int().min(1).max(99).optional(), options: z.array(OptionInput).optional(), legacy_id: z.string().nullable().optional() });
 const GroupPatch = GroupCreate.omit({ id: true }).partial().extend({ archived: z.boolean().optional() });
 
 const SectionSchema = z.object({ id: z.string(), name: z.string(), parent_id: z.string().nullable(), sort: z.number().int(), legacy_id: z.string().nullable(), items: z.array(z.object({ product_id: z.string(), sort: z.number().int() })) });
-const SectionInput = z.object({ id: z.uuid().optional(), name: z.string().min(1), parent_id: z.uuid().nullable().optional(), sort: z.number().int().optional(), legacy_id: z.string().nullable().optional(), items: z.array(z.object({ product_id: z.uuid(), sort: z.number().int().optional() })).optional() });
+const SectionInput = z.object({ id: z.uuid().optional(), name: z.string().trim().min(1), parent_id: z.uuid().nullable().optional(), sort: z.number().int().min(0).max(1_000_000).optional(), legacy_id: z.string().nullable().optional(), items: z.array(z.object({ product_id: z.uuid(), sort: z.number().int().min(0).max(1_000_000).optional() })).optional() });
 const MenuSchema = z.object({ id: z.string(), brand_id: z.string(), name: z.string(), legacy_id: z.string().nullable(), archived: z.boolean(), sections: z.array(SectionSchema) });
-const MenuCreate = z.object({ id: z.uuid().optional(), brand_id: z.uuid(), name: z.string().min(1), legacy_id: z.string().nullable().optional(), sections: z.array(SectionInput).optional() });
-const MenuPatch = z.object({ name: z.string().min(1).optional(), archived: z.boolean().optional(), sections: z.array(SectionInput).optional() });
+const MenuCreate = z.object({ id: z.uuid().optional(), brand_id: z.uuid(), name: z.string().trim().min(1), legacy_id: z.string().nullable().optional(), sections: z.array(SectionInput).optional() });
+const MenuPatch = z.object({ name: z.string().trim().min(1).optional(), archived: z.boolean().optional(), sections: z.array(SectionInput).optional() });
 
 const AvailabilitySchema = z.object({ id: z.string(), target_kind: z.enum(["product", "section"]), target_id: z.string(), outlet_ids: z.array(z.string()), channels: z.array(z.string()), days_of_week: z.array(z.number().int()), start_time: z.string().nullable(), end_time: z.string().nullable() });
 const AvailabilityCreate = z.object({ id: z.uuid().optional(), target_kind: z.enum(["product", "section"]), target_id: z.uuid(), outlet_ids: z.array(z.uuid()).optional(), channels: z.array(z.enum(["pos", "scan_to_order"])).optional(), days_of_week: z.array(z.number().int().min(0).max(6)).optional(), start_time: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(), end_time: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional() });
@@ -183,19 +183,18 @@ async function loadMenu(row: typeof menus.$inferSelect) {
 
 /** Replace a menu's sections and item placements. Section IDs that are reused keep their identity. */
 export async function writeMenuSections(merchantId: string, menuId: string, sections: z.infer<typeof SectionInput>[]) {
-  const existing = await db().select({ id: menuSections.id }).from(menuSections).where(eq(menuSections.menuId, menuId));
+  const existing = new Set((await db().select({ id: menuSections.id }).from(menuSections).where(eq(menuSections.menuId, menuId))).map((e) => e.id));
   const keep = new Set(sections.map((s) => s.id).filter((x): x is string => !!x));
-  const drop = existing.map((e) => e.id).filter((id) => !keep.has(id));
+  const drop = [...existing].filter((id) => !keep.has(id));
   if (drop.length) await db().delete(menuSections).where(inArray(menuSections.id, drop));
   const idByIndex: string[] = [];
   for (let i = 0; i < sections.length; i++) {
     const s = sections[i]!;
-    const parentId = s.parent_id ?? null;
-    const [row] = await db()
-      .insert(menuSections)
-      .values({ id: s.id, merchantId, menuId, parentId, name: s.name, sort: s.sort ?? i, legacyId: s.legacy_id ?? null })
-      .onConflictDoUpdate({ target: menuSections.id, set: { name: s.name, parentId, sort: s.sort ?? i, legacyId: s.legacy_id ?? null } })
-      .returning({ id: menuSections.id });
+    const values = { parentId: s.parent_id ?? null, name: s.name, sort: s.sort ?? i, legacyId: s.legacy_id ?? null };
+    // Only this menu's own sections are updated in place; any other id is a new section, and one taken anywhere is a conflict.
+    const [row] = s.id && existing.has(s.id)
+      ? await db().update(menuSections).set(values).where(eq(menuSections.id, s.id)).returning({ id: menuSections.id })
+      : await db().insert(menuSections).values({ id: s.id, merchantId, menuId, ...values }).returning({ id: menuSections.id });
     idByIndex.push(row!.id);
   }
   await db().delete(menuItems).where(eq(menuItems.menuId, menuId));
@@ -328,10 +327,10 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
           .set({ price: ch.price, updatedAt: new Date() })
           .where(and(eq(products.id, ch.product_id), eq(products.merchantId, p.merchantId)))
           .returning({ id: products.id });
-        if (rows.length) {
-          updated++;
-          if (ch.prices_by_order_type) await writePricesAndGroups(p.merchantId, ch.product_id, ch.prices_by_order_type);
-        }
+        // One unknown id refuses the whole edit, so nothing is half-applied and no event claims a change.
+        if (!rows.length) throw AppError.notFound("product", ch.product_id);
+        updated++;
+        if (ch.prices_by_order_type) await writePricesAndGroups(p.merchantId, ch.product_id, ch.prices_by_order_type);
       }
       const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "product.updated", aggregate: { kind: "catalogue", id: p.merchantId }, operationId: "products.bulk_price", payload: { count: updated }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
       await recordAudit(p, { action: "products.bulk_price", targetKind: "catalogue", targetId: p.merchantId, details: { count: updated } });
@@ -369,10 +368,17 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
     if (options.length) await db().insert(modifierOptions).values(options.map((o, i) => ({ merchantId, groupId, productId: o.product_id, priceOverride: o.price_override ?? null, childGroupId: o.child_group_id ?? null, isDefault: o.is_default ?? false, sort: o.sort ?? i })));
   };
 
+  // A required choice must be possible: a minimum above what the options allow would block every order of the product.
+  const assertSatisfiable = (minSelect: number, maxPerModifier: number, optionCount: number) => {
+    if (minSelect <= optionCount * maxPerModifier) return;
+    throw AppError.validation(optionCount === 0 ? "A group that asks for a choice needs options to choose from" : `The group asks for ${minSelect} choices but its options allow only ${optionCount * maxPerModifier}`, { remedy: "Lower the minimum, add options, or allow more of each option.", details: { field: "min_select" } });
+  };
+
   defineOp(app, { op: "modifier_groups.create", method: "post", path: "/v1/modifier-groups", tags: ["catalogue"], request: { body: jsonBody(GroupCreate) }, responses: { 201: jsonResponse(mutationResponse(GroupSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const b = c.req.valid("json");
     if (b.max_select != null && (b.min_select ?? 0) > b.max_select) throw AppError.validation("min_select cannot exceed max_select");
+    assertSatisfiable(b.min_select ?? 0, b.max_per_modifier ?? 1, b.options?.length ?? 0);
     const [row] = await db().insert(modifierGroups).values({ id: b.id, merchantId: p.merchantId, name: b.name, minSelect: b.min_select ?? 0, maxSelect: b.max_select ?? null, maxPerModifier: b.max_per_modifier ?? 1, legacyId: b.legacy_id ?? null }).returning();
     await writeOptions(p.merchantId, row!.id, b.options ?? []);
     const data = await loadGroup(row!);
@@ -393,6 +399,11 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
       : await db().select().from(modifierGroups).where(and(eq(modifierGroups.id, id), eq(modifierGroups.merchantId, p.merchantId))).limit(1);
     if (!row) throw AppError.notFound("modifier group", id);
     if (row.maxSelect != null && row.minSelect > row.maxSelect) throw AppError.validation("min_select cannot exceed max_select");
+    // Checked when the edit touches what decides it, so a rename of a group saved before this rule still goes through.
+    if (b.min_select !== undefined || b.max_per_modifier !== undefined || b.options) {
+      const optionCount = b.options ? b.options.length : (await db().select({ id: modifierOptions.id }).from(modifierOptions).where(eq(modifierOptions.groupId, id))).length;
+      assertSatisfiable(row.minSelect, row.maxPerModifier, optionCount);
+    }
     if (b.options) await writeOptions(p.merchantId, id, b.options);
     const data = await loadGroup(row);
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "modifier_group.updated", aggregate: { kind: "modifier_group", id }, operationId: "modifier_groups.update", payload: b, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
@@ -505,6 +516,7 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
       if (b.until === "indefinite") until = new Date("9999-12-31T00:00:00Z");
       else if (b.until === "today") until = nextCutoff(new Date(), bd.cutoff, bd.timeZone); // until the next business-day cutoff at the outlet
       else until = new Date(b.until);
+      if (until.getTime() <= Date.now()) throw AppError.validation("That time has already passed", { remedy: "Pick a time later than now, or mark it sold out for today.", details: { field: "until" } });
       const [row] = await db()
         .insert(stockStatus)
         .values({ merchantId: p.merchantId, outletId: b.outlet_id, productId: b.product_id, soldOutUntil: until })
@@ -533,7 +545,7 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data, events: [ev], warnings: [] }, 200);
   });
 
-  defineOp(app, { op: "stock.set_daily_cap", method: "post", path: "/v1/stock/daily-cap", tags: ["stock"], request: { body: jsonBody(stockBody.extend({ quantity: z.number().int().min(0).nullable() })) }, responses: { 200: jsonResponse(mutationResponse(StockSchema)), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "stock.set_daily_cap", method: "post", path: "/v1/stock/daily-cap", tags: ["stock"], request: { body: jsonBody(stockBody.extend({ quantity: z.number().int().min(0).max(100_000).nullable() })) }, responses: { 200: jsonResponse(mutationResponse(StockSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const b = c.req.valid("json");
     if (!(await outletVisible(p, b.outlet_id))) throw AppError.notFound("outlet", b.outlet_id);

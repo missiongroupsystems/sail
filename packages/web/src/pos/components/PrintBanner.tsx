@@ -1,7 +1,7 @@
 "use client";
 
 import { Banner, Button, Sheet, useLocale } from "@sail/ui";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { PrintJob } from "../api/types";
 import { usePrintAlerts, type LateGroup } from "../hooks/usePrintAlerts";
 import { useNow } from "../lib/device";
@@ -16,7 +16,7 @@ const KIND_LABEL: Record<string, string> = { kitchen: "ticket", kitchen_ticket: 
  * oldest waiting ticket, [Send to <backup>] [Retry] [Details], the relay-offline
  * wording when the print box itself is gone, and the green "back" line for 5 s.
  */
-export function PrintBanner() {
+export function PrintBanner({ wrap = (b) => b }: { wrap?: (banner: ReactNode) => ReactNode } = {}) {
   const { station, tablesById, offline } = usePos();
   const now = useNow(1000);
   const alerts = usePrintAlerts(station.outlet_id, now);
@@ -27,7 +27,7 @@ export function PrintBanner() {
   const others = alerts.groups.length - 1;
 
   if (!group) {
-    if (alerts.recoveredAt && now - alerts.recoveredAt < 5000) return <Banner tone="success">Kitchen printer is back · all tickets printed</Banner>;
+    if (alerts.recoveredAt && now - alerts.recoveredAt < 5000) return wrap(<Banner tone="success">Kitchen printer is back · all tickets printed</Banner>);
     return null;
   }
 
@@ -37,7 +37,7 @@ export function PrintBanner() {
 
   return (
     <>
-      <Banner
+      {wrap(<Banner
         tone="alert"
         queued={others > 0 ? others : undefined}
         actions={
@@ -57,8 +57,8 @@ export function PrintBanner() {
         }
       >
         {text}
-      </Banner>
-      <Sheet isOpen={details} onOpenChange={(o) => (!o ? setDetails(false) : undefined)} title="Tickets waiting" description={alerts.relayOffline ? "The print box has not reported. Tickets stay queued and print when it is back." : "By printer, oldest first. The last error is the printer's own report."} width="lg">
+      </Banner>)}
+      <Sheet labelledClose isOpen={details} onOpenChange={(o) => (!o ? setDetails(false) : undefined)} title="Tickets waiting" description={alerts.relayOffline ? "The print box has not reported. Tickets stay queued and print when it is back." : "By printer, oldest first. The last error is the printer's own report."} width="lg">
         <div className="flex flex-col gap-6">
           {alerts.groups.map((g) => (
             <section key={g.printerId}>

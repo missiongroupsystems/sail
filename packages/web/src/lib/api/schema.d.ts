@@ -2747,7 +2747,7 @@ export interface paths {
         put?: never;
         /**
          * Refund a bill
-         * @description Full, by lines and quantities, or by amount. Manager, Finance or Admin, or a lower role with a manager override. Reason required. Produces a numbered refund receipt and, when the bill was invoiced, a numbered credit note. Each line's refunds never exceed its paid amount; each payment's refunds never exceed what it paid. Refunded items do not restore daily caps.
+         * @description Full, by lines and quantities, or by amount. Manager, Finance or Admin, or a lower role with a manager override. Reason required. Produces a numbered refund receipt and, when the bill was invoiced, a numbered credit note. Each line's refunds never exceed its paid amount; each payment's refunds never exceed what it paid. A full refund also gives back each payment's tip (`tip_cents` on the tender, on top of `amount`); a refund by lines or amount never does. A manager's approval for a lower role names the quoted `total` and, when a tip goes back, the `tip`. Refunded items do not restore daily caps.
          */
         post: operations["refunds.create"];
         delete?: never;
@@ -6535,7 +6535,9 @@ export interface operations {
     };
     "stations.list": {
         parameters: {
-            query?: never;
+            query?: {
+                include_archived?: "true" | "false";
+            };
             header?: never;
             path: {
                 id: string;
@@ -20094,6 +20096,7 @@ export interface operations {
                             amount: number;
                         }[];
                         total: number;
+                        tip?: number;
                     };
                 } | {
                     /** @enum {string} */

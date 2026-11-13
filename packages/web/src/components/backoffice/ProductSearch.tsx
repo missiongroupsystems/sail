@@ -68,7 +68,7 @@ export function ProductSearch({ onPick, label, placeholder = "Search products by
               >
                 <span className="min-w-0 truncate">
                   <span className="text-ink">{p.name}</span>
-                  {p.sku ? <span className="ml-2 font-mono text-caption text-ink-2">{p.sku}</span> : null}
+                  {p.sku ? <span className="ml-2 text-caption text-ink-2 tabular">{p.sku}</span> : null}
                   {p.archived ? <span className="ml-2 text-caption text-ink-2">archived</span> : null}
                 </span>
                 <Money cents={p.price} className="text-ink-2" />

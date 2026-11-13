@@ -81,8 +81,9 @@ export async function startSession(api: PosApi, pin: string): Promise<SessionSta
   return res.data as unknown as SessionStart;
 }
 
-export async function endSession(api: PosApi): Promise<void> {
-  await req(api.POST("/v1/stations/sessions/end", { body: {}, headers: headers() }));
+/** Ends a PIN session on the register: the one signed in, or `token`'s when the station has already locked. */
+export async function endSession(api: PosApi, token?: string | null): Promise<void> {
+  await req(api.POST("/v1/stations/sessions/end", { body: {}, headers: { ...headers(), ...(token ? { authorization: `Bearer ${token}` } : {}) } }));
 }
 
 export async function getMe(api: PosApi) {

@@ -34,7 +34,7 @@ type Payment = { id: string; tender: string; amount: number; rounding_cents: num
 type Check = { id: string; status: string; balance: number; paid_total: number; totals: { total: number }; payments: Payment[] };
 type Snap = { id: string; version: number; status: string; pricing_status: string; balance: number; checks: Check[] };
 type Intent = { id: string; state: string; outcome_reason: string | null; amount: number; tip_cents: number; payment_id: string | null; provider_ref: string | null; void_requested_at: string | null; provider_voided_at: string | null };
-type Err = { code?: string; message?: string; details?: Record<string, unknown> };
+type Err = { code?: string; message?: string; remedy?: string; details?: Record<string, unknown> };
 
 async function merchant(name: string, opts: { currency?: string; rounding?: number | null; price?: number; tips?: boolean } = {}) {
   const m = await seedMerchant(db.sql, name, { preset: "blank", timeZone: "Europe/London", currency: opts.currency ?? "GBP", locale: "en-GB", cashRoundingIncrement: opts.rounding ?? null });
@@ -138,6 +138,26 @@ describe("approve and decline", () => {
     expect(await intents(off, s.id)).toEqual([]);
   });
 
+  it("a terminal tip above the bill is refused before the terminal is asked (A-6)", async () => {
+    const s = await order(A);
+    const total = s.checks[0]!.totals.total;
+    const r = await start(A, s.checks[0]!.id, s.checks[0]!.balance, { tip_cents: total + 1 });
+    expect(r.status).toBe(400);
+    expect(r.body.message).toMatch(/is more than the bill of/);
+    expect(await intents(A, s.id)).toEqual([]);
+  });
+
+  it("an amount above the balance is refused naming the balance in the merchant's currency, before the terminal is asked", async () => {
+    const s = await order(A);
+    const balance = s.checks[0]!.balance;
+    const r = await start(A, s.checks[0]!.id, balance + 1);
+    expect(r.status).toBe(400);
+    const shown = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(balance / 100);
+    expect(r.body.message).toBe(`Card (terminal) payments cannot exceed the balance of ${shown}`);
+    expect(r.body.remedy).toBe(`Enter ${shown} or a smaller part payment.`);
+    expect(await intents(A, s.id)).toEqual([]);
+  });
+
   it("a decline leaves the bill exactly as it was: no payment, pricing not frozen, and the bill can be paid another way", async () => {
     const s = await order(A);
     const intent = await onTerminal(A, s);
@@ -152,16 +172,33 @@ describe("approve and decline", () => {
     expect(cash.status, JSON.stringify(cash.body)).toBe(200);
   });
 
-  it("a bill whose terminal payment was declined can still be split, and an intent for a bill split away is never applied", async () => {
+  it("a bill whose terminal payment was declined can still be split; while one is waiting on the terminal no split, unsplit or move is taken", async () => {
     const s = await order(A, [A.ids.item, A.ids.side]);
     const declined = await onTerminal(A, s);
     await sim.settle(declined.id, "decline");
     const pending = await onTerminal(A, s);
+    // A re-split keeps bill ids, so an approval pinned to a bill whose items moved would be applied to the wrong items.
+    const tries = [
+      () => call<Err & { remedy?: string }>("POST", `/v1/orders/${s.id}/checks/split-even`, { token: A.token, body: { n: 2 } }),
+      () => call<Err & { remedy?: string }>("POST", `/v1/orders/${s.id}/checks/split-by-seat`, { token: A.token, body: { shared: "even" } }),
+      () => call<Err & { remedy?: string }>("POST", `/v1/orders/${s.id}/checks/unsplit`, { token: A.token, body: {} }),
+      () => call<Err & { remedy?: string }>("POST", `/v1/orders/${s.id}/checks/allocate`, { token: A.token, body: { moves: [], add_checks: 1 } }),
+    ];
+    for (const t of tries) {
+      const r = await t();
+      expect(r.status, JSON.stringify(r.body)).toBe(409);
+      expect(r.body.code).toBe("state_conflict");
+      expect(r.body.message).toBe("A card payment is waiting on the terminal");
+      expect(r.body.remedy).toBe("Cancel it or wait for it to finish, then split the bill.");
+    }
+    const unchanged = await call<{ data: Snap }>("GET", `/v1/orders/${s.id}`, { token: A.token });
+    expect(unchanged.body.data.checks).toHaveLength(1);
+    // Once the terminal has finished, the bill splits as usual.
+    await sim.settle(pending.id, "decline");
+    expect(await intentRow(pending.id)).toMatchObject({ state: "declined" });
     const split = await call<{ data: Snap }>("POST", `/v1/orders/${s.id}/checks/split-even`, { token: A.token, body: { n: 2 } });
     expect(split.status, JSON.stringify(split.body)).toBe(200);
     expect(split.body.data.checks).toHaveLength(2);
-    await sim.settle(pending.id, "approve");
-    expect(await intentRow(pending.id)).toMatchObject({ state: "cancelled", outcome_reason: "bill_changed" });
     expect(await paymentRows(s.id)).toHaveLength(0);
   });
 

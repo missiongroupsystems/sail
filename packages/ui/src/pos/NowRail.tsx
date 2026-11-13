@@ -1,7 +1,9 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { Check } from "lucide-react";
 import { cx } from "../lib/cx";
+import { Icon } from "../components/Icon";
 import { Button, type ButtonVariant } from "../components/Button";
 
 export type NowItem = {
@@ -24,17 +26,24 @@ export type NowRailProps = {
 /** The "Now" rail: everything waiting for a person, oldest first; "Nothing waiting" when empty. */
 export function NowRail({ items, footer, className }: NowRailProps) {
   return (
-    <aside className={cx("flex h-full w-[300px] shrink-0 flex-col hairline-l bg-surface", className)} aria-label="Now">
-      <h2 className="px-4 pt-4 pb-2 text-caption text-ink-2 uppercase tracking-[0.04em]">Now</h2>
-      <div className="min-h-0 flex-1 overflow-y-auto px-3">
+    <aside className={cx("flex h-full w-[300px] shrink-0 flex-col overflow-hidden rounded-panel border border-rule bg-surface max-[1100px]:w-[260px]", className)} aria-label="Now">
+      <header className="flex h-12 shrink-0 items-center justify-between border-b border-rule px-4">
+        <h2 className="font-heading text-[16px] font-semibold text-ink">Now</h2>
+        {items.length ? <span className="text-[13px] text-ink-3 tabular">{items.length} waiting</span> : null}
+      </header>
+      <div className={cx("min-h-0 flex-1 overflow-y-auto p-2", items.length === 0 && "flex flex-col items-center justify-center")}>
         {items.length === 0 ? (
-          <p className="px-1 py-3 text-body text-ink-2">Nothing waiting</p>
+          <div className="flex flex-col items-center gap-2 px-6 text-center">
+            <Icon icon={Check} size={20} className="text-ink-2" />
+            <p className="text-[15px] text-ink-2">Nothing waiting</p>
+            <p className="text-[13.5px] text-ink-3">QR orders, table requests and pickups appear here.</p>
+          </div>
         ) : (
           <ul className="flex flex-col gap-2">
             {items.map((it) => (
-              <li key={it.id} className="rounded-tile bg-surface-2 px-3 py-3">
-                <p className="text-line text-ink">{it.title}</p>
-                {it.detail ? <p className="text-caption text-ink-2">{it.detail}</p> : null}
+              <li key={it.id} className="rounded-tile border border-rule bg-surface p-3">
+                <p className="text-line font-medium text-ink">{it.title}</p>
+                {it.detail ? <p className="text-[13px] text-ink-2">{it.detail}</p> : null}
                 {it.lines?.length ? (
                   <ul className="mt-1 text-caption text-ink-2">
                     {it.lines.map((l, i) => (
@@ -58,7 +67,7 @@ export function NowRail({ items, footer, className }: NowRailProps) {
           </ul>
         )}
       </div>
-      {footer ? <div className="flex flex-col gap-2 p-3 hairline-t">{footer}</div> : null}
+      {footer ? <div className="flex flex-col gap-2 border-t border-rule-subtle p-3">{footer}</div> : null}
     </aside>
   );
 }

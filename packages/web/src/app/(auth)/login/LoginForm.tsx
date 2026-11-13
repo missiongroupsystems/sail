@@ -35,6 +35,8 @@ export function LoginForm({ mode, nextPath }: { mode: LoginMode; nextPath: strin
   const router = useRouter();
   const [error, setError] = useState<ApiError | null>(null);
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: { email: "", password: "" } });
+  const [email, password] = form.watch(["email", "password"]);
+  const filled = Boolean(email?.trim() && password);
 
   const submit = form.handleSubmit(async (values) => {
     setError(null);
@@ -98,10 +100,11 @@ export function LoginForm({ mode, nextPath }: { mode: LoginMode; nextPath: strin
         )}
       />
       <InlineError error={error} />
-      <Button type="submit" variant="primary" isPending={form.formState.isSubmitting} className="mt-2 w-full">
+      {/* Grey until both fields hold something. */}
+      <Button type="submit" variant="primary" isDisabled={!filled} isPending={form.formState.isSubmitting} className="mt-4 w-full">
         Sign in
       </Button>
-      <p className="text-caption text-ink-2">
+      <p className="text-center text-caption text-ink-2">
         {mode.kind === "password" ? "Forgotten your password? Ask an Admin for a reset link." : "Signed in with your organisation's account."}
       </p>
     </form>

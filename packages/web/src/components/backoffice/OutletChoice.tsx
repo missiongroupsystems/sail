@@ -27,7 +27,7 @@ export function OutletChoice({ outlets, scope, outletId, onChange }: { outlets: 
   return (
     <Select
       aria-label="Outlet"
-      variant="toolbar"
+      variant="toolbar" size="sm"
       items={outlets.filter((o) => !o.archived || o.id === outletId).map((o) => ({ id: o.id, label: o.name }))}
       selectedKey={outletId}
       onSelectionChange={onChange}
@@ -51,7 +51,7 @@ export function BrandChoice({ brands, scope, brandId, onChange, allowAll }: { br
   return (
     <Select
       aria-label="Brand"
-      variant="toolbar"
+      variant="toolbar" size="sm"
       items={[...(allowAll ? [{ id: ALL, label: "All brands" }] : []), ...brands.filter((b) => !b.archived || b.id === brandId).map((b) => ({ id: b.id, label: b.name }))]}
       selectedKey={brandId ?? (allowAll ? ALL : null)}
       onSelectionChange={(k) => onChange(k === ALL ? null : k)}

@@ -50,7 +50,7 @@ export function ItemsView({ outlets, scope, initialOutletId, today }: { outlets:
       <div className="flex flex-wrap items-end gap-3">
         <ReportRange outlets={outlets} scope={scope} range={range} />
         <div className="mb-6">
-          <Select aria-label="Group by" variant="toolbar" selectedKey={groupBy} onSelectionChange={(k) => setGroupBy(k as GroupBy)} items={GROUPS} />
+          <Select aria-label="Group by" variant="toolbar" size="sm" selectedKey={groupBy} onSelectionChange={(k) => setGroupBy(k as GroupBy)} items={GROUPS} />
         </div>
       </div>
       {report.isPending && range.outletId ? <Skeleton lines={6} /> : null}

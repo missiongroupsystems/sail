@@ -32,7 +32,7 @@ export function activeGroups(menu: CompiledMenu, product: CompiledProduct, selec
 export function unmetRequirement(menu: CompiledMenu, product: CompiledProduct, selection: Selection): string | null {
   for (const { group } of activeGroups(menu, product, selection)) {
     const n = (selection[group.id] ?? []).length;
-    if (n < group.min_select) return `Choose ${group.min_select - n} more: ${group.name}`;
+    if (n < group.min_select) return n === 0 ? `Choose ${group.min_select}: ${group.name}` : `Choose ${group.min_select - n} more: ${group.name}`;
   }
   return null;
 }
@@ -112,13 +112,13 @@ export function ModifierPicker({ menu, product, selection, onChange, isDisabled 
         return (
           <section key={group.id} className={parent ? "ml-4 border-l-2 border-rule pl-4" : ""} aria-label={group.name}>
             <header className="mb-2 flex items-baseline justify-between gap-2">
-              <h3 className="text-line text-ink">
+              <h3 className="text-[16px] font-medium text-ink">
                 {group.name}
                 {parent ? <span className="text-ink-2"> · for {parent.group.options.find((o) => o.product_id === parent.option)?.name}</span> : null}
               </h3>
-              <span className={"text-caption " + (group.min_select > 0 && !met ? "text-status-bill" : "text-ink-2")}>{ruleText(group)}</span>
+              <span className={"text-[13px] " + (group.min_select > 0 && !met ? "rounded-chip bg-status-sent-tint px-2 py-0.5 font-medium text-status-sent" : "text-ink-3")}>{ruleText(group)}</span>
             </header>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {group.options.map((o) => {
                 const on = chosen.includes(o.product_id);
                 return (
@@ -128,15 +128,15 @@ export function ModifierPicker({ menu, product, selection, onChange, isDisabled 
                     isDisabled={isDisabled || (!on && full && group.max_select !== 1)}
                     aria-pressed={on}
                     className={
-                      "press pos-touch flex min-h-14 items-center justify-between gap-2 rounded-tile px-4 text-left text-line outline-none data-[pressed]:scale-[0.98] data-[disabled]:opacity-40 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated " +
-                      (on ? "bg-ink text-surface" : "bg-surface-2 text-ink")
+                      "press pos-touch flex min-h-14 items-center justify-between gap-2 rounded-tile bg-surface px-3.5 text-left text-[15px] text-ink outline-none transition-colors duration-[120ms] data-[pressed]:scale-[0.98] data-[disabled]:opacity-40 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus " +
+                      (on ? "font-medium shadow-[inset_0_0_0_2px_var(--ink)]" : "shadow-[inset_0_0_0_1px_var(--line-strong)] data-[hovered]:bg-surface-2")
                     }
                   >
                     <span className="flex min-w-0 items-center gap-2">
-                      {on ? <Icon icon={Check} size={18} /> : <span className="inline-block size-[18px] shrink-0 rounded-full ring-1 ring-inset ring-current opacity-50" aria-hidden />}
+                      {on ? <Icon icon={Check} size={16} className="shrink-0" /> : null}
                       <span className="truncate">{o.name}</span>
                     </span>
-                    {o.price > 0 ? <span className={"shrink-0 text-caption tabular " + (on ? "text-surface/80" : "text-ink-2")}>{money(o.price, { signed: true })}</span> : null}
+                    {o.price > 0 ? <span className={"shrink-0 text-caption tabular " + "text-ink-2"}>{money(o.price, { signed: true })}</span> : null}
                   </AriaButton>
                 );
               })}

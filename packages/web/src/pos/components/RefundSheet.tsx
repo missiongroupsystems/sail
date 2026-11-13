@@ -1,13 +1,15 @@
 "use client";
 
-import { AmountPad, Badge, Button, Money, QuantityStepper, ReasonPicker, Sheet, taxRows, TextField, type PickedReason, useLocale } from "@sail/ui";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { AmountPad, Button, Icon, Money, QuantityStepper, ReasonPicker, Sheet, taxRows, TextField, type PickedReason, useLocale } from "@sail/ui";
+import { Check, ChevronRight, KeyRound } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import { idempotencyKey, toApiError } from "@/lib/api";
 import type { CheckSnapshot, OrderSnapshot, RefundQuote, RefundRequest, RefundResult } from "../api/types";
 import { useVoidReasons } from "../hooks/queries";
 import { roleAtLeast, type OrderActions } from "../hooks/useOrderActions";
 import { usePos } from "./PosContext";
+import { GREY_PILL, PANEL } from "./styles";
 
 type Step = "bill" | "what" | "why" | "backto" | "review" | "done";
 type What = "full" | "lines" | "amount";
@@ -31,7 +33,7 @@ export type RefundSheetProps = {
 
 /**
  * The refund stepper: which bill, what, why, back to which tenders,
- * review of the register's quote, then "Refund $19.18 ▸" or "Manager approval ▸".
+ * review of the register's quote, then "Refund $19.18" or "Manager approval".
  * The summary on the right follows every step.
  */
 export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }: RefundSheetProps) {
@@ -81,6 +83,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
   }, [isOpen, initialCheckId]);
 
   const check: CheckSnapshot | null = order.checks.find((c) => c.id === checkId) ?? null;
+  const hasTip = Boolean(check?.payments.some((p) => p.status === "recorded" && p.tip_cents > 0));
   const linesById = useMemo(() => new Map(order.lines.map((l) => [l.id, l])), [order.lines]);
 
   const request: RefundRequest | null = useMemo(() => {
@@ -155,7 +158,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
   const submit = async () => {
     if (!check || !request || !quote || !reason) return;
     setBusy(true);
-    const res = await actions.refund(check, { refund_id: refundId.current, request, ...(tenderSplit ? { tender_split: tenderSplit } : {}), reason: reasonText, ...(reference.trim() ? { reference: reference.trim() } : {}), print: true }, total);
+    const res = await actions.refund(check, { refund_id: refundId.current, request, ...(tenderSplit ? { tender_split: tenderSplit } : {}), reason: reasonText, ...(reference.trim() ? { reference: reference.trim() } : {}), print: true }, total, quote.tip ?? 0);
     setBusy(false);
     if (res) {
       setResult(res);
@@ -163,6 +166,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
     }
   };
 
+  const nothingPicked = (what === "lines" && !Object.values(qty).some((n) => n > 0)) || (what === "amount" && !digits);
   const footer =
     step === "done" ? (
       <>
@@ -183,9 +187,22 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
           </Button>
         ) : null}
         {step === "review" ? (
-          <Button size="lg" variant="primary" isDisabled={offline || busy || quoting || !quote || total <= 0} isPending={busy} onPress={submit} className="gap-2">
-            {offline ? "Offline" : canRefund ? `Refund ${money(total)} ▸` : "Manager approval ▸"}
-            {!canRefund && !offline ? <Badge tone="bill">Refund {money(total)}</Badge> : null}
+          <Button
+            size="lg"
+            variant="primary"
+            isDisabled={offline || busy || quoting || !quote || total <= 0}
+            isPending={busy}
+            onPress={submit}
+            aria-label={offline ? undefined : canRefund ? undefined : `Refund ${money(total)}, Manager approval`}
+          >
+            {/* The amount is the label; a needed approval follows it on the same line as a light key chip, as on the order dock. */}
+            <span>{offline ? "Offline" : `Refund ${money(total)}`}</span>
+            {!canRefund && !offline ? (
+              <span className="inline-flex items-center gap-1 rounded-chip bg-on-primary/15 px-1.5 text-[12px] leading-[20px] font-medium text-on-primary">
+                <Icon icon={KeyRound} size={12} />
+                Manager
+              </span>
+            ) : null}
           </Button>
         ) : (
           <Button size="lg" variant="primary" isDisabled={!next() || busy} onPress={() => setStep(next()!)}>
@@ -196,27 +213,38 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
     );
 
   return (
-    <Sheet isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title={step === "done" && result ? `Refunded ${money(result.refund.totals.total)}` : "Refund"} description={check ? `${check.label} · paid ${money(check.paid_total)}` : "Pick the bill to refund from"} width="lg" isDismissable={!busy} footer={footer}>
+    <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title={step === "done" && result ? "Refunded" : "Refund"} description={check ? `${check.label} · paid ${money(check.paid_total)}` : "Pick the bill to refund from"} width="lg" isDismissable={!busy} footer={footer} className="bg-bg! sm:max-w-[min(1100px,calc(100%-16px))]!">
       {step === "done" && result ? (
-        <div className="flex flex-col gap-4">
-          <p className="text-display text-ink tabular">Refunded {money(result.refund.totals.total)}</p>
-          <dl className="flex flex-col gap-1 text-line text-ink">
-            {result.refund.refund_receipt_no ? <Line label="Refund receipt" value={result.refund.refund_receipt_no} /> : null}
-            {result.refund.credit_note_no ? <Line label="Credit note" value={result.refund.credit_note_no} /> : null}
+        // Refund done: the result centred, a grey line over the amount in large type, the receipt number, and
+        // where the money went in small rows under it.
+        <div className="flex min-h-full flex-col items-center justify-center gap-2 py-10 text-center">
+          <span aria-hidden className="mb-2 flex size-14 items-center justify-center rounded-full bg-status-paid-tint text-status-paid">
+            <Icon icon={Check} size={24} />
+          </span>
+          <p className="text-[16px] text-ink-2">Refunded · {check?.label}</p>
+          <Money cents={result.refund.totals.total} size="amount-xl" className="font-heading text-[40px] leading-tight font-semibold text-ink" />
+          {result.refund.refund_receipt_no ? <p className="text-body text-ink-2 tabular">Refund receipt {result.refund.refund_receipt_no}</p> : null}
+          {result.refund.credit_note_no ? <p className="text-body text-ink-2 tabular">Credit note {result.refund.credit_note_no}</p> : null}
+          <dl className="mt-4 flex w-full max-w-[380px] flex-col gap-1 rounded-tile bg-surface-2 px-4 py-3 text-left text-[14.5px]">
             <Line label="Reason" value={result.refund.reason} />
             {result.refund.quote.tenders.map((t) => (
-              <Line key={t.payment_id} label={`Back to ${t.tender}`} value={money(t.amount)} />
+              <Fragment key={t.payment_id}>
+                <Line label={`Back to ${t.tender}`} value={money(t.amount)} />
+                {t.tip_cents ? <Line label="Tip given back" value={money(t.tip_cents)} /> : null}
+              </Fragment>
             ))}
-            {result.refund.quote.cash_out > 0 ? <Line label="Cash handed back" value={money(result.refund.quote.cash_out)} /> : null}
+            {result.refund.quote.cash_out > 0 ? <Line label="Cash handed back" value={money(result.refund.quote.cash_out)} /> : result.refund.quote.given_back != null ? <Line label="Handed back in all" value={money(result.refund.quote.given_back)} /> : null}
           </dl>
-          {result.refund.quote.tenders.some((t) => !t.is_cash) ? <p className="text-body text-ink-2">Card refunds are made on the terminal. The refund receipt is printing.</p> : null}
+          {result.refund.quote.tenders.some((t) => !t.is_cash) ? <p className="text-body text-ink-2">Card refunds are made on the terminal.</p> : null}
         </div>
       ) : (
-        <div className="flex gap-6">
-          <div className="min-w-0 flex-1">
-            <ol className="mb-4 flex flex-wrap gap-1 text-caption" aria-label="Steps">
+        <div className="flex items-start gap-4">
+          <div className={PANEL + " min-w-0 flex-1 p-5"}>
+            {/* A progress row, not buttons: the steps are moved through with Next and Back. */}
+            <ol className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]" aria-label="Steps">
               {STEPS.filter((s) => s.id !== "bill" || !initialCheckId).map((s, i) => (
-                <li key={s.id} className={`rounded-chip px-2.5 py-1 ${s.id === step ? "bg-ink text-surface" : "bg-surface-2 text-ink-2"}`}>
+                <li key={s.id} aria-current={s.id === step ? "step" : undefined} className={`inline-flex items-center gap-2 ${s.id === step ? "font-semibold text-ink" : "text-ink-3"}`}>
+                  {i > 0 ? <Icon icon={ChevronRight} size={13} className="text-ink-3" /> : null}
                   {i + 1}. {s.label}
                 </li>
               ))}
@@ -226,7 +254,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
               <div className="flex flex-col gap-2">
                 {refundable.length === 0 ? <p className="text-body text-ink-2">Nothing has been paid on this order yet, so there is nothing to refund.</p> : null}
                 {refundable.map((c) => (
-                  <AriaButton key={c.id} onPress={() => setCheckId(c.id)} aria-pressed={checkId === c.id} className={`press pos-touch flex min-h-16 w-full items-center justify-between gap-3 rounded-tile px-4 text-left outline-none data-[pressed]:scale-[0.98] data-[focus-visible]:outline-2 data-[focus-visible]:outline-status-seated ${checkId === c.id ? "bg-ink text-surface" : "bg-surface-2 text-ink"}`}>
+                  <AriaButton key={c.id} onPress={() => setCheckId(c.id)} aria-pressed={checkId === c.id} className={`press pos-touch flex min-h-16 w-full items-center justify-between gap-3 rounded-tile bg-surface px-4 text-left text-ink outline-none data-[pressed]:scale-[0.98] data-[focus-visible]:outline-2 data-[focus-visible]:outline-focus ${checkId === c.id ? "shadow-[inset_0_0_0_2px_var(--ink)]" : "shadow-[inset_0_0_0_1px_var(--line-strong)] data-[hovered]:bg-surface-2"}`}>
                     <span>
                       <span className="block text-line">{c.label}{c.seat_no != null ? ` · Seat ${c.seat_no}` : ""}</span>
                       <span className="block text-caption opacity-80">
@@ -244,7 +272,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
               <div className="flex flex-col gap-4">
                 <div className="grid grid-cols-3 gap-2" role="group" aria-label="What to refund">
                   {(["full", "lines", "amount"] as What[]).map((w) => (
-                    <Button key={w} size="lg" variant={what === w ? "primary" : "secondary"} aria-pressed={what === w} onPress={() => setWhat(w)} className="min-h-16">
+                    <Button key={w} size="lg" variant={what === w ? "primary" : "quiet"} aria-pressed={what === w} onPress={() => setWhat(w)} className={"min-h-14" + (what === w ? "" : " " + GREY_PILL)}>
                       {w === "full" ? "Whole bill" : w === "lines" ? "Some items" : "An amount"}
                     </Button>
                   ))}
@@ -254,19 +282,22 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                     {check.allocations.map((a) => {
                       const l = linesById.get(a.line_id);
                       if (!l || l.status === "voided") return null;
+                      // What the register says is still refundable from this bill; a line refunded in full is not offered again.
+                      const left = l.quantity - (a.refunded_quantity ?? 0);
+                      if (left <= 0) return null;
                       const n = qty[a.line_id] ?? 0;
                       return (
-                        <li key={a.line_id} className={`flex min-h-16 items-center gap-3 rounded-tile px-3 ${n > 0 ? "bg-surface-2" : ""}`}>
+                        <li key={a.line_id} className={`flex min-h-16 items-center gap-3 rounded-tile px-3 ${n > 0 ? "shadow-[inset_0_0_0_1.5px_var(--ink)]" : ""}`}>
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-line text-ink">
                               {l.name}
                               {a.share !== "1" ? <span className="ml-2 rounded-chip bg-surface px-1.5 text-caption text-ink-2 tabular">{a.share}</span> : null}
                             </span>
                             <span className="block text-caption text-ink-2 tabular">
-                              {l.quantity} on the order · {money(a.base)} on this bill
+                              {l.quantity} on the order{a.refunded_quantity ? ` · ${a.refunded_quantity} already refunded` : ""} · {money(a.base)} on this bill
                             </span>
                           </span>
-                          <QuantityStepper value={n} onChange={(v) => setQty({ ...qty, [a.line_id]: v })} min={0} max={l.quantity} label={`${l.name} quantity to refund`} />
+                          <QuantityStepper value={n} onChange={(v) => setQty({ ...qty, [a.line_id]: v })} min={0} max={left} label={`${l.name} quantity to refund`} />
                         </li>
                       );
                     })}
@@ -277,7 +308,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                     <AmountPad digits={digits} onChange={setDigits} mode="cents" hint={`Paid ${money(check.paid_total)}${check.refunded_total > 0 ? ` · ${money(check.refunded_total)} already refunded` : ""} · goodwill, spread across the bill`} />
                   </div>
                 ) : null}
-                {what === "full" ? <p className="text-body text-ink-2">Everything paid on {check.label} goes back, including service charge, tax and cash rounding, as the register works them out.</p> : null}
+                {what === "full" ? <p className="text-body text-ink-2">Everything paid on {check.label} goes back, including service charge, tax, cash rounding{hasTip ? " and the tip" : ""}, as the register works them out.</p> : hasTip ? <p className="text-body text-ink-2">The tip stays with the bill unless you choose Whole bill.</p> : null}
               </div>
             ) : null}
 
@@ -293,7 +324,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                 ) : (
                   <ReasonPicker reasons={reasons} onPick={setReason} />
                 )}
-                <TextField label="Add a note (optional)" value={note} onChange={setNote} inputClassName="min-h-14 text-line" maxLength={160} />
+                <TextField label="Add a note (optional)" value={note} onChange={setNote} inputClassName="min-h-14 text-line" maxLength={Math.max(0, Math.min(160, 200 - (reason?.text.length ?? 0) - 3))} />
               </div>
             ) : null}
 
@@ -353,7 +384,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                     Back to the register's split
                   </Button>
                 ) : null}
-                <TextField label="Terminal reference (optional)" value={reference} onChange={setReference} inputClassName="min-h-14 text-line" className="max-w-[360px]" maxLength={80} mono />
+                {(quote?.tenders ?? []).some((t) => !t.is_cash) ? <TextField label="Terminal reference (optional)" value={reference} onChange={setReference} inputClassName="min-h-14 text-line" className="max-w-[360px]" maxLength={80} mono /> : null}
               </div>
             ) : null}
 
@@ -382,7 +413,6 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                   {taxRows(quote.totals.taxes, order.totals.tax_mode).before.map((t) => (
                     <Line key={t.key} label={t.label} value={money(-t.amount)} />
                   ))}
-                  {quote.tenders.some((t) => t.rounding_cents !== 0) ? <Line label="Cash rounding" value={quote.tenders.map((t) => money(t.rounding_cents)).join(" ")} /> : null}
                   <div className="mt-1 flex items-center justify-between gap-3 pt-2 hairline-t">
                     <dt className="text-title text-ink">Refund</dt>
                     <dd>
@@ -393,32 +423,33 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                     <Line key={t.key} label={t.label} value={money(-t.amount)} />
                   ))}
                 </dl>
-                <ul className="text-body text-ink-2">
-                  {quote.tenders.map((t) => (
-                    <li key={t.payment_id}>
-                      {money(t.amount)} back to {t.tender}
-                      {!t.is_cash ? " · refund on the terminal, then tap Refunded" : ""}
-                    </li>
-                  ))}
-                </ul>
+                <TenderRows quote={quote} />
                 <p className="text-body text-ink-2">Reason: {reasonText}</p>
                 {!canRefund ? <p className="text-body text-ink-2">Refunds need a Manager. The approval sheet opens with this summary.</p> : null}
               </div>
             ) : null}
           </div>
 
-          <aside className="w-[240px] shrink-0 rounded-tile bg-surface-2 px-4 py-3" aria-label="Refund summary">
-            <h3 className="text-caption text-ink-2 uppercase tracking-[0.04em]">Summary</h3>
-            <dl className="mt-2 flex flex-col gap-2 text-body">
+          <aside className={PANEL + " w-[320px] shrink-0 p-5"} aria-label="Refund summary">
+            <h3 className="font-heading text-[16px] font-semibold text-ink">The register's quote</h3>
+            <dl className="mt-3 flex flex-col gap-2 text-[14.5px]">
               <Line label="Bill" value={check ? check.label : "—"} />
               <Line label="What" value={what === "full" ? "Whole bill" : what === "lines" ? ((n) => `${n} ${n === 1 ? "item" : "items"}`)(Object.values(qty).filter((n) => n > 0).length) : digits ? money(Number(digits)) : "An amount"} />
               <Line label="Why" value={reasonText || "—"} />
               <Line label="Back to" value={quote ? quote.tenders.map((t) => `${t.tender} ${money(t.amount)}`).join(", ") || "—" : "—"} />
+              {quote && what === "full" && quote.tip ? <Line label="Tip given back" value={money(quote.tip)} /> : null}
             </dl>
-            <div className="mt-3 flex items-center justify-between pt-2 hairline-t">
-              <span className="text-line text-ink">Refund</span>
-              {quoting ? <span className="text-caption text-ink-2">Checking…</span> : <Money cents={total} size="heading" className="text-ink" />}
+            <div className="mt-4 flex items-center justify-between border-t border-rule pt-3">
+              <span className="font-heading text-[17px] font-semibold text-ink">Refund</span>
+              {/* Nothing picked yet: no figure, rather than the last quote's (live-test B-F13). */}
+              {nothingPicked ? <span className="text-title text-ink-3">—</span> : quoting ? <span className="text-caption text-ink-2">Checking…</span> : <Money cents={total} size="title" className="font-heading text-ink" />}
             </div>
+            {quote && !quoting && quote.given_back != null && quote.given_back !== total ? (
+              <div className="mt-1 flex items-center justify-between text-[14.5px]">
+                <span className="text-ink-2">Handed back</span>
+                <Money cents={quote.given_back} size="body" className="text-ink" />
+              </div>
+            ) : null}
             {quoteError && step !== "backto" ? <p className="mt-2 text-caption text-status-alert">{quoteError}</p> : null}
           </aside>
         </div>
@@ -433,5 +464,27 @@ function Line({ label, value }: { label: string; value: string }) {
       <dt className="shrink-0 text-ink-2">{label}</dt>
       <dd className="min-w-0 text-right text-ink tabular">{value}</dd>
     </div>
+  );
+}
+
+/**
+ * Where the refund goes, as the register quoted it: each payment's amount, its tip given back as its own row (a
+ * whole-bill refund only), cash rounding, then what is handed back in all and in cash. Nothing is added up here.
+ */
+function TenderRows({ quote }: { quote: RefundQuote }) {
+  const { money } = useLocale();
+  return (
+    <dl className="flex flex-col gap-1 rounded-tile bg-surface-2 px-4 py-3 text-[14.5px]" aria-label="Given back">
+      {quote.tenders.map((t) => (
+        <Fragment key={t.payment_id}>
+          <Line label={`${t.tender}${!t.is_cash ? " · refund on the terminal, then tap Refunded" : ""}`} value={money(t.amount)} />
+          {t.tip_cents ? <Line label="Tip given back" value={money(t.tip_cents)} /> : null}
+          {t.rounding_cents ? <Line label="Cash rounding" value={money(t.rounding_cents)} /> : null}
+        </Fragment>
+      ))}
+      {/* "In all" only where it is more than one row's figure; cash only where it differs from that (no row says the same amount twice). */}
+      {quote.given_back != null && (quote.tenders.length > 1 || quote.tenders.some((t) => t.tip_cents || t.rounding_cents)) ? <Line label="Handed back in all" value={money(quote.given_back)} /> : null}
+      {quote.cash_out > 0 && (quote.given_back == null || quote.cash_out !== quote.given_back || quote.tenders.length > 1) ? <Line label="Cash handed back" value={money(quote.cash_out)} /> : null}
+    </dl>
   );
 }

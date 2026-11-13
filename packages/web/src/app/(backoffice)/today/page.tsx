@@ -26,12 +26,12 @@ export default async function TodayPage() {
   return (
     <>
       <PageHeader
-        eyebrow={longDate()}
-        title={merchant.data.name}
+        title="Today"
+        eyebrow={merchant.data.name}
         description={
           <>
-            {summary}.{" "}
-            <Link href="/settings/merchant" className="text-ink underline underline-offset-4">
+            {longDate()} · {summary}.{" "}
+            <Link href="/settings/merchant" className="whitespace-nowrap text-ink underline underline-offset-4">
               Merchant settings
             </Link>
           </>

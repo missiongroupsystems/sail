@@ -5,6 +5,8 @@ const config: NextConfig = {
   // Both workspace packages export TypeScript source.
   transpilePackages: ["@sail/shared", "@sail/ui"],
   poweredByHeader: false,
+  // forbidden(): a page the person's role may not read shows a refusal (app/(backoffice)/forbidden.tsx), not a 500.
+  experimental: { authInterrupts: true },
   // The end-to-end run starts a second back office for first-run setup; it builds into its own directory.
   distDir: process.env.SAIL_WEB_DIST_DIR || ".next",
   webpack: (webpackConfig) => {

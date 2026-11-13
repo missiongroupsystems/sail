@@ -11,7 +11,7 @@ export const REJECT_ROUND_REASONS = ["Sold out", "Kitchen is closing", "Cannot m
 export function ReopenSheet({ isOpen, onClose, onReopen }: { isOpen: boolean; onClose: () => void; onReopen: (reason: string) => Promise<unknown> }) {
   const [busy, setBusy] = useState(false);
   return (
-    <Sheet isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Reopen order" description="Why is it being reopened? Needs a Manager, and only on the same business day." isDismissable={!busy}>
+    <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Reopen order" description="Why is it being reopened? Needs a Manager, and only on the same business day." isDismissable={!busy}>
       <ReasonPicker
         reasons={REOPEN_REASONS.map((r) => ({ id: r, name: r }))}
         isDisabled={busy}
@@ -30,7 +30,7 @@ export function ReopenSheet({ isOpen, onClose, onReopen }: { isOpen: boolean; on
 export function RejectRoundSheet({ roundLabel, isOpen, onClose, onReject }: { roundLabel: string | null; isOpen: boolean; onClose: () => void; onReject: (reason: string) => Promise<unknown> }) {
   const [busy, setBusy] = useState(false);
   return (
-    <Sheet isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Reject QR order" description={roundLabel ? `${roundLabel} · the guest is told why` : "The guest is told why"} isDismissable={!busy}>
+    <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Reject QR order" description={roundLabel ? `${roundLabel} · the guest is told why` : "The guest is told why"} isDismissable={!busy}>
       <ReasonPicker
         reasons={REJECT_ROUND_REASONS.map((r) => ({ id: r, name: r }))}
         isDisabled={busy}
@@ -50,7 +50,7 @@ export function VoidPaymentSheet({ label, onTerminal = false, isOpen, onClose, o
   const [busy, setBusy] = useState(false);
   const what = `The bill owes it again.${onTerminal ? " The terminal gives the money back to the card." : ""} Needs a Manager.`;
   return (
-    <Sheet isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Void payment" description={label ? `${label} · ${what}` : what} isDismissable={!busy}>
+    <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Void payment" description={label ? `${label} · ${what}` : what} isDismissable={!busy}>
       <ReasonPicker
         reasons={VOID_PAYMENT_REASONS.map((r) => ({ id: r, name: r }))}
         isDisabled={busy}

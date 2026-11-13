@@ -1,16 +1,18 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, Checkbox, DataTable, EmptyState, Icon, InlineError, Money, MoneyField, Select, Sheet, StatusDot, Switch, type DataTableColumn } from "@sail/ui";
+import { Button, Checkbox, DataTable, EmptyState, Icon, InlineError, Money, MoneyField, Select, Sheet, Switch, type DataTableColumn, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
+import { greyPill, greyPillAlert, Quiet, SheetSection, TwoLine } from "@/components/office/parts";
+import { applyServerErrors } from "@/components/office/server-errors";
 import { ProductSearch } from "@/components/backoffice/ProductSearch";
 import { Warnings } from "@/components/backoffice/Warnings";
 import { productName, useProductsById } from "@/components/backoffice/products";
-import { FormSection, RhfTextField } from "@/components/forms/fields";
+import { RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { ModifierGroup, ModifierGroupCreate } from "@/lib/api/types";
@@ -30,7 +32,7 @@ const Schema = z
     options: z.array(
       z.object({
         product_id: z.string(),
-        price_override: z.number().int().min(0).nullable(),
+        price_override: z.number().int().min(0, "An override cannot be below zero. Leave it empty to use the product's price.").nullable(),
         child_group_id: z.string().nullable(),
         is_default: z.boolean(),
       }),
@@ -82,25 +84,25 @@ export function ModifierGroupsView({ initialGroups }: { initialGroups: ModifierG
   const rows = groups.data.filter((g) => showArchived || !g.archived);
 
   const columns: DataTableColumn<ModifierGroup>[] = [
-    { key: "name", header: "Name", sortable: true, isRowHeader: true, render: (g) => <span className="text-ink">{g.name}</span> },
-    { key: "rule", header: "Rule", render: (g) => <span className="text-ink-2">{rule(g)}</span> },
+    { key: "name", header: "Name", sortable: true, isRowHeader: true, width: "2fr", render: (g) => <TwoLine primary={g.name} meta={g.options.some((o) => o.child_group_id) ? "Has nested groups" : undefined} /> },
+    { key: "rule", header: "Rule", render: (g) => <Quiet>{rule(g)}</Quiet> },
     { key: "max_per_modifier", header: "Max per option", numeric: true, render: (g) => g.max_per_modifier },
     { key: "options", header: "Options", numeric: true, sortable: true, sortValue: (g) => g.options.length, render: (g) => g.options.length },
     { key: "nested", header: "Nested", render: (g) => (g.options.some((o) => o.child_group_id) ? "Yes" : "—") },
-    { key: "archived", header: "Status", sortable: true, sortValue: (g) => (g.archived ? 1 : 0), render: (g) => (g.archived ? <StatusDot status="neutral" label="Archived" muted /> : <StatusDot status="paid" label="Active" />) },
+    { key: "archived", header: "Status", sortable: true, sortValue: (g) => (g.archived ? 1 : 0), render: (g) => (g.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <Pill size="sm" tone="paid">Active</Pill>) },
   ];
 
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-ink-2 tabular">
+        <p className="text-[13px] text-ink-2 tabular">
           {rows.length} {rows.length === 1 ? "group" : "groups"}
         </p>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
           </Switch>
-          <Button variant="primary" onPress={() => setSheet({ mode: "create" })}>
+          <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
             Add modifier group
           </Button>
         </div>
@@ -113,7 +115,7 @@ export function ModifierGroupsView({ initialGroups }: { initialGroups: ModifierG
         defaultSort={{ column: "name", direction: "ascending" }}
         onRowAction={(g) => setSheet({ mode: "edit", group: g })}
         rowClassName={(g) => (g.archived ? "text-ink-2" : undefined)}
-        emptyState={<EmptyState variant="quiet" title="No modifier groups yet" hint="Tap Add modifier group. Options are products of kind Component." />}
+        emptyState={<EmptyState variant="centred" title="No modifier groups yet" hint="Tap Add modifier group. Options are products of kind Component." />}
       />
       <GroupSheet state={sheet} groups={groups.data} onClose={() => setSheet(null)} />
     </>
@@ -145,6 +147,8 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
   const save = useMutation<{ data: ModifierGroup; warnings: string[] }, ApiError, Values>({
     mutationFn: (v) => (group ? req(api.PATCH("/v1/modifier-groups/{id}", { params: { path: { id: group.id } }, body: toBody(v) })) : req(api.POST("/v1/modifier-groups", { body: toBody(v) }))),
     onSuccess: (r) => settle(r.warnings),
+    // A refusal that names a field shows under it; the message also stays at the foot of the form.
+    onError: (e) => applyServerErrors(form.setError, e, Object.keys(form.getValues())),
   });
   const archive = useMutation<{ data: ModifierGroup; warnings: string[] }, ApiError, boolean>({
     mutationFn: (archived) => req(api.PATCH("/v1/modifier-groups/{id}", { params: { path: { id: group!.id } }, body: { archived } })),
@@ -163,11 +167,11 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
       footer={
         <>
           {group ? (
-            <Button variant={group.archived ? "secondary" : "destructive"} onPress={() => archive.mutate(!group.archived)} isPending={archive.isPending} isDisabled={save.isPending} className="mr-auto">
+            <Button variant="secondary" onPress={() => archive.mutate(!group.archived)} isPending={archive.isPending} isDisabled={save.isPending} className={`mr-auto ${group.archived ? greyPill : greyPillAlert}`}>
               {group.archived ? "Restore group" : "Archive group"}
             </Button>
           ) : null}
-          <Button variant="quiet" onPress={onClose} isDisabled={busy}>
+          <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={busy}>
             Cancel
           </Button>
           <Button variant="primary" type="submit" form="group-form" isPending={save.isPending} isDisabled={archive.isPending}>
@@ -177,16 +181,16 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
       }
     >
       <form id="group-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
-        <FormSection>
+        <SheetSection>
           <RhfTextField control={form.control} name="name" label="Name" placeholder="Milk" autoFocus={!group} />
           <div className="grid gap-4 sm:grid-cols-3">
             <RhfTextField control={form.control} name="min_select" label="Minimum choices" numeric inputMode="numeric" description="0 makes the group optional." />
             <RhfTextField control={form.control} name="max_select" label="Maximum choices" numeric inputMode="numeric" placeholder="No limit" />
             <RhfTextField control={form.control} name="max_per_modifier" label="Max per option" numeric inputMode="numeric" description="How many times one option can be chosen." />
           </div>
-        </FormSection>
+        </SheetSection>
 
-        <FormSection title="Options" hint="Each option is a product (usually a component). The override replaces the product's price when chosen here.">
+        <SheetSection flat title="Options" hint="Each option is a product (usually a component). The override replaces the product's price when chosen here.">
           <Controller
             control={form.control}
             name="options"
@@ -202,17 +206,17 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
               };
               return (
                 <div className="flex flex-col gap-4">
-                  {list.length === 0 ? <p className="text-caption text-ink-2">No options yet. Search a product below to add one.</p> : null}
+                  {list.length === 0 ? <p className="rounded-panel border border-dashed border-rule-dashed px-4 py-3 text-[13px] text-ink-3">No options yet. Search a product below to add one.</p> : null}
                   {list.length ? (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-body">
+                    <div className="overflow-x-auto rounded-panel border border-rule">
+                      <table className="w-full text-[14px] leading-5">
                         <thead>
-                          <tr className="text-left text-caption text-ink-2">
-                            <th className="py-1 pr-2 font-medium hairline-b">Option</th>
-                            <th className="py-1 pr-2 font-medium hairline-b">Price override</th>
-                            <th className="py-1 pr-2 font-medium hairline-b">Default</th>
-                            <th className="py-1 pr-2 font-medium hairline-b">Nested group</th>
-                            <th className="py-1 font-medium hairline-b">
+                          <tr className="text-left text-[12.5px] text-ink-3">
+                            <th className="px-3 py-2 font-medium border-b border-rule-subtle">Option</th>
+                            <th className="px-3 py-2 font-medium border-b border-rule-subtle">Price override</th>
+                            <th className="px-3 py-2 font-medium border-b border-rule-subtle">Default</th>
+                            <th className="px-3 py-2 font-medium border-b border-rule-subtle">Nested group</th>
+                            <th className="px-3 py-2 font-medium border-b border-rule-subtle">
                               <span className="sr-only">Order</span>
                             </th>
                           </tr>
@@ -221,24 +225,25 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
                           {list.map((o, i) => {
                             const p = byId.get(o.product_id);
                             return (
-                              <tr key={`${o.product_id}-${i}`} className="hairline-b align-middle">
-                                <td className="py-2 pr-2">
-                                  <span className="text-ink">{productName(byId, o.product_id)}</span>
+                              <tr key={`${o.product_id}-${i}`} className="border-b border-rule-subtle align-middle last:border-b-0">
+                                <td className="py-2 pr-2 pl-3">
+                                  <span className="font-medium text-ink break-words">{productName(byId, o.product_id)}</span>
                                   {p ? (
-                                    <span className="block text-caption text-ink-2">
+                                    <span className="block text-[12px] text-ink-3">
                                       Product price <Money cents={p.price} />
                                     </span>
                                   ) : null}
                                 </td>
-                                <td className="py-2 pr-2">
-                                  <MoneyField aria-label={`Price override for ${productName(byId, o.product_id)}`} value={o.price_override} onChange={(c) => update(i, { price_override: c })} placeholder="product price" className="w-[140px]" />
+                                <td className="py-2 pr-2 pl-3">
+                                  {/* A refused override says why at the field rather than the form failing silently (live-test E-M9). */}
+                                  <MoneyField aria-label={`Price override for ${productName(byId, o.product_id)}`} value={o.price_override} onChange={(c) => update(i, { price_override: c })} placeholder="product price" className="w-[140px]" isInvalid={Boolean(form.formState.errors.options?.[i]?.price_override)} errorMessage={form.formState.errors.options?.[i]?.price_override?.message} />
                                 </td>
-                                <td className="py-2 pr-2">
+                                <td className="py-2 pr-2 pl-3">
                                   <Checkbox aria-label={`${productName(byId, o.product_id)} is chosen by default`} isSelected={o.is_default} onChange={(v) => update(i, { is_default: v })} className="py-0">
                                     <span className="sr-only">Default</span>
                                   </Checkbox>
                                 </td>
-                                <td className="py-2 pr-2">
+                                <td className="py-2 pr-2 pl-3">
                                   <Select
                                     aria-label={`Nested group for ${productName(byId, o.product_id)}`}
                                     selectedKey={o.child_group_id ?? NONE}
@@ -247,7 +252,7 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
                                     className="w-[180px]"
                                   />
                                 </td>
-                                <td className="py-2">
+                                <td className="py-2 pr-2">
                                   <span className="flex items-center justify-end">
                                     <Button variant="quiet" iconOnly aria-label="Move up" onPress={() => move(i, -1)} isDisabled={i === 0}>
                                       <Icon icon={ArrowUp} size={16} />
@@ -278,7 +283,7 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
               );
             }}
           />
-        </FormSection>
+        </SheetSection>
 
         <Warnings warnings={warnings} />
         <InlineError error={save.error ?? archive.error} />

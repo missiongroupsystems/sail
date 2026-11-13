@@ -85,6 +85,12 @@ describe("Scan to Order", () => {
     expect(body.message).toMatch(/cannot be printed again/);
     expect(body.remedy).toMatch(/Rotate every code/);
     expect(await alive(qrUrl12, "device-live-0002")).toBe(201);
+    // A phone that opened the table before a rotation is signed out by it, not only new scans of the old card.
+    const before = (await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl12), device_id: "device-live-0003" }, idempotencyKey: null })).body.data.guest_token;
+    const menuPath = `/v1/channel-links/${ids.qrLink}/menu`;
+    expect((await guestCall("GET", menuPath, before)).status).toBe(200);
+    qrUrl12 = (await call<{ data: { url: string } }>("POST", `/v1/tables/${ids.table12}/qr/rotate`, { token: A.admin.token, body: {} })).body.data.url;
+    expect((await guestCall("GET", menuPath, before)).status).toBe(401);
     // Rotating every code is a separate, deliberate action: the earlier URLs are dead after it.
     const rotated = await call<{ data: { rotated: number } }>("POST", `/v1/outlets/${A.outletId}/qr/rotate`, { token: A.admin.token, body: {} });
     expect(rotated.status, JSON.stringify(rotated.body)).toBe(200);
@@ -173,10 +179,17 @@ describe("Scan to Order", () => {
     const jobs = await call<{ data: { kind: string; text: string }[] }>("GET", `/v1/outlets/${A.outletId}/print-jobs?order_id=${seated.body.data.id}`, { token: serverPin });
     expect(jobs.body.data.filter((j) => j.kind === "kitchen")).toHaveLength(1);
     expect(jobs.body.data[0]!.text).toMatch(/LESS SPICY/i);
-    const view = await guestCall<{ data: { rounds: { status: string }[]; order: { status: string } } }>("GET", "/v1/guest/order", g);
+    type Totals = { tax_mode: string; subtotal: number; adjustments: { name: string; total: number }[]; taxes: { name: string; amount: number }[]; total: number };
+    const view = await guestCall<{ data: { rounds: { status: string }[]; order: { status: string }; lines: { name: string; amount: number }[]; totals: Totals } }>("GET", "/v1/guest/order", g);
     expect(view.body.data.rounds[0]!.status).toBe("fired");
     expect(view.body.data.order.status).toBe("fired");
-    expect(JSON.stringify(view.body)).not.toMatch(/"total"/); // guests see no totals or payments
+    // The table's totals as the register priced the order, figure for figure; each line carries its amount.
+    const staffView = (await call<{ data: { totals: { subtotal: number; tax_mode: string; taxes: { name: string; bps: number; amount: number }[]; total: number }; adjustments: { name: string; total: number }[]; lines: { name: string; amounts: { base: number } }[] } }>("GET", `/v1/orders/${seated.body.data.id}`, { token: serverPin })).body.data;
+    expect(view.body.data.totals).toEqual({ tax_mode: staffView.totals.tax_mode, subtotal: staffView.totals.subtotal, adjustments: staffView.adjustments.filter((a) => a.total !== 0).map((a) => ({ name: a.name, total: a.total })), taxes: staffView.totals.taxes.map((t) => ({ name: t.name, bps: t.bps, amount: t.amount })), total: staffView.totals.total });
+    expect(view.body.data.totals.subtotal).toBe(1800 + 360);
+    expect(view.body.data.totals.adjustments.length).toBeGreaterThan(0); // the seed's service charge
+    expect(view.body.data.lines.map((l) => [l.name, l.amount])).toEqual(staffView.lines.map((l) => [l.name, l.amounts.base]));
+    expect(JSON.stringify(view.body)).not.toMatch(/"(paid_total|balance|payments|checks)"/); // payments stay at the POS
     // The guest stream signals order changes.
     const gs = await app.request("/v1/guest/stream", { headers: { authorization: `Bearer ${g}` } });
     expect(gs.status).toBe(200);
@@ -196,6 +209,23 @@ describe("Scan to Order", () => {
     expect(rejected.body.data.lines.filter((l) => l.round_id === round2).every((l) => l.status === "voided")).toBe(true);
     const view2 = await guestCall<{ data: { rounds: { id: string; status: string; reject_reason: string | null }[] } }>("GET", "/v1/guest/order", g);
     expect(view2.body.data.rounds.find((r) => r.id === round2)).toMatchObject({ status: "rejected", reject_reason: "Kitchen closed" });
+    // D-8: the turned-down round still lists its item, voided, so the guest sees what was not accepted.
+    const view2Lines = (view2.body.data as unknown as { lines: { name: string; status: string; round_id: string | null }[] }).lines;
+    expect(view2Lines.filter((l) => l.round_id === round2).map((l) => [l.name, l.status])).toEqual([["Kopi", "voided"]]);
+    // A line of an accepted round that staff void later is the POS's business: it leaves the guest's view.
+    await resetGuestRateLimitsForTests();
+    const round3 = randomUUID();
+    const kopiLine = randomUUID();
+    await guestCall("POST", "/v1/guest/rounds", g, { round_id: round3, lines: [{ line_id: kopiLine, product_id: ids.kopi, quantity: 1 }] });
+    expect((await call("POST", `/v1/rounds/${round3}/accept`, { token: serverPin, body: {} })).status).toBe(200);
+    const kopi = { id: kopiLine };
+    const before = (await guestCall<{ data: { lines: { id: string; status: string }[] } }>("GET", "/v1/guest/order", g)).body.data.lines;
+    expect(before.find((l) => l.id === kopi.id)?.status).toBe("fired");
+    const voided = await call("POST", `/v1/orders/${seated.body.data.id}/lines/${kopi.id}/void`, { token: A.admin.token, body: { reason_text: "Spilt at the pass" } });
+    expect(voided.status, JSON.stringify(voided.body)).toBe(200);
+    const view3Lines = (await guestCall<{ data: { lines: { id: string; status: string; round_id: string | null }[] } }>("GET", "/v1/guest/order", g)).body.data.lines;
+    expect(view3Lines.find((l) => l.id === kopi.id)).toBeUndefined();
+    expect(view3Lines.filter((l) => l.round_id === round2).map((l) => l.status)).toEqual(["voided"]);
   });
 
   it("table requests reach the POS, print a slip, and call-for-bill marks the table; rate limits hold", async () => {

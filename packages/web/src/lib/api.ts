@@ -59,6 +59,16 @@ export function toApiError(e: unknown): ApiError {
 export const DEFAULT_TIMEOUT_MS = 30_000;
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+/**
+ * A double click: a mutation sent again, word for word, while the first is on the wire or just answered. It shares the
+ * first one's answer instead of reaching the register with a new Idempotency-Key and creating a second record. Only
+ * mutations whose key is made here take part (a caller that passes its own key decides for itself), and only in the
+ * browser, where one person is behind the client.
+ */
+const autoKeyed = new WeakSet<Request>();
+const inFlight = new Map<string, Promise<Response>>();
+const SHARE_ANSWER_MS = 1000;
+
 export type ApiClientOptions = {
   /** "http://localhost:8080" on the server; "/api" in the browser (the Next proxy). */
   baseUrl: string;
@@ -77,6 +87,22 @@ export type ApiClientOptions = {
  */
 export function createApi({ baseUrl, token, headers, timeoutMs = DEFAULT_TIMEOUT_MS }: ApiClientOptions) {
   const timedFetch = async (request: Request): Promise<Response> => {
+    if (!autoKeyed.has(request)) return send(request);
+    // The body is read once, as bytes, and sent as bytes: a request cloned to read it would go out as a stream.
+    const body = await request.arrayBuffer();
+    const same = `${request.method} ${request.url}\n${request.headers.get("authorization") ?? ""}\n${new TextDecoder().decode(body)}`;
+    request = new Request(request, { body });
+    const first = inFlight.get(same);
+    if (first) return (await first).clone();
+    const answer = send(request);
+    inFlight.set(same, answer);
+    answer.then(
+      () => setTimeout(() => inFlight.delete(same), SHARE_ANSWER_MS),
+      () => inFlight.delete(same),
+    );
+    return (await answer).clone();
+  };
+  const send = async (request: Request): Promise<Response> => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(ApiError.timeout(timeoutMs)), timeoutMs);
     const upstream = request.signal;
@@ -101,6 +127,7 @@ export function createApi({ baseUrl, token, headers, timeoutMs = DEFAULT_TIMEOUT
       for (const [name, value] of Object.entries(headers ?? {})) request.headers.set(name, value);
       if (MUTATING.has(request.method) && !request.headers.has("idempotency-key")) {
         request.headers.set("idempotency-key", crypto.randomUUID());
+        if (typeof window !== "undefined") autoKeyed.add(request);
       }
       request.headers.set("accept", "application/json");
       return request;

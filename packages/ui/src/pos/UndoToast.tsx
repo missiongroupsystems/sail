@@ -37,11 +37,11 @@ export function UndoToast({ label, onUndo, durationMs = 8000, onDone, nonce, isP
     <div
       role="status"
       aria-live="polite"
-      className={cx("pointer-events-auto flex min-h-14 items-center gap-3 rounded-tile bg-ink pr-2 pl-4 text-surface shadow-sheet", "animate-rise-in", className)}
+      className={cx("pointer-events-auto flex min-h-14 items-center gap-3 rounded-panel bg-(--toast) pr-2 pl-4 text-(--on-toast) shadow-float", "animate-rise-in", className)}
     >
-      <span className="text-line">{label}</span>
-      <span aria-hidden className="h-1 w-10 overflow-hidden rounded-chip bg-surface/30">
-        <span className="block h-full bg-surface" style={{ width: `${(remaining / durationMs) * 100}%`, transition: "width 250ms linear" }} />
+      <span className="text-[14.5px] font-medium">{label}</span>
+      <span aria-hidden className="h-1 w-10 overflow-hidden rounded-chip bg-(--on-toast)/30">
+        <span className="block h-full bg-(--on-toast)" style={{ width: `${(remaining / durationMs) * 100}%`, transition: "width 250ms linear" }} />
       </span>
       <Button
         variant="quiet"
@@ -50,7 +50,7 @@ export function UndoToast({ label, onUndo, durationMs = 8000, onDone, nonce, isP
         onPress={() => {
           onUndo();
         }}
-        className="text-surface data-[hovered]:bg-surface/15 data-[pressed]:bg-surface/25"
+        className="text-(--on-toast)! data-[hovered]:bg-(--on-toast)/15 data-[pressed]:bg-(--on-toast)/25"
       >
         Undo
       </Button>

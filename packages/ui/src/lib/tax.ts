@@ -9,6 +9,15 @@ export type TaxRow = { key: string; label: string; amount: number };
  */
 export function taxRows(taxes: readonly TaxAmountLike[], taxMode: string): { before: TaxRow[]; after: TaxRow[] } {
   const inclusive = taxMode === "inclusive";
-  const rows = taxes.map((t, i) => ({ key: `tax:${i}:${t.name}`, label: inclusive ? `${t.name} (included)` : t.name, amount: t.amount }));
+  const rows = sortTaxes(taxes).map((t, i) => ({ key: `tax:${i}:${t.name}`, label: inclusive ? `${t.name} (included)` : t.name, amount: t.amount }));
   return inclusive ? { before: [], after: rows } : { before: rows, after: [] };
+}
+
+/**
+ * One order for tax components on every screen and receipt: the lowest rate first, then by name. A bill and its
+ * order list the same rates in whatever order the register met them, so the pay sheet and the order panel differed
+ * (live-test C-8). The printed receipt sorts the same way (shared/escpos templates).
+ */
+export function sortTaxes<T extends TaxAmountLike>(taxes: readonly T[]): T[] {
+  return [...taxes].sort((a, b) => a.bps - b.bps || a.name.localeCompare(b.name));
 }

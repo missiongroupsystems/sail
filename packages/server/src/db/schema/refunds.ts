@@ -36,6 +36,8 @@ export const refunds = pgTable(
     tax: bigint("tax", { mode: "number" }).notNull(),
     taxes: jsonb("taxes").$type<TaxAmount[]>().notNull().default([]),
     total: bigint("total", { mode: "number" }).notNull(),
+    /** Tips given back, on top of `total` (the bill's share): only a whole-bill refund gives them back. */
+    tip: bigint("tip", { mode: "number" }).notNull().default(0),
     refundReceiptNo: text("refund_receipt_no").notNull(),
     creditNoteNo: text("credit_note_no"),
     /** Snapshot documents, so receipts and credit notes reproduce exactly. */
@@ -83,6 +85,8 @@ export const refundTenders = pgTable(
     isCash: boolean("is_cash").notNull(),
     amount: bigint("amount", { mode: "number" }).notNull(),
     roundingCents: bigint("rounding_cents", { mode: "number" }).notNull().default(0),
+    /** The payment's tip given back, on top of `amount`. */
+    tipCents: bigint("tip_cents", { mode: "number" }).notNull().default(0),
     reference: text("reference"),
   },
   (t) => [primaryKey({ columns: [t.refundId, t.paymentId] }), index("refund_tenders_payment_idx").on(t.paymentId)],

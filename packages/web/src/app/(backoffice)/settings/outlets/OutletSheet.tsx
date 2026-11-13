@@ -7,7 +7,9 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
-import { FormSection, RhfTextField } from "@/components/forms/fields";
+import { greyPill, SheetSection } from "@/components/office/parts";
+import { applyServerErrors } from "@/components/office/server-errors";
+import { RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Outlet, OutletCreate } from "@/lib/api/types";
@@ -88,6 +90,8 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
       return res.data;
     },
     onSuccess: settle,
+    // A refusal that names a field shows under it; the message also stays at the foot of the form.
+    onError: (e) => applyServerErrors(form.setError, e, Object.keys(form.getValues())),
   });
 
   const archive = useMutation<Outlet, ApiError, boolean>({
@@ -119,7 +123,7 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
               {outlet.archived ? "Restore outlet" : "Archive outlet"}
             </Button>
           ) : null}
-          <Button variant="quiet" onPress={onClose} isDisabled={busy}>
+          <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={busy}>
             Cancel
           </Button>
           <Button variant="primary" type="submit" form="outlet-form" isPending={save.isPending} isDisabled={archive.isPending}>
@@ -129,15 +133,15 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
       }
     >
       <form id="outlet-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
-        <FormSection>
+        <SheetSection>
           <RhfTextField control={form.control} name="name" label="Name" placeholder="Brand · Location" autoFocus={!outlet} />
           <RhfTextField control={form.control} name="address" label="Address" multiline rows={2} />
           <div className="grid gap-4 sm:grid-cols-2">
             <RhfTextField control={form.control} name="phone" label="Phone" type="tel" inputMode="tel" numeric />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <RhfTextField control={form.control} name="business_registration_no" label={business_registration_label} mono description="Shown on receipts and invoices." />
-            <RhfTextField control={form.control} name="tax_registration_no" label={tax_registration_label} mono description="Shown on receipts and invoices." />
+            <RhfTextField control={form.control} name="business_registration_no" label={business_registration_label} description="Shown on receipts and invoices." />
+            <RhfTextField control={form.control} name="tax_registration_no" label={tax_registration_label} description="Shown on receipts and invoices." />
           </div>
           <RhfTextField
             control={form.control}
@@ -148,9 +152,9 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
             description="Leave empty to use the merchant's cutoff. Sales after this time count towards the same day."
             className="sm:max-w-[240px]"
           />
-        </FormSection>
+        </SheetSection>
 
-        <FormSection title="Hours" hint="One opening range per day. Closed days have no range.">
+        <SheetSection title="Hours" hint="One opening range per day. Closed days have no range.">
           <div className="flex flex-col">
             {WEEKDAYS.map((day) => (
               <Controller
@@ -158,7 +162,7 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
                 control={form.control}
                 name={`hours.${day}.open`}
                 render={({ field: openField }) => (
-                  <div className="grid grid-cols-[minmax(120px,1fr)_auto_auto_auto] items-start gap-x-3 py-1 hairline-b last:border-b-0">
+                  <div className="grid grid-cols-[minmax(120px,1fr)_auto_auto_auto] items-start gap-x-3 border-b border-rule-subtle py-1.5 last:border-b-0">
                     <Switch isSelected={openField.value} onChange={openField.onChange} className="min-h-11">
                       {WEEKDAY_LABEL[day]}
                     </Switch>
@@ -202,7 +206,7 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
               />
             ))}
           </div>
-        </FormSection>
+        </SheetSection>
 
         <InlineError error={error} />
       </form>

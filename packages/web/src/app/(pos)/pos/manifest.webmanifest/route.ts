@@ -11,8 +11,8 @@ export function GET(): Response {
     scope: "/pos",
     display: "standalone",
     orientation: "landscape",
-    background_color: "#121315",
-    theme_color: "#121315",
+    background_color: "#0f1311",
+    theme_color: "#0f1311",
     icons: [{ src: "/pos/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" }],
   };
   return new Response(JSON.stringify(manifest), { headers: { "content-type": "application/manifest+json; charset=utf-8", "cache-control": "public, max-age=3600" } });

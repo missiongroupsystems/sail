@@ -26,6 +26,7 @@ export function OrderMenu({ order, actions, onOpen }: { order: OrderSnapshot; ac
   const [open, setOpen] = useState<Open>(null);
   const closed = order.status === "completed";
   const paidChecks = order.checks.filter((c) => c.paid_total > 0);
+  const sentLines = order.lines.some((l) => l.status === "fired");
   const frozen = order.pricing_status === "frozen";
   const onAction = (k: React.Key) => {
     if (k === "refund" || k === "reopen" || k === "reprint") return onOpen(k);
@@ -66,7 +67,8 @@ export function OrderMenu({ order, actions, onOpen }: { order: OrderSnapshot; ac
             Reprint ticket
           </MenuItem>
           <MenuSeparator />
-          <MenuItem id="cancel" tone="destructive" isDisabled={closed}>
+          {/* The register refuses a cancel with sent items or a payment; the item says so instead of offering it (live-test B-F13). */}
+          <MenuItem id="cancel" tone="destructive" isDisabled={closed || sentLines || order.paid_total > 0} detail={!closed && sentLines ? "Void sent items first" : !closed && order.paid_total > 0 ? "A payment is on it" : undefined}>
             Cancel order
           </MenuItem>
         </Menu>
@@ -75,7 +77,7 @@ export function OrderMenu({ order, actions, onOpen }: { order: OrderSnapshot; ac
       <MoveTableSheet isOpen={open === "move"} onClose={() => setOpen(null)} order={order} actions={actions} />
       <CustomerSheet isOpen={open === "customer"} onClose={() => setOpen(null)} order={order} actions={actions} />
       <CancelSheet isOpen={open === "cancel"} onClose={() => setOpen(null)} actions={actions} />
-      <Sheet isOpen={open === "invoice"} onOpenChange={(o) => (!o ? setOpen(null) : undefined)} title="Get invoice" description="Which bill is the invoice for?">
+      <Sheet labelledClose isOpen={open === "invoice"} onOpenChange={(o) => (!o ? setOpen(null) : undefined)} title="Get invoice" description="Which bill is the invoice for?">
         <div className="flex flex-col gap-2">
           {paidChecks.map((c) => (
             <Button
@@ -150,7 +152,7 @@ function ChangeTypeSheet({ isOpen, onClose, order, actions }: SheetProps) {
   };
 
   return (
-    <Sheet
+    <Sheet labelledClose
       isOpen={isOpen}
       onOpenChange={(o) => (!o ? onClose() : undefined)}
       title="Change type"
@@ -206,7 +208,7 @@ function MoveTableSheet({ isOpen, onClose, order, actions }: SheetProps) {
     if (snap) onClose();
   };
   return (
-    <Sheet isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Move table" description="Tap the table to move this order to. Free tables are highlighted." width="lg" isDismissable={!busy}>
+    <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Move table" description="Tap the table to move this order to. Free tables are highlighted." width="lg" isDismissable={!busy}>
       <div className="flex flex-col gap-6">
         {(snapshot?.areas ?? []).map((a) => {
           const tables = (snapshot?.tables ?? []).filter((t) => t.area_id === a.id);
@@ -274,7 +276,7 @@ function CustomerSheet({ isOpen, onClose, order, actions }: SheetProps) {
   };
 
   return (
-    <Sheet isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Customer" description="Customer-group discounts apply once a customer is attached." isDismissable={!busy}>
+    <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Customer" description="Customer-group discounts apply once a customer is attached." isDismissable={!busy}>
       <div className="flex flex-col gap-5">
         {order.customer_id ? (
           <div className="flex items-center justify-between gap-3 rounded-tile bg-surface-2 px-4 py-3">
@@ -325,7 +327,7 @@ function CancelSheet({ isOpen, onClose, actions }: { isOpen: boolean; onClose: (
     }
   };
   return (
-    <Sheet isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Cancel order" description="Why is the order being cancelled?" isDismissable={!busy}>
+    <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Cancel order" description="Why is the order being cancelled?" isDismissable={!busy}>
       <ReasonPicker reasons={CANCEL_REASONS.map((r) => ({ id: r, name: r }))} onPick={(r) => void cancel(r.text)} isDisabled={busy} />
     </Sheet>
   );

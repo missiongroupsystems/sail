@@ -7,6 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { reprintJob } from "../../api/register";
 import type { PrintJob } from "../../api/types";
 import { usePos } from "../../components/PosContext";
+import { GREY_PILL } from "../../components/styles";
 import { JOB_KIND_LABEL, JOB_STATUS_LABEL } from "../../components/ReprintSheet";
 import { usePrinters, useRecentPrintJobs, useRelays } from "../../hooks/queries";
 import { useApi } from "../../hooks/useApi";
@@ -48,14 +49,14 @@ export function PrintersView() {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-[880px] flex-col gap-6 px-8 py-8">
+    <div className="flex w-full flex-col gap-4 px-4 pt-1 pb-4">
       <div>
-        <h1 className="text-title text-ink">Printers</h1>
+        <h2 className="font-heading text-[22px] leading-tight font-semibold tracking-[-0.01em] text-ink">Printers</h2>
         <p className="text-body text-ink-2">Status comes from the print box at this outlet. Tickets that have not printed within 10 seconds are listed first.</p>
       </div>
 
-      <section className="rounded-tile bg-surface px-5 py-3 hairline">
-        <h2 className="text-caption text-ink-2 uppercase tracking-[0.04em]">Print box</h2>
+      <section className="rounded-panel border border-rule bg-surface px-5 pb-4">
+        <h2 className="-mx-5 mb-2 border-b border-rule px-5 py-3.5 font-heading text-[16px] font-semibold text-ink">Print box</h2>
         {relays.isLoading && !relays.data ? <Skeleton lines={2} /> : null}
         {relays.data && relays.data.length === 0 ? <p className="py-2 text-body text-ink-2">No print box is paired at this outlet. Tickets queue until one is paired in the back office.</p> : null}
         <ul>
@@ -70,8 +71,8 @@ export function PrintersView() {
         </ul>
       </section>
 
-      <section className="rounded-tile bg-surface px-5 py-3 hairline">
-        <h2 className="text-caption text-ink-2 uppercase tracking-[0.04em]">Printers</h2>
+      <section className="rounded-panel border border-rule bg-surface px-5 pb-4">
+        <h2 className="-mx-5 mb-2 border-b border-rule px-5 py-3.5 font-heading text-[16px] font-semibold text-ink">Printers</h2>
         {printers.isLoading && !printers.data ? <Skeleton lines={3} /> : null}
         {printers.data && printers.data.length === 0 ? <p className="py-2 text-body text-ink-2">No printers are set up for this outlet.</p> : null}
         <ul>
@@ -98,7 +99,7 @@ export function PrintersView() {
                         Send to {backup.name}
                       </Button>
                     ) : null}
-                    <Button size="md" variant="secondary" isDisabled={offline || alerts.busy} onPress={() => void alerts.retry(waiting.jobs)}>
+                    <Button size="md" variant="quiet" className={GREY_PILL} isDisabled={offline || alerts.busy} onPress={() => void alerts.retry(waiting.jobs)}>
                       Retry
                     </Button>
                   </span>
@@ -109,8 +110,8 @@ export function PrintersView() {
         </ul>
       </section>
 
-      <section className="rounded-tile bg-surface px-5 py-3 hairline">
-        <h2 className="text-caption text-ink-2 uppercase tracking-[0.04em]">Recent tickets</h2>
+      <section className="rounded-panel border border-rule bg-surface px-5 pb-4">
+        <h2 className="-mx-5 mb-2 border-b border-rule px-5 py-3.5 font-heading text-[16px] font-semibold text-ink">Recent tickets</h2>
         {recent.isLoading && !recent.data ? <Skeleton lines={4} /> : null}
         {recent.data && recent.data.length === 0 ? <p className="py-2 text-body text-ink-2">Nothing has printed yet today.</p> : null}
         <ul className="flex flex-col gap-1 py-1">
@@ -135,7 +136,7 @@ export function PrintersView() {
                       Order
                     </Button>
                   ) : null}
-                  <Button size="md" variant="secondary" isDisabled={offline || busy !== null} isPending={busy === j.id} onPress={() => void reprint(j)}>
+                  <Button size="md" variant="quiet" className={GREY_PILL} isDisabled={offline || busy !== null} isPending={busy === j.id} onPress={() => void reprint(j)}>
                     Reprint
                   </Button>
                 </span>

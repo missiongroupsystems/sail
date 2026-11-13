@@ -68,7 +68,7 @@ const PrinterSchema = z.object({
 const PrinterCreate = z.object({
   id: z.uuid().optional(),
   outlet_id: z.uuid(),
-  name: z.string().min(1),
+  name: z.string().trim().min(1),
   ip: z.string().regex(/^(\d{1,3}\.){3}\d{1,3}$|^[a-z0-9.-]+$/i),
   port: z.number().int().min(1).max(65535).optional(),
   paper_width: z.enum(["80mm", "58mm"]).optional(),
@@ -171,8 +171,8 @@ export function printingRoutes(app: OpenAPIHono<AppEnv>) {
     table: printRelays,
     columns: { id: printRelays.id, merchantId: printRelays.merchantId, outletId: printRelays.outletId, archivedAt: printRelays.archivedAt, name: printRelays.name },
     api: RelaySchema,
-    create: z.object({ id: z.uuid().optional(), outlet_id: z.uuid(), name: z.string().min(1) }),
-    patch: z.object({ name: z.string().min(1).optional() }),
+    create: z.object({ id: z.uuid().optional(), outlet_id: z.uuid(), name: z.string().trim().min(1) }),
+    patch: z.object({ name: z.string().trim().min(1).optional() }),
     aggregateKind: "relay",
     principals: { read: ["staff", "station"], write: ["staff"] },
     mcp: { read: false },
@@ -188,6 +188,8 @@ export function printingRoutes(app: OpenAPIHono<AppEnv>) {
     if (!relay) throw AppError.notFound("relay", id);
     const code = randomDigits(6);
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    // A new code replaces any the relay still has unused, so only the code shown last can pair it.
+    await db().update(relayPairingCodes).set({ expiresAt: sql`now()` }).where(and(eq(relayPairingCodes.relayId, id), isNull(relayPairingCodes.usedAt), gt(relayPairingCodes.expiresAt, sql`now()`)));
     await db().insert(relayPairingCodes).values({ merchantId: p.merchantId, relayId: id, codeHash: hashSecret(code), expiresAt });
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: relay.outletId, type: "relay.pairing_code_issued", aggregate: { kind: "relay", id }, operationId: "relays.pairing_code", payload: { expires_at: expiresAt.toISOString() }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(p.merchantId, relay.outletId) }, p);
     await recordAudit(p, { action: "relays.pairing_code", targetKind: "relay", targetId: id, outletId: relay.outletId });
@@ -197,7 +199,7 @@ export function printingRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "relays.pair", method: "post", path: "/v1/relays/pair", tags: ["printing"], request: { body: jsonBody(z.object({ code: secret(z.string().regex(/^\d{6}$/)), version: z.string().max(40).optional() })) }, responses: { 200: jsonResponse(dataResponse(z.object({ relay_token: secret(z.string()), relay: RelaySchema }))), ...errorResponses } }, async (c) => {
     const { code, version } = c.req.valid("json");
     const result = await withTransaction(async (t) => {
-      const candidates = await t.db.select().from(relayPairingCodes).where(and(isNull(relayPairingCodes.usedAt), gt(relayPairingCodes.expiresAt, new Date())));
+      const candidates = await t.db.select().from(relayPairingCodes).where(and(isNull(relayPairingCodes.usedAt), gt(relayPairingCodes.expiresAt, sql`now()`)));
       const match = candidates.find((x) => verifySecret(code, x.codeHash));
       if (!match) throw new AppError("unauthenticated", "Pairing code not recognised or expired", { remedy: "Ask an Admin for a new code from the relay's page in the back office." });
       const token = await signSailToken({ typ: "relay", merchant_id: match.merchantId, relay_id: match.relayId }, null);

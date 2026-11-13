@@ -1,12 +1,14 @@
 "use client";
 
-import { BackButton, Badge, BillCard, Button, Checkbox, Icon, Money, QuantityStepper, SegmentedControl, Sheet, Skeleton, taxRows, type BillCardLine, type BillCardRow, type LocaleFormat, useLocale } from "@sail/ui";
+import { Badge, Button, Checkbox, Icon, Money, SegmentedControl, Sheet, Skeleton, taxRows, type BillCardLine, type BillCardRow, type LocaleFormat, useLocale } from "@sail/ui";
 import { Check } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import type { CheckSnapshot, OrderSnapshot, SnapshotLine } from "../api/types";
 import { Frame } from "../components/Frame";
 import { usePos } from "../components/PosContext";
+import { GREY_PILL, PANEL, PANEL_LABEL } from "../components/styles";
+import { CheckBillCard } from "../components/TipLeft";
 import { RefundSheet } from "../components/RefundSheet";
 import { useOrder } from "../hooks/queries";
 import { roleAtLeast, useOrderActions } from "../hooks/useOrderActions";
@@ -16,7 +18,7 @@ import { useUiStore } from "../state/ui";
 
 type Mode = "one" | "even" | "seat" | "item";
 
-const MODE_LABEL: Record<Mode, string> = { one: "One", even: "Even", seat: "Seat", item: "Item" };
+const MODE_LABEL: Record<Mode, string> = { one: "One bill", even: "Even", seat: "By seat", item: "By item" };
 const FRACTIONS: Record<string, string> = { "1/2": "½", "1/3": "⅓", "1/4": "¼", "1/5": "⅕", "1/6": "⅙", "1/8": "⅛" };
 
 /** How the bills are currently split, read from the register's allocations. */
@@ -61,7 +63,7 @@ export function billRows(check: CheckSnapshot, taxMode: string): BillCardRow[] {
 
 /**
  * The Bill screen: One / Even / By seat / By item, bills as
- * cards with the register's figures, "✓ Bills add up to", Pre-bill and Pay
+ * cards with the register's figures, "Order total … across N bills", Pre-bill and Pay
  * per bill, and the lock on paid bills.
  */
 export function BillScreen({ orderId }: { orderId: string }) {
@@ -99,7 +101,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
 
   if (!snap || mode === null) {
     return (
-      <Frame left={<BackButton label="Order" onPress={back} />} title="Bill">
+      <Frame sub={{ back: { label: "Order", onPress: back }, title: "Bill" }}>
         <div className="flex flex-1 gap-4 p-4">
           <Skeleton className="h-full w-[300px]" />
           <Skeleton className="h-full flex-1" />
@@ -110,7 +112,8 @@ export function BillScreen({ orderId }: { orderId: string }) {
 
   const table = snap.table_id ? tablesById.get(snap.table_id) : null;
   const backLabel = snap.order_type === "dine_in" ? `Table ${table?.name ?? ""}` : snap.order_no;
-  const title = ["Bill", snap.pax ? `${snap.pax} ${snap.pax === 1 ? "guest" : "guests"}` : ORDER_TYPE_LABEL[snap.order_type], `Total ${money(snap.totals.total)}`].join(" · ");
+  // The total is in the foot; the header names the order.
+  const title = [snap.pax ? `${snap.pax} ${snap.pax === 1 ? "guest" : "guests"}` : ORDER_TYPE_LABEL[snap.order_type], `Order ${snap.order_no}`].join(" · ");
 
   const switchMode = async (next: Mode) => {
     if (next === mode) return;
@@ -166,8 +169,8 @@ export function BillScreen({ orderId }: { orderId: string }) {
     const on = snap.checks.filter((c) => c.allocations.some((a) => a.line_id === lineId));
     if (on.length === 0) return "Not on a bill";
     if (on.length === 1) return on[0]!.label;
-    const share = on[0]!.allocations.find((a) => a.line_id === lineId)?.share ?? "";
-    return `Shared ${on.map(() => shareText(share) || share).join("·")}`;
+    // "Shared · ½ on Bill 1, ½ on Bill 2": each bill's own share, named.
+    return `Shared · ${on.map((c) => { const sh = c.allocations.find((a) => a.line_id === lineId)?.share ?? ""; return `${shareText(sh) || sh} on ${c.label}`; }).join(", ")}`;
   };
 
   const canPick = (mode === "item" || (mode === "seat" && shared === "manual")) && !offline;
@@ -184,7 +187,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
       .filter((x) => x.line)
       .map(({ a, line }) => ({
         id: a.line_id,
-        name: `${line!.quantity} ${line!.name}`,
+        name: line!.quantity > 1 ? `${line!.quantity} × ${line!.name}` : line!.name,
         share: shareText(a.share) || null,
         detail: line!.modifiers.length ? line!.modifiers.map((m) => m.name).join(", ") : null,
         // The line's share of its menu price, as the receipt prints it; discounts, fees and tax are the rows below.
@@ -201,15 +204,18 @@ export function BillScreen({ orderId }: { orderId: string }) {
 
   return (
     <Frame
-      left={<BackButton label={backLabel} onPress={back} />}
-      title={title}
-      right={<SegmentedControl aria-label="Split mode" options={modeOptions} selectedId={mode} onSelect={(id) => void switchMode(id as Mode)} onDisabledPress={(o) => notify({ text: o.reason ?? "This split is locked", tone: "info", orderId }, 5000)} />}
+      sub={{
+        back: { label: backLabel, onPress: back },
+        title: "Bill",
+        meta: title,
+        actions: <SegmentedControl aria-label="Split mode" options={modeOptions} selectedId={mode} onSelect={(id) => void switchMode(id as Mode)} onDisabledPress={(o) => notify({ text: o.reason ?? "This split is locked", tone: "info", orderId }, 5000)} />,
+      }}
     >
       <div className="flex min-h-0 flex-1">
         {mode === "item" || (mode === "seat" && shared === "manual") ? (
-          <section className="flex w-[320px] shrink-0 flex-col hairline-r bg-surface" aria-label="Lines">
+          <section className={PANEL + " mb-4 ml-4 flex w-[320px] shrink-0 flex-col overflow-hidden max-[960px]:w-[260px]"} aria-label="Lines">
             <header className="px-4 pt-4 pb-2">
-              <h2 className="text-caption text-ink-2 uppercase tracking-[0.04em]">Lines</h2>
+              <h2 className={PANEL_LABEL}>Lines</h2>
               <p className="text-caption text-ink-2">{selectedLine ? "Now tap the bill to move it to." : "Tap a line, then a bill."}</p>
             </header>
             <ul className="min-h-0 flex-1 overflow-y-auto px-2">
@@ -242,8 +248,8 @@ export function BillScreen({ orderId }: { orderId: string }) {
                 );
               })}
             </ul>
-            <footer className="flex flex-col gap-2 p-3 hairline-t">
-              <Button size="lg" variant="secondary" isDisabled={!selectedLine || offline || snap.checks.length < 2} onPress={() => setSharing(selectedLine ? (linesById.get(selectedLine) ?? null) : null)}>
+            <footer className="flex flex-col gap-2 border-t border-rule p-3">
+              <Button size="lg" variant="quiet" className={GREY_PILL} isDisabled={!selectedLine || offline || snap.checks.length < 2} onPress={() => setSharing(selectedLine ? (linesById.get(selectedLine) ?? null) : null)}>
                 Share between bills…
               </Button>
               <Button size="lg" variant="quiet" isDisabled={offline || snap.checks.length >= 20 || Boolean(lockReason)} onPress={() => void addBill()}>
@@ -255,29 +261,30 @@ export function BillScreen({ orderId }: { orderId: string }) {
 
         <section className="flex min-w-0 flex-1 flex-col">
           {mode === "even" ? (
-            <div className="flex items-center gap-4 px-5 pt-3">
-              <span className="text-line text-ink">Split evenly between</span>
-              <QuantityStepper value={evenN ?? snap.checks.length} onChange={changeEven} min={2} max={20} label="Number of bills" />
-              <span className="text-line text-ink">bills</span>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 pt-1">
+              <EvenChips value={evenN ?? snap.checks.length} onChange={changeEven} />
               {inFlight ? <span className="text-caption text-ink-2">Checking…</span> : snap.checks[0] ? <span className="text-caption text-ink-2 tabular">{shareSummary(snap.checks.map((c) => c.totals.total), money)}</span> : null}
             </div>
           ) : null}
           {mode === "seat" ? (
-            <div className="flex items-center gap-4 px-5 pt-3">
+            <div className="flex items-center gap-4 px-4 pt-1">
               <span className="text-line text-ink">Shared lines</span>
               <SegmentedControl aria-label="Shared lines" options={[{ id: "even", label: "Split evenly", isDisabled: Boolean(lockReason), reason: lockReason }, { id: "manual", label: "Assign by hand", isDisabled: Boolean(lockReason), reason: lockReason }]} selectedId={shared} onSelect={(id) => void changeShared(id as "even" | "manual")} onDisabledPress={() => notify({ text: lockReason ?? "", tone: "info", orderId }, 5000)} />
             </div>
           ) : null}
-          <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-5 py-3">
+          {/* Landscape: bills side by side, scrolling sideways. Portrait: they wrap and scroll down, so no Pay is hidden off the edge. */}
+          {/* Bills wrap onto the next row and the area scrolls down, so no bill's Pay is ever cut off at the right edge. */}
+          <div className="flex min-h-0 flex-1 flex-wrap content-start items-start gap-3 overflow-y-auto px-4 py-3">
             {snap.checks.map((check) => {
               const paid = check.status !== "open";
               return (
-                <BillCard
+                <CheckBillCard
+                  check={check}
                   key={check.id}
                   label={billLabel(check)}
                   status={check.status}
                   lines={cardLines(check)}
-                  rows={billRows(check, snap.totals.tax_mode)}
+                  rows={[{ key: "subtotal", label: "Subtotal", cents: check.totals.subtotal }, ...billRows(check, snap.totals.tax_mode)]}
                   tenders={check.payments
                     .filter((p) => p.status === "recorded")
                     .flatMap((p) => [{ id: p.id, label: `${p.tender}${p.reference ? ` · ${p.reference}` : ""}`, cents: p.amount }, ...(p.tip_cents ? [{ id: `${p.id}:tip`, label: `Tip on ${p.tender}`, cents: p.tip_cents }] : [])])}
@@ -298,11 +305,11 @@ export function BillScreen({ orderId }: { orderId: string }) {
                       </>
                     ) : (
                       <>
-                        <Button size="lg" variant="secondary" isDisabled={offline} onPress={() => void actions.prebill(check.id)}>
+                        <Button size="lg" variant="quiet" isDisabled={offline} onPress={() => void actions.prebill(check.id)} className={GREY_PILL}>
                           Pre-bill
                         </Button>
-                        <Button size="lg" variant="primary" isDisabled={offline || check.balance <= 0 || live.length === 0} onPress={() => payFor(check)} className="gap-1">
-                          Pay {money(check.balance)} ▸{!canPay ? <Badge tone="bill">Manager approval</Badge> : null}
+                        <Button size="lg" variant="primary" isDisabled={offline || check.balance <= 0 || live.length === 0} onPress={() => payFor(check)} className="flex-1">
+                          Pay {money(check.balance)}{!canPay ? <Badge tone="bill">Cashier approval</Badge> : null}
                         </Button>
                       </>
                     )
@@ -311,22 +318,27 @@ export function BillScreen({ orderId }: { orderId: string }) {
               );
             })}
           </div>
-          <footer className="flex h-[72px] shrink-0 items-center gap-3 px-5 hairline-t bg-surface">
+          <footer className={PANEL + " mx-4 mb-4 flex min-h-[68px] shrink-0 items-center gap-3 px-5 py-2.5 max-[960px]:gap-2 max-[960px]:px-3"}>
             {inFlight ? (
               <span className="text-line text-ink-2" role="status" aria-live="polite">
                 Checking…
               </span>
             ) : (
               // The register keeps the invariant (bills always add up to the order); the figure shown is its order total, never a client sum.
-              <span className="inline-flex items-center gap-2 text-line text-ink" role="status" aria-live="polite">
-                <Icon icon={Check} size={20} className="text-status-paid" /> Bills add up to {money(snap.totals.total)}
+              <span className="inline-flex items-baseline gap-2.5 whitespace-nowrap text-ink" role="status" aria-live="polite">
+                <span className="text-line text-ink-2">Order total</span>
+                <Money cents={snap.totals.total} size="title" className="font-heading text-[24px] font-semibold text-ink" />
+                <span className="inline-flex items-center gap-1.5 text-body text-ink-2">
+                  across {snap.checks.length} {snap.checks.length === 1 ? "bill" : "bills"}
+                  <Icon icon={Check} size={16} className="text-status-paid" />
+                </span>
               </span>
             )}
             <div className="flex-1" />
-            <Button size="lg" variant="secondary" isDisabled={offline || snap.checks.every((c) => c.status !== "open")} onPress={() => void actions.prebill(null)}>
+            <Button size="lg" variant="quiet" isDisabled={offline || snap.checks.every((c) => c.status !== "open")} onPress={() => void actions.prebill(null)} className={GREY_PILL}>
               {snap.checks.filter((c) => c.status === "open").length > 1 ? "Print all pre-bills" : "Print pre-bill"}
             </Button>
-            <Button size="lg" variant="primary" onPress={back} className="min-w-[140px]">
+            <Button size="lg" variant="quiet" onPress={back} className={GREY_PILL + " min-w-[120px] max-[960px]:min-w-0"}>
               Done
             </Button>
           </footer>
@@ -339,6 +351,31 @@ export function BillScreen({ orderId }: { orderId: string }) {
   );
 }
 
+/** "Even 2 3 4 5 6": the number of bills as chips; past six the next count is one more chip, up to the register's 20. */
+function EvenChips({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  const top = Math.min(20, Math.max(6, value + 1));
+  const counts = Array.from({ length: top - 1 }, (_, i) => i + 2);
+  return (
+    <div role="group" aria-label="Number of bills" className="flex flex-wrap items-center gap-1.5">
+      <span className="mr-1 text-body text-ink-2">Even</span>
+      {counts.map((n) => (
+        <AriaButton
+          key={n}
+          aria-pressed={n === value}
+          aria-label={`${n} bills`}
+          onPress={() => onChange(n)}
+          className={
+            "press pos-touch flex size-12 items-center justify-center rounded-full text-line font-medium tabular outline-none transition-colors duration-[120ms] data-[pressed]:scale-[0.97] data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus " +
+            (n === value ? "bg-primary text-on-primary" : "bg-surface-2 text-ink data-[hovered]:bg-surface-3")
+          }
+        >
+          {n}
+        </AriaButton>
+      ))}
+    </div>
+  );
+}
+
 /** "Share between bills…": pick the bills for an equal share, such as the wine three ways. */
 function ShareSheet({ line, checks, onClose, onShare }: { line: SnapshotLine | null; checks: CheckSnapshot[]; onClose: () => void; onShare: (line: SnapshotLine, checkIds: string[]) => void }) {
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -347,7 +384,7 @@ function ShareSheet({ line, checks, onClose, onShare }: { line: SnapshotLine | n
   }, [line, checks]);
   const open = checks.filter((c) => !c.locked);
   return (
-    <Sheet
+    <Sheet labelledClose
       isOpen={Boolean(line)}
       onOpenChange={(o) => (!o ? onClose() : undefined)}
       title={line ? `Share ${line.name}` : ""}

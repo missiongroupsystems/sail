@@ -13,8 +13,8 @@ export default async function SetupPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-title text-ink">Set up Sail</h1>
-        <p className="mt-1 text-ink-2">Your business, its first outlet and the first Admin. You can change all of it later in Settings.</p>
+        <h1 className="font-heading text-[24px] leading-[1.25] font-semibold tracking-[-0.02em] text-ink">Set up Sail</h1>
+        <p className="mt-2 text-[14px] leading-5 text-ink-2">Your business, its first outlet and the first Admin. You can change all of it later in Settings.</p>
       </div>
       <SetupForm withPassword={status.provider === "local"} />
     </div>

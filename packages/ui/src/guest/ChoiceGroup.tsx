@@ -33,7 +33,7 @@ export type ChoiceGroupProps = {
   /** The rule, announced with the group: "Choose 1", "Choose up to 3", "Optional". */
   rule: string;
   required: boolean;
-  /** Whether the minimum is met; the rule turns to the bill colour until it is. */
+  /** Whether the minimum is met; the rule sits on an amber tint until it is. */
   met: boolean;
   /** A single-choice group renders radios; anything else renders checkboxes. */
   mode: "single" | "multi";
@@ -54,20 +54,23 @@ export type ChoiceGroupProps = {
 };
 
 const row =
-  "group flex min-h-12 w-full cursor-default items-center gap-3 rounded-tile px-2 py-2 text-body text-ink outline-none touch-manipulation " +
-  "data-[pressed]:bg-surface-2 data-[disabled]:opacity-45 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated";
+  "group flex min-h-[52px] w-full cursor-default items-center gap-3 px-4 py-2.5 text-[15.5px] text-ink outline-none touch-manipulation transition-colors duration-[120ms] " +
+  "data-[pressed]:bg-surface-2 data-[disabled]:text-ink-disabled data-[focus-visible]:outline-2 data-[focus-visible]:-outline-offset-2 data-[focus-visible]:outline-focus";
+
+/** The options sit in one bordered card with a hairline between them. */
+const card = "flex flex-col divide-y divide-rule-subtle overflow-hidden rounded-sheet border border-rule";
 
 function Mark({ shape, selected }: { shape: "radio" | "check"; selected: boolean }) {
   return (
     <span
       aria-hidden
       className={cx(
-        "inline-flex size-6 shrink-0 items-center justify-center hairline press",
+        "inline-flex size-[22px] shrink-0 items-center justify-center border-[1.5px] transition-colors duration-[120ms] press",
         shape === "radio" ? "rounded-full" : "rounded-[6px]",
-        selected ? "border-brand-accent bg-brand-accent text-on-brand-accent" : "bg-surface",
+        selected ? "border-brand-accent bg-brand-accent text-on-brand-accent" : "border-rule-input bg-surface",
       )}
     >
-      {shape === "radio" ? <span className={cx("size-2.5 rounded-full bg-on-brand-accent", selected ? "opacity-100" : "opacity-0")} /> : <Icon icon={Check} size={16} strokeWidth={2.5} className={selected ? "opacity-100" : "opacity-0"} />}
+      <Icon icon={Check} size={14} strokeWidth={3} className={selected ? "opacity-100" : "opacity-0"} />
     </span>
   );
 }
@@ -76,10 +79,10 @@ function OptionText({ option }: { option: ChoiceOption }) {
   return (
     <>
       <span className="flex min-w-0 flex-1 flex-col">
-        <span>{option.name}</span>
-        {option.description ? <span className="text-caption text-ink-2">{option.description}</span> : null}
+        <span className="break-words group-data-[selected]:font-medium">{option.name}</span>
+        {option.description ? <span className="text-caption text-ink-3">{option.description}</span> : null}
       </span>
-      {option.price ? <Money cents={option.price} signed className="shrink-0 text-ink-2" /> : null}
+      {option.price ? <Money cents={option.price} signed className="shrink-0 text-[14.5px] text-ink-2" /> : null}
     </>
   );
 }
@@ -93,7 +96,7 @@ function OptionText({ option }: { option: ChoiceOption }) {
 export function ChoiceGroup({ name, rule, required, met, mode, maxSelect, maxPerOption, options, value, onChange, errorMessage, renderUnder, parentLabel, isDisabled, className }: ChoiceGroupProps) {
   const chosen = new Set(value.map((v) => v.id));
   const full = maxSelect != null && value.length >= maxSelect;
-  const ruleTone = errorMessage ? "text-status-alert" : required && !met ? "text-status-bill" : "text-ink-2";
+  const ruleTone = errorMessage ? "text-status-alert" : required && !met ? "text-status-sent" : "text-ink-3";
 
   const setQuantity = (id: string, quantity: number) => onChange(value.map((v) => (v.id === id ? { ...v, quantity } : v)));
 
@@ -103,10 +106,10 @@ export function ChoiceGroup({ name, rule, required, met, mode, maxSelect, maxPer
     const child = renderUnder?.(option.id) ?? null;
     if (!stepper && !child) return null;
     return (
-      <div className="ml-9 flex flex-col gap-3 pb-2 pl-3 border-l-2 border-rule">
+      <div className="flex flex-col gap-3 bg-surface-2 px-4 py-3">
         {stepper ? (
           <div className="flex items-center justify-between gap-3">
-            <span className="text-caption text-ink-2">How many (up to {maxPerOption})</span>
+            <span className="text-caption text-ink-3">How many (up to {maxPerOption})</span>
             {stepper}
           </div>
         ) : null}
@@ -116,12 +119,12 @@ export function ChoiceGroup({ name, rule, required, met, mode, maxSelect, maxPer
   };
 
   const heading = (
-    <div className="mb-1 flex items-baseline justify-between gap-3 px-2">
-      <Label className="font-display text-heading text-ink">
+    <div className="mb-2 flex items-baseline justify-between gap-3">
+      <Label className="font-display text-[16px] font-semibold text-ink">
         {name}
         {parentLabel ? <span className="font-sans text-body text-ink-2"> · for {parentLabel}</span> : null}
       </Label>
-      <Text slot="description" className={cx("shrink-0 text-caption", ruleTone)} role={errorMessage ? "alert" : undefined}>
+      <Text slot="description" className={cx("shrink-0 rounded-chip px-2 py-0.5 text-[12.5px] font-medium", ruleTone, required && !met && !errorMessage && "bg-status-sent-tint")} role={errorMessage ? "alert" : undefined}>
         {errorMessage ?? rule}
       </Text>
     </div>
@@ -138,19 +141,21 @@ export function ChoiceGroup({ name, rule, required, met, mode, maxSelect, maxPer
         className={cx("flex flex-col", className)}
       >
         {heading}
-        {options.map((o) => (
-          <div key={o.id}>
-            <AriaRadio value={o.id} isDisabled={o.isDisabled} className={row}>
-              {({ isSelected }) => (
-                <>
-                  <Mark shape="radio" selected={isSelected} />
-                  <OptionText option={o} />
-                </>
-              )}
-            </AriaRadio>
-            {under(o)}
-          </div>
-        ))}
+        <div className={card}>
+          {options.map((o) => (
+            <div key={o.id}>
+              <AriaRadio value={o.id} isDisabled={o.isDisabled} className={row}>
+                {({ isSelected }) => (
+                  <>
+                    <Mark shape="radio" selected={isSelected} />
+                    <OptionText option={o} />
+                  </>
+                )}
+              </AriaRadio>
+              {under(o)}
+            </div>
+          ))}
+        </div>
       </AriaRadioGroup>
     );
   }
@@ -169,19 +174,21 @@ export function ChoiceGroup({ name, rule, required, met, mode, maxSelect, maxPer
       className={cx("flex flex-col", className)}
     >
       {heading}
-      {options.map((o) => (
-        <div key={o.id}>
-          <AriaCheckbox value={o.id} isDisabled={o.isDisabled || (full && !chosen.has(o.id) && maxSelect !== 1)} className={row}>
-            {({ isSelected }) => (
-              <>
-                <Mark shape="check" selected={isSelected} />
-                <OptionText option={o} />
-              </>
-            )}
-          </AriaCheckbox>
-          {under(o)}
-        </div>
-      ))}
+      <div className={card}>
+        {options.map((o) => (
+          <div key={o.id}>
+            <AriaCheckbox value={o.id} isDisabled={o.isDisabled || (full && !chosen.has(o.id) && maxSelect !== 1)} className={row}>
+              {({ isSelected }) => (
+                <>
+                  <Mark shape="check" selected={isSelected} />
+                  <OptionText option={o} />
+                </>
+              )}
+            </AriaCheckbox>
+            {under(o)}
+          </div>
+        ))}
+      </div>
     </AriaCheckboxGroup>
   );
 }

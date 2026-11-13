@@ -60,6 +60,24 @@ describe("demo seed", () => {
       expect(terminal.length).toBe(1);
       expect(s.posStationIds.length).toBe(3);
       expect(s.kitchenDisplayIds.length).toBe(2);
+      // No brand accent: the guest app draws ink until a merchant chooses a colour (round-one D-3, guest 1).
+      const accents = await db.sql<{ accent_color: string | null }[]>`select accent_color from brands where merchant_id = ${s.merchantId}`;
+      expect(accents.length).toBeGreaterThan(0);
+      expect(accents.every((b) => b.accent_color === null)).toBe(true);
+    }
+  });
+
+  it("a new merchant's seed rules start when it is set up, never on 1 Jan 1970 (office 4)", async () => {
+    for (const s of first) {
+      const rows = await db.sql<{ rule_key: string; effective_from: Date }[]>`select rule_key, effective_from from pricing_rules where merchant_id = ${s.merchantId} and note = 'seed'`;
+      expect(rows.length).toBeGreaterThan(0);
+      const [made] = await db.sql<{ created_at: Date }[]>`select created_at from merchants where id = ${s.merchantId}`;
+      for (const r of rows) {
+        expect(r.effective_from.getUTCFullYear(), r.rule_key).toBeGreaterThan(2000);
+        // From the moment the merchant was set up (to the second): the rules price its first order.
+        expect(Math.abs(r.effective_from.getTime() - made!.created_at.getTime()), r.rule_key).toBeLessThan(60_000);
+        expect(r.effective_from.getTime(), r.rule_key).toBeLessThanOrEqual(Date.now());
+      }
     }
   });
 

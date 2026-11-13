@@ -17,8 +17,8 @@ export type ScrollTabsProps = {
 };
 
 /**
- * Sticky section tabs for the guest menu: one horizontal row
- * that scrolls, the selected tab underlined in the brand accent (section 9).
+ * Sticky section chips for the guest menu: one horizontal row
+ * that scrolls, the section being read filled in ink, the others grey.
  * They jump to sections on the same page, so they are navigation, not a tablist.
  */
 export function ScrollTabs({ tabs, selectedId, onSelect, label = "Menu sections", className }: ScrollTabsProps) {
@@ -29,7 +29,7 @@ export function ScrollTabs({ tabs, selectedId, onSelect, label = "Menu sections"
     el?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
   }, [selectedId]);
   return (
-    <nav ref={ref} aria-label={label} className={cx("no-scrollbar flex gap-1 overflow-x-auto px-2", className)}>
+    <nav ref={ref} aria-label={label} className={cx("no-scrollbar flex gap-2 overflow-x-auto py-1.5", className ?? "px-4")}>
       {tabs.map((t) => {
         const on = t.id === selectedId;
         return (
@@ -39,13 +39,12 @@ export function ScrollTabs({ tabs, selectedId, onSelect, label = "Menu sections"
             onPress={() => onSelect(t.id)}
             aria-current={on ? "location" : undefined}
             className={cx(
-              "press relative flex min-h-12 shrink-0 items-center px-3 text-line whitespace-nowrap outline-none touch-manipulation select-none",
-              "data-[pressed]:scale-[0.97] data-[focus-visible]:outline-2 data-[focus-visible]:-outline-offset-2 data-[focus-visible]:outline-status-seated",
-              on ? "text-brand-accent" : "text-ink-2",
+              "press relative flex min-h-12 shrink-0 items-center rounded-chip px-4 text-[14.5px] whitespace-nowrap outline-none touch-manipulation select-none transition-colors duration-[120ms]",
+              "data-[focus-visible]:outline-2 data-[focus-visible]:-outline-offset-2 data-[focus-visible]:outline-focus",
+              on ? "bg-primary font-semibold text-on-primary" : "bg-surface-2 font-medium text-ink-2 data-[hovered]:text-ink data-[pressed]:bg-surface-3",
             )}
           >
             {t.label}
-            <span aria-hidden className={cx("absolute inset-x-3 bottom-0 h-0.5 rounded-full", on ? "bg-brand-accent" : "bg-transparent")} />
           </AriaButton>
         );
       })}

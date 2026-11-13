@@ -65,10 +65,14 @@ describe("a database at the last migration before the bigint change migrates for
     expect(first).toBeGreaterThan(0);
     const last = journal.entries.findIndex((e) => e.tag.endsWith("_money_bigint_views"));
     const later = journal.entries.slice(last + 1).flatMap((e) =>
-      readFileSync(join(folder, `${e.tag}.sql`), "utf8").split("--> statement-breakpoint").map((x) => x.trim()).filter(Boolean).map((stmt) => {
+      readFileSync(join(folder, `${e.tag}.sql`), "utf8").split("--> statement-breakpoint").map((x) => x.split("\n").filter((l) => !l.startsWith("--")).join("\n").trim()).filter(Boolean).flatMap((stmt) => {
+        // Checks, triggers and views a later migration replaces are not needed to seed: the forward migration applies them.
+        if (/^(CREATE OR REPLACE (FUNCTION|VIEW) |ALTER TABLE \w+ (DROP|ADD) CONSTRAINT )/.test(stmt)) return [];
         const m = /^ALTER TABLE "(\w+)" ADD COLUMN "(\w+)" ([^;]+);?$/.exec(stmt);
+        // Constraints, triggers and functions change no column today's code reads, so the seed needs nothing undone for them.
+        if (!m && !/\b(ADD|DROP|ALTER|RENAME)\s+COLUMN\b/i.test(stmt.replace(/^--.*$/gm, ""))) return [];
         if (!m) throw new Error(`${e.tag}: this test only knows how to undo ADD COLUMN, not: ${stmt}`);
-        return { table: m[1]!, column: m[2]!, def: m[3]! };
+        return [{ table: m[1]!, column: m[2]!, def: m[3]! }];
       }),
     );
     const before = mkdtempSync(join(tmpdir(), "sail-mig-"));
@@ -109,10 +113,19 @@ describe("a database at the last migration before the bigint change migrates for
 
     // Every row of every table and report view, as text: an int4 and an int8 holding the same amount print the same.
     const relations = await db.sql<{ name: string }[]>`select c.relname as name from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('r', 'v') order by 1`;
+    // A view a later migration widens (CREATE OR REPLACE VIEW appends columns) is compared on the columns it had before.
+    const columnsOf = async () => {
+      const by = new Map<string, Set<string>>();
+      for (const c of await catalogue(db!.sql)) by.set(c.table_name, (by.get(c.table_name) ?? new Set()).add(c.column_name));
+      return by;
+    };
+    const columnsBefore = await columnsOf();
     const snapshot = async () => {
       const out: Record<string, string | null> = {};
+      const now = await columnsOf();
       for (const { name } of relations) {
-        const drop = later.filter((c) => c.table === name).map((c) => `'${c.column}'`);
+        const added = [...(now.get(name) ?? [])].filter((c) => !columnsBefore.get(name)?.has(c));
+        const drop = [...later.filter((c) => c.table === name).map((c) => c.column), ...added].map((c) => `'${c}'`);
         const row = drop.length ? `(to_jsonb(t) - array[${drop.join(", ")}])::text` : "to_jsonb(t)::text";
         out[name] = (await db!.sql.unsafe<{ h: string | null }[]>(`select md5(string_agg(${row}, '|' order by ${row})) as h from "${name}" t`))[0]!.h;
       }

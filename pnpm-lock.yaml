@@ -43,12 +43,18 @@ importers:
 
   packages/guest:
     dependencies:
+      '@fontsource-variable/instrument-sans':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@sail/ui':
         specifier: workspace:*
         version: link:../ui
       '@tanstack/react-query':
         specifier: ^5.90.0
         version: 5.105.3(@types/react@19.3.0)(react@19.3.1)
+      geist:
+        specifier: ^1.9.2
+        version: 1.9.2(next@15.5.29(patch_hash=1f32b203d0dfd9ce90b9d94ad42e378e00f8e20a652d390deb71bbea25db95e0)(@babel/core@7.29.13)(@playwright/test@1.65.0)(@types/node@22.20.5)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))
       lucide-react:
         specifier: ^0.577.0
         version: 0.577.0(react@19.3.1)
@@ -245,6 +251,9 @@ importers:
       '@dnd-kit/utilities':
         specifier: 3.2.2
         version: 3.2.2(react@19.3.1)
+      '@fontsource-variable/instrument-sans':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@hookform/resolvers':
         specifier: ^5.2.0
         version: 5.9.2(ajv@8.20.0)(react-hook-form@7.91.0(@types/react@19.3.0)(react@19.3.1))(zod@4.6.7)
@@ -263,6 +272,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.90.0
         version: 5.105.3(@types/react@19.3.0)(react@19.3.1)
+      geist:
+        specifier: ^1.9.2
+        version: 1.9.2(next@15.5.29(patch_hash=1f32b203d0dfd9ce90b9d94ad42e378e00f8e20a652d390deb71bbea25db95e0)(@babel/core@7.29.13)(@playwright/test@1.65.0)(@types/node@22.20.5)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))
       lucide-react:
         specifier: ^0.577.0
         version: 0.577.0(react@19.3.1)
@@ -1119,6 +1131,9 @@ packages:
   '@eslint/plugin-kit@0.7.3':
     resolution: {integrity: sha512-IkO+/KEUvwbVpiURZg+P7zF74z5Jxe0UgJxVni+RtoHQ6IZieXaO02kmadomap/q+l6bc/jdPGGqTjhuZnuz1Q==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
+
+  '@fontsource-variable/instrument-sans@5.3.0':
+    resolution: {integrity: sha512-u4gKbDBTNFGkg997tfQn3eHOhHuquWUFTRT/rwzuKtrxX5P2ekfs2x+LgBPP4P32+cC+vUwF1Cr+IdRoPQbrGw==}
 
   '@hono/node-server@1.19.18':
     resolution: {integrity: sha512-609kppIP9GITS+EwPyB6Kiq8z2yXONaYD1VHpo7MMP9celRJYbkFr9KakJncHwK0EK/XYtlogqmrLchDv5HX5w==}
@@ -2481,6 +2496,11 @@ packages:
 
   function-bind@1.1.2:
     resolution: {integrity: sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==}
+
+  geist@1.9.2:
+    resolution: {integrity: sha512-UU1x2q5Khob0+i4csFvXk1Ki4DePdu7xISuXyEcj1tzQMg64oN7Kbuy4e5z5QhcUWbbvOMJNs3ZxYQqpsEMV3w==}
+    peerDependencies:
+      next: '>=13.2.0'
 
   gensync@1.0.0-beta.2:
     resolution: {integrity: sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==}
@@ -4126,6 +4146,8 @@ snapshots:
       '@eslint/core': 1.2.1
       levn: 0.4.1
 
+  '@fontsource-variable/instrument-sans@5.3.0': {}
+
   '@hono/node-server@1.19.18(hono@4.13.16)':
     dependencies:
       hono: 4.13.16
@@ -5360,6 +5382,10 @@ snapshots:
     optional: true
 
   function-bind@1.1.2: {}
+
+  geist@1.9.2(next@15.5.29(patch_hash=1f32b203d0dfd9ce90b9d94ad42e378e00f8e20a652d390deb71bbea25db95e0)(@babel/core@7.29.13)(@playwright/test@1.65.0)(@types/node@22.20.5)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)):
+    dependencies:
+      next: 15.5.29(patch_hash=1f32b203d0dfd9ce90b9d94ad42e378e00f8e20a652d390deb71bbea25db95e0)(@babel/core@7.29.13)(@playwright/test@1.65.0)(@types/node@22.20.5)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
 
   gensync@1.0.0-beta.2: {}
 

@@ -6,6 +6,8 @@ import { cx } from "../lib/cx";
 export type SegmentOption = {
   id: string;
   label: string;
+  /** A count after the label, in grey ("Open 3"). */
+  count?: number;
   isDisabled?: boolean;
   /** The register's reason the option is off ("Bill 1 is paid. Refund it to change the split."); surfaced by the parent on press. */
   reason?: string | null;
@@ -24,7 +26,7 @@ export type SegmentedControlProps = {
 /** A segmented control (split modes): one row of equal pills, the selected one filled. Disabled options stay visible with their reason. */
 export function SegmentedControl({ options, selectedId, onSelect, onDisabledPress, className, ...rest }: SegmentedControlProps) {
   return (
-    <div role="group" aria-label={rest["aria-label"]} className={cx("inline-flex items-center gap-1 rounded-tile bg-surface-2 p-1", className)}>
+    <div role="group" aria-label={rest["aria-label"]} className={cx("inline-flex items-center gap-0.5 rounded-chip bg-surface-2 p-1", className)}>
       {options.map((o) => {
         const selected = o.id === selectedId;
         return (
@@ -35,13 +37,14 @@ export function SegmentedControl({ options, selectedId, onSelect, onDisabledPres
             aria-description={o.isDisabled && o.reason ? o.reason : undefined}
             onPress={() => (o.isDisabled ? onDisabledPress?.(o) : onSelect(o.id))}
             className={cx(
-              "press pos-touch flex min-h-11 min-w-[72px] items-center justify-center rounded-[8px] px-4 text-line outline-none",
-              selected ? "bg-surface text-ink shadow-[0_1px_2px_rgba(0,0,0,0.08)]" : "text-ink-2 data-[hovered]:text-ink",
-              o.isDisabled && !selected && "opacity-45",
-              "data-[pressed]:scale-[0.97] data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated",
+              "press pos-touch flex min-h-11 min-w-[72px] items-center justify-center rounded-chip px-4 text-[14.5px] font-medium whitespace-nowrap outline-none transition-colors duration-[120ms]",
+              selected ? "bg-surface text-ink shadow-segment" : "text-ink-2 data-[hovered]:text-ink",
+              o.isDisabled && !selected && "text-ink-disabled",
+              "data-[pressed]:scale-[0.97] data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus",
             )}
           >
             {o.label}
+            {o.count != null ? <span className="ml-1.5 text-[12.5px] font-normal text-ink-3 tabular">{o.count}</span> : null}
           </AriaButton>
         );
       })}

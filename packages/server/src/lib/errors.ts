@@ -31,8 +31,10 @@ export class AppError extends Error {
       remedy: "Check the ID, and that it belongs to your merchant and outlet.",
     });
   }
+  /** Staff read the message; the operation stays in `details.action` for clients and agents. */
   static permission(requiredRole: string, overrideAllowed: boolean, action: string) {
-    return new AppError("permission_denied", `${action} needs ${requiredRole} or above`, {
+    const label = requiredRole.charAt(0).toUpperCase() + requiredRole.slice(1);
+    return new AppError("permission_denied", `Only ${/^[AEIOU]/.test(label) ? "an" : "a"} ${label} or above can do this`, {
       remedy: overrideAllowed ? "Ask a manager to approve this action (manager override)." : "Ask someone with the required role.",
       details: { required_role: requiredRole, override_allowed: overrideAllowed, action },
     });

@@ -39,6 +39,8 @@ A few routes run without the per-request transaction: `/health`, `/openapi.json`
 
 Merchant > brand > outlet > station. Every tenant table has `merchant_id`, and `outlet_id` where an outlet applies. RLS is on for every one of them, with policies built on `sail.merchant_id()` and `sail.outlet_allowed(outlet_id)`, which read the settings from step 4.
 
+Foreign keys bypass RLS, so a reference also has to match the merchant: every foreign key between two tenant tables has a twin on `(column, merchant_id)`, and references without a foreign key (id arrays, layout and printer ids) are checked by the `sail.check_merchant_refs` trigger (migration 0051). Another merchant's id fails exactly as an unknown id does. `cross-merchant-writes.test.ts` replays the write routes with the other merchant's ids and fails if a new foreign key has no twin.
+
 | Postgres role | Used by | Can reach |
 |-|-|-|
 | `app_authenticated` | Staff (back office or PIN) and paired stations | The merchant's rows within the outlet scope and the person's brand scope; what each person may do is decided by the role checks |
@@ -101,8 +103,8 @@ A ticket is `new`, `in_progress`, `ready` (bumped), `recalled` or `cancelled`; a
 |-|-|-|-|
 | Back-office staff | Built in: `auth.sign_in` with email and password, which starts a session row (`backoffice_sessions`). With an external issuer: its JWT, verified against `SUPABASE_URL`'s JWKS or `SUPABASE_JWT_SECRET` and matched to a `staff` row by `auth_subject` | 12 h (built in) or the issuer's | Sign-out, password change or reset, access revoked, staff deactivated |
 | Station (paired iPad) | `stations.pair` with a single-use 6-digit code | No expiry | Pairing again or archiving the station |
-| Staff on a station | `staff_sessions.start` with the station token and a 6-digit PIN | 14 h, ended after `PIN_SESSION_IDLE_SECONDS` idle | Sign-out, idle or expiry |
-| Guest | `guest_sessions.create` with a table's QR token | 4 h | The order completes or is cancelled, or expiry |
+| Staff on a station | `staff_sessions.start` with the station token and a 6-digit PIN | 14 h, ended after `PIN_SESSION_IDLE_SECONDS` without an action (a GET, such as polling or a stream, does not count) | Sign-out, idle, expiry, or the station paired again or archived |
+| Guest | `guest_sessions.create` with a table's QR token | 4 h | The order completes or is cancelled, the table's code is rotated, or expiry |
 | Relay | `relays.pair` with a single-use code | No expiry | Pairing again |
 | Agent | `agent_sessions.start` with an identity credential | 15 min | Expiry, identity disabled, credential rotated |
 

@@ -8,9 +8,21 @@ export const dynamic = "force-dynamic";
 
 type Search = Promise<{ next?: string; expired?: string }>;
 
+/**
+ * Where to go after signing in: a page of this site only. A browser reads "\" as "/", so "/\example.com" is another
+ * site. Anything with a backslash or a control character, or that does not resolve to this origin, goes to Today.
+ */
 function safeNext(next: string | undefined): string {
-  if (!next || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/login")) return "/today";
-  return next;
+  if (!next || !next.startsWith("/") || /[\\\u0000-\u001f]/.test(next)) return "/today";
+  const base = "http://sail.invalid";
+  let url: URL;
+  try {
+    url = new URL(next, base);
+  } catch {
+    return "/today";
+  }
+  if (url.origin !== base || url.pathname.startsWith("/login")) return "/today";
+  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 export default async function LoginPage({ searchParams }: { searchParams: Search }) {
@@ -26,8 +38,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-title text-ink">Sign in to the back office</h1>
-        <p className="mt-1 text-ink-2">{params.expired ? "Your session ended. Sign in again to continue." : "Use the email on your staff record."}</p>
+        <h1 className="font-heading text-[24px] leading-[1.25] font-semibold tracking-[-0.02em] text-ink">Back office</h1>
+        <p className="mt-2 text-[14px] leading-5 text-ink-2">{params.expired ? "Your session ended. Sign in again to continue." : "Use the email on your staff record."}</p>
       </div>
       <LoginForm mode={mode} nextPath={safeNext(params.next)} />
     </div>

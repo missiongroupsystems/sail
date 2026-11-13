@@ -47,7 +47,7 @@ export function taxRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: classes.map((k) => toClass(k, rates.filter((r) => r.taxClassId === k.id))), next_cursor: null }, 200);
   });
 
-  defineOp(app, { op: "tax_classes.create", method: "post", path: "/v1/tax-classes", tags: ["tax"], request: { body: jsonBody(z.object({ id: z.uuid().optional(), name: z.string().min(1).max(80), components: Components, is_default: z.boolean().optional() })) }, responses: { 201: jsonResponse(mutationResponse(TaxClassSchema)), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "tax_classes.create", method: "post", path: "/v1/tax-classes", tags: ["tax"], request: { body: jsonBody(z.object({ id: z.uuid().optional(), name: z.string().trim().min(1).max(80), components: Components, is_default: z.boolean().optional() })) }, responses: { 201: jsonResponse(mutationResponse(TaxClassSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const b = c.req.valid("json");
     if (b.is_default) await db().update(taxClasses).set({ isDefault: false }).where(and(eq(taxClasses.merchantId, p.merchantId), eq(taxClasses.isDefault, true)));
@@ -59,7 +59,7 @@ export function taxRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data, events: [ev], warnings: [] }, 201);
   });
 
-  defineOp(app, { op: "tax_classes.update", method: "patch", path: "/v1/tax-classes/{id}", tags: ["tax"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({ name: z.string().min(1).max(80).optional(), is_default: z.literal(true).optional(), archived: z.boolean().optional() })) }, responses: { 200: jsonResponse(mutationResponse(TaxClassSchema)), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "tax_classes.update", method: "patch", path: "/v1/tax-classes/{id}", tags: ["tax"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({ name: z.string().trim().min(1).max(80).optional(), is_default: z.literal(true).optional(), archived: z.boolean().optional() })) }, responses: { 200: jsonResponse(mutationResponse(TaxClassSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const b = c.req.valid("json");

@@ -54,9 +54,9 @@ export function TotalsBlock({ rows, pricing, className }: TotalsBlockProps) {
   }, [rows]);
 
   return (
-    <div className={cx("relative px-3 pt-2 pb-3", className)} aria-busy={pricing || undefined}>
-      <div aria-hidden className={cx("absolute inset-x-3 top-0 h-px overflow-hidden", pricing ? "bg-rule" : "bg-transparent")}>
-        {pricing ? <div className="pos-progress keep-motion h-full w-1/2 bg-ink" /> : null}
+    <div className={cx("relative px-3 pt-2.5 pb-3", className)} aria-busy={pricing || undefined}>
+      <div aria-hidden className={cx("absolute inset-x-3 top-0 h-0.5 overflow-hidden rounded-chip", pricing ? "bg-surface-2" : "bg-transparent")}>
+        {pricing ? <div className="pos-progress keep-motion h-full w-1/3 rounded-chip bg-ink-3" /> : null}
       </div>
       {/* Polite live region: a changed row is announced; the whole block is not re-read. */}
       <dl className={cx("transition-opacity duration-150", pricing && "opacity-60")} aria-live="polite" aria-atomic="false">
@@ -64,27 +64,27 @@ export function TotalsBlock({ rows, pricing, className }: TotalsBlockProps) {
           <div
             key={r.key}
             className={cx(
-              "flex items-center justify-between gap-3 rounded-sm px-1",
-              r.kind === "total" ? "mt-1 pt-2 hairline-t" : "min-h-7",
+              "flex items-center justify-between gap-3 rounded-[4px] px-1",
+              r.kind === "total" ? "mt-1.5 pt-2.5 hairline-t" : "min-h-7",
               flashing.has(r.key) && "pos-flash keep-motion",
             )}
           >
-            <dt className={cx("flex min-w-0 items-center gap-2", r.kind === "total" ? "text-title text-ink" : "text-body text-ink-2")}>
+            <dt className={cx("flex min-w-0 items-center gap-2", r.kind === "total" ? "font-heading text-[17px] font-semibold text-ink" : "text-[14.5px] text-ink-2")}>
               <span className="truncate">{r.label}</span>
-              {r.note ? <span className="truncate text-caption text-ink-2">{r.note}</span> : null}
+              {r.note ? <span className="truncate text-caption font-normal text-ink-3">{r.note}</span> : null}
               {r.onRemove ? (
                 <AriaButton
                   onPress={r.onRemove}
                   isDisabled={r.removeDisabled}
                   aria-label={`Remove ${r.label}`}
-                  className="press pos-touch flex size-7 items-center justify-center rounded-chip text-ink-2 outline-none data-[pressed]:bg-surface-2 data-[hovered]:bg-surface-2 data-[disabled]:opacity-40"
+                  className="press pos-touch relative flex size-7 items-center justify-center rounded-chip text-ink-2 outline-none before:absolute before:-inset-2 before:content-[''] data-[pressed]:bg-surface-3 data-[hovered]:bg-surface-2 data-[disabled]:text-ink-disabled"
                 >
                   <Icon icon={X} size={14} />
                 </AriaButton>
               ) : null}
             </dt>
             <dd className="shrink-0">
-              <Money cents={r.cents} size={r.kind === "total" ? "title" : "body"} className="text-ink" />
+              <Money cents={r.cents} size={r.kind === "total" ? "title" : "body"} className={r.kind === "total" ? "font-heading text-ink" : "text-ink"} />
             </dd>
           </div>
         ))}

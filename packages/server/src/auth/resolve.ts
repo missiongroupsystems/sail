@@ -11,8 +11,10 @@ import { peekTokenType, sha256, verifySailToken } from "./tokens.js";
  * Turn a bearer token into a Principal. Runs inside the request transaction
  * BEFORE SET LOCAL ROLE, so it can look up the staff row across merchants by
  * the unique auth subject. Later phases add guest, relay and agent resolution.
+ * `activity` says whether the request is something a person did (any non-GET): only that keeps a PIN session from
+ * idling out, so a POS that polls or streams in the background does not keep an unattended session alive.
  */
-export async function resolvePrincipal(token: string, t: RequestTx): Promise<Principal> {
+export async function resolvePrincipal(token: string, t: RequestTx, opts: { activity: boolean } = { activity: true }): Promise<Principal> {
   const typ = peekTokenType(token);
   if (typ === null) throw new AppError("unauthenticated", "Malformed token");
 
@@ -21,7 +23,9 @@ export async function resolvePrincipal(token: string, t: RequestTx): Promise<Pri
 
   if (typ === "station") {
     const claims = await verifySailToken(token, "station");
-    const [st] = await t.db.select().from(stations).where(eq(stations.id, claims.station_id!)).limit(1);
+    // FOR SHARE waits for a pairing in flight, so a PIN session cannot start on the old token while another device pairs
+    // (resolve.ts would otherwise see the old hash, and the session would start after the new pairing's time).
+    const [st] = await t.db.select().from(stations).where(eq(stations.id, claims.station_id!)).limit(1).for("share");
     // Pairing again replaces the stored hash, so an older token (lost or stolen iPad) stops working.
     if (!st || st.archivedAt || !st.tokenHash || st.tokenHash !== sha256(token)) throw new AppError("unauthenticated", "This station is no longer paired", { remedy: "Pair the iPad again from the back office." });
     return { type: "station", id: st.id, merchantId: st.merchantId, outletId: st.outletId, stationId: st.id };
@@ -29,15 +33,22 @@ export async function resolvePrincipal(token: string, t: RequestTx): Promise<Pri
 
   if (typ === "pin") {
     const claims = await verifySailToken(token, "pin");
-    const [sess] = await t.db.select().from(staffSessions).where(eq(staffSessions.id, claims.session_id!)).limit(1);
+    const [found] = await t.db.select({ sess: staffSessions, station: { archivedAt: stations.archivedAt, tokenHash: stations.tokenHash, pairedAt: stations.pairedAt } }).from(staffSessions).innerJoin(stations, eq(stations.id, staffSessions.stationId)).where(eq(staffSessions.id, claims.session_id!)).limit(1);
+    const sess = found?.sess;
     if (!sess || sess.endedAt) throw new AppError("unauthenticated", "Your PIN session has ended", { remedy: "Sign in again with your PIN." });
+    // A session lives only as long as the station's pairing it started under: archiving or pairing another device ends it.
+    const st = found.station;
+    if (st.archivedAt || !st.tokenHash || (st.pairedAt && sess.startedAt < st.pairedAt)) {
+      await t.db.update(staffSessions).set({ endedAt: new Date() }).where(eq(staffSessions.id, sess.id));
+      throw new AppError("unauthenticated", "This station is no longer paired", { remedy: "Pair the iPad again from the back office." });
+    }
     const idle = (Date.now() - sess.lastSeenAt.getTime()) / 1000;
     if (idle > config().PIN_SESSION_IDLE_SECONDS) {
       await t.db.update(staffSessions).set({ endedAt: new Date() }).where(eq(staffSessions.id, sess.id));
       throw new AppError("unauthenticated", "Your PIN session expired after inactivity", { remedy: "Sign in again with your PIN." });
     }
     // Best-effort: skip when another request of the same session holds the row (a proposal approval replays a frozen request inside the approver's request).
-    await t.sql`update staff_sessions set last_seen_at = now() where id in (select id from staff_sessions where id = ${sess.id} for update skip locked)`;
+    if (opts.activity) await t.sql`update staff_sessions set last_seen_at = now() where id in (select id from staff_sessions where id = ${sess.id} for update skip locked)`;
     const [row] = await t.db.select().from(staff).where(eq(staff.id, sess.staffId)).limit(1);
     if (!row || !row.active) throw new AppError("unauthenticated", "Staff record is inactive");
     return {

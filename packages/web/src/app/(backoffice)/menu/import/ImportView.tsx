@@ -1,10 +1,11 @@
 "use client";
 
-import { Badge, Button, DataTable, DescriptionList, EmptyState, Icon, InlineError, SectionHeading, Select, Stat, StatusDot, TextField, type DataTableColumn, useLocale } from "@sail/ui";
+import { Button, DataTable, DescriptionList, EmptyState, Icon, InlineError, Select, Stat, TextField, type DataTableColumn, useLocale, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Upload, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { Warnings } from "@/components/backoffice/Warnings";
+import { Group, Quiet, SectionLabel } from "@/components/office/parts";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { ImportEntity, ImportJob, ImportJobSummary, ImportMapping, ImportReport } from "@/lib/api/types";
@@ -24,13 +25,13 @@ function statusDot(j: { status: ImportJob["status"]; dry_run: boolean }) {
   switch (j.status) {
     case "queued":
     case "running":
-      return <StatusDot status="sent" label={STATUS_LABEL[j.status]} />;
+      return <Pill size="sm" tone="sent">{STATUS_LABEL[j.status]}</Pill>;
     case "dry_run_complete":
-      return <StatusDot status="seated" label="Dry run complete" />;
+      return <Pill size="sm" tone="seated">Dry run complete</Pill>;
     case "applied":
-      return <StatusDot status="paid" label="Applied" />;
+      return <Pill size="sm" tone="paid">Applied</Pill>;
     case "failed":
-      return <StatusDot status="alert" label="Failed" />;
+      return <Pill size="sm" tone="alert">Failed</Pill>;
   }
 }
 
@@ -124,30 +125,49 @@ export function ImportView({ initialJobs }: { initialJobs: ImportJobSummary[] })
 
   const historyColumns: DataTableColumn<ImportJobSummary>[] = [
     { key: "created_at", header: "When", isRowHeader: true, render: (j) => <span className="tabular whitespace-nowrap">{dayClock(j.created_at)}</span> },
-    { key: "kind", header: "Run", render: (j) => (j.dry_run ? <Badge>Dry run</Badge> : <Badge tone="paid">Apply</Badge>) },
+    {
+      key: "kind",
+      header: "Run",
+      render: (j) =>
+        j.dry_run ? (
+          <Pill size="sm" tone="neutral">
+            Dry run
+          </Pill>
+        ) : (
+          <Pill size="sm" tone="paid">
+            Apply
+          </Pill>
+        ),
+    },
     { key: "status", header: "Status", render: (j) => statusDot(j) },
-    { key: "files", header: "Files", render: (j) => <span className="text-ink-2">{j.file_names.join(", ")}</span> },
+    { key: "files", header: "Files", render: (j) => <Quiet className="font-mono text-[12.5px]">{j.file_names.join(", ")}</Quiet> },
     { key: "summary", header: "Result", render: (j) => <span className="text-ink-2 tabular">{j.report ? summarise(j.report) : summariseCounts(j.report_summary) ?? j.error ?? "—"}</span> },
   ];
 
   return (
     <div className="grid gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-      <section className="flex flex-col gap-6">
-        <SectionHeading title="New import" aside="Legacy POS importer · CSV" />
+      <section className="flex min-w-0 flex-col gap-6">
+        <div className="flex flex-col gap-4 rounded-panel border border-rule bg-surface p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h2 className="flex items-center gap-2 font-heading text-[16px] leading-[1.35] font-semibold text-ink">
+            <Icon icon={Upload} size={16} className="text-ink-3" /> New import
+          </h2>
+          <span className="text-[13px] text-ink-3">Legacy POS importer · CSV</span>
+        </div>
         <div className="flex flex-wrap items-center gap-3">
           <input ref={fileInput} type="file" accept=".csv,text/csv" multiple hidden onChange={(e) => void addFiles(e.target.files)} />
           <Button onPress={() => fileInput.current?.click()}>
             <Icon icon={Upload} size={16} /> Choose CSV files
           </Button>
-          <span className="text-caption text-ink-2">One file per entity. Files are matched by legacy ID (or SKU, or mobile), so re-running is safe.</span>
+          <span className="min-w-0 flex-1 basis-[240px] text-[13px] text-ink-2">One file per entity. Files are matched by legacy ID (or SKU, or mobile), so re-running is safe.</span>
         </div>
         <InlineError error={readError} />
 
         {uploads.map((u) => (
-          <div key={u.name} className="flex flex-col gap-4 rounded-tile hairline p-4">
+          <div key={u.name} className="flex flex-col gap-4 rounded-panel border border-rule-subtle bg-surface-2/40 p-4">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="font-mono text-caption text-ink">{u.name}</span>
-              <span className="text-caption text-ink-2 tabular">
+              <span className="min-w-0 font-mono text-[13px] text-ink [overflow-wrap:anywhere]">{u.name}</span>
+              <span className="text-[12.5px] text-ink-3 tabular">
                 {u.rows} {u.rows === 1 ? "row" : "rows"} · {u.headers.length} columns
               </span>
               <Select
@@ -170,9 +190,9 @@ export function ImportView({ initialJobs }: { initialJobs: ImportJobSummary[] })
                 {FIELDS[u.entity].map((f) => (
                   <div key={f.name} className="grid grid-cols-[minmax(120px,1fr)_minmax(140px,1.2fr)] items-center gap-3 py-1">
                     <span className="min-w-0">
-                      <span className="font-mono text-caption text-ink">{f.name}</span>
-                      {f.required ? <span className="ml-1 text-caption text-status-alert">required</span> : null}
-                      {f.hint ? <span className="block truncate text-caption text-ink-2">{f.hint}</span> : null}
+                      <span className="font-mono text-[12.5px] text-ink">{f.name}</span>
+                      {f.required ? <span className="ml-1 text-[12px] text-status-alert">required</span> : null}
+                      {f.hint ? <span className="block truncate text-[12px] text-ink-3">{f.hint}</span> : null}
                     </span>
                     <Select
                       aria-label={`Column for ${f.name}`}
@@ -200,19 +220,23 @@ export function ImportView({ initialJobs }: { initialJobs: ImportJobSummary[] })
               <TextField label="Outlet legacy ID (option)" value={outletLegacyId} onChange={setOutletLegacyId} mono description="Used when an areas file has no outlet column." />
             </div>
             <Warnings warnings={problems} tone="blocking" />
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-[13px] text-ink-2">A dry run changes nothing. You read the report, then apply.</span>
               <Button variant="primary" isDisabled={problems.length > 0} isPending={dryRun.isPending} onPress={() => dryRun.mutate()}>
                 Run a dry run on {uploads.length} {uploads.length === 1 ? "file" : "files"}
               </Button>
-              <span className="text-caption text-ink-2">A dry run changes nothing. You read the report, then apply.</span>
             </div>
             <InlineError error={dryRun.error} />
           </>
         ) : null}
+        </div>
 
         {jobId ? (
-          <div className="flex flex-col gap-4">
-            <SectionHeading title="Report" aside={job.data ? <span className="font-mono">{jobId.slice(0, 8)}</span> : null} />
+          <div className="flex flex-col gap-3">
+            <div className="flex items-baseline justify-between gap-3">
+              <SectionLabel as="h2">Report</SectionLabel>
+              {job.data ? <span className="font-mono text-[12px] text-ink-3">{jobId.slice(0, 8)}</span> : null}
+            </div>
             {job.isPending ? <p className="text-ink-2">Loading the job…</p> : null}
             {job.data ? (
               <JobReport
@@ -228,8 +252,11 @@ export function ImportView({ initialJobs }: { initialJobs: ImportJobSummary[] })
         ) : null}
       </section>
 
-      <section className="flex flex-col gap-4">
-        <SectionHeading title="History" aside={`${jobs.data.length} ${jobs.data.length === 1 ? "job" : "jobs"}`} />
+      <section className="flex min-w-0 flex-col gap-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <SectionLabel as="h2">History</SectionLabel>
+          <span className="text-[12.5px] text-ink-3 tabular">{`${jobs.data.length} ${jobs.data.length === 1 ? "job" : "jobs"}`}</span>
+        </div>
         <DataTable
           aria-label="Import jobs"
           columns={historyColumns}
@@ -237,7 +264,7 @@ export function ImportView({ initialJobs }: { initialJobs: ImportJobSummary[] })
           rowKey={(j) => j.id}
           onRowAction={(j) => setJobId(j.id)}
           rowClassName={(j) => (j.id === jobId ? "bg-surface-2/60" : undefined)}
-          emptyState={<EmptyState variant="quiet" title="No imports yet" hint="Choose CSV files on the left to start a dry run." />}
+          emptyState={<EmptyState variant="centred" title="No imports yet" hint="Choose CSV files above to start a dry run." />}
         />
         <InlineError error={jobs.error} />
       </section>
@@ -292,14 +319,22 @@ function JobReport({ job, canApply, onApply, applying, applyError }: { job: Impo
   );
 
   const rejectedColumns: DataTableColumn<(typeof rejected)[number]>[] = [
-    { key: "entity", header: "Entity", render: (r) => <Badge>{ENTITY_LABEL[r.entity]}</Badge> },
+    {
+      key: "entity",
+      header: "Entity",
+      render: (r) => (
+        <Pill size="sm" tone="neutral">
+          {ENTITY_LABEL[r.entity]}
+        </Pill>
+      ),
+    },
     { key: "row", header: "Row", numeric: true, render: (r) => r.row },
-    { key: "reason", header: "Reason", render: (r) => <span className="text-ink">{r.reason}</span> },
+    { key: "reason", header: "Reason", render: (r) => <span className="text-ink break-words">{r.reason}</span> },
     {
       key: "data",
       header: "Data",
       render: (r) => (
-        <span className="font-mono text-caption text-ink-2" title={JSON.stringify(r.data, null, 2)}>
+        <span className="font-mono text-[12px] text-ink-2 break-words" title={JSON.stringify(r.data, null, 2)}>
           {Object.entries(r.data ?? {})
             .slice(0, 4)
             .map(([k, v]) => `${k}=${String(v)}`)
@@ -310,7 +345,7 @@ function JobReport({ job, canApply, onApply, applying, applyError }: { job: Impo
   ];
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 rounded-panel border border-rule bg-surface p-4">
       <DescriptionList
         layout="grid"
         items={[
@@ -326,51 +361,53 @@ function JobReport({ job, canApply, onApply, applying, applyError }: { job: Impo
       {report ? (
         <>
           <div>
-            <h3 className="mb-2 text-caption text-ink-2 uppercase tracking-[0.06em]">Summary</h3>
-            <div className="flex flex-wrap gap-8 rounded-tile bg-surface-2/60 px-4 py-3">
+            <SectionLabel className="mb-2.5">Summary</SectionLabel>
+            <div className="flex flex-wrap gap-x-8 gap-y-3 rounded-panel bg-surface-2/60 px-4 py-3">
               <Stat label="New" value={totals.creates} tone="paid" />
               <Stat label="Updated" value={totals.updates} />
               <Stat label="Unchanged" value={totals.unchanged} />
               <Stat label="Rejected" value={totals.rejected} tone={totals.rejected ? "alert" : "default"} />
               <Stat label="Warnings" value={report.warnings.length} tone={report.warnings.length ? "alert" : "default"} />
             </div>
-            <table className="mt-3 w-full text-body">
+            <Group className="mt-3 overflow-x-auto">
+            <table className="w-full text-[14px] leading-5">
               <thead>
-                <tr className="text-left text-caption text-ink-2">
-                  <th className="py-1 font-medium hairline-b">Entity</th>
-                  <th className="py-1 text-right font-medium hairline-b">New</th>
-                  <th className="py-1 text-right font-medium hairline-b">Updated</th>
-                  <th className="py-1 text-right font-medium hairline-b">Unchanged</th>
-                  <th className="py-1 text-right font-medium hairline-b">Rejected</th>
+                <tr className="text-left text-[12.5px] text-ink-3">
+                  <th className="px-3 py-2 font-medium border-b border-rule-subtle">Entity</th>
+                  <th className="px-3 py-2 text-right font-medium border-b border-rule-subtle">New</th>
+                  <th className="px-3 py-2 text-right font-medium border-b border-rule-subtle">Updated</th>
+                  <th className="px-3 py-2 text-right font-medium border-b border-rule-subtle">Unchanged</th>
+                  <th className="px-3 py-2 text-right font-medium border-b border-rule-subtle">Rejected</th>
                 </tr>
               </thead>
               <tbody>
                 {entities.map((e) => {
                   const x = report.entities[e]!;
                   return (
-                    <tr key={e} className="hairline-b tabular">
-                      <td className="py-1.5 text-ink">{ENTITY_LABEL[e]}</td>
-                      <td className="py-1.5 text-right">{x.creates}</td>
-                      <td className="py-1.5 text-right">{x.updates}</td>
-                      <td className="py-1.5 text-right text-ink-2">{x.unchanged}</td>
-                      <td className={`py-1.5 text-right ${x.rejected.length ? "text-status-alert" : "text-ink-2"}`}>{x.rejected.length}</td>
+                    <tr key={e} className="border-b border-rule-subtle tabular last:border-b-0">
+                      <td className="px-3 py-2 text-ink">{ENTITY_LABEL[e]}</td>
+                      <td className="px-3 py-2 text-right">{x.creates}</td>
+                      <td className="px-3 py-2 text-right">{x.updates}</td>
+                      <td className="px-3 py-2 text-right text-ink-2">{x.unchanged}</td>
+                      <td className={`px-3 py-2 text-right ${x.rejected.length ? "text-status-alert" : "text-ink-2"}`}>{x.rejected.length}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+            </Group>
           </div>
 
           {report.warnings.length ? (
             <div>
-              <h3 className="mb-2 text-caption text-ink-2 uppercase tracking-[0.06em]">Warnings</h3>
+              <SectionLabel className="mb-2.5">Warnings</SectionLabel>
               <Warnings warnings={report.warnings} />
             </div>
           ) : null}
 
           <div>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-caption text-ink-2 uppercase tracking-[0.06em]">Rejected rows</h3>
+              <SectionLabel>Rejected rows</SectionLabel>
               <Select
                 aria-label="Filter rejected rows by entity"
                 variant="toolbar"
@@ -379,14 +416,14 @@ function JobReport({ job, canApply, onApply, applying, applyError }: { job: Impo
                 items={[{ id: ANY, label: "Every entity" }, ...entities.map((e) => ({ id: e, label: ENTITY_LABEL[e] }))]}
               />
             </div>
-            <DataTable aria-label="Rejected rows" columns={rejectedColumns} rows={rejected} rowKey={(r) => r.id} emptyState={<EmptyState variant="quiet" title="No rejected rows" hint="Every row was accepted." />} />
+            <DataTable aria-label="Rejected rows" columns={rejectedColumns} rows={rejected} rowKey={(r) => r.id} emptyState={<EmptyState variant="centred" title="No rejected rows" hint="Every row was accepted." />} />
           </div>
 
           {job.dry_run && job.status === "dry_run_complete" ? (
-            <div className="flex flex-wrap items-center gap-3 rounded-tile hairline px-4 py-3">
-              <div className="min-w-0 flex-1">
-                <p className="text-ink">Apply this import</p>
-                <p className="text-caption text-ink-2">{canApply ? "Runs the same files and mapping for real. Rejected rows stay out." : "Only an Admin can apply an import."}</p>
+            <div className="flex flex-wrap items-center gap-3 rounded-panel border border-rule bg-surface-2/40 px-4 py-3">
+              <div className="min-w-0 flex-1 basis-[220px]">
+                <p className="font-medium text-ink">Apply this import</p>
+                <p className="text-[13px] text-ink-2">{canApply ? "Runs the same files and mapping for real. Rejected rows stay out." : "Only an Admin can apply an import."}</p>
               </div>
               <Button variant="primary" isDisabled={!canApply} isPending={applying} onPress={onApply}>
                 Apply {totals.creates + totals.updates} {totals.creates + totals.updates === 1 ? "change" : "changes"}

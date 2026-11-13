@@ -20,7 +20,7 @@ registerOperations({
 
 const ENTITIES: [ImportEntity, ...ImportEntity[]] = ["brands", "outlets", "categories", "products", "modifier_groups", "modifier_options", "menus", "menu_sections", "menu_items", "areas", "tables", "tender_types", "void_reasons", "staff", "customers", "layouts"];
 const MappingSchema = z.object({
-  files: z.array(z.object({ name: z.string().min(1), entity: z.enum(ENTITIES), columns: z.record(z.string(), z.string()), defaults: z.record(z.string(), z.string()).optional() })).min(1),
+  files: z.array(z.object({ name: z.string().trim().min(1), entity: z.enum(ENTITIES), columns: z.record(z.string(), z.string()), defaults: z.record(z.string(), z.string()).optional() })).min(1),
   options: z.object({ brand_legacy_id: z.string().optional(), outlet_legacy_id: z.string().optional(), tile_colour_map: z.record(z.string(), z.string()).optional() }).optional(),
 });
 const ReportSchema = z.object({ entities: z.record(z.string(), z.object({ creates: z.number().int(), updates: z.number().int(), unchanged: z.number().int(), rejected: z.array(z.object({ row: z.number().int(), reason: untrusted(z.string()), data: z.record(z.string(), z.string()) })) })), warnings: z.array(z.string()) });

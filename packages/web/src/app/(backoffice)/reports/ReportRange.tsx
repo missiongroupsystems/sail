@@ -1,6 +1,6 @@
 "use client";
 
-import { TextField } from "@sail/ui";
+import { DateField } from "@sail/ui";
 import { useState } from "react";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
 import type { Outlet } from "@/lib/api/types";
@@ -22,10 +22,11 @@ export function useReportRange(outlets: Outlet[], scope: Scope, initialOutletId:
 
 export function ReportRange({ outlets, scope, range }: { outlets: Outlet[]; scope: Scope; range: ReturnType<typeof useReportRange> }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end gap-3">
+    <div className="mb-6 flex flex-wrap items-start gap-3">
       <OutletChoice outlets={outlets} scope={scope} outletId={range.outletId} onChange={range.setOutletId} />
-      <TextField label="From" type="date" numeric value={range.from} onChange={range.setFrom} className="w-[170px]" />
-      <TextField label="To" type="date" numeric value={range.to} onChange={range.setTo} className="w-[170px]" errorMessage={range.valid ? undefined : "From must be on or before To"} isInvalid={!range.valid} />
+      {/* From and To sit inside their fields, so the row lines up with the outlet choice beside it. */}
+      <DateField aria-label="From" prefix="From" value={range.from} onChange={range.setFrom} className="w-[240px]" />
+      <DateField aria-label="To" prefix="To" value={range.to} onChange={range.setTo} className="w-[240px]" errorMessage="From must be on or before To" isInvalid={!range.valid} />
     </div>
   );
 }

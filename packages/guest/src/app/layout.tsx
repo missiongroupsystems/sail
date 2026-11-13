@@ -16,14 +16,17 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#f6f3ee",
+  themeColor: "#ffffff",
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const lang = localeFromAcceptLanguage((await headers()).get("accept-language")) ?? "en";
   return (
     <html lang={lang} data-surface="guest" className={fontClassNames}>
-      <body className="bg-bg font-sans text-ink antialiased">{children}</body>
+      {/* One phone-wide white column, centred on a grey backdrop on anything wider. */}
+      <body className="bg-surface font-sans text-ink antialiased sm:bg-surface-2">
+        <div className="mx-auto min-h-dvh w-full max-w-[480px] bg-surface sm:border-x sm:border-rule-subtle">{children}</div>
+      </body>
     </html>
   );
 }

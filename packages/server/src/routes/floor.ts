@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, eq, isNull, type SQL } from "drizzle-orm";
 import { AccessLevelSchema, ChannelTypeSchema, registerOperations } from "@sail/shared";
-import { db } from "../db/client.js";
+import { db, tx } from "../db/client.js";
 import { paymentProvider } from "../payments/provider.js";
 import { areas, channelLinks, posLayouts, tables, tenderTypes, voidReasons, type LayoutPage, type LayoutTile } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -26,17 +26,19 @@ const ProductTileSchema = z.object({ ...tileBase, kind: z.literal("product"), pr
 /** Folders hold product tiles only: pages > folders > tiles, never deeper. */
 const FolderTileSchema = z.object({ ...tileBase, kind: z.literal("folder"), tiles: z.array(ProductTileSchema) });
 const TileSchema = z.union([ProductTileSchema, FolderTileSchema]) as unknown as z.ZodType<LayoutTile>;
-const PageSchema: z.ZodType<LayoutPage> = z.object({ id: z.string().min(1), name: z.string().min(1), tiles: z.array(TileSchema) });
+const PageSchema: z.ZodType<LayoutPage> = z.object({ id: z.string().min(1), name: z.string().trim().min(1), tiles: z.array(TileSchema) });
 const LayoutSchema = z.object({ id: z.string(), brand_id: z.string(), name: z.string(), pages: z.array(PageSchema), version: z.number().int(), legacy_id: z.string().nullable(), archived: z.boolean(), updated_at: z.string() });
-const LayoutCreate = z.object({ id: z.uuid().optional(), brand_id: z.uuid(), name: z.string().min(1), pages: z.array(PageSchema).optional(), legacy_id: z.string().nullable().optional() });
-const LayoutPatch = z.object({ name: z.string().min(1).optional(), pages: z.array(PageSchema).optional(), archived: z.boolean().optional() });
+const LayoutCreate = z.object({ id: z.uuid().optional(), brand_id: z.uuid(), name: z.string().trim().min(1), pages: z.array(PageSchema).optional(), legacy_id: z.string().nullable().optional() });
+const LayoutPatch = z.object({ name: z.string().trim().min(1).optional(), pages: z.array(PageSchema).optional(), archived: z.boolean().optional() });
 
 const toLayout = (l: typeof posLayouts.$inferSelect) => ({ id: l.id, brand_id: l.brandId, name: l.name, pages: l.pages, version: l.version, legacy_id: l.legacyId, archived: l.archivedAt != null, updated_at: l.updatedAt.toISOString() });
 
-function validatePages(pages: LayoutPage[]) {
+async function validatePages(merchantId: string, pages: LayoutPage[]) {
+  const productIds = new Set<string>();
   const walk = (tiles: LayoutTile[], depth: number) => {
     for (const t of tiles) {
       if (t.kind === "product" && !t.product_id) throw AppError.validation(`tile "${t.label}" needs a product_id`);
+      if (t.kind === "product") productIds.add(t.product_id!);
       if (t.kind === "folder") {
         if (depth >= 1) throw AppError.validation(`folder "${t.label}" is nested too deep: pages > folders > tiles only`);
         walk(t.tiles ?? [], depth + 1);
@@ -44,6 +46,11 @@ function validatePages(pages: LayoutPage[]) {
     }
   };
   for (const p of pages) walk(p.tiles, 0);
+  // A tile shows one of this merchant's products: an unknown id and another merchant's are refused alike.
+  if (productIds.size) {
+    const found = await tx().unsafe<{ id: string }[]>("select id::text as id from products where merchant_id = $1 and id::text = any($2::text[])", [merchantId, [...productIds]]);
+    if (found.length !== productIds.size) throw AppError.validation("A tile names a product this business does not have", { remedy: "Pick the tile's product from this business's products.", details: { field: "pages" } });
+  }
 }
 
 export function floorRoutes(app: OpenAPIHono<AppEnv>) {
@@ -56,8 +63,8 @@ export function floorRoutes(app: OpenAPIHono<AppEnv>) {
     table: areas,
     columns: { id: areas.id, merchantId: areas.merchantId, outletId: areas.outletId, sort: areas.sort, name: areas.name },
     api: AreaSchema,
-    create: z.object({ id: z.uuid().optional(), outlet_id: z.uuid(), name: z.string().min(1), sort: z.number().int().optional(), legacy_id: z.string().nullable().optional() }),
-    patch: z.object({ name: z.string().min(1).optional(), sort: z.number().int().optional() }),
+    create: z.object({ id: z.uuid().optional(), outlet_id: z.uuid(), name: z.string().trim().min(1), sort: z.number().int().min(0).max(1_000_000).optional(), legacy_id: z.string().nullable().optional() }),
+    patch: z.object({ name: z.string().trim().min(1).optional(), sort: z.number().int().min(0).max(1_000_000).optional() }),
     aggregateKind: "area",
     toApi: (r) => ({ id: r.id, outlet_id: r.outletId, name: r.name, sort: r.sort, legacy_id: r.legacyId }),
     fromCreate: (b) => ({ id: b.id, merchantId: "", outletId: b.outlet_id, name: b.name, sort: b.sort ?? 0, legacyId: b.legacy_id ?? null }),
@@ -65,7 +72,7 @@ export function floorRoutes(app: OpenAPIHono<AppEnv>) {
   });
 
   const TableSchema = z.object({ id: z.string(), outlet_id: z.string(), area_id: z.string(), name: z.string(), seats: z.number().int(), shape: z.string(), x: z.number().int(), y: z.number().int(), w: z.number().int(), h: z.number().int(), legacy_id: z.string().nullable(), archived: z.boolean() });
-  const TableCreate = z.object({ id: z.uuid().optional(), outlet_id: z.uuid(), area_id: z.uuid(), name: z.string().min(1), seats: z.number().int().min(1).optional(), shape: z.enum(["rect", "round", "square"]).optional(), x: z.number().int().min(0).optional(), y: z.number().int().min(0).optional(), w: z.number().int().min(1).optional(), h: z.number().int().min(1).optional(), legacy_id: z.string().nullable().optional() });
+  const TableCreate = z.object({ id: z.uuid().optional(), outlet_id: z.uuid(), area_id: z.uuid(), name: z.string().trim().min(1), seats: z.number().int().min(1).max(99).optional(), shape: z.enum(["rect", "round", "square"]).optional(), x: z.number().int().min(0).max(10_000).optional(), y: z.number().int().min(0).max(10_000).optional(), w: z.number().int().min(1).max(1_000).optional(), h: z.number().int().min(1).max(1_000).optional(), legacy_id: z.string().nullable().optional() });
   defineCrud(app, {
     group: "tables",
     path: "/v1/tables",
@@ -88,7 +95,7 @@ export function floorRoutes(app: OpenAPIHono<AppEnv>) {
   // requires_approval defaults to on for a tender that is neither cash nor a card terminal (a house account).
   // `provider` and `terminal_id` go together: payments with this tender are sent to that terminal instead of recorded by hand.
   const providerName = z.string().refine((n) => paymentProvider(n) != null, { message: "not a payment provider this register has" });
-  const TenderCreate = z.object({ id: z.uuid().optional(), name: z.string().min(1), is_cash: z.boolean().optional(), opens_drawer: z.boolean().optional(), is_terminal: z.boolean().optional(), requires_approval: z.boolean().optional(), requires_reference: z.boolean().optional(), provider: providerName.nullable().optional(), terminal_id: z.string().min(1).max(80).nullable().optional(), sort: z.number().int().optional(), legacy_id: z.string().nullable().optional() });
+  const TenderCreate = z.object({ id: z.uuid().optional(), name: z.string().trim().min(1), is_cash: z.boolean().optional(), opens_drawer: z.boolean().optional(), is_terminal: z.boolean().optional(), requires_approval: z.boolean().optional(), requires_reference: z.boolean().optional(), provider: providerName.nullable().optional(), terminal_id: z.string().min(1).max(80).nullable().optional(), sort: z.number().int().min(0).max(1_000_000).optional(), legacy_id: z.string().nullable().optional() });
   defineCrud(app, {
     group: "tender_types",
     path: "/v1/tender-types",
@@ -106,7 +113,7 @@ export function floorRoutes(app: OpenAPIHono<AppEnv>) {
   });
 
   const ReasonSchema = z.object({ id: z.string(), name: z.string(), for_refunds: z.boolean(), sort: z.number().int(), legacy_id: z.string().nullable(), archived: z.boolean() });
-  const ReasonCreate = z.object({ id: z.uuid().optional(), name: z.string().min(1), for_refunds: z.boolean().optional(), sort: z.number().int().optional(), legacy_id: z.string().nullable().optional() });
+  const ReasonCreate = z.object({ id: z.uuid().optional(), name: z.string().trim().min(1), for_refunds: z.boolean().optional(), sort: z.number().int().min(0).max(1_000_000).optional(), legacy_id: z.string().nullable().optional() });
   defineCrud(app, {
     group: "void_reasons",
     path: "/v1/void-reasons",
@@ -177,7 +184,7 @@ export function floorRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "layouts.create", method: "post", path: "/v1/layouts", tags: ["layouts"], request: { body: jsonBody(LayoutCreate) }, responses: { 201: jsonResponse(mutationResponse(LayoutSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const b = c.req.valid("json");
-    validatePages(b.pages ?? []);
+    await validatePages(p.merchantId, b.pages ?? []);
     const [row] = await db().insert(posLayouts).values({ id: b.id, merchantId: p.merchantId, brandId: b.brand_id, name: b.name, pages: b.pages ?? [], legacyId: b.legacy_id ?? null }).returning();
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "layout.created", aggregate: { kind: "layout", id: row!.id, version: 1 }, operationId: "layouts.create", payload: { name: b.name, brand_id: b.brand_id }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
     await recordAudit(p, { action: "layouts.create", targetKind: "layout", targetId: row!.id, details: { name: b.name } });
@@ -188,7 +195,7 @@ export function floorRoutes(app: OpenAPIHono<AppEnv>) {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const b = c.req.valid("json");
-    if (b.pages) validatePages(b.pages);
+    if (b.pages) await validatePages(p.merchantId, b.pages);
     const [cur] = await db().select({ version: posLayouts.version }).from(posLayouts).where(and(eq(posLayouts.id, id), eq(posLayouts.merchantId, p.merchantId))).limit(1);
     if (!cur) throw AppError.notFound("layout", id);
     const [row] = await db()

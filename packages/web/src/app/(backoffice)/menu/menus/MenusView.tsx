@@ -4,7 +4,7 @@ import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, us
 import type { SyntheticListenerMap } from "@dnd-kit/core/dist/hooks/utilities";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Badge, Button, Dialog, EmptyState, Icon, InlineError, Money, Select, Skeleton, StatusDot, Switch, TextField, useLocale } from "@sail/ui";
+import { Badge, Button, Dialog, EmptyState, Icon, InlineError, Money, Select, Skeleton, Switch, TextField, useLocale, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { GripVertical, Pencil, Plus, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -17,6 +17,7 @@ import { api } from "@/lib/api.browser";
 import type { Brand, Menu, MenuSection, MenuSectionInput, MenuSummary } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
 import { keys } from "@/lib/query";
+import { greyPill } from "@/components/office/parts";
 
 /** Local editing shape: one level of sub-sections, items in order. */
 type Draft = { id: string; name: string; parent_id: string | null; items: string[] };
@@ -71,11 +72,11 @@ export function MenusView({ initialMenus, brands, scope }: { initialMenus: MenuS
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-end gap-3">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <BrandChoice brands={brands} scope={scope} brandId={brandId} onChange={(id) => { setBrandId(id); setMenuId(null); }} />
         <Select
           aria-label="Menu"
-          variant="toolbar"
+          variant="toolbar" size="sm"
           selectedKey={current?.id ?? null}
           onSelectionChange={setMenuId}
           placeholder={forBrand.length ? "Choose a menu" : "No menus for this brand"}
@@ -85,7 +86,7 @@ export function MenusView({ initialMenus, brands, scope }: { initialMenus: MenuS
         <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
           Show archived
         </Switch>
-        <Button className="ml-auto" variant="primary" onPress={() => setAdding(true)} isDisabled={!brandId}>
+        <Button size="sm" className="ml-auto" variant="primary" onPress={() => setAdding(true)} isDisabled={!brandId}>
           Add menu
         </Button>
       </div>
@@ -104,7 +105,7 @@ export function MenusView({ initialMenus, brands, scope }: { initialMenus: MenuS
         title="New menu"
         footer={
           <>
-            <Button variant="quiet" onPress={() => setAdding(false)}>
+            <Button variant="secondary" className={greyPill} onPress={() => setAdding(false)}>
               Cancel
             </Button>
             <Button variant="primary" isDisabled={!newName.trim()} isPending={create.isPending} onPress={() => create.mutate(newName.trim())}>
@@ -130,6 +131,16 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
   });
   const [draft, setDraft] = useState<Draft[] | null>(null);
   const [dirty, setDirty] = useState(false);
+  // Unsaved changes to the menu's order ask before the tab closes or reloads (live-test E-L4).
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
   const { locale } = useLocale();
   const [warnings, setWarnings] = useState<string[]>([]);
   const [renaming, setRenaming] = useState(false);
@@ -204,39 +215,43 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-tile bg-surface-2/60 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-rule-subtle pb-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
           {renaming ? (
             <form
-              className="flex items-center gap-2"
+              className="flex flex-wrap items-center gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
                 if (menuName.trim()) patchMenu.mutate({ name: menuName.trim() });
               }}
             >
-              <TextField aria-label="Menu name" value={menuName} onChange={setMenuName} autoFocus className="w-[240px]" />
+              <TextField aria-label="Menu name" value={menuName} onChange={setMenuName} autoFocus className="w-full sm:w-[240px]" />
               <Button type="submit" variant="primary" isPending={patchMenu.isPending}>
                 Rename
               </Button>
-              <Button variant="quiet" onPress={() => setRenaming(false)}>
+              <Button variant="secondary" className={greyPill} onPress={() => setRenaming(false)}>
                 Cancel
               </Button>
             </form>
           ) : (
             <>
-              <h2 className="text-heading text-ink">{summary.name}</h2>
-              <Button variant="quiet" iconOnly aria-label="Rename menu" onPress={() => { setMenuName(summary.name); setRenaming(true); }}>
-                <Icon icon={Pencil} size={16} />
-              </Button>
-              {summary.archived ? <StatusDot status="neutral" label="Archived" muted /> : null}
-              <span className="text-caption text-ink-2 tabular">
-                {tops.length} {tops.length === 1 ? "section" : "sections"} · {itemCount} {itemCount === 1 ? "item" : "items"}
-              </span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1">
+                  <h2 className="font-heading text-[19px] leading-[1.3] font-semibold tracking-[-0.01em] text-ink [overflow-wrap:anywhere]">{summary.name}</h2>
+                  <Button variant="quiet" iconOnly aria-label="Rename menu" onPress={() => { setMenuName(summary.name); setRenaming(true); }}>
+                    <Icon icon={Pencil} size={16} />
+                  </Button>
+                  {summary.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : null}
+                </div>
+                <p className="text-[13px] text-ink-3 tabular">
+                  {tops.length} {tops.length === 1 ? "section" : "sections"} · {itemCount} {itemCount === 1 ? "item" : "items"}
+                </p>
+              </div>
             </>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="quiet" onPress={() => patchMenu.mutate({ archived: !summary.archived })} isPending={patchMenu.isPending && patchMenu.variables?.archived !== undefined}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" className={greyPill} onPress={() => patchMenu.mutate({ archived: !summary.archived })} isPending={patchMenu.isPending && patchMenu.variables?.archived !== undefined}>
             {summary.archived ? "Restore menu" : "Archive menu"}
           </Button>
           <Button onPress={() => addSection(null)}>
@@ -257,7 +272,7 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
           <SortableContext items={tops.map((s) => `sec:${s.id}`)} strategy={verticalListSortingStrategy}>
             <ol className="flex flex-col gap-4">
               {tops.map((s) => (
-                <SortableRow key={s.id} id={`sec:${s.id}`} className="rounded-tile hairline bg-surface">
+                <SortableRow key={s.id} id={`sec:${s.id}`} className="rounded-panel border border-rule bg-surface">
                   {(handle) => (
                     <SectionBlock
                       section={s}
@@ -271,9 +286,9 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
                     >
                       {childrenOf(s.id).length ? (
                         <SortableContext items={childrenOf(s.id).map((c) => `sec:${c.id}`)} strategy={verticalListSortingStrategy}>
-                          <ol className="flex flex-col gap-3 pl-6">
+                          <ol className="flex flex-col gap-3 sm:pl-6">
                             {childrenOf(s.id).map((c) => (
-                              <SortableRow key={c.id} id={`sec:${c.id}`} className="rounded-tile hairline bg-surface-2/40">
+                              <SortableRow key={c.id} id={`sec:${c.id}`} className="rounded-panel border border-rule-subtle bg-surface-2/50">
                                 {(h) => (
                                   <SectionBlock
                                     section={c}
@@ -319,7 +334,7 @@ function DragHandle({ handle, label }: { handle: Handle; label: string }) {
     <button
       type="button"
       aria-label={label}
-      className="press inline-flex size-9 shrink-0 cursor-grab touch-none items-center justify-center rounded-tile text-ink-2 outline-none hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-status-seated active:cursor-grabbing"
+      className="press inline-flex size-9 shrink-0 cursor-grab touch-none items-center justify-center rounded-full text-ink-3 outline-none hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-focus active:cursor-grabbing"
       {...handle.attributes}
       {...handle.listeners}
     >
@@ -356,36 +371,37 @@ function SectionBlock({
   const [name, setName] = useState(section.name);
 
   return (
-    <div className="flex flex-col gap-3 p-3">
-      <div className="flex items-center gap-2">
+    <div className="flex flex-col gap-2 p-3">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <DragHandle handle={handle} label={`Reorder ${section.name}`} />
         {editing ? (
           <form
-            className="flex flex-1 items-center gap-2"
+            className="flex flex-1 flex-wrap items-center gap-2"
             onSubmit={(e) => {
               e.preventDefault();
               if (name.trim()) onRename(name.trim());
               setEditing(false);
             }}
           >
-            <TextField aria-label="Section name" value={name} onChange={setName} autoFocus className="w-[240px]" />
+            <TextField aria-label="Section name" value={name} onChange={setName} autoFocus className="w-full sm:w-[240px]" />
             <Button type="submit" variant="primary">
               Rename
             </Button>
-            <Button variant="quiet" onPress={() => setEditing(false)}>
+            <Button variant="secondary" className={greyPill} onPress={() => setEditing(false)}>
               Cancel
             </Button>
           </form>
         ) : (
           <>
-            <h3 className={sub ? "text-line text-ink" : "text-heading text-ink"}>{section.name}</h3>
+            <h3 className={`min-w-0 font-heading font-semibold text-ink [overflow-wrap:anywhere] ${sub ? "text-[15px] leading-[1.35]" : "text-[16px] leading-[1.35] tracking-[-0.005em]"}`}>{section.name}</h3>
             <Button variant="quiet" iconOnly aria-label={`Rename ${section.name}`} onPress={() => { setName(section.name); setEditing(true); }}>
               <Icon icon={Pencil} size={16} />
             </Button>
             <Badge>{section.items.length}</Badge>
           </>
         )}
-        <span className="ml-auto flex items-center gap-1">
+        {/* On a phone the actions take their own line, tighter, so the × stays inside the card. */}
+        <span className="flex min-w-0 items-center gap-0.5 max-sm:w-full max-sm:[&>button]:px-2! sm:ml-auto sm:justify-end">
           {onAddSub ? (
             <Button variant="quiet" onPress={onAddSub}>
               <Icon icon={Plus} size={16} /> Sub-section
@@ -394,7 +410,7 @@ function SectionBlock({
           <Button variant="quiet" onPress={() => setAdding((v) => !v)}>
             <Icon icon={Plus} size={16} /> Products
           </Button>
-          <Button variant="quiet" iconOnly aria-label={`Remove ${section.name}`} onPress={onRemove}>
+          <Button variant="quiet" iconOnly aria-label={`Remove ${section.name}`} onPress={onRemove} className="max-sm:ml-auto">
             <Icon icon={X} size={16} />
           </Button>
         </span>
@@ -406,15 +422,15 @@ function SectionBlock({
             {section.items.map((pid) => {
               const p = byId.get(pid);
               return (
-                <SortableRow key={pid} id={`item:${section.id}:${pid}`} className="hairline-b last:border-b-0">
+                <SortableRow key={pid} id={`item:${section.id}:${pid}`} className="border-b border-rule-subtle last:border-b-0">
                   {(h) => (
-                    <div className="flex items-center gap-2 py-1">
+                    <div className="flex items-center gap-2 py-0.5">
                       <DragHandle handle={h} label={`Reorder ${p?.name ?? "item"}`} />
-                      <span className="min-w-0 flex-1 truncate text-ink">
+                      <span className="min-w-0 flex-1 truncate text-[14px] text-ink">
                         {p?.name ?? `Product ${pid.slice(0, 8)}`}
-                        {p?.archived ? <span className="ml-2 text-caption text-ink-2">archived</span> : null}
+                        {p?.archived ? <span className="ml-2 text-[12px] text-ink-3">archived</span> : null}
                       </span>
-                      {p ? <Money cents={p.price} className="text-ink-2" /> : null}
+                      {p ? <Money cents={p.price} className="text-[14px] text-ink-2" /> : null}
                       <Button variant="quiet" iconOnly aria-label={`Remove ${p?.name ?? "item"} from ${section.name}`} onPress={() => onRemoveItem(pid)}>
                         <Icon icon={X} size={16} />
                       </Button>
@@ -426,10 +442,10 @@ function SectionBlock({
           </ol>
         </SortableContext>
       ) : (
-        <p className="px-2 text-caption text-ink-2">No products in this section yet.</p>
+        <p className="mx-1 rounded-field border border-dashed border-rule-dashed px-3 py-2.5 text-[13px] text-ink-3">No products in this section yet.</p>
       )}
 
-      {adding ? <ProductSearch autoFocus keepQuery exclude={section.items} onPick={(p) => onAddItem(p.id)} className="max-w-[520px]" /> : null}
+      {adding ? <ProductSearch autoFocus keepQuery exclude={section.items} onPick={(p) => onAddItem(p.id)} className="w-full max-w-[520px]" /> : null}
       {children}
     </div>
   );

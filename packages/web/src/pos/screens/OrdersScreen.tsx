@@ -1,6 +1,7 @@
 "use client";
 
-import { Badge, Button, EmptyState, Menu, MenuItem, MenuTrigger, Money, SegmentedControl, Sheet, Skeleton, TextField, type BadgeTone, useLocale } from "@sail/ui";
+import { ClipboardList, Plus, ShoppingBag } from "lucide-react";
+import { Badge, Button, EmptyState, Icon, Menu, MenuItem, MenuTrigger, Money, SegmentedControl, Sheet, Skeleton, TextField, type BadgeTone, useLocale } from "@sail/ui";
 import { useMemo, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import { idempotencyKey, toApiError } from "@/lib/api";
@@ -16,14 +17,17 @@ import { useUiStore } from "../state/ui";
 
 const STATUS_TONE: Record<string, BadgeTone> = { open: "seated", fired: "sent", ready: "paid", out_for_delivery: "bill", completed: "paid", cancelled: "neutral" };
 
-/** Orders: takeaway, pickup and delivery, sorted by ready-by, with + New order and Ready; and today's closed orders for Refund and Reopen. */
+/** Orders: takeaway, pickup and delivery, sorted by ready-by, with New order and Ready; and today's closed orders for Refund and Reopen. */
 export function OrdersScreen() {
   const { clock } = useLocale();
   const api = useApi();
-  const { outlet, station, offline, tablesById } = usePos();
+  const { station, offline, tablesById } = usePos();
   const [view, setView] = useState<"open" | "today">("open");
   const orders = useOpenOrders(station.outlet_id);
-  const today = useTodaysOrders(station.outlet_id, view === "today");
+  // Today's closed orders are read once that tab has been opened (a refetch of the day's orders on every outlet event
+  // is too much to keep running on the Open tab); its count shows from then on.
+  const [seenToday, setSeenToday] = useState(false);
+  const today = useTodaysOrders(station.outlet_id, view === "today" || seenToday);
   const applySnapshot = useApplySnapshot();
   const openOrderScreen = useNavStore((s) => s.openOrder);
   const notify = useUiStore((s) => s.notify);
@@ -50,38 +54,60 @@ export function OrdersScreen() {
   };
 
   return (
-    <Frame
-      title={`${outlet?.name ?? ""} · Orders`}
-      right={
-        <MenuTrigger>
-          <Button variant="primary" size="lg" isDisabled={offline}>
-            {offline ? "Offline" : "+ New order"}
-          </Button>
-          <Menu minWidth={220} onAction={(k) => setCreating(k as OrderType)}>
-            <MenuItem id="takeaway">Takeaway</MenuItem>
-            <MenuItem id="pickup">Pickup</MenuItem>
-            <MenuItem id="delivery">Delivery</MenuItem>
-          </Menu>
-        </MenuTrigger>
-      }
-    >
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        <div className="mb-4 flex items-center gap-3">
-          <SegmentedControl aria-label="Which orders" options={[{ id: "open", label: `Open${openList.length ? ` · ${openList.length}` : ""}` }, { id: "today", label: "Today's closed" }]} selectedId={view} onSelect={(id) => setView(id as "open" | "today")} />
+    <Frame>
+      <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+        <div className="flex min-h-[52px] shrink-0 items-center gap-3">
+          <SegmentedControl aria-label="Which orders" options={[{ id: "open", label: "Open", count: orders.data ? openList.length : undefined }, { id: "today", label: "Today's closed", count: today.data ? closedList.length : undefined }]} selectedId={view} onSelect={(id) => {
+            setView(id as "open" | "today");
+            if (id === "today") setSeenToday(true);
+          }} />
           {view === "today" ? <span className="text-body text-ink-2">Tap a done order for Refund, Reopen and receipts.</span> : null}
+          <span className="flex-1" />
+          <MenuTrigger>
+            <Button variant="primary" size="lg" isDisabled={offline}>
+              {offline ? (
+                "Offline"
+              ) : (
+                <>
+                  <Icon icon={Plus} size={18} />
+                  New order
+                </>
+              )}
+            </Button>
+            <Menu minWidth={220} onAction={(k) => setCreating(k as OrderType)}>
+              <MenuItem id="takeaway">Takeaway</MenuItem>
+              <MenuItem id="pickup">Pickup</MenuItem>
+              <MenuItem id="delivery">Delivery</MenuItem>
+            </Menu>
+          </MenuTrigger>
         </div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-panel border border-rule bg-surface">
+        {/* Column heads over the rows. */}
+        <div aria-hidden className="flex shrink-0 items-center gap-4 border-b border-rule px-5 py-3 text-[13px] font-semibold text-ink-2">
+          <span className="w-24 shrink-0">Order</span>
+          <span className="min-w-0 flex-1">For</span>
+          <span className="w-32 shrink-0">Status</span>
+          <span className="w-24 shrink-0 text-right">Total</span>
+          {/* The action column is there on both tabs, so Status and Total keep their place when switching. */}
+          <span className="w-[92px] shrink-0" />
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-2">
         {query.isLoading && !query.data ? <Skeleton lines={4} /> : null}
-        {query.data && list.length === 0 ? (view === "open" ? <EmptyState title="No open orders" hint="Tap + New order to start a takeaway, pickup or delivery." /> : <EmptyState title="Nothing closed yet today" hint="Paid and cancelled orders from this business day appear here." />) : null}
-        <ul className="flex flex-col gap-2">
+        {query.data && list.length === 0 ? (
+          <div className="flex flex-1 items-center justify-center">
+            {view === "open" ? <EmptyState variant="centred" icon={ShoppingBag} title="No open orders" hint="Tap New order to start a takeaway, pickup or delivery." /> : <EmptyState variant="centred" icon={ClipboardList} title="Nothing closed yet today" hint="Paid and cancelled orders from this business day appear here." />}
+          </div>
+        ) : null}
+        <ul className="flex flex-col">
           {list.map((o) => (
-            <li key={o.id}>
+            <li key={o.id} className="border-b border-rule-subtle py-1 last:border-b-0">
               <div className="flex items-stretch gap-2">
                 <AriaButton
                   onPress={() => openOrderScreen(o.id, "orders")}
-                  className="press pos-touch flex min-h-16 flex-1 items-center gap-4 rounded-tile bg-surface px-4 text-left outline-none hairline data-[pressed]:bg-surface-2 data-[hovered]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated"
+                  className="press pos-touch flex min-h-16 flex-1 items-center gap-4 rounded-tile px-3 text-left outline-none data-[pressed]:bg-surface-3 data-[hovered]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated"
                   aria-label={`${ORDER_TYPE_LABEL[o.order_type]} ${o.order_no}${o.customer_ref?.name ? `, ${o.customer_ref.name}` : ""}, ${ORDER_STATUS_LABEL[o.status]}`}
                 >
-                  <span className="w-24 shrink-0 font-mono text-body text-ink-2">{o.order_no}</span>
+                  <span className="w-24 shrink-0 text-body text-ink-2 tabular">{o.order_no}</span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-line text-ink">
                       {o.order_type === "dine_in" && o.table_id ? `Table ${tablesById.get(o.table_id)?.name ?? ""} · ` : ""}
@@ -97,18 +123,24 @@ export function OrdersScreen() {
                       {o.checks.some((c) => c.refunded_total > 0) ? " · refunded" : ""}
                     </span>
                   </span>
-                  <Badge tone={STATUS_TONE[o.status] ?? "neutral"}>{ORDER_STATUS_LABEL[o.status]}</Badge>
-                  <Money cents={o.status === "completed" ? o.paid_total : o.totals.total} size="line" className="w-24 text-right" />
+                  <span className="w-32 shrink-0">
+                    <Badge tone={STATUS_TONE[o.status] ?? "neutral"}>{ORDER_STATUS_LABEL[o.status]}</Badge>
+                  </span>
+                  <Money cents={o.status === "completed" ? o.paid_total : o.totals.total} size="line" className="w-24 shrink-0 text-right" />
                 </AriaButton>
                 {o.status === "fired" ? (
-                  <Button size="lg" variant="secondary" isDisabled={offline || busy === o.id} isPending={busy === o.id} onPress={() => void ready(o)} className="min-h-16">
+                  <Button size="lg" variant="secondary" isDisabled={offline || busy === o.id} isPending={busy === o.id} onPress={() => void ready(o)} className="min-h-16 w-[92px]">
                     {offline ? "Offline" : "Ready"}
                   </Button>
-                ) : null}
+                ) : (
+                  <span aria-hidden className="w-[92px] shrink-0" />
+                )}
               </div>
             </li>
           ))}
         </ul>
+        </div>
+      </div>
       </div>
       <NewOrderSheet
         type={creating}
@@ -124,7 +156,7 @@ export function OrdersScreen() {
   );
 }
 
-/** + New order: Takeaway (optional name), Pickup (name, mobile, ready-by), Delivery (plus address and notes). */
+/** New order: Takeaway (optional name), Pickup (name, mobile, ready-by), Delivery (plus address and notes). */
 export function NewOrderSheet({ type, onClose, onCreate }: { type: OrderType | null; onClose: () => void; onCreate: (input: OpenOrderInput) => Promise<void> }) {
   const [name, setName] = useState("");
   const [mobile, setMobile] = useState("");
@@ -182,7 +214,7 @@ export function NewOrderSheet({ type, onClose, onCreate }: { type: OrderType | n
 
   const title = type ? `New ${ORDER_TYPE_LABEL[type].toLowerCase()} order` : "";
   return (
-    <Sheet
+    <Sheet labelledClose
       isOpen={Boolean(type)}
       onOpenChange={(o) => (!o ? close() : undefined)}
       title={title}

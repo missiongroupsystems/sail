@@ -1,9 +1,10 @@
 "use client";
 
 import { create } from "zustand";
+import { useSessionStore } from "./session";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { ConnectionStatus } from "@sail/ui";
-import type { OverrideSubject } from "../api/types";
+import type { OverrideSubject, Role } from "../api/types";
 
 /* ---- Theme: schedule from the outlet, or a manual choice -------- */
 
@@ -44,7 +45,8 @@ export const useConnectionStore = create<ConnectionState>()((set, get) => ({
 
 /* ---- Transient UI: undo, notices, pricing, override requests ---------------- */
 
-export type UndoEntry = { id: number; label: string; undo: () => Promise<void> | void };
+/** `screen`: the Undo belongs to the screen it was made on (a line added or held) and goes when the person leaves it. */
+export type UndoEntry = { id: number; label: string; undo: () => Promise<void> | void; screen?: boolean };
 export type Notice = { id: number; text: string; remedy?: string | null; tone: "info" | "alert" | "success"; orderId?: string | null };
 
 export type OverrideRequest = {
@@ -53,6 +55,8 @@ export type OverrideRequest = {
   title: string;
   /** The register's figures for the effect: "already sent · $18.00". */
   quote: string | null;
+  /** The lowest role that may approve: the prompt names it, since a Cashier's PIN approves some actions. */
+  minRole?: Role;
   resolve: (grant: { override_id: string; approverName: string } | null) => void;
 };
 
@@ -63,7 +67,7 @@ type UiState = {
   inFlight: Record<string, number>;
   activeSeat: Record<string, number | null>;
   override: OverrideRequest | null;
-  showUndo: (label: string, undo: UndoEntry["undo"]) => void;
+  showUndo: (label: string, undo: UndoEntry["undo"], opts?: { screen?: boolean }) => void;
   clearUndo: () => void;
   notify: (n: Omit<Notice, "id">, ttlMs?: number) => void;
   dismissNotice: (id: number) => void;
@@ -72,6 +76,8 @@ type UiState = {
   setActiveSeat: (orderId: string, seat: number | null) => void;
   requestOverride: (req: Omit<OverrideRequest, "resolve">) => Promise<{ override_id: string; approverName: string } | null>;
   settleOverride: (grant: { override_id: string; approverName: string } | null) => void;
+  /** The station locked: nothing from the last person's session stays on screen for the next one. */
+  clearForLock: () => void;
 };
 
 let seq = 0;
@@ -82,9 +88,11 @@ export const useUiStore = create<UiState>()((set, get) => ({
   inFlight: {},
   activeSeat: {},
   override: null,
-  showUndo: (label, undo) => set({ undo: { id: ++seq, label, undo } }),
+  showUndo: (label, undo, opts) => set({ undo: { id: ++seq, label, undo, screen: opts?.screen } }),
   clearUndo: () => set({ undo: null }),
   notify: (n, ttlMs = 6000) => {
+    // Locked, there is no one to tell: an action cut short by the lock (a 401 as the session ended) shows the PIN pad, not an error.
+    if (!useSessionStore.getState().token) return;
     const id = ++seq;
     set({ notices: [...get().notices, { ...n, id }] });
     if (ttlMs > 0) setTimeout(() => get().dismissNotice(id), ttlMs);
@@ -101,5 +109,10 @@ export const useUiStore = create<UiState>()((set, get) => ({
     const cur = get().override;
     set({ override: null });
     cur?.resolve(grant);
+  },
+  clearForLock: () => {
+    const cur = get().override;
+    set({ undo: null, notices: [], override: null });
+    cur?.resolve(null);
   },
 }));

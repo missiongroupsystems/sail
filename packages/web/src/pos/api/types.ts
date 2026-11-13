@@ -226,7 +226,7 @@ export type OrderSnapshot = {
   totals: { tax_mode: "inclusive" | "exclusive"; tax_rounding: "per_line" | "per_rate"; subtotal: number; discount_total: number; fee_total: number; tax_total: number; taxes: TaxBreakdown[]; total: number };
   lines: SnapshotLine[];
   adjustments: SnapshotAdjustment[];
-  manual_applications: { id: string; rule_key: string; entered_value: number | null; line_ids: string[] | null; applied_by: string | null; reason: string | null }[];
+  manual_applications: { id: string; rule_key: string; entered_value: number | null; line_ids: string[] | null; applied_by: string | null; approved_by?: string | null; reason: string | null }[];
   checks: CheckSnapshot[];
   paid_total: number;
   balance: number;
@@ -303,7 +303,8 @@ export type CheckPayment = {
   created_at: string;
 };
 /** One line's part of a bill: `share` is "1" or a fraction such as "1/3". */
-export type CheckAllocation = { line_id: string; share: string; base: number; discount: number; fee: number; tax: number; taxes: TaxAmount[]; total: number };
+/** `refunded_quantity`: units of the line already refunded from this bill (registers before tips went back with refunds leave it out). */
+export type CheckAllocation = { line_id: string; share: string; base: number; discount: number; fee: number; tax: number; taxes: TaxAmount[]; total: number; refunded_quantity?: number };
 export type CheckSnapshot = {
   id: string;
   index: number;
@@ -348,13 +349,19 @@ export type PaymentResult = MutationResult & { payment: PaymentFigures };
 
 export type RefundRequest = { kind: "full" } | { kind: "lines"; lines: { line_id: string; quantity: number }[] } | { kind: "amount"; amount: number };
 export type RefundLineResult = { line_id: string; quantity: number; base: number; discount: number; fee: number; tax: number; taxes: TaxAmount[]; total: number; adjustments: Record<string, { amount: number; tax: number }> };
-export type RefundTenderResult = { payment_id: string; tender: string; is_cash: boolean; amount: number; rounding_cents: number };
-export type RefundablePayment = { payment_id: string; tender: string; is_cash: boolean; amount: number; refunded: number };
+/** `amount` is the bill's share given back to this payment; `tip_cents` its tip given back on top (a whole-bill refund only). */
+export type RefundTenderResult = { payment_id: string; tender: string; is_cash: boolean; amount: number; rounding_cents: number; tip_cents?: number };
+export type RefundablePayment = { payment_id: string; tender: string; is_cash: boolean; amount: number; refunded: number; tip?: number; refunded_tip?: number };
 export type RefundQuote = {
   lines: RefundLineResult[];
   totals: { base: number; discount: number; fee: number; tax: number; taxes: TaxAmount[]; total: number };
   tenders: RefundTenderResult[];
+  /** Tips given back on top of `totals.total`. */
+  tip?: number;
+  /** Cash handed back: cash amounts, rounding and tips. */
   cash_out: number;
+  /** Everything handed back on every payment: the total, cash rounding and tips. */
+  given_back?: number;
   check_id: string;
   remaining_after: { total: number };
   payments: RefundablePayment[];

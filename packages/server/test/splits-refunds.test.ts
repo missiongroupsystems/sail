@@ -105,6 +105,46 @@ describe("bill splitting", () => {
     expect(sumChecks(manual.body.data)).toBe(added.body.data.totals.total);
   });
 
+  it("B-F3: after a payment is voided, every split mode works again and the voided payments keep their history", async () => {
+    const o = await open(managerPin, { order_type: "dine_in", table_id: await tableId("6"), pax: 2 });
+    const orderId = o.body.data.id;
+    const added = await addLines(managerPin, orderId, [{ line_id: randomUUID(), product_id: ids.laksa, quantity: 1, seat_no: 1 }, { line_id: randomUUID(), product_id: ids.kopi, quantity: 1, seat_no: 2 }]);
+    const total = added.body.data.totals.total;
+    const voidPay = async (checkId: string, amount: number) => {
+      const p = await pay(managerPin, checkId, { tender_type_id: ids.card, amount });
+      expect(p.status, JSON.stringify(p.body)).toBe(200);
+      const paymentId = p.body.data.checks.find((c) => c.id === checkId)!.payments.at(-1)!.id;
+      const v = await call<Body>("POST", `/v1/payments/${paymentId}/void`, { token: managerPin, body: { reason: "Wrong amount" } });
+      expect(v.status, JSON.stringify(v.body)).toBe(200);
+      return paymentId;
+    };
+    const first = await voidPay(added.body.data.checks[0]!.id, 500);
+    const split = (path: string, body: Record<string, unknown>) => call<Body>("POST", `/v1/orders/${orderId}/checks/${path}`, { token: managerPin, body });
+    const even = await split("split-even", { n: 2 });
+    expect(even.status, JSON.stringify(even.body)).toBe(200);
+    expect(sumChecks(even.body.data)).toBe(total);
+    // The bill the payment was voided on is still Bill 1, with its voided payment on it.
+    expect(even.body.data.checks[0]!.id).toBe(added.body.data.checks[0]!.id);
+    const seat = await split("split-by-seat", { shared: "even" });
+    expect(seat.status, JSON.stringify(seat.body)).toBe(200);
+    expect(seat.body.data.checks.map((c) => c.seat_no)).toEqual([1, 2]);
+    const [b1, b2] = seat.body.data.checks.map((c) => c.id) as [string, string];
+    const moved = await split("allocate", { moves: [{ line_id: added.body.data.lines[1]!.id, check_ids: [b1, b2] }] });
+    expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+    // Two bills, each with a voided payment, back to one: Bill 2's voided payment moves to Bill 1, and none is lost.
+    const second = await voidPay(b2, 100);
+    const one = await split("unsplit", {});
+    expect(one.status, JSON.stringify(one.body)).toBe(200);
+    expect(one.body.data.checks).toHaveLength(1);
+    expect(one.body.data.checks[0]!.totals.total).toBe(total);
+    expect(one.body.data.checks[0]!.payments.map((p) => p.id).sort()).toEqual([first, second].sort());
+    const kept = await db.sql<{ id: string; status: string; check_id: string }[]>`select id, status, check_id from payments where order_id = ${orderId}`;
+    expect(kept.map((p) => [p.status, p.check_id])).toEqual([["reversed", b1], ["reversed", b1]]);
+    // And the bill can be paid in full afterwards.
+    const paid = await pay(managerPin, b1, { tender_type_id: ids.card, amount: total });
+    expect(paid.status, JSON.stringify(paid.body)).toBe(200);
+  });
+
   it("by item: move a line to a bill, share the wine three ways, pay one bill, then the paid bill is locked", async () => {
     const o = await open(cashierPin, { order_type: "dine_in", table_id: await tableId("3"), pax: 3 });
     const laksaLine = randomUUID();
@@ -288,5 +328,24 @@ describe("refunds", () => {
     await call("POST", "/v1/stock/daily-cap", { token: A.manager.token, body: { outlet_id: A.outletId, product_id: ids.kopi, quantity: null } });
     // Refund rows are immutable.
     await expect(db.sql`delete from refunds where check_id = ${check.id}`).rejects.toThrow(/append_only/);
+  });
+});
+
+describe("a re-split keeps numbered documents", () => {
+  it("an order reopened after its bill was invoiced cannot be re-split: the invoice records that bill", async () => {
+    const o = await open(managerPin, { order_type: "takeaway", takeaway_ref: "Inv" });
+    const added = await addLines(managerPin, o.body.data.id, [{ line_id: randomUUID(), product_id: ids.laksa, quantity: 1 }, { line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }]);
+    await call("POST", `/v1/orders/${o.body.data.id}/fire`, { token: managerPin, body: {} });
+    const check = added.body.data.checks[0]!;
+    expect((await pay(managerPin, check.id, { tender_type_id: ids.card, amount: check.balance })).status).toBe(200);
+    const inv = await call<{ data: { invoice_no: string } }>("POST", `/v1/checks/${check.id}/invoice`, { token: managerPin, body: {} });
+    expect(inv.status, JSON.stringify(inv.body)).toBe(200);
+    const reopened = await call<Body>("POST", `/v1/orders/${o.body.data.id}/reopen`, { token: managerPin, body: { reason: "Wrong items" } });
+    expect(reopened.status, JSON.stringify(reopened.body)).toBe(200);
+    const split = await call<Body>("POST", `/v1/orders/${o.body.data.id}/checks/split-even`, { token: managerPin, body: { n: 2 } });
+    expect(split.status).toBe(409);
+    expect(split.body.message).toBe(`Bill 1 has tax invoice ${inv.body.data.invoice_no}`);
+    const [kept] = await db.sql<{ invoice_no: string }[]>`select invoice_no from checks where id = ${check.id}`;
+    expect(kept!.invoice_no).toBe(inv.body.data.invoice_no);
   });
 });

@@ -63,7 +63,7 @@ export function ReprintSheet({ isOpen, onClose, order, actions, round }: Reprint
   );
 
   return (
-    <Sheet isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Reprint ticket" description={round ? `Round ${round.number}${round.firedAt ? ` · sent ${clock(round.firedAt)}` : ""}` : "Tickets the register printed for this order"} isDismissable={busy === null}>
+    <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Reprint ticket" description={round ? `Round ${round.number}${round.firedAt ? ` · sent ${clock(round.firedAt)}` : ""}` : "Tickets the register printed for this order"} isDismissable={busy === null}>
       {jobs.isLoading && !jobs.data ? <Skeleton lines={3} /> : null}
       {jobs.data && all.length === 0 ? <p className="text-body text-ink-2">No tickets have been printed for this order. Kitchen tickets print when a round is sent and a kitchen printer is set up.</p> : null}
       {forRound.length ? (

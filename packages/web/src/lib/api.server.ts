@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { forbidden, redirect } from "next/navigation";
 import { ApiError, createApi, req, type ApiClient } from "./api";
 import { parseScope, parseTheme, SCOPE_COOKIE, SESSION_COOKIE, THEME_COOKIE, type Scope, type Theme } from "./cookies";
 
@@ -40,12 +40,16 @@ export async function registerToday(api: ApiClient, outletId: string | null): Pr
   return (floor.data as unknown as { business_date: string }).business_date;
 }
 
-/** Runs a server-side call; an expired or revoked session goes back to sign in instead of erroring. */
+/**
+ * Runs a server-side call; an expired or revoked session goes back to sign in instead of erroring, and a page the
+ * person's role may not read shows the refusal (forbidden.tsx) instead of an error page.
+ */
 export async function orSignIn<T>(call: Promise<T>): Promise<T> {
   try {
     return await call;
   } catch (e) {
     if (e instanceof ApiError && e.isUnauthenticated) redirect("/login?expired=1");
+    if (e instanceof ApiError && e.code === "permission_denied") forbidden();
     throw e;
   }
 }

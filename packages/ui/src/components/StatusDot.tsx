@@ -10,7 +10,7 @@ const dots: Record<Status, string> = {
   bill: "bg-status-bill",
   paid: "bg-status-paid",
   alert: "bg-status-alert",
-  neutral: "bg-transparent ring-1 ring-inset ring-ink-2",
+  neutral: "ring-1 ring-inset ring-rule-input",
 };
 
 export type StatusDotProps = {
@@ -25,7 +25,7 @@ export type StatusDotProps = {
 export function StatusDot({ status, label, className, muted }: StatusDotProps) {
   return (
     <span className={cx("inline-flex items-center gap-2 whitespace-nowrap", muted && "text-ink-2", className)}>
-      <span aria-hidden className={cx("inline-block size-2 shrink-0 rounded-full", dots[status])} />
+      <span aria-hidden className={cx("inline-block size-[7px] shrink-0 rounded-full", dots[status])} />
       <span>{label}</span>
     </span>
   );

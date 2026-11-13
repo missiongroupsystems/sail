@@ -1,6 +1,7 @@
 "use client";
 
-import { Badge, Button, DescriptionList, Dialog, InlineError, Money, SectionHeading, Sheet, Skeleton, taxRows, TextField, useLocale } from "@sail/ui";
+import { Check, Circle, RotateCcw } from "lucide-react";
+import { BusinessDay, Badge, Button, DescriptionList, Dialog, Group, InlineError, Money, Sheet, SheetSection, Skeleton, taxRows, TextField, useLocale, ValueRows, kindTone } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useBusinessDate } from "@/lib/business-date";
@@ -11,10 +12,9 @@ import { Warnings } from "@/components/backoffice/Warnings";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { OrderSnapshot } from "@/lib/api/types";
-import { shortId } from "@/lib/format";
 import { keys } from "@/lib/query";
 import { useSession } from "@/lib/session-context";
-import { statusTone, whoFor } from "./OrdersView";
+import { statusIcon, statusTone, whoFor } from "./OrdersView";
 import { RefundSheet, refundableChecks } from "./RefundSheet";
 
 const REFUND_KIND_LABEL: Record<string, string> = { full: "Whole bill", lines: "Some items", amount: "An amount" };
@@ -115,25 +115,24 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
     <Sheet
       isOpen={orderId !== null}
       onOpenChange={(open) => !open && onClose()}
-      width="lg"
-      title={o ? <span className="font-mono">{o.order_no}</span> : "Order"}
-      description={o ? `${label(ORDER_TYPE_LABEL, o.order_type)} · ${label(CHANNEL_LABEL, o.channel)} · opened ${dayClock(o.opened_at)}${o.opened_by.name ? ` by ${o.opened_by.name}` : ""}` : undefined}
-      footer={
-        o && !readOnly ? (
+      title={
+        o ? (
+          <span className="inline-flex flex-wrap items-center gap-2.5">
+            {o.order_no}
+            <Badge tone={statusTone(o.status)} icon={statusIcon(o.status)}>
+              {label(ORDER_STATUS_LABEL, o.status)}
+            </Badge>
+          </span>
+        ) : (
+          "Order"
+        )
+      }
+      description={
+        o ? (
           <>
-            {o.status === "completed" ? (
-              <span className="mr-auto inline-flex flex-wrap items-center gap-2">
-                <Button onPress={() => { setReopenReason(""); setReopen(true); }} isDisabled={!canReopen || !sameDay}>
-                  Reopen order
-                </Button>
-                <span className="text-caption text-ink-2">{!canReopen ? rolesFor("orders.reopen") : !sameDay ? "Same business day only" : "Reverses the payments and unlocks the bills"}</span>
-              </span>
-            ) : null}
-            <span className="inline-flex flex-wrap items-center gap-2">
-              {!canRefund ? <span className="text-caption text-ink-2">{rolesFor("refunds.create")}</span> : null}
-              <Button variant="primary" onPress={() => setRefund({ checkId: null })} isDisabled={!canRefund || refundable.length === 0}>
-                Refund…
-              </Button>
+            {[label(ORDER_TYPE_LABEL, o.order_type), `${o.order_type === "dine_in" ? "Table " : ""}${whoFor(o, tableName)}${o.pax ? ` · ${o.pax} ${o.pax === 1 ? "guest" : "guests"}` : ""}`, label(CHANNEL_LABEL, o.channel), `opened ${dayClock(o.opened_at)}`, o.opened_by.name].filter(Boolean).join(" · ")}
+            <span className="block text-caption text-ink-3">
+              Business day <BusinessDay value={o.business_date} /> · {o.pricing_status === "frozen" ? "prices frozen at first payment" : "live pricing"} · v{o.version} · {o.round_count} {o.round_count === 1 ? "round" : "rounds"}
             </span>
           </>
         ) : undefined
@@ -142,23 +141,23 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
       {order.isPending ? <Skeleton lines={8} /> : null}
       <InlineError error={order.error} />
       {o ? (
-        <div className="flex flex-col gap-8">
-          <DescriptionList
-            layout="grid"
-            items={[
-              { term: "Status", detail: <Badge tone={statusTone(o.status)}>{label(ORDER_STATUS_LABEL, o.status)}</Badge> },
-              { term: o.order_type === "dine_in" ? "Table" : "Customer", detail: `${whoFor(o, tableName)}${o.pax ? ` · ${o.pax} pax` : ""}` },
-              { term: "Business date", detail: o.business_date, numeric: true },
-              { term: "Pricing", detail: o.pricing_status === "frozen" ? "Frozen at first payment" : "Live" },
-              ...(o.ready_by ? [{ term: "Ready by", detail: dayClock(o.ready_by) }] : []),
-              ...(o.delivery_address ? [{ term: "Delivery address", detail: o.delivery_address }] : []),
-              ...(o.notes ? [{ term: "Notes", detail: o.notes }] : []),
-              { term: "Version", detail: `v${o.version} · ${o.round_count} ${o.round_count === 1 ? "round" : "rounds"}`, numeric: true },
-            ]}
-          />
+        <div className="flex flex-col gap-6">
+          {o.ready_by || o.delivery_address || o.notes ? (
+            <Group>
+              <DescriptionList
+                layout="grid"
+                className="px-4 py-3.5"
+                items={[
+                  ...(o.ready_by ? [{ term: "Ready by", detail: dayClock(o.ready_by) }] : []),
+                  ...(o.delivery_address ? [{ term: "Delivery address", detail: o.delivery_address }] : []),
+                  ...(o.notes ? [{ term: "Notes", detail: o.notes }] : []),
+                ]}
+              />
+            </Group>
+          ) : null}
 
           {note ? (
-            <div className="flex flex-col gap-2" role="status">
+            <div className="flex flex-col gap-2 rounded-[14px] bg-surface-2 px-4 py-3" role="status">
               <p className="text-body text-ink">{note.text}</p>
               <Warnings warnings={note.warnings} />
             </div>
@@ -166,267 +165,291 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
           <InlineError error={actionError} />
           {readOnly ? <p className="text-caption text-ink-2">Read-only for Servers. Refunds, reopening, receipts and invoices need a Cashier or higher.</p> : null}
 
-          <section>
-            <SectionHeading title="Lines" aside={`${lines.length}`} />
-            <ul className="flex flex-col">
-              {lines.map((l) => (
-                <li key={l.id} className={`flex flex-col gap-0.5 py-2 hairline-b ${l.status === "voided" ? "text-ink-2 line-through" : ""}`}>
-                  <div className="flex items-baseline gap-3">
-                    <span className="w-8 shrink-0 tabular text-ink-2">{l.quantity}×</span>
-                    <span className="min-w-0 flex-1 text-ink">
-                      {l.name}
-                      {l.seat_no ? <span className="ml-2 text-caption text-ink-2 no-underline">Seat {l.seat_no}</span> : null}
-                      <Badge className="ml-2" tone={l.status === "fired" ? "sent" : l.status === "voided" ? "alert" : l.status === "held" ? "bill" : "neutral"}>
-                        {label(LINE_STATUS_LABEL, l.status)}
-                      </Badge>
-                    </span>
-                    <span className="inline-flex flex-col items-end">
-                      <Money cents={l.amounts.base} />
-                      {l.amounts.discount ? <Money cents={l.amounts.discount} className="text-caption text-ink-2" /> : null}
-                    </span>
-                  </div>
-                  {l.modifiers.length ? <p className="pl-11 text-caption text-ink-2">{l.modifiers.map((m) => `${m.quantity > 1 ? `${m.quantity}× ` : ""}${m.name}`).join(", ")}</p> : null}
-                  {l.notes ? <p className="pl-11 text-caption text-ink-2">“{l.notes}”</p> : null}
-                  {l.void_reason ? <p className="pl-11 text-caption text-status-alert no-underline">Voided: {l.void_reason}</p> : null}
-                  <p className="pl-11 text-caption text-ink-2 tabular">
-                    {l.unit_price ? <Money cents={l.unit_price} size="caption" /> : "open price"} each{l.fired_at ? ` · sent ${dayClock(l.fired_at)}` : ""}
-                    {l.added_by ? ` · ${l.added_by}` : ""}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </section>
+          <SheetSection label="Totals">
+            <Group>
+              <ValueRows
+                className="px-4 py-3"
+                rows={[
+                  { label: "Subtotal", value: <Money cents={o.totals.subtotal} /> },
+                  { label: "Discounts", value: <Money cents={o.totals.discount_total} /> },
+                  { label: "Fees", value: <Money cents={o.totals.fee_total} /> },
+                  ...taxRows(o.totals.taxes, o.totals.tax_mode).before.map((t) => ({ label: t.label, value: <Money cents={t.amount} /> })),
+                  { label: <span className="font-heading text-[15px] font-semibold">Total</span>, value: <Money cents={o.totals.total} size="heading" />, strong: true },
+                  ...taxRows(o.totals.taxes, o.totals.tax_mode).after.map((t) => ({ label: t.label, value: <Money cents={t.amount} /> })),
+                  { label: "Paid", value: <Money cents={o.paid_total} /> },
+                  { label: <span className="font-heading text-[15px] font-semibold">Balance</span>, value: <Money cents={o.balance} size="heading" />, strong: true },
+                ]}
+              />
+            </Group>
+            {!readOnly ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Button size="sm" onPress={() => setRefund({ checkId: null })} isDisabled={!canRefund || refundable.length === 0}>
+                  Refund…
+                </Button>
+                {o.status === "completed" ? (
+                  <Button
+                    size="sm"
+                    onPress={() => {
+                      setReopenReason("");
+                      setReopen(true);
+                    }}
+                    isDisabled={!canReopen || !sameDay}
+                  >
+                    Reopen order
+                  </Button>
+                ) : null}
+                <span className="text-caption text-ink-2">{!canRefund ? rolesFor("refunds.create") : o.status === "completed" && !canReopen ? rolesFor("orders.reopen") : o.status === "completed" && !sameDay ? "Reopen: same business day only" : ""}</span>
+              </div>
+            ) : null}
+          </SheetSection>
 
-          <section>
-            <SectionHeading title="Adjustments" aside={`${o.adjustments.length}`} />
-            {o.adjustments.length === 0 ? (
-              <p className="mt-2 text-ink-2">No fees or discounts on this order.</p>
-            ) : (
-              <ul className="flex flex-col">
-                {o.adjustments.map((a) => (
-                  <li key={a.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 hairline-b">
-                    <span className="text-ink">{a.name}</span>
-                    <Badge tone={a.kind === "fee" ? "sent" : "seated"}>{a.kind}</Badge>
-                    <span className="text-caption text-ink-2">
-                      v{a.rule_version}
-                      {a.capped ? " · capped" : ""}
-                      {a.frozen ? " · frozen" : ""}
-                      {a.applied_by ? ` · by ${a.applied_by}` : ""}
-                      {a.approved_by ? ` · approved by ${a.approved_by}` : ""}
-                      {a.reason ? ` · ${a.reason}` : ""}
-                    </span>
-                    <Money cents={a.total} signed className="ml-auto" />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section>
-            <SectionHeading title="Totals" />
-            <DescriptionList
-              className="mt-1"
-              items={[
-                { term: "Subtotal", detail: <Money cents={o.totals.subtotal} />, numeric: true },
-                { term: "Discounts", detail: <Money cents={o.totals.discount_total} />, numeric: true },
-                { term: "Fees", detail: <Money cents={o.totals.fee_total} />, numeric: true },
-                ...taxRows(o.totals.taxes, o.totals.tax_mode).before.map((t) => ({ term: t.label, detail: <Money cents={t.amount} />, numeric: true })),
-                { term: <span className="text-ink">Total</span>, detail: <Money cents={o.totals.total} size="heading" />, numeric: true },
-                ...taxRows(o.totals.taxes, o.totals.tax_mode).after.map((t) => ({ term: t.label, detail: <Money cents={t.amount} />, numeric: true })),
-                { term: "Paid", detail: <Money cents={o.paid_total} />, numeric: true },
-                { term: "Balance", detail: <Money cents={o.balance} />, numeric: true },
-              ]}
-            />
-          </section>
-
-          <section>
-            <SectionHeading title="Bills" aside={`${checks.length}`} />
-            {checks.length === 0 ? <p className="mt-2 text-ink-2">No bills yet.</p> : null}
-            <ul className="flex flex-col">
-              {checks.map((c) => {
-                const paid = c.locked && c.paid_total > 0;
-                return (
-                  <li key={c.id} className="flex flex-col gap-2 py-3 hairline-b">
-                    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                      <span className="inline-flex flex-wrap items-baseline gap-2">
-                        <span className="text-line text-ink">{c.label}</span>
-                        <Badge tone={c.status === "paid" ? "paid" : c.status === "open" ? "seated" : "bill"}>{label(CHECK_STATUS_LABEL, c.status)}</Badge>
-                        {c.seat_no ? <span className="text-caption text-ink-2">Seat {c.seat_no}</span> : null}
-                        {c.invoice_no ? <span className="font-mono text-caption text-ink-2">Invoice {c.invoice_no}</span> : null}
-                      </span>
-                      <span className="tabular text-ink">
-                        <Money cents={c.totals.total} />
-                        <span className="text-caption text-ink-2"> · paid </span>
-                        <Money cents={c.paid_total} size="caption" />
-                        {c.refunded_total ? (
-                          <>
-                            <span className="text-caption text-ink-2"> · refunded </span>
-                            <Money cents={c.refunded_total} size="caption" />
-                          </>
-                        ) : null}
-                        {c.balance ? (
-                          <>
-                            <span className="text-caption text-ink-2"> · balance </span>
-                            <Money cents={c.balance} size="caption" />
-                          </>
-                        ) : null}
-                      </span>
-                    </div>
-                    {c.payments.length ? (
-                      <ul className="flex flex-col gap-0.5 pl-3">
-                        {c.payments.map((p) => (
-                          <li key={p.id} className={`flex flex-wrap items-baseline justify-between gap-x-4 text-caption ${p.status === "reversed" ? "text-ink-2 line-through" : "text-ink-2"}`}>
-                            <span>
-                              {p.tender}
-                              {p.reference ? ` · ${p.reference}` : ""}
-                              {p.recorded_by ? ` · ${p.recorded_by}` : ""} · {dayClock(p.created_at)}
-                              {p.status === "reversed" ? " · reversed" : ""}
-                            </span>
-                            <span className="tabular">
-                              <Money cents={p.amount} size="caption" />
-                              {p.rounding_cents ? ` (rounding ${money(p.rounding_cents, { signed: true })})` : ""}
-                              {p.tip_cents ? ` · tip ` : ""}
-                              {p.tip_cents ? <Money cents={p.tip_cents} size="caption" /> : null}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                    {!readOnly && paid ? (
-                      <div className="flex flex-wrap items-center gap-1">
-                        <Button variant="quiet" className="min-h-9 px-2.5 text-caption" isDisabled={!canPrint} onPress={() => printReceipt.mutate(c)} isPending={printReceipt.isPending && printReceipt.variables?.id === c.id}>
-                          Print receipt
-                        </Button>
-                        {c.invoice_no ? (
-                          <Button variant="quiet" className="min-h-9 px-2.5 text-caption" onPress={() => invoicePdf.mutate(c)} isPending={invoicePdf.isPending && invoicePdf.variables?.id === c.id}>
-                            Download invoice PDF
-                          </Button>
-                        ) : (
-                          <Button variant="quiet" className="min-h-9 px-2.5 text-caption" isDisabled={!canInvoice} onPress={() => issueInvoice.mutate(c)} isPending={issueInvoice.isPending && issueInvoice.variables?.id === c.id}>
-                            Get invoice
-                          </Button>
-                        )}
-                        {refundable.some((r) => r.id === c.id) ? (
-                          <Button variant="quiet" className="min-h-9 px-2.5 text-caption" isDisabled={!canRefund} onPress={() => setRefund({ checkId: c.id })}>
-                            Refund…
-                          </Button>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-
-          <section>
-            <SectionHeading title="Refunds" aside={refunds.data ? `${refunds.data.length}` : "loading"} />
-            <InlineError error={refunds.error} className="mt-2" />
-            {refunds.data && refunds.data.length === 0 ? <p className="mt-2 text-ink-2">No refunds on this order.</p> : null}
-            <ul className="flex flex-col">
-              {(refunds.data ?? []).map((r) => (
-                <li key={r.id} className="flex flex-col gap-1 py-3 hairline-b">
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <SheetSection label="Bills" aside={<span className="text-caption text-ink-3 tabular">{checks.length}</span>}>
+            {checks.length === 0 ? <p className="text-ink-2">No bills yet.</p> : null}
+            {checks.map((c) => {
+              const paid = c.locked && c.paid_total > 0;
+              return (
+                <Group key={c.id}>
+                  <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3">
                     <span className="inline-flex flex-wrap items-baseline gap-2">
-                      <span className="font-mono text-ink">{r.refund_receipt_no}</span>
-                      {r.credit_note_no ? <span className="font-mono text-caption text-ink-2">Credit note {r.credit_note_no}</span> : null}
-                      <Badge>{label(REFUND_KIND_LABEL, r.kind)}</Badge>
+                      <span className="text-[14.5px] font-medium text-ink">{c.label}</span>
+                      {c.seat_no ? <span className="text-caption text-ink-2">Seat {c.seat_no}</span> : null}
+                      {c.invoice_no ? <span className="font-mono text-caption text-ink-2">Invoice {c.invoice_no}</span> : null}
                     </span>
-                    <Money cents={-r.totals.total} />
+                    <Badge tone={c.status === "paid" ? "paid" : c.status === "open" ? "neutral" : "bill"} icon={c.status === "paid" ? Check : c.status === "open" ? Circle : RotateCcw}>{label(CHECK_STATUS_LABEL, c.status)}</Badge>
                   </div>
-                  <p className="text-caption text-ink-2">
-                    {dayClock(r.created_at)}
-                    {r.refunded_by ? ` · ${r.refunded_by}` : ""}
-                    {r.approved_by ? ` · approved by ${r.approved_by}` : ""} · {r.reason}
-                  </p>
-                  {!readOnly ? (
-                    <div className="flex flex-wrap items-center gap-1">
-                      {r.credit_note_no ? (
-                        <Button variant="quiet" className="min-h-9 px-2.5 text-caption" onPress={() => creditNotePdf.mutate(r)} isPending={creditNotePdf.isPending && creditNotePdf.variables?.id === r.id}>
-                          Download credit note PDF
+                  {c.payments.length ? (
+                    <ul className="flex flex-col gap-1 px-4 py-3">
+                      {c.payments.map((p) => (
+                        <li key={p.id} className={`flex flex-wrap items-baseline justify-between gap-x-4 text-caption ${p.status === "reversed" ? "text-ink-2 line-through" : "text-ink-2"}`}>
+                          <span>
+                            {p.tender}
+                            {p.reference ? ` · ${p.reference}` : ""}
+                            {p.recorded_by ? ` · ${p.recorded_by}` : ""} · {dayClock(p.created_at)}
+                            {p.status === "reversed" ? " · reversed" : ""}
+                          </span>
+                          <span className="tabular">
+                            <Money cents={p.amount} size="caption" />
+                            {p.rounding_cents ? ` (rounding ${money(p.rounding_cents, { signed: true })})` : ""}
+                            {p.tip_cents ? ` · tip ` : ""}
+                            {p.tip_cents ? <Money cents={p.tip_cents} size="caption" /> : null}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <ValueRows
+                    className="px-4 py-3"
+                    rows={[
+                      { label: "Paid", value: <Money cents={c.paid_total} /> },
+                      ...(c.refunded_total ? [{ label: "Refunded", value: <Money cents={c.refunded_total} /> }] : []),
+                      ...(c.balance ? [{ label: "Balance", value: <Money cents={c.balance} /> }] : []),
+                      { label: <span className="font-heading text-[15px] font-semibold">Total</span>, value: <Money cents={c.totals.total} size="heading" />, strong: true },
+                    ]}
+                  />
+                  {!readOnly && paid ? (
+                    <div className="flex flex-wrap items-center gap-1 px-3 py-2">
+                      <Button variant="quiet" className="min-h-9 px-2.5 text-caption" isDisabled={!canPrint} onPress={() => printReceipt.mutate(c)} isPending={printReceipt.isPending && printReceipt.variables?.id === c.id}>
+                        Print receipt
+                      </Button>
+                      {c.invoice_no ? (
+                        <Button variant="quiet" className="min-h-9 px-2.5 text-caption" onPress={() => invoicePdf.mutate(c)} isPending={invoicePdf.isPending && invoicePdf.variables?.id === c.id}>
+                          Download invoice PDF
+                        </Button>
+                      ) : (
+                        <Button variant="quiet" className="min-h-9 px-2.5 text-caption" isDisabled={!canInvoice} onPress={() => issueInvoice.mutate(c)} isPending={issueInvoice.isPending && issueInvoice.variables?.id === c.id}>
+                          Get invoice
+                        </Button>
+                      )}
+                      {refundable.some((r) => r.id === c.id) ? (
+                        <Button variant="quiet" className="min-h-9 px-2.5 text-caption" isDisabled={!canRefund} onPress={() => setRefund({ checkId: c.id })}>
+                          Refund…
                         </Button>
                       ) : null}
-                      <Button variant="quiet" className="min-h-9 px-2.5 text-caption" isDisabled={!canPrint} onPress={() => printRefund.mutate(r)} isPending={printRefund.isPending && printRefund.variables?.id === r.id}>
-                        Reprint refund receipt
-                      </Button>
                     </div>
                   ) : null}
-                </li>
-              ))}
-            </ul>
-          </section>
+                </Group>
+              );
+            })}
+          </SheetSection>
 
-          <section>
-            <SectionHeading title="Tickets" aside={jobs.data ? `${jobs.data.length}` : "loading"} />
-            <InlineError error={jobs.error} className="mt-2" />
-            {jobs.data && jobs.data.length === 0 ? <p className="mt-2 text-ink-2">Nothing printed for this order yet.</p> : null}
-            <ul className="flex flex-col">
-              {(jobs.data ?? []).map((j) => (
-                <li key={j.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2 hairline-b">
-                  <span className="inline-flex min-w-0 flex-wrap items-baseline gap-2">
-                    <span className="text-ink">{label(PRINT_JOB_KIND_LABEL, j.kind)}</span>
-                    <span className="text-caption text-ink-2">
-                      {(printers.data ?? []).find((p) => p.id === j.printer_id)?.name ?? shortId(j.printer_id)} · {dayClock(j.created_at)}
-                      {j.copies > 1 ? ` · copy ${j.copy_no}/${j.copies}` : ""}
-                      {isWaiting(j) ? ` · waiting ${formatElapsed(j.age_seconds)}` : ""}
-                      {j.last_error ? ` · ${j.last_error}` : ""}
-                    </span>
-                    <JobStatus job={j} />
-                  </span>
-                  {canReprint ? <JobRowActions job={j} printers={printers.data ?? []} onDone={(text, warnings) => settle(text, warnings)} compact /> : null}
-                </li>
-              ))}
-            </ul>
-          </section>
+          <SheetSection label="Lines" aside={<span className="text-caption text-ink-3 tabular">{lines.length}</span>}>
+            {lines.length ? (
+              <Group>
+                <ul className="flex flex-col divide-y divide-rule-subtle">
+                  {lines.map((l) => (
+                    <li key={l.id} className={`flex flex-col gap-0.5 px-4 py-3 ${l.status === "voided" ? "text-ink-2 line-through" : ""}`}>
+                      <div className="flex items-baseline gap-3">
+                        <span className="w-8 shrink-0 tabular text-ink-2">{l.quantity}×</span>
+                        <span className="min-w-0 flex-1 text-[14.5px] text-ink">
+                          {l.name}
+                          {l.seat_no ? <span className="ml-2 text-caption text-ink-2 no-underline">Seat {l.seat_no}</span> : null}
+                          <Badge className="ml-2" tone={l.status === "fired" ? "sent" : l.status === "voided" ? "alert" : l.status === "held" ? "bill" : "neutral"}>
+                            {label(LINE_STATUS_LABEL, l.status)}
+                          </Badge>
+                        </span>
+                        <span className="inline-flex flex-col items-end">
+                          <Money cents={l.amounts.base} />
+                          {l.amounts.discount ? <Money cents={l.amounts.discount} className="text-caption text-ink-2" /> : null}
+                        </span>
+                      </div>
+                      {l.modifiers.length ? <p className="pl-11 text-caption text-ink-2">{l.modifiers.map((m) => `${m.quantity > 1 ? `${m.quantity}× ` : ""}${m.name}`).join(", ")}</p> : null}
+                      {l.notes ? <p className="pl-11 text-caption text-ink-2">“{l.notes}”</p> : null}
+                      {l.void_reason ? <p className="pl-11 text-caption text-status-alert no-underline">Voided: {l.void_reason}</p> : null}
+                      <p className="pl-11 text-caption text-ink-2 tabular">
+                        {l.unit_price ? <Money cents={l.unit_price} size="caption" /> : "open price"} each{l.fired_at ? ` · sent ${dayClock(l.fired_at)}` : ""}
+                        {l.added_by ? ` · ${l.added_by}` : ""}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </Group>
+            ) : null}
+          </SheetSection>
 
-          <section>
-            <SectionHeading title="Events" aside={events.data ? `${events.data.length}` : "loading"} />
-            {events.isPending ? <Skeleton lines={3} className="mt-2" /> : null}
-            <InlineError error={events.error} className="mt-2" />
-            {events.data && events.data.length === 0 ? <p className="mt-2 text-ink-2">No events for this order in the outlet log.</p> : null}
-            <ol className="flex flex-col">
-              {(events.data ?? []).map((e) => (
-                <li key={e.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 hairline-b">
-                  <span className="tabular whitespace-nowrap text-ink-2" title={fullStamp(e.occurred_at)}>
-                    {dayClock(e.occurred_at)}
-                  </span>
-                  <span className="font-mono text-caption text-ink">{e.type}</span>
-                  <span className="text-caption text-ink-2">
-                    seq {e.seq} · v{e.aggregate.version}
-                    {typeof e.actor === "object" && e.actor && "name" in e.actor && e.actor.name ? ` · ${String(e.actor.name)}` : ""}
-                    {e.reason && typeof e.reason === "object" && "text" in e.reason && e.reason.text ? ` · ${String(e.reason.text)}` : ""}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </section>
+          <SheetSection label="Adjustments" aside={<span className="text-caption text-ink-3 tabular">{o.adjustments.length}</span>}>
+            {o.adjustments.length === 0 ? (
+              <p className="text-ink-2">No fees or discounts on this order.</p>
+            ) : (
+              <Group>
+                <ul className="flex flex-col divide-y divide-rule-subtle">
+                  {o.adjustments.map((a) => (
+                    <li key={a.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-3">
+                      <span className="text-ink">{a.name}</span>
+                      <Badge tone={kindTone(a.kind)}>{a.kind}</Badge>
+                      <span className="text-caption text-ink-2">
+                        v{a.rule_version}
+                        {a.capped ? " · capped" : ""}
+                        {a.frozen ? " · frozen" : ""}
+                        {/* People by name, from the manual application: the adjustment itself holds their staff ids (live-test C-5). */}
+                        {((m) => `${m?.applied_by ? ` · by ${m.applied_by}` : ""}${m?.approved_by ? ` · approved by ${m.approved_by}` : ""}`)(o.manual_applications.find((m) => m.id === a.manual_application_id) )}
+                        {a.reason ? ` · ${a.reason}` : ""}
+                      </span>
+                      <Money cents={a.total} signed className="ml-auto" />
+                    </li>
+                  ))}
+                </ul>
+              </Group>
+            )}
+          </SheetSection>
 
-          <section>
-            <SectionHeading title="Audit" aside={audit.data ? `${audit.data.length}` : "loading"} />
-            {audit.isPending ? <Skeleton lines={3} className="mt-2" /> : null}
-            <InlineError error={audit.error} className="mt-2" />
-            {audit.data && audit.data.length === 0 ? <p className="mt-2 text-ink-2">No audit entries name this order.</p> : null}
-            <ol className="flex flex-col">
-              {(audit.data ?? []).map((a) => (
-                <li key={a.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 hairline-b">
-                  <span className="tabular whitespace-nowrap text-ink-2" title={fullStamp(a.occurred_at)}>
-                    {dayClock(a.occurred_at)}
-                  </span>
-                  <span className="font-mono text-caption text-ink">{a.action}</span>
-                  <span className="text-caption text-ink-2">
-                    {a.actor_name ?? a.actor_type}
-                    {a.actor_role ? ` (${a.actor_role})` : ""}
-                    {a.approver_name ? ` · approved by ${a.approver_name}` : ""}
-                    {a.reason ? ` · ${a.reason}` : ""}
-                  </span>
-                  <span className="font-mono text-caption text-ink-2">{shortId(a.id)}</span>
-                </li>
-              ))}
-            </ol>
-          </section>
+          <SheetSection label="Refunds" aside={<span className="text-caption text-ink-3 tabular">{refunds.data ? `${refunds.data.length}` : "loading"}</span>}>
+            <InlineError error={refunds.error} />
+            {refunds.data && refunds.data.length === 0 ? <p className="text-ink-2">No refunds on this order.</p> : null}
+            {(refunds.data ?? []).length ? (
+              <Group>
+                <ul className="flex flex-col divide-y divide-rule-subtle">
+                  {(refunds.data ?? []).map((r) => (
+                    <li key={r.id} className="flex flex-col gap-1 px-4 py-3">
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                        <span className="inline-flex flex-wrap items-baseline gap-2">
+                          <span className="font-mono text-ink">{r.refund_receipt_no}</span>
+                          {r.credit_note_no ? <span className="font-mono text-caption text-ink-2">Credit note {r.credit_note_no}</span> : null}
+                          <Badge>{label(REFUND_KIND_LABEL, r.kind)}</Badge>
+                        </span>
+                        <Money cents={-r.totals.total} />
+                      </div>
+                      <p className="text-caption text-ink-2">
+                        {dayClock(r.created_at)}
+                        {r.refunded_by ? ` · ${r.refunded_by}` : ""}
+                        {r.approved_by ? ` · approved by ${r.approved_by}` : ""} · {r.reason}
+                      </p>
+                      {!readOnly ? (
+                        <div className="-ml-2.5 flex flex-wrap items-center gap-1">
+                          {r.credit_note_no ? (
+                            <Button variant="quiet" className="min-h-9 px-2.5 text-caption" onPress={() => creditNotePdf.mutate(r)} isPending={creditNotePdf.isPending && creditNotePdf.variables?.id === r.id}>
+                              Download credit note PDF
+                            </Button>
+                          ) : null}
+                          <Button variant="quiet" className="min-h-9 px-2.5 text-caption" isDisabled={!canPrint} onPress={() => printRefund.mutate(r)} isPending={printRefund.isPending && printRefund.variables?.id === r.id}>
+                            Reprint refund receipt
+                          </Button>
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </Group>
+            ) : null}
+          </SheetSection>
+
+          <SheetSection label="Tickets" aside={<span className="text-caption text-ink-3 tabular">{jobs.data ? `${jobs.data.length}` : "loading"}</span>}>
+            <InlineError error={jobs.error} />
+            {jobs.data && jobs.data.length === 0 ? <p className="text-ink-2">Nothing printed for this order yet.</p> : null}
+            {(jobs.data ?? []).length ? (
+              <Group>
+                <ul className="flex flex-col divide-y divide-rule-subtle">
+                  {(jobs.data ?? []).map((j) => (
+                    <li key={j.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2.5">
+                      <span className="inline-flex min-w-0 flex-wrap items-baseline gap-2">
+                        <span className="text-ink">{label(PRINT_JOB_KIND_LABEL, j.kind)}</span>
+                        <span className="text-caption text-ink-2">
+                          {(printers.data ?? []).find((p) => p.id === j.printer_id)?.name ?? "A removed printer"} · {dayClock(j.created_at)}
+                          {j.copies > 1 ? ` · copy ${j.copy_no}/${j.copies}` : ""}
+                          {isWaiting(j) ? ` · waiting ${formatElapsed(j.age_seconds)}` : ""}
+                          {j.last_error ? ` · ${j.last_error}` : ""}
+                        </span>
+                        <JobStatus job={j} />
+                      </span>
+                      {canReprint ? <JobRowActions job={j} printers={printers.data ?? []} onDone={(text, warnings) => settle(text, warnings)} compact /> : null}
+                    </li>
+                  ))}
+                </ul>
+              </Group>
+            ) : null}
+          </SheetSection>
+
+          <SheetSection label="Events" aside={<span className="text-caption text-ink-3 tabular">{events.data ? `${events.data.length}` : "loading"}</span>}>
+            {events.isPending ? <Skeleton lines={3} /> : null}
+            <InlineError error={events.error} />
+            {events.data && events.data.length === 0 ? <p className="text-ink-2">No events for this order in the outlet log.</p> : null}
+            {(events.data ?? []).length ? (
+              <Group>
+                <ol className="flex flex-col divide-y divide-rule-subtle">
+                  {(events.data ?? []).map((e) => (
+                    <li key={e.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2.5">
+                      <span className="tabular whitespace-nowrap text-ink-2" title={fullStamp(e.occurred_at)}>
+                        {dayClock(e.occurred_at)}
+                      </span>
+                      <span className="font-mono text-caption text-ink">{e.type}</span>
+                      <span className="text-caption text-ink-2">
+                        seq {e.seq} · v{e.aggregate.version}
+                        {typeof e.actor === "object" && e.actor && "name" in e.actor && e.actor.name ? ` · ${String(e.actor.name)}` : ""}
+                        {e.reason && typeof e.reason === "object" && "text" in e.reason && e.reason.text ? ` · ${String(e.reason.text)}` : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </Group>
+            ) : null}
+          </SheetSection>
+
+          <SheetSection label="Audit" aside={<span className="text-caption text-ink-3 tabular">{audit.data ? `${audit.data.length}` : "loading"}</span>}>
+            {audit.isPending ? <Skeleton lines={3} /> : null}
+            <InlineError error={audit.error} />
+            {audit.data && audit.data.length === 0 ? <p className="text-ink-2">No audit entries name this order.</p> : null}
+            {(audit.data ?? []).length ? (
+              <Group>
+                <ol className="flex flex-col divide-y divide-rule-subtle">
+                  {(audit.data ?? []).map((a) => (
+                    <li key={a.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2.5">
+                      <span className="tabular whitespace-nowrap text-ink-2" title={fullStamp(a.occurred_at)}>
+                        {dayClock(a.occurred_at)}
+                      </span>
+                      <span className="font-mono text-caption text-ink">{a.action}</span>
+                      <span className="text-caption text-ink-2">
+                        {a.actor_name ?? a.actor_type}
+                        {a.actor_role ? ` (${a.actor_role})` : ""}
+                        {a.approver_name ? ` · approved by ${a.approver_name}` : ""}
+                        {a.reason ? ` · ${a.reason}` : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </Group>
+            ) : null}
+          </SheetSection>
         </div>
       ) : null}
-
       {o ? <RefundSheet order={o} checks={checks} initialCheckId={refund?.checkId ?? null} isOpen={refund !== null} onClose={() => setRefund(null)} /> : null}
 
       <Dialog

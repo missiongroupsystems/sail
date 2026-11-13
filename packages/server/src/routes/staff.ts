@@ -1,5 +1,5 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { and, asc, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, lte, ne, sql } from "drizzle-orm";
 import { RoleSchema } from "@sail/shared";
 import { db } from "../db/client.js";
 import { auditLog, backofficeLinks, backofficeSessions, staff } from "../db/schema/index.js";
@@ -9,6 +9,7 @@ import { defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutatio
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
 import { hashSecret, pinLookup } from "../auth/tokens.js";
+import { PIN_TAKEN_LIMITS, pinScope, returnPinAttempt, takePinAttempt } from "../services/pin-attempts.js";
 
 export const StaffSchema = z.object({
   id: z.string(),
@@ -26,9 +27,10 @@ export const StaffSchema = z.object({
 });
 const StaffInput = z.object({
   id: z.uuid().optional(),
-  name: z.string().min(1),
+  name: z.string().trim().min(1),
   initials: z.string().max(3).nullable().optional(),
-  email: z.string().email().nullable().optional(),
+  /** Stored lower-cased: one address is one person, whatever its case. */
+  email: z.string().trim().toLowerCase().email().nullable().optional(),
   role: RoleSchema,
   outlet_ids: z.array(z.uuid()).optional(),
   brand_ids: z.array(z.uuid()).optional(),
@@ -100,9 +102,28 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: rows.map(toStaff), next_cursor: null }, 200);
   });
 
+  /** An address already on another staff record, in any case (rows from before addresses were lower-cased included). */
+  const assertEmailFree = async (merchantId: string, email: string | null | undefined, exceptId?: string) => {
+    if (!email) return;
+    const [taken] = await db().select({ id: staff.id }).from(staff).where(and(eq(staff.merchantId, merchantId), sql`lower(${staff.email}) = ${email}`, exceptId ? ne(staff.id, exceptId) : undefined)).limit(1);
+    if (taken) throw new AppError("state_conflict", "Someone at this business already uses that email address", { remedy: "Use a different address, or edit the person who has it.", details: { field: "email" } });
+  };
+
+  /** A PIN is how the register knows who is signing in, so it must be unique; finding taken ones is limited (PIN_TAKEN_LIMITS). Free PINs give their attempt back. */
+  const assertPinFree = async (p: { merchantId: string; id: string; stationId?: string }, pin: string | null | undefined, exceptId?: string) => {
+    if (!pin) return;
+    const scope = `pin_taken:${pinScope(p)}`;
+    await takePinAttempt(p.merchantId, scope, PIN_TAKEN_LIMITS);
+    const [taken] = await db().select({ id: staff.id }).from(staff).where(and(eq(staff.merchantId, p.merchantId), eq(staff.pinLookup, pinLookup(p.merchantId, pin)), exceptId ? ne(staff.id, exceptId) : undefined)).limit(1);
+    if (taken) throw new AppError("state_conflict", "Someone at this business already uses that PIN", { remedy: "Choose a different six-digit PIN.", details: { field: "pin" } });
+    await returnPinAttempt(p.merchantId, scope);
+  };
+
   defineOp(app, { op: "staff.create", method: "post", path: "/v1/staff", tags: ["team"], request: { body: jsonBody(StaffInput) }, responses: { 201: jsonResponse(mutationResponse(StaffSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const body = c.req.valid("json");
+    await assertEmailFree(p.merchantId, body.email);
+    await assertPinFree(p, body.pin);
     const [row] = await db()
       .insert(staff)
       .values({
@@ -130,6 +151,8 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
     const { id } = c.req.valid("param");
     const body = c.req.valid("json");
     if (id === p.id && body.role && body.role !== "admin") throw AppError.invariant("admin_self_demotion", "You cannot lower your own role", "Ask another Admin to change your role.");
+    await assertEmailFree(p.merchantId, body.email, id);
+    await assertPinFree(p, body.pin, id);
     const [row] = await db()
       .update(staff)
       .set({

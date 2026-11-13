@@ -355,9 +355,9 @@ describe("who may see and bump", () => {
   });
 
   it("a display station may only show destinations of its own outlet, and a POS station none", async () => {
-    expect((await call("PATCH", `/v1/stations/${ids.d1}`, { token: A.admin.token, body: { display_destination_ids: [ids.hotOutlet2] } })).status).toBe(404);
+    expect((await call("PATCH", `/v1/stations/${ids.d1}`, { token: A.admin.token, body: { display_destination_ids: [ids.hotOutlet2] } })).status).toBe(400);
     expect((await call("PATCH", `/v1/stations/${ids.pos}`, { token: A.admin.token, body: { display_destination_ids: [ids.hot] } })).status).toBe(400);
-    expect((await call("PATCH", `/v1/stations/${ids.d1}`, { token: A.admin.token, body: { display_destination_ids: [ids.hotB] } })).status).toBe(404);
+    expect((await call("PATCH", `/v1/stations/${ids.d1}`, { token: A.admin.token, body: { display_destination_ids: [ids.hotB] } })).status).toBe(400);
   });
 });
 

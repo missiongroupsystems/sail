@@ -37,7 +37,9 @@ export type BillCardProps = {
   isTarget?: boolean;
   onPress?: () => void;
   isDisabled?: boolean;
-  /** [Pre-bill] [Pay ▸] on unpaid bills; [Get invoice] [Refund] on paid ones. */
+  /** Overrides the status word on a paid bill: "Tip still to give back: $2.00". */
+  statusLabel?: string | null;
+  /** [Pre-bill] [Pay] on unpaid bills; [Get invoice] [Refund] on paid ones. */
   actions?: ReactNode;
   className?: string;
 };
@@ -45,39 +47,42 @@ export type BillCardProps = {
 const STATUS_LABEL: Record<BillCardStatus, string> = { open: "", paid: "Paid", partially_refunded: "Partly refunded", refunded: "Refunded" };
 
 /** One bill as a column card: lines with their share, totals, a lock when paid, and the bill's own actions. */
-export function BillCard({ label, status, lines, rows, tenders, isTarget, onPress, isDisabled, actions, className }: BillCardProps) {
+export function BillCard({ label, status, lines, rows, tenders, isTarget, onPress, isDisabled, actions, statusLabel, className }: BillCardProps) {
   const paid = status !== "open";
   const body = (
     <>
-      <header className="flex items-center justify-between gap-2 px-4 pt-3 pb-2 hairline-b">
-        <h3 className="truncate text-line text-ink">{label}</h3>
+      <header className="flex min-h-12 items-center justify-between gap-2 border-b border-rule-subtle px-4 py-2.5">
+        <h3 className="truncate font-heading text-[17px] font-semibold text-ink">{label}</h3>
         {paid ? (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-chip bg-[color-mix(in_srgb,var(--status-paid)_12%,transparent)] px-2 text-caption text-status-paid">
-            <Icon icon={Lock} size={13} /> {STATUS_LABEL[status]}
+          <span className="inline-flex h-[22px] shrink-0 items-center gap-1 rounded-chip bg-status-paid-tint px-2 text-[11.5px] font-medium text-status-paid">
+            <Icon icon={Lock} size={13} /> {statusLabel ?? STATUS_LABEL[status]}
           </span>
         ) : isTarget ? (
-          <span className="shrink-0 text-caption text-status-seated">Tap to move here</span>
-        ) : null}
+          <span className="shrink-0 text-caption font-medium text-status-seated">Tap to move here</span>
+        ) : (
+          <span className="inline-flex h-[22px] shrink-0 items-center gap-1 rounded-chip bg-surface-2 px-2 text-[11.5px] font-medium text-ink-2">
+            <span aria-hidden className="inline-block size-2.5 rounded-full border border-current" /> Unpaid
+          </span>
+        )}
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-1">
-        {lines.length === 0 ? <p className="px-2 py-3 text-body text-ink-2">Nothing on this bill yet.</p> : null}
+        {lines.length === 0 ? <p className="px-2 py-3 text-[14.5px] text-ink-3">Nothing on this bill yet.</p> : null}
         {lines.map((l) => {
           const inner = (
             <>
               <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-2 text-body text-ink">
-                  <span className="truncate">{l.name}</span>
-                  {l.share && l.share !== "1" ? <span className="shrink-0 rounded-chip bg-surface-2 px-1.5 text-caption text-ink-2 tabular">{l.share}</span> : null}
-                </span>
-                {l.detail ? <span className="block truncate text-caption text-ink-2">{l.detail}</span> : null}
+                <span className="block truncate text-[15px] text-ink">{l.name}</span>
+                {l.detail ? <span className="block truncate text-[13px] text-ink-2">{l.detail}</span> : null}
+                {/* A shared line says so in words under its name, not as a chip. */}
+                {l.share && l.share !== "1" ? <span className="block text-[12.5px] text-ink-2 tabular">Shared · <span className="font-medium text-ink">{l.share} share</span></span> : null}
               </span>
               <Money cents={l.amountCents} size="body" className="shrink-0 text-ink" />
             </>
           );
           const cls = cx(
-            "flex w-full items-start gap-2 rounded-[8px] px-2 py-1.5 text-left outline-none",
-            l.isSelected && "bg-[color-mix(in_srgb,var(--status-seated)_14%,transparent)] shadow-[inset_0_0_0_1.5px_var(--status-seated)]",
-            l.onPress && "press pos-touch data-[pressed]:bg-surface-2 data-[hovered]:bg-surface-2 data-[disabled]:opacity-45 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-[-2px] data-[focus-visible]:outline-status-seated",
+            "flex w-full items-start gap-2 rounded-field px-2 py-1.5 text-left outline-none",
+            l.isSelected && "bg-surface-3 shadow-[inset_0_0_0_1.5px_var(--ink)]",
+            l.onPress && "press pos-touch min-h-11 transition-colors duration-[120ms] data-[pressed]:bg-surface-3 data-[hovered]:bg-surface-2 data-[disabled]:text-ink-disabled data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-[-2px] data-[focus-visible]:outline-focus",
           );
           return l.onPress ? (
             <AriaButton key={l.id} onPress={l.onPress} isDisabled={l.isDisabled} aria-pressed={l.isSelected} className={cls}>
@@ -90,18 +95,18 @@ export function BillCard({ label, status, lines, rows, tenders, isTarget, onPres
           );
         })}
       </div>
-      <dl className="px-4 pt-2 pb-1 hairline-t">
+      <dl className="border-t border-rule-subtle px-4 pt-2.5 pb-1">
         {rows.map((r) => (
-          <div key={r.key} className={cx("flex items-center justify-between gap-2", r.kind === "total" ? "mt-1 min-h-8 pt-1 hairline-t" : "min-h-6")}>
-            <dt className={cx("truncate", r.kind === "total" ? "text-line text-ink" : "text-caption text-ink-2")}>{r.label}</dt>
+          <div key={r.key} className={cx("flex items-center justify-between gap-2", r.kind === "total" ? "mt-1.5 min-h-9 pt-1.5 hairline-t" : "min-h-6")}>
+            <dt className={cx("truncate", r.kind === "total" ? "font-heading text-line font-semibold text-ink" : "text-[13px] text-ink-2")}>{r.label}</dt>
             <dd className="shrink-0">
-              <Money cents={r.cents} size={r.kind === "total" ? "heading" : "caption"} className={r.kind === "total" ? "text-ink" : "text-ink-2"} />
+              <Money cents={r.cents} size={r.kind === "total" ? "heading" : "caption"} className={r.kind === "total" ? "font-heading text-ink" : "text-ink"} />
             </dd>
           </div>
         ))}
       </dl>
       {tenders?.length ? (
-        <ul className="px-4 pb-2 text-caption text-ink-2">
+        <ul className="px-4 pb-2 text-[13px] text-ink-2">
           {tenders.map((t) => (
             <li key={t.id} className="flex items-center justify-between gap-2">
               <span className="truncate">{t.label}</span>
@@ -110,18 +115,17 @@ export function BillCard({ label, status, lines, rows, tenders, isTarget, onPres
           ))}
         </ul>
       ) : null}
-      {actions ? <footer className="flex flex-wrap items-center justify-end gap-2 px-3 pt-1 pb-3">{actions}</footer> : null}
+      {actions ? <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-rule-subtle px-2.5 py-2.5">{actions}</footer> : null}
     </>
   );
   const classes = cx(
-    "flex h-full w-[264px] shrink-0 flex-col rounded-tile bg-surface hairline text-left",
-    isTarget && "shadow-[inset_0_0_0_2px_var(--status-seated)] bg-[color-mix(in_srgb,var(--status-seated)_6%,var(--surface))]",
-    paid && "bg-[color-mix(in_srgb,var(--status-paid)_6%,var(--surface))]",
+    "flex max-h-full w-[400px] shrink-0 flex-col self-start max-[1150px]:w-[340px] overflow-hidden rounded-panel border border-rule text-left max-[960px]:max-h-none max-[960px]:w-full",
+    isTarget ? "border-transparent shadow-[inset_0_0_0_2px_var(--status-seated)] bg-status-seated-tint" : paid ? "bg-[color-mix(in_oklab,var(--status-paid-tint)_60%,var(--surface))]" : "bg-surface",
     className,
   );
   if (onPress) {
     return (
-      <AriaButton onPress={onPress} isDisabled={isDisabled} aria-label={`${label}, move the selected line here`} className={cx(classes, "press pos-touch outline-none data-[pressed]:scale-[0.99] data-[disabled]:opacity-60 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated")}>
+      <AriaButton onPress={onPress} isDisabled={isDisabled} aria-label={`${label}, move the selected line here`} className={cx(classes, "press pos-touch outline-none data-[pressed]:scale-[0.99] data-[disabled]:opacity-60 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus")}>
         {body}
       </AriaButton>
     );

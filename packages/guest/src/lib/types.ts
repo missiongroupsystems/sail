@@ -84,7 +84,11 @@ export type GuestLine = {
   source: string;
   round_id: string | null;
   mine: boolean;
+  /** The line's amount as the register priced it (menu price and choices, before discounts). */
+  amount: number;
 };
+/** The table's totals as the register priced the order; the phone shows them and never adds them up. */
+export type GuestTotals = { tax_mode: string; subtotal: number; adjustments: { name: string; total: number }[]; taxes: { name: string; bps: number; amount: number }[]; total: number };
 export type GuestRequest = {
   id: string;
   table_id: string;
@@ -97,7 +101,7 @@ export type GuestRequest = {
   acknowledged_by: string | null;
 };
 export type GuestOrder = { id: string; order_no: string; status: OrderStatus; opened_at: string; bill_requested: boolean };
-export type OrderView = { table_id: string; order: GuestOrder | null; lines: GuestLine[]; rounds: GuestRound[]; requests: GuestRequest[] };
+export type OrderView = { table_id: string; order: GuestOrder | null; lines: GuestLine[]; rounds: GuestRound[]; requests: GuestRequest[]; totals?: GuestTotals | null };
 export type RoundResult = OrderView & { round_id: string; status: "pending" | "accepted"; order_opened: boolean };
 
 export type RoundModifierInput = { group_id: string; product_id: string; quantity?: number };

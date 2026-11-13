@@ -1,6 +1,7 @@
 "use client";
 
-import { DataTable, DescriptionList, EmptyState, InlineError, Money, SectionHeading, Skeleton, taxRows, type DataTableColumn } from "@sail/ui";
+import { BusinessDay, DataTable, EmptyState, InlineError, Money, Panel, refundBlocks, Skeleton, taxRows, ValueRows, type DataTableColumn } from "@sail/ui";
+import { blockRows } from "@/components/backoffice/ZReportBody";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
@@ -15,17 +16,21 @@ import { ReportRange, useReportRange } from "../ReportRange";
  * `totals.fees` excludes tax; `totals.total` is what was collected before refunds.
  */
 type SalesSummary = {
-  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; tax: number; refunds: number; net: number; total: number; rounding: number; tips: number };
+  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; tax: number; refunds: number; net: number; total: number; rounding: number; tips: number; net_before_refunds?: number; total_after_refunds?: number };
   /** `totals.tax` by component. */
   taxes: TaxBreakdown[];
   by_day: { business_date: string; orders: number; covers: number; gross: number; net: number }[];
   by_tender: { tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number }[];
   by_category: { category_id: string | null; category: string; quantity: number; gross: number; net: number }[];
   voids: { count: number; quantity: number; value: number };
+  /** `net`, `fees`, `tax`, `tips` and `taxes` arrive with the before/after-refunds figures (`net + fees + tax = amount`). */
+  refunds?: { count: number; amount: number; net?: number; fees?: number; tax?: number; tips?: number; taxes?: TaxBreakdown[] };
+  /** The tax due by component (`taxes` less `refunds.taxes`), as the register computed it. */
+  tax_due?: { name: string; bps: number; amount: number }[];
 };
 
 const dayColumns: DataTableColumn<SalesSummary["by_day"][number]>[] = [
-  { key: "business_date", header: "Business date", isRowHeader: true, render: (d) => <span className="tabular text-ink">{d.business_date}</span> },
+  { key: "business_date", header: "Business date", isRowHeader: true, render: (d) => <span className="text-ink"><BusinessDay value={d.business_date} /></span> },
   { key: "orders", header: "Orders", numeric: true, render: (d) => d.orders },
   { key: "covers", header: "Covers", numeric: true, render: (d) => d.covers },
   { key: "gross", header: "Gross", numeric: true, render: (d) => <Money cents={d.gross} /> },
@@ -55,6 +60,7 @@ export function SalesView({ outlets, scope, initialOutletId, today }: { outlets:
   });
   const t = report.data?.totals;
   const taxMode = useSession().merchant.settings.tax_mode;
+  const blocks = report.data && t && report.data.refunds ? refundBlocks({ ...t, taxes: report.data.taxes }, report.data.refunds, taxMode, report.data.tax_due) : null;
 
   return (
     <>
@@ -62,40 +68,64 @@ export function SalesView({ outlets, scope, initialOutletId, today }: { outlets:
       {report.isPending && range.outletId ? <Skeleton lines={6} /> : null}
       <InlineError error={report.error} />
       {report.data && t ? (
-        <div className={report.isPlaceholderData ? "flex flex-col gap-8 opacity-60" : "flex flex-col gap-8"}>
-          <section className="max-w-[560px]">
-            <SectionHeading title="Totals" />
-            <DescriptionList
-              items={[
-                { term: "Orders", detail: t.orders, numeric: true },
-                { term: "Covers", detail: t.covers, numeric: true },
-                { term: "Items", detail: t.items, numeric: true },
-                { term: "Gross", detail: <Money cents={t.gross} />, numeric: true },
-                { term: "Discounts", detail: <Money cents={-t.discounts} />, numeric: true },
-                { term: "Refunds (before tax)", detail: <Money cents={-t.refunds} />, numeric: true },
-                { term: "Net sales", detail: <Money cents={t.net} />, numeric: true },
-                { term: "Service and fees (before tax)", detail: <Money cents={t.fees} />, numeric: true },
-                ...taxRows(report.data.taxes, taxMode).before.map((x) => ({ term: x.label, detail: <Money cents={x.amount} />, numeric: true })),
-                { term: "Collected", detail: <Money cents={t.total} />, numeric: true },
-                ...taxRows(report.data.taxes, taxMode).after.map((x) => ({ term: x.label, detail: <Money cents={x.amount} />, numeric: true })),
-                { term: "Cash rounding", detail: <Money cents={t.rounding} signed />, numeric: true },
-                { term: "Tips", detail: <Money cents={t.tips} />, numeric: true },
-                { term: "Voids", detail: <>{report.data.voids.count} · <Money cents={report.data.voids.value} /></>, numeric: true },
+        <div className={report.isPlaceholderData ? "grid items-start gap-6 opacity-60 lg:grid-cols-2" : "grid items-start gap-6 lg:grid-cols-2"}>
+          {blocks && t ? (
+            <div className="flex min-w-0 flex-col gap-6">
+              <Panel title="Before refunds">
+                <ValueRows
+                  rows={[
+                    { label: "Orders", value: t.orders },
+                    { label: "Covers", value: t.covers },
+                    { label: "Items", value: t.items },
+                    ...blockRows(blocks.before),
+                    { label: "Cash rounding", value: <Money cents={t.rounding} signed /> },
+                    { label: "Tips", value: <Money cents={t.tips} /> },
+                    { label: "Voids", value: <>{report.data.voids.count} · <Money cents={report.data.voids.value} /></> },
+                  ]}
+                />
+              </Panel>
+              <Panel title="Refunds">
+                <ValueRows rows={blockRows(blocks.refunds)} />
+                {blocks.tipsBack ? <ValueRows className="mt-1.5 border-t border-rule-subtle pt-1.5" rows={blockRows([blocks.tipsBack])} /> : null}
+              </Panel>
+              <Panel title="After refunds">
+                <ValueRows rows={blockRows(blocks.after)} />
+                {blocks.taxDue.length ? <ValueRows className="mt-1.5 border-t border-rule-subtle pt-1.5" rows={blockRows(blocks.taxDue)} /> : null}
+              </Panel>
+            </div>
+          ) : (
+          <Panel title="Totals">
+            <ValueRows
+              rows={[
+                { label: "Orders", value: t.orders },
+                { label: "Covers", value: t.covers },
+                { label: "Items", value: t.items },
+                { label: "Gross", value: <Money cents={t.gross} /> },
+                { label: "Discounts", value: <Money cents={-t.discounts} /> },
+                { label: "Refunds (before tax)", value: <Money cents={-t.refunds} /> },
+                { label: "Net sales", value: <Money cents={t.net} />, strong: true },
+                { label: "Service and fees (before tax)", value: <Money cents={t.fees} /> },
+                ...taxRows(report.data.taxes, taxMode).before.map((x) => ({ key: x.key, label: x.label, value: <Money cents={x.amount} /> })),
+                { label: "Collected", value: <Money cents={t.total} />, strong: true },
+                ...taxRows(report.data.taxes, taxMode).after.map((x) => ({ key: x.key, label: x.label, value: <Money cents={x.amount} /> })),
+                { label: "Cash rounding", value: <Money cents={t.rounding} signed /> },
+                { label: "Tips", value: <Money cents={t.tips} /> },
+                { label: "Voids", value: <>{report.data.voids.count} · <Money cents={report.data.voids.value} /></> },
               ]}
             />
-          </section>
-          <section>
-            <SectionHeading title="By day" />
-            <DataTable aria-label="Sales by day" columns={dayColumns} rows={report.data.by_day} rowKey={(d) => d.business_date} emptyState={<EmptyState title="No orders in this range" />} />
-          </section>
-          <section>
-            <SectionHeading title="By tender" />
-            <DataTable aria-label="Sales by tender" columns={tenderColumns} rows={report.data.by_tender} rowKey={(t) => t.tender} emptyState={<EmptyState title="No payments in this range" />} />
-          </section>
-          <section>
-            <SectionHeading title="By category" />
-            <DataTable aria-label="Sales by category" columns={categoryColumns} rows={report.data.by_category} rowKey={(c) => c.category_id ?? c.category} emptyState={<EmptyState title="No items in this range" />} />
-          </section>
+          </Panel>
+          )}
+          <div className="flex min-w-0 flex-col gap-6">
+            <Panel title="By tender" body="flush">
+              <DataTable aria-label="Sales by tender" flush="inset" columns={tenderColumns} rows={report.data.by_tender} rowKey={(t) => t.tender} emptyState={<EmptyState variant="centred" title="No payments in this range" />} />
+            </Panel>
+            <Panel title="By category" body="flush">
+              <DataTable aria-label="Sales by category" flush="inset" columns={categoryColumns} rows={report.data.by_category} rowKey={(c) => c.category_id ?? c.category} emptyState={<EmptyState variant="centred" title="No items in this range" />} />
+            </Panel>
+          </div>
+          <Panel title="By day" body="flush" className="lg:col-span-2">
+            <DataTable aria-label="Sales by day" flush="inset" columns={dayColumns} rows={report.data.by_day} rowKey={(d) => d.business_date} emptyState={<EmptyState variant="centred" title="No orders in this range" />} />
+          </Panel>
         </div>
       ) : null}
     </>

@@ -12,6 +12,9 @@ import { useConnectionStore, useUiStore } from "../state/ui";
 import { applySnapshot, posKeys } from "./queries";
 import { useApi } from "./useApi";
 
+/** The Send on the wire for each order, shared by every screen that offers Send. */
+const sending = new Map<string, Promise<OrderSnapshot | null>>();
+
 const RANK: Record<Role, number> = { server: 10, cashier: 20, manager: 30, finance: 40, admin: 50 };
 const MIN_ROLE: Record<OverrideAction, Role> = { "lines.void_fired": "manager", "lines.add_open_price": "manager", "adjustments.apply_manual": "server", "adjustments.remove": "server", "payments.record": "cashier", "refunds.create": "manager", "orders.reopen": "manager", "payments.void": "manager" };
 
@@ -114,8 +117,8 @@ export function useOrderActions(orderId: string) {
    */
   const withApproval = useCallback(
     async <T,>(subject: OverrideSubject, title: string, quote: string | null, exec: (overrideId: string | null) => Promise<T>, minRole: Role = MIN_ROLE[subject.action]): Promise<T | null> => {
-      const ask = async () => {
-        const grant = await requestOverride({ subject, title, quote });
+      const ask = async (needed: Role = minRole) => {
+        const grant = await requestOverride({ subject, title, quote, minRole: needed });
         return grant;
       };
       if (!roleAtLeast(role, minRole)) {
@@ -127,7 +130,9 @@ export function useOrderActions(orderId: string) {
         return await exec(null);
       } catch (e) {
         if (e instanceof ApiError && e.code === "permission_denied" && e.details?.override_allowed) {
-          const grant = await ask();
+          // The register names the role it needs; the prompt asks for that one.
+          const required = e.details.required_role;
+          const grant = await ask(typeof required === "string" && ["server", "cashier", "manager", "finance", "admin"].includes(required) ? (required as Role) : minRole);
           if (!grant) return null;
           return exec(grant.override_id);
         }
@@ -228,7 +233,7 @@ export function useOrderActions(orderId: string) {
           } catch (e) {
             fail(e);
           }
-        });
+        }, { screen: true });
         return snap;
       } catch (e) {
         qc.setQueryData<OrderSnapshot>(key, (s) => (s ? { ...s, lines: s.lines.filter((l) => l.id !== lineId) } : s));
@@ -256,7 +261,7 @@ export function useOrderActions(orderId: string) {
             } catch (e) {
               fail(e);
             }
-          });
+          }, { screen: true });
         }
         return snap;
       } catch (e) {
@@ -277,7 +282,8 @@ export function useOrderActions(orderId: string) {
           return await withApproval(
             { action: "lines.void_fired", target_kind: "order_line", target_id: line.id, args: { quantity: qty } },
             `Void ${line.name} ×${qty}`,
-            `already sent · ${money(line.amounts.base)}${line.kitchen_name ? " · prints a void ticket" : ""}`,
+            // A part of the line names its count, not the whole line's price: the register has not priced the part yet.
+            `${qty < line.quantity ? `${qty} of ${line.quantity} · already sent` : `already sent · ${money(line.amounts.base)}`}${line.kitchen_name ? " · prints a void ticket" : ""}`,
             (overrideId) => run((expected) => reg.voidLine(api, orderId, line.id, body, { expectedVersion: expected, overrideId })),
           );
         }
@@ -290,14 +296,26 @@ export function useOrderActions(orderId: string) {
     [api, fail, money, orderId, run, withApproval],
   );
 
-  const send = useCallback(async () => {
-    try {
-      return await run((expected) => reg.fireOrder(api, orderId, {}, { expectedVersion: expected }));
-    } catch (e) {
-      fail(e);
-      return null;
-    }
-  }, [api, fail, orderId, run]);
+  // A second tap while the first Send is on the wire joins it: sent again with the old version, it came back 409 and
+  // said the order had changed on another station.
+  const send = useCallback(() => {
+    const inFlight = sending.get(orderId);
+    if (inFlight) return inFlight;
+    const request = (async () => {
+      try {
+        const res = await run((expected) => reg.fireOrder(api, orderId, {}, { expectedVersion: expected }));
+        if (res) notify({ text: "Sent to the kitchen", tone: "success", orderId }, 3000);
+        return res;
+      } catch (e) {
+        fail(e);
+        return null;
+      } finally {
+        sending.delete(orderId);
+      }
+    })();
+    sending.set(orderId, request);
+    return request;
+  }, [api, fail, notify, orderId, run]);
 
   const holdAllNew = useCallback(async () => {
     const s = snapshot();
@@ -314,7 +332,7 @@ export function useOrderActions(orderId: string) {
           } catch (e) {
             fail(e);
           }
-        });
+        }, { screen: true });
       }
       return last;
     } catch (e) {
@@ -551,7 +569,7 @@ export function useOrderActions(orderId: string) {
    * a Server gets the Manager approval sheet.
    */
   const pay = useCallback(
-    async (check: CheckSnapshot, input: Omit<reg.PaymentInput, "dry_run">, tenderName: string): Promise<PaymentResult | null> => {
+    async (check: CheckSnapshot, input: Omit<reg.PaymentInput, "dry_run">, tenderName: string, opts: { onRefused?: (e: ApiError) => void } = {}): Promise<PaymentResult | null> => {
       beginMutation(orderId);
       try {
         const res = await withApproval(
@@ -571,6 +589,8 @@ export function useOrderActions(orderId: string) {
           return null;
         }
         refreshIfBalanceChanged(e);
+        // The register's refusal is shown as it is given; the screen may also point at the field it names.
+        if (e instanceof ApiError) opts.onRefused?.(e);
         fail(e);
         return null;
       } finally {
@@ -715,11 +735,11 @@ export function useOrderActions(orderId: string) {
 
   /** `refund_id` doubles as the idempotency key; the caller keeps one per attempt so a retry after a timeout never refunds twice. */
   const refund = useCallback(
-    async (check: CheckSnapshot, input: Omit<reg.RefundInput, "refund_id"> & { refund_id?: string }, total: number): Promise<RefundResult | null> => {
+    async (check: CheckSnapshot, input: Omit<reg.RefundInput, "refund_id"> & { refund_id?: string }, total: number, tip = 0): Promise<RefundResult | null> => {
       const refundId = input.refund_id ?? idempotencyKey();
       beginMutation(orderId);
       try {
-        const res = await withApproval({ action: "refunds.create", target_kind: "check", target_id: check.id, args: { request: input.request, tender_split: input.tender_split, total } }, `Refund ${money(total)}`, `${check.label} · ${input.reason}`, (overrideId) => reg.createRefund(api, check.id, { ...input, refund_id: refundId }, { key: refundId, expectedVersion: snapshot()?.version ?? null, overrideId }));
+        const res = await withApproval({ action: "refunds.create", target_kind: "check", target_id: check.id, args: { request: input.request, tender_split: input.tender_split, total, ...(tip > 0 ? { tip } : {}) } }, tip > 0 ? `Refund ${money(total)} and a ${money(tip)} tip` : `Refund ${money(total)}`, `${check.label} · ${input.reason}`, (overrideId) => reg.createRefund(api, check.id, { ...input, refund_id: refundId }, { key: refundId, expectedVersion: snapshot()?.version ?? null, overrideId }));
         if (!res) return null;
         applySnapshot(qc, res.data);
         void qc.invalidateQueries({ queryKey: posKeys.refunds(orderId) });

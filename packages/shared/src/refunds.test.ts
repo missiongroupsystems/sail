@@ -69,7 +69,7 @@ describe("refund quotes", () => {
 
   it("an explicit tender split is honoured and capped per payment", () => {
     const q = quoteRefund([kopi], [card, cash], { kind: "full" }, { tenderSplit: [{ payment_id: "card", amount: 216 }] });
-    expect(q.tenders).toEqual([{ payment_id: "card", tender: "Card", is_cash: false, amount: 216, rounding_cents: 0 }]);
+    expect(q.tenders).toEqual([{ payment_id: "card", tender: "Card", is_cash: false, amount: 216, rounding_cents: 0, tip_cents: 0 }]);
     expect(() => quoteRefund([kopi], [{ ...card, refunded: 1900 }], { kind: "full" }, { tenderSplit: [{ payment_id: "card", amount: 216 }] })).toThrow(/can return at most/);
     expect(() => quoteRefund([kopi], [card], { kind: "full" }, { tenderSplit: [{ payment_id: "card", amount: 100 }] })).toThrow(/add up to/);
   });

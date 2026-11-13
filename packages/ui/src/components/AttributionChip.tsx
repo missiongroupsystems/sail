@@ -35,14 +35,14 @@ export function AttributionChip({ who, mode = "compact", className }: Attributio
     case "person":
       return (
         <span className={cx("inline-flex items-center gap-2", className)} title={who.name}>
-          <span className={cx(chip, "bg-surface-2 text-ink font-semibold tracking-wide")}>{who.initials}</span>
+          <span className={cx(chip, "bg-surface-2 text-ink font-semibold")}>{who.initials}</span>
           {mode === "full" && who.name ? <span>{who.name}</span> : null}
         </span>
       );
     case "assistant": {
       const forWhom = who.forInitials ?? (who.forName ? initialsOf(who.forName) : null);
       return (
-        <span className={cx(chip, "bg-[color-mix(in_srgb,var(--agent)_12%,transparent)] text-agent", className)} title={who.forName ? `Assistant · for ${who.forName}` : "Assistant"}>
+        <span className={cx(chip, "bg-agent-tint font-medium text-agent", className)} title={who.forName ? `Assistant · for ${who.forName}` : "Assistant"}>
           <AgentMark size={11} />
           <span>{who.role ?? "Assistant"}</span>
           {forWhom ? <span className="text-agent/80">· for {mode === "full" && who.forName ? who.forName : forWhom}</span> : null}
@@ -51,14 +51,14 @@ export function AttributionChip({ who, mode = "compact", className }: Attributio
     }
     case "guest":
       return (
-        <span className={cx(chip, "bg-surface-2 text-ink-2", className)}>
+        <span className={cx(chip, "bg-surface-2 font-medium text-ink-2", className)}>
           <Icon icon={QrCode} size={12} />
           <span>{who.label ?? "Guest"}</span>
         </span>
       );
     case "system":
       return (
-        <span className={cx(chip, "bg-surface-2 text-ink-2", className)}>
+        <span className={cx(chip, "bg-surface-2 font-medium text-ink-2", className)}>
           <Icon icon={Settings2} size={12} />
           <span>{who.label ?? "System"}</span>
         </span>

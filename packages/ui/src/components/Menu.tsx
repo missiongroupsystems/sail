@@ -29,7 +29,7 @@ export function Menu<T extends object>({ className, placement = "bottom end", mi
     <Popover
       placement={placement}
       offset={4}
-      className="min-w-(--trigger-width) rounded-tile bg-surface hairline shadow-sheet outline-none data-[entering]:animate-rise-in data-[exiting]:animate-rise-out"
+      className="min-w-(--trigger-width) rounded-tile bg-surface shadow-popover outline-none data-[entering]:animate-rise-in data-[exiting]:animate-rise-out"
       style={minWidth ? { minWidth } : undefined}
     >
       <AriaMenu {...rest} className={cx("max-h-[min(60vh,420px)] overflow-auto p-1 outline-none", className)} />
@@ -49,11 +49,11 @@ export function MenuItem({ children, detail, tone = "default", className, ...res
   return (
     <AriaMenuItem {...rest} className={cx(listItemClass, tone === "destructive" && "text-status-alert", className)}>
       <span className="min-w-0 truncate">{children}</span>
-      {detail ? <span className="shrink-0 text-caption text-ink-2">{detail}</span> : null}
+      {detail ? <span className="shrink-0 text-caption text-ink-3">{detail}</span> : null}
     </AriaMenuItem>
   );
 }
 
 export function MenuSeparator() {
-  return <Separator className="my-1 hairline-t" />;
+  return <Separator className="-mx-1 my-1 hairline-t" />;
 }

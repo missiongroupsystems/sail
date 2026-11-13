@@ -179,10 +179,12 @@ export function buildBillDocument(data: BillDocument, cols: number): DocLine[] {
   const totals = data.totals;
   for (const t of moneyRow("Subtotal", totals.subtotal, cols, fmt)) doc.push(text(t));
   for (const adj of data.adjustments) for (const t of moneyRow(adj.name, adj.amount, cols, fmt)) doc.push(text(t));
-  if (totals.tax_mode === "exclusive") for (const tax of totals.taxes) for (const t of moneyRow(tax.name, tax.amount, cols, fmt)) doc.push(text(t));
+  // Lowest rate first, then by name: the order every screen shows (ui/src/lib/tax.ts sortTaxes).
+  const taxes = [...totals.taxes].sort((a, b) => a.bps - b.bps || a.name.localeCompare(b.name));
+  if (totals.tax_mode === "exclusive") for (const tax of taxes) for (const t of moneyRow(tax.name, tax.amount, cols, fmt)) doc.push(text(t));
   const totalLabel = data.kind === "refund_receipt" ? "Refund total" : "Total";
   for (const t of justify(totalLabel, money(totals.total, fmt), cols)) doc.push(large(t, { bold: true }));
-  if (totals.tax_mode === "inclusive") for (const tax of totals.taxes) for (const t of moneyRow(`${tax.name} (included)`, tax.amount, cols, fmt)) doc.push(text(t));
+  if (totals.tax_mode === "inclusive") for (const tax of taxes) for (const t of moneyRow(`${tax.name} (included)`, tax.amount, cols, fmt)) doc.push(text(t));
 
   // Payments.
   if (data.payments && data.payments.length > 0) {

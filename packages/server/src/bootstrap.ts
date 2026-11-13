@@ -67,9 +67,12 @@ export async function applyPreset(tx: TransactionSql, merchantId: string, preset
 
 /** The preset's seed pricing rules and tenders. */
 export async function seedPresetRulesAndTenders(tx: TransactionSql, merchantId: string, preset: RegionPreset, taxClassIds: Record<string, string>) {
+  // The seed rules start when the merchant is set up: the back office shows that date as each rule's version date
+  // (the epoch read "Thu, 1 Jan 1970"). No order of this merchant can be priced before it exists.
+  const setUpAt = new Date().toISOString();
   for (const rule of presetSeedRules(preset, taxClassIds)) {
     const parsed = PricingRuleSchema.parse(rule);
-    await tx`insert into pricing_rules (merchant_id, rule_key, version, status, effective_from, body, note, created_by) values (${merchantId}, ${parsed.id}, 1, 'active', ${new Date(0).toISOString()}, ${tx.json({ ...parsed, version: 1 })}, 'seed', 'system')`;
+    await tx`insert into pricing_rules (merchant_id, rule_key, version, status, effective_from, body, note, created_by) values (${merchantId}, ${parsed.id}, 1, 'active', ${setUpAt}, ${tx.json({ ...parsed, version: 1 })}, 'seed', 'system')`;
   }
   // A preset tender that is neither cash nor a card terminal (a house account) needs a Manager's approval.
   for (const [i, t] of preset.tenders.entries()) await tx`insert into tender_types (merchant_id, name, is_cash, opens_drawer, is_terminal, requires_approval, sort) values (${merchantId}, ${t.name}, ${t.is_cash}, ${t.is_cash}, ${t.is_terminal}, ${!t.is_cash && !t.is_terminal}, ${i})`;
@@ -97,7 +100,7 @@ export async function createMerchant(tx: TransactionSql, input: BootstrapInput):
   await tx`insert into merchants (id, name) values (${merchantId}, ${input.merchantName})`;
   const taxClassIds = await applyPreset(tx, merchantId, preset, input);
   await seedPresetRulesAndTenders(tx, merchantId, preset, taxClassIds);
-  await tx`insert into brands (id, merchant_id, name, accent_color) values (${brandId}, ${merchantId}, ${input.brandName ?? input.merchantName}, '#B26B00')`;
+  await tx`insert into brands (id, merchant_id, name, accent_color) values (${brandId}, ${merchantId}, ${input.brandName ?? input.merchantName}, null)`;
   await tx`insert into outlets (id, merchant_id, name, hours) values (${outletId}, ${merchantId}, ${input.outletName ?? "Main outlet"}, ${tx.json({ mon: [["11:00", "22:00"]], tue: [["11:00", "22:00"]], wed: [["11:00", "22:00"]], thu: [["11:00", "22:00"]], fri: [["11:00", "23:00"]], sat: [["11:00", "23:00"]], sun: [["11:00", "22:00"]] })})`;
   await tx`insert into stations (id, merchant_id, outlet_id, brand_id, name, seats_enabled) values (${stationId}, ${merchantId}, ${outletId}, ${brandId}, 'Station 1', true)`;
   await tx`insert into staff (id, merchant_id, name, initials, email, role, pin_hash, pin_lookup) values (${adminStaffId}, ${merchantId}, ${input.admin.name}, ${initials(input.admin.name)}, ${input.admin.email}, 'admin', ${input.admin.pin ? hashSecret(input.admin.pin) : null}, ${input.admin.pin ? pinLookup(merchantId, input.admin.pin) : null})`;

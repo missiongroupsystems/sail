@@ -41,6 +41,27 @@ describe("health and auth", () => {
     const bad = await call<{ code: string }>("GET", "/v1/me", { token: "not.a.token" });
     expect(bad.status).toBe(401);
   });
+  it("a body that is not JSON is a validation error, on public and signed-in routes alike", async () => {
+    for (const [path, token] of [["/v1/auth/sign-in", null], ["/v1/brands", A.admin.token]] as const) {
+      const headers: Record<string, string> = { "content-type": "application/json", "idempotency-key": randomUUID() };
+      if (token) headers.authorization = `Bearer ${token}`;
+      const res = await app.request(path, { method: "POST", headers, body: "{not json" });
+      expect(res.status, path).toBe(400);
+      expect(await res.json()).toMatchObject({ code: "validation", message: "The request body is not valid JSON" });
+    }
+  });
+  it("a refused write names at most the field, never a constraint, key value or row-level security", async () => {
+    const C = await seedMerchant(db.sql, "Charlie");
+    const again = await call("POST", "/v1/outlets", { token: C.admin.token, body: { id: C.outletId, name: "Twice" } });
+    expect(again.status, JSON.stringify(again.body)).toBe(409);
+    expect(again.body).toEqual({ code: "state_conflict", message: "A record with the same unique value already exists", remedy: "Use a different value or update the existing record." });
+    const missing = randomUUID();
+    const dangling = await call("POST", "/v1/stations", { token: C.admin.token, body: { outlet_id: C.outletId, brand_id: missing, name: "S" } });
+    expect(dangling.status).toBe(400);
+    expect(JSON.stringify(dangling.body)).not.toMatch(/fkey|same_merchant|constraint|Key \(|rls/);
+    expect(JSON.stringify(dangling.body)).not.toContain(missing);
+    expect(dangling.body).toMatchObject({ code: "validation", message: "A referenced record does not exist" });
+  });
   it("resolves a back-office JWT to a staff principal", async () => {
     const r = await call<{ data: { type: string; role: string; merchant_id: string; outlet_scope: string } }>("GET", "/v1/me", { token: A.admin.token });
     expect(r.status).toBe(200);

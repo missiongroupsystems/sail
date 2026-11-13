@@ -20,10 +20,10 @@ export type SectionRailProps = {
 };
 
 const item =
-  "press pos-touch flex min-h-14 w-full items-center rounded-tile px-3 text-left text-line outline-none " +
-  "data-[pressed]:scale-[0.98] data-[hovered]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated";
+  "press pos-touch flex min-h-12 w-full items-center gap-2.5 rounded-tile px-3 text-left text-[15px] outline-none transition-colors duration-[120ms] " +
+  "data-[pressed]:scale-[0.98] data-[hovered]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus";
 
-/** The section rail: 140pt, the layout's pages as items, the brand accent on the selected one. */
+/** The section rail: 140pt, the layout's pages as items, the selected one raised on a white chip. */
 export function SectionRail({ items, selectedId, onSelect, folder, footer, className }: SectionRailProps) {
   return (
     <nav aria-label="Menu sections" className={cx("flex h-full w-[140px] shrink-0 flex-col gap-1 py-2 pr-2", className)}>
@@ -41,7 +41,7 @@ export function SectionRail({ items, selectedId, onSelect, folder, footer, class
               key={it.id}
               onPress={() => onSelect(it.id)}
               aria-current={selected ? "page" : undefined}
-              className={cx(item, selected ? "bg-surface text-ink shadow-[inset_4px_0_0_var(--brand-accent)]" : "text-ink-2")}
+              className={cx(item, selected ? "bg-surface font-medium text-ink shadow-segment" : "text-ink-2 data-[hovered]:text-ink")}
             >
               <span className="truncate">{it.label}</span>
             </AriaButton>

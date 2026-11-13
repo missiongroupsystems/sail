@@ -25,21 +25,22 @@ export function Checkbox({ children, description, className, ...rest }: Checkbox
   return (
     <AriaCheckbox
       {...rest}
-      className={cx("group flex min-h-11 cursor-default items-start gap-3 py-2 text-body text-ink outline-none data-[disabled]:opacity-50", className)}
+      className={cx("group flex min-h-11 cursor-default items-start gap-3 py-2 text-body text-ink outline-none data-[disabled]:text-ink-disabled", className)}
     >
       <span
         aria-hidden
         className={cx(
-          "mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-[5px] hairline bg-surface press",
-          "group-data-[selected]:bg-primary group-data-[selected]:border-primary group-data-[selected]:text-on-primary group-data-[pressed]:scale-[0.94]",
-          "group-data-[focus-visible]:outline-2 group-data-[focus-visible]:outline-offset-2 group-data-[focus-visible]:outline-status-seated",
+          "mt-[3px] inline-flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-rule-input bg-surface press",
+          "group-data-[hovered]:border-ink-2 group-data-[selected]:bg-primary group-data-[selected]:border-primary group-data-[selected]:text-on-primary group-data-[pressed]:scale-[0.94]",
+          "group-data-[disabled]:border-rule group-data-[disabled]:bg-surface-2 group-data-[selected]:group-data-[disabled]:border-transparent group-data-[selected]:group-data-[disabled]:bg-ink-disabled",
+          "group-data-[focus-visible]:outline-2 group-data-[focus-visible]:outline-offset-2 group-data-[focus-visible]:outline-focus",
         )}
       >
-        <Icon icon={Check} size={14} className="opacity-0 group-data-[selected]:opacity-100" strokeWidth={2.25} />
+        <Icon icon={Check} size={12} className="opacity-0 group-data-[selected]:opacity-100" strokeWidth={3} />
       </span>
       <span className="flex flex-col">
         <span>{children}</span>
-        {description ? <span className="text-caption text-ink-2">{description}</span> : null}
+        {description ? <span className="text-caption text-ink-3">{description}</span> : null}
       </span>
     </AriaCheckbox>
   );

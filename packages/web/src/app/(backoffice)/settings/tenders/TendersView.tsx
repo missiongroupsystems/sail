@@ -1,12 +1,14 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, DataTable, EmptyState, InlineError, Sheet, StatusDot, Switch, type DataTableColumn } from "@sail/ui";
+import { Button, DataTable, EmptyState, InlineError, Sheet, Switch, type DataTableColumn, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { FormSection, RhfSwitch, RhfTextField } from "@/components/forms/fields";
+import { greyPill, greyPillAlert, SheetSection, TwoLine } from "@/components/office/parts";
+import { applyServerErrors } from "@/components/office/server-errors";
+import { RhfSwitch, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { TenderType } from "@/lib/api/types";
@@ -40,22 +42,23 @@ export function TendersView({ initialTenders }: { initialTenders: TenderType[] }
 
   const columns: DataTableColumn<TenderType>[] = [
     { key: "sort", header: "Order", numeric: true, sortable: true, width: 80, render: (t) => t.sort },
-    { key: "name", header: "Payment method", isRowHeader: true, sortable: true, render: (t) => <span className="text-ink">{t.name}</span> },
+    { key: "name", header: "Payment method", isRowHeader: true, sortable: true, width: "2fr", render: (t) => <TwoLine primary={t.name} meta={[t.is_cash ? "Cash" : null, t.is_terminal ? "Card terminal" : null].filter(Boolean).join(" · ") || undefined} /> },
     { key: "is_cash", header: "Cash", render: (t) => (t.is_cash ? "Yes · rounding applies" : "—") },
     { key: "opens_drawer", header: "Opens drawer", render: (t) => (t.opens_drawer ? "Yes" : "—") },
-    { key: "is_terminal", header: "Card terminal", render: (t) => (t.is_terminal ? "Yes · amount shown to key in" : "—") },
-    { key: "archived", header: "Status", sortable: true, sortValue: (t) => (t.archived ? 1 : 0), render: (t) => (t.archived ? <StatusDot status="neutral" label="Archived" muted /> : <StatusDot status="paid" label="Active" />) },
+    // A provider-linked method names its provider and terminal (live-test E-L10); a by-hand terminal is keyed in.
+    { key: "is_terminal", header: "Card terminal", render: (t) => ((t as { provider?: string | null }).provider ? <TwoLine primary={`Sent to ${(t as { provider?: string | null }).provider}`} meta={(t as { terminal_id?: string | null }).terminal_id ? `Terminal ${(t as { terminal_id?: string | null }).terminal_id}` : undefined} /> : t.is_terminal ? "Yes · amount shown to key in" : "—") },
+    { key: "archived", header: "Status", sortable: true, sortValue: (t) => (t.archived ? 1 : 0), render: (t) => (t.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <Pill size="sm" tone="paid">Active</Pill>) },
   ];
 
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-ink-2">Payment methods offered at the register, in the order they appear.</p>
-        <div className="flex items-center gap-4">
+        <p className="text-[14px] text-ink-2">Payment methods offered at the register, in the order they appear.</p>
+        <div className="flex flex-wrap items-center gap-4">
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
           </Switch>
-          <Button variant="primary" onPress={() => setSheet({ mode: "create" })}>
+          <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
             Add payment method
           </Button>
         </div>
@@ -68,7 +71,7 @@ export function TendersView({ initialTenders }: { initialTenders: TenderType[] }
         defaultSort={{ column: "sort", direction: "ascending" }}
         onRowAction={(t) => setSheet({ mode: "edit", tender: t })}
         rowClassName={(t) => (t.archived ? "text-ink-2" : undefined)}
-        emptyState={<EmptyState variant="quiet" title="No payment methods yet" hint="Add Cash and your card terminal to start." />}
+        emptyState={<EmptyState variant="centred" title="No payment methods yet" hint="Add Cash and your card terminal to start." />}
       />
       <TenderSheet state={sheet} nextSort={tenders.data.length} onClose={() => setSheet(null)} />
     </>
@@ -98,6 +101,8 @@ function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
       return tender ? req(api.PATCH("/v1/tender-types/{id}", { params: { path: { id: tender.id } }, body })) : req(api.POST("/v1/tender-types", { body }));
     },
     onSuccess: settle,
+    // A refusal that names a field shows under it; the message also stays at the foot of the form.
+    onError: (e) => applyServerErrors(form.setError, e, Object.keys(form.getValues())),
   });
   const archive = useMutation<unknown, ApiError, boolean>({
     mutationFn: (archived) => req(api.PATCH("/v1/tender-types/{id}", { params: { path: { id: tender!.id } }, body: { archived } })),
@@ -113,11 +118,11 @@ function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
       footer={
         <>
           {tender ? (
-            <Button variant={tender.archived ? "secondary" : "destructive"} onPress={() => archive.mutate(!tender.archived)} isPending={archive.isPending} className="mr-auto">
+            <Button variant="secondary" onPress={() => archive.mutate(!tender.archived)} isPending={archive.isPending} className={`mr-auto ${tender.archived ? greyPill : greyPillAlert}`}>
               {tender.archived ? "Restore" : "Archive"}
             </Button>
           ) : null}
-          <Button variant="quiet" onPress={onClose} isDisabled={busy}>
+          <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={busy}>
             Cancel
           </Button>
           <Button variant="primary" type="submit" form="tender-form" isPending={save.isPending}>
@@ -127,13 +132,13 @@ function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
       }
     >
       <form id="tender-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
-        <FormSection>
+        <SheetSection>
           <div className="grid gap-4 sm:grid-cols-[1fr_120px]">
             <RhfTextField control={form.control} name="name" label="Name" placeholder="Cash" autoFocus={!tender} />
             <RhfTextField control={form.control} name="sort" label="Order" numeric inputMode="numeric" placeholder={String(nextSort)} />
           </div>
-        </FormSection>
-        <FormSection title="Behaviour">
+        </SheetSection>
+        <SheetSection title="Behaviour">
           <RhfSwitch control={form.control} name="is_cash" description="Cash rounding applies and change is calculated.">
             Cash
           </RhfSwitch>
@@ -149,7 +154,7 @@ function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
           <RhfSwitch control={form.control} name="requires_reference" description="The payment is refused without a reference, such as an account, a room or a voucher number.">
             Needs a reference
           </RhfSwitch>
-        </FormSection>
+        </SheetSection>
         <InlineError error={save.error ?? archive.error} />
       </form>
     </Sheet>

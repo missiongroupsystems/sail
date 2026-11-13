@@ -199,7 +199,7 @@ export type OrderSnapshot = {
   totals: { tax_mode: string; tax_rounding: string; subtotal: number; discount_total: number; fee_total: number; tax_total: number; taxes: TaxBreakdown[]; total: number };
   lines: OrderLine[];
   adjustments: OrderAdjustment[];
-  manual_applications: { id: string; rule_key: string; entered_value: number | null; line_ids: string[] | null; applied_by: string | null; reason: string | null }[];
+  manual_applications: { id: string; rule_key: string; entered_value: number | null; line_ids: string[] | null; applied_by: string | null; approved_by?: string | null; reason: string | null }[];
   checks: unknown[];
   paid_total: number;
   balance: number;

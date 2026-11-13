@@ -1,6 +1,6 @@
 import { createRoute, OpenAPIHono, z, type RouteConfig, type RouteHandler } from "@hono/zod-openapi";
 import type { Next } from "hono";
-import { ApiErrorSchema, operation, roleAtLeast, type OperationSpec } from "@sail/shared";
+import { ApiErrorSchema, MAX_AMOUNT, operation, roleAtLeast, type OperationSpec } from "@sail/shared";
 import { AppError } from "./errors.js";
 import { markDryRun, maybeTx, tx } from "../db/client.js";
 import { aboveCeiling, createProposal, currentOrderMoney, directCeiling, moneyEffect, orderMoney, requestOrderId, sameOrderMoney, takeAgentBudget, toProposal } from "../services/agents.js";
@@ -74,10 +74,51 @@ export function createApp() {
     defaultHook: (result) => {
       if (!result.success) {
         const issues = result.error.issues.map((i) => ({ path: i.path.join("."), message: i.message, code: i.code }));
-        throw new AppError("validation", issues[0] ? `${issues[0].path || "body"}: ${issues[0].message}` : "Invalid request", { remedy: "Fix the listed fields and retry.", details: { issues } });
+        const first = result.error.issues[0];
+        throw new AppError("validation", first ? plainIssue(first) : "Invalid request", { remedy: "Fix the listed fields and retry.", details: { issues } });
       }
     },
   });
+}
+
+type Issue = z.core.$ZodIssue;
+
+/**
+ * A validation failure as a sentence a person can act on: the field in words and what it needs, never the validator's
+ * own text or an amount in minor units. The raw issues stay in `details.issues` for clients.
+ */
+export function plainIssue(i: Issue): string {
+  const key = [...i.path].reverse().find((x) => typeof x === "string");
+  const words = typeof key === "string" ? key.replace(/_/g, " ") : "";
+  const field = words ? words.charAt(0).toUpperCase() + words.slice(1) : "The request";
+  switch (i.code) {
+    case "too_small": {
+      const min = Number(i.minimum);
+      if (i.origin === "string") return min <= 1 ? `${field} cannot be empty` : `${field} needs at least ${min} characters`;
+      if (i.origin === "array" || i.origin === "set") return min <= 1 ? `${field} needs at least one item` : `${field} needs at least ${min} items`;
+      return i.inclusive === false ? `${field} must be more than ${min}` : `${field} must be at least ${min}`;
+    }
+    case "too_big": {
+      const max = Number(i.maximum);
+      if (i.origin === "string") return `${field} can have at most ${max} characters`;
+      if (i.origin === "array" || i.origin === "set") return `${field} can have at most ${max} items`;
+      if (max === MAX_AMOUNT) return `${field} is more than the largest amount the register accepts`;
+      return `${field} can be at most ${max}`;
+    }
+    case "invalid_type":
+      return /received undefined/.test(i.message) ? `${field} is required` : `${field} has the wrong kind of value`;
+    case "invalid_format":
+      return `${field} is not in the right format`;
+    case "invalid_value":
+      return i.values.length <= 6 ? `${field} must be one of: ${i.values.map(String).join(", ")}` : `${field} is not one of the allowed values`;
+    case "invalid_union":
+      return `${field} is not valid`;
+    case "unrecognized_keys":
+      return `${field} has fields this operation does not take: ${i.keys.join(", ")}`;
+    default:
+      // Custom checks carry messages written for people.
+      return words ? `${field}: ${i.message}` : i.message;
+  }
 }
 
 /**
@@ -202,7 +243,7 @@ function enforce(c: { get(k: "principal"): AppEnv["Variables"]["principal"] | un
   const principal = c.get("principal");
   if (!principal) throw new AppError("unauthenticated", "Missing bearer token");
   if (!callers(spec).includes(principal.type)) {
-    throw new AppError("permission_denied", `${spec.op} is not available to ${principal.type} principals`, {
+    throw new AppError("permission_denied", principal.type === "station" ? "Sign in with your PIN to do this" : "This sign-in cannot do this", {
       remedy: principal.type === "station" ? "Sign in with a PIN first." : "Use a staff or station token.",
       details: { action: spec.op, principal_type: principal.type },
     });
@@ -213,12 +254,24 @@ function enforce(c: { get(k: "principal"): AppEnv["Variables"]["principal"] | un
   }
   if (spec.minRole) {
     const role = principalRole(principal);
-    if (!role) throw new AppError("permission_denied", `${spec.op} needs a signed-in staff member`, { remedy: "Sign in with a PIN first.", details: { action: spec.op, required_role: spec.minRole } });
+    if (!role) throw new AppError("permission_denied", "Sign in with your PIN to do this", { remedy: "Sign in with a PIN first.", details: { action: spec.op, required_role: spec.minRole } });
     if (!roleAtLeast(role, spec.minRole)) {
       // Manager override grants are checked by the handler (v0.4) when override_allowed; here the base role check fails.
       // An agent never holds a grant, so an override header means nothing for it.
-      if (!spec.overrideAllowed || principal.type === "agent" || !hasOverrideHeader(c)) throw AppError.permission(spec.minRole, spec.overrideAllowed, spec.op);
+      // A payment's dry run is a quote whose transaction is rolled back: a Server's Pay screen gets the change and rounding
+      // before it asks for approval (live-test B-F4). Recording the payment itself is still refused here.
+      const quoteOnly = spec.op === "payments.record" && principal.type === "staff" && isDryRun(c);
+      if (!quoteOnly && (!spec.overrideAllowed || principal.type === "agent" || !hasOverrideHeader(c))) throw AppError.permission(spec.minRole, spec.overrideAllowed, spec.op);
     }
+  }
+}
+
+function isDryRun(c: unknown): boolean {
+  const ctx = c as { req?: { valid?(target: "json"): unknown } };
+  try {
+    return (ctx.req?.valid?.("json") as { dry_run?: unknown } | undefined)?.dry_run === true;
+  } catch {
+    return false;
   }
 }
 

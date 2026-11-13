@@ -1,13 +1,14 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Badge, Button, DataTable, EmptyState, InlineError, Sheet, StatusDot, TagsField, type DataTableColumn } from "@sail/ui";
+import { Button, DataTable, EmptyState, InlineError, Sheet, TagsField, type DataTableColumn, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
+import { greyPill, SheetSection, TwoLine } from "@/components/office/parts";
 import { CHANNEL_LABEL } from "@/components/backoffice/labels";
-import { FormSection, RhfSelect, RhfSwitch } from "@/components/forms/fields";
+import { RhfSelect, RhfSwitch } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Brand, ChannelLink, MenuSummary, Outlet } from "@/lib/api/types";
@@ -55,8 +56,13 @@ export function ChannelsView({ initialLinks, outlets, brands, menus }: { initial
   const menuName = useMemo(() => new Map(menus.map((m) => [m.id, m.name])), [menus]);
 
   const columns: DataTableColumn<ChannelLink>[] = [
-    { key: "channel", header: "Channel", isRowHeader: true, sortable: true, render: (l) => <Badge tone={l.channel === "pos" ? "neutral" : "seated"}>{CHANNEL_LABEL[l.channel]}</Badge> },
-    { key: "outlet", header: "Outlet", sortable: true, sortValue: (l) => outletName.get(l.outlet_id), render: (l) => <span className="text-ink">{outletName.get(l.outlet_id) ?? "—"}</span> },
+    { key: "channel", header: "Channel", isRowHeader: true, sortable: true, render: (l) => (
+        <Pill size="sm" tone={l.channel === "pos" ? "neutral" : "seated"}>
+          {CHANNEL_LABEL[l.channel]}
+        </Pill>
+      ),
+    },
+    { key: "outlet", header: "Outlet", sortable: true, sortValue: (l) => outletName.get(l.outlet_id), render: (l) => <TwoLine primary={outletName.get(l.outlet_id) ?? "—"} /> },
     { key: "brand", header: "Brand", sortable: true, sortValue: (l) => brandName.get(l.brand_id), render: (l) => brandName.get(l.brand_id) ?? "—" },
     { key: "menu", header: "Menu", render: (l) => <span className="text-ink-2">{menuName.get(l.menu_id) ?? "—"}</span> },
     {
@@ -64,7 +70,7 @@ export function ChannelsView({ initialLinks, outlets, brands, menus }: { initial
       header: "Scan to order",
       render: (l) =>
         l.channel === "scan_to_order" ? (
-          <span className="text-ink-2">
+          <span className="text-ink-2 break-words">
             {l.hold_orders ? "Holds orders for staff" : "Sends straight to kitchen"} · {l.open_on_first_scan ? "opens on first scan" : "staff open the table"}
             {l.service_requests.length ? ` · ${l.service_requests.length} requests` : ""}
           </span>
@@ -72,14 +78,14 @@ export function ChannelsView({ initialLinks, outlets, brands, menus }: { initial
           <span className="text-ink-2">—</span>
         ),
     },
-    { key: "enabled", header: "Status", sortable: true, render: (l) => (l.enabled ? <StatusDot status="paid" label="Enabled" /> : <StatusDot status="neutral" label="Disabled" muted />) },
+    { key: "enabled", header: "Status", sortable: true, render: (l) => (l.enabled ? <Pill size="sm" tone="paid">Enabled</Pill> : <Pill size="sm" tone="neutral">Disabled</Pill>) },
   ];
 
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-ink-2">A channel link says which menu a brand serves at an outlet, on the POS or through Scan to order.</p>
-        <Button variant="primary" onPress={() => setSheet({ mode: "create" })}>
+        <p className="text-[14px] text-ink-2">A channel link says which menu a brand serves at an outlet, on the POS or through Scan to order.</p>
+        <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
           Add channel link
         </Button>
       </div>
@@ -91,7 +97,7 @@ export function ChannelsView({ initialLinks, outlets, brands, menus }: { initial
         defaultSort={{ column: "outlet", direction: "ascending" }}
         onRowAction={(l) => setSheet({ mode: "edit", link: l })}
         rowClassName={(l) => (l.enabled ? undefined : "text-ink-2")}
-        emptyState={<EmptyState variant="quiet" title="No channel links yet" hint="Tap Add channel link to put a menu live at an outlet." />}
+        emptyState={<EmptyState variant="centred" title="No channel links yet" hint="Tap Add channel link to put a menu live at an outlet." />}
       />
       <InlineError error={links.error} className="mt-4" />
       <LinkSheet state={sheet} outlets={outlets} brands={brands} menus={menus} onClose={() => setSheet(null)} />
@@ -132,7 +138,7 @@ function LinkSheet({ state, outlets, brands, menus, onClose }: { state: SheetSta
       description={link ? "Channel, outlet and brand are fixed; change the menu and behaviours." : "One link per channel, outlet and brand."}
       footer={
         <>
-          <Button variant="quiet" onPress={onClose} isDisabled={save.isPending}>
+          <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={save.isPending}>
             Cancel
           </Button>
           <Button variant="primary" type="submit" form="link-form" isPending={save.isPending}>
@@ -142,7 +148,7 @@ function LinkSheet({ state, outlets, brands, menus, onClose }: { state: SheetSta
       }
     >
       <form id="link-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
-        <FormSection>
+        <SheetSection>
           <RhfSelect
             control={form.control}
             name="channel"
@@ -161,9 +167,9 @@ function LinkSheet({ state, outlets, brands, menus, onClose }: { state: SheetSta
           <RhfSwitch control={form.control} name="enabled" description="Disabled links stop serving the menu without being deleted.">
             Enabled
           </RhfSwitch>
-        </FormSection>
+        </SheetSection>
         {channel === "scan_to_order" ? (
-          <FormSection title="Scan to order" hint="How guest orders behave at this outlet.">
+          <SheetSection title="Scan to order" hint="How guest orders behave at this outlet.">
             <RhfSwitch control={form.control} name="hold_orders" description="Guest orders wait for a staff member to send them, instead of going straight to the kitchen.">
               Hold orders for staff
             </RhfSwitch>
@@ -186,7 +192,7 @@ function LinkSheet({ state, outlets, brands, menus, onClose }: { state: SheetSta
                 />
               )}
             />
-          </FormSection>
+          </SheetSection>
         ) : null}
         <InlineError error={save.error} />
       </form>

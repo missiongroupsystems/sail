@@ -60,6 +60,8 @@ describe("first-run setup", () => {
     expect(tenders.length).toBeGreaterThan(0);
     expect(tenders.filter((t) => t.provider !== null)).toEqual([]);
     expect((await db.sql`select count(*)::int as n from payment_provider_accounts where merchant_id = ${merchant!.id}`)[0]!.n).toBe(0);
+    // A new merchant's brand has no accent: the guest app draws ink until the merchant chooses a colour.
+    expect((await db.sql<{ accent_color: string | null }[]>`select accent_color from brands where merchant_id = ${merchant!.id}`).map((b) => b.accent_color)).toEqual([null]);
 
     const signIn = await call<{ data: { token: string } }>("POST", "/v1/auth/sign-in", { body: { email: `First.Admin.${n}@setup.test`, password: "a long enough password" }, idempotencyKey: null });
     expect(signIn.status, JSON.stringify(signIn.body)).toBe(201);

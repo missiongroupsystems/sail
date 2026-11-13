@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { evenShares, sharedAmong, type Share } from "@sail/shared";
 import { db } from "../db/client.js";
-import { checkAllocations, checks, orderLines } from "../db/schema/index.js";
+import { checkAllocations, checks, digitalReceipts, orderLines, paymentIntents, payments } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { checksFor, syncAllocations, type CheckRow } from "./checks.js";
 
@@ -18,19 +18,45 @@ async function assertNoLockedChecks(orderId: string) {
   if (locked) throw AppError.invariant("check_locked_by_payment", `${locked.label} is paid`, `Refund ${locked.label} to change the split.`);
 }
 
+/**
+ * A card payment waiting on the terminal is pinned to its bill. Bills keep their ids across a re-split, so moving items
+ * under it would let the approval pay for a bill whose items changed: no split, unsplit or move until it has finished.
+ */
+async function assertNoPendingTerminalPayment(orderId: string) {
+  const [pending] = await db().select({ id: paymentIntents.id }).from(paymentIntents).where(and(eq(paymentIntents.orderId, orderId), eq(paymentIntents.state, "pending"))).limit(1);
+  if (pending) throw new AppError("state_conflict", "A card payment is waiting on the terminal", { remedy: "Cancel it or wait for it to finish, then split the bill.", details: { intent_id: pending.id } });
+}
+
 async function liveLines(orderId: string) {
   return db().select().from(orderLines).where(and(eq(orderLines.orderId, orderId), sql`${orderLines.status} <> 'voided'`));
 }
 
-/** Replace the order's checks with `n` fresh ones (labels Bill 1..n, optional seat numbers). */
+/**
+ * Make the order's checks `n` (labels Bill 1..n, optional seat numbers). The existing bills are reused in order, so a
+ * voided or reversed payment keeps the bill it was taken on; a bill left over hands its reversed payments and their
+ * digital receipts to Bill 1 before it goes. Payments are never deleted.
+ */
 async function resetChecks(order: { id: string; merchantId: string; outletId: string }, n: number, seats: (number | null)[] = []): Promise<CheckRow[]> {
   await assertNoLockedChecks(order.id);
-  await db().delete(checks).where(eq(checks.orderId, order.id));
+  await assertNoPendingTerminalPayment(order.id);
+  const existing = await checksFor(order.id);
+  // A numbered tax invoice records its bill as it was; re-splitting would change or remove that bill under it.
+  const invoiced = existing.find((c) => c.invoiceNo);
+  if (invoiced) throw AppError.state(`${invoiced.label} has tax invoice ${invoiced.invoiceNo}`, [], "Keep the bills as they are: the invoice records this split.");
   const rows: CheckRow[] = [];
   for (let i = 1; i <= n; i++) {
     const seatNo = seats[i - 1] ?? null;
-    const [row] = await db().insert(checks).values({ id: randomUUID(), merchantId: order.merchantId, outletId: order.outletId, orderId: order.id, index: i, label: seatNo != null ? `Bill ${i} · Seat ${seatNo}` : `Bill ${i}`, seatNo }).returning();
+    const values = { index: i, label: seatNo != null ? `Bill ${i} · Seat ${seatNo}` : `Bill ${i}`, seatNo };
+    const old = existing[i - 1];
+    const [row] = old ? await db().update(checks).set({ ...values, updatedAt: new Date() }).where(eq(checks.id, old.id)).returning() : await db().insert(checks).values({ id: randomUUID(), merchantId: order.merchantId, outletId: order.outletId, orderId: order.id, ...values }).returning();
     rows.push(row!);
+  }
+  const leftOver = existing.slice(n);
+  if (leftOver.length) {
+    const ids = leftOver.map((c) => c.id);
+    await db().update(payments).set({ checkId: rows[0]!.id }).where(inArray(payments.checkId, ids));
+    await db().update(digitalReceipts).set({ checkId: rows[0]!.id }).where(inArray(digitalReceipts.checkId, ids));
+    await db().delete(checks).where(inArray(checks.id, ids));
   }
   return rows;
 }
@@ -45,6 +71,7 @@ export async function splitEven(order: { id: string; merchantId: string; outletI
 
 /** One bill per seat; shared lines (no seat) split evenly across the seats, or left on a separate "Shared" bill when `shared` is `manual`. */
 export async function splitBySeat(order: { id: string; merchantId: string; outletId: string }, shared: "even" | "manual"): Promise<CheckRow[]> {
+  await assertNoPendingTerminalPayment(order.id);
   const lines = await liveLines(order.id);
   const seats = [...new Set(lines.map((l) => l.seatNo).filter((s): s is number => s != null))].sort((a, b) => a - b);
   if (seats.length === 0) throw AppError.invariant("no_seats", "No items have a seat number", "Assign seats to the items first, or split evenly.");
@@ -70,6 +97,7 @@ export type AllocationMove = { line_id: string; check_ids: string[] };
  * moved onto them or the order is re-split. Lines on a paid bill cannot move.
  */
 export async function allocateLines(order: { id: string; merchantId: string; outletId: string }, moves: AllocationMove[], addChecks = 0): Promise<CheckRow[]> {
+  await assertNoPendingTerminalPayment(order.id);
   let chks = await checksFor(order.id);
   for (let i = 0; i < addChecks; i++) {
     const index = chks.length + 1;

@@ -1,8 +1,9 @@
 "use client";
 
-import { Badge, Button, Checkbox, CheckboxGroup, DataTable, EmptyState, InlineError, Select, Sheet, TextField, type DataTableColumn } from "@sail/ui";
+import { Button, Checkbox, CheckboxGroup, DataTable, EmptyState, InlineError, Select, Sheet, TextField, Pill, type DataTableColumn } from "@sail/ui";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import { greyPill, Quiet, SheetSection, TwoLine } from "@/components/office/parts";
 import { CHANNELS, CHANNEL_LABEL, WEEKDAYS } from "@/components/backoffice/labels";
 import { ProductSearch } from "@/components/backoffice/ProductSearch";
 import { Warnings } from "@/components/backoffice/Warnings";
@@ -67,24 +68,29 @@ export function AvailabilityView({ initialRules, outlets, menus }: { initialRule
       key: "target",
       header: "Applies to",
       isRowHeader: true,
+      width: "2fr",
+      render: (r) => <TwoLine primary={r.target_kind === "product" ? productName(byId, r.target_id) : sectionLabel.get(r.target_id) ?? `Section ${r.target_id.slice(0, 8)}`} />,
+    },
+    {
+      key: "kind",
+      header: "Kind",
       render: (r) => (
-        <span>
-          <Badge className="mr-2">{r.target_kind === "product" ? "Product" : "Section"}</Badge>
-          <span className="text-ink">{r.target_kind === "product" ? productName(byId, r.target_id) : sectionLabel.get(r.target_id) ?? `Section ${r.target_id.slice(0, 8)}`}</span>
-        </span>
+        <Pill size="sm" tone={r.target_kind === "product" ? "neutral" : "seated"}>
+          {r.target_kind === "product" ? "Product" : "Section"}
+        </Pill>
       ),
     },
-    { key: "outlets", header: "Outlets", render: (r) => <span className="text-ink-2">{r.outlet_ids.length ? r.outlet_ids.map((id) => outletName.get(id) ?? "Unknown").join(", ") : "All outlets"}</span> },
-    { key: "channels", header: "Channels", render: (r) => <span className="text-ink-2">{r.channels.length ? r.channels.map((c) => CHANNEL_LABEL[c] ?? c).join(", ") : "All channels"}</span> },
-    { key: "days", header: "Days", render: (r) => <span className="text-ink-2">{describeDays(r.days_of_week)}</span> },
+    { key: "outlets", header: "Outlets", render: (r) => <Quiet>{r.outlet_ids.length ? r.outlet_ids.map((id) => outletName.get(id) ?? "Unknown").join(", ") : "All outlets"}</Quiet> },
+    { key: "channels", header: "Channels", render: (r) => <Quiet>{r.channels.length ? r.channels.map((c) => CHANNEL_LABEL[c] ?? c).join(", ") : "All channels"}</Quiet> },
+    { key: "days", header: "Days", render: (r) => <Quiet>{describeDays(r.days_of_week)}</Quiet> },
     { key: "time", header: "Time", render: (r) => <span className="tabular text-ink-2">{r.start_time || r.end_time ? `${r.start_time ?? "open"} – ${r.end_time ?? "close"}` : "All day"}</span> },
   ];
 
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-ink-2">A rule limits when something can be ordered. Without a rule, an item is always available where its menu is live.</p>
-        <Button variant="primary" onPress={() => setSheet({ mode: "create" })}>
+        <p className="text-[14px] text-ink-2">A rule limits when something can be ordered. Without a rule, an item is always available where its menu is live.</p>
+        <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
           Add availability rule
         </Button>
       </div>
@@ -94,7 +100,7 @@ export function AvailabilityView({ initialRules, outlets, menus }: { initialRule
         rows={rules.data}
         rowKey={(r) => r.id}
         onRowAction={(r) => setSheet({ mode: "edit", rule: r })}
-        emptyState={<EmptyState variant="quiet" title="No availability rules" hint="Everything on a live menu is available at all times. Tap Add availability rule for breakfast-only items and the like." />}
+        emptyState={<EmptyState variant="centred" title="No availability rules" hint="Everything on a live menu is available at all times. Tap Add availability rule for breakfast-only items and the like." />}
       />
       <InlineError error={rules.error} className="mt-4" />
       <RuleSheet state={sheet} outlets={outlets} sections={sections} byId={byId} onClose={() => setSheet(null)} />
@@ -163,7 +169,7 @@ function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetSt
       description={rule ? "The target of a rule cannot change; add a new rule for another item." : "Choose what the rule applies to, then narrow where and when it can be ordered."}
       footer={
         <>
-          <Button variant="quiet" onPress={onClose} isDisabled={save.isPending}>
+          <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={save.isPending}>
             Cancel
           </Button>
           <Button variant="primary" isDisabled={!targetId} isPending={save.isPending} onPress={() => save.mutate()}>
@@ -172,7 +178,8 @@ function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetSt
         </>
       }
     >
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-7">
+        <SheetSection title="What">
         {!rule ? (
           <>
             <Select
@@ -186,9 +193,9 @@ function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetSt
             />
             {form.target_kind === "product" ? (
               form.product ? (
-                <div className="flex items-center justify-between gap-3 rounded-tile bg-surface-2 px-3 py-2">
-                  <span className="text-ink">{form.product.name}</span>
-                  <Button variant="quiet" onPress={() => set("product", null)}>
+                <div className="flex items-center justify-between gap-3 rounded-field bg-surface-2 py-1 pr-1 pl-3">
+                  <span className="min-w-0 font-medium text-ink [overflow-wrap:anywhere]">{form.product.name}</span>
+                  <Button variant="secondary" onPress={() => set("product", null)}>
                     Change
                   </Button>
                 </div>
@@ -200,9 +207,11 @@ function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetSt
             )}
           </>
         ) : (
-          <p className="text-ink">{rule.target_kind === "product" ? productName(byId, rule.target_id) : sections.find((s) => s.id === rule.target_id)?.label ?? "Section"}</p>
+          <p className="font-medium text-ink [overflow-wrap:anywhere]">{rule.target_kind === "product" ? productName(byId, rule.target_id) : sections.find((s) => s.id === rule.target_id)?.label ?? "Section"}</p>
         )}
+        </SheetSection>
 
+        <SheetSection title="Where">
         <CheckboxGroup label="Outlets" description="Leave every outlet unticked to apply the rule everywhere." value={form.outlet_ids} onChange={(v) => set("outlet_ids", v)} columns={2}>
           {outlets.map((o) => (
             <Checkbox key={o.id} value={o.id}>
@@ -217,6 +226,8 @@ function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetSt
             </Checkbox>
           ))}
         </CheckboxGroup>
+        </SheetSection>
+        <SheetSection title="When">
         <CheckboxGroup label="Days" description="Unticked means every day." value={form.days} onChange={(v) => set("days", v)} columns={2}>
           {WEEKDAYS.map((d) => (
             <Checkbox key={d.id} value={String(d.id)}>
@@ -228,6 +239,7 @@ function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetSt
           <TextField label="From" type="time" numeric value={form.start_time} onChange={(v) => set("start_time", v)} description="Empty means from opening." />
           <TextField label="Until" type="time" numeric value={form.end_time} onChange={(v) => set("end_time", v)} description="Empty means until closing." />
         </div>
+        </SheetSection>
         <Warnings warnings={warnings} />
         <InlineError error={save.error} />
       </div>

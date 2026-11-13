@@ -358,6 +358,27 @@
       "when": 1794525386550,
       "tag": "0050_tips_enabled",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1794552966935,
+      "tag": "0051_same_merchant_refs",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1794553794646,
+      "tag": "0052_category_nesting",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1794553795646,
+      "tag": "0053_refund_tips",
+      "breakpoints": true
     }
   ]
 }

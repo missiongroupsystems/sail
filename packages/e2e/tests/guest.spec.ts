@@ -34,7 +34,7 @@ test("guest: a QR order from the table arrives on the POS, is accepted, and show
     await expect(sheet).toBeHidden();
     await phone.getByRole("button", { name: /^Kopi,/ }).click();
     await phone.getByRole("dialog", { name: "Kopi" }).getByRole("button", { name: /^Add to order/ }).click();
-    await phone.getByRole("button", { name: /^Review 2 items/ }).click();
+    await phone.getByRole("button", { name: /^View your order, 2 items/ }).click();
     await phone.getByRole("button", { name: /^Send/ }).first().click();
     await expect(phone.getByRole("heading", { name: "Order sent" })).toBeVisible();
   });

@@ -10,7 +10,7 @@ export default async function ChangePasswordPage() {
   return (
     <>
       <PageHeader title="Change password" description="Your other back-office sessions end; this one stays signed in." />
-      {status.provider === "local" ? <ChangePasswordForm /> : <p className="text-ink-2">Your password is managed by your organisation's identity provider.</p>}
+      {status.provider === "local" ? <ChangePasswordForm /> : <p className="max-w-[460px] rounded-[16px] border border-rule bg-surface px-6 py-7 text-ink-2 sm:px-7">Your password is managed by your organisation's identity provider.</p>}
     </>
   );
 }

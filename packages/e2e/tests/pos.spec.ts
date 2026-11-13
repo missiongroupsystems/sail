@@ -80,17 +80,17 @@ test("POS: pair, sign in, shift, order, split, cash and card, refund with a mana
     await page.getByRole("button", { name: "Bill", exact: true }).click();
     await page.getByRole("group", { name: "Split mode" }).getByRole("button", { name: "Even" }).click();
     await expect(page.getByRole("region", { name: "Bill 2" })).toBeVisible();
-    await expect(page.getByText("Bills add up to")).toBeVisible();
+    await expect(page.getByText("Order total", { exact: true })).toBeVisible();
     // Three ways the total does not divide evenly. The header must name every distinct share, not the first bill's for all.
     const bills = page.getByRole("group", { name: "Number of bills" });
-    await bills.getByRole("button", { name: "Increase quantity" }).click();
+    await bills.getByRole("button", { name: "3 bills" }).click();
     await expect(page.getByRole("region", { name: "Bill 3" })).toBeVisible();
     await expect(page.getByText("Checking…")).toHaveCount(0);
     const shares = await Promise.all(["Bill 1", "Bill 2", "Bill 3"].map(async (b) => (await page.getByRole("region", { name: b }).getByRole("button", { name: /^Pay / }).innerText()).match(/\$[\d,.]+/)![0]));
     expect(new Set(shares).size, `shares ${shares.join(", ")}`).toBeGreaterThan(1);
     const header = page.getByText(/ each$/);
     for (const share of new Set(shares)) await expect(header).toContainText(share);
-    await bills.getByRole("button", { name: "Decrease quantity" }).click();
+    await bills.getByRole("button", { name: "2 bills" }).click();
     await expect(page.getByRole("region", { name: "Bill 3" })).toHaveCount(0);
     await expect(page.getByText("Checking…")).toHaveCount(0);
   });
@@ -99,7 +99,7 @@ test("POS: pair, sign in, shift, order, split, cash and card, refund with a mana
     await page.getByRole("region", { name: "Bill 1" }).getByRole("button", { name: /^Pay / }).click();
     await page.getByRole("group", { name: "Payment method" }).getByRole("button", { name: "Cash", exact: true }).click();
     await page.getByRole("group", { name: "Cash given" }).getByRole("button", { name: "$20", exact: true }).click();
-    await expect(page.getByRole("status").filter({ hasText: "change" })).toContainText("change $");
+    await expect(page.getByRole("status").filter({ hasText: "Change to give" })).toContainText(/Change to give\s*\$/);
     await page.getByRole("button", { name: /^Take \$20\.00 cash/ }).click();
     await expect(page.getByText(/^Paid · Bill 1 · /)).toBeVisible();
     await expect(page.getByText(/^Change \$/)).toBeVisible();
@@ -128,27 +128,28 @@ test("POS: pair, sign in, shift, order, split, cash and card, refund with a mana
     await sheet.getByRole("group", { name: "Reason" }).getByRole("button").first().click();
     await sheet.getByRole("button", { name: "Next: back to" }).click();
     await sheet.getByRole("button", { name: "Review" }).click();
-    await sheet.getByRole("button", { name: /^Manager approval/ }).click();
+    await sheet.getByRole("button", { name: /^Refund .*, Manager approval$/ }).click();
     const approval = page.getByRole("dialog", { name: "Manager approval" });
     await expect(approval).toBeVisible();
     await keyIn(page, "PIN keys", MANAGER_PIN);
-    await expect(page.getByRole("dialog", { name: /^Refunded \$/ })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Refunded", exact: true })).toBeVisible();
   });
 
   await test.step("close the shift with a blind count", async () => {
-    await page.getByRole("dialog", { name: /^Refunded \$/ }).getByRole("button", { name: "Done" }).click();
+    await page.getByRole("dialog", { name: "Refunded", exact: true }).getByRole("button", { name: "Done" }).click();
     await page.getByRole("banner").getByRole("button", { name: "Orders", exact: true }).click();
     await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Shift", exact: true }).click();
-    await page.getByRole("button", { name: "Close shift ▸" }).click();
+    await page.getByRole("button", { name: "Close shift", exact: true }).click();
     // Other specs may leave a table open: carry anything outstanding to the next shift.
     const checklist = page.getByRole("list", { name: "Before closing" });
     for (const leave of await checklist.getByRole("button", { name: "Leave open" }).all()) await leave.click();
     await page.getByRole("button", { name: /^Next: count the cash/ }).click();
-    await keyIn(page, "Amount keys", "20000");
+    await page.getByRole("textbox", { name: "Cash counted in the drawer" }).fill("200.00");
     await page.getByRole("button", { name: /^Close shift · counted \$200\.00/ }).click();
     // The count leaves out the day's cash takings, so the register asks why it is short before closing.
     await expect(page.getByRole("heading", { name: /^Variance −\$/ })).toBeVisible();
     await page.getByRole("group", { name: "Reason" }).getByRole("button", { name: "Change given wrongly" }).click();
+    await page.getByRole("button", { name: "Close shift", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Shift closed" })).toBeVisible();
   });
 });

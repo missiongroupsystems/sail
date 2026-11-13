@@ -67,7 +67,7 @@ function hslToRgb({ h, s, l }: { h: number; s: number; l: number }): Rgb {
 
 export const WHITE: Rgb = { r: 255, g: 255, b: 255 };
 /** `ink` by day. */
-export const INK: Rgb = { r: 0x1c, g: 0x1d, b: 0x1f };
+export const INK: Rgb = { r: 0x0d, g: 0x0d, b: 0x0d };
 export const MIN_TEXT_CONTRAST = 4.5;
 
 export type AccentCheck = {

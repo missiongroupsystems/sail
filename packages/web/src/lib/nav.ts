@@ -12,6 +12,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
+import type { Role } from "@sail/shared";
 
 export type Section = {
   href: string;
@@ -21,6 +22,8 @@ export type Section = {
   arrives?: string;
   /** One line on what the section will hold, shown on its placeholder page. */
   summary?: string;
+  /** The lowest role the register lets read this section; the rail leaves it out for anyone below. */
+  minRole?: Role;
 };
 
 /** Every section, in order. Unbuilt sections still render, never a gap. */
@@ -31,8 +34,8 @@ export const SECTIONS: Section[] = [
   { href: "/pricing", label: "Pricing", icon: Tags },
   { href: "/floor", label: "Floor & QR", icon: LayoutGrid },
   { href: "/printing", label: "Printing", icon: Printer },
-  { href: "/team", label: "Team", icon: Users },
-  { href: "/reports", label: "Reports", icon: ChartNoAxesColumn },
+  { href: "/team", label: "Team", icon: Users, minRole: "manager" },
+  { href: "/reports", label: "Reports", icon: ChartNoAxesColumn, minRole: "manager" },
   { href: "/changes", label: "Changes", icon: GitPullRequestArrow, arrives: "with the agent work", summary: "Every configuration change, from a person or an assistant, will be reviewed here before it applies: summary, checks and impact first, then the row-level diff." },
   { href: "/assistants", label: "Assistants", icon: Bot, arrives: "with the agent work", summary: "Assistant identities and roles, playbooks, activity and traces, budgets, and the on/off switch. Until then the register runs with assistants off." },
   { href: "/settings", label: "Settings", icon: Settings },

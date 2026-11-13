@@ -29,11 +29,11 @@ export function PanelSheet({ isOpen, onClose, title, description, children, foot
       role="dialog"
       aria-modal="false"
       aria-label={typeof title === "string" ? title : undefined}
-      className={cx("absolute inset-0 z-20 flex flex-col rounded-tile bg-surface shadow-sheet animate-sheet-in", className)}
+      className={cx("absolute inset-0 z-20 flex flex-col overflow-hidden rounded-sheet bg-surface shadow-sheet animate-sheet-in", className)}
     >
-      <header className="flex items-start justify-between gap-4 px-5 pt-4 pb-3 hairline-b">
-        <div className="min-w-0 pt-1">
-          <h2 className="truncate text-heading text-ink">{title}</h2>
+      <header className="flex items-start justify-between gap-4 border-b border-rule-subtle px-5 pt-4 pb-3">
+        <div className="min-w-0 pt-1.5">
+          <h2 className="truncate font-heading text-title text-ink">{title}</h2>
           {description ? <p className="mt-0.5 text-body text-ink-2">{description}</p> : null}
         </div>
         <Button variant="quiet" size="lg" iconOnly aria-label="Close" onPress={onClose} className="-mr-2">
@@ -41,7 +41,7 @@ export function PanelSheet({ isOpen, onClose, title, description, children, foot
         </Button>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
-      {footer ? <footer className="flex flex-wrap items-center justify-end gap-2 px-5 py-3 hairline-t">{footer}</footer> : null}
+      {footer ? <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-rule-subtle px-5 py-3">{footer}</footer> : null}
     </section>
   );
 }

@@ -1,10 +1,11 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
-import type { TaxAmount, TaxBreakdown } from "@sail/shared";
+import { formatMoney, type TaxAmount, type TaxBreakdown } from "@sail/shared";
 import { db, tx } from "../db/client.js";
 import { businessDayCloses, merchantSettings, orderAdjustments, orderLines, orders, payments, shifts, staff } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { businessToday } from "./business-day.js";
 import { brandScopeFor, type Principal } from "../auth/principal.js";
+import { taxDue } from "./tax-due.js";
 
 /**
  * Shifts and the basic Z-report. The
@@ -20,17 +21,25 @@ export type ZReport = {
    * `fees` excludes tax; `tax` is by component in `taxes`. `total` is the completed orders' total before refunds,
    * so `net + refunds + fees + tax = total`. The tenders add up to `total` only when every order was opened, paid and
    * completed in this scope; `reconciliation` gives the difference.
+   * Before refunds, `net_before_refunds + fees + tax = total`; after them, `total_after_refunds = total - refunds.amount`
+   * (the `refunds` block splits that amount into net, fees and tax).
    */
-  sales: { gross: number; discounts: number; fees: number; tax: number; taxes: TaxBreakdown[]; refunds: number; net: number; total: number };
+  sales: { gross: number; discounts: number; fees: number; tax: number; taxes: TaxBreakdown[]; refunds: number; net: number; total: number; net_before_refunds: number; total_after_refunds: number };
   adjustments: { rule_key: string; name: string; kind: string; report_class: string; total: number; count: number }[];
   tenders: { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number }[];
   /** Register-computed totals across tenders, so clients never add rows up: `non_cash` is the figure to compare with the terminal's end-of-day total. */
   tenders_summary: { cash: number; non_cash: number; tips: number; count: number };
-  /** `expected = float + cash_payments + rounding + tips - refunds`: cash tips stay in the drawer until they are paid out. */
+  /** `expected = float + cash_payments + rounding + tips - refunds`: cash tips stay in the drawer until they are paid out; `refunds` is the cash given back, tips included. */
   cash: { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number; counted: number | null; variance: number | null };
   voids: { count: number; quantity: number; value: number };
-  /** `taxes` is the tax given back, by component: a period's tax due is `sales.taxes` less these, component by component. */
-  refunds: { count: number; amount: number; taxes: TaxAmount[] };
+  /**
+   * `amount` is the bills' share given back, `net + fees + tax = amount`; `taxes` is the tax given back, by component: a
+   * period's tax due is `sales.taxes` less these, component by component. `tips` were given back on top of `amount`
+   * (a whole-bill refund returns the tip); the cash ones are in `cash.refunds`.
+   */
+  refunds: { count: number; amount: number; net: number; fees: number; tax: number; tips: number; taxes: TaxAmount[] };
+  /** The tax due by component: `sales.taxes` less `refunds.taxes`, matched on name and rate. Empty for a shift's report. */
+  tax_due: TaxAmount[];
   /** Payments taken in this scope and then reversed (voided, or reversed by a reopen): they count in no tender. */
   reversals: { count: number; amount: number; cash_amount: number; items: { payment_id: string; order_no: string; tender: string; is_cash: boolean; amount: number; reversed_at: string | null; reversed_by: string | null; reason: string | null }[] };
   /**
@@ -46,7 +55,7 @@ export type ZReport = {
 type Scope = { outletId: string; businessDate: string; stationId?: string | null; shiftId?: string | null };
 
 /** Refund figures arrive in v0.7 through this provider. */
-let refundProvider: (scope: Scope) => Promise<{ count: number; amount: number; net: number; cash_amount: number; taxes: TaxAmount[] }> = async () => ({ count: 0, amount: 0, net: 0, cash_amount: 0, taxes: [] });
+let refundProvider: (scope: Scope) => Promise<{ count: number; amount: number; net: number; tax: number; tips: number; cash_amount: number; taxes: TaxAmount[] }> = async () => ({ count: 0, amount: 0, net: 0, tax: 0, tips: 0, cash_amount: 0, taxes: [] });
 export function registerRefundTotals(fn: typeof refundProvider) {
   refundProvider = fn;
 }
@@ -110,13 +119,16 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
   return {
     scope: { outlet_id: scope.outletId, station_id: scope.stationId ?? null, business_date: scope.businessDate, shift_id: scope.shiftId ?? null },
     orders: { count: o?.count ?? 0, by_type: Object.fromEntries(byType.map((b) => [b.t, b.n])), covers: o?.covers ?? 0, open_count: open?.n ?? 0 },
-    sales: { gross: o?.gross ?? 0, discounts: o?.discounts ?? 0, fees: o?.fees ?? 0, tax: o?.tax ?? 0, taxes, refunds: refunds.net, net: (o?.net ?? 0) - refunds.net, total: o?.total ?? 0 },
+    sales: { gross: o?.gross ?? 0, discounts: o?.discounts ?? 0, fees: o?.fees ?? 0, tax: o?.tax ?? 0, taxes, refunds: refunds.net, net: (o?.net ?? 0) - refunds.net, total: o?.total ?? 0, net_before_refunds: o?.net ?? 0, total_after_refunds: (o?.total ?? 0) - refunds.amount },
     adjustments: adj,
     tenders,
     tenders_summary: { cash: cashPayments, non_cash: tenders.filter((t) => !t.is_cash).reduce((s, t) => s + t.amount, 0), tips: tenders.reduce((s, t) => s + t.tips, 0), count: tenders.reduce((s, t) => s + t.count, 0) },
     cash: { float: cashCounts.float, cash_payments: cashPayments, rounding, tips: cashTips, refunds: refunds.cash_amount, expected, counted: cashCounts.counted, variance: cashCounts.counted == null ? null : cashCounts.counted - expected },
     voids: voidRows[0] ?? { count: 0, quantity: 0, value: 0 },
-    refunds: { count: refunds.count, amount: refunds.amount, taxes: refunds.taxes },
+    refunds: { count: refunds.count, amount: refunds.amount, net: refunds.net, fees: refunds.amount - refunds.net - refunds.tax, tax: refunds.tax, tips: refunds.tips, taxes: refunds.taxes },
+    // Sales here are scoped by outlet, day and station, refunds by shift when one is named: a shift's tax due would mix the
+    // two, so it is given only for a day or a station-day.
+    tax_due: scope.shiftId ? [] : taxDue(taxes, refunds.taxes),
     reversals: {
       count: reversed.length,
       amount: reversed.reduce((s, p) => s + p.amount, 0),
@@ -137,11 +149,11 @@ export function assertCountsMatch(counts: Record<string, number> | null | undefi
   let sum = 0;
   for (const [key, pieces] of Object.entries(counts)) {
     const cents = Number(key);
-    if (!Number.isInteger(cents) || cents <= 0) throw AppError.validation(`${what}: denomination keys must be the piece value in cents`, { details: { key } });
+    if (!Number.isInteger(cents) || cents <= 0) throw AppError.validation(`${what}: each count must be for a note or coin value`, { details: { key } });
     if (!Number.isInteger(pieces) || pieces < 0) throw AppError.validation(`${what}: piece counts must be whole numbers`, { details: { key, pieces } });
     sum += cents * pieces;
   }
-  if (sum !== totalCents) throw AppError.validation(`${what}: the denominations add up to ${sum} cents, not ${totalCents}`, { remedy: "Count again, or clear the denominations and enter the total.", details: { counted_from_denominations: sum, total: totalCents } });
+  if (sum !== totalCents) throw AppError.validation(`${what}: the notes and coins counted do not add up to the total`, { remedy: "Count again, or clear the denominations and enter the total.", details: { counted_from_denominations: sum, total: totalCents } });
 }
 
 export async function openShift(principal: Principal, input: { outletId: string; stationId: string | null; name: string | null; floatCents: number; floatCounts: Record<string, number> | null; businessDate: string }) {
@@ -195,11 +207,11 @@ export async function closeShift(principal: Principal, shiftId: string, input: {
   const [voiding] = await tx()<{ n: number }[]>`select count(*)::int as n from payment_intents i join payments p on p.id = i.payment_id where p.shift_id = ${shiftId} and i.void_requested_at is not null and i.provider_voided_at is null`;
   if ((voiding?.n ?? 0) > 0) throw AppError.state("A card void in this shift is waiting for the terminal", [], "Wait for the terminal to confirm the void, then close the shift.");
   const report = await zReport({ outletId: shift.outletId, businessDate: shift.businessDate, stationId: shift.stationId, shiftId: shift.id }, { float: shift.floatCents, counted: input.countedCashCents });
-  const [settings] = await db().select({ threshold: merchantSettings.cashVarianceThreshold }).from(merchantSettings).where(eq(merchantSettings.merchantId, shift.merchantId)).limit(1);
+  const [settings] = await db().select({ threshold: merchantSettings.cashVarianceThreshold, currency: merchantSettings.currency, locale: merchantSettings.locale }).from(merchantSettings).where(eq(merchantSettings.merchantId, shift.merchantId)).limit(1);
   if (!settings) throw AppError.notFound("merchant");
   const variance = report.cash.variance ?? 0;
   if (Math.abs(variance) > settings.threshold && !input.varianceReason?.trim())
-    throw AppError.validation(`The drawer is ${Math.abs(variance)} minor units ${variance < 0 ? "short" : "over"}, more than the ${settings.threshold} allowed without a reason`, {
+    throw AppError.validation(`The drawer is ${formatMoney(Math.abs(variance), settings)} ${variance < 0 ? "short" : "over"}, more than the ${formatMoney(settings.threshold, settings)} allowed without a reason`, {
       remedy: "Count again, or close with a variance reason.",
       details: { expected: report.cash.expected, counted: input.countedCashCents, variance, variance_threshold: settings.threshold },
     });

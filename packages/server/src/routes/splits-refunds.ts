@@ -26,17 +26,17 @@ registerOperations({
   "checks.allocate": op({ op: "checks.allocate", summary: "Move or share items between bills", description: "Put each listed item wholly on one bill, or share it equally between the listed bills (a bottle three ways). A paid bill's allocations are locked.", emits: ["checks.allocated"] }),
   "checks.unsplit": op({ op: "checks.unsplit", summary: "Back to one bill", description: "Only before the first payment.", emits: ["checks.split"] }),
   "refunds.quote": op({ op: "refunds.quote", summary: "Quote a refund", description: "Reversal per line, adjustment and tax component, plus the split across the original payments with per-payment caps and cash rounding. Pure: writes nothing. Agents must show these figures, never their own.", tier: "T0", dryRun: false, principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.refund", "pos.read"] } }),
-  "refunds.create": op({ op: "refunds.create", summary: "Refund a bill", description: "Full, by lines and quantities, or by amount. Manager, Finance or Admin, or a lower role with a manager override. Reason required. Produces a numbered refund receipt and, when the bill was invoiced, a numbered credit note. Each line's refunds never exceed its paid amount; each payment's refunds never exceed what it paid. Refunded items do not restore daily caps.", tier: "T3", ...PERMISSIONS["refunds.create"], reasonRequired: true, emits: ["refund.created", "check.refunded", "print_job.created"], mcp: { expose: true, toolsets: ["pos.refund"] } }),
+  "refunds.create": op({ op: "refunds.create", summary: "Refund a bill", description: "Full, by lines and quantities, or by amount. Manager, Finance or Admin, or a lower role with a manager override. Reason required. Produces a numbered refund receipt and, when the bill was invoiced, a numbered credit note. Each line's refunds never exceed its paid amount; each payment's refunds never exceed what it paid. A full refund also gives back each payment's tip (`tip_cents` on the tender, on top of `amount`); a refund by lines or amount never does. A manager's approval for a lower role names the quoted `total` and, when a tip goes back, the `tip`. Refunded items do not restore daily caps.", tier: "T3", ...PERMISSIONS["refunds.create"], reasonRequired: true, emits: ["refund.created", "check.refunded", "print_job.created"], mcp: { expose: true, toolsets: ["pos.refund"] } }),
   "refunds.list": op({ op: "refunds.list", summary: "Refunds of an order", description: "Refunds with their lines, tenders and document numbers.", tier: "T0", dryRun: false, principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read", "reports"] } }),
   "refunds.credit_note_pdf": op({ op: "refunds.credit_note_pdf", summary: "Download a credit note PDF", description: "The credit note for a refund against an invoiced bill.", tier: "T0", dryRun: false, principals: ["staff", "station", "agent"], mcp: { expose: false, toolsets: [] } }),
   "refunds.receipt_print": op({ op: "refunds.receipt_print", summary: "Print a refund receipt", description: "Reprints the refund receipt on the station's receipt printer.", emits: ["print_job.created"] }),
   "refunds.receipt_send": op({ op: "refunds.receipt_send", summary: "Send a refund receipt digitally", description: "A public link (QR) for the refund receipt.", tier: "T2", minRole: "cashier", emits: ["receipt.sent"] }),
 });
 
-const Mutation = z.object({ expected_version: z.number().int().optional(), dry_run: z.boolean().optional(), override_id: z.uuid().optional() });
+const Mutation = z.object({ expected_version: z.number().int().min(0).max(2_147_483_647).optional(), dry_run: z.boolean().optional(), override_id: z.uuid().optional() });
 const Snapshot = z.record(z.string(), z.unknown());
 const OrderMutationResponse = z.object({ data: Snapshot, events: z.array(z.object({ id: z.string(), seq: z.number().int(), type: z.string(), occurredAt: z.string(), businessDate: z.string() })), warnings: z.array(z.string()) });
-export const RefundRequestSchema = z.discriminatedUnion("kind", [z.object({ kind: z.literal("full") }), z.object({ kind: z.literal("lines"), lines: z.array(z.object({ line_id: z.uuid(), quantity: z.number().int().min(1) })).min(1) }), z.object({ kind: z.literal("amount"), amount: AmountSchema.min(1) })]);
+export const RefundRequestSchema = z.discriminatedUnion("kind", [z.object({ kind: z.literal("full") }), z.object({ kind: z.literal("lines"), lines: z.array(z.object({ line_id: z.uuid(), quantity: z.number().int().min(1).max(999) })).min(1) }), z.object({ kind: z.literal("amount"), amount: AmountSchema.min(1) })]);
 export const TenderSplit = z.array(z.object({ payment_id: z.uuid(), amount: AmountSchema })).optional();
 
 function dryRunFrom(c: { set(k: "dryRun", v: boolean): void }, body: { dry_run?: boolean }) {
@@ -46,7 +46,7 @@ function dryRunFrom(c: { set(k: "dryRun", v: boolean): void }, body: { dry_run?:
   }
 }
 
-const toRefund = (r: typeof refunds.$inferSelect) => ({ id: r.id, order_id: r.orderId, check_id: r.checkId, kind: r.kind, reason: r.reason, refunded_by: r.refundedByName, approved_by: r.approvedByName, business_date: r.businessDate, totals: { base: r.base, discount: r.discount, fee: r.fee, tax: r.tax, taxes: r.taxes, total: r.total }, refund_receipt_no: r.refundReceiptNo, credit_note_no: r.creditNoteNo, created_at: r.createdAt.toISOString() });
+const toRefund = (r: typeof refunds.$inferSelect) => ({ id: r.id, order_id: r.orderId, check_id: r.checkId, kind: r.kind, reason: r.reason, refunded_by: r.refundedByName, approved_by: r.approvedByName, business_date: r.businessDate, totals: { base: r.base, discount: r.discount, fee: r.fee, tax: r.tax, taxes: r.taxes, total: r.total }, tip: r.tip, refund_receipt_no: r.refundReceiptNo, credit_note_no: r.creditNoteNo, created_at: r.createdAt.toISOString() });
 
 export function splitRefundRoutes(app: OpenAPIHono<AppEnv>) {
   const splitRoute = (opId: string, path: string, body: z.ZodTypeAny, run: (order: Awaited<ReturnType<typeof lockOrder>>, b: Record<string, unknown>) => Promise<unknown>, eventType: string) =>
@@ -91,9 +91,10 @@ export function splitRefundRoutes(app: OpenAPIHono<AppEnv>) {
       const order = await lockOrder(check.orderId, b.expected_version);
       // A void waiting for the provider is already giving money back; a refund on top would give it twice.
       if ((await voidsPendingOn(order.id)) > 0) throw AppError.state("A void of a payment on this order is waiting for the provider", [], "Wait for the terminal to confirm the void, then refund what is still owed back.");
-      // The approval covers this request and the total the approver was quoted.
-      const total = quote(await refundableFor(id), b.request, b.tender_split).totals.total;
-      const approval = await requireRoleOrOverride(p, principalRole(p), PERMISSIONS["refunds.create"].minRole, { action: "refunds.create", targetId: id, args: { request: b.request, tender_split: b.tender_split, total }, overrideId: b.override_id, overrideAllowed: PERMISSIONS["refunds.create"].overrideAllowed });
+      // The approval covers this request and what the approver was quoted: the total and, when one goes back, the tip.
+      const quoted = quote(await refundableFor(id), b.request, b.tender_split);
+      const total = quoted.totals.total;
+      const approval = await requireRoleOrOverride(p, principalRole(p), PERMISSIONS["refunds.create"].minRole, { action: "refunds.create", targetId: id, args: { request: b.request, tender_split: b.tender_split, total, ...(quoted.tip > 0 ? { tip: quoted.tip } : {}) }, overrideId: b.override_id, overrideAllowed: PERMISSIONS["refunds.create"].overrideAllowed });
       const created = await createRefund({ refundId: b.refund_id, checkId: id, request: b.request, tenderSplit: b.tender_split, reason: b.reason, reference: b.reference ?? null, principal: p, approver: approval, overrideId: b.override_id ?? null, stationId: p.type === "staff" ? (p.stationId ?? null) : null });
       const version = await bumpVersion(order.id);
       const snapshot = await loadSnapshot(order.id);
@@ -103,7 +104,7 @@ export function splitRefundRoutes(app: OpenAPIHono<AppEnv>) {
         await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "refund.created", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "refunds.create", payload: { refund_id: created.refund.id, check_id: id, kind: b.request.kind, total: created.quote.totals.total, tenders: created.quote.tenders, refund_receipt_no: created.refund.refundReceiptNo, credit_note_no: created.refund.creditNoteNo }, reason: { text: b.reason }, approval: approval ? { override_id: b.override_id, approver_id: approval.id, approver_name: approval.name ?? undefined } : null, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p),
       ];
       events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "check.refunded", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "refunds.create", payload: { check_id: id, refunded_total: check.refundedTotal + created.quote.totals.total, total: check.total }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
-      await recordAudit(p, { action: "refunds.create", targetKind: "check", targetId: id, outletId: order.outletId, reason: b.reason, approver: approval, overrideId: b.override_id ?? null, details: { refund_id: created.refund.id, kind: b.request.kind, total: created.quote.totals.total, refund_receipt_no: created.refund.refundReceiptNo, credit_note_no: created.refund.creditNoteNo } });
+      await recordAudit(p, { action: "refunds.create", targetKind: "check", targetId: id, outletId: order.outletId, reason: b.reason, approver: approval, overrideId: b.override_id ?? null, details: { refund_id: created.refund.id, kind: b.request.kind, total: created.quote.totals.total, tip: created.quote.tip, refund_receipt_no: created.refund.refundReceiptNo, credit_note_no: created.refund.creditNoteNo } });
       const warnings: string[] = [];
       if (b.print !== false) {
         try {

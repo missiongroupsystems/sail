@@ -1,13 +1,15 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, DataTable, EmptyState, InlineError, Select, Sheet, StatusDot, Switch, type DataTableColumn } from "@sail/ui";
+import { Button, DataTable, Dialog, EmptyState, InlineError, Select, Sheet, StatusDot, Switch, type DataTableColumn, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { greyPill, greyPillAlert, SheetSection, TwoLine } from "@/components/office/parts";
+import { applyServerErrors } from "@/components/office/server-errors";
 import { PairingPanel } from "@/components/backoffice/PairingPanel";
-import { FormSection, RhfCheckboxGroup, RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
+import { RhfCheckboxGroup, RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Brand, Outlet, Station } from "@/lib/api/types";
@@ -54,7 +56,8 @@ export function StationsView({
 
   const stations = useQuery({
     queryKey: keys.stations(outletId ?? ""),
-    queryFn: () => req(api.GET("/v1/outlets/{id}/stations", { params: { path: { id: outletId! } } })).then((r) => r.data),
+    // Archived stations come back only when asked (a register without the flag ignores it and lists the active ones).
+    queryFn: () => req(api.GET("/v1/outlets/{id}/stations", { params: { path: { id: outletId! }, query: { include_archived: "true" } } })).then((r) => r.data),
     enabled: outletId !== null,
     initialData: outletId === initialOutletId ? initialStations : undefined,
   });
@@ -63,7 +66,7 @@ export function StationsView({
   const rows = (stations.data ?? []).filter((s) => (showArchived || !s.archived) && (!scope.brandId || !s.brand_id || s.brand_id === scope.brandId));
 
   const columns: DataTableColumn<Station>[] = [
-    { key: "name", header: "Name", sortable: true, isRowHeader: true, render: (s) => <span className="text-ink">{s.name}</span> },
+    { key: "name", header: "Name", sortable: true, isRowHeader: true, width: "1.4fr", render: (s) => <TwoLine primary={s.name} meta={s.kind === "display" ? "Kitchen display" : "POS station"} /> },
     { key: "brand_id", header: "Brand", sortable: true, sortValue: (s) => (s.brand_id ? brandName.get(s.brand_id) : ""), render: (s) => <span className="text-ink-2">{s.brand_id ? brandName.get(s.brand_id) ?? "Unknown brand" : "Any brand"}</span> },
     { key: "pay_before_firing", header: "Pay before sending", sortable: true, render: (s) => (s.pay_before_firing ? "Yes" : "—") },
     { key: "seats_enabled", header: "Seats", sortable: true, render: (s) => (s.seats_enabled ? "On" : "Off") },
@@ -72,14 +75,14 @@ export function StationsView({
       key: "paired",
       header: "Pairing",
       sortable: true,
-      render: (s) => (s.paired ? <StatusDot status="paid" label={s.device_label ? `Paired · ${s.device_label}` : "Paired"} /> : <StatusDot status="neutral" label="Not paired" muted />),
+      render: (s) => (s.paired ? <StatusDot status="paid" label={s.device_label ? `Paired · ${s.device_label}` : "Paired"} /> : <Pill size="sm" tone="neutral">Not paired</Pill>),
     },
     {
       key: "archived",
       header: "Status",
       sortable: true,
       sortValue: (s) => (s.archived ? 1 : 0),
-      render: (s) => (s.archived ? <StatusDot status="neutral" label="Archived" muted /> : <StatusDot status="paid" label="Active" />),
+      render: (s) => (s.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <Pill size="sm" tone="paid">Active</Pill>),
     },
   ];
 
@@ -98,7 +101,7 @@ export function StationsView({
           ) : (
             <Select
               aria-label="Outlet"
-              variant="toolbar"
+              variant="toolbar" size="sm"
               items={outlets.map((o) => ({ id: o.id, label: o.name }))}
               selectedKey={outletId}
               onSelectionChange={setOutletId}
@@ -109,7 +112,7 @@ export function StationsView({
             Show archived
           </Switch>
         </div>
-        <Button variant="primary" onPress={() => setSheet({ mode: "create" })} isDisabled={!outletId}>
+        <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })} isDisabled={!outletId}>
           Add station
         </Button>
       </div>
@@ -126,7 +129,7 @@ export function StationsView({
           defaultSort={{ column: "name", direction: "ascending" }}
           onRowAction={(s) => setSheet({ mode: "edit", station: s })}
           rowClassName={(s) => (s.archived ? "text-ink-2" : undefined)}
-          emptyState={<EmptyState variant="quiet" title="No stations at this outlet" hint="Tap Add station, then pair an iPad to it." />}
+          emptyState={<EmptyState variant="centred" title="No stations at this outlet" hint="Tap Add station, then pair an iPad to it." />}
         />
       )}
       <InlineError error={stations.error} className="mt-4" />
@@ -168,14 +171,19 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
       return res.data;
     },
     onSuccess: settle,
+    // A refusal that names a field shows under it; the message also stays at the foot of the form.
+    onError: (e) => applyServerErrors(form.setError, e, Object.keys(form.getValues())),
   });
   const archive = useMutation<Station, ApiError, boolean>({
     mutationFn: async (archived) => (await req(api.PATCH("/v1/stations/{id}", { params: { path: { id: station!.id } }, body: { archived } }))).data,
     onSuccess: settle,
   });
   const busy = save.isPending || archive.isPending;
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  useEffect(() => setConfirmArchive(false), [state]);
 
   return (
+    <>
     <Sheet
       isOpen={state !== null}
       onOpenChange={(open) => !open && onClose()}
@@ -195,11 +203,11 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
       footer={
         <>
           {station ? (
-            <Button variant={station.archived ? "secondary" : "destructive"} onPress={() => archive.mutate(!station.archived)} isPending={archive.isPending} isDisabled={save.isPending} className="mr-auto">
-              {station.archived ? "Restore station" : "Archive station"}
+            <Button variant="secondary" onPress={() => (station.archived ? archive.mutate(false) : setConfirmArchive(true))} isPending={archive.isPending} isDisabled={save.isPending} className={`mr-auto ${station.archived ? greyPill : greyPillAlert}`}>
+              {station.archived ? "Restore station" : "Archive station…"}
             </Button>
           ) : null}
-          <Button variant="quiet" onPress={onClose} isDisabled={busy}>
+          <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={busy}>
             Cancel
           </Button>
           <Button variant="primary" type="submit" form="station-form" isPending={save.isPending} isDisabled={archive.isPending}>
@@ -209,7 +217,12 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
       }
     >
       <form id="station-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
-        <FormSection>
+        {station?.archived ? (
+          <p className="rounded-panel bg-surface-2 px-4 py-3 text-[14px] text-ink-2">
+            Archived: no device can use it. Restoring brings it back unpaired, so pair the {station.kind === "display" ? "screen" : "iPad"} again afterwards.
+          </p>
+        ) : null}
+        <SheetSection>
           <RhfTextField control={form.control} name="name" label="Name" placeholder="Counter 1" autoFocus={!station} />
           {station ? null : (
             <RhfSelect
@@ -222,14 +235,14 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
               ]}
             />
           )}
-        </FormSection>
+        </SheetSection>
         {kind === "display" ? (
-          <FormSection title="Kitchen display" hint="The display shows the tickets routed to these destinations. Set their routing in Printing › Printers.">
+          <SheetSection title="Kitchen display" hint="The display shows the tickets routed to these destinations. Set their routing in Printing › Printers.">
             <RhfCheckboxGroup control={form.control} name="display_destination_ids" label="Destinations" options={(destinations.data ?? []).map((d) => ({ id: d.id, label: d.name }))} emptyHint={destinations.isPending ? "Loading the destinations…" : "No display destinations at this outlet yet. Add one in Printing › Printers."} description="Tick at least one: a kitchen display with none shows no tickets." />
-          </FormSection>
+          </SheetSection>
         ) : (
           <>
-            <FormSection>
+            <SheetSection>
               <RhfSelect
                 control={form.control}
                 name="brand_id"
@@ -246,24 +259,46 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
                   { id: "takeaway", label: "New takeaway order", description: "Counter stations." },
                 ]}
               />
-            </FormSection>
-            <FormSection title="Service">
+            </SheetSection>
+            <SheetSection title="Service">
               <RhfSwitch control={form.control} name="pay_before_firing" description="Nothing goes to the kitchen until the bill is paid. For counters and kiosks.">
                 Pay before sending
               </RhfSwitch>
               <RhfSwitch control={form.control} name="seats_enabled" description="Shows the seat strip so lines can be assigned to guests.">
                 Seats
               </RhfSwitch>
-            </FormSection>
+            </SheetSection>
           </>
         )}
         {station ? (
-          <FormSection title="Pairing" hint={station.kind === "display" ? "A screen becomes this display by opening /kds and entering a one-time code. The code expires in 10 minutes." : "An iPad becomes this station by entering a one-time code. The code expires in 10 minutes."}>
+          <SheetSection title="Pairing" hint={station.kind === "display" ? "A screen becomes this display by opening /kds and entering a one-time code. The code expires in 10 minutes." : "An iPad becomes this station by entering a one-time code. The code expires in 10 minutes."}>
             <PairingPanel station={station} />
-          </FormSection>
+          </SheetSection>
         ) : null}
         <InlineError error={save.error ?? archive.error} />
       </form>
     </Sheet>
+    {station ? (
+      <Dialog
+        isOpen={confirmArchive}
+        onOpenChange={(open) => !open && setConfirmArchive(false)}
+        role="alertdialog"
+        title={`Archive ${station.name}?`}
+        footer={
+          <>
+            <Button variant="secondary" className={greyPill} onPress={() => setConfirmArchive(false)} isDisabled={archive.isPending}>
+              Keep the station
+            </Button>
+            <Button variant="destructive" isPending={archive.isPending} onPress={() => archive.mutate(true, { onSuccess: () => setConfirmArchive(false) })}>
+              Archive station
+            </Button>
+          </>
+        }
+      >
+        <p>{station.paired ? `The ${station.kind === "display" ? "screen" : "iPad"} paired to it${station.device_label ? ` (${station.device_label})` : ""} is signed out at once, and anyone signed in on it is signed out too.` : "It stops appearing on this outlet's lists."} To use it again, restore it and pair a device afresh.</p>
+        <InlineError error={archive.error} />
+      </Dialog>
+    ) : null}
+    </>
   );
 }

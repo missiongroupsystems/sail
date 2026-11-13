@@ -1,13 +1,15 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, EmptyState, Icon, InlineError, Sheet, StatusDot, Switch, useLocale } from "@sail/ui";
+import { Button, EmptyState, Icon, InlineError, Sheet, Switch, useLocale, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { FormSection, RhfSelect, RhfTextField } from "@/components/forms/fields";
+import { greyPill, greyPillAlert, SheetSection } from "@/components/office/parts";
+import { applyServerErrors } from "@/components/office/server-errors";
+import { RhfSelect, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Category } from "@/lib/api/types";
@@ -59,14 +61,14 @@ export function CategoriesView({ initialCategories }: { initialCategories: Categ
   const Row = ({ c, siblings, depth }: { c: Category; siblings: Category[]; depth: 0 | 1 }) => {
     const i = siblings.findIndex((s) => s.id === c.id);
     return (
-      <li className={`flex items-center gap-2 py-1.5 hairline-b ${depth ? "pl-8" : ""}`}>
-        <Button variant="quiet" className="min-w-0 flex-1 justify-start px-2 text-left font-normal" onPress={() => setSheet({ mode: "edit", category: c })}>
-          <span className={`truncate ${c.archived ? "text-ink-2" : "text-ink"}`}>{c.name}</span>
-          {c.archived ? <StatusDot status="neutral" label="Archived" muted className="ml-2 text-caption" /> : null}
-          {c.legacy_id ? <span className="ml-2 font-mono text-caption text-ink-2">{c.legacy_id}</span> : null}
+      <li className={`flex flex-wrap items-center gap-1 border-b border-rule-subtle py-1 pr-2 last:border-b-0 ${depth ? "pl-6 sm:pl-10" : "pl-2"}`}>
+        <Button variant="quiet" className="min-w-0 flex-1 basis-[160px] justify-start rounded-field px-2 text-left font-normal" onPress={() => setSheet({ mode: "edit", category: c })}>
+          <span className={`truncate ${depth ? "text-[14px]" : "font-medium"} ${c.archived ? "text-ink-2" : "text-ink"}`}>{c.name}</span>
+          {c.archived ? <Pill size="sm" tone="neutral" className="ml-1">Archived</Pill> : null}
+          {c.legacy_id ? <span className="ml-1 truncate text-[12px] text-ink-3">{c.legacy_id}</span> : null}
         </Button>
         {depth === 0 ? (
-          <Button variant="quiet" onPress={() => setSheet({ mode: "create", parentId: c.id })} className="text-caption text-ink-2">
+          <Button variant="quiet" onPress={() => setSheet({ mode: "create", parentId: c.id })} className="text-[13px] text-ink-2">
             <Icon icon={Plus} size={14} /> Sub-category
           </Button>
         ) : null}
@@ -83,12 +85,12 @@ export function CategoriesView({ initialCategories }: { initialCategories: Categ
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-ink-2">Two levels: a category and its sub-categories. Pricing scopes on a category include its sub-categories.</p>
-        <div className="flex items-center gap-4">
+        <p className="text-[14px] text-ink-2">Two levels: a category and its sub-categories. Pricing scopes on a category include its sub-categories.</p>
+        <div className="flex flex-wrap items-center gap-4">
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
           </Switch>
-          <Button variant="primary" onPress={() => setSheet({ mode: "create", parentId: null })}>
+          <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create", parentId: null })}>
             Add category
           </Button>
         </div>
@@ -97,10 +99,10 @@ export function CategoriesView({ initialCategories }: { initialCategories: Categ
       {parents.length === 0 ? (
         <EmptyState title="No categories yet" hint="Tap Add category to create the first one. Products are grouped by category in reports and pricing scopes." />
       ) : (
-        <ul className="max-w-[760px]">
+        <ul className="flex max-w-[760px] flex-col gap-3">
           {parents.map((p) => (
             <li key={p.id}>
-              <ul>
+              <ul className="rounded-panel border border-rule bg-surface">
                 <Row c={p} siblings={parents} depth={0} />
                 {(childrenOf.get(p.id) ?? []).map((c) => (
                   <Row key={c.id} c={c} siblings={childrenOf.get(p.id) ?? []} depth={1} />
@@ -136,6 +138,8 @@ function CategorySheet({ state, parents, parentIds, onClose }: { state: SheetSta
       return category ? req(api.PATCH("/v1/categories/{id}", { params: { path: { id: category.id } }, body })) : req(api.POST("/v1/categories", { body }));
     },
     onSuccess: settle,
+    // A refusal that names a field shows under it; the message also stays at the foot of the form.
+    onError: (e) => applyServerErrors(form.setError, e, Object.keys(form.getValues())),
   });
   const archive = useMutation<unknown, ApiError, boolean>({
     mutationFn: (archived) => req(api.PATCH("/v1/categories/{id}", { params: { path: { id: category!.id } }, body: { archived } })),
@@ -155,11 +159,11 @@ function CategorySheet({ state, parents, parentIds, onClose }: { state: SheetSta
       footer={
         <>
           {category ? (
-            <Button variant={category.archived ? "secondary" : "destructive"} onPress={() => archive.mutate(!category.archived)} isPending={archive.isPending} isDisabled={save.isPending} className="mr-auto">
+            <Button variant="secondary" onPress={() => archive.mutate(!category.archived)} isPending={archive.isPending} isDisabled={save.isPending} className={`mr-auto ${category.archived ? greyPill : greyPillAlert}`}>
               {category.archived ? "Restore category" : "Archive category"}
             </Button>
           ) : null}
-          <Button variant="quiet" onPress={onClose} isDisabled={busy}>
+          <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={busy}>
             Cancel
           </Button>
           <Button variant="primary" type="submit" form="category-form" isPending={save.isPending} isDisabled={archive.isPending}>
@@ -169,7 +173,7 @@ function CategorySheet({ state, parents, parentIds, onClose }: { state: SheetSta
       }
     >
       <form id="category-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-6">
-        <FormSection>
+        <SheetSection>
           <RhfTextField control={form.control} name="name" label="Name" autoFocus />
           {canHaveParent ? (
             <RhfSelect
@@ -180,7 +184,7 @@ function CategorySheet({ state, parents, parentIds, onClose }: { state: SheetSta
               items={[{ id: ROOT, label: "Top level" }, ...parents.filter((p) => p.id !== category?.id).map((p) => ({ id: p.id, label: p.name }))]}
             />
           ) : null}
-        </FormSection>
+        </SheetSection>
         <InlineError error={save.error ?? archive.error} />
       </form>
     </Sheet>

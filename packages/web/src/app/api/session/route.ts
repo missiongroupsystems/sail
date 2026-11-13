@@ -60,6 +60,9 @@ export async function POST(request: Request): Promise<Response> {
       token = done.data.session.token;
     } else if (body.kind === "link") {
       token = (await req(anonymous.POST("/v1/auth/links/accept", { body: { token: body.token, password: body.password } }))).data.token;
+      // A link opened in a browser someone is signed in to: that person's session ends on the register, not only here.
+      const previous = (await cookies()).get(SESSION_COOKIE)?.value;
+      if (previous && previous !== token) await createApi({ baseUrl: API_URL, token: previous }).POST("/v1/auth/sign-out", { body: {} }).catch(() => null);
     } else {
       token = body.token;
     }

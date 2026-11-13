@@ -1,12 +1,14 @@
 "use client";
 
-import { ActionDock, Button, GroupHeader, LineRow, SeatStrip, taxRows, TotalsBlock, type TaxRow, type TotalsRow, useLocale } from "@sail/ui";
+import { ArrowRight, Pause, Percent, ReceiptText, Utensils } from "lucide-react";
+import { ActionDock, Button, GroupHeader, Icon, LineRow, SeatStrip, taxRows, TotalsBlock, type TaxRow, type TotalsRow, useLocale } from "@sail/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GuestRound, ManualRule, OrderSnapshot, PrintJob, SnapshotLine } from "../api/types";
 import type { OrderActions } from "../hooks/useOrderActions";
 import { useUiStore } from "../state/ui";
 import { usePos } from "./PosContext";
 import { jobsForRound } from "./ReprintSheet";
+import { PANEL } from "./styles";
 
 export type OrderSheetProps = {
   order: OrderSnapshot;
@@ -112,7 +114,9 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
     ...tax.before.map(taxRow),
     { key: "total", label: "Total", cents: order.totals.total, kind: "total" },
     ...tax.after.map(taxRow),
-    ...(order.paid_total > 0 ? [{ key: "paid", label: "Paid", cents: order.paid_total, kind: "adjustment" as const, note: order.pricing_status === "frozen" ? "prices frozen" : null }, { key: "balance", label: "Balance", cents: order.balance, kind: "adjustment" as const }] : []),
+    ...(order.paid_total > 0 ? [{ key: "paid", label: "Paid", cents: order.paid_total, kind: "adjustment" as const, note: order.pricing_status === "frozen" ? "prices frozen" : null }] : []),
+    // The balance is always under the total, the register's figure, equal to the total until money is taken.
+    { key: "balance", label: "Balance", cents: order.balance, kind: "total" as const },
   ];
 
   /** ✓ printed, ◷ waiting or ⚠ not printed for a round, from the register's jobs. */
@@ -146,12 +150,18 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
 
   const canRefund = order.checks.some((c) => c.paid_total > 0 && c.status !== "refunded");
   const managerPlus = ["manager", "finance", "admin"].includes(staff.role);
+  const empty = live.length === 0 && rounds.length === 0 && pendingRounds.length === 0 && order.paid_total === 0;
 
   return (
-    <section className="flex h-full w-[420px] shrink-0 flex-col hairline-l bg-surface" aria-label="Order">
-      {station.seats_enabled && order.order_type === "dine_in" && !closed ? <SeatStrip seats={seats} active={activeSeat} onChange={onSeat} onAddSeat={() => onSeat(seats + 1)} className="hairline-b" /> : null}
-      <div className="min-h-0 flex-1 overflow-y-auto pb-2">
-        {live.length === 0 && rounds.length === 0 ? <p className="px-4 pt-6 text-body text-ink-2">No items yet. Tap a tile to add the first one.</p> : null}
+    <section className={PANEL + " flex h-full w-[400px] shrink-0 flex-col overflow-hidden max-[1100px]:w-[360px] max-[900px]:w-[340px]"} aria-label="Order">
+      {station.seats_enabled && order.order_type === "dine_in" && !closed ? <SeatStrip seats={seats} active={activeSeat} onChange={onSeat} onAddSeat={() => onSeat(seats + 1)} className="shrink-0 border-b border-rule px-3" /> : null}
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        {empty ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
+            <Icon icon={Utensils} size={22} className="text-ink-2" />
+            <p className="max-w-[30ch] text-body text-ink-2">No items yet. Tap an item on the left to start this order.</p>
+          </div>
+        ) : null}
         {pendingRounds.map((r) => {
           const lines = live.filter((l) => r.line_ids.includes(l.id));
           return (
@@ -177,7 +187,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
         })}
         {newLines.length ? (
           <>
-            <GroupHeader label="New" />
+            <GroupHeader label="New" detail="not sent yet" />
             {newLines.map((l) => row(l, "new"))}
           </>
         ) : null}
@@ -204,9 +214,12 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
           </>
         ) : null}
       </div>
-      <div className="hairline-t">
-        <TotalsBlock rows={rows} pricing={pricing} />
-      </div>
+      {/* An empty order has nothing to total: the figures appear with the first line. */}
+      {empty ? null : (
+        <div className="shrink-0 border-t border-rule px-1 pt-1">
+          <TotalsBlock rows={rows} pricing={pricing} />
+        </div>
+      )}
       {closed ? (
         <ActionDock
           offline={offline}
@@ -220,14 +233,17 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
           offline={offline}
           primary={
             sendable > 0
-              ? { id: "send", label: `Send ${sendable} ▸`, ariaLabel: `Send ${sendable} to kitchen`, onPress: () => void actions.send() }
-              : { id: "pay", label: `Pay ${money(order.balance)} ▸`, ariaLabel: `Pay ${money(order.balance)}`, onPress: onPay, isDisabled: live.length === 0 || order.balance <= 0, needsApproval: !["cashier", "manager", "finance", "admin"].includes(staff.role) }
+              ? { id: "send", label: `Send ${sendable}`, ariaLabel: `Send ${sendable} to kitchen`, onPress: () => void actions.send(), trailingIcon: ArrowRight }
+              : live.length === 0
+                ? // Nothing on the order yet: a disabled Send, not "Pay $0.00".
+                  { id: "send", label: "Send", ariaLabel: "Send to kitchen", onPress: () => undefined, isDisabled: true, trailingIcon: ArrowRight }
+                : { id: "pay", label: `Pay ${money(order.balance)}`, ariaLabel: `Pay ${money(order.balance)}`, onPress: onPay, isDisabled: live.length === 0 || order.balance <= 0, needsApproval: !["cashier", "manager", "finance", "admin"].includes(staff.role), approvalLabel: "Cashier approval" }
           }
           secondaries={[
             // Hold goes with Send: once nothing new is waiting, Pay takes the space so the dock fits the order column.
-            ...(sendable > 0 ? [{ id: "hold", label: "Hold", onPress: () => void actions.holdAllNew() }] : []),
-            { id: "discount", label: "Discount", onPress: onDiscount, isDisabled: live.length === 0 || order.pricing_status === "frozen", needsApproval: rules ? rules.every((r) => !roleOk(staff.role, r.min_role)) : false },
-            { id: "bill", label: "Bill", onPress: onBill, mutates: false, isDisabled: live.length === 0 },
+            ...(sendable > 0 ? [{ id: "hold", label: "Hold", icon: Pause, onPress: () => void actions.holdAllNew() }] : []),
+            { id: "discount", label: "Discount", icon: Percent, onPress: onDiscount, isDisabled: live.length === 0 || order.pricing_status === "frozen", needsApproval: rules ? rules.every((r) => !roleOk(staff.role, r.min_role)) : false, approvalLabel: rules?.length ? `${lowestRole(rules.map((r) => r.min_role))} approval` : undefined },
+            { id: "bill", label: "Bill", icon: ReceiptText, onPress: onBill, mutates: false, isDisabled: live.length === 0 },
           ]}
         />
       )}
@@ -236,6 +252,11 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
 }
 
 const RANK: Record<string, number> = { server: 10, cashier: 20, manager: 30, finance: 40, admin: 50 };
+/** The least of the roles, capitalised ("Cashier"), for an approval badge. */
+function lowestRole(roles: string[]): string {
+  const r = [...roles].sort((a, b) => (RANK[a] ?? 0) - (RANK[b] ?? 0))[0] ?? "manager";
+  return `${r.charAt(0).toUpperCase()}${r.slice(1)}`;
+}
 function roleOk(role: string, min: string) {
   return (RANK[role] ?? 0) >= (RANK[min] ?? 0);
 }

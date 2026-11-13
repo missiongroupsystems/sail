@@ -235,7 +235,7 @@ describe("sessions", () => {
     const code = await call<{ data: { code: string } }>("POST", `/v1/stations/${station.body.data.id}/pairing-code`, { token: A.admin.token, body: {} });
     const paired = await call<{ data: { station_token: string } }>("POST", "/v1/stations/pair", { body: { code: code.body.data.code, device_label: "iPad" }, idempotencyKey: null });
     const pin = await call<{ data: { session_token: string } }>("POST", "/v1/stations/sessions", { token: paired.body.data.station_token, body: { pin: "111111" } });
-    const body = { current_password: PASSWORD, new_password: "y".repeat(12) };
+    const body = { current_password: PASSWORD, new_password: "yellow harbour kite" };
     expect((await call("POST", "/v1/auth/password", { token: pin.body.data.session_token, body })).status).toBe(403);
     const id = await newStaff(A, { name: "No Login Yet", email: "no.login.yet@alpha.test" });
     await db.sql`update staff set auth_subject = ${`local:${id}`} where id = ${id}`;

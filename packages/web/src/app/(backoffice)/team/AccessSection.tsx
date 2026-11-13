@@ -3,7 +3,7 @@
 import { Button, InlineError, TextField, useLocale } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { FormSection } from "@/components/forms/fields";
+import { greyPillAlert, SheetSection } from "@/components/office/parts";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Staff } from "@/lib/api/types";
@@ -46,9 +46,9 @@ export function AccessSection({ staff, emailUnsaved }: { staff: Staff; emailUnsa
   };
 
   return (
-    <FormSection title="Back-office access" hint={local ? "People sign in with their email and a password they set from a link you give them." : "People sign in through your organisation's identity provider."}>
+    <SheetSection title="Back-office access" hint={local ? "People sign in with their email and a password they set from a link you give them." : "People sign in through your organisation's identity provider."}>
       {a ? (
-        <p className="text-ink-2">
+        <p className="text-[14px] text-ink-2">
           {a.status === "active"
             ? `Can sign in as ${a.email ?? "their email"}.`
             : a.status === "invited"
@@ -83,14 +83,14 @@ export function AccessSection({ staff, emailUnsaved }: { staff: Staff; emailUnsa
             </Button>
           ) : null}
           {a.status !== "none" && staff.id !== me.id ? (
-            <Button variant="quiet" onPress={() => act.mutate("revoke")} isPending={act.isPending && act.variables === "revoke"}>
+            <Button variant="secondary" className={greyPillAlert} onPress={() => act.mutate("revoke")} isPending={act.isPending && act.variables === "revoke"}>
               Revoke access
             </Button>
           ) : null}
         </div>
       ) : null}
-      {!staff.email || emailUnsaved ? <p className="text-caption text-ink-2">Save an email for this person to invite them.</p> : null}
+      {!staff.email || emailUnsaved ? <p className="text-[12.5px] text-ink-3">Save an email for this person to invite them.</p> : null}
       <InlineError error={act.error ?? access.error} />
-    </FormSection>
+    </SheetSection>
   );
 }

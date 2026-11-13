@@ -32,6 +32,18 @@ export function normaliseEmail(email: string): string {
 export function checkPassword(password: string): void {
   if (password.length < PASSWORD_MIN_LENGTH) throw AppError.validation(`A password needs at least ${PASSWORD_MIN_LENGTH} characters`, { remedy: "Use a longer password; a few unrelated words work well." });
   if (password.length > PASSWORD_MAX_LENGTH) throw AppError.validation(`A password can have at most ${PASSWORD_MAX_LENGTH} characters`);
+  if (guessable(password)) throw AppError.validation("That password is too easy to guess", { remedy: "Avoid repeated characters, repeated blocks and runs such as 1234 or qwerty; a few unrelated words work well." });
+}
+
+/** Long but trivial: few distinct characters, one block repeated, or a straight run along the alphabet, digits or keyboard. */
+function guessable(password: string): boolean {
+  const p = password.toLowerCase();
+  if (new Set(p).size < 5) return true;
+  for (let n = 1; n <= p.length / 2; n++) if (p.length % n === 0 && p.slice(0, n).repeat(p.length / n) === p) return true;
+  return ["abcdefghijklmnopqrstuvwxyz", "0123456789", "qwertyuiopasdfghjklzxcvbnm"].some((run) => {
+    const twice = run + run;
+    return twice.includes(p) || [...twice].reverse().join("").includes(p);
+  });
 }
 
 function staffPrincipal(row: typeof staff.$inferSelect, sessionId?: string): Principal {

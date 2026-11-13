@@ -1,11 +1,13 @@
 "use client";
 
-import { BrandButton, InlineError, cx, useLocale } from "@sail/ui";
-import { ArrowLeft } from "lucide-react";
+import { BrandButton, Icon, InlineError, Pill, useLocale } from "@sail/ui";
+import { ReceiptText, Utensils } from "lucide-react";
 import type { ApiError } from "@/lib/api";
 import { lineStatusLabel, lineStatusTone, roundStage } from "@/lib/status";
 import type { GuestLine, GuestSession, OrderView } from "@/lib/types";
-import { LineText } from "./StatusView";
+import { Dock, PageHeader } from "./Shell";
+import { TotalsPanel } from "./TotalsPanel";
+import { LineText, RoundHead, stagePill } from "./StatusView";
 
 export type OurTableViewProps = {
   session: GuestSession;
@@ -18,9 +20,10 @@ export type OurTableViewProps = {
   onOrderMore: () => void;
 };
 
-const toneClass = { sent: "text-status-sent", paid: "text-status-paid", seated: "text-status-seated", "ink-2": "text-ink-2" } as const;
+const pillTone = { sent: "sent", paid: "paid", seated: "seated", "ink-2": "neutral" } as const;
+const yours = <span className="shrink-0 rounded-chip bg-surface-2 px-2 py-0.5 font-sans text-[12px] font-medium text-ink-2">Yours</span>;
 
-/** "Our table": everything the table has ordered, with statuses, this guest's items marked. */
+/** "Our table": everything the table has ordered, a card per round with its stage, statuses on each line, this guest's items marked. */
 export function OurTableView({ session, orderView, loading, error, onBack, onCallStaff, onOrderMore }: OurTableViewProps) {
   const { clock } = useLocale();
   const order = orderView?.order ?? null;
@@ -30,41 +33,35 @@ export function OurTableView({ session, orderView, loading, error, onBack, onCal
   const staffLines = lines.filter((l) => !inRound.has(l.id));
 
   const renderLine = (l: GuestLine) => (
-    <li key={l.id} className="flex flex-col gap-1 py-3 hairline-b">
-      <LineText line={l} />
-      <span className="flex items-center gap-2 text-caption">
-        <span className={cx(toneClass[lineStatusTone(l, order)])}>{lineStatusLabel(l, order)}</span>
-        {l.mine ? <span className="rounded-chip bg-brand-accent px-2 py-0.5 text-on-brand-accent">Yours</span> : null}
+    <li key={l.id} className="flex flex-col gap-1 py-3">
+      <LineText line={l} struck={l.status === "voided"} />
+      <span className="flex items-center gap-2">
+        <Pill size="sm" tone={pillTone[lineStatusTone(l, order)]}>
+          {lineStatusLabel(l, order)}
+        </Pill>
+        {l.mine ? yours : null}
       </span>
     </li>
   );
 
   return (
     <>
-      <header className="sticky top-0 z-20 bg-bg/95 backdrop-blur-sm hairline-b">
-        <div className="mx-auto flex w-full max-w-[560px] items-center gap-2 px-2 pb-2 pt-[max(8px,env(safe-area-inset-top))]">
-          <BrandButton variant="quiet" onPress={onBack} aria-label="Back" className="px-3">
-            <ArrowLeft size={22} aria-hidden />
-            <span>Back</span>
-          </BrandButton>
-          <div className="min-w-0 flex-1 text-right">
-            <h1 tabIndex={-1} className="truncate font-display text-heading text-ink outline-none">
-              Our table
-            </h1>
-            <p className="text-caption text-ink-2">
-              Table {session.table.name}
-              {order ? ` · Order ${order.order_no}` : ""}
-            </p>
-          </div>
-        </div>
-      </header>
+      <PageHeader title="Our table" subtitle={`Table ${session.table.name}${order ? ` · Order ${order.order_no}` : ""}`} onBack={onBack} backLabel="Back" />
 
-      <main className="mx-auto flex w-full max-w-[560px] flex-col gap-6 px-4 pb-44 pt-4">
-        {!orderView && loading ? <p className="text-body text-ink-2">Checking with the kitchen…</p> : null}
+      <main className="flex w-full min-w-0 flex-col gap-3 px-4 pb-44 pt-4">
+        {!orderView && loading ? <p className="text-[15px] text-ink-2">Checking with the kitchen…</p> : null}
         {!orderView && error ? <InlineError error={{ message: error.message, remedy: error.remedy ?? "Try again in a moment." }} /> : null}
-        {orderView && lines.length === 0 ? <p className="py-8 text-body text-ink-2">Nothing has been ordered at this table yet.</p> : null}
+        {orderView && lines.length === 0 ? (
+          <div className="flex flex-col items-center gap-4 px-4 py-20 text-center">
+            <span className="flex size-14 items-center justify-center rounded-full bg-surface-2 text-ink">
+              <Icon icon={Utensils} size={24} />
+            </span>
+            <p className="max-w-[32ch] text-[15.5px] leading-relaxed text-ink-2">Nothing has been ordered at this table yet.</p>
+          </div>
+        ) : null}
         {order?.bill_requested ? (
-          <p role="status" className="rounded-tile bg-surface-2 px-4 py-3 text-body text-ink">
+          <p role="status" className="flex items-start gap-3 rounded-sheet bg-status-bill-tint px-4 py-3.5 text-[15px] leading-snug text-ink">
+            <Icon icon={ReceiptText} size={20} className="mt-0.5 text-status-bill" />
             The bill has been requested. Someone will be with you shortly.
           </p>
         ) : null}
@@ -74,39 +71,41 @@ export function OurTableView({ session, orderView, loading, error, onBack, onCal
           if (!rl.length && r.status !== "rejected") return null;
           const stage = roundStage(r, order);
           return (
-            <section key={r.id} aria-label={`Order sent ${clock(r.submitted_at)}`} className="flex flex-col">
-              <h2 className="flex items-baseline justify-between gap-3 pb-1 text-caption text-ink-2">
-                <span className="tabular">
-                  Sent {clock(r.submitted_at)}
-                  {r.guest_name ? ` · ${r.guest_name}` : ""}
-                  {r.mine ? " · Yours" : ""}
-                </span>
-                {stage === "rejected" ? <span className="text-status-alert">Not accepted{r.reject_reason ? `: ${r.reject_reason}` : ""}</span> : null}
-              </h2>
-              <ul className="hairline-t">{rl.map(renderLine)}</ul>
+            <section key={r.id} aria-label={`Order sent ${clock(r.submitted_at)}`} className="flex flex-col rounded-sheet border border-rule bg-surface">
+              <RoundHead
+                title={r.guest_name ?? (r.mine ? "Your order" : "Order")}
+                at={`Sent ${clock(r.submitted_at)}`}
+                pill={stagePill(stage, session.hold_orders)}
+                extra={r.mine && r.guest_name ? yours : null}
+              />
+              {stage === "rejected" && r.reject_reason ? <p className="px-4 pb-2 text-[13.5px] text-status-alert wrap-anywhere">Not accepted: {r.reject_reason}</p> : null}
+              {rl.length ? <ul className="flex flex-col divide-y divide-rule-subtle border-t border-rule-subtle px-4">{rl.map(renderLine)}</ul> : null}
             </section>
           );
         })}
         {staffLines.length ? (
-          <section aria-label="Added by staff" className="flex flex-col">
-            <h2 className="pb-1 text-caption text-ink-2">Added by staff</h2>
-            <ul className="hairline-t">{staffLines.map(renderLine)}</ul>
+          <section aria-label="Added by staff" className="flex flex-col rounded-sheet border border-rule bg-surface">
+            <div className="px-4 pt-3.5 pb-2.5">
+              <p className="font-display text-[15.5px] font-semibold text-ink">Added by staff</p>
+            </div>
+            <ul className="flex flex-col divide-y divide-rule-subtle border-t border-rule-subtle px-4">{staffLines.map(renderLine)}</ul>
           </section>
         ) : null}
 
-        <p className="text-body text-ink">Pay at the counter or ask your server for the bill.</p>
+        {orderView?.totals && lines.length ? <TotalsPanel totals={orderView.totals} /> : null}
+        <p className="px-1 pt-1 text-[14px] leading-snug text-ink-2">Pay at the counter or ask your server for the bill.</p>
       </main>
 
-      <div className="fixed inset-x-0 bottom-0 z-30 bg-bg/95 backdrop-blur-sm hairline-t">
-        <div className="mx-auto grid w-full max-w-[560px] grid-cols-2 gap-3 px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-3">
-          <BrandButton variant="accent" className="min-h-14" onPress={onOrderMore}>
-            Order more
-          </BrandButton>
-          <BrandButton className="min-h-14" onPress={onCallStaff}>
+      <Dock>
+        <div className="flex items-center gap-2.5">
+          <BrandButton variant="secondary" className="min-h-14 flex-1 text-[16px]" onPress={onCallStaff}>
             Call staff
           </BrandButton>
+          <BrandButton variant="accent" className="min-h-14 flex-[1.4] text-[16.5px]" onPress={onOrderMore}>
+            Order more
+          </BrandButton>
         </div>
-      </div>
+      </Dock>
     </>
   );
 }

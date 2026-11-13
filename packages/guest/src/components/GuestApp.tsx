@@ -3,6 +3,7 @@
 import { BrandButton, LocaleProvider } from "@sail/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Clock, QrCode } from "lucide-react";
 import { useStore } from "zustand";
 import { API_URL, ApiError, createGuestApi, createSession, getMenu, getOrder, submitRound, toApiError } from "@/lib/api";
 import { createBasketStore, type BasketItem } from "@/lib/basket";
@@ -59,6 +60,12 @@ function GuestAppInner({ token }: { token: string }) {
   const queryClient = useQueryClient();
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [session, setSession] = useState<GuestSession | null>(null);
+  const [requestSent, setRequestSent] = useState<string | null>(null);
+  useEffect(() => {
+    if (!requestSent) return;
+    const t = setTimeout(() => setRequestSent(null), 6000);
+    return () => clearTimeout(t);
+  }, [requestSent]);
   const sessionRef = useRef<GuestSession | null>(null);
   sessionRef.current = session;
   /** The session came from sessionStorage and has not yet been confirmed by the register. */
@@ -110,7 +117,8 @@ function GuestAppInner({ token }: { token: string }) {
         applySession(s);
       } catch (e) {
         const err = toApiError(e);
-        if (err.isNotFound) setPhase({ kind: "invalid" });
+        // A code of the wrong length is refused by the register's validator: to a guest it is simply not a valid code (D-5).
+        if (err.isNotFound || err.code === "validation") setPhase({ kind: "invalid" });
         else setPhase({ kind: "unavailable", error: err });
       }
     },
@@ -178,13 +186,18 @@ function GuestAppInner({ token }: { token: string }) {
     queryKey: keys.menu(session?.channel_link_id ?? ""),
     queryFn: () => getMenu(api, session!.channel_link_id),
     enabled: Boolean(session),
-    staleTime: 60_000,
-    refetchInterval: 120_000,
+    // Sold out and availability change during service: an open menu catches up within half a minute, and at once
+    // when the phone comes back to the page (live-test D-7, E-L19).
+    staleTime: 20_000,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   });
   const orderQuery = useQuery({
     queryKey: keys.order(session?.session_id ?? ""),
     queryFn: () => getOrder(api),
     enabled: Boolean(session),
+    // No order on the table yet: the stream would only answer 409 (logged in the console, live-test D-14), so poll.
+    refetchInterval: (q) => (q.state.data?.order ? false : RECHECK_MS),
   });
   const menu = menuQuery.data;
   const orderView = orderQuery.data ?? null;
@@ -217,8 +230,9 @@ function GuestAppInner({ token }: { token: string }) {
 
   /* ---- Live updates: the stream when an order exists, polling otherwise. ---- */
   const sessionId = session?.session_id ?? null;
+  const hasOrder = Boolean(orderQuery.data?.order);
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || !hasOrder) return;
     const stream = new GuestStream({
       baseUrl: API_URL,
       getToken: () => sessionRef.current?.guest_token ?? null,
@@ -233,15 +247,19 @@ function GuestAppInner({ token }: { token: string }) {
       stream.stop();
       streamRef.current = null;
     };
-  }, [sessionId, queryClient, onUnauthenticated]);
+  }, [sessionId, hasOrder, queryClient, onUnauthenticated]);
 
   /* ---- Not ready to order: re-check so the menu opens up when staff seat the table. ---- */
   const canOrder = session?.can_order ?? false;
+  /** "Check again" on the not-ready banner: the next check now, instead of at the back-off's next step. */
+  const checkNow = useRef<(() => void) | null>(null);
   useEffect(() => {
     if (!session || canOrder) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let delay = RECHECK_MS;
+    let checking = false;
+    let waitUntil = 0;
     const schedule = (ms: number) => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => void check(), ms);
@@ -252,6 +270,7 @@ function GuestAppInner({ token }: { token: string }) {
         schedule(delay);
         return;
       }
+      checking = true;
       try {
         const s = await createSession(api, { token, device_id: deviceId() });
         if (cancelled) return;
@@ -270,7 +289,11 @@ function GuestAppInner({ token }: { token: string }) {
           return;
         }
         // The register limits sessions per device; wait as long as it says, then try again.
-        schedule((err.retryAfterSeconds ?? delay / 1000) * 1000);
+        const wait = (err.retryAfterSeconds ?? delay / 1000) * 1000;
+        waitUntil = Date.now() + wait;
+        schedule(wait);
+      } finally {
+        checking = false;
       }
     };
     const onVisible = () => {
@@ -279,9 +302,16 @@ function GuestAppInner({ token }: { token: string }) {
       schedule(500);
     };
     schedule(RECHECK_MS);
+    checkNow.current = () => {
+      // One check at a time, and never inside the register's back-off: repeated taps would spend the device's sessions.
+      if (checking || Date.now() < waitUntil) return;
+      delay = RECHECK_MS;
+      schedule(0);
+    };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
+      checkNow.current = null;
       if (timer) clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
@@ -332,10 +362,10 @@ function GuestAppInner({ token }: { token: string }) {
   }, [session, menu, basket.items, basket.guestName, sending, basketStore, api, queryClient, applySession, navigate, menuQuery]);
 
   /* ---- Screens ---- */
-  if (phase.kind === "invalid") return <Notice title="This code isn't valid." body="Ask a member of staff." />;
+  if (phase.kind === "invalid") return <Notice icon={QrCode} tone="warning" title="This code isn't valid." body="Ask a member of staff." />;
   if (phase.kind === "ended") {
     return (
-      <Notice title="This table session has ended." body="Scan the QR code on the table again, or start again here.">
+      <Notice icon={Clock} title="This table session has ended." body="Scan the QR code on the table again, or start again here.">
         <BrandButton variant="accent" onPress={() => startSession(true)}>
           Start again
         </BrandButton>
@@ -344,7 +374,7 @@ function GuestAppInner({ token }: { token: string }) {
   }
   if (phase.kind === "unavailable") {
     return (
-      <Notice title={phase.error.message} body={phase.error.remedy ?? "Please order with a member of staff."}>
+      <Notice icon={AlertTriangle} title={phase.error.message} body={phase.error.remedy ?? "Please order with a member of staff."}>
         <RetryButton onPress={() => startSession(true)} />
       </Notice>
     );
@@ -353,7 +383,7 @@ function GuestAppInner({ token }: { token: string }) {
   if (menuQuery.isError && !menu) {
     const err = toApiError(menuQuery.error);
     return (
-      <Notice title={err.message} body={err.remedy ?? "Try again in a moment."}>
+      <Notice icon={AlertTriangle} title={err.message} body={err.remedy ?? "Try again in a moment."}>
         <RetryButton onPress={() => menuQuery.refetch()} />
       </Notice>
     );
@@ -365,22 +395,25 @@ function GuestAppInner({ token }: { token: string }) {
 
   return (
     <LocaleProvider settings={{ currency: session.settings.currency, currencyExponent: session.settings.currency_exponent, locale: session.settings.locale, timeZone: session.settings.timezone }}>
-      <div className="min-h-dvh bg-bg text-ink">
+      <div className="min-h-dvh bg-surface text-ink">
         {view === "menu" ? (
           <MenuView
             session={session}
             menu={menu}
             canOrder={canOrder}
+            onCheckAgain={() => checkNow.current?.()}
             basketItems={basket.items}
             orderView={orderView}
             onOpenItem={(productId) => openItem(productId, null)}
             onReview={() => navigate("review")}
             onCallStaff={() => setStaffSheet(true)}
             onStatus={() => navigate(orderView?.rounds.some((r) => r.mine) ? "status" : "table")}
+            onOurTable={() => navigate("table")}
           />
         ) : null}
         {view === "review" ? (
           <ReviewView
+            taxMode={orderView?.totals?.tax_mode ?? null}
             session={session}
             menu={menu}
             items={basket.items}
@@ -396,6 +429,10 @@ function GuestAppInner({ token }: { token: string }) {
             onRemove={(key) => {
               basket.remove(key);
               setSendError(null);
+            }}
+            onQuantity={(key, quantity) => {
+              const item = basket.items.find((i) => i.key === key);
+              if (item) basket.update(key, { ...item, quantity });
             }}
             onSend={() => void send()}
             onBack={() => navigate("menu")}
@@ -439,7 +476,13 @@ function GuestAppInner({ token }: { token: string }) {
             }}
           />
         ) : null}
-        <CallStaffSheet isOpen={staffSheet} onOpenChange={setStaffSheet} api={api} requests={session.service_requests} guestName={basket.guestName} />
+        <CallStaffSheet isOpen={staffSheet} onOpenChange={setStaffSheet} api={api} requests={session.service_requests} guestName={basket.guestName} onSent={setRequestSent} />
+        {/* After the sheet closes, the page still says the request went (it confirmed under its row while open). */}
+        {requestSent && !staffSheet ? (
+          <p role="status" className="fixed inset-x-4 bottom-24 z-40 mx-auto max-w-[480px] rounded-panel bg-(--toast) px-4 py-3 text-[15px] font-medium text-(--on-toast) shadow-float">
+            {requestSent}: sent. Someone will be with you shortly.
+          </p>
+        ) : null}
       </div>
     </LocaleProvider>
   );

@@ -8,7 +8,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
-import { FormSection, RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
+import { SheetSection } from "@/components/office/parts";
+import { RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Merchant, MerchantSettingsPatch } from "@/lib/api/types";
@@ -114,11 +115,11 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
       })}
       className="flex max-w-[640px] flex-col gap-10"
     >
-      <FormSection title="Merchant">
+      <SheetSection title="Merchant">
         <RhfTextField control={form.control} name="name" label="Name" />
-      </FormSection>
+      </SheetSection>
 
-      <FormSection title="Tax" hint="Applies to every outlet. Orders already priced keep their snapshot.">
+      <SheetSection title="Tax" hint="Applies to every outlet. Orders already priced keep their snapshot.">
         <RhfSelect
           control={form.control}
           name="tax_mode"
@@ -144,13 +145,13 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
           </Link>
           .
         </p>
-      </FormSection>
+      </SheetSection>
 
-      <FormSection title="Money and language" hint={`Amounts are in ${merchant.data.settings.currency}, which cannot change once set.`}>
+      <SheetSection title="Money and language" hint={`Amounts are in ${merchant.data.settings.currency}, which cannot change once set.`}>
         <RhfTextField control={form.control} name="locale" label="Locale" description="Formats money, dates and times, for example en-GB or de-DE." className="sm:max-w-[240px]" />
-      </FormSection>
+      </SheetSection>
 
-      <FormSection title="Cash and day">
+      <SheetSection title="Cash and day">
         <RhfSelect control={form.control} name="cash_rounding_increment" label="Cash rounding" items={roundingItems(money)} description="Card and other non-cash payments are never rounded." className="sm:max-w-[320px]" />
         <Controller
           control={form.control}
@@ -196,19 +197,19 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
           description="Sales after this time count towards the same business day. Outlets can set their own."
           className="sm:max-w-[240px]"
         />
-      </FormSection>
+      </SheetSection>
 
-      <FormSection title="Receipts">
+      <SheetSection title="Receipts">
         <div className="grid gap-4 sm:grid-cols-2">
           <RhfTextField control={form.control} name="business_registration_label" label="Business registration label" description="Printed before each outlet's business registration number." />
           <RhfTextField control={form.control} name="tax_registration_label" label="Tax registration label" description="Printed before each outlet's tax registration number." />
         </div>
         <RhfTextField control={form.control} name="receipt_footer" label="Receipt footer" multiline rows={3} description="Printed under every receipt. Leave empty for none." />
-      </FormSection>
+      </SheetSection>
 
       <InlineError error={save.error} />
 
-      <div className="flex items-center gap-4 hairline-t pt-6">
+      <div className="flex flex-wrap items-center gap-4 border-t border-rule-subtle pt-6">
         <Button variant="primary" type="submit" isPending={save.isPending} isDisabled={!form.formState.isDirty && !save.isError}>
           Save changes
         </Button>

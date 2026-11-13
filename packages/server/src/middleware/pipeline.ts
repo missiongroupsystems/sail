@@ -23,6 +23,9 @@ export function resetGateForTests() {
   gate = null;
 }
 
+/** Requests a client makes on its own (polling, streams) rather than because a person did something. */
+const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
 class RollbackSignal extends Error {
   constructor(readonly response: Response) {
     super("rollback");
@@ -48,7 +51,7 @@ export const requestPipeline: MiddlewareHandler<AppEnv> = async (c, next) => {
 
   // Long-lived streams resolve access in a short transaction, then stream outside it.
   if (SHORT_TX_ROUTES.some((p) => p.test(path))) {
-    const principal = await withTransaction((t) => resolvePrincipal(bearer, t));
+    const principal = await withTransaction((t) => resolvePrincipal(bearer, t, { activity: false }));
     c.set("principal", principal);
     return next();
   }
@@ -63,7 +66,7 @@ export const requestPipeline: MiddlewareHandler<AppEnv> = async (c, next) => {
   try {
     const started = performance.now();
     await withTransaction(async (t) => {
-      const principal = await resolvePrincipal(bearer, t);
+      const principal = await resolvePrincipal(bearer, t, { activity: !READ_METHODS.has(c.req.method) });
       c.set("principal", principal);
       await applyRls(t, principal);
       t.principal = { type: principal.type, id: principal.id, merchantId: principal.merchantId };

@@ -1,9 +1,9 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import QRCode from "qrcode";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db, tx, withOwnTransaction } from "../db/client.js";
-import { brands, channelLinks, guestRounds, guestSessions, orderLines, orders, outlets, serviceRequests, tableQrTokens, tables } from "../db/schema/index.js";
+import { brands, channelLinks, guestRounds, guestSessions, orderAdjustments, orderLines, orders, outlets, serviceRequests, tableQrTokens, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { sha256, signSailToken } from "../auth/tokens.js";
 import { config } from "../config.js";
@@ -91,6 +91,8 @@ export async function rotateTableToken(table: { id: string; merchantId: string; 
   const token = tableToken(id);
   await db().update(tableQrTokens).set({ rotatedAt: new Date() }).where(and(eq(tableQrTokens.tableId, table.id), isNull(tableQrTokens.rotatedAt)));
   await db().insert(tableQrTokens).values({ id, merchantId: table.merchantId, outletId: table.outletId, tableId: table.id, tokenHash: sha256(token) });
+  // Phones that scanned the old code lose their sessions too: a rotation stops the old card working at once.
+  await db().update(guestSessions).set({ revokedAt: new Date() }).where(and(eq(guestSessions.tableId, table.id), isNull(guestSessions.revokedAt)));
   return { token, url: guestUrl(token) };
 }
 
@@ -229,18 +231,42 @@ export async function guestOrderView(p: Extract<Principal, { type: "guest" }>) {
   const canOrder = !!link?.enabled && (orderId != null || !!link.openOnFirstScan);
   if (!orderId) return { order: null, order_open: false, can_order: canOrder, hold_orders: link?.holdOrders ?? true, lines: [], rounds: rounds.map(toRound), requests: requests.map(toRequest), table_id: p.tableId };
   const [order] = await db().select().from(orders).where(eq(orders.id, orderId)).limit(1);
-  const lines = order ? await db().select().from(orderLines).where(and(eq(orderLines.orderId, orderId), sql`${orderLines.status} <> 'voided'`)).orderBy(orderLines.sort) : [];
   const allRounds = order ? await db().select().from(guestRounds).where(eq(guestRounds.orderId, orderId)).orderBy(guestRounds.submittedAt) : [];
+  // Voided lines stay out, except those of a round staff turned down: it still shows what it held, struck through
+  // (live-test D-8). A line voided after its round was accepted is the POS's business and stays out.
+  const rejectedRounds = allRounds.filter((r) => r.status === "rejected").map((r) => r.id);
+  const lines = order
+    ? await db()
+        .select()
+        .from(orderLines)
+        .where(and(eq(orderLines.orderId, orderId), rejectedRounds.length ? or(ne(orderLines.status, "voided"), inArray(orderLines.roundId, rejectedRounds)) : ne(orderLines.status, "voided")))
+        .orderBy(orderLines.sort)
+    : [];
   return {
     table_id: p.tableId,
     order_open: !!order,
     can_order: canOrder,
     hold_orders: link?.holdOrders ?? true,
     order: order ? { id: order.id, order_no: order.orderNo, status: order.status, opened_at: order.openedAt.toISOString(), bill_requested: order.billRequestedAt != null } : null,
-    // Prices are menu prices only; fees and discounts are shown on the bill at the POS.
-    lines: lines.map((l) => ({ id: l.id, name: l.name, quantity: l.quantity, modifiers: l.modifiers.map((m) => m.name), notes: l.notes, seat_no: l.seatNo, status: l.status, source: l.source, round_id: l.roundId, mine: rounds.some((r) => r.lineIds.includes(l.id)) })),
+    // Each line's amount (menu price and choices, before discounts) and the table's totals as the register priced them,
+    // so the phone shows them without adding anything up. Payments and balances stay at the POS.
+    lines: lines.map((l) => ({ id: l.id, name: l.name, quantity: l.quantity, modifiers: l.modifiers.map((m) => m.name), notes: l.notes, seat_no: l.seatNo, status: l.status, source: l.source, round_id: l.roundId, mine: rounds.some((r) => r.lineIds.includes(l.id)), amount: l.baseAmount })),
+    totals: order ? await guestTotals(order) : null,
     rounds: allRounds.map((r) => ({ ...toRound(r), mine: r.guestSessionId === p.sessionId })),
     requests: requests.map(toRequest),
+  };
+}
+
+/** The order's totals as the register stored them on its last pricing: subtotal, each fee and discount, tax, total. */
+async function guestTotals(order: typeof orders.$inferSelect) {
+  // The guest role reads no adjustments; the order is the one this session is bound to, so read its rows as the register.
+  const adjs = await asSystem(() => db().select({ name: orderAdjustments.name, total: orderAdjustments.total }).from(orderAdjustments).where(and(eq(orderAdjustments.orderId, order.id), eq(orderAdjustments.merchantId, order.merchantId))).orderBy(asc(orderAdjustments.sort)));
+  return {
+    tax_mode: order.taxMode,
+    subtotal: order.subtotal,
+    adjustments: adjs.filter((a) => a.total !== 0).map((a) => ({ name: a.name, total: a.total })),
+    taxes: order.taxes.map((t) => ({ name: t.name, bps: t.bps, amount: t.amount })),
+    total: order.total,
   };
 }
 

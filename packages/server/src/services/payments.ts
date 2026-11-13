@@ -89,6 +89,8 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
       rounding = roundCash(balance, settings.cashRoundingIncrement).roundingCents;
     }
     // A cash tip stays in the drawer: it is part of what the guest hands over, never part of the change.
+    // A tip above the bill is a slip of the keypad: say so before any check of the cash it would need.
+    assertTipAllowed(settings, tip, check.total, await tipsOn(check.id));
     const step = settings.cashRoundingIncrement ?? 1;
     if (tip % step !== 0) throw AppError.validation(`A cash tip must be a multiple of ${formatCents(step)}, the smallest cash amount`, { remedy: `Round the tip to a multiple of ${formatCents(step)}.`, details: { tip_cents: tip, cash_rounding_increment: step } });
     const due = applied + rounding + tip;
@@ -98,10 +100,10 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
     }
   } else {
     if (input.tipBps != null) tip = percentOfCents(applied, input.tipBps);
-    if (applied > balance) throw AppError.validation(`${tender.name} payments cannot exceed the balance of ${formatCents(balance)}`, { remedy: `The bill's balance is ${formatCents(balance)}. Enter the balance or a smaller part payment.`, details: { balance, check_id: check.id, check_total: check.total } });
+    if (applied > balance) throw AppError.validation(`${tender.name} payments cannot exceed the balance of ${formatCents(balance)}`, { remedy: "Enter the balance or a smaller part payment.", details: { balance, check_id: check.id, check_total: check.total } });
   }
 
-  assertTipAllowed(settings.tipsEnabled, tip);
+  if (!tender.isCash) assertTipAllowed(settings, tip, check.total, await tipsOn(check.id));
 
   const [openShift] = await openShiftFor(order.outletId, input.stationId ?? null);
   // Cash goes into a drawer, and a drawer is counted at a shift's close: cash with no shift open would count nowhere.
@@ -146,9 +148,22 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
   return { payment: payment!, check: updatedCheck!, changeDue: change, firstPayment, orderCompleted: completed };
 }
 
-/** A tip is taken only where the merchant has tips on: the register decides, not the pay screen. */
-export function assertTipAllowed(tipsEnabled: boolean, tip: number) {
-  if (tip > 0 && !tipsEnabled) throw AppError.validation("Tips are turned off for this business", { remedy: "Take the payment without a tip, or ask an Admin to turn tips on in Settings.", details: { tip_cents: tip } });
+/**
+ * A tip is taken only where the merchant has tips on, and a bill's tips together are never more than the bill (a 100% tip): a
+ * larger figure is a slip of the keypad, not a tip. The register decides, not the pay screen.
+ */
+export function assertTipAllowed(settings: { tipsEnabled: boolean; currency: string; locale: string }, tip: number, billTotal: number, tipsSoFar = 0) {
+  if (tip > 0 && !settings.tipsEnabled) throw AppError.validation("Tips are turned off for this business", { remedy: "Take the payment without a tip, or ask an Admin to turn tips on in Settings.", details: { tip_cents: tip } });
+  if (tipsSoFar + tip <= billTotal) return;
+  const max = Math.max(0, billTotal - tipsSoFar);
+  const message = tipsSoFar > 0 ? `With the ${formatMoney(tipsSoFar, settings)} already tipped, a tip of ${formatMoney(tip, settings)} is more than the bill of ${formatMoney(billTotal, settings)}` : `A tip of ${formatMoney(tip, settings)} is more than the bill of ${formatMoney(billTotal, settings)}`;
+  throw AppError.validation(message, { remedy: `Enter a tip of ${formatMoney(max, settings)} or less.`, details: { tip_cents: tip, max_tip_cents: max } });
+}
+
+/** Tips already taken on a bill, by its recorded payments: all of a bill's tips together are capped by the bill. */
+export async function tipsOn(checkId: string): Promise<number> {
+  const [r] = await db().select({ n: sql<number>`coalesce(sum(${payments.tipCents}),0)::bigint` }).from(payments).where(and(eq(payments.checkId, checkId), eq(payments.status, "recorded")));
+  return Number(r?.n ?? 0);
 }
 
 /** The open shift a payment or refund at this station counts in: the station's own, else the outlet's shared drawer. */

@@ -7,26 +7,34 @@ import { cx, withClass } from "../lib/cx";
 import { Icon } from "./Icon";
 
 export type ButtonVariant = "primary" | "secondary" | "quiet" | "destructive";
-/** `md` is the 44px minimum (back office); `lg` is the 56px POS standard. */
-export type ButtonSize = "md" | "lg";
+/**
+ * `md` is the 44px minimum (back office default); `lg` is the 56px POS standard; `sm` is the 36px desktop button for
+ * back-office toolbars and table headers (opt-in, pointer screens only: never on the POS).
+ */
+export type ButtonSize = "sm" | "md" | "lg";
 
+/** Pills. Disabled changes fill and ink rather than fading the whole button (opacity alone is not a state). */
 const base =
-  "press inline-flex items-center justify-center gap-2 rounded-tile font-sans text-line whitespace-nowrap select-none " +
+  "press inline-flex items-center justify-center gap-2 rounded-chip border font-sans whitespace-nowrap select-none " +
   "touch-manipulation outline-none cursor-default " +
-  "data-[pressed]:scale-[0.97] data-[disabled]:opacity-45 data-[disabled]:cursor-not-allowed " +
-  "data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated";
+  "data-[pressed]:scale-[0.97] data-[disabled]:cursor-not-allowed " +
+  "data-[disabled]:border-transparent data-[disabled]:bg-surface-2 data-[disabled]:text-ink-disabled " +
+  "data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus";
 
 const variants: Record<ButtonVariant, string> = {
-  primary: "bg-primary text-on-primary data-[hovered]:brightness-110 data-[pressed]:brightness-90",
-  secondary: "bg-surface text-ink hairline data-[hovered]:bg-surface-2 data-[pressed]:bg-surface-2",
-  quiet: "bg-transparent text-ink data-[hovered]:bg-surface-2 data-[pressed]:bg-surface-2",
+  primary:
+    "border-transparent bg-primary font-semibold text-on-primary data-[hovered]:bg-[color-mix(in_oklab,var(--primary),var(--surface)_12%)] data-[pressed]:bg-[color-mix(in_oklab,var(--primary),var(--surface)_20%)]",
+  secondary: "border-transparent bg-surface-2 font-medium text-ink data-[hovered]:bg-surface-3 data-[pressed]:bg-surface-3",
+  // A quiet control that cannot be used fades its ink only: a grey fill made disabled arrows look more pressable.
+  quiet: "border-transparent bg-transparent font-medium text-ink data-[hovered]:bg-surface-2 data-[pressed]:bg-surface-3 data-[disabled]:bg-transparent!",
   destructive:
-    "bg-surface text-status-alert hairline data-[hovered]:bg-[color-mix(in_srgb,var(--status-alert)_8%,transparent)] data-[pressed]:bg-[color-mix(in_srgb,var(--status-alert)_14%,transparent)]",
+    "border-transparent bg-status-alert font-semibold text-on-primary data-[hovered]:bg-[color-mix(in_oklab,var(--status-alert),var(--ink)_12%)] data-[pressed]:bg-[color-mix(in_oklab,var(--status-alert),var(--ink)_20%)]",
 };
 
 const sizes: Record<ButtonSize, { text: string; icon: string }> = {
-  md: { text: "min-h-11 px-4", icon: "min-h-11 min-w-11 px-0" },
-  lg: { text: "min-h-14 px-5", icon: "min-h-14 min-w-14 px-0" },
+  sm: { text: "min-h-9 px-3.5 text-[14px] leading-5", icon: "min-h-9 min-w-9 px-0 text-[14px]" },
+  md: { text: "min-h-11 px-4 text-line", icon: "min-h-11 min-w-11 px-0 text-line" },
+  lg: { text: "min-h-14 px-6 text-line", icon: "min-h-14 min-w-14 px-0 text-line" },
 };
 
 export type ButtonProps = Omit<AriaButtonProps, "className" | "children"> & {

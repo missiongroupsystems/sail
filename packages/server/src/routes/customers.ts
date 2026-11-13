@@ -20,7 +20,7 @@ registerOperations({
 });
 
 export const CustomerSchema = z.object({ id: z.string(), name: z.string(), mobile: z.string().nullable(), email: z.string().nullable(), marketing_consent: z.boolean(), notes: untrusted(z.string().nullable()), group_ids: z.array(z.string()), legacy_id: z.string().nullable(), archived: z.boolean() });
-const CustomerUpsert = z.object({ id: z.uuid().optional(), name: untrusted(z.string().min(1), "name@customers", "customer_name"), mobile: untrusted(z.string().min(3).nullable().optional(), "mobile@customers"), email: z.string().email().nullable().optional(), marketing_consent: z.boolean().optional(), notes: untrusted(z.string().nullable().optional()), legacy_id: z.string().nullable().optional(), group_ids: z.array(z.uuid()).optional(), archived: z.boolean().optional() });
+const CustomerUpsert = z.object({ id: z.uuid().optional(), name: untrusted(z.string().trim().min(1), "name@customers", "customer_name"), mobile: untrusted(z.string().min(3).nullable().optional(), "mobile@customers"), email: z.string().email().nullable().optional(), marketing_consent: z.boolean().optional(), notes: untrusted(z.string().nullable().optional()), legacy_id: z.string().nullable().optional(), group_ids: z.array(z.uuid()).optional(), archived: z.boolean().optional() });
 
 async function toCustomer(rows: (typeof customers.$inferSelect)[]) {
   const ids = rows.map((r) => r.id);
@@ -104,8 +104,8 @@ export function customerRoutes(app: OpenAPIHono<AppEnv>) {
     table: customerGroups,
     columns: { id: customerGroups.id, merchantId: customerGroups.merchantId, archivedAt: customerGroups.archivedAt, name: customerGroups.name },
     api: GroupSchema,
-    create: z.object({ id: z.uuid().optional(), name: z.string().min(1), description: z.string().nullable().optional() }),
-    patch: z.object({ name: z.string().min(1).optional(), description: z.string().nullable().optional() }),
+    create: z.object({ id: z.uuid().optional(), name: z.string().trim().min(1), description: z.string().nullable().optional() }),
+    patch: z.object({ name: z.string().trim().min(1).optional(), description: z.string().nullable().optional() }),
     roles: { write: "manager" },
     aggregateKind: "customer_group",
     toApi: (r) => ({ id: r.id, name: r.name, description: r.description, archived: r.archivedAt != null }),

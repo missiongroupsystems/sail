@@ -40,7 +40,7 @@ registerOperations({
   "business_days.close": op({ op: "business_days.close", summary: "Close a business day", description: "Snapshots the Z-report once every shift is closed. Manager+. T3: it cannot be undone and closes the day for the whole outlet.", tier: "T3", ...PERMISSIONS["business_days.close"], emits: ["business_day.closed"], mcp: { expose: true, toolsets: ["pos.payment"] } }),
 });
 
-const Mutation = z.object({ expected_version: z.number().int().optional(), dry_run: z.boolean().optional(), override_id: z.uuid().optional() });
+const Mutation = z.object({ expected_version: z.number().int().min(0).max(2_147_483_647).optional(), dry_run: z.boolean().optional(), override_id: z.uuid().optional() });
 const Snapshot = z.record(z.string(), z.unknown());
 const OrderMutationResponse = z.object({ data: Snapshot, events: z.array(z.object({ id: z.string(), seq: z.number().int(), type: z.string(), occurredAt: z.string(), businessDate: z.string() })), warnings: z.array(z.string()) });
 
@@ -95,16 +95,20 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
       // A terminal payment is recorded when the provider approves it, never by hand (a dry run still previews it).
       const [linked] = await db().select({ provider: tenderTypes.provider, name: tenderTypes.name }).from(tenderTypes).where(eq(tenderTypes.id, b.tender_type_id)).limit(1);
       if (linked?.provider && !b.dry_run) throw AppError.validation(`${linked.name} payments are taken on the terminal`, { remedy: "Send the payment to the terminal (payments.start) instead of recording it.", details: { tender_type_id: b.tender_type_id } });
-      await requireRoleOrOverride(p, principalRole(p), await paymentRole(order.merchantId, b.tender_type_id), { action: "payments.record", targetId: check.orderId, args: { check_id: id, tender_type_id: b.tender_type_id, amount: b.amount, tip_cents: b.tip_cents ?? 0, reference: b.reference ?? null }, overrideId: b.override_id, overrideAllowed: PERMISSIONS["payments.record"].overrideAllowed });
+      // A dry run changes nothing (its transaction is rolled back), so staff who may see the bill get the quote: a
+      // Server's Pay screen shows the cash change before asking for approval, on every method alike (live-test B-F4).
+      // Only staff: an agent or any other principal is held to the role check even for a dry run.
+      const approval = b.dry_run && !b.override_id && p.type === "staff" ? null : await requireRoleOrOverride(p, principalRole(p), await paymentRole(order.merchantId, b.tender_type_id), { action: "payments.record", targetId: check.orderId, args: { check_id: id, tender_type_id: b.tender_type_id, amount: b.amount, tip_cents: b.tip_cents ?? 0, reference: b.reference ?? null }, overrideId: b.override_id, overrideAllowed: PERMISSIONS["payments.record"].overrideAllowed });
       const result = await recordPayment(order, { paymentId: b.payment_id, checkId: id, tenderTypeId: b.tender_type_id, amount: b.amount, tendered: b.tendered ?? null, tipCents: b.tip_cents, tipBps: b.tip_bps, reference: b.reference ?? null, stationId: p.type === "staff" ? (p.stationId ?? null) : null }, p);
-      await recordAudit(p, { action: "payments.record", targetKind: "order", targetId: order.id, outletId: order.outletId, details: { payment_id: result.payment.id, tender: result.payment.tenderName, amount: result.payment.amount, rounding_cents: result.payment.roundingCents } });
+      await recordAudit(p, { action: "payments.record", targetKind: "order", targetId: order.id, outletId: order.outletId, approver: approval, overrideId: b.override_id ?? null, details: { payment_id: result.payment.id, tender: result.payment.tenderName, amount: result.payment.amount, rounding_cents: result.payment.roundingCents } });
       const version = await bumpVersion(order.id);
       const snapshot = { ...(await loadSnapshot(order.id)), version };
       // Invariants first, events last: the first append locks the outlet's sequence counter until commit (see orders.ts `finish`).
       await settleInvariants();
       const events: AppendedEvent[] = [];
       const bd = await businessDayInputs(order.merchantId, order.outletId);
-      const ev = (type: string, payload: unknown) => appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type, aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "payments.record", payload, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p);
+      const approvalRef = approval ? { override_id: b.override_id, approver_id: approval.id, approver_name: approval.name ?? undefined } : null;
+      const ev = (type: string, payload: unknown) => appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type, aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "payments.record", payload, approval: type === "payment.recorded" ? approvalRef : null, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p);
       events.push(await ev("payment.recorded", { payment_id: result.payment.id, check_id: id, tender: result.payment.tenderName, amount: result.payment.amount, rounding_cents: result.payment.roundingCents, tip_cents: result.payment.tipCents, change_cents: result.payment.changeCents, reference: result.payment.reference, first_payment: result.firstPayment }));
       if (result.check.status === "paid") events.push(await ev("check.paid", { check_id: id, total: result.check.total, paid_total: result.check.paidTotal }));
       if (result.orderCompleted) events.push(await ev("order.completed", { order_no: order.orderNo }));

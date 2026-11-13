@@ -1,8 +1,8 @@
 "use client";
 
 import { zonedInputToIso } from "@sail/shared";
-import { Badge, Button, Checkbox, CheckboxGroup, DescriptionList, EmptyState, Icon, InlineError, Money, MoneyField, PercentField, SectionHeading, Select, taxRows, TextField, useLocale } from "@sail/ui";
-import { useMutation } from "@tanstack/react-query";
+import { Badge, Button, Checkbox, CheckboxGroup, EmptyState, Icon, InlineError, Money, MoneyField, Panel, PercentField, Select, taxRows, TextField, useLocale, ValueRows, kindTone, DateField } from "@sail/ui";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Minus, Plus, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { CHANNELS, CHANNEL_LABEL, ORDER_TYPES, ORDER_TYPE_LABEL, label } from "@/components/backoffice/labels";
@@ -65,96 +65,111 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
     });
   const setQty = (id: string, d: number) => setLines((prev) => prev.map((l) => (l.line_id === id ? { ...l, quantity: Math.max(1, l.quantity + d) } : l)));
   const lineName = (id: string) => lines.find((l) => l.line_id === id)?.product.name ?? id.slice(0, 8);
+  const taxClasses = useQuery({ queryKey: ["tax-classes", "simulator"], queryFn: () => req(api.GET("/v1/tax-classes")).then((r) => r.data as unknown as { id: string; name: string; rates?: { id: string; name: string }[] }[]), staleTime: 300_000 });
+  // The register's trace names lines and rates by id; people read the basket's names (live-test E-L11, F-9).
+  const taxNames = new Map((taxClasses.data ?? []).flatMap((c) => [[c.id, c.name] as const, ...(c.rates ?? []).map((r) => [r.id, r.name] as const)]));
+  const named = (text: string) => text.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, (id) => lines.find((l) => l.line_id === id)?.product.name ?? taxNames.get(id) ?? "a line");
 
   const result = simulate.data;
   const ready = outletId && brandId && lines.length > 0;
 
   return (
-    <div className="grid gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-      <section className="flex flex-col gap-6">
-        <SectionHeading title="Order" />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Select label="Outlet" selectedKey={outletId} onSelectionChange={setOutletId} items={outlets.map((o) => ({ id: o.id, label: o.name }))} />
-          <Select label="Brand" selectedKey={brandId} onSelectionChange={setBrandId} items={brands.map((b) => ({ id: b.id, label: b.name }))} />
-          <Select label="Order type" selectedKey={orderType} onSelectionChange={(k) => k && setOrderType(k)} items={ORDER_TYPES.map((t) => ({ id: t, label: ORDER_TYPE_LABEL[t]! }))} />
-          <Select label="Channel" selectedKey={channel} onSelectionChange={(k) => k && setChannel(k)} items={CHANNELS.map((c) => ({ id: c, label: CHANNEL_LABEL[c]! }))} />
-          <Select
-            label="Tax mode"
-            selectedKey={taxMode}
-            onSelectionChange={(k) => k && setTaxMode(k as TaxMode)}
-            items={[
-              { id: "merchant", label: `Merchant setting (${merchantTaxMode === "inclusive" ? "tax included" : "tax added"})` },
-              { id: "inclusive", label: "Tax included in prices" },
-              { id: "exclusive", label: "Tax added at the bill" },
-            ]}
-          />
-          <TextField label="Price as at" type="datetime-local" numeric value={at} onChange={setAt} description="Empty: now. Try a scheduled version." />
-        </div>
-        {groups.length ? (
-          <CheckboxGroup label="Customer in groups" value={groupIds} onChange={setGroupIds} columns={2}>
-            {groups.filter((g) => !g.archived).map((g) => (
-              <Checkbox key={g.id} value={g.id}>
-                {g.name}
-              </Checkbox>
-            ))}
-          </CheckboxGroup>
-        ) : null}
-
-        <SectionHeading title="Basket" aside={`${lines.reduce((n, l) => n + l.quantity, 0)} items`} />
-        {lines.length ? (
-          <ul className="flex flex-col">
-            {lines.map((l) => (
-              <li key={l.line_id} className="flex flex-wrap items-center gap-2 py-2 hairline-b">
-                <span className="min-w-0 flex-1 truncate text-ink">{l.product.name}</span>
-                {l.product.open_price ? <MoneyField aria-label={`Open price for ${l.product.name}`} value={l.open_price} onChange={(c) => setLines((prev) => prev.map((x) => (x.line_id === l.line_id ? { ...x, open_price: c } : x)))} placeholder="price" className="w-[120px]" /> : <Money cents={l.product.price} className="text-ink-2" />}
-                <span className="inline-flex items-center gap-1">
-                  <Button variant="quiet" iconOnly aria-label={`One less ${l.product.name}`} onPress={() => setQty(l.line_id, -1)} isDisabled={l.quantity <= 1}>
-                    <Icon icon={Minus} size={16} />
-                  </Button>
-                  <span className="w-6 text-center tabular">{l.quantity}</span>
-                  <Button variant="quiet" iconOnly aria-label={`One more ${l.product.name}`} onPress={() => setQty(l.line_id, 1)}>
-                    <Icon icon={Plus} size={16} />
-                  </Button>
-                </span>
-                <Button variant="quiet" iconOnly aria-label={`Remove ${l.product.name}`} onPress={() => setLines((prev) => prev.filter((x) => x.line_id !== l.line_id))}>
-                  <Icon icon={X} size={16} />
-                </Button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        <ProductSearch label="Add to basket" brandId={brandId} keepQuery onPick={addLine} />
-
-        <SectionHeading title="Manual rules" aside={manualRules.length ? `${manualRules.length} available` : "none active"} />
-        {rulesError ? <InlineError error={rulesError} /> : null}
-        {manuals.map((m, i) => {
-          const rule = manualRules.find((r) => r.v.rule_key === m.rule_id);
-          const open = rule?.body.value.type === "open";
-          const percent = rule?.body.calc === "percent";
-          return (
-            <div key={m.application_id} className="grid gap-3 rounded-tile hairline p-3 sm:grid-cols-[1fr_140px_1fr_auto]">
-              <Select aria-label="Manual rule" selectedKey={m.rule_id} onSelectionChange={(k) => k && setManuals((prev) => prev.map((x, j) => (j === i ? { ...x, rule_id: k } : x)))} items={manualRules.map((r) => ({ id: r.v.rule_key, label: r.body.name }))} />
-              {open ? (
-                percent ? (
-                  <PercentField aria-label="Entered percentage" value={m.entered_value} onChange={(v) => setManuals((prev) => prev.map((x, j) => (j === i ? { ...x, entered_value: v } : x)))} />
-                ) : (
-                  <MoneyField aria-label="Entered amount" value={m.entered_value} onChange={(v) => setManuals((prev) => prev.map((x, j) => (j === i ? { ...x, entered_value: v } : x)))} />
-                )
-              ) : (
-                <span className="self-center text-caption text-ink-2">Fixed value</span>
-              )}
-              <TextField aria-label="Reason" placeholder="Reason" value={m.reason} onChange={(v) => setManuals((prev) => prev.map((x, j) => (j === i ? { ...x, reason: v } : x)))} />
-              <Button variant="quiet" iconOnly aria-label="Remove manual rule" onPress={() => setManuals((prev) => prev.filter((_, j) => j !== i))}>
-                <Icon icon={X} size={16} />
-              </Button>
+    <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+      <div className="flex min-w-0 flex-col gap-6">
+        <Panel title="Order">
+          <div className="flex flex-col gap-4 py-2">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Select label="Outlet" selectedKey={outletId} onSelectionChange={setOutletId} items={outlets.map((o) => ({ id: o.id, label: o.name }))} />
+              <Select label="Brand" selectedKey={brandId} onSelectionChange={setBrandId} items={brands.map((b) => ({ id: b.id, label: b.name }))} />
+              <Select label="Order type" selectedKey={orderType} onSelectionChange={(k) => k && setOrderType(k)} items={ORDER_TYPES.map((t) => ({ id: t, label: ORDER_TYPE_LABEL[t]! }))} />
+              <Select label="Channel" selectedKey={channel} onSelectionChange={(k) => k && setChannel(k)} items={CHANNELS.map((c) => ({ id: c, label: CHANNEL_LABEL[c]! }))} />
+              <Select
+                label="Tax mode"
+                selectedKey={taxMode}
+                onSelectionChange={(k) => k && setTaxMode(k as TaxMode)}
+                items={[
+                  { id: "merchant", label: `Merchant (${merchantTaxMode === "inclusive" ? "included" : "added"})` },
+                  { id: "inclusive", label: "Tax included in prices" },
+                  { id: "exclusive", label: "Tax added at the bill" },
+                ]}
+              />
+              <DateField label="Price as at" type="datetime" size="md" value={at} onChange={setAt} placeholder="Now" description="Empty: now. Try a scheduled version." />
             </div>
-          );
-        })}
-        {manualRules.length ? (
-          <Button onPress={() => setManuals((prev) => [...prev, { application_id: crypto.randomUUID(), rule_id: manualRules[0]!.v.rule_key, entered_value: null, reason: "" }])} className="self-start">
-            <Icon icon={Plus} size={16} /> Apply a manual rule
-          </Button>
-        ) : null}
+            {groups.length ? (
+              <CheckboxGroup label="Customer in groups" value={groupIds} onChange={setGroupIds} columns={2}>
+                {groups.filter((g) => !g.archived).map((g) => (
+                  <Checkbox key={g.id} value={g.id}>
+                    {g.name}
+                  </Checkbox>
+                ))}
+              </CheckboxGroup>
+            ) : null}
+          </div>
+        </Panel>
+
+        <Panel title="Basket" body="flush" aside={`${lines.reduce((n, l) => n + l.quantity, 0)} items`}>
+          {lines.length ? (
+            <ul className="flex flex-col divide-y divide-rule-subtle border-b border-rule-subtle">
+              {lines.map((l) => (
+                <li key={l.line_id} className="flex flex-wrap items-center gap-2 px-5 py-2">
+                  <span className="min-w-0 flex-1 truncate text-ink">{l.product.name}</span>
+                  {l.product.open_price ? <MoneyField aria-label={`Open price for ${l.product.name}`} value={l.open_price} onChange={(c) => setLines((prev) => prev.map((x) => (x.line_id === l.line_id ? { ...x, open_price: c } : x)))} placeholder="price" className="w-[120px]" /> : <Money cents={l.product.price} className="text-ink-2" />}
+                  <span className="inline-flex items-center gap-1">
+                    <Button variant="quiet" iconOnly aria-label={`One less ${l.product.name}`} onPress={() => setQty(l.line_id, -1)} isDisabled={l.quantity <= 1}>
+                      <Icon icon={Minus} size={16} />
+                    </Button>
+                    <span className="w-6 text-center tabular">{l.quantity}</span>
+                    <Button variant="quiet" iconOnly aria-label={`One more ${l.product.name}`} onPress={() => setQty(l.line_id, 1)}>
+                      <Icon icon={Plus} size={16} />
+                    </Button>
+                  </span>
+                  <Button variant="quiet" iconOnly aria-label={`Remove ${l.product.name}`} onPress={() => setLines((prev) => prev.filter((x) => x.line_id !== l.line_id))}>
+                    <Icon icon={X} size={16} />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <div className="px-5 py-4">
+            <ProductSearch label="Add to basket" brandId={brandId} keepQuery onPick={addLine} />
+          </div>
+        </Panel>
+
+        <Panel title="Manual rules" aside={manualRules.length ? `${manualRules.length} available` : "none active"}>
+          <div className="flex flex-col gap-3 py-2">
+            {rulesError ? <InlineError error={rulesError} /> : null}
+            {manuals.map((m, i) => {
+              const rule = manualRules.find((r) => r.v.rule_key === m.rule_id);
+              const open = rule?.body.value.type === "open";
+              const percent = rule?.body.calc === "percent";
+              return (
+                <div key={m.application_id} className="grid gap-3 rounded-[12px] border border-rule p-3 sm:grid-cols-[1fr_140px_1fr_auto]">
+                  <Select aria-label="Manual rule" selectedKey={m.rule_id} onSelectionChange={(k) => k && setManuals((prev) => prev.map((x, j) => (j === i ? { ...x, rule_id: k } : x)))} items={manualRules.map((r) => ({ id: r.v.rule_key, label: r.body.name }))} />
+                  {open ? (
+                    percent ? (
+                      <PercentField aria-label="Entered percentage" value={m.entered_value} onChange={(v) => setManuals((prev) => prev.map((x, j) => (j === i ? { ...x, entered_value: v } : x)))} />
+                    ) : (
+                      <MoneyField aria-label="Entered amount" value={m.entered_value} onChange={(v) => setManuals((prev) => prev.map((x, j) => (j === i ? { ...x, entered_value: v } : x)))} />
+                    )
+                  ) : (
+                    <span className="self-center text-caption text-ink-2">Fixed value</span>
+                  )}
+                  <TextField aria-label="Reason" placeholder="Reason" value={m.reason} onChange={(v) => setManuals((prev) => prev.map((x, j) => (j === i ? { ...x, reason: v } : x)))} />
+                  <Button variant="quiet" iconOnly aria-label="Remove manual rule" onPress={() => setManuals((prev) => prev.filter((_, j) => j !== i))}>
+                    <Icon icon={X} size={16} />
+                  </Button>
+                </div>
+              );
+            })}
+            {manualRules.length ? (
+              <Button onPress={() => setManuals((prev) => [...prev, { application_id: crypto.randomUUID(), rule_id: manualRules[0]!.v.rule_key, entered_value: null, reason: "" }])} className="self-start">
+                <Icon icon={Plus} size={16} /> Apply a manual rule
+              </Button>
+            ) : manuals.length === 0 && !rulesError ? (
+              <p className="text-ink-2">No manual rule is active.</p>
+            ) : null}
+          </div>
+        </Panel>
 
         <div className="flex items-center gap-3 pt-2">
           <Button variant="primary" size="lg" isDisabled={!ready} isPending={simulate.isPending} onPress={() => simulate.mutate()}>
@@ -163,74 +178,70 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
           <span className="text-caption text-ink-2">Writes nothing. The register prices it with the live rules.</span>
         </div>
         <InlineError error={simulate.error} />
-      </section>
+      </div>
 
-      <section className="flex flex-col gap-8">
+      <div className="flex min-w-0 flex-col gap-6">
         {!result ? (
-          <EmptyState title="No result yet" hint="Build a basket on the left and tap Price this basket." />
+          <EmptyState title="No result yet" hint="Build a basket and tap Price this basket." />
         ) : (
           <>
-            <div>
-              <SectionHeading title="Totals" aside={<Badge tone={result.pricing_status === "frozen" ? "sent" : "paid"}>{result.pricing_status}</Badge>} />
-              <DescriptionList
-                className="mt-2"
-                items={[
-                  { term: "Subtotal", detail: <Money cents={result.totals.subtotal} />, numeric: true },
-                  { term: "Discounts", detail: <Money cents={result.totals.discount_total} />, numeric: true },
-                  { term: "Net subtotal", detail: <Money cents={result.totals.net_subtotal} />, numeric: true },
-                  { term: "Fees", detail: <Money cents={result.totals.fee_total} />, numeric: true },
-                  ...taxRows(result.totals.taxes, result.totals.tax_mode).before.map((t) => ({ term: t.label, detail: <Money cents={t.amount} />, numeric: true })),
-                  { term: <span className="text-ink">Total</span>, detail: <Money cents={result.totals.total} size="heading" />, numeric: true },
-                  ...taxRows(result.totals.taxes, result.totals.tax_mode).after.map((t) => ({ term: t.label, detail: <Money cents={t.amount} />, numeric: true })),
+            <Panel title="Totals" aside={<Badge tone={result.pricing_status === "frozen" ? "sent" : "paid"}>{result.pricing_status}</Badge>}>
+              <ValueRows
+                rows={[
+                  { label: "Subtotal", value: <Money cents={result.totals.subtotal} /> },
+                  { label: "Discounts", value: <Money cents={result.totals.discount_total} /> },
+                  { label: "Net subtotal", value: <Money cents={result.totals.net_subtotal} /> },
+                  { label: "Fees", value: <Money cents={result.totals.fee_total} /> },
+                  ...taxRows(result.totals.taxes, result.totals.tax_mode).before.map((t) => ({ key: t.key, label: t.label, value: <Money cents={t.amount} /> })),
+                  { label: <span className="font-heading text-[15px] font-semibold">Total</span>, value: <Money cents={result.totals.total} size="heading" />, strong: true },
+                  ...taxRows(result.totals.taxes, result.totals.tax_mode).after.map((t) => ({ key: t.key, label: t.label, value: <Money cents={t.amount} /> })),
                 ]}
               />
-              <Warnings warnings={result.warnings} className="mt-3" />
-            </div>
+              <Warnings warnings={result.warnings} className="mt-3 mb-2" />
+            </Panel>
 
-            <div>
-              <SectionHeading title="Lines" />
+            <Panel title="Lines" body="flush">
               <div className="overflow-x-auto">
-                <table className="mt-2 w-full text-body">
+                <table className="w-full text-body [&_tr>*:first-child]:pl-5 [&_tr>*:last-child]:pr-5 [&_td]:px-2 [&_th]:px-2">
                   <thead>
-                    <tr className="text-left text-caption text-ink-2">
-                      <th className="py-1 font-medium hairline-b">Line</th>
-                      <th className="py-1 text-right font-medium hairline-b">Qty</th>
-                      <th className="py-1 text-right font-medium hairline-b">Unit</th>
-                      <th className="py-1 text-right font-medium hairline-b">Base</th>
-                      <th className="py-1 text-right font-medium hairline-b">Discount</th>
-                      <th className="py-1 text-right font-medium hairline-b">Fees</th>
-                      <th className="py-1 text-right font-medium hairline-b">Tax</th>
-                      <th className="py-1 text-right font-medium hairline-b">Total</th>
+                    <tr className="text-left text-[14px]">
+                      <th className="h-10 border-b border-rule-subtle font-medium text-ink-2">Line</th>
+                      <th className="h-10 border-b border-rule-subtle text-right font-medium text-ink-2">Qty</th>
+                      <th className="h-10 border-b border-rule-subtle text-right font-medium text-ink-2">Unit</th>
+                      <th className="h-10 border-b border-rule-subtle text-right font-medium text-ink-2">Base</th>
+                      <th className="h-10 border-b border-rule-subtle text-right font-medium text-ink-2">Discount</th>
+                      <th className="h-10 border-b border-rule-subtle text-right font-medium text-ink-2">Fees</th>
+                      <th className="h-10 border-b border-rule-subtle text-right font-medium text-ink-2">Tax</th>
+                      <th className="h-10 border-b border-rule-subtle text-right font-medium text-ink-2">Total</th>
                     </tr>
                   </thead>
                   <tbody className="tabular">
                     {result.lines.map((l) => (
-                      <tr key={l.line_id} className="hairline-b">
-                        <td className="py-1.5 text-ink">{lineName(l.line_id)}</td>
-                        <td className="py-1.5 text-right">{l.quantity}</td>
-                        <td className="py-1.5 text-right"><Money cents={l.unit_price + l.modifiers_per_unit} /></td>
-                        <td className="py-1.5 text-right"><Money cents={l.base_amount} /></td>
-                        <td className="py-1.5 text-right"><Money cents={l.discount_amount} /></td>
-                        <td className="py-1.5 text-right"><Money cents={l.fee_amount} /></td>
-                        <td className="py-1.5 text-right"><Money cents={l.tax_on_net + l.tax_on_fees} /></td>
-                        <td className="py-1.5 text-right text-ink"><Money cents={l.total} /></td>
+                      <tr key={l.line_id} className="border-b border-rule-subtle last:border-b-0">
+                        <td className="py-3 text-ink">{lineName(l.line_id)}</td>
+                        <td className="py-3 text-right">{l.quantity}</td>
+                        <td className="py-3 text-right"><Money cents={l.unit_price + l.modifiers_per_unit} /></td>
+                        <td className="py-3 text-right"><Money cents={l.base_amount} /></td>
+                        <td className="py-3 text-right"><Money cents={l.discount_amount} /></td>
+                        <td className="py-3 text-right"><Money cents={l.fee_amount} /></td>
+                        <td className="py-3 text-right"><Money cents={l.tax_on_net + l.tax_on_fees} /></td>
+                        <td className="py-3 text-right text-ink"><Money cents={l.total} /></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </div>
+            </Panel>
 
-            <div>
-              <SectionHeading title="Adjustments" aside={`${result.adjustments.length}`} />
+            <Panel title="Adjustments" body="flush" aside={`${result.adjustments.length}`}>
               {result.adjustments.length === 0 ? (
-                <p className="mt-2 text-ink-2">No fee or discount applied.</p>
+                <p className="px-5 py-4 text-ink-2">No fee or discount applied.</p>
               ) : (
-                <ul className="mt-2 flex flex-col">
+                <ul className="flex flex-col divide-y divide-rule-subtle">
                   {result.adjustments.map((a, i) => (
-                    <li key={`${a.rule_id}-${a.manual_application_id ?? i}`} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2 hairline-b">
+                    <li key={`${a.rule_id}-${a.manual_application_id ?? i}`} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-5 py-2.5">
                       <span className="text-ink">{a.rule_name}</span>
-                      <Badge tone={a.kind === "fee" ? "sent" : "seated"}>{a.kind}</Badge>
+                      <Badge tone={kindTone(a.kind)}>{a.kind}</Badge>
                       <span className="text-caption text-ink-2">
                         {a.level} · v{a.rule_version} · {label({}, a.report_class)}
                         {a.capped ? " · capped" : ""}
@@ -245,11 +256,10 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
                   ))}
                 </ul>
               )}
-            </div>
+            </Panel>
 
-            <div>
-              <SectionHeading title="Trace" aside="step by step" />
-              <ol className="mt-2 flex flex-col gap-4">
+            <Panel title="Trace" aside="step by step">
+              <ol className="flex flex-col gap-4 py-2">
                 {result.trace.map((step) => (
                   <li key={step.step}>
                     <p className="text-line text-ink">
@@ -261,7 +271,7 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
                         <li key={i} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-1.5 pl-6 hairline-b last:border-b-0">
                           <Badge tone={OUTCOME_TONE[e.outcome]}>{e.outcome}</Badge>
                           {e.rule_name ? <span className="text-ink">{e.rule_name}</span> : null}
-                          <span className="min-w-0 flex-1 text-ink-2">{e.detail}</span>
+                          <span className="min-w-0 flex-1 text-ink-2">{named(e.detail)}</span>
                           {e.amount !== undefined ? <Money cents={e.amount} signed className="text-ink-2" /> : null}
                         </li>
                       ))}
@@ -269,10 +279,10 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
                   </li>
                 ))}
               </ol>
-            </div>
+            </Panel>
           </>
         )}
-      </section>
+      </div>
     </div>
   );
 }

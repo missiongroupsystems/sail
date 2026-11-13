@@ -1,12 +1,13 @@
 "use client";
 
-import { Badge, Button, DataTable, EmptyState, InlineError, Money, Select, StatusDot, Switch, TextField, type DataTableColumn } from "@sail/ui";
+import { Badge, Button, DataTable, EmptyState, InlineError, Money, Pill, Select, Switch, TextField, type DataTableColumn } from "@sail/ui";
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 import { Check } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@sail/ui";
 import { req } from "@/lib/api";
 import { api } from "@/lib/api.browser";
+import { Quiet, TwoLine } from "@/components/office/parts";
 import type { Brand, Category, Product, ProductPage } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
 import { keys } from "@/lib/query";
@@ -107,17 +108,21 @@ export function ProductsView({ initialPage, categories, brands, scope }: { initi
       key: "name",
       header: "Name",
       isRowHeader: true,
+      width: "2fr",
+      render: (p) => <TwoLine primary={p.name} meta={p.kitchen_name && p.kitchen_name !== p.name ? `Kitchen: ${p.kitchen_name}` : undefined} />,
+    },
+    { key: "sku", header: "SKU", render: (p) => <span className="text-ink-2 tabular break-words">{p.sku ?? "—"}</span> },
+    {
+      key: "kind",
+      header: "Kind",
       render: (p) => (
-        <span>
-          <span className="text-ink">{p.name}</span>
-          {p.kitchen_name && p.kitchen_name !== p.name ? <span className="ml-2 text-caption text-ink-2">kitchen: {p.kitchen_name}</span> : null}
-        </span>
+        <Pill size="sm" tone={p.kind === "component" ? "seated" : "neutral"}>
+          {p.kind === "component" ? "Component" : "Product"}
+        </Pill>
       ),
     },
-    { key: "sku", header: "SKU", render: (p) => <span className="font-mono text-caption">{p.sku ?? "—"}</span> },
-    { key: "kind", header: "Kind", render: (p) => <span className="text-ink-2">{p.kind === "component" ? "Component" : "Product"}</span> },
-    { key: "category_id", header: "Category", render: (p) => <span className="text-ink-2">{p.category_id ? catLabel.get(p.category_id) ?? "—" : "—"}</span> },
-    { key: "brand_id", header: "Brand", render: (p) => <span className="text-ink-2">{p.brand_id ? brandName.get(p.brand_id) ?? "—" : "All brands"}</span> },
+    { key: "category_id", header: "Category", render: (p) => <Quiet>{p.category_id ? catLabel.get(p.category_id) ?? "—" : "—"}</Quiet> },
+    { key: "brand_id", header: "Brand", hideBelow: "xl", render: (p) => <Quiet className="whitespace-nowrap">{p.brand_id ? brandName.get(p.brand_id) ?? "—" : "All brands"}</Quiet> },
     {
       key: "tags",
       header: "Tags",
@@ -138,65 +143,79 @@ export function ProductsView({ initialPage, categories, brands, scope }: { initi
       render: (p) => (
         <span className="inline-flex flex-col items-end">
           <Money cents={p.price} />
-          {Object.keys(p.prices_by_order_type).length ? <span className="text-caption text-ink-2">+{Object.keys(p.prices_by_order_type).length} by order type</span> : null}
+          {Object.keys(p.prices_by_order_type).length ? <span className="text-[12px] text-ink-3">+{Object.keys(p.prices_by_order_type).length} by order type</span> : null}
         </span>
       ),
     },
     {
       key: "archived",
       header: "Status",
-      render: (p) => (p.archived ? <StatusDot status="neutral" label="Archived" muted /> : <StatusDot status="paid" label="Active" />),
+      render: (p) =>
+        p.archived ? (
+          <Pill size="sm" tone="neutral">
+            Archived
+          </Pill>
+        ) : (
+          <Pill size="sm" tone="paid">
+            Active
+          </Pill>
+        ),
     },
   ];
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-end gap-3">
-        <TextField aria-label="Search products" type="search" value={q} onChange={setQ} placeholder="Search name or SKU" className="w-[240px]" />
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <TextField size="sm" aria-label="Search products" type="search" value={q} onChange={setQ} placeholder="Search name or SKU" className="w-full sm:w-[150px] xl:w-[180px]" />
+        {/* A merchant with one brand has nothing to filter by brand; leaving it out keeps the actions on the row at 1024px. */}
+        {brands.length > 1 ? (
         <Select
           aria-label="Brand"
-          variant="toolbar"
+          variant="toolbar" size="sm"
           selectedKey={brandId ?? ANY}
           onSelectionChange={(k) => setBrandId(k === ANY ? null : k)}
           items={[{ id: ANY, label: "All brands" }, ...brands.map((b) => ({ id: b.id, label: b.name }))]}
         />
+        ) : null}
         <Select
           aria-label="Category"
-          variant="toolbar"
+          variant="toolbar" size="sm"
           selectedKey={categoryId ?? ANY}
           onSelectionChange={(k) => setCategoryId(k === ANY ? null : k)}
           items={[{ id: ANY, label: "All categories" }, ...categories.filter((c) => !c.archived).map((c) => ({ id: c.id, label: catLabel.get(c.id) ?? c.name }))]}
         />
         <Select
           aria-label="Kind"
-          variant="toolbar"
+          variant="toolbar" size="sm"
           selectedKey={kind ?? ANY}
           onSelectionChange={(k) => setKind(k === ANY || k === null ? null : (k as "product" | "component"))}
           items={[
-            { id: ANY, label: "Products and components" },
+            { id: ANY, label: "All kinds" },
             { id: "product", label: "Products only" },
             { id: "component", label: "Components only", description: "Modifier options and parts of other items." },
           ]}
         />
-        <TextField aria-label="Tag" value={tag} onChange={setTag} placeholder="Tag" className="w-[140px]" />
-        <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
-          Show archived
+        <TextField size="sm" aria-label="Tag" value={tag} onChange={setTag} placeholder="Tag" className="w-[80px] xl:w-[96px]" />
+        {/* "Archived" alone below 1280px keeps Bulk price edit and Add product on the row at 1024. */}
+        <Switch isSelected={showArchived} onChange={setShowArchived} aria-label="Show archived" className="min-h-11 py-0">
+          <span className="xl:hidden">Archived</span>
+          <span className="max-xl:hidden">Show archived</span>
         </Switch>
         <div className="ml-auto flex items-center gap-2">
           {selecting ? (
             <>
               <span className="text-caption text-ink-2 tabular">{selected.size} selected</span>
-              <Button variant="quiet" onPress={() => { setSelecting(false); setSelected(new Map()); }}>
+              <Button size="sm" variant="quiet" onPress={() => { setSelecting(false); setSelected(new Map()); }}>
                 Done selecting
               </Button>
-              <Button variant="primary" isDisabled={selected.size === 0} onPress={() => setBulkOpen(true)}>
+              <Button size="sm" variant="primary" isDisabled={selected.size === 0} onPress={() => setBulkOpen(true)}>
                 Set prices for {selected.size}
               </Button>
             </>
           ) : (
             <>
-              <Button onPress={() => setSelecting(true)}>Bulk price edit</Button>
-              <Button variant="primary" onPress={() => setSheet({ mode: "create" })}>
+              <Button size="sm" onPress={() => setSelecting(true)}>Bulk price edit</Button>
+              <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
                 Add product
               </Button>
             </>
@@ -213,7 +232,7 @@ export function ProductsView({ initialPage, categories, brands, scope }: { initi
         className={pages.isPlaceholderData ? "opacity-60" : undefined}
         onRowAction={(p) => (selecting ? toggle(p) : setSheet({ mode: "edit", product: p }))}
         rowClassName={(p) => (p.archived ? "text-ink-2" : undefined)}
-        emptyState={<EmptyState variant="quiet" title="No products match" hint={rows.length === 0 && total === 0 && isInitial ? "Tap Add product, or import a legacy export under Import. A product reaches the POS once it is in a section of a menu (Menu › Menus & sections) and that menu is linked in Settings › Channels." : "Widen the filters or clear the search."} />}
+        emptyState={<EmptyState variant="centred" title="No products match" hint={rows.length === 0 && total === 0 && isInitial ? "Tap Add product, or import a legacy export under Import. A product reaches the POS once it is in a section of a menu (Menu › Menus & sections) and that menu is linked in Settings › Channels." : "Widen the filters or clear the search."} />}
       />
       <InlineError error={pages.error} className="mt-4" />
 
@@ -223,7 +242,7 @@ export function ProductsView({ initialPage, categories, brands, scope }: { initi
             Show more
           </Button>
         ) : null}
-        <span className="text-caption text-ink-2 tabular">
+        <span className="text-[13px] text-ink-2 tabular">
           {rows.length} of {total} {total === 1 ? "product" : "products"}
         </span>
       </div>

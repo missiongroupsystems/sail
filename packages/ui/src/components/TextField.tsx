@@ -12,7 +12,7 @@ import {
   type ValidationResult,
 } from "react-aria-components";
 import { cx } from "../lib/cx";
-import { fieldControl, fieldDescription, fieldError, fieldLabel, fieldWrap } from "./field";
+import { fieldControl, fieldControlSm, fieldDescription, fieldError, fieldLabel, fieldWrap, type FieldSize } from "./field";
 
 export type TextFieldProps = Omit<AriaTextFieldProps, "className" | "children"> & {
   label?: ReactNode;
@@ -31,6 +31,8 @@ export type TextFieldProps = Omit<AriaTextFieldProps, "className" | "children"> 
   inputClassName?: string;
   /** A short unit or hint rendered inside the field on the right ("bps", "%"). */
   suffix?: ReactNode;
+  /** `sm` is the 36px back-office field for filter rows; the default `md` is 44px. Not for the POS. */
+  size?: FieldSize;
 };
 
 export function TextField({
@@ -45,9 +47,10 @@ export function TextField({
   className,
   inputClassName,
   suffix,
+  size = "md",
   ...rest
 }: TextFieldProps) {
-  const control = cx(fieldControl, mono && "font-mono", numeric && "tabular", suffix ? "pr-12" : null, inputClassName);
+  const control = cx(size === "sm" ? fieldControlSm : fieldControl, mono && "font-mono", numeric && "tabular", suffix ? "pr-12" : null, inputClassName);
   return (
     <AriaTextField {...rest} validationBehavior={rest.validationBehavior ?? "aria"} className={cx(fieldWrap, className)}>
       {label ? <Label className={fieldLabel}>{label}</Label> : null}
@@ -58,7 +61,7 @@ export function TextField({
           <Input placeholder={placeholder} className={control} />
         )}
         {suffix ? (
-          <span aria-hidden className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-caption text-ink-2">
+          <span aria-hidden className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-caption text-ink-3">
             {suffix}
           </span>
         ) : null}

@@ -16,9 +16,9 @@ export function TicketPreview({ text, paperWidth = "80mm", caption, className }:
   const cols = paperWidth === "58mm" ? 32 : 48;
   return (
     <figure className={cx("flex flex-col items-start gap-2", className)}>
-      {caption ? <figcaption className="text-caption text-ink-2">{caption}</figcaption> : null}
+      {caption ? <figcaption className="text-caption text-ink-3">{caption}</figcaption> : null}
       <pre
-        className="max-w-full overflow-x-auto rounded-[4px] bg-white px-4 py-3 font-mono text-[13px] leading-[18px] text-black shadow-[0_1px_2px_rgba(0,0,0,0.18)] whitespace-pre"
+        className="max-w-full overflow-x-auto rounded-[4px] bg-white px-4 py-3 font-mono text-[13px] leading-[18px] text-black shadow-thumb ring-1 ring-black/5 whitespace-pre"
         style={{ width: `calc(${cols}ch + 2rem)`, maxWidth: "100%" }}
       >
         {text || "(empty ticket)"}

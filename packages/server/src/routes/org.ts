@@ -1,8 +1,8 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { AmountSchema, currencyExponent, TaxModeSchema, TaxRoundingSchema } from "@sail/shared";
 import { db } from "../db/client.js";
-import { brands, displayDestinations, merchantSettings, merchants, outlets, stations } from "../db/schema/index.js";
+import { brands, displayDestinations, merchantSettings, merchants, outlets, staffSessions, stationPairingCodes, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
@@ -50,7 +50,7 @@ export async function localeSettingsFor(merchantId: string): Promise<z.infer<typ
   if (!s) throw AppError.notFound("merchant");
   return { currency: s.currency, currency_exponent: currencyExponent(s.currency), locale: s.locale, timezone: s.timezone };
 }
-const SettingsPatch = MerchantSettingsSchema.omit({ currency_exponent: true }).partial().extend({ name: z.string().min(1).optional() });
+const SettingsPatch = MerchantSettingsSchema.omit({ currency_exponent: true }).partial().extend({ name: z.string().trim().min(1).optional() });
 
 export const BrandSchema = z.object({
   id: z.string(),
@@ -61,7 +61,7 @@ export const BrandSchema = z.object({
   legacy_id: z.string().nullable(),
   archived: z.boolean(),
 });
-const BrandInput = z.object({ id: z.uuid().optional(), name: z.string().min(1), accent_color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(), display_font: z.string().nullable().optional(), logo_url: z.string().nullable().optional(), legacy_id: z.string().nullable().optional() });
+const BrandInput = z.object({ id: z.uuid().optional(), name: z.string().trim().min(1), accent_color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(), display_font: z.string().nullable().optional(), logo_url: z.string().nullable().optional(), legacy_id: z.string().nullable().optional() });
 const BrandPatch = BrandInput.omit({ id: true }).partial().extend({ archived: z.boolean().optional() });
 
 const HoursSchema = z.record(z.string(), z.array(z.tuple([z.string(), z.string()])));
@@ -80,7 +80,7 @@ export const OutletSchema = z.object({
 });
 const OutletInput = z.object({
   id: z.uuid().optional(),
-  name: z.string().min(1),
+  name: z.string().trim().min(1),
   address: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
   business_registration_no: z.string().nullable().optional(),
@@ -114,7 +114,7 @@ export const StationSchema = z.object({
 const StationInput = z.object({
   id: z.uuid().optional(),
   outlet_id: z.uuid(),
-  name: z.string().min(1),
+  name: z.string().trim().min(1),
   brand_id: z.uuid().nullable().optional(),
   layout_id: z.uuid().nullable().optional(),
   pay_before_firing: z.boolean().optional(),
@@ -191,7 +191,7 @@ async function assertDestinations(st: typeof stations.$inferSelect) {
   if (ids.length === 0) return;
   if (st.kind !== "display") throw AppError.validation("Only a kitchen display station shows display destinations", { remedy: "Create a station of kind display for the kitchen screen." });
   const found = await db().select({ id: displayDestinations.id }).from(displayDestinations).where(and(inArray(displayDestinations.id, ids), eq(displayDestinations.outletId, st.outletId), isNull(displayDestinations.archivedAt)));
-  if (found.length !== ids.length) throw AppError.notFound("kitchen display destination at this station's outlet");
+  if (found.length !== ids.length) throw AppError.validation("display_destination_ids names a destination this station's outlet does not have", { remedy: "Pick live destinations of the station's own outlet.", details: { field: "display_destination_ids" } });
 }
 
 /* ---- Routes -------------------------------------------------------------- */
@@ -213,9 +213,9 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
       const patch = c.req.valid("json");
       const [current] = await db().select({ currency: merchantSettings.currency }).from(merchantSettings).where(eq(merchantSettings.merchantId, p.merchantId)).limit(1);
       if (!current) throw AppError.notFound("merchant");
-      if (patch.cash_rounding_increment != null && !isCashRoundingIncrement(patch.cash_rounding_increment)) throw AppError.validation("cash_rounding_increment must be 1, 2 or 5 times a power of ten, in minor units of the currency, or null to turn rounding off", { remedy: "For example 5 rounds CHF to 0.05; 100 rounds SEK to 1 krona." });
-      if (patch.cash_denominations != null && !validDenominations(patch.cash_denominations)) throw AppError.validation("cash_denominations must be distinct positive amounts in minor units, largest first", { remedy: "For example [5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5]." });
-      if (patch.cash_variance_threshold != null && patch.cash_variance_threshold < 0) throw AppError.validation("cash_variance_threshold must be zero or more, in minor units of the currency", { remedy: "For example 500 asks for a reason when the drawer is more than 5.00 out in a 2-decimal currency." });
+      if (patch.cash_rounding_increment != null && !isCashRoundingIncrement(patch.cash_rounding_increment)) throw AppError.validation("Cash rounding must be to 1, 2 or 5 of a unit or a power of ten of it, or off", { remedy: "For example 0.05 for CHF, or 1 krona for SEK.", details: { field: "cash_rounding_increment" } });
+      if (patch.cash_denominations != null && !validDenominations(patch.cash_denominations)) throw AppError.validation("Cash notes and coins must be different positive amounts, largest first", { details: { field: "cash_denominations" } });
+      if (patch.cash_variance_threshold != null && patch.cash_variance_threshold < 0) throw AppError.validation("The drawer difference allowed without a reason cannot be negative", { details: { field: "cash_variance_threshold" } });
       if (patch.business_day_cutoff != null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(patch.business_day_cutoff)) throw AppError.validation("business_day_cutoff must be HH:MM (24-hour)", { remedy: "For example 04:00." });
       if (patch.timezone != null && !isValidTimeZone(patch.timezone)) throw AppError.validation(`Unknown time zone ${patch.timezone}`, { remedy: "Use an IANA zone such as Europe/Berlin." });
       if (patch.locale != null && !isValidLocale(patch.locale)) throw AppError.validation(`Unknown locale ${patch.locale}`, { remedy: "Use a BCP 47 tag such as en-GB or de-DE." });
@@ -351,11 +351,12 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
   });
 
   /* Stations */
-  defineOp(app, { op: "stations.list", method: "get", path: "/v1/outlets/{id}/stations", tags: ["organisation"], request: { params: z.object({ id: z.uuid() }) }, responses: { 200: jsonResponse(listResponse(StationSchema)), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "stations.list", method: "get", path: "/v1/outlets/{id}/stations", tags: ["organisation"], request: { params: z.object({ id: z.uuid() }), query: z.object({ include_archived: z.enum(["true", "false"]).optional() }) }, responses: { 200: jsonResponse(listResponse(StationSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
+    const q = c.req.valid("query");
     if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
-    const rows = await db().select().from(stations).where(and(eq(stations.outletId, id), isNull(stations.archivedAt))).orderBy(asc(stations.name));
+    const rows = await db().select().from(stations).where(q.include_archived === "true" ? eq(stations.outletId, id) : and(eq(stations.outletId, id), isNull(stations.archivedAt))).orderBy(asc(stations.name));
     return c.json({ data: rows.map(toStation), next_cursor: null }, 200);
   });
 
@@ -392,11 +393,17 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
         ...(body.text_size !== undefined && { textSize: body.text_size }),
         ...(body.display_destination_ids !== undefined && { displayDestinationIds: body.display_destination_ids }),
         ...(body.archived !== undefined && { archivedAt: body.archived ? new Date() : null }),
+        ...(body.archived === true && { tokenHash: null }),
       })
       .where(and(eq(stations.id, id), eq(stations.merchantId, p.merchantId)))
       .returning();
     if (!row) throw AppError.notFound("station", id);
     if (body.display_destination_ids !== undefined) await assertDestinations(row);
+    // Archiving unpairs the device and ends its PIN sessions and unused codes; restoring it needs a new pairing.
+    if (body.archived === true) {
+      await db().update(staffSessions).set({ endedAt: new Date() }).where(and(eq(staffSessions.stationId, id), isNull(staffSessions.endedAt)));
+      await db().update(stationPairingCodes).set({ expiresAt: sql`now()` }).where(and(eq(stationPairingCodes.stationId, id), isNull(stationPairingCodes.usedAt)));
+    }
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: row.outletId, type: "station.updated", aggregate: { kind: "station", id }, operationId: "stations.update", payload: body, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(p.merchantId, row.outletId) }, p);
     await recordAudit(p, { action: "stations.update", targetKind: "station", targetId: id, outletId: row.outletId, details: body });
     return c.json({ data: toStation(row), events: [ev], warnings: [] }, 200);

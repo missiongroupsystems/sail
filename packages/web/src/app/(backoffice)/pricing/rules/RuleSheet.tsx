@@ -125,7 +125,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
       description={
         row ? (
           <span className="inline-flex flex-wrap items-center gap-2">
-            <span className="font-mono text-caption">{row.rule_key}</span>
+            <span className="text-caption">{row.rule_key}</span>
             <Badge tone={row.current.status === "active" ? "paid" : row.current.status === "scheduled" ? "sent" : row.current.status === "archived" ? "alert" : "neutral"}>
               {STATUS_LABEL[row.current.status]} · v{row.current.version}
             </Badge>
@@ -181,7 +181,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
       ) : (
         <form id="rule-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
           {row && showVersions ? (
-            <FormSection title="Versions">
+            <FormSection variant="label" title="Versions">
               <ul className="flex flex-col">
                 {row.versions.map((v) => (
                   <li key={v.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 hairline-b last:border-b-0">
@@ -222,7 +222,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
             </div>
           </FormSection>
 
-          <FormSection title="Amount">
+          <FormSection variant="label" title="Amount">
             <div className="grid gap-4 sm:grid-cols-2">
               <RhfSelect
                 control={form.control}
@@ -285,7 +285,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
             ) : null}
           </FormSection>
 
-          <FormSection title="Applies to" hint="Which lines the rule looks at. Exclusions win over the scope.">
+          <FormSection variant="label" title="Applies to" hint="Which lines the rule looks at. Exclusions win over the scope.">
             <RhfSelect
               control={form.control}
               name="scope_type"
@@ -313,7 +313,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
             </details>
           </FormSection>
 
-          <FormSection title="Conditions" hint="All ticked conditions must hold. Leave a group unticked to not check it.">
+          <FormSection variant="label" title="Conditions" hint="All ticked conditions must hold. Leave a group unticked to not check it.">
             <div className="grid gap-6 sm:grid-cols-2">
               <RhfCheckboxGroup control={form.control} name="cond_order_types" label="Order types" options={ORDER_TYPES.map((t) => ({ id: t, label: ORDER_TYPE_LABEL[t]! }))} />
               <RhfCheckboxGroup control={form.control} name="cond_channels" label="Channels" options={CHANNELS.map((c) => ({ id: c, label: CHANNEL_LABEL[c]! }))} />
@@ -342,22 +342,25 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
             </div>
           </FormSection>
 
-          <FormSection title="Order of evaluation" hint="Lower priority runs first. An exclusive discount stops later discounts on the lines it touched.">
+          {/* Stacking is about discounts: a fee's form leaves it out (live-test E-L21). */}
+          <FormSection variant="label" title="Order of evaluation" hint={kind === "fee" ? "Lower priority runs first." : "Lower priority runs first. An exclusive discount stops later discounts on the lines it touched."}>
             <div className="grid gap-4 sm:grid-cols-2">
               <RhfTextField control={form.control} name="priority" label="Priority" numeric inputMode="numeric" />
-              <RhfSelect
-                control={form.control}
-                name="stacking"
-                label="Stacking"
-                items={[
-                  { id: "stackable", label: "Stacks with other discounts" },
-                  { id: "exclusive", label: "Exclusive", description: "No later discount on the same lines." },
-                ]}
-              />
+              {kind === "fee" ? null : (
+                <RhfSelect
+                  control={form.control}
+                  name="stacking"
+                  label="Stacking"
+                  items={[
+                    { id: "stackable", label: "Stacks with other discounts" },
+                    { id: "exclusive", label: "Exclusive", description: "No later discount on the same lines." },
+                  ]}
+                />
+              )}
             </div>
           </FormSection>
 
-          <FormSection title="How it is applied">
+          <FormSection variant="label" title="How it is applied">
             <RhfSelect
               control={form.control}
               name="application"
@@ -389,7 +392,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
             ) : null}
           </FormSection>
 
-          <FormSection title="Effective" hint="When this version starts applying to new orders.">
+          <FormSection variant="label" title="Effective" hint="When this version starts applying to new orders.">
             <div className="grid gap-4 sm:grid-cols-2">
               <RhfSelect
                 control={form.control}

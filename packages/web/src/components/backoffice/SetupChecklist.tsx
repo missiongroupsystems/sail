@@ -1,6 +1,6 @@
 "use client";
 
-import { Icon, SectionHeading } from "@sail/ui";
+import { Icon, Panel } from "@sail/ui";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Check, Circle } from "lucide-react";
 import Link from "next/link";
@@ -49,13 +49,10 @@ export function SetupChecklist({ outletId, tableCount }: { outletId: string; tab
   if (left === 0) return null;
 
   return (
-    <section aria-labelledby="setup-checklist" className="mb-10">
-      <div id="setup-checklist">
-        <SectionHeading title="Get ready for the first order" aside={`${steps.length - left} of ${steps.length} done`} />
-      </div>
-      <ol className="flex flex-col">
+    <Panel id="setup-checklist" title="Get ready for the first order" aside={`${steps.length - left} of ${steps.length} done`} body="flush" className="mb-6">
+      <ol className="flex flex-col divide-y divide-rule-subtle">
         {steps.map((s) => (
-          <li key={s.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3 hairline-b">
+          <li key={s.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3">
             <Icon icon={s.done ? Check : Circle} size={18} className={s.done ? "text-status-paid" : "text-ink-2"} aria-hidden />
             <span className="min-w-0 flex-1">
               <span className={s.done ? "block text-body text-ink-2" : "block text-body text-ink"}>
@@ -72,6 +69,6 @@ export function SetupChecklist({ outletId, tableCount }: { outletId: string; tab
           </li>
         ))}
       </ol>
-    </section>
+    </Panel>
   );
 }

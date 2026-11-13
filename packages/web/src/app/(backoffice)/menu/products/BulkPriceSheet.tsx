@@ -3,6 +3,7 @@
 import { Button, InlineError, Money, MoneyField, PercentField, Select, Sheet, useLocale } from "@sail/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { greyPill, Group, SheetSection } from "@/components/office/parts";
 import { Warnings } from "@/components/backoffice/Warnings";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
@@ -69,7 +70,7 @@ export function BulkPriceSheet({ isOpen, products, onClose, onSaved }: { isOpen:
       description="One change for every selected product. Nothing is saved until you tap the button below."
       footer={
         <>
-          <Button variant="quiet" onPress={onClose} isDisabled={save.isPending}>
+          <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={save.isPending}>
             Cancel
           </Button>
           <Button variant="primary" onPress={() => save.mutate()} isPending={save.isPending} isDisabled={!ready}>
@@ -78,7 +79,8 @@ export function BulkPriceSheet({ isOpen, products, onClose, onSaved }: { isOpen:
         </>
       }
     >
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-7">
+        <SheetSection title="Change">
         <div className="grid gap-4 sm:grid-cols-[220px_200px]">
           <Select
             label="Change"
@@ -108,31 +110,36 @@ export function BulkPriceSheet({ isOpen, products, onClose, onSaved }: { isOpen:
             className="sm:max-w-[320px]"
           />
         ) : null}
+        </SheetSection>
 
-        <table className="w-full text-body">
+        <SheetSection flat title="Preview">
+        <Group className="overflow-hidden">
+        <table className="w-full text-[14px] leading-5">
           <thead>
-            <tr className="text-left text-caption text-ink-2">
-              <th className="py-2 font-medium hairline-b">Product</th>
-              <th className="py-2 text-right font-medium hairline-b">Before</th>
-              <th className="py-2 text-right font-medium hairline-b">After</th>
-              <th className="py-2 text-right font-medium hairline-b">Δ</th>
+            <tr className="text-left text-[12.5px] text-ink-3">
+              <th className="border-b border-rule-subtle px-4 py-2 font-medium">Product</th>
+              <th className="border-b border-rule-subtle px-4 py-2 text-right font-medium">Before</th>
+              <th className="border-b border-rule-subtle px-4 py-2 text-right font-medium">After</th>
+              <th className="border-b border-rule-subtle px-4 py-2 text-right font-medium">Δ</th>
             </tr>
           </thead>
           <tbody>
             {changes.map(({ product: p, price }) => (
-              <tr key={p.id} className="hairline-b">
-                <td className="py-2 text-ink">{p.name}</td>
-                <td className="py-2 text-right">
+              <tr key={p.id} className="border-b border-rule-subtle last:border-b-0">
+                <td className="px-4 py-2 text-ink break-words">{p.name}</td>
+                <td className="px-4 py-2 text-right">
                   <Money cents={p.price} className="text-ink-2" />
                 </td>
-                <td className="py-2 text-right">
+                <td className="px-4 py-2 text-right">
                   <Money cents={price} className={price !== p.price ? "text-ink font-medium" : "text-ink-2"} />
                 </td>
-                <td className="py-2 text-right">{price !== p.price ? <Money cents={price - p.price} signed className="text-ink-2" /> : <span className="text-ink-2">—</span>}</td>
+                <td className="px-4 py-2 text-right">{price !== p.price ? <Money cents={price - p.price} signed className="text-ink-2" /> : <span className="text-ink-2">—</span>}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        </Group>
+        </SheetSection>
 
         <Warnings warnings={warnings} />
         <InlineError error={save.error} />

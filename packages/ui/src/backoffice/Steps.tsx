@@ -31,7 +31,7 @@ export function Steps({ steps, current, onStepPress, className }: StepsProps) {
             aria-hidden
             className={cx(
               "inline-flex size-6 shrink-0 items-center justify-center rounded-full text-caption tabular",
-              done && "bg-status-paid text-white",
+              done && "bg-status-paid text-on-primary",
               active && "bg-primary text-on-primary",
               !done && !active && "bg-surface-2 text-ink-2",
             )}
@@ -39,11 +39,11 @@ export function Steps({ steps, current, onStepPress, className }: StepsProps) {
             {done ? <Icon icon={Check} size={13} strokeWidth={2.5} /> : i + 1}
           </span>
         );
-        const label = <span className={cx("text-body", active ? "text-ink" : "text-ink-2")}>{step.label}</span>;
+        const label = <span className={cx("text-body", active ? "font-medium text-ink" : "text-ink-2")}>{step.label}</span>;
         return (
           <li key={step.id} className="flex items-center gap-2" aria-current={active ? "step" : undefined}>
             {done && onStepPress ? (
-              <button type="button" onClick={() => onStepPress(step.id)} className="press flex min-h-11 items-center gap-2 rounded-tile px-1 outline-none hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-status-seated">
+              <button type="button" onClick={() => onStepPress(step.id)} className="press flex min-h-11 items-center gap-2 rounded-field px-1.5 outline-none hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-focus">
                 {dot}
                 {label}
               </button>

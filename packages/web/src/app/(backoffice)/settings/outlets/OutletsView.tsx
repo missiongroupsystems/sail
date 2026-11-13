@@ -1,8 +1,9 @@
 "use client";
 
-import { Button, DataTable, EmptyState, StatusDot, Switch, type DataTableColumn } from "@sail/ui";
+import { Button, DataTable, EmptyState, Switch, type DataTableColumn, Pill } from "@sail/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { Quiet, TwoLine } from "@/components/office/parts";
 import { req } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Outlet } from "@/lib/api/types";
@@ -13,19 +14,19 @@ import { OutletSheet, type OutletSheetState } from "./OutletSheet";
 
 /** Registration columns are headed with the merchant's own labels. */
 const outletColumns = (labels: { business: string; tax: string }): DataTableColumn<Outlet>[] => [
-  { key: "name", header: "Name", sortable: true, isRowHeader: true, render: (o) => <span className="text-ink">{o.name}</span> },
-  { key: "address", header: "Address", render: (o) => <span className="text-ink-2">{o.address ?? "—"}</span> },
-  { key: "phone", header: "Phone", render: (o) => <span className="tabular">{o.phone ?? "—"}</span> },
-  { key: "business_registration_no", header: labels.business, render: (o) => <span className="font-mono text-caption">{o.business_registration_no ?? "—"}</span> },
-  { key: "tax_registration_no", header: labels.tax, render: (o) => <span className="font-mono text-caption">{o.tax_registration_no ?? "—"}</span> },
+  { key: "name", header: "Name", sortable: true, isRowHeader: true, width: "1.4fr", render: (o) => <TwoLine primary={o.name} /> },
+  { key: "address", header: "Address", render: (o) => <Quiet>{o.address ?? "—"}</Quiet> },
+  { key: "phone", header: "Phone", render: (o) => (o.phone ? <span className="tabular">{o.phone}</span> : <Quiet>—</Quiet>) },
+  { key: "business_registration_no", header: labels.business, render: (o) => (o.business_registration_no ? <span className="tabular break-words">{o.business_registration_no}</span> : <Quiet>—</Quiet>) },
+  { key: "tax_registration_no", header: labels.tax, render: (o) => (o.tax_registration_no ? <span className="tabular break-words">{o.tax_registration_no}</span> : <Quiet>—</Quiet>) },
   { key: "business_day_cutoff", header: "Day ends", sortable: true, render: (o) => <span className="tabular">{o.business_day_cutoff ?? "Merchant default"}</span> },
-  { key: "hours", header: "Hours", render: (o) => <span className="text-ink-2">{summariseHours(o.hours)}</span> },
+  { key: "hours", header: "Hours", render: (o) => <Quiet>{summariseHours(o.hours)}</Quiet> },
   {
     key: "archived",
     header: "Status",
     sortable: true,
     sortValue: (o) => (o.archived ? 1 : 0),
-    render: (o) => (o.archived ? <StatusDot status="neutral" label="Archived" muted /> : <StatusDot status="paid" label="Active" />),
+    render: (o) => (o.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <Pill size="sm" tone="paid">Active</Pill>),
   },
 ];
 
@@ -47,15 +48,15 @@ export function OutletsView({ initialOutlets }: { initialOutlets: Outlet[] }) {
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-ink-2">
+        <p className="text-[14px] text-ink-2">
           {rows.length} {rows.length === 1 ? "outlet" : "outlets"}
           {!showArchived && archivedCount ? ` · ${archivedCount} archived` : ""}
         </p>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
           </Switch>
-          <Button variant="primary" onPress={() => setSheet({ mode: "create" })}>
+          <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
             Add outlet
           </Button>
         </div>
@@ -69,7 +70,7 @@ export function OutletsView({ initialOutlets }: { initialOutlets: Outlet[] }) {
         defaultSort={{ column: "name", direction: "ascending" }}
         onRowAction={(o) => setSheet({ mode: "edit", outlet: o })}
         rowClassName={(o) => (o.archived ? "text-ink-2" : undefined)}
-        emptyState={<EmptyState variant="quiet" title="No outlets yet" hint="Tap Add outlet to create the first one." />}
+        emptyState={<EmptyState variant="centred" title="No outlets yet" hint="Tap Add outlet to create the first one." />}
       />
 
       <OutletSheet state={sheet} onClose={() => setSheet(null)} />

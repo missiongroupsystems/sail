@@ -3,6 +3,7 @@
 import { createPosApi, type PosApi } from "../api/client";
 import { useSessionStore } from "../state/session";
 import { useStationStore } from "../state/station";
+import { useUiStore } from "../state/ui";
 
 let singleton: PosApi | null = null;
 
@@ -18,7 +19,11 @@ export function posApi(): PosApi {
       getToken: currentToken,
       onUnauthenticated: () => {
         // A 401 while signed in means the PIN session ended on the register: lock, keep the station paired.
-        if (useSessionStore.getState().token) useSessionStore.getState().lock("Your session ended. Sign in again.");
+        // The register has already ended it, so there is nothing to end; the PIN pad says why.
+        if (useSessionStore.getState().token) {
+          useSessionStore.getState().lock("Your session ended. Sign in again.");
+          useUiStore.getState().clearForLock();
+        }
       },
     });
   }

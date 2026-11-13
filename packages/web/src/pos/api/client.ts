@@ -23,8 +23,9 @@ export function createPosApi({ baseUrl = POS_API_URL, getToken, onUnauthenticate
   const client = createApi({ baseUrl, token: null, timeoutMs });
   client.use({
     onRequest({ request }) {
+      // A call that names its own token keeps it: ending a session the station has already locked sends that session's token.
       const token = getToken();
-      if (token) request.headers.set("authorization", `Bearer ${token}`);
+      if (token && !request.headers.has("authorization")) request.headers.set("authorization", `Bearer ${token}`);
       return request;
     },
     onResponse({ response }) {

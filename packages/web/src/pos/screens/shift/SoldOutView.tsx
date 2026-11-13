@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, QuantityStepper, SearchField, Sheet, Skeleton, TextField, useLocale } from "@sail/ui";
+import { Badge, Button, QuantityStepper, SearchField, Sheet, Skeleton, TextField, soldOutText, useLocale } from "@sail/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
@@ -63,7 +63,7 @@ export function SoldOutView() {
       <AriaButton onPress={() => setPicked(p)} className="press pos-touch flex min-h-14 w-full items-center justify-between gap-3 rounded-tile px-4 text-left outline-none data-[pressed]:bg-surface-2 data-[hovered]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:outline-status-seated">
         <span className="min-w-0">
           <span className="block truncate text-line text-ink">{p.name}</span>
-          <span className="block truncate text-caption text-ink-2">{p.sku ? `${p.sku} · ` : ""}{e?.sold_out ? (e.sold_out_until ? `Sold out until ${clock(e.sold_out_until)}` : "Sold out") : p.unavailable_reason ?? "Available"}{e?.daily_cap != null ? ` · cap ${e.daily_cap}${e.cap_remaining != null ? ` (${e.cap_remaining} left)` : ""}` : ""}</span>
+          <span className="block truncate text-caption text-ink-2">{p.sku ? `${p.sku} · ` : ""}{e?.sold_out ? soldOutText(e, clock) : p.unavailable_reason ?? "Available"}{e?.daily_cap != null ? ` · cap ${e.daily_cap}${e.cap_remaining != null ? ` (${e.cap_remaining} left)` : ""}` : ""}</span>
         </span>
         {e?.sold_out ? <Badge tone="alert">Sold out</Badge> : e?.daily_cap != null ? <Badge tone="sent">Capped</Badge> : null}
       </AriaButton>
@@ -71,24 +71,25 @@ export function SoldOutView() {
   );
 
   return (
-    <div className="mx-auto flex w-full max-w-[880px] flex-col gap-6 px-8 py-8">
+    <div className="flex w-full flex-col gap-4 px-4 pt-1 pb-4">
       <div>
-        <h1 className="text-title text-ink">Sold out</h1>
+        <h2 className="font-heading text-[22px] leading-tight font-semibold tracking-[-0.01em] text-ink">Sold out</h2>
         <p className="text-body text-ink-2">Search the menu, tap an item, then say for how long. Tiles update on every station.</p>
       </div>
       <SearchField value={query} onChange={setQuery} placeholder="Search the menu" label="Search the menu" />
       {query.trim() ? (
-        <section>
-          <h2 className="mb-2 text-caption text-ink-2 uppercase tracking-[0.04em]">Results</h2>
-          {results.length === 0 ? <p className="text-body text-ink-2">Nothing on this menu matches "{query}".</p> : <ul className="flex flex-col gap-1">{results.map((p) => row(p, entries.get(p.id)))}</ul>}
+        <section className="rounded-panel border border-rule bg-surface px-3 pb-3">
+          <h2 className="-mx-3 mb-2 border-b border-rule px-5 py-3.5 font-heading text-[16px] font-semibold text-ink">Results</h2>
+          {results.length === 0 ? <p className="px-2 py-2 text-body text-ink-2">Nothing on this menu matches "{query}".</p> : <ul className="flex flex-col gap-1">{results.map((p) => row(p, entries.get(p.id)))}</ul>}
         </section>
       ) : null}
-      <section>
-        <h2 className="mb-2 text-caption text-ink-2 uppercase tracking-[0.04em]">Sold out or capped now</h2>
-        {stock.isLoading && !stock.data ? <Skeleton lines={3} /> : affected.length === 0 ? <p className="text-body text-ink-2">Nothing is sold out at this outlet.</p> : <ul className="flex flex-col gap-1">{affected.map(({ e, p }) => row(p!, e))}</ul>}
+      {/* The list sits in a panel with a title row, as the Printers page's. */}
+      <section className="rounded-panel border border-rule bg-surface px-3 pb-3">
+        <h2 className="-mx-3 mb-2 border-b border-rule px-5 py-3.5 font-heading text-[16px] font-semibold text-ink">Sold out or capped now</h2>
+        {stock.isLoading && !stock.data ? <Skeleton lines={3} /> : affected.length === 0 ? <p className="px-2 py-2 text-body text-ink-2">Nothing is sold out at this outlet.</p> : <ul className="flex flex-col gap-1">{affected.map(({ e, p }) => row(p!, e))}</ul>}
       </section>
 
-      <Sheet isOpen={Boolean(picked)} onOpenChange={(o) => (!o ? setPicked(null) : undefined)} title={picked?.name ?? ""} description={entry?.sold_out ? (entry.sold_out_until ? `Sold out until ${clock(entry.sold_out_until)}` : "Sold out") : "Available now"} isDismissable={!busy}>
+      <Sheet labelledClose isOpen={Boolean(picked)} onOpenChange={(o) => (!o ? setPicked(null) : undefined)} title={picked?.name ?? ""} description={entry?.sold_out ? soldOutText(entry, clock) : "Available now"} isDismissable={!busy}>
         {picked ? (
           <div className="flex flex-col gap-6">
             {!canMark ? <p className="text-body text-ink-2">Marking items sold out needs a Cashier or above.</p> : null}

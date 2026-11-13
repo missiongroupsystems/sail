@@ -1,12 +1,14 @@
 "use client";
 
-import { Badge, Button, DataTable, EmptyState, InlineError, StatusDot, Switch, type DataTableColumn, useLocale } from "@sail/ui";
+import { Badge, Button, DataTable, EmptyState, InlineError, SectionHead, Switch, type DataTableColumn, useLocale } from "@sail/ui";
+import Link from "next/link";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
 import { label } from "@/components/backoffice/labels";
 import { useAllProducts } from "@/components/backoffice/products";
 import { boKeys, can, PRINTER_ROLE_LABEL, plural, type CreatedJob, type Printer, type Relay } from "@/components/backoffice/register";
+import { RelayCard } from "@/components/backoffice/RelayPairingPanel";
 import { Warnings } from "@/components/backoffice/Warnings";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
@@ -134,13 +136,14 @@ export function PrintersView({ outlets, scope, initialOutletId, initialPrinters,
       key: "status",
       header: "Relay status",
       render: (p) => {
-        if (p.archived) return <StatusDot status="neutral" label="Archived" muted />;
+        if (p.archived) return <Badge>Archived</Badge>;
         const s = latestStatus(relays.data ?? [], p.id);
-        if (!s) return <StatusDot status="neutral" label="No report yet" muted />;
+        if (!s) return <Badge>No report yet</Badge>;
         return (
-          <span className="inline-flex flex-col leading-tight">
-            <StatusDot status={s.ok ? "paid" : "alert"} label={s.ok ? "Reachable" : s.error || "Not reachable"} />
-            <span className="pl-4 text-caption text-ink-2" title={dayClock(s.checked_at)}>
+          <span className="inline-flex flex-col items-start gap-0.5 leading-tight">
+            <Badge tone={s.ok ? "paid" : "alert"}>{s.ok ? "Reachable" : "Not reachable"}</Badge>
+            {!s.ok && s.error ? <span className="max-w-[260px] text-caption whitespace-normal text-status-alert">{s.error}</span> : null}
+            <span className="text-caption text-ink-2" title={dayClock(s.checked_at)}>
               {s.relay} · {dayClock(s.checked_at)}
             </span>
           </span>
@@ -169,7 +172,7 @@ export function PrintersView({ outlets, scope, initialOutletId, initialPrinters,
             Show archived
           </Switch>
         </div>
-        <Button variant="primary" onPress={() => setSheet({ mode: "create" })} isDisabled={!outletId || !admin}>
+        <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })} isDisabled={!outletId || !admin}>
           Add printer
         </Button>
       </div>
@@ -177,16 +180,41 @@ export function PrintersView({ outlets, scope, initialOutletId, initialPrinters,
       {coverage ? <Warnings warnings={coverage.warnings} className="mb-4" /> : null}
       {coverage && coverage.warnings.length === 0 && coverage.fallbackCount > 0 ? <p className="mb-4 text-caption text-ink-2">{plural(coverage.fallbackCount, "product falls", "products fall")} back to the default kitchen printer.</p> : null}
       {note ? (
-        <div className="mb-4 flex flex-col gap-2" role="status">
+        <div className="mb-4 flex flex-col gap-2 rounded-[14px] bg-surface-2 px-5 py-3" role="status">
           <p className="text-body text-ink">{note.text}</p>
           <Warnings warnings={note.warnings} />
         </div>
       ) : null}
       <InlineError error={test.error} className="mb-4" />
 
+      {outletId && (relays.data ?? []).length > 0 ? (
+        <section aria-labelledby="printing-relays" className="mb-8">
+          <SectionHead
+            as="h2"
+            id="printing-relays"
+            title="Print relays"
+            className="mb-3"
+            actions={
+              <Link href="/printing/relays" className="text-caption text-ink underline underline-offset-4">
+                Manage relays
+              </Link>
+            }
+          />
+          <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {(relays.data ?? []).map((r) => (
+              <li key={r.id}>
+                <RelayCard relay={r} className="h-full" />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {outlets.length === 0 ? (
         <EmptyState title="No outlets yet" hint="Printers belong to an outlet. Add an outlet first." />
       ) : (
+        <>
+        <SectionHead as="h2" title="Printers" className="mb-1" />
         <DataTable
           aria-label="Printers"
           columns={columns}
@@ -196,15 +224,41 @@ export function PrintersView({ outlets, scope, initialOutletId, initialPrinters,
           defaultSort={{ column: "name", direction: "ascending" }}
           onRowAction={(p) => setSheet({ mode: "edit", printer: p })}
           rowClassName={(p) => (p.archived ? "text-ink-2" : undefined)}
-          emptyState={<EmptyState variant="quiet" title="No printers at this outlet" hint={admin ? "Tap Add printer. Give it a fixed IP on the outlet LAN, port 9100." : "An Admin adds printers."} />}
+          emptyState={<EmptyState variant="centred" title="No printers at this outlet" hint={admin ? "Tap Add printer. Give it a fixed IP on the outlet LAN, port 9100." : "An Admin adds printers."} />}
         />
+        </>
       )}
       <InlineError error={printers.error ?? relays.error} className="mt-4" />
       {!admin ? <p className="mt-3 text-caption text-ink-2">Printers are read-only for your role. An Admin adds, edits and tests them.</p> : null}
+
+      {outletId ? <NotPrinted outletId={outletId} /> : null}
 
       {outletId ? <DisplayDestinations outletId={outletId} stations={stations.data ?? []} canEdit={admin} /> : null}
 
       {outletId ? <PrinterSheet state={sheet} outletId={outletId} printers={all} stations={stations.data ?? []} canEdit={admin} onClose={() => setSheet(null)} /> : null}
     </>
+  );
+}
+
+/** "Not printed": tickets the register could not print, with a way to the full list. */
+function NotPrinted({ outletId }: { outletId: string }) {
+  const failed = useQuery({
+    queryKey: ["printing", "not-printed", outletId],
+    queryFn: () => req(api.GET("/v1/outlets/{id}/print-jobs", { params: { path: { id: outletId }, query: { status: "failed", limit: 50 } } })).then((r) => r.data),
+    refetchInterval: 30_000,
+  });
+  const n = failed.data?.length ?? 0;
+  return (
+    <section aria-labelledby="printing-not-printed" className="mt-8">
+      <SectionHead as="h2" id="printing-not-printed" title="Not printed" className="mb-1" />
+      <p className="text-body text-ink-2" role="status">
+        {!failed.data ? "Checking…" : n === 0 ? "Every ticket the register sent has printed or is on its way." : `${plural(n, "ticket has", "tickets have")} not printed. `}
+        {n > 0 ? (
+          <Link href="/printing/jobs" className="text-ink underline underline-offset-4">
+            See them in Print jobs
+          </Link>
+        ) : null}
+      </p>
+    </section>
   );
 }

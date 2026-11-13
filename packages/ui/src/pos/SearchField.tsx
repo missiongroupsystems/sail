@@ -19,14 +19,14 @@ export type SearchFieldProps = {
 export function SearchField({ value, onChange, placeholder = "Search", label = "Search the menu", autoFocus, className }: SearchFieldProps) {
   return (
     <AriaSearchField value={value} onChange={onChange} aria-label={label} autoFocus={autoFocus} className={cx("group relative flex items-center", className)}>
-      <Icon icon={Search} size={20} className="pointer-events-none absolute left-3 text-ink-2" />
+      <Icon icon={Search} size={18} className="pointer-events-none absolute left-4 text-ink-3" />
       <Input
         placeholder={placeholder}
-        className="min-h-14 w-full rounded-tile bg-surface-2 pr-12 pl-11 text-line text-ink placeholder:text-ink-2/70 outline-none data-[focused]:ring-2 data-[focused]:ring-status-seated [&::-webkit-search-cancel-button]:hidden"
+        className="min-h-14 w-full rounded-chip border border-rule bg-surface pr-12 pl-11 group-data-[empty]:pr-4 text-line text-ink placeholder:text-ink-3 outline-none transition-colors duration-[120ms] data-[hovered]:border-rule-strong data-[focused]:border-rule-strong data-[focus-visible]:border-ink [&::-webkit-search-cancel-button]:hidden"
       />
       <AriaButton
         aria-label="Clear search"
-        className={cx("absolute right-1 flex size-12 items-center justify-center rounded-tile text-ink-2 outline-none data-[pressed]:bg-surface group-data-[empty]:hidden")}
+        className={cx("absolute right-1 flex size-12 items-center justify-center rounded-chip text-ink-2 outline-none data-[pressed]:bg-surface group-data-[empty]:hidden")}
       >
         <Icon icon={X} size={20} />
       </AriaButton>

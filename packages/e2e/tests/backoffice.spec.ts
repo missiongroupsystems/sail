@@ -84,7 +84,7 @@ test("back office: body text and secondary buttons are readable in Day and Servi
       ["page heading", "main h1"],
       ["secondary text", "main .text-ink-2"],
       ["table text", 'main [role="grid"] [role="rowheader"], main table th[scope="row"], main table td'],
-      ["secondary button", "main button.bg-surface"],
+      ["secondary button", "main button.bg-surface-2"],
     ] as const) {
       await expect.poll(async () => (await textContrast(page, selector)).ratio, { message: `${theme}: ${what} contrast`, timeout: 5_000 }).toBeGreaterThanOrEqual(4.5);
     }

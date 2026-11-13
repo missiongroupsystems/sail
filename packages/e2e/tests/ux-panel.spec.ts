@@ -26,7 +26,7 @@ async function seatFreeTable(page: Page) {
 /** A takeaway order from the floor, so these checks never run out of free tables. */
 async function newTakeaway(page: Page) {
   await page.getByRole("button", { name: "Floor", exact: true }).click();
-  await page.getByRole("button", { name: "+ Takeaway order" }).click();
+  await page.getByRole("button", { name: "Takeaway order", exact: true }).click();
   await expect(page.getByRole("navigation", { name: "Menu sections" })).toBeVisible();
 }
 
@@ -150,10 +150,11 @@ test.describe("iPad landscape 1180×820", () => {
 
       await test.step("cash with 15%: the tip is a whole number of 5-cent steps", async () => {
         await page.getByRole("group", { name: "Payment method" }).getByRole("button", { name: "Cash", exact: true }).click();
+        await page.getByRole("button", { name: "Type the tip" }).click();
         await page.getByRole("group", { name: "Tip" }).getByRole("button", { name: "Tip 15%" }).click();
-        const status = pay.getByRole("status").filter({ hasText: "tip $" });
+        const status = pay.getByRole("status").filter({ hasText: /Tip\s*\$/ });
         await expect(status).toBeVisible();
-        const tip = cents((await status.innerText()).match(/tip (\$[\d.]+)/)![1]!);
+        const tip = cents((await status.innerText()).match(/Tip\s*(\$[\d.]+)/)![1]!);
         // 15% of the amount, rounded half up to the cent, then to the nearest 5 cents.
         expect(tip).toBe(Math.round(Math.round((balance * 15) / 100) / 5) * 5);
       });
@@ -161,6 +162,7 @@ test.describe("iPad landscape 1180×820", () => {
       let shown = 0;
       await test.step("card with 18%: the button asks for the bill and the tip", async () => {
         await page.getByRole("group", { name: "Payment method" }).getByRole("button", { name: "Card", exact: true }).click();
+        await page.getByRole("button", { name: "Type the tip" }).click();
         await page.getByRole("group", { name: "Tip" }).getByRole("button", { name: "Tip 18%" }).click();
         const take = page.getByRole("button", { name: /^Take \$[\d.]+ by Card/ });
         await expect(take).toBeEnabled();
@@ -255,9 +257,11 @@ test.describe("iPad landscape 1180×820", () => {
     await methods.getByRole("button", { name: "Card (terminal)", exact: true }).click();
     await page.getByRole("button", { name: /^Send \$[\d.]+ to the terminal/ }).click();
     await expect(page.getByText("Waiting for the terminal.", { exact: false })).toBeVisible();
-    await page.getByRole("banner").getByRole("button").first().click();
+    // Back is the first button in the screen's own row, under the top bar (the top bar now holds the destinations on every screen).
+    await page.getByRole("main").getByRole("button").first().click();
     await page.getByRole("button", { name: /^Pay \$/ }).click();
     await expect(page.getByText("Waiting for the terminal.", { exact: false })).toBeVisible();
+    await page.getByRole("button", { name: "Use another method" }).click();
     await methods.getByRole("button", { name: "Cash", exact: true }).click();
     await expect(page.getByText(/^A terminal payment of \$[\d.]+ is waiting for the guest/)).toBeVisible();
     await page.getByRole("button", { name: "Show the terminal payment" }).click();
@@ -294,8 +298,9 @@ for (const [width, height] of [
         for (const r of rights) expect(r).toBeLessThanOrEqual(canvas.x + canvas.width + 1);
         await expect(page.getByText(/^Some tables are off screen/)).toHaveCount(0);
       } else {
-        expect(Math.max(...rights)).toBeGreaterThan(canvas.x + canvas.width);
-        await expect(page.getByText("Some tables are off screen. Swipe across to see them all.")).toBeVisible();
+        // Portrait puts the Now rail under the plan, so the plan may now fit; if it does not, it says so.
+        if (Math.max(...rights) > canvas.x + canvas.width + 1) await expect(page.getByText("Some tables are off screen. Swipe across to see them all.")).toBeVisible();
+        else await expect(page.getByText(/^Some tables are off screen/)).toHaveCount(0);
         // Still a comfortable tap target.
         expect((await tables.first().boundingBox())!.width).toBeGreaterThanOrEqual(48);
       }
@@ -320,10 +325,10 @@ test.describe("guest phone 390×844", () => {
     await expect(sheet.getByRole("button", { name: /^Add to order · \$16\.00 \+ \$2\.00$/ })).toBeVisible();
     await sheet.getByLabel("Note for the kitchen").pressSequentially(`no peanuts https://example.com/${"x".repeat(120)}`);
     await sheet.getByRole("button", { name: /^Add to order/ }).click();
-    await page.getByRole("button", { name: /^Review 1 item/ }).click();
+    await page.getByRole("button", { name: /^View your order, 1 item/ }).click();
     await expect(page.getByText(/^Note: no peanuts/)).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-    const send = (await page.getByRole("button", { name: /Send to kitchen|Waiting for staff/ }).boundingBox())!;
+    const send = (await page.getByRole("button", { name: /to the kitchen$|Waiting for staff/ }).boundingBox())!;
     expect(send.x + send.width).toBeLessThanOrEqual(390);
   });
 });

@@ -1,7 +1,8 @@
 "use client";
 
+import { Users } from "lucide-react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Badge, Button, DataTable, EmptyState, InlineError, SectionHeading, Sheet, StatusDot, TextField, type DataTableColumn } from "@sail/ui";
+import { Badge, Button, DataTable, EmptyState, InlineError, Panel, Pill, Sheet, StatusDot, TextField, type DataTableColumn } from "@sail/ui";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -81,15 +82,15 @@ export function CustomersView({ initialGroups, initialCustomers }: { initialGrou
         </span>
       ),
     },
-    { key: "archived", header: "Status", render: (c) => (c.archived ? <StatusDot status="neutral" label="Archived" muted /> : <StatusDot status="paid" label="Active" />) },
+    { key: "archived", header: "Status", render: (c) => (c.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <Pill size="sm" tone="paid">Active</Pill>) },
   ];
 
   return (
-    <div className="grid gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,3fr)_minmax(0,1fr)]">
-      <section>
+    <div className="grid items-start gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,3fr)_minmax(0,1fr)]">
+      <section className="min-w-0">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-          <TextField aria-label="Find a customer" type="search" value={q} onChange={setQ} placeholder="Mobile number or name" className="w-[280px]" />
-          <Button variant="primary" onPress={() => setCustomerSheet({ mode: "create" })}>
+          <TextField size="sm" aria-label="Find a customer" type="search" value={q} onChange={setQ} placeholder="Mobile number or name" className="w-[280px]" />
+          <Button size="sm" variant="primary" onPress={() => setCustomerSheet({ mode: "create" })}>
             Add customer
           </Button>
         </div>
@@ -102,7 +103,7 @@ export function CustomersView({ initialGroups, initialCustomers }: { initialGrou
           className={customers.isPlaceholderData ? "opacity-60" : undefined}
           defaultSort={{ column: "name", direction: "ascending" }}
           onRowAction={(c) => setCustomerSheet({ mode: "edit", customer: c })}
-          emptyState={<EmptyState variant="quiet" title={dq ? "No customers match" : "No customers yet"} hint={dq ? "Try the mobile number without spaces, or part of the name." : "Customers are created from pickup and delivery orders, by import, or here."} />}
+          emptyState={<EmptyState variant="centred" icon={Users} title={dq ? "No customers match" : "No customers yet"} hint={dq ? "Try the mobile number without spaces, or part of the name." : "Customers are created from pickup and delivery orders, by import, or here."} />}
         />
         <InlineError error={customers.error} className="mt-4" />
         <p className="mt-3 text-caption text-ink-2 tabular">
@@ -110,38 +111,38 @@ export function CustomersView({ initialGroups, initialCustomers }: { initialGrou
         </p>
       </section>
 
-      <section className="flex flex-col gap-3">
-        <SectionHeading
-          title="Groups"
-          aside={
-            <Button variant="quiet" className="min-h-8 px-2 text-caption" onPress={() => setGroupSheet({ mode: "create" })}>
-              Add group
-            </Button>
-          }
-        />
+      <Panel
+        title="Groups"
+        body="flush"
+        aside={
+          <Button size="sm" onPress={() => setGroupSheet({ mode: "create" })}>
+            Add group
+          </Button>
+        }
+      >
         {groups.data.length === 0 ? (
-          <EmptyState variant="quiet" title="No groups yet" hint="Groups like VIP or Staff let pricing rules apply to a customer." />
+          <EmptyState variant="quiet" className="px-5 py-4" title="No groups yet" hint="Groups like VIP or Staff let pricing rules apply to a customer." />
         ) : (
-          <ul className="flex flex-col">
-            <li className="hairline-b">
-              <Button variant="quiet" className={`w-full justify-start px-2 font-normal ${groupId === null ? "text-ink" : "text-ink-2"}`} onPress={() => setGroupId(null)}>
+          <ul className="flex flex-col gap-0.5 p-2">
+            <li>
+              <Button variant="quiet" className={`min-h-10 w-full justify-start rounded-[10px] px-3 font-normal ${groupId === null ? "bg-surface-3 text-ink" : "text-ink-2"}`} onPress={() => setGroupId(null)}>
                 All customers
               </Button>
             </li>
             {groups.data.map((g) => (
-              <li key={g.id} className="flex items-center gap-1 hairline-b">
-                <Button variant="quiet" className={`min-w-0 flex-1 justify-start px-2 text-left font-normal ${groupId === g.id ? "text-ink" : "text-ink-2"}`} onPress={() => setGroupId(g.id)}>
+              <li key={g.id} className="flex items-center gap-1">
+                <Button variant="quiet" className={`min-h-10 min-w-0 flex-1 justify-start rounded-[10px] px-3 text-left font-normal ${groupId === g.id ? "bg-surface-3 text-ink" : "text-ink-2"}`} onPress={() => setGroupId(g.id)}>
                   <span className="truncate">{g.name}</span>
                   {g.archived ? <span className="ml-2 text-caption">archived</span> : null}
                 </Button>
-                <Button variant="quiet" className="min-h-8 px-2 text-caption text-ink-2" onPress={() => setGroupSheet({ mode: "edit", group: g })}>
+                <Button variant="quiet" className="min-h-8 px-2.5 text-caption text-ink-2" onPress={() => setGroupSheet({ mode: "edit", group: g })}>
                   Edit
                 </Button>
               </li>
             ))}
           </ul>
         )}
-      </section>
+      </Panel>
 
       <CustomerFormSheet state={customerSheet} groups={groups.data} onClose={() => setCustomerSheet(null)} />
       <GroupFormSheet state={groupSheet} onClose={() => setGroupSheet(null)} />
@@ -220,12 +221,12 @@ function CustomerFormSheet({ state, groups, onClose }: { state: CustomerSheet; g
           </div>
           <RhfTextField control={form.control} name="notes" label="Notes" multiline rows={2} description="Seen by staff on the order, never by the customer." />
         </FormSection>
-        <FormSection title="Consent">
+        <FormSection variant="label" title="Consent">
           <RhfSwitch control={form.control} name="marketing_consent" description="The customer agreed to receive marketing messages. Recorded with the time of the change.">
             Marketing consent
           </RhfSwitch>
         </FormSection>
-        <FormSection title="Groups" hint="Pricing rules can apply to customers in a group.">
+        <FormSection variant="label" title="Groups" hint="Pricing rules can apply to customers in a group.">
           <RhfCheckboxGroup control={form.control} name="group_ids" aria-label="Groups" options={groups.filter((g) => !g.archived).map((g) => ({ id: g.id, label: g.name, description: g.description ?? undefined }))} columns={2} emptyHint="No groups yet. Add one on the right." />
         </FormSection>
         <InlineError error={save.error ?? archive.error} />

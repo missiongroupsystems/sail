@@ -1,11 +1,12 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { zonedToUtc, type MoneyFormat, type TaxBreakdown } from "@sail/shared";
+import { zonedToUtc, type MoneyFormat, type TaxAmount, type TaxBreakdown } from "@sail/shared";
 import { tx } from "../db/client.js";
 import { toCsv } from "./csv.js";
 import { businessDayInputs } from "./business-day.js";
 import { shiftDate } from "../lib/time.js";
 import { pdfMoney, winAnsi } from "../lib/pdf-text.js";
 import type { ZReport } from "./shifts.js";
+import { taxDue } from "./tax-due.js";
 
 /**
  * Operational reports read from the `report_*` views. Every
@@ -44,10 +45,11 @@ export type SalesSummary = {
   /**
    * `net` is net sales: items after discounts, without tax and fees, less `refunds` (the refunds' net).
    * `gross` and `discounts` are as charged (tax included in inclusive mode); `fees` excludes tax.
-   * `total` is what was collected before refunds: `net + refunds + fees + tax = total`.
+   * `total` is what was collected before refunds: `net + refunds + fees + tax = total`, and
+   * `net_before_refunds + fees + tax = total`; after refunds, `total_after_refunds = total - refunds.amount`.
    * Every `net` below (by day, order type, source and category) is the same figure split up.
    */
-  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; tax: number; refunds: number; net: number; total: number; rounding: number; tips: number };
+  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; tax: number; refunds: number; net: number; total: number; rounding: number; tips: number; net_before_refunds: number; total_after_refunds: number };
   /** totals.tax by component name and rate. */
   taxes: TaxBreakdown[];
   by_day: { business_date: string; orders: number; covers: number; gross: number; net: number }[];
@@ -58,8 +60,13 @@ export type SalesSummary = {
   adjustments_by_rule: { rule_key: string; name: string; kind: string; report_class: string; count: number; total: number }[];
   adjustments_by_class: { report_class: string; kind: string; count: number; total: number }[];
   voids: { count: number; quantity: number; value: number };
-  /** `taxes` is the tax given back, by component; the period's tax due is `taxes` (in totals) less these. */
-  refunds: { count: number; amount: number; by_kind: { kind: string; count: number; amount: number }[]; taxes: { name: string; bps: number; amount: number }[] };
+  /**
+   * `amount` is the bills' share given back, `net + fees + tax = amount`; `taxes` is the tax given back, by component;
+   * the period's tax due is `taxes` (in totals) less these. `tips` were given back on top of `amount`.
+   */
+  refunds: { count: number; amount: number; net: number; fees: number; tax: number; tips: number; by_kind: { kind: string; count: number; amount: number }[]; taxes: { name: string; bps: number; amount: number }[] };
+  /** The period's tax due by component: `taxes` less `refunds.taxes`, matched on name and rate. */
+  tax_due: TaxAmount[];
   generated_at: string;
 };
 
@@ -92,14 +99,14 @@ export async function salesSummary(f: ReportFilters): Promise<SalesSummary> {
   const byRule = await sql<SalesSummary["adjustments_by_rule"]>`select rule_key, name, kind, report_class, count(*)::int as count, coalesce(sum(total),0)::bigint as total from report_adjustments r where ${w} group by rule_key, name, kind, report_class order by kind, total`;
   const byClass = await sql<SalesSummary["adjustments_by_class"]>`select report_class, kind, count(*)::int as count, coalesce(sum(total),0)::bigint as total from report_adjustments r where ${w} group by report_class, kind order by kind, total`;
   const [voids] = await sql<{ count: number; quantity: number; value: number }[]>`select count(*)::int as count, coalesce(sum(quantity),0)::bigint as quantity, coalesce(sum(value),0)::bigint as value from report_voids r where ${w}`;
-  const [refunds] = await sql<{ count: number; amount: number; net: number }[]>`select count(*)::int as count, coalesce(sum(total),0)::bigint as amount, coalesce(sum(net),0)::bigint as net from report_refunds r where ${w}`;
+  const [refunds] = await sql<{ count: number; amount: number; net: number; tax: number; tips: number }[]>`select count(*)::int as count, coalesce(sum(total),0)::bigint as amount, coalesce(sum(net),0)::bigint as net, coalesce(sum(tax),0)::bigint as tax, coalesce(sum(tip),0)::bigint as tips from report_refunds r where ${w}`;
   const refundTaxes = await sql<SalesSummary["refunds"]["taxes"]>`select t->>'name' as name, (t->>'bps')::int as bps, coalesce(sum((t->>'amount')::bigint),0)::bigint as amount from report_refunds r cross join lateral jsonb_array_elements(r.taxes) t where ${w} group by 1, 2 order by 2 desc, 1`;
   const refundKinds = await sql<{ kind: string; count: number; amount: number }[]>`select kind, count(*)::int as count, coalesce(sum(total),0)::bigint as amount from report_refunds r where ${w} group by kind order by kind`;
   const rounding = byTender.reduce((s, x) => s + x.rounding, 0);
   const tips = byTender.reduce((s, x) => s + x.tips, 0);
   return {
     filters: f,
-    totals: { orders: t?.orders ?? 0, covers: t?.covers ?? 0, items: items?.n ?? 0, gross: t?.gross ?? 0, discounts: t?.discounts ?? 0, fees: t?.fees ?? 0, tax: t?.tax ?? 0, refunds: refunds?.net ?? 0, net: (t?.net ?? 0) - (refunds?.net ?? 0), total: t?.total ?? 0, rounding, tips },
+    totals: { orders: t?.orders ?? 0, covers: t?.covers ?? 0, items: items?.n ?? 0, gross: t?.gross ?? 0, discounts: t?.discounts ?? 0, fees: t?.fees ?? 0, tax: t?.tax ?? 0, refunds: refunds?.net ?? 0, net: (t?.net ?? 0) - (refunds?.net ?? 0), total: t?.total ?? 0, rounding, tips, net_before_refunds: t?.net ?? 0, total_after_refunds: (t?.total ?? 0) - (refunds?.amount ?? 0) },
     taxes,
     by_day: byDay,
     by_order_type: byType,
@@ -109,7 +116,8 @@ export async function salesSummary(f: ReportFilters): Promise<SalesSummary> {
     adjustments_by_rule: byRule,
     adjustments_by_class: byClass,
     voids: voids ?? { count: 0, quantity: 0, value: 0 },
-    refunds: { count: refunds?.count ?? 0, amount: refunds?.amount ?? 0, by_kind: refundKinds, taxes: refundTaxes },
+    refunds: { count: refunds?.count ?? 0, amount: refunds?.amount ?? 0, net: refunds?.net ?? 0, fees: (refunds?.amount ?? 0) - (refunds?.net ?? 0) - (refunds?.tax ?? 0), tax: refunds?.tax ?? 0, tips: refunds?.tips ?? 0, by_kind: refundKinds, taxes: refundTaxes },
+    tax_due: taxDue(taxes, refundTaxes),
     generated_at: new Date().toISOString(),
   };
 }

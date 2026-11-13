@@ -1,6 +1,8 @@
 "use client";
 
+import { ReceiptText } from "lucide-react";
 import { cx } from "../lib/cx";
+import { Icon } from "../components/Icon";
 import { Money } from "../components/Money";
 import { useLocale } from "../lib/locale";
 import { taxRows } from "../lib/tax";
@@ -45,9 +47,9 @@ const KIND_LABEL: Record<BillDocumentLike["kind"], string> = { prebill: "Bill", 
 
 function Row({ label, cents, strong, muted, signed }: { label: string; cents: number; strong?: boolean; muted?: boolean; signed?: boolean }) {
   return (
-    <div className={cx("flex items-baseline justify-between gap-4", strong ? "text-title text-ink" : muted ? "text-body text-ink-2" : "text-body text-ink")}>
-      <span className="min-w-0">{label}</span>
-      <Money cents={cents} size={strong ? "title" : "body"} signed={signed} />
+    <div className={cx("flex items-baseline justify-between gap-4", strong ? "pt-1 text-[18px] font-semibold text-ink" : muted ? "text-[15px] text-ink-2" : "text-[15px] text-ink")}>
+      <span className="min-w-0 wrap-anywhere">{label}</span>
+      <Money cents={cents} size={strong ? "heading" : "body"} signed={signed} className={cx(strong ? "font-heading text-[18px] font-semibold" : "text-[15px] text-ink")} />
     </div>
   );
 }
@@ -55,21 +57,26 @@ function Row({ label, cents, strong, muted, signed }: { label: string; cents: nu
 /**
  * One bill grammar on every surface: the lines, the
  * adjustments, a row per tax component in the outlet's tax mode, the total, then the
- * payments with cash rounding, tip and change, and the document numbers.
+ * payments with cash rounding, tip and change, and the document numbers. On the phone
+ * it is a summary card: the brand over the document's name, the lines in a bordered
+ * card, the totals in a grey panel.
  */
 export function BillDocumentView({ document: doc, className }: BillDocumentViewProps) {
   const t = doc.totals;
   const tax = taxRows(t.taxes, t.tax_mode);
   const { stamp } = useLocale();
   return (
-    <article className={cx("flex flex-col gap-6", className)} aria-label={`${KIND_LABEL[doc.kind]} ${doc.check_label}`}>
-      <header className="flex flex-col gap-1">
-        <h1 className="font-display text-title text-ink">{doc.header.brand_name}</h1>
-        <p className="text-body text-ink-2">{doc.header.outlet_name}</p>
-        <p className="mt-2 text-line text-ink">
+    <article className={cx("flex flex-col gap-5", className)} aria-label={`${KIND_LABEL[doc.kind]} ${doc.check_label}`}>
+      <header className="flex flex-col items-center gap-1 text-center">
+        <span aria-hidden className="mb-3 flex size-[72px] items-center justify-center rounded-full bg-surface-2 text-ink">
+          <Icon icon={ReceiptText} size={32} />
+        </span>
+        <h1 className="font-display text-[28px] leading-tight font-semibold tracking-tight text-balance text-ink wrap-anywhere">{doc.header.brand_name}</h1>
+        <p className="text-[15px] text-ink-2">{doc.header.outlet_name}</p>
+        <p className="mt-2 text-[15.5px] font-medium text-ink">
           {KIND_LABEL[doc.kind]} · {doc.check_label}
         </p>
-        <p className="text-body text-ink-2 tabular">
+        <p className="text-[14px] text-ink-2 tabular">
           Order {doc.header.order_no}
           {doc.header.table_name ? ` · Table ${doc.header.table_name}` : ""}
           {" · "}
@@ -83,29 +90,28 @@ export function BillDocumentView({ document: doc, className }: BillDocumentViewP
             {doc.original_date ? `, paid ${stamp(doc.original_date)}` : ""}
           </p>
         ) : null}
-        {doc.refund_reason ? <p className="text-caption text-ink-2">Reason: {doc.refund_reason}</p> : null}
+        {doc.refund_reason ? <p className="text-caption text-ink-2 wrap-anywhere">Reason: {doc.refund_reason}</p> : null}
       </header>
 
-      <ul className="flex flex-col hairline-t" aria-label="Items">
+      <ul className="flex flex-col divide-y divide-rule-subtle rounded-sheet border border-rule px-4" aria-label="Items">
         {doc.lines.map((l, i) => (
-          <li key={i} className="flex flex-col gap-1 py-3 hairline-b">
+          <li key={i} className="flex flex-col gap-0.5 py-3">
             <div className="flex items-baseline gap-3">
-              <span className="w-7 shrink-0 text-body tabular text-ink-2">{l.quantity}×</span>
-              <span className="min-w-0 flex-1 text-body text-ink">
-                {l.name}
+              <span className="min-w-0 flex-1 text-[15.5px] leading-snug text-ink wrap-anywhere">
+                <span className="font-medium tabular">{l.quantity} ×</span> {l.name}
                 {l.share ? <span className="text-ink-2"> · {l.share}</span> : null}
                 {l.seat_no ? <span className="text-ink-2"> · Seat {l.seat_no}</span> : null}
               </span>
-              <Money cents={l.amount} size="body" className="text-ink" />
+              <Money cents={l.amount} size="body" className="text-[15px] text-ink" />
             </div>
             {l.modifiers.map((m, j) => (
-              <div key={j} className="flex items-baseline gap-3 pl-10 text-caption text-ink-2">
-                <span className="min-w-0 flex-1">{m.name}</span>
+              <div key={j} className="flex items-baseline gap-3 text-[13.5px] text-ink-2">
+                <span className="min-w-0 flex-1 wrap-anywhere">{m.name}</span>
                 {m.price ? <Money cents={m.price} size="caption" signed /> : null}
               </div>
             ))}
             {l.quantity > 1 ? (
-              <div className="pl-10 text-caption text-ink-2">
+              <div className="text-[13.5px] text-ink-2">
                 <Money cents={l.unit_price} size="caption" /> each
               </div>
             ) : null}
@@ -113,7 +119,7 @@ export function BillDocumentView({ document: doc, className }: BillDocumentViewP
         ))}
       </ul>
 
-      <section className="flex flex-col gap-2" aria-label="Totals">
+      <section className="flex flex-col gap-2.5 rounded-sheet bg-surface-2 px-4 py-4" aria-label="Totals">
         <Row label="Subtotal" cents={t.subtotal} muted />
         {doc.adjustments.map((a, i) => (
           <Row key={i} label={a.name} cents={a.amount} muted />
@@ -121,7 +127,7 @@ export function BillDocumentView({ document: doc, className }: BillDocumentViewP
         {tax.before.map((r) => (
           <Row key={r.key} label={r.label} cents={r.amount} muted />
         ))}
-        <div className="pt-2 hairline-t">
+        <div className="mt-1 border-t border-rule pt-2">
           <Row label="Total" cents={t.total} strong />
         </div>
         {tax.after.map((r) => (
@@ -130,9 +136,9 @@ export function BillDocumentView({ document: doc, className }: BillDocumentViewP
       </section>
 
       {doc.payments?.length ? (
-        <section className="flex flex-col gap-2 pt-4 hairline-t" aria-label="Payments">
+        <section className="flex flex-col divide-y divide-rule-subtle rounded-sheet border border-rule" aria-label="Payments">
           {doc.payments.map((p, i) => (
-            <div key={i} className="flex flex-col gap-1">
+            <div key={i} className="flex flex-col gap-1 px-4 py-3.5">
               <Row label={p.tender} cents={p.amount} />
               {p.reference ? <p className="font-mono text-caption text-ink-2">Ref {p.reference}</p> : null}
               {p.rounding_cents ? <Row label="Cash rounding" cents={p.rounding_cents} muted signed /> : null}
@@ -143,13 +149,13 @@ export function BillDocumentView({ document: doc, className }: BillDocumentViewP
         </section>
       ) : null}
       {doc.balance != null && doc.balance !== 0 ? (
-        <section className="pt-4 hairline-t">
+        <section className="rounded-sheet bg-surface-2 px-4 py-3.5">
           <Row label="Balance due" cents={doc.balance} strong />
         </section>
       ) : null}
 
       {doc.footer_lines?.length || doc.outlet_phone || doc.business_registration || doc.tax_registration ? (
-        <footer className="flex flex-col gap-1 pt-4 text-caption text-ink-2 hairline-t">
+        <footer className="flex flex-col items-center gap-1 pt-1 text-center text-caption text-ink-2 wrap-anywhere">
           {doc.footer_lines?.map((f, i) => <p key={i}>{f}</p>)}
           {doc.outlet_phone ? <p className="tabular">Tel {doc.outlet_phone}</p> : null}
           {[doc.business_registration, doc.tax_registration].map((reg, i) =>

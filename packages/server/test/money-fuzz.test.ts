@@ -112,10 +112,10 @@ type AdjRow = { id: string; kind: string };
 type AdjLineRow = { order_line_id: string; amount: number; tax_amount: number; kind: string; tax_class_id: string | null; order_id: string };
 type CheckRow = { id: string; order_id: string; total: number; paid_total: number; rounding_total: number; refunded_total: number; discount_total: number; fee_total: number; tax_total: number; taxes: Tax[]; locked: boolean };
 type AllocRow = { check_id: string; order_line_id: string; share_num: number; share_den: number; total: number; tax: number; adjustments: Record<string, { amount: number; tax: number }> };
-type PayRow = { id: string; check_id: string; amount: number; rounding_cents: number; status: string };
+type PayRow = { id: string; check_id: string; amount: number; rounding_cents: number; tip_cents: number; status: string };
 type RefundRow = { id: string; check_id: string; total: number };
 type RefundLineRow = { refund_id: string; order_line_id: string; quantity: number; total: number; taxes: Tax[] };
-type RefundTenderRow = { payment_id: string; amount: number; rounding_cents: number; is_cash: boolean };
+type RefundTenderRow = { payment_id: string; amount: number; rounding_cents: number; tip_cents: number; is_cash: boolean };
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const byComponent = (ts: Tax[] | null) => {
@@ -137,10 +137,10 @@ async function invariants(c: Ctx): Promise<string[]> {
     sql<AdjLineRow[]>`select al.order_line_id, al.amount, al.tax_amount, a.kind, a.tax_class_id, a.order_id from order_adjustment_lines al join order_adjustments a on a.id = al.adjustment_id where a.merchant_id = ${mid}`,
     sql<CheckRow[]>`select id, order_id, total, paid_total, rounding_total, refunded_total, discount_total, fee_total, tax_total, taxes, locked_at is not null as locked from checks where merchant_id = ${mid}`,
     sql<AllocRow[]>`select ca.check_id, ca.order_line_id, ca.share_num, ca.share_den, ca.total, ca.tax, ca.adjustments from check_allocations ca join checks c on c.id = ca.check_id where c.merchant_id = ${mid}`,
-    sql<PayRow[]>`select id, check_id, amount, rounding_cents, status from payments where merchant_id = ${mid}`,
+    sql<PayRow[]>`select id, check_id, amount, rounding_cents, tip_cents, status from payments where merchant_id = ${mid}`,
     sql<RefundRow[]>`select id, check_id, total from refunds where merchant_id = ${mid}`,
     sql<RefundLineRow[]>`select refund_id, order_line_id, quantity, total, taxes from refund_lines where merchant_id = ${mid}`,
-    sql<RefundTenderRow[]>`select payment_id, amount, rounding_cents, is_cash from refund_tenders where merchant_id = ${mid}`,
+    sql<RefundTenderRow[]>`select payment_id, amount, rounding_cents, tip_cents, is_cash from refund_tenders where merchant_id = ${mid}`,
   ]);
   const adjKind = new Map(adjs.map((a) => [a.id, a.kind]));
 
@@ -203,14 +203,15 @@ async function invariants(c: Ctx): Promise<string[]> {
   for (const p of pays) {
     const back = refundTenders.filter((t) => t.payment_id === p.id);
     if (sum(back.map((t) => t.amount)) > p.amount) v.push(`payment ${p.id}: refunded more than it took`);
-    if (back.some((t) => t.is_cash) && sum(back.map((t) => t.amount + t.rounding_cents)) > p.amount + p.rounding_cents) v.push(`payment ${p.id}: paid out more cash than it took`);
+    if (sum(back.map((t) => t.tip_cents)) > p.tip_cents) v.push(`payment ${p.id}: gave back more tip than it took`);
+    if (back.some((t) => t.is_cash) && sum(back.map((t) => t.amount + t.rounding_cents + t.tip_cents)) > p.amount + p.rounding_cents + p.tip_cents) v.push(`payment ${p.id}: paid out more cash than it took`);
     if (back.length && p.status !== "recorded") v.push(`payment ${p.id}: refunded and then ${p.status}`);
   }
   return v;
 }
 
-type Z = { scope: { business_date: string }; sales: { gross: number; discounts: number; fees: number; tax: number; taxes: Tax[]; refunds: number; net: number; total: number }; tenders: { amount: number }[]; refunds: { amount: number }; cash: { expected: number }; reconciliation: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number } };
-type Summary = { totals: { total: number; net: number; tax: number }; by_tender: { amount: number }[]; by_day: { net: number }[]; by_category: { net: number }[]; by_order_type: { net: number }[] };
+type Z = { scope: { business_date: string }; sales: { gross: number; discounts: number; fees: number; tax: number; taxes: Tax[]; refunds: number; net: number; total: number; net_before_refunds: number; total_after_refunds: number }; tenders: { amount: number }[]; refunds: { amount: number; net: number; fees: number; tax: number; tips: number; taxes: Tax[] }; cash: { expected: number }; reconciliation: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number } };
+type Summary = { totals: { total: number; net: number; tax: number; net_before_refunds: number; total_after_refunds: number }; refunds: { amount: number; net: number; fees: number; tax: number; tips: number }; by_tender: { amount: number }[]; by_day: { net: number }[]; by_category: { net: number }[]; by_order_type: { net: number }[] };
 
 async function reports(c: Ctx): Promise<string[]> {
   const v: string[] = [];
@@ -221,8 +222,8 @@ async function reports(c: Ctx): Promise<string[]> {
   const bd = Z.scope.business_date;
   const [pays, refundTotal, cashBack, done, shift] = await Promise.all([
     sql<{ amount: number; rounding_cents: number; tip_cents: number; is_cash: boolean }[]>`select amount, rounding_cents, tip_cents, is_cash from payments where outlet_id = ${c.m.outletId} and status = 'recorded' and business_date = ${bd}`,
-    sql<{ n: number }[]>`select coalesce(sum(total),0)::bigint as n from refunds where outlet_id = ${c.m.outletId} and business_date = ${bd}`,
-    sql<{ n: number }[]>`select coalesce(sum(t.amount + t.rounding_cents),0)::bigint as n from refund_tenders t join refunds r on r.id = t.refund_id where r.outlet_id = ${c.m.outletId} and r.business_date = ${bd} and t.is_cash`,
+    sql<{ n: number; tips: number }[]>`select coalesce(sum(total),0)::bigint as n, coalesce(sum(tip),0)::bigint as tips from refunds where outlet_id = ${c.m.outletId} and business_date = ${bd}`,
+    sql<{ n: number }[]>`select coalesce(sum(t.amount + t.rounding_cents + t.tip_cents),0)::bigint as n from refund_tenders t join refunds r on r.id = t.refund_id where r.outlet_id = ${c.m.outletId} and r.business_date = ${bd} and t.is_cash`,
     sql<{ n: number }[]>`select coalesce(sum(total),0)::bigint as n from orders where outlet_id = ${c.m.outletId} and business_date = ${bd} and status = 'completed'`,
     sql<{ bd: string }[]>`select business_date::text as bd from shifts where id = ${c.shiftId}`,
   ]);
@@ -234,6 +235,12 @@ async function reports(c: Ctx): Promise<string[]> {
   if (Z.sales.total !== done[0]!.n) v.push(`Z sales ${Z.sales.total}, completed orders ${done[0]!.n}`);
   if (Z.sales.net + Z.sales.refunds + Z.sales.fees + Z.sales.tax !== Z.sales.total) v.push("Z: net + refunds + fees + tax is not the total");
   if (sum(Z.sales.taxes.map((t) => t.amount)) !== Z.sales.tax) v.push("Z: tax components do not add up");
+  // Before and after refunds, each block adds up on its own (E-M8), in every tax mode.
+  if (Z.sales.net_before_refunds + Z.sales.fees + Z.sales.tax !== Z.sales.total) v.push("Z: net before refunds + fees + tax is not the total");
+  if (Z.refunds.net + Z.refunds.fees + Z.refunds.tax !== Z.refunds.amount || Z.refunds.net !== Z.sales.refunds) v.push(`Z: refunds do not split into net, fees and tax: ${JSON.stringify(Z.refunds)}`);
+  if (sum(Z.refunds.taxes.map((t) => t.amount)) !== Z.refunds.tax) v.push("Z: refunded tax components do not add up");
+  if (Z.sales.net_before_refunds - Z.refunds.net !== Z.sales.net || Z.sales.total_after_refunds !== Z.sales.total - Z.refunds.amount) v.push("Z: after refunds is not before refunds less the refunds");
+  if (Z.refunds.tips !== refundTotal[0]!.tips) v.push(`Z refunded tips ${Z.refunds.tips}, refunds say ${refundTotal[0]!.tips}`);
   const rc = Z.reconciliation;
   if (rc.tenders !== tenders || rc.sales_total !== Z.sales.total || rc.tenders !== rc.sales_total + rc.paid_on_other_orders - rc.paid_elsewhere) v.push(`Z reconciliation does not hold: ${JSON.stringify(rc)}`);
   const s = await c.call<{ data: Summary }>("GET", `/v1/reports/sales-summary?outlet_id=${c.m.outletId}&from=${bd}&to=${bd}`, { token: c.admin });
@@ -241,6 +248,8 @@ async function reports(c: Ctx): Promise<string[]> {
   const S = s.body.data;
   if (S.totals.total !== Z.sales.total || S.totals.net !== Z.sales.net || S.totals.tax !== Z.sales.tax) v.push("sales summary differs from the Z-report");
   if (sum(S.by_tender.map((t) => t.amount)) !== tenders) v.push("sales summary tenders differ from the Z-report's");
+  if (S.totals.net_before_refunds !== Z.sales.net_before_refunds || S.totals.total_after_refunds !== Z.sales.total_after_refunds) v.push("sales summary before and after refunds differ from the Z-report");
+  if (S.refunds.amount !== Z.refunds.amount || S.refunds.net !== Z.refunds.net || S.refunds.fees !== Z.refunds.fees || S.refunds.tax !== Z.refunds.tax || S.refunds.tips !== Z.refunds.tips) v.push("sales summary refunds differ from the Z-report's");
   for (const [name, rows] of [["day", S.by_day], ["category", S.by_category], ["order type", S.by_order_type]] as const) if (sum(rows.map((x) => x.net)) !== S.totals.net) v.push(`sales summary net by ${name} does not add up`);
   return v;
 }
@@ -404,7 +413,7 @@ async function runRegime(r: Regime, seed: number, db: TestDb) {
   const [rows] = await db.sql<{ n: number }[]>`
     select (${c.float}::bigint
       + coalesce((select sum(amount + rounding_cents + tip_cents) from payments where shift_id = ${c.shiftId} and status = 'recorded' and is_cash), 0)
-      - coalesce((select sum(t.amount + t.rounding_cents) from refund_tenders t join refunds f on f.id = t.refund_id where f.shift_id = ${c.shiftId} and t.is_cash), 0))::bigint as n`;
+      - coalesce((select sum(t.amount + t.rounding_cents + t.tip_cents) from refund_tenders t join refunds f on f.id = t.refund_id where f.shift_id = ${c.shiftId} and t.is_cash), 0))::bigint as n`;
   const close = await c.call<{ data: { variance_cents: number } }>("POST", `/v1/shifts/${c.shiftId}/close`, { token: c.admin, body: { counted_cash_cents: rows!.n, variance_reason: "fuzz" } });
   if (close.status !== 200) violations.push(`shift close ${close.status} ${JSON.stringify(close.body)}`);
   else if (close.body.data.variance_cents !== 0) violations.push(`shift closed at variance ${close.body.data.variance_cents} with the rows' cash counted`);

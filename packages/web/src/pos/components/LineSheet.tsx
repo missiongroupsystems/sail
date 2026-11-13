@@ -1,12 +1,13 @@
 "use client";
 
-import { Button, Money, QuantityStepper, ReasonPicker, Sheet, TextField } from "@sail/ui";
-import { useEffect, useState } from "react";
+import { Button, Money, QuantityStepper, ReasonPicker, Sheet, sortTaxes, TextField } from "@sail/ui";
+import { Fragment, useEffect, useState } from "react";
 import type { OrderSnapshot, SnapshotLine } from "../api/types";
 import { useVoidReasons } from "../hooks/queries";
 import type { useOrderActions } from "../hooks/useOrderActions";
 import { ModifierPicker, QUICK_NOTES, selectionFromLine, toModifiers, unmetRequirement, type Selection } from "./ModifierPicker";
 import { usePos } from "./PosContext";
+import { GREY_PILL } from "./styles";
 
 export type LineSheetProps = {
   order: OrderSnapshot;
@@ -38,7 +39,7 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
     setRemoving(false);
   }, [line]);
 
-  if (!line) return <Sheet isOpen={false} onOpenChange={() => undefined} title="" children={null} />;
+  if (!line) return <Sheet labelledClose isOpen={false} onOpenChange={() => undefined} title="" children={null} />;
 
   const sent = line.status === "fired";
   const product = menu?.products[line.product_id];
@@ -78,27 +79,33 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
   const addNote = (chip: string) => setNotes((n) => (n.split(", ").includes(chip) ? n : n ? `${n}, ${chip}` : chip));
 
   return (
-    <Sheet
+    <Sheet labelledClose
       isOpen
       onOpenChange={(o) => (!o ? onClose() : undefined)}
       title={line.name}
       description={
         <span className="inline-flex items-center gap-2">
-          <Money cents={line.amounts.base} /> · {sent ? `Sent · round ${line.fire_round}` : line.status === "held" ? "Held" : "Not sent yet"}
+          Order {order.order_no}
         </span>
       }
       isDismissable={!busy}
       footer={
-        removing ? null : (
+        removing ? (
           <>
+            <span className="mr-auto text-body text-ink-2">{offline ? "Offline" : sent ? `Sent · round ${line.fire_round}. Tap a reason to void it.` : "Not sent yet. Tap a reason to remove it."}</span>
+            <Button variant="quiet" size="lg" onPress={() => setRemoving(false)} isDisabled={busy} className={GREY_PILL}>
+              Keep the line
+            </Button>
+          </>
+        ) : (
+          <>
+            <span className="mr-auto text-body text-ink-2">{offline ? "Offline" : sent ? `Sent · round ${line.fire_round}.` : line.status === "held" ? "Held." : "Not sent yet."}</span>
             {!offline ? (
-              <Button variant="destructive" size="lg" isDisabled={busy} onPress={() => setRemoving(true)} className="mr-auto">
-                {sent ? "Void" : "Remove"}
-                {sent && !["manager", "finance", "admin"].includes(actions.role ?? "") ? <span className="ml-1 rounded-chip bg-[color-mix(in_srgb,var(--status-bill)_14%,transparent)] px-2 text-caption text-status-bill">Manager approval</span> : null}
+              <Button variant="quiet" size="lg" isDisabled={busy} onPress={() => setRemoving(true)} className={GREY_PILL + (sent && !["manager", "finance", "admin"].includes(actions.role ?? "") ? " flex-col gap-0! py-1" : "")}>
+                <span>{sent ? "Void item" : "Remove item"}</span>
+                {sent && !["manager", "finance", "admin"].includes(actions.role ?? "") ? <span className="rounded-chip bg-status-bill-tint px-2 text-[12px] leading-[18px] text-status-bill">Manager approval</span> : null}
               </Button>
-            ) : (
-              <span className="mr-auto text-caption text-ink-2">Offline</span>
-            )}
+            ) : null}
             {!sent ? (
               <Button variant="secondary" size="lg" isDisabled={busy || offline} onPress={toggleHold}>
                 {line.status === "held" ? "Release" : "Hold"}
@@ -115,30 +122,30 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
     >
       {removing ? (
         <div className="flex flex-col gap-4">
-          <p className="text-line text-ink">{sent ? "Why is it being voided?" : "Why is it being removed?"}</p>
+          {/* The line's figures first, then the reasons; one tap on a reason removes it. */}
+          <LineTotal line={line} taxMode={order.totals.tax_mode} />
+          <p className="text-line font-medium text-ink">{sent ? "Reason for voiding it" : "Reason for removing it"}</p>
           {quantity < line.quantity ? (
             <p className="text-body text-ink-2">
               {sent ? "Voiding" : "Removing"} {quantity} of {line.quantity}.
             </p>
           ) : null}
           <ReasonPicker reasons={(reasons.data ?? []).map((r) => ({ id: r.id, name: r.name }))} onPick={(r) => void remove(r)} isDisabled={busy} />
-          <Button variant="quiet" size="lg" onPress={() => setRemoving(false)} isDisabled={busy}>
-            Keep the line
-          </Button>
         </div>
       ) : (
         <div className="flex flex-col gap-6">
           <section className="flex items-center justify-between gap-4">
-            <h3 className="text-line text-ink">Quantity</h3>
+            <h3 className="text-[16px] font-medium text-ink">Quantity</h3>
             <QuantityStepper value={quantity} onChange={setQuantity} min={1} max={sent ? line.quantity : 999} />
           </section>
           {sent ? <p className="text-body text-ink-2">A sent line cannot be changed. Lower the quantity to void part of it.</p> : null}
+          <LineTotal line={line} taxMode={order.totals.tax_mode} />
           {station.seats_enabled && order.order_type === "dine_in" && !sent ? (
             <section>
-              <h3 className="mb-2 text-line text-ink">Seat</h3>
+              <h3 className="mb-2 text-[16px] font-medium text-ink">Seat</h3>
               <div className="flex flex-wrap gap-2">
                 {[null, ...Array.from({ length: seats }, (_, i) => i + 1)].map((s) => (
-                  <Button key={s ?? "shared"} size="lg" variant={s === seat ? "primary" : "secondary"} onPress={() => setSeat(s)} className="rounded-chip min-w-14">
+                  <Button key={s ?? "shared"} size="lg" variant={s === seat ? "primary" : "quiet"} onPress={() => setSeat(s)} className={"min-w-14" + (s === seat ? "" : " " + GREY_PILL)}>
                     {s ?? "Shared"}
                   </Button>
                 ))}
@@ -150,12 +157,12 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
           ) : null}
           {canEditModifiers ? (
             <section>
-              <h3 className="mb-2 text-line text-ink">Choices</h3>
+              <h3 className="mb-2 text-[16px] font-medium text-ink">Choices</h3>
               <ModifierPicker menu={menu} product={product} selection={selection} onChange={setSelection} />
             </section>
           ) : line.modifiers.length ? (
             <section>
-              <h3 className="mb-1 text-line text-ink">Choices</h3>
+              <h3 className="mb-1 text-[16px] font-medium text-ink">Choices</h3>
               <ul className="text-body text-ink-2">
                 {line.modifiers.map((m) => (
                   <li key={m.modifier_id}>· {m.name}</li>
@@ -165,10 +172,10 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
           ) : null}
           {!sent ? (
             <section>
-              <h3 className="mb-2 text-line text-ink">Notes</h3>
+              <h3 className="mb-2 text-[16px] font-medium text-ink">Notes</h3>
               <div className="mb-2 flex flex-wrap gap-2">
                 {QUICK_NOTES.map((c) => (
-                  <Button key={c} size="md" variant="secondary" onPress={() => addNote(c)} className="rounded-chip">
+                  <Button key={c} size="md" variant="quiet" onPress={() => addNote(c)} className={GREY_PILL + " text-[14.5px] font-normal"}>
                     {c}
                   </Button>
                 ))}
@@ -181,5 +188,32 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
         </div>
       )}
     </Sheet>
+  );
+}
+
+/** The line's figures as the register priced them, in a bordered card: the items, its share of discounts and fees, tax, and the line total. */
+function LineTotal({ line, taxMode }: { line: SnapshotLine; taxMode: string }) {
+  const a = line.amounts;
+  const row = (label: string, cents: number, signed = false) => (
+    <div className="flex items-center justify-between gap-3">
+      <dt className="text-[13.5px] text-ink-2">{label}</dt>
+      <dd>
+        <Money cents={cents} signed={signed} size="body" className="text-[13.5px] text-ink" />
+      </dd>
+    </div>
+  );
+  return (
+    <dl className="flex flex-col gap-1 rounded-tile border border-rule px-4 py-3" aria-label="Line total">
+      {row(`${line.quantity} × ${line.name}`, a.base)}
+      {a.discount ? row("Discounts", -Math.abs(a.discount), true) : null}
+      {a.fee ? row("Service and fees", a.fee) : null}
+      {line.taxes.length ? sortTaxes(line.taxes).map((t, i) => <Fragment key={i}>{row(taxMode === "inclusive" ? `${t.name} (included)` : t.name, t.amount)}</Fragment>) : a.tax ? row(taxMode === "inclusive" ? "Tax (included)" : "Tax", a.tax) : null}
+      <div className="mt-1.5 flex items-center justify-between gap-3 border-t border-rule pt-2.5">
+        <dt className="text-[15px] font-semibold text-ink">Line total</dt>
+        <dd>
+          <Money cents={a.total} size="title" className="text-ink" />
+        </dd>
+      </div>
+    </dl>
   );
 }

@@ -15,9 +15,9 @@ export type QuantityStepperProps = {
 };
 
 const key =
-  "press pos-touch flex size-14 items-center justify-center rounded-tile bg-surface-2 text-ink outline-none " +
-  "data-[pressed]:scale-[0.97] data-[pressed]:brightness-90 data-[disabled]:opacity-40 " +
-  "data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated";
+  "press pos-touch flex size-14 items-center justify-center rounded-chip bg-surface-2 text-ink outline-none transition-colors duration-[120ms] " +
+  "data-[pressed]:scale-[0.97] data-[pressed]:bg-surface-3 data-[disabled]:text-ink-disabled " +
+  "data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus";
 
 /** A quantity stepper with 56pt keys and the value in tabular figures. */
 export function QuantityStepper({ value, onChange, min = 1, max = 999, label = "Quantity", className }: QuantityStepperProps) {
@@ -26,7 +26,7 @@ export function QuantityStepper({ value, onChange, min = 1, max = 999, label = "
       <AriaButton onPress={() => onChange(Math.max(min, value - 1))} isDisabled={value <= min} aria-label="Decrease quantity" className={key}>
         <Icon icon={Minus} size={22} />
       </AriaButton>
-      <output className="min-w-10 text-center text-title tabular text-ink" aria-live="polite">
+      <output className="min-w-10 text-center font-heading text-title tabular text-ink" aria-live="polite">
         {value}
       </output>
       <AriaButton onPress={() => onChange(Math.min(max, value + 1))} isDisabled={value >= max} aria-label="Increase quantity" className={key}>

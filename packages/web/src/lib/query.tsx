@@ -1,11 +1,23 @@
 "use client";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { ApiError } from "./api";
 
+/**
+ * The session ended while the page was open (the register answers 401): go to sign-in with the page to come back to,
+ * instead of showing a table's "No products match" as if the data were empty (live-test E-L6).
+ */
+function toSignIn(error: unknown) {
+  if (!(error instanceof ApiError) || error.status !== 401 || typeof window === "undefined") return;
+  if (window.location.pathname.startsWith("/login")) return;
+  const next = `${window.location.pathname}${window.location.search}`;
+  window.location.assign(`/login?expired=1&next=${encodeURIComponent(next)}`);
+}
+
 function makeClient(): QueryClient {
   return new QueryClient({
+    queryCache: new QueryCache({ onError: toSignIn }),
     defaultOptions: {
       queries: {
         staleTime: 10_000,

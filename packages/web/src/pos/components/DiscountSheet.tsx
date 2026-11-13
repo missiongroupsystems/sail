@@ -59,7 +59,7 @@ export function DiscountSheet({ isOpen, onClose, order, rules, actions }: Discou
   };
 
   return (
-    <Sheet
+    <Sheet labelledClose
       isOpen={isOpen}
       onOpenChange={(o) => (!o ? onClose() : undefined)}
       title={rule ? rule.name : "Discount"}
@@ -73,7 +73,7 @@ export function DiscountSheet({ isOpen, onClose, order, rules, actions }: Discou
             </Button>
             <Button variant="primary" size="lg" isDisabled={!canApply} isPending={busy} onPress={apply}>
               {offline ? "Offline" : !inRange ? `Enter ${describeRuleValue(rule, money)}` : needsReason ? "Pick a reason" : `Apply ${rule.name}`}
-              {above(rule) && inRange && !needsReason && !offline ? <span className="ml-1 rounded-chip bg-[color-mix(in_srgb,var(--status-bill)_14%,transparent)] px-2 text-caption text-status-bill">Manager approval</span> : null}
+              {above(rule) && inRange && !needsReason && !offline ? <span className="ml-1 rounded-chip bg-[color-mix(in_srgb,var(--status-bill)_14%,transparent)] px-2 text-caption text-status-bill">{approvalOf(rule.min_role)}</span> : null}
             </Button>
           </>
         ) : undefined
@@ -95,7 +95,7 @@ export function DiscountSheet({ isOpen, onClose, order, rules, actions }: Discou
                     setReason(null);
                     setLineIds(r.level === "line" ? new Set(live.map((l) => l.id)) : null);
                   }}
-                  className="press pos-touch flex min-h-16 w-full items-center justify-between gap-3 rounded-tile bg-surface-2 px-4 text-left outline-none data-[pressed]:scale-[0.98] data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated"
+                  className="press pos-touch flex min-h-16 w-full items-center justify-between gap-3 rounded-tile bg-surface px-4 text-left shadow-[inset_0_0_0_1px_var(--line-strong)] outline-none data-[hovered]:bg-surface-2 data-[pressed]:scale-[0.98] data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated"
                 >
                   <span className="min-w-0">
                     <span className="block truncate text-line text-ink">{r.name}</span>
@@ -105,7 +105,7 @@ export function DiscountSheet({ isOpen, onClose, order, rules, actions }: Discou
                       {r.reason_required ? " · reason required" : ""}
                     </span>
                   </span>
-                  {above(r) ? <Badge tone="bill">Manager approval</Badge> : null}
+                  {above(r) ? <Badge tone="bill">{approvalOf(r.min_role)}</Badge> : null}
                 </AriaButton>
               </li>
             ))}
@@ -120,7 +120,7 @@ export function DiscountSheet({ isOpen, onClose, order, rules, actions }: Discou
           ) : null}
           {rule.level === "line" && lineIds ? (
             <section>
-              <h3 className="mb-2 text-line text-ink">Which items?</h3>
+              <h3 className="mb-2 text-[16px] font-medium text-ink">Which items?</h3>
               <div className="flex flex-col gap-1">
                 {live.map((l) => (
                   <Checkbox
@@ -146,7 +146,7 @@ export function DiscountSheet({ isOpen, onClose, order, rules, actions }: Discou
           ) : null}
           {rule.reason_required ? (
             <section>
-              <h3 className="mb-2 text-line text-ink">Reason</h3>
+              <h3 className="mb-2 text-[16px] font-medium text-ink">Reason</h3>
               {reason ? (
                 <div className="flex items-center justify-between gap-3 rounded-tile bg-surface-2 px-4 py-3">
                   <span className="text-line text-ink">{reason}</span>
@@ -163,4 +163,9 @@ export function DiscountSheet({ isOpen, onClose, order, rules, actions }: Discou
       )}
     </Sheet>
   );
+}
+
+/** "Cashier approval", "Manager approval": the least role that may approve, as the register names it. */
+function approvalOf(role: string): string {
+  return `${role.charAt(0).toUpperCase()}${role.slice(1)} approval`;
 }

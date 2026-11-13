@@ -9,6 +9,7 @@ import { useApplySnapshot, useChannelLink, useFloor, useLayout, useMenu, useMerc
 import { useApi } from "../hooks/useApi";
 import { useOutletStream } from "../hooks/useOutletStream";
 import { useIdleLock, useWakeLock } from "../lib/device";
+import { lockStation } from "../lib/lock";
 import { layoutFromMenu } from "../lib/menu";
 import { useThemeScheduler } from "../lib/theme";
 import { useNavStore } from "../state/nav";
@@ -56,7 +57,6 @@ function SignedInShell() {
   const station = useStationStore((s) => s.station)!;
   const staff = useSessionStore((s) => s.staff)!;
   const expiresInSeconds = useSessionStore((s) => s.expiresInSeconds);
-  const lock = useSessionStore((s) => s.lock);
   const screen = useNavStore((s) => s.screen);
   const status = useConnectionStore((s) => s.status);
   const applySnapshot = useApplySnapshot();
@@ -74,7 +74,8 @@ function SignedInShell() {
   useOutletStream(station.outlet_id, true, stationNames);
   useThemeScheduler(outlet.data?.service_theme_from);
   useWakeLock(true);
-  const idle = useIdleLock(true, expiresInSeconds, () => lock("Locked after inactivity. Sign in to continue."));
+  // The timer follows the person's own input; locking ends the session on the register too, so background reads stop using it.
+  const idle = useIdleLock(true, expiresInSeconds, () => void lockStation(api, "Locked after inactivity. Sign in to continue."));
 
   // A counter station opens on a new takeaway order, once per sign-in.
   const homed = useRef(false);
@@ -90,7 +91,7 @@ function SignedInShell() {
       } catch (e) {
         // The station still opens, on Orders, with the register's reason in one line.
         const err = toApiError(e);
-        useUiStore.getState().notify({ text: `Could not open a takeaway order: ${err.message}`, remedy: err.remedy ?? "Tap + New order to try again.", tone: "alert" }, 8000);
+        useUiStore.getState().notify({ text: `Could not open a takeaway order: ${err.message}`, remedy: err.remedy ?? "Tap New order to try again.", tone: "alert" }, 8000);
         useNavStore.getState().go({ kind: "orders" });
       }
     })();

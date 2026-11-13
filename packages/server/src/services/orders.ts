@@ -46,7 +46,8 @@ export type OrderSnapshot = {
   totals: { tax_mode: string; tax_rounding: string; subtotal: number; discount_total: number; fee_total: number; tax_total: number; taxes: TaxBreakdown[]; total: number };
   lines: SnapshotLine[];
   adjustments: SnapshotAdjustment[];
-  manual_applications: { id: string; rule_key: string; entered_value: number | null; line_ids: string[] | null; applied_by: string | null; reason: string | null }[];
+  /** Who applied and who approved, by name (the adjustments carry their ids). */
+  manual_applications: { id: string; rule_key: string; entered_value: number | null; line_ids: string[] | null; applied_by: string | null; approved_by: string | null; reason: string | null }[];
   /** Filled by v0.6: checks, payments and balances. */
   checks: unknown[];
   paid_total: number;
@@ -484,7 +485,7 @@ export async function loadSnapshot(orderId: string): Promise<OrderSnapshot> {
       reason: a.reason,
       lines: adjLines.filter((x) => x.adjustmentId === a.id).map((x) => ({ line_id: x.orderLineId, amount: x.amount, tax_amount: x.taxAmount })),
     })),
-    manual_applications: apps.map((a) => ({ id: a.id, rule_key: a.ruleKey, entered_value: a.enteredValue, line_ids: a.lineIds, applied_by: a.appliedByName, reason: a.reason })),
+    manual_applications: apps.map((a) => ({ id: a.id, rule_key: a.ruleKey, entered_value: a.enteredValue, line_ids: a.lineIds, applied_by: a.appliedByName, approved_by: a.approvedByName, reason: a.reason })),
     ...extra,
   };
 }

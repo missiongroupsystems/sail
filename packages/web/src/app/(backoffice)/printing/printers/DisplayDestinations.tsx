@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Badge, Button, DataTable, EmptyState, InlineError, SectionHeading, Sheet, TagsField, type DataTableColumn } from "@sail/ui";
+import { Badge, Button, DataTable, EmptyState, InlineError, SectionHead, Sheet, TagsField, type DataTableColumn } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -74,15 +74,16 @@ export function DisplayDestinations({ outletId, stations, canEdit }: { outletId:
 
   return (
     <section className="mt-10" aria-label="Kitchen displays">
-      <SectionHeading
+      <SectionHead
         title="Kitchen displays"
-        aside={
-          <Button variant="secondary" onPress={() => setSheet({ mode: "create" })} isDisabled={!canEdit}>
+        description="Items are routed to a display by the same tags, order types and sources as a printer. Assign destinations to a kitchen display station in Settings › Stations."
+        className="mb-2"
+        actions={
+          <Button size="sm" variant="secondary" onPress={() => setSheet({ mode: "create" })} isDisabled={!canEdit}>
             Add display destination
           </Button>
         }
       />
-      <p className="mt-3 mb-4 text-caption text-ink-2">Items are routed to a display by the same tags, order types and sources as a printer. Assign destinations to a kitchen display station in Settings › Stations.</p>
       <DataTable
         aria-label="Kitchen display destinations"
         columns={columns}
@@ -91,7 +92,7 @@ export function DisplayDestinations({ outletId, stations, canEdit }: { outletId:
         isLoading={destinations.isPending}
         defaultSort={{ column: "name", direction: "ascending" }}
         onRowAction={(d) => setSheet({ mode: "edit", destination: d })}
-        emptyState={<EmptyState variant="quiet" title="No kitchen displays at this outlet" hint="Without one, kitchen tickets only print." />}
+        emptyState={<EmptyState variant="centred" title="No kitchen displays at this outlet" hint="Without one, kitchen tickets only print." />}
       />
       <InlineError error={destinations.error} className="mt-4" />
       <DestinationSheet state={sheet} outletId={outletId} canEdit={canEdit} onClose={() => setSheet(null)} />
@@ -154,7 +155,7 @@ function DestinationSheet({ state, outletId, canEdit, onClose }: { state: SheetS
           <FormSection>
             <RhfTextField control={form.control} name="name" label="Name" placeholder="Hot line" autoFocus={!destination} />
           </FormSection>
-          <FormSection title="Routing" hint="An item goes to every display destination whose include tags it carries. Items that match no destination go to the default one.">
+          <FormSection variant="label" title="Routing" hint="An item goes to every display destination whose include tags it carries. Items that match no destination go to the default one.">
             <Controller control={form.control} name="include_tags" render={({ field }) => <TagsField label="Include tags" value={field.value} onChange={field.onChange} placeholder="kitchen, grill, bar…" description="Empty means every item (unless this is the default, which then takes only the leftovers)." isDisabled={!canEdit} />} />
             <Controller control={form.control} name="exclude_tags" render={({ field }) => <TagsField label="Exclude tags" value={field.value} onChange={field.onChange} placeholder="drinks…" description="Items with any of these tags skip this display." isDisabled={!canEdit} />} />
             <RhfCheckboxGroup control={form.control} name="order_types" label="Order types" description="Leave all unticked for every type." columns={2} options={ORDER_TYPES.map((t) => ({ id: t, label: ORDER_TYPE_LABEL[t]! }))} />

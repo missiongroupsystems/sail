@@ -8297,6 +8297,18 @@
             "required": true,
             "name": "id",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "include_archived",
+            "in": "query"
           }
         ],
         "responses": {
@@ -12936,7 +12948,9 @@
                     "format": "uuid"
                   },
                   "sort": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
                   },
                   "legacy_id": {
                     "type": [
@@ -13737,7 +13751,9 @@
                     "format": "uuid"
                   },
                   "sort": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
                   },
                   "legacy_id": {
                     "type": [
@@ -17224,18 +17240,21 @@
                   },
                   "min_select": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 100
                   },
                   "max_select": {
                     "type": [
                       "integer",
                       "null"
                     ],
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 100
                   },
                   "max_per_modifier": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 99
                   },
                   "options": {
                     "type": "array",
@@ -17265,7 +17284,9 @@
                           "type": "boolean"
                         },
                         "sort": {
-                          "type": "integer"
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
                         }
                       },
                       "required": [
@@ -18148,18 +18169,21 @@
                   },
                   "min_select": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 100
                   },
                   "max_select": {
                     "type": [
                       "integer",
                       "null"
                     ],
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 100
                   },
                   "max_per_modifier": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 99
                   },
                   "options": {
                     "type": "array",
@@ -18189,7 +18213,9 @@
                           "type": "boolean"
                         },
                         "sort": {
-                          "type": "integer"
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
                         }
                       },
                       "required": [
@@ -19068,7 +19094,9 @@
                           "format": "uuid"
                         },
                         "sort": {
-                          "type": "integer"
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
                         },
                         "legacy_id": {
                           "type": [
@@ -19086,7 +19114,9 @@
                                 "format": "uuid"
                               },
                               "sort": {
-                                "type": "integer"
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 1000000
                               }
                             },
                             "required": [
@@ -20008,7 +20038,9 @@
                           "format": "uuid"
                         },
                         "sort": {
-                          "type": "integer"
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
                         },
                         "legacy_id": {
                           "type": [
@@ -20026,7 +20058,9 @@
                                 "format": "uuid"
                               },
                               "sort": {
-                                "type": "integer"
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 1000000
                               }
                             },
                             "required": [
@@ -24248,7 +24282,8 @@
                       "integer",
                       "null"
                     ],
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 100000
                   }
                 },
                 "required": [
@@ -25060,7 +25095,9 @@
                     "minLength": 1
                   },
                   "sort": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
                   },
                   "legacy_id": {
                     "type": [
@@ -25841,7 +25878,9 @@
                     "minLength": 1
                   },
                   "sort": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
                   }
                 }
               }
@@ -26673,7 +26712,8 @@
                   },
                   "seats": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 99
                   },
                   "shape": {
                     "type": "string",
@@ -26685,19 +26725,23 @@
                   },
                   "x": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 10000
                   },
                   "y": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 10000
                   },
                   "w": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 1000
                   },
                   "h": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 1000
                   },
                   "legacy_id": {
                     "type": [
@@ -27540,7 +27584,8 @@
                   },
                   "seats": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 99
                   },
                   "shape": {
                     "type": "string",
@@ -27552,19 +27597,23 @@
                   },
                   "x": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 10000
                   },
                   "y": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 10000
                   },
                   "w": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 1000
                   },
                   "h": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 1000
                   },
                   "legacy_id": {
                     "type": [
@@ -28450,7 +28499,9 @@
                     "maxLength": 80
                   },
                   "sort": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
                   },
                   "legacy_id": {
                     "type": [
@@ -29327,7 +29378,9 @@
                     "maxLength": 80
                   },
                   "sort": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
                   },
                   "legacy_id": {
                     "type": [
@@ -30163,7 +30216,9 @@
                     "type": "boolean"
                   },
                   "sort": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
                   },
                   "legacy_id": {
                     "type": [
@@ -30954,7 +31009,9 @@
                     "type": "boolean"
                   },
                   "sort": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
                   },
                   "legacy_id": {
                     "type": [
@@ -48396,7 +48453,8 @@
                                         },
                                         "quantity": {
                                           "type": "integer",
-                                          "minimum": 1
+                                          "minimum": 1,
+                                          "maximum": 999
                                         }
                                       },
                                       "required": [
@@ -48458,6 +48516,11 @@
                           "total": {
                             "type": "integer",
                             "minimum": 0,
+                            "maximum": 1000000000000
+                          },
+                          "tip": {
+                            "type": "integer",
+                            "minimum": 1,
                             "maximum": 1000000000000
                           }
                         },
@@ -48987,7 +49050,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -49789,7 +49854,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -51090,7 +51157,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -51120,7 +51189,8 @@
                       "integer",
                       "null"
                     ],
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 99
                   },
                   "customer_ref": {
                     "type": [
@@ -51542,7 +51612,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -51942,7 +52014,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -52336,7 +52410,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -52738,7 +52814,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -53226,7 +53304,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -53274,7 +53354,8 @@
                         },
                         "quantity": {
                           "type": "integer",
-                          "minimum": 1
+                          "minimum": 1,
+                          "maximum": 999
                         }
                       },
                       "required": [
@@ -53679,7 +53760,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -53690,7 +53773,8 @@
                   },
                   "quantity": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 999
                   },
                   "reason_id": {
                     "type": "string",
@@ -54090,7 +54174,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -54495,7 +54581,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -54894,7 +54982,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -55293,7 +55383,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -55700,7 +55792,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -56142,7 +56236,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -66180,7 +66276,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -66623,7 +66721,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -67018,7 +67118,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -67422,7 +67524,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -67828,7 +67932,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -68225,7 +68331,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -69019,7 +69127,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -70113,7 +70223,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -70547,7 +70659,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -71333,7 +71447,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -71732,7 +71848,9 @@
                     "type": "object",
                     "properties": {
                       "expected_version": {
-                        "type": "integer"
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2147483647
                       },
                       "dry_run": {
                         "type": "boolean"
@@ -72143,7 +72261,9 @@
                     "type": "object",
                     "properties": {
                       "expected_version": {
-                        "type": "integer"
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2147483647
                       },
                       "dry_run": {
                         "type": "boolean"
@@ -72554,7 +72674,9 @@
                     "type": "object",
                     "properties": {
                       "expected_version": {
-                        "type": "integer"
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2147483647
                       },
                       "dry_run": {
                         "type": "boolean"
@@ -72991,7 +73113,9 @@
                     "type": "object",
                     "properties": {
                       "expected_version": {
-                        "type": "integer"
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2147483647
                       },
                       "dry_run": {
                         "type": "boolean"
@@ -73426,7 +73550,8 @@
                                 },
                                 "quantity": {
                                   "type": "integer",
-                                  "minimum": 1
+                                  "minimum": 1,
+                                  "maximum": 999
                                 }
                               },
                               "required": [
@@ -73792,7 +73917,7 @@
           "refunds"
         ],
         "operationId": "refunds.create",
-        "description": "Full, by lines and quantities, or by amount. Manager, Finance or Admin, or a lower role with a manager override. Reason required. Produces a numbered refund receipt and, when the bill was invoiced, a numbered credit note. Each line's refunds never exceed its paid amount; each payment's refunds never exceed what it paid. Refunded items do not restore daily caps.",
+        "description": "Full, by lines and quantities, or by amount. Manager, Finance or Admin, or a lower role with a manager override. Reason required. Produces a numbered refund receipt and, when the bill was invoiced, a numbered credit note. Each line's refunds never exceed its paid amount; each payment's refunds never exceed what it paid. A full refund also gives back each payment's tip (`tip_cents` on the tender, on top of `amount`); a refund by lines or amount never does. A manager's approval for a lower role names the quoted `total` and, when a tip goes back, the `tip`. Refunded items do not restore daily caps.",
         "summary": "Refund a bill",
         "x-sail": {
           "op": "refunds.create",
@@ -73837,7 +73962,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -73886,7 +74013,8 @@
                                 },
                                 "quantity": {
                                   "type": "integer",
-                                  "minimum": 1
+                                  "minimum": 1,
+                                  "maximum": 999
                                 }
                               },
                               "required": [
@@ -75020,7 +75148,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -75417,7 +75547,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"
@@ -91307,7 +91439,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "intent_id": {
                     "type": "string",
@@ -92444,7 +92578,9 @@
                 "type": "object",
                 "properties": {
                   "expected_version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
                   },
                   "dry_run": {
                     "type": "boolean"

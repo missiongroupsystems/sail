@@ -1,7 +1,7 @@
 "use client";
 
-import { Button, PinPad, useLocale } from "@sail/ui";
-import { useCallback, useState } from "react";
+import { Button, PinPad, SailLogo, useLocale } from "@sail/ui";
+import { useCallback, useEffect, useState } from "react";
 import { toApiError } from "@/lib/api";
 import { startSession } from "../api/register";
 import { useChannelLink, useLayout, useMenu } from "../hooks/queries";
@@ -9,6 +9,7 @@ import { useApi } from "../hooks/useApi";
 import { useNow } from "../lib/device";
 import { useSessionStore } from "../state/session";
 import { useStationStore } from "../state/station";
+import { GREY_PILL } from "../components/styles";
 
 /**
  * The lock screen: outlet and station, a clock, a big PIN pad that
@@ -16,7 +17,7 @@ import { useStationStore } from "../state/station";
  * countdown. The menu and layout load here so the floor is instant after sign-in.
  */
 export function LockScreen() {
-  const { clock } = useLocale();
+  const { clock, businessDay, isoDate } = useLocale();
   const api = useApi();
   const station = useStationStore((s) => s.station)!;
   const unpair = useStationStore((s) => s.unpair);
@@ -34,7 +35,15 @@ export function LockScreen() {
   const [error, setError] = useState<string | null>(null);
   const [lockedUntil, setLockedUntil] = useState<number | null>(null);
   const [pending, setPending] = useState(false);
+  const [confirmUnpair, setConfirmUnpair] = useState(false);
   const lockedFor = lockedUntil ? Math.max(0, Math.ceil((lockedUntil - now) / 1000)) : 0;
+  // The lockout's message goes with the lock: once the countdown ends, the pad is clear to try again (live-test A-11).
+  useEffect(() => {
+    if (lockedUntil && lockedFor === 0) {
+      setLockedUntil(null);
+      setError(null);
+    }
+  }, [lockedUntil, lockedFor]);
 
   const complete = useCallback(
     async (value: string) => {
@@ -49,8 +58,8 @@ export function LockScreen() {
         if (err.code === "rate_limited") {
           const secs = Number(err.details?.retry_after_seconds ?? 30);
           setLockedUntil(Date.now() + secs * 1000);
-          setError("Too many wrong PINs");
-        } else if (err.code === "unauthenticated") setError("PIN not recognised");
+          setError("Too many wrong PINs.");
+        } else if (err.code === "unauthenticated") setError(err.message || "PIN not recognised");
         else setError(err.remedy ? `${err.message}. ${err.remedy}` : err.message);
         setPin("");
       } finally {
@@ -64,20 +73,40 @@ export function LockScreen() {
 
   return (
     <main className="flex h-dvh w-full items-center justify-center bg-bg px-8">
-      <div className="grid w-full max-w-[960px] grid-cols-[1fr_auto] items-center gap-16">
-        <section className="flex flex-col gap-2">
-          <p className="text-caption text-ink-2 uppercase tracking-[0.04em]">Sail</p>
-          <h1 className="text-title text-ink">{outletName || "Station locked"}</h1>
-          <p className="text-heading text-ink-2">{station.name}</p>
-          <p className="mt-8 text-display tabular text-ink">{clock(new Date(now))}</p>
-          {lockNote ? <p className="mt-4 text-body text-ink-2">{lockNote}</p> : null}
-          <div className="mt-10">
-            <Button variant="quiet" size="md" onPress={unpair} className="-ml-4 text-ink-2">
-              Pair this iPad again
-            </Button>
-          </div>
+      <div className="grid w-full max-w-[880px] grid-cols-[1fr_auto] items-center gap-16">
+        <section className="flex flex-col">
+          <SailLogo size="card" />
+          <h1 className="mt-5 font-heading text-[30px] leading-tight font-semibold tracking-[-0.02em] text-ink">{outletName || "Station locked"}</h1>
+          <p className="mt-1 text-[16px] text-ink-2">{station.name}</p>
+          <p className="mt-7 font-heading text-[56px] leading-none font-semibold tracking-[-0.02em] tabular text-ink">{clock(new Date(now))}</p>
+          <p className="mt-2 text-[14.5px] text-ink-2">{/* Today in the outlet's zone, written as every other date on the till ("Fri, 13 Nov 2026"). */}
+            {businessDay(isoDate(new Date(now)))}</p>
+          {lockNote ? <p className="mt-6 text-body text-ink-2">{lockNote}</p> : null}
+          {/* Unpairing stops this iPad working as the station until a new code is entered, so one tap only asks. */}
+          {confirmUnpair ? (
+            <div className="mt-8 flex max-w-[400px] flex-col gap-3 rounded-tile border border-rule bg-surface p-4" role="group" aria-label="Pair this iPad again">
+              <p className="text-body text-ink">This iPad stops working as {station.name} until it is paired again with a new code from the back office.</p>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="destructive" size="lg" onPress={unpair}>
+                  Unpair this iPad
+                </Button>
+                <Button variant="quiet" size="lg" onPress={() => setConfirmUnpair(false)} className={GREY_PILL}>
+                  Keep this iPad paired
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-8">
+              <Button variant="secondary" size="lg" onPress={() => setConfirmUnpair(true)}>
+                Pair this iPad again
+              </Button>
+            </div>
+          )}
         </section>
-        <PinPad value={pin} onChange={setPin} onComplete={complete} error={error} lockedForSeconds={lockedFor || null} isPending={pending} />
+        <div className="flex flex-col items-center gap-2 rounded-[20px] bg-surface px-10 pt-9 pb-10 shadow-e2">
+          <p className="text-[14.5px] text-ink-2">Enter your PIN</p>
+          <PinPad value={pin} onChange={setPin} onComplete={complete} error={error} lockedForSeconds={lockedFor || null} isPending={pending} />
+        </div>
       </div>
     </main>
   );

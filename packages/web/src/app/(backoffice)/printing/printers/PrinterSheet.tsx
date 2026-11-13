@@ -196,7 +196,7 @@ export function PrinterSheet({ state, outletId, printers, stations, canEdit, onC
           </FormSection>
 
           {role === "kitchen" ? (
-            <FormSection title="Routing" hint="An item goes to every kitchen printer whose include tags it carries. Items that match no printer go to the default kitchen printer.">
+            <FormSection variant="label" title="Routing" hint="An item goes to every kitchen printer whose include tags it carries. Items that match no printer go to the default kitchen printer.">
               <Controller
                 control={form.control}
                 name="include_tags"
@@ -211,7 +211,7 @@ export function PrinterSheet({ state, outletId, printers, stations, canEdit, onC
             </FormSection>
           ) : null}
 
-          <FormSection title="Output">
+          <FormSection variant="label" title="Output">
             <div className="grid gap-3 sm:grid-cols-2">
               <RhfTextField control={form.control} name="copies" label="Copies" numeric inputMode="numeric" description="Each copy is its own job." />
               <RhfSelect
@@ -238,7 +238,7 @@ export function PrinterSheet({ state, outletId, printers, stations, canEdit, onC
         </fieldset>
 
         {printer && !printer.archived ? (
-          <FormSection title="Test print" hint="Queues a ticket reading TEST PRINT with the printer's address. Admin only.">
+          <FormSection variant="label" title="Test print" hint="Queues a ticket reading TEST PRINT with the printer's address. Admin only.">
             <div className="flex flex-wrap items-center gap-3">
               <Button onPress={() => test.mutate()} isPending={test.isPending} isDisabled={!canEdit}>
                 Test print

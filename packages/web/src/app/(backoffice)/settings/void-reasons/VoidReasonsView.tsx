@@ -1,12 +1,14 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, DataTable, EmptyState, InlineError, Sheet, StatusDot, Switch, type DataTableColumn } from "@sail/ui";
+import { Button, DataTable, EmptyState, InlineError, Sheet, Switch, type DataTableColumn, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { FormSection, RhfSwitch, RhfTextField } from "@/components/forms/fields";
+import { greyPill, greyPillAlert, SheetSection, TwoLine } from "@/components/office/parts";
+import { applyServerErrors } from "@/components/office/server-errors";
+import { RhfSwitch, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { VoidReason } from "@/lib/api/types";
@@ -30,19 +32,19 @@ export function VoidReasonsView({ initialReasons }: { initialReasons: VoidReason
   const rows = reasons.data.filter((r) => showArchived || !r.archived);
   const columns: DataTableColumn<VoidReason>[] = [
     { key: "sort", header: "Order", numeric: true, sortable: true, width: 80, render: (r) => r.sort },
-    { key: "name", header: "Reason", isRowHeader: true, sortable: true, render: (r) => <span className="text-ink">{r.name}</span> },
+    { key: "name", header: "Reason", isRowHeader: true, sortable: true, width: "2fr", render: (r) => <TwoLine primary={r.name} /> },
     { key: "for_refunds", header: "Also for refunds", render: (r) => (r.for_refunds ? "Yes" : "—") },
-    { key: "archived", header: "Status", sortable: true, sortValue: (r) => (r.archived ? 1 : 0), render: (r) => (r.archived ? <StatusDot status="neutral" label="Archived" muted /> : <StatusDot status="paid" label="Active" />) },
+    { key: "archived", header: "Status", sortable: true, sortValue: (r) => (r.archived ? 1 : 0), render: (r) => (r.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <Pill size="sm" tone="paid">Active</Pill>) },
   ];
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-ink-2">Shown when staff void a sent item; “Other” with a typed reason is always available.</p>
-        <div className="flex items-center gap-4">
+        <p className="text-[14px] text-ink-2">Shown when staff void a sent item; “Other” with a typed reason is always available.</p>
+        <div className="flex flex-wrap items-center gap-4">
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
           </Switch>
-          <Button variant="primary" onPress={() => setSheet({ mode: "create" })}>
+          <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
             Add void reason
           </Button>
         </div>
@@ -55,7 +57,7 @@ export function VoidReasonsView({ initialReasons }: { initialReasons: VoidReason
         defaultSort={{ column: "sort", direction: "ascending" }}
         onRowAction={(r) => setSheet({ mode: "edit", reason: r })}
         rowClassName={(r) => (r.archived ? "text-ink-2" : undefined)}
-        emptyState={<EmptyState variant="quiet" title="No void reasons yet" hint="Add a few: Wrong item, Guest changed mind, Kitchen error." />}
+        emptyState={<EmptyState variant="centred" title="No void reasons yet" hint="Add a few: Wrong item, Guest changed mind, Kitchen error." />}
       />
       <ReasonSheet state={sheet} nextSort={reasons.data.length} onClose={() => setSheet(null)} />
     </>
@@ -80,6 +82,8 @@ function ReasonSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
       return reason ? req(api.PATCH("/v1/void-reasons/{id}", { params: { path: { id: reason.id } }, body })) : req(api.POST("/v1/void-reasons", { body }));
     },
     onSuccess: settle,
+    // A refusal that names a field shows under it; the message also stays at the foot of the form.
+    onError: (e) => applyServerErrors(form.setError, e, Object.keys(form.getValues())),
   });
   const archive = useMutation<unknown, ApiError, boolean>({
     mutationFn: (archived) => req(api.PATCH("/v1/void-reasons/{id}", { params: { path: { id: reason!.id } }, body: { archived } })),
@@ -95,11 +99,11 @@ function ReasonSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
       footer={
         <>
           {reason ? (
-            <Button variant={reason.archived ? "secondary" : "destructive"} onPress={() => archive.mutate(!reason.archived)} isPending={archive.isPending} className="mr-auto">
+            <Button variant="secondary" onPress={() => archive.mutate(!reason.archived)} isPending={archive.isPending} className={`mr-auto ${reason.archived ? greyPill : greyPillAlert}`}>
               {reason.archived ? "Restore" : "Archive"}
             </Button>
           ) : null}
-          <Button variant="quiet" onPress={onClose} isDisabled={busy}>
+          <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={busy}>
             Cancel
           </Button>
           <Button variant="primary" type="submit" form="reason-form" isPending={save.isPending}>
@@ -109,7 +113,7 @@ function ReasonSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
       }
     >
       <form id="reason-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
-        <FormSection>
+        <SheetSection>
           <div className="grid gap-4 sm:grid-cols-[1fr_120px]">
             <RhfTextField control={form.control} name="name" label="Reason" placeholder="Wrong item" autoFocus={!reason} />
             <RhfTextField control={form.control} name="sort" label="Order" numeric inputMode="numeric" placeholder={String(nextSort)} />
@@ -117,7 +121,7 @@ function ReasonSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
           <RhfSwitch control={form.control} name="for_refunds" description="Offered in the refund flow as well as for voids.">
             Also a refund reason
           </RhfSwitch>
-        </FormSection>
+        </SheetSection>
         <InlineError error={save.error ?? archive.error} />
       </form>
     </Sheet>

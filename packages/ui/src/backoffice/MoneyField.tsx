@@ -85,10 +85,10 @@ export function MoneyField({
     >
       {label ? <Label className={fieldLabel}>{label}</Label> : null}
       <div className="relative">
-        <span aria-hidden className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-body text-ink-2">
+        <span aria-hidden className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-body text-ink-3">
           {symbol}
         </span>
-        <Input placeholder={placeholder ?? moneyText(0)} className={cx(fieldControl, "tabular text-right", symbol.length > 1 ? "pl-12" : "pl-7", inputClassName)} />
+        <Input placeholder={placeholder ?? moneyText(0)} className={cx(fieldControl, "tabular", symbol.length > 1 ? "pl-12" : "pl-7", inputClassName)} />
       </div>
       {description ? (
         <Text slot="description" className={fieldDescription}>

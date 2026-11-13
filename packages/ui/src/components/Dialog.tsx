@@ -31,16 +31,16 @@ export function Dialog({ isOpen, onOpenChange, title, children, footer, isDismis
     >
       <Modal
         className={cx(
-          "w-full max-w-[480px] rounded-sheet bg-surface shadow-sheet outline-none data-[entering]:animate-rise-in data-[exiting]:animate-rise-out",
+          "w-full max-w-[480px] overflow-hidden rounded-tile bg-surface shadow-modal outline-none data-[entering]:animate-rise-in data-[exiting]:animate-rise-out",
           className,
         )}
       >
         <AriaDialog role={role} className="flex flex-col outline-none">
-          <Heading slot="title" className="px-6 pt-6 text-heading text-ink">
+          <Heading slot="title" className="px-5 pt-5 font-heading text-heading text-ink">
             {title}
           </Heading>
-          {children ? <div className="px-6 pt-2 pb-2 text-body text-ink-2">{children}</div> : null}
-          {footer ? <footer className="flex flex-wrap items-center justify-end gap-2 px-6 py-5">{footer}</footer> : <div className="pb-6" />}
+          {children ? <div className="px-5 pt-2 pb-4 text-body text-ink-2">{children}</div> : null}
+          {footer ? <footer className="flex flex-wrap items-center justify-end gap-2 px-5 py-4 border-t border-rule-subtle">{footer}</footer> : <div className="pb-5" />}
         </AriaDialog>
       </Modal>
     </ModalOverlay>

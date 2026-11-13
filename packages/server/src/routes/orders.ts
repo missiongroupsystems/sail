@@ -49,7 +49,7 @@ registerOperations({
 /* ---- Schemas ----------------------------------------------------------- */
 
 const CustomerRef = untrusted(z.object({ name: z.string().max(80).optional(), mobile: z.string().max(30).optional() }));
-const Mutation = z.object({ expected_version: z.number().int().optional(), dry_run: z.boolean().optional(), override_id: z.uuid().optional() });
+const Mutation = z.object({ expected_version: z.number().int().min(0).max(2_147_483_647).optional(), dry_run: z.boolean().optional(), override_id: z.uuid().optional() });
 const OpenBody = Mutation.extend({
   order_id: z.uuid(),
   order_type: OrderTypeSchema,
@@ -88,6 +88,8 @@ async function outletContext(p: Principal, body: { outlet_id?: string; brand_id?
     const stationId = p.type === "station" ? p.stationId : p.stationId!;
     const [st] = await db().select().from(stations).where(eq(stations.id, stationId)).limit(1);
     if (!st) throw AppError.notFound("station", stationId);
+    // A station takes orders at its own outlet only: another outlet in the body is refused, not quietly replaced.
+    if (body.outlet_id && body.outlet_id !== st.outletId) throw AppError.validation("outlet_id is not this station's outlet", { remedy: "Leave outlet_id out on a station; the order opens at the station's outlet." });
     const brandId = body.brand_id ?? st.brandId;
     if (!brandId) throw AppError.validation("The station has no brand; set one in the back office or pass brand_id");
     return { outletId: st.outletId, brandId, stationId: st.id, station: st };
@@ -312,7 +314,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     return finish(c, p, id, [() => emit(c, p, o, "order.details_updated", b)]);
   });
 
-  defineOp(app, { op: "orders.change_type", method: "post", path: "/v1/orders/{id}/change-type", tags: ["orders"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ order_type: OrderTypeSchema, table_id: z.uuid().nullable().optional(), pax: z.number().int().min(1).nullable().optional(), customer_ref: CustomerRef.nullable().optional(), delivery_address: untrusted(z.string().nullable().optional()), ready_by: z.iso.datetime().nullable().optional() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "orders.change_type", method: "post", path: "/v1/orders/{id}/change-type", tags: ["orders"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ order_type: OrderTypeSchema, table_id: z.uuid().nullable().optional(), pax: z.number().int().min(1).max(99).nullable().optional(), customer_ref: CustomerRef.nullable().optional(), delivery_address: untrusted(z.string().nullable().optional()), ready_by: z.iso.datetime().nullable().optional() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const b = c.req.valid("json");
@@ -390,14 +392,14 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     const menu = await compileMenu(o.channelLinkId, new Date());
     const [maxRow] = await db().select({ max: sql<number>`coalesce(max(${orderLines.sort}), -1)` }).from(orderLines).where(eq(orderLines.orderId, id));
     const max = Number(maxRow?.max ?? -1);
-    const built = await buildLines(menu, b.lines as LineInput[], { orderType: o.orderType, outletId: o.outletId, today: await todayFor(o.merchantId, o.outletId), source: "pos", addedBy: p.type === "staff" ? p.id : null, addedByName: "name" in p ? p.name : null, allowOpenPrice: true, startSort: Number(max) + 1 });
+    const built = await buildLines(menu, b.lines as LineInput[], { orderType: o.orderType, outletId: o.outletId, today: await todayFor(o.merchantId, o.outletId), source: "pos", addedBy: p.type === "staff" ? p.id : null, addedByName: "name" in p ? p.name : null, allowOpenPrice: true, startSort: Number(max) + 1, role: principalRole(p) });
     await db().insert(orderLines).values(built.map((l) => ({ ...l, orderId: id, merchantId: o.merchantId, outletId: o.outletId })));
     if (approval) await recordAudit(p, { action: "lines.add_open_price", targetKind: "order", targetId: id, outletId: o.outletId, approver: approval, overrideId: b.override_id ?? null, details: { lines: built.filter((l) => l.openPrice != null).map((l) => ({ id: l.id, open_price: l.openPrice })) } });
     const pending: PendingEvent[] = built.map((l) => () => emit(c, p, o, "line.added", { line_id: l.id, product_id: l.productId, name: l.name, quantity: l.quantity, seat_no: l.seatNo, held: l.status === "held", open_price: l.openPrice }, approval ? { approval: { override_id: b.override_id, approver_id: approval.id, approver_name: approval.name ?? undefined } } : {}));
     return finish(c, p, id, pending);
   });
 
-  defineOp(app, { op: "lines.update", method: "patch", path: "/v1/orders/{id}/lines/{line_id}", tags: ["orders"], request: { params: z.object({ id: z.uuid(), line_id: z.uuid() }), body: jsonBody(Mutation.extend({ quantity: z.number().int().min(1).max(999).optional(), notes: untrusted(z.string().max(200).nullable().optional()), seat_no: z.number().int().min(1).max(99).nullable().optional(), hold: z.boolean().optional(), modifiers: z.array(z.object({ group_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1).optional() })).optional() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "lines.update", method: "patch", path: "/v1/orders/{id}/lines/{line_id}", tags: ["orders"], request: { params: z.object({ id: z.uuid(), line_id: z.uuid() }), body: jsonBody(Mutation.extend({ quantity: z.number().int().min(1).max(999).optional(), notes: untrusted(z.string().max(200).nullable().optional()), seat_no: z.number().int().min(1).max(99).nullable().optional(), hold: z.boolean().optional(), modifiers: z.array(z.object({ group_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1).max(999).optional() })).optional() })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id, line_id } = c.req.valid("param");
     const b = c.req.valid("json");
@@ -432,7 +434,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     return finish(c, p, id, [() => emit(c, p, o, "line.updated", { line_id, ...b })]);
   });
 
-  defineOp(app, { op: "lines.void", method: "post", path: "/v1/orders/{id}/lines/{line_id}/void", tags: ["orders"], request: { params: z.object({ id: z.uuid(), line_id: z.uuid() }), body: jsonBody(Mutation.extend({ quantity: z.number().int().min(1).optional(), reason_id: z.uuid().optional(), reason_text: untrusted(z.string().max(200).optional(), "void_reason") })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "lines.void", method: "post", path: "/v1/orders/{id}/lines/{line_id}/void", tags: ["orders"], request: { params: z.object({ id: z.uuid(), line_id: z.uuid() }), body: jsonBody(Mutation.extend({ quantity: z.number().int().min(1).max(999).optional(), reason_id: z.uuid().optional(), reason_text: untrusted(z.string().max(200).optional(), "void_reason") })) }, responses: { 200: jsonResponse(OrderMutationResponse), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id, line_id } = c.req.valid("param");
     const b = c.req.valid("json");
@@ -604,10 +606,10 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     await assertAdjustmentUnlocked(id, application_id);
     const rule = await ruleOrLastVersion(o.merchantId, appRow.ruleKey, new Date());
     if (!rule) throw AppError.notFound("pricing rule", appRow.ruleKey);
-    await requireRoleOrOverride(p, principalRole(p), (rule.min_role ?? "server") as Role, { action: "adjustments.remove", targetId: id, args: { application_id }, overrideId: b.override_id, overrideAllowed: rule.override_allowed });
+    const approval = await requireRoleOrOverride(p, principalRole(p), (rule.min_role ?? "server") as Role, { action: "adjustments.remove", targetId: id, args: { application_id }, overrideId: b.override_id, overrideAllowed: rule.override_allowed });
     await db().update(orderManualApplications).set({ removedAt: new Date(), removedBy: p.id }).where(eq(orderManualApplications.id, application_id));
-    await recordAudit(p, { action: "adjustments.remove", targetKind: "order", targetId: id, outletId: o.outletId, reason: b.reason ?? null, details: { rule_key: appRow.ruleKey } });
-    return finish(c, p, id, [() => emit(c, p, o, "adjustment.removed", { application_id, rule_key: appRow.ruleKey }, { reason: b.reason ? { text: b.reason } : null })]);
+    await recordAudit(p, { action: "adjustments.remove", targetKind: "order", targetId: id, outletId: o.outletId, reason: b.reason ?? null, approver: approval, overrideId: b.override_id ?? null, details: { rule_key: appRow.ruleKey } });
+    return finish(c, p, id, [() => emit(c, p, o, "adjustment.removed", { application_id, rule_key: appRow.ruleKey }, { reason: b.reason ? { text: b.reason } : null, approval: approval ? { override_id: b.override_id, approver_id: approval.id, approver_name: approval.name ?? undefined } : null })]);
   });
 
   defineOp(app, { op: "floor.snapshot", method: "get", path: "/v1/outlets/{id}/floor", tags: ["orders"], request: { params: z.object({ id: z.uuid() }) }, responses: { 200: jsonResponse(dataResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {

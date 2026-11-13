@@ -1,13 +1,15 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, DataTable, EmptyState, InlineError, Sheet, StatusDot, Switch, type DataTableColumn } from "@sail/ui";
+import { Button, DataTable, EmptyState, InlineError, Sheet, StatusDot, Switch, type DataTableColumn, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { FormSection, RhfTextField } from "@/components/forms/fields";
+import { greyPill, greyPillAlert, SheetSection, TwoLine } from "@/components/office/parts";
+import { applyServerErrors } from "@/components/office/server-errors";
+import { RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Brand } from "@/lib/api/types";
@@ -26,7 +28,7 @@ function Swatch({ hex }: { hex: string | null }) {
   return (
     <span className="inline-flex items-center gap-2">
       <span aria-hidden className="inline-block size-4 rounded-full hairline" style={hex ? { background: hex, borderColor: hex } : undefined} />
-      <span className="font-mono text-caption">{hex ?? "Not set"}</span>
+      <span className="text-caption tabular">{hex ?? "Not set"}</span>
     </span>
   );
 }
@@ -43,7 +45,7 @@ function AccentStatus({ hex }: { hex: string | null }) {
 }
 
 const columns: DataTableColumn<Brand>[] = [
-  { key: "name", header: "Name", sortable: true, isRowHeader: true, render: (b) => <span className="text-ink">{b.name}</span> },
+  { key: "name", header: "Name", sortable: true, isRowHeader: true, width: "1.4fr", render: (b) => <TwoLine primary={b.name} /> },
   { key: "accent_color", header: "Accent", render: (b) => <Swatch hex={b.accent_color} /> },
   { key: "contrast", header: "Button text contrast", render: (b) => <AccentStatus hex={b.accent_color} /> },
   {
@@ -51,7 +53,7 @@ const columns: DataTableColumn<Brand>[] = [
     header: "Status",
     sortable: true,
     sortValue: (b) => (b.archived ? 1 : 0),
-    render: (b) => (b.archived ? <StatusDot status="neutral" label="Archived" muted /> : <StatusDot status="paid" label="Active" />),
+    render: (b) => (b.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <Pill size="sm" tone="paid">Active</Pill>),
   },
 ];
 
@@ -68,14 +70,14 @@ export function BrandsView({ initialBrands }: { initialBrands: Brand[] }) {
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-ink-2">
+        <p className="text-[14px] text-ink-2">
           {rows.length} {rows.length === 1 ? "brand" : "brands"}. Brands tint identity (name, accent, tiles); Sail's controls stay the same everywhere.
         </p>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
           </Switch>
-          <Button variant="primary" onPress={() => setSheet({ mode: "create" })}>
+          <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
             Add brand
           </Button>
         </div>
@@ -88,7 +90,7 @@ export function BrandsView({ initialBrands }: { initialBrands: Brand[] }) {
         defaultSort={{ column: "name", direction: "ascending" }}
         onRowAction={(b) => setSheet({ mode: "edit", brand: b })}
         rowClassName={(b) => (b.archived ? "text-ink-2" : undefined)}
-        emptyState={<EmptyState variant="quiet" title="No brands yet" hint="Tap Add brand to create the first one." />}
+        emptyState={<EmptyState variant="centred" title="No brands yet" hint="Tap Add brand to create the first one." />}
       />
       <BrandSheet state={sheet} onClose={() => setSheet(null)} />
     </>
@@ -125,6 +127,8 @@ function BrandSheet({ state, onClose }: { state: SheetState; onClose: () => void
       return res.data;
     },
     onSuccess: settle,
+    // A refusal that names a field shows under it; the message also stays at the foot of the form.
+    onError: (e) => applyServerErrors(form.setError, e, Object.keys(form.getValues())),
   });
   const archive = useMutation<Brand, ApiError, boolean>({
     mutationFn: async (archived) => (await req(api.PATCH("/v1/brands/{id}", { params: { path: { id: brand!.id } }, body: { archived } }))).data,
@@ -142,11 +146,11 @@ function BrandSheet({ state, onClose }: { state: SheetState; onClose: () => void
       footer={
         <>
           {brand ? (
-            <Button variant={brand.archived ? "secondary" : "destructive"} onPress={() => archive.mutate(!brand.archived)} isPending={archive.isPending} isDisabled={save.isPending} className="mr-auto">
+            <Button variant="secondary" onPress={() => archive.mutate(!brand.archived)} isPending={archive.isPending} isDisabled={save.isPending} className={`mr-auto ${brand.archived ? greyPill : greyPillAlert}`}>
               {brand.archived ? "Restore brand" : "Archive brand"}
             </Button>
           ) : null}
-          <Button variant="quiet" onPress={onClose} isDisabled={busy}>
+          <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={busy}>
             Cancel
           </Button>
           <Button variant="primary" type="submit" form="brand-form" isPending={save.isPending} isDisabled={archive.isPending || blocked}>
@@ -156,11 +160,11 @@ function BrandSheet({ state, onClose }: { state: SheetState; onClose: () => void
       }
     >
       <form id="brand-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
-        <FormSection>
+        <SheetSection>
           <RhfTextField control={form.control} name="name" label="Name" placeholder="Brand name" autoFocus={!brand} />
           <div className="flex items-end gap-3">
             <RhfTextField control={form.control} name="accent_color" label="Accent colour" placeholder="#B4235E" mono className="flex-1" description="Leave empty to use Sail's default." />
-            <label className="relative flex size-11 shrink-0 cursor-default items-center justify-center rounded-tile hairline" style={{ background: HEX_RE.test(accent) ? accent : "var(--surface-2)" }}>
+            <label className="relative flex size-11 shrink-0 cursor-default items-center justify-center rounded-full hairline" style={{ background: HEX_RE.test(accent) ? accent : "var(--surface-2)" }}>
               <span className="sr-only">Pick accent colour</span>
               <input
                 type="color"
@@ -171,7 +175,7 @@ function BrandSheet({ state, onClose }: { state: SheetState; onClose: () => void
             </label>
           </div>
           {check ? (
-            <div className="flex flex-col gap-3 rounded-tile bg-surface-2 px-4 py-3">
+            <div className="flex flex-col gap-3 rounded-panel bg-surface-2 px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <span className="text-body">
                   {check.passes ? (
@@ -183,7 +187,7 @@ function BrandSheet({ state, onClose }: { state: SheetState; onClose: () => void
                 <span
                   aria-hidden
                   className="inline-flex min-h-9 items-center rounded-tile px-3 text-caption"
-                  style={{ background: check.hex, color: check.textOn === "white" ? "#FFFFFF" : "#1C1D1F" }}
+                  style={{ background: check.hex, color: check.textOn === "white" ? "#FFFFFF" : "#0D0D0D" }}
                 >
                   Add to order
                 </span>
@@ -201,7 +205,7 @@ function BrandSheet({ state, onClose }: { state: SheetState; onClose: () => void
               ) : null}
             </div>
           ) : null}
-        </FormSection>
+        </SheetSection>
         <InlineError error={save.error ?? archive.error} />
       </form>
     </Sheet>

@@ -26,8 +26,9 @@ import {
   listTenderTypes,
   listTodaysOrders,
   listVoidReasons,
+  quoteRefund,
 } from "../api/register";
-import type { FloorSnapshot, OrderSnapshot } from "../api/types";
+import type { CheckSnapshot, FloorSnapshot, OrderSnapshot } from "../api/types";
 import { useApi } from "./useApi";
 
 /** Query keys, by resource. The event store invalidates by these. */
@@ -59,6 +60,7 @@ export const posKeys = {
   requests: (outletId: string) => ["pos", "service-requests", outletId] as const,
   stock: (outletId: string) => ["pos", "stock", outletId] as const,
   kitchenTickets: (orderId: string) => ["pos", "kitchen-tickets", orderId] as const,
+  tipLeft: (checkId: string, refunded: number) => ["pos", "tip-left", checkId, refunded] as const,
 };
 
 /** The merchant's settings (signed in: a station without a PIN session may not read them). */
@@ -248,4 +250,28 @@ export function useOpenServiceRequests(outletId: string | null) {
 export function useStock(outletId: string | null, enabled = true) {
   const api = useApi();
   return useQuery({ queryKey: posKeys.stock(outletId ?? ""), queryFn: () => listStock(api, outletId!), enabled: Boolean(outletId) && enabled, staleTime: 10_000 });
+}
+
+/**
+ * A bill refunded in full by items can still hold its tip (the register keeps it partly refunded with nothing of the
+ * bill left). How much tip is left to give back is the register's whole-bill quote, never a sum made here; null when
+ * there is none or the register does not give tips back.
+ */
+export function useTipLeft(check: CheckSnapshot | null) {
+  const api = useApi();
+  const holding = Boolean(check && check.status === "partially_refunded" && check.refunded_total >= check.totals.total && check.payments.some((p) => p.status === "recorded" && p.tip_cents > 0));
+  return useQuery({
+    queryKey: posKeys.tipLeft(check?.id ?? "", check?.refunded_total ?? 0),
+    enabled: holding,
+    retry: false,
+    queryFn: async () => {
+      try {
+        const q = await quoteRefund(api, check!.id, { kind: "full" });
+        return q.tip && q.tip > 0 ? q.tip : null;
+      } catch {
+        // Nothing left to refund: no tip is waiting either.
+        return null;
+      }
+    },
+  });
 }

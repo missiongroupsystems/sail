@@ -19,6 +19,13 @@ export const PIN_LOCK_SECONDS = 30;
 export type AttemptLimits = { maxFailures: number; lockSeconds: number; what: string; delay?: { after: number; maxSeconds: number }; forgetAfterSeconds?: number };
 const PIN_LIMITS: AttemptLimits = { maxFailures: PIN_MAX_FAILURES, lockSeconds: PIN_LOCK_SECONDS, what: "wrong PINs" };
 
+/**
+ * Setting a PIN someone already has is refused, and that answer says someone has it. Each person may run into a taken
+ * PIN a few times; then setting any PIN waits, so the staff form or an import cannot be used to find colleagues' PINs.
+ * The scope is `pin_taken:` and the person's pinScope.
+ */
+export const PIN_TAKEN_LIMITS: AttemptLimits = { maxFailures: 5, lockSeconds: 900, what: "PINs that someone already uses", forgetAfterSeconds: 3600 };
+
 export function pinScope(p: { stationId?: string; id: string }): string {
   return p.stationId ? `station:${p.stationId}` : `staff:${p.id}`;
 }

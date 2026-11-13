@@ -74,7 +74,39 @@ describe("checks and payments", () => {
     const denied = await pay(serverPin, s.checks[0]!.id, { tender_type_id: ids.card, amount: 100 });
     expect(denied.status).toBe(403);
     expect(denied.body.details).toMatchObject({ required_role: "cashier", override_allowed: true });
+    // B-F4: a dry run is a quote and changes nothing, so a Server gets it (the screen shows the change before asking for
+    // approval); recording the same payment is still refused without one.
+    const quoteKey = randomUUID();
+    const quote = await pay(serverPin, s.checks[0]!.id, { tender_type_id: ids.card, amount: 100, dry_run: true }, quoteKey);
+    expect(quote.status, JSON.stringify(quote.body)).toBe(200);
+    // The quote leaves the bill as it was: same balance, no payment, and no override or idempotency record behind it.
+    const after = (await call<{ data: Snap }>("GET", `/v1/orders/${o.body.data.id}`, { token: serverPin })).body.data;
+    expect(after.balance).toBe(s.balance);
+    expect(after.checks[0]!.balance).toBe(s.checks[0]!.balance);
+    expect(after.checks[0]!.payments).toHaveLength(0);
+    expect((await db.sql`select 1 from overrides where target_id = ${o.body.data.id}`).length).toBe(0);
+    expect((await db.sql`select 1 from idempotency_keys where key = ${quoteKey}`).length).toBe(0);
+    expect((await pay(serverPin, s.checks[0]!.id, { tender_type_id: ids.card, amount: 100 })).status).toBe(403);
+    // Only staff get the quote without the role: an agent with a Server's role is held to the check even for a dry run.
+    const cred = await call<{ data: { credential: string } }>("POST", "/v1/agent-identities", { token: A.admin.token, body: { name: `pay-${randomUUID().slice(0, 6)}`, role: "server", toolsets: ["pos.payment", "pos.order", "pos.read"], risk_ceiling: "T2" } });
+    expect(cred.status, JSON.stringify(cred.body)).toBe(201);
+    const agentToken = (await call<{ data: { agent_token: string } }>("POST", "/v1/agent-sessions", { body: { credential: cred.body.data.credential }, idempotencyKey: null })).body.data.agent_token;
+    const agentQuote = await pay(agentToken, s.checks[0]!.id, { tender_type_id: ids.card, amount: 100, dry_run: true });
+    expect(agentQuote.status, JSON.stringify(agentQuote.body)).toBe(403);
+    expect(agentQuote.body.details).toMatchObject({ required_role: "cashier" });
     await call("POST", `/v1/orders/${o.body.data.id}/cancel`, { token: serverPin, body: { reason: "test" } });
+  });
+
+  it("a payment above the balance names the balance once, in the message, and the remedy says what to do (A-12)", async () => {
+    const o = await open(cashierPin, { order_type: "dine_in", table_id: ids.table2, pax: 1 });
+    const added = await addLines(cashierPin, o.body.data.id, [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }]);
+    const check = added.body.data.checks[0]!;
+    const over = await pay(cashierPin, check.id, { tender_type_id: ids.card, amount: check.balance + 1 });
+    expect(over.status).toBe(400);
+    const body = over.body as Mut["body"] & { remedy?: string };
+    expect(body.message).toMatch(/^Card payments cannot exceed the balance of \S+$/);
+    expect(body.remedy).toBe("Enter the balance or a smaller part payment.");
+    await call("POST", `/v1/orders/${o.body.data.id}/cancel`, { token: cashierPin, body: { reason: "test" } });
   });
 
   it("card part payment, then cash with rounding settles the bill; the first payment freezes order-level pricing and new lines go to a new bill", async () => {
@@ -316,6 +348,8 @@ describe("checks and payments", () => {
       const refused = await call<{ code: string; details: Record<string, number> }>("POST", `/v1/shifts/${shift.body.data.id}/close`, { token: cashierPin, body });
       expect(refused.status, JSON.stringify(refused.body)).toBe(400);
       expect(refused.body.details).toMatchObject({ expected: 1000, counted: 1301, variance: 301, variance_threshold: 300 });
+      // Said in the merchant's money, not in minor units.
+      expect((refused.body as { message?: string }).message).toBe("The drawer is $3.01 over, more than the $3.00 allowed without a reason");
     }
     const closed = await call<{ data: { variance_cents: number; variance_reason: string } }>("POST", `/v1/shifts/${shift.body.data.id}/close`, { token: cashierPin, body: { ...over, variance_reason: "Float was not counted at open" } });
     expect(closed.status, JSON.stringify(closed.body)).toBe(200);

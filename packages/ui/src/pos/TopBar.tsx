@@ -18,9 +18,9 @@ export type TopBarProps = {
 /** The POS top bar: 56pt, destinations left, user menu and connection right. */
 export function TopBar({ left, title, right, className }: TopBarProps) {
   return (
-    <header className={cx("flex h-14 shrink-0 items-center gap-4 px-3 hairline-b bg-surface", className)}>
+    <header className={cx("flex h-14 shrink-0 items-center gap-4 border-b border-rule-subtle bg-surface px-3", className)}>
       <div className="flex min-w-0 shrink-0 items-center gap-1">{left}</div>
-      <div className="min-w-0 flex-1 truncate text-center text-line text-ink">{title}</div>
+      <div className="min-w-0 flex-1 truncate text-center text-line font-medium text-ink">{title}</div>
       <div className="flex shrink-0 items-center gap-2">{right}</div>
     </header>
   );
@@ -46,13 +46,13 @@ export function TopTabs({ tabs, selectedId, onSelect }: TopTabsProps) {
             aria-current={selected ? "page" : undefined}
             onPress={() => onSelect(t.id)}
             className={cx(
-              "press pos-touch relative flex min-h-11 items-center gap-2 rounded-tile px-4 text-line outline-none",
-              selected ? "bg-surface-2 text-ink" : "text-ink-2 data-[hovered]:bg-surface-2",
-              "data-[pressed]:scale-[0.97] data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated",
+              "press pos-touch relative flex min-h-11 items-center gap-2 rounded-chip px-4 text-[15px] outline-none transition-colors duration-[120ms]",
+              selected ? "bg-surface-2 font-medium text-ink" : "text-ink-2 data-[hovered]:bg-surface-2 data-[hovered]:text-ink",
+              "data-[pressed]:scale-[0.97] data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus",
             )}
           >
             {t.label}
-            {t.badge ? <span className="rounded-chip bg-ink px-2 text-caption text-surface tabular">{t.badge}</span> : null}
+            {t.badge ? <span className="flex h-5 min-w-5 items-center justify-center rounded-chip bg-primary px-1.5 text-[11.5px] font-semibold text-on-primary tabular">{t.badge}</span> : null}
           </AriaButton>
         );
       })}
@@ -65,7 +65,7 @@ export function BackButton({ label, onPress }: { label: string; onPress: () => v
   return (
     <AriaButton
       onPress={onPress}
-      className="press pos-touch flex min-h-11 items-center gap-1 rounded-tile pr-3 pl-2 text-line text-ink outline-none data-[hovered]:bg-surface-2 data-[pressed]:scale-[0.97] data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated"
+      className="press pos-touch flex min-h-11 items-center gap-1 rounded-chip pr-3 pl-2 text-[15px] text-ink-2 outline-none transition-colors duration-[120ms] data-[hovered]:bg-surface-2 data-[hovered]:text-ink data-[pressed]:scale-[0.97] data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus"
     >
       <Icon icon={ChevronLeft} size={20} />
       {label}
@@ -88,8 +88,8 @@ const word: Record<ConnectionStatus, string> = { online: "online", reconnecting:
 /** The connection indicator: online, reconnecting, offline with the "as of" time. */
 export function ConnectionIndicator({ status, asOf, className }: ConnectionIndicatorProps) {
   return (
-    <span className={cx("inline-flex items-center gap-2 whitespace-nowrap text-caption text-ink-2", className)} role="status" aria-live="polite">
-      <span aria-hidden className={cx("inline-block size-2 rounded-full", dot[status])} />
+    <span className={cx("inline-flex items-center gap-2 whitespace-nowrap text-caption font-medium text-ink", className)} role="status" aria-live="polite">
+      <span aria-hidden className={cx("inline-block size-[7px] rounded-full", dot[status])} />
       <span>
         {word[status]}
         {status !== "online" && asOf ? <span className="tabular"> · as of {asOf}</span> : null}

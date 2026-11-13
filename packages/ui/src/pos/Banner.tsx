@@ -17,9 +17,9 @@ export type BannerProps = {
 };
 
 const tones: Record<BannerTone, { icon: typeof Info; cls: string }> = {
-  alert: { icon: AlertTriangle, cls: "bg-[color-mix(in_srgb,var(--status-alert)_12%,var(--surface))] text-ink" },
-  waiting: { icon: Loader2, cls: "bg-[color-mix(in_srgb,var(--status-sent)_14%,var(--surface))] text-ink" },
-  success: { icon: CheckCircle2, cls: "bg-[color-mix(in_srgb,var(--status-paid)_14%,var(--surface))] text-ink" },
+  alert: { icon: AlertTriangle, cls: "bg-status-alert-tint text-ink" },
+  waiting: { icon: Loader2, cls: "bg-status-sent-tint text-ink" },
+  success: { icon: CheckCircle2, cls: "bg-status-paid-tint text-ink" },
   info: { icon: Info, cls: "bg-surface-2 text-ink" },
 };
 
@@ -27,11 +27,11 @@ const tones: Record<BannerTone, { icon: typeof Info; cls: string }> = {
 export function Banner({ tone, children, actions, queued, className }: BannerProps) {
   const t = tones[tone];
   return (
-    <div role={tone === "alert" ? "alert" : "status"} aria-live={tone === "alert" ? "assertive" : "polite"} className={cx("flex h-12 items-center gap-3 px-4 text-body", t.cls, className)}>
+    <div role={tone === "alert" ? "alert" : "status"} aria-live={tone === "alert" ? "assertive" : "polite"} className={cx("flex h-12 items-center gap-3 px-5 text-[14.5px] font-medium", t.cls, className)}>
       <Icon icon={t.icon} size={18} className={cx(tone === "alert" && "text-status-alert", tone === "success" && "text-status-paid", tone === "waiting" && "keep-motion animate-spin text-status-sent")} />
       <div className="min-w-0 flex-1 truncate">{children}</div>
       {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
-      {queued ? <span className="shrink-0 text-caption text-ink-2 tabular">+{queued}</span> : null}
+      {queued ? <span className="shrink-0 text-caption font-normal text-ink-2 tabular">+{queued}</span> : null}
     </div>
   );
 }

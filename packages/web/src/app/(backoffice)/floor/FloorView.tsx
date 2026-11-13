@@ -1,8 +1,11 @@
 "use client";
 
-import { Button, Dialog, EmptyState, InlineError, SectionHeading, Select, StatusDot, Switch, TextField, cx, useLocale } from "@sail/ui";
+import { Button, Dialog, EmptyState, Icon, InlineError, Select, Switch, TextField, cx, useLocale, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { Users } from "lucide-react";
+import { greyPill, greyPillAlert, SectionLabel } from "@/components/office/parts";
+import { serverFieldErrors } from "@/components/office/server-errors";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
 import { QrSheetButton, RotateQrButton } from "@/components/backoffice/QrTools";
 import { roleIs } from "@/components/backoffice/register";
@@ -123,8 +126,8 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-wrap items-end gap-3">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <OutletChoice outlets={outlets} scope={scope} outletId={outletId} onChange={(id) => { setOutletId(id); setAreaId(null); }} />
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived tables
@@ -132,10 +135,10 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
         </div>
         <div className="flex flex-wrap items-start gap-2">
           {outlet ? <QrSheetButton outletId={outlet.id} outletName={outlet.name} canRotate={admin} /> : null}
-          <Button onPress={() => { setAreaName(""); setAreaDialog({ mode: "create" }); }} isDisabled={!outletId}>
+          <Button size="sm" onPress={() => { setAreaName(""); setAreaDialog({ mode: "create" }); }} isDisabled={!outletId}>
             Add area
           </Button>
-          <Button variant="primary" onPress={() => addTable.mutate()} isDisabled={!area} isPending={addTable.isPending}>
+          <Button size="sm" variant="primary" onPress={() => addTable.mutate()} isDisabled={!area} isPending={addTable.isPending}>
             Add table
           </Button>
         </div>
@@ -146,28 +149,40 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
       ) : sortedAreas.length === 0 ? (
         <EmptyState title="No areas yet" hint="Tap Add area: Main dining, Terrace, Bar. Tables live in an area." />
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
-          <div className="flex flex-col gap-3">
-            <nav aria-label="Areas" className="-mx-1 flex flex-wrap items-center gap-1">
-              {sortedAreas.map((a) => (
-                <Button key={a.id} variant={a.id === area?.id ? "secondary" : "quiet"} onPress={() => setAreaId(a.id)} className={a.id === area?.id ? "text-ink" : "text-ink-2"}>
-                  {a.name}
-                </Button>
-              ))}
+        // The table panel goes beside the plan from 1280px; below that the plan takes the width, so tables keep their size.
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="flex min-w-0 flex-col gap-3">
+            <nav aria-label="Areas" className="flex flex-wrap items-center gap-2">
+              {/* The same tabs as every other back-office switcher (36px, small rounded tiles), not a 44px pill. */}
+              <span className="inline-flex h-9 max-w-full flex-wrap items-center gap-0.5 rounded-[10px] bg-surface-2 p-0.5">
+                {sortedAreas.map((a) => (
+                  <Button
+                    key={a.id}
+                    variant="quiet"
+                    aria-current={a.id === area?.id ? "true" : undefined}
+                    onPress={() => setAreaId(a.id)}
+                    className={cx("h-8! min-h-8! rounded-[8px]! px-3! text-[13px]", a.id === area?.id ? "bg-surface! text-ink shadow-segment" : "text-ink-2")}
+                  >
+                    {a.name}
+                  </Button>
+                ))}
+              </span>
               {area ? (
-                <Button variant="quiet" className="text-caption text-ink-2" onPress={() => { setAreaName(area.name); setAreaDialog({ mode: "rename", area }); }}>
+                <Button variant="quiet" className="text-[13px] text-ink-2" onPress={() => { setAreaName(area.name); setAreaDialog({ mode: "rename", area }); }}>
                   Rename {area.name}
                 </Button>
               ) : null}
             </nav>
+            {/* On a phone the plan keeps a workable size (tables about 46pt) and scrolls sideways inside its frame. */}
+            <div className="overflow-x-auto rounded-panel bg-surface-2 p-2 sm:p-3">
             <div
               ref={canvasRef}
               role="application"
               aria-label={`Floor plan for ${area?.name ?? "area"}`}
-              className="relative w-full select-none overflow-hidden rounded-tile hairline bg-surface touch-none"
+              className="relative w-full select-none overflow-hidden rounded-[10px] bg-surface touch-none shadow-[inset_0_0_0_1px_var(--line-subtle)] max-sm:min-w-[560px]"
               style={{
                 aspectRatio: `${COLS} / ${ROWS}`,
-                backgroundImage: "linear-gradient(to right, var(--line) 1px, transparent 1px), linear-gradient(to bottom, var(--line) 1px, transparent 1px)",
+                backgroundImage: "radial-gradient(circle at 0 0, var(--line-strong) 1.2px, transparent 1.4px)",
                 backgroundSize: `${100 / COLS}% ${100 / ROWS}%`,
               }}
               onPointerMove={onMove}
@@ -198,42 +213,49 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
                       }
                     }}
                     className={cx(
-                      "absolute flex items-center justify-center text-center outline-none transition-[left,top,width,height] duration-[80ms]",
-                      t.shape === "round" ? "rounded-full" : "rounded-tile",
-                      t.archived ? "border border-dashed border-rule text-ink-2" : "bg-surface-2 text-ink hairline hover:border-ink-2",
-                      isSelected && "border-ink ring-2 ring-status-seated ring-offset-1 ring-offset-surface",
+                      "absolute flex border p-0.5 outline-none transition-[left,top,width,height] duration-[80ms] sm:p-2",
+                      t.shape === "round" ? "items-center justify-center rounded-full text-center" : "items-center justify-center rounded-[14px] text-center sm:items-start sm:justify-start sm:text-left",
+                      t.archived ? "border-dashed border-rule-dashed bg-surface-2/60 text-ink-3" : "border-dashed border-ink-3/60 bg-surface text-ink hover:border-ink-2",
+                      isSelected && "border-solid border-ink outline-solid outline-2 outline-offset-2 outline-ink",
                       drag?.id === t.id && "cursor-grabbing shadow-sheet",
                       !t.archived && !drag && "cursor-grab",
-                      "focus-visible:ring-2 focus-visible:ring-status-seated",
+                      "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
                     )}
-                    style={{ left: `${(pos.x / COLS) * 100}%`, top: `${(pos.y / ROWS) * 100}%`, width: `${(pos.w / COLS) * 100}%`, height: `${(pos.h / ROWS) * 100}%` }}
+                    style={{ left: `calc(${(pos.x / COLS) * 100}% + 3px)`, top: `calc(${(pos.y / ROWS) * 100}% + 3px)`, width: `calc(${(pos.w / COLS) * 100}% - 6px)`, height: `calc(${(pos.h / ROWS) * 100}% - 6px)` }}
                   >
-                    <span className="flex flex-col leading-tight">
-                      <span className="text-line">{t.name}</span>
-                      <span className="text-caption text-ink-2 tabular">{t.seats}</span>
+                    <span className={cx("flex min-w-0 flex-col gap-1 overflow-hidden leading-none", t.shape === "round" && "items-center")}>
+                      <span className="truncate font-heading text-[clamp(10px,1.4vw,20px)] font-semibold">{t.name}</span>
+                      <span className="inline-flex items-center gap-1 text-[12px] font-medium text-ink-3 tabular max-sm:hidden">
+                        <Icon icon={Users} size={12} />
+                        {t.seats}
+                      </span>
                     </span>
                     {isSelected && !t.archived ? (
                       <span
                         role="presentation"
                         aria-hidden
                         onPointerDown={(e) => startDrag(e, t, "resize")}
-                        className="absolute right-0 bottom-0 size-4 translate-x-1/3 translate-y-1/3 cursor-nwse-resize rounded-full bg-status-seated"
+                        className="absolute right-0 bottom-0 size-4 translate-x-1/3 translate-y-1/3 cursor-nwse-resize rounded-full border-2 border-surface bg-ink"
                       />
                     ) : null}
                   </div>
                 );
               })}
-              {areaTables.length === 0 ? <p className="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-ink-2">No tables in {area?.name}. Tap Add table.</p> : null}
+              {areaTables.length === 0 ? <p className="absolute inset-x-0 top-1/2 -translate-y-1/2 px-4 text-center text-[15px] text-ink-2">No tables in {area?.name}. Tap Add table.</p> : null}
+            </div>
             </div>
             <InlineError error={patchTable.error ?? addTable.error ?? areas.error ?? tables.error} />
           </div>
 
-          <aside className="flex flex-col gap-4">
-            <SectionHeading title={selectedTable ? selectedTable.name : "Table"} aside={selectedTable ? (selectedTable.archived ? <StatusDot status="neutral" label="Archived" muted /> : `${selectedTable.seats} seats`) : null} />
+          <aside className="flex flex-col gap-4 self-start rounded-panel border border-rule bg-surface p-4">
+            <div className="flex items-start justify-between gap-3">
+              <h2 className="min-w-0 font-heading text-[17px] leading-[1.3] font-semibold text-ink [overflow-wrap:anywhere]">{selectedTable ? selectedTable.name : "Table"}</h2>
+              {selectedTable ? selectedTable.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <span className="text-[13px] text-ink-3 tabular">{selectedTable.seats} seats</span> : null}
+            </div>
             {selectedTable ? (
-              <TablePanel key={selectedTable.id} table={selectedTable} areas={sortedAreas} onSave={(body) => patchTable.mutate({ id: selectedTable.id, body })} saving={patchTable.isPending} canRotateQr={admin} />
+              <TablePanel key={selectedTable.id} table={selectedTable} areas={sortedAreas} onSave={(body) => patchTable.mutate({ id: selectedTable.id, body })} saving={patchTable.isPending} canRotateQr={admin} error={patchTable.variables?.id === selectedTable.id ? patchTable.error : null} />
             ) : (
-              <p className="text-ink-2">Tap a table to edit its name, seats, shape and size, or to rotate its QR code. Drag it to move it; drag the corner to resize. Arrow keys nudge a focused table.</p>
+              <p className="text-[14px] text-ink-2">Tap a table to edit its name, seats, shape and size, or to rotate its QR code. Drag it to move it; drag the corner to resize. Arrow keys nudge a focused table.</p>
             )}
           </aside>
         </div>
@@ -245,7 +267,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
         title={areaDialog?.mode === "rename" ? `Rename ${areaDialog.area.name}` : "New area"}
         footer={
           <>
-            <Button variant="quiet" onPress={() => setAreaDialog(null)}>
+            <Button variant="secondary" className={greyPill} onPress={() => setAreaDialog(null)}>
               Cancel
             </Button>
             <Button variant="primary" isDisabled={!areaName.trim()} isPending={saveArea.isPending} onPress={() => saveArea.mutate({ id: areaDialog?.mode === "rename" ? areaDialog.area.id : undefined, name: areaName.trim() })}>
@@ -263,7 +285,9 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
   );
 }
 
-function TablePanel({ table, areas, onSave, saving, canRotateQr }: { table: Table; areas: Area[]; onSave: (body: TablePatch) => void; saving: boolean; canRotateQr: boolean }) {
+function TablePanel({ table, areas, onSave, saving, canRotateQr, error }: { table: Table; areas: Area[]; onSave: (body: TablePatch) => void; saving: boolean; canRotateQr: boolean; error: ApiError | null }) {
+  // A refusal that names a field (seats over the limit, a name) shows under that field as well as under the plan.
+  const fieldError = (name: string) => serverFieldErrors(error).find((e) => e.field === name)?.message;
   const [name, setName] = useState(table.name);
   const [seats, setSeats] = useState(String(table.seats));
   const [shape, setShape] = useState(table.shape);
@@ -287,9 +311,9 @@ function TablePanel({ table, areas, onSave, saving, canRotateQr }: { table: Tabl
         save();
       }}
     >
-      <TextField label="Name" value={name} onChange={setName} />
+      <TextField label="Name" value={name} onChange={setName} isInvalid={!!fieldError("name")} errorMessage={fieldError("name")} />
       <div className="grid grid-cols-2 gap-3">
-        <TextField label="Seats" numeric inputMode="numeric" value={seats} onChange={setSeats} />
+        <TextField label="Seats" numeric inputMode="numeric" value={seats} onChange={setSeats} isInvalid={!!fieldError("seats")} errorMessage={fieldError("seats")} />
         <Select label="Shape" selectedKey={shape} onSelectionChange={(k) => k && setShape(k)} items={SHAPES} />
       </div>
       <Select label="Area" selectedKey={areaId} onSelectionChange={(k) => k && setAreaId(k)} items={areas.map((a) => ({ id: a.id, label: a.name }))} />
@@ -299,19 +323,19 @@ function TablePanel({ table, areas, onSave, saving, canRotateQr }: { table: Tabl
         <TextField label="W" numeric inputMode="numeric" value={geom.w} onChange={(v) => setGeom({ ...geom, w: v })} />
         <TextField label="H" numeric inputMode="numeric" value={geom.h} onChange={(v) => setGeom({ ...geom, h: v })} />
       </div>
-      <p className="text-caption text-ink-2">
+      <p className="text-[12.5px] text-ink-3">
         Grid of {COLS} × {ROWS}. Position and size are in grid units.
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <Button type="submit" variant="primary" isDisabled={!valid} isPending={saving}>
           Save table
         </Button>
-        <Button variant={table.archived ? "secondary" : "destructive"} onPress={() => onSave({ archived: !table.archived })} isDisabled={saving}>
+        <Button variant="secondary" className={table.archived ? greyPill : greyPillAlert} onPress={() => onSave({ archived: !table.archived })} isDisabled={saving}>
           {table.archived ? "Restore" : "Archive"}
         </Button>
       </div>
-      <section className="flex flex-col gap-2 pt-2 hairline-t">
-        <h3 className="pt-2 text-line text-ink">QR code</h3>
+      <section className="flex flex-col gap-2.5 border-t border-rule-subtle pt-4">
+        <SectionLabel>QR code</SectionLabel>
         <RotateQrButton table={table} canRotate={canRotateQr} />
       </section>
     </form>

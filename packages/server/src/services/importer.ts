@@ -9,6 +9,22 @@ import { parseCsv } from "./csv.js";
 import { TILE_COLOURS } from "../routes/floor.js";
 import type { LayoutPage, LayoutTile } from "../db/schema/catalogue.js";
 import { logger } from "../logger.js";
+import { PIN_TAKEN_LIMITS, returnPinAttempt, takePinAttempt } from "./pin-attempts.js";
+
+/**
+ * Why the database refused a row, said as the API says it (app.ts): never a constraint, a key value or row-level
+ * security. A refusal written for people (SL400) keeps its message; an error raised by the importer itself is kept.
+ */
+export function rowRefusal(e: unknown): string {
+  const pg = e as { code?: unknown; message?: string; constraint_name?: string; detail?: string };
+  if (typeof pg.code !== "string" || !/^[0-9A-Z]{5}$/.test(pg.code) || !(e instanceof Error) || e.name !== "PostgresError") return (e as Error).message;
+  if (pg.code === "SL400") return pg.message ?? "This row is not allowed";
+  if (pg.code === "23505") return pg.constraint_name === "staff_merchant_pin_uq" ? "Someone at this business already uses that PIN" : "A record with the same unique value already exists";
+  if (pg.code === "23503") return "A referenced record does not exist";
+  if (pg.code === "23502") return "A required value is missing";
+  if (pg.code.startsWith("22")) return "A value is not valid or is too large";
+  return "The row would break a rule the register keeps";
+}
 
 /**
  * Legacy POS importer: CSV-first, one-way, re-runnable. Records
@@ -40,7 +56,7 @@ export async function runImportJob(jobId: string): Promise<ImportReport> {
   try {
     try {
       await withTransaction(async (t) => {
-        report = await importInto(t, job.merchantId, job.mapping, job.files);
+        report = await importInto(t, job.merchantId, job.mapping, job.files, { actorId: job.createdBy });
         if (job.dryRun) throw new DryRunRollback();
       });
     } catch (e) {
@@ -56,9 +72,10 @@ export async function runImportJob(jobId: string): Promise<ImportReport> {
 }
 
 /** Run an import for a merchant inside the given transaction. Exposed for tests. */
-export async function importInto(t: RequestTx, merchantId: string, mapping: ImportMapping, files: Record<string, string>): Promise<ImportReport> {
+export async function importInto(t: RequestTx, merchantId: string, mapping: ImportMapping, files: Record<string, string>, opts: { actorId?: string | null } = {}): Promise<ImportReport> {
   const report: ImportReport = { entities: {}, warnings: [] };
-  const sql = t.sql;
+  // Each row runs in its own savepoint (below), and its queries go through that savepoint's handle.
+  let sql = t.sql;
   const legacy: Record<string, Map<string, string>> = {}; // entity → legacy_id → our id
   const skuToProduct = new Map<string, string>();
   const [settings] = await sql<{ currency: string }[]>`select currency from merchant_settings where merchant_id = ${merchantId}`;
@@ -122,7 +139,10 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
 
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i]!;
+        // A row the database refuses (a third category level, a taken email) is rejected alone, not the whole import.
         try {
+          await t.sql.savepoint(async (sp) => {
+          sql = sp;
           switch (entity) {
             case "brands": {
               const lid = get(row, "legacy_id") || get(row, "name");
@@ -313,10 +333,24 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               if (outletIds.some((x) => !x)) throw new Error(`outlet not found in ${outletKeys.join(";")}`);
               const pin = get(row, "pin");
               if (pin && !/^\d{6}$/.test(pin)) throw new Error("pin must be 6 digits");
-              const values: Record<string, unknown> = { name, email: get(row, "email") || null, role, outlet_ids: outletIds, initials: initialsFor(name), active: get(row, "active") ? bool(get(row, "active")) : true };
+              const values: Record<string, unknown> = { name, email: get(row, "email").toLowerCase() || null, role, outlet_ids: outletIds, initials: initialsFor(name), active: get(row, "active") ? bool(get(row, "active")) : true };
               if (pin) {
                 values["pin_hash"] = hashSecret(pin);
                 values["pin_lookup"] = pinLookup(merchantId, pin);
+              }
+              if (pin) {
+                // A taken PIN is refused, and finding taken PINs is limited per person as in the staff form, so a dry
+                // run of many rows cannot list colleagues' PINs. The count commits on its own, dry run or not.
+                const scope = `pin_taken:${opts.actorId ? `staff:${opts.actorId}` : "import"}`;
+                await takePinAttempt(merchantId, scope, PIN_TAKEN_LIMITS);
+                const [holder] = await sql<{ id: string }[]>`select id from staff where merchant_id = ${merchantId} and pin_lookup = ${values["pin_lookup"] as string} and legacy_id is distinct from ${lid} limit 1`;
+                if (holder) throw new Error("Someone at this business already uses that PIN");
+                await returnPinAttempt(merchantId, scope);
+              }
+              const email = values["email"] as string | null;
+              if (email) {
+                const [taken] = await sql<{ id: string }[]>`select id from staff where merchant_id = ${merchantId} and lower(email) = ${email} and legacy_id is distinct from ${lid} limit 1`;
+                if (taken) throw new Error(`email ${email} is already used by another staff member`);
               }
               const { id } = await upsert("staff", lid, values);
               legacy.staff!.set(lid, id);
@@ -347,8 +381,11 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               break;
             }
           }
+          });
         } catch (e) {
-          reject(i, (e as Error).message, row);
+          reject(i, rowRefusal(e), row);
+        } finally {
+          sql = t.sql;
         }
       }
     }

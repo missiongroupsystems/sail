@@ -46,6 +46,17 @@ export async function createRuleVersion(merchantId: string, input: { rule_key: s
     .where(and(eq(pricingRules.merchantId, merchantId), eq(pricingRules.ruleKey, input.rule_key)))
     .orderBy(desc(pricingRules.version))
     .limit(1);
+  // The register prices with the version that started last. A new version dated before the one already in effect would
+  // show as active while the register kept the other, so it is refused. Starting before a version still scheduled is
+  // fine: that one takes over at its own time.
+  const [live] = await db()
+    .select({ effectiveFrom: pricingRules.effectiveFrom })
+    .from(pricingRules)
+    .where(and(eq(pricingRules.merchantId, merchantId), eq(pricingRules.ruleKey, input.rule_key), isNull(pricingRules.archivedAt), lte(pricingRules.effectiveFrom, new Date())))
+    .orderBy(desc(pricingRules.effectiveFrom))
+    .limit(1);
+  if (live && input.effective_from < live.effectiveFrom)
+    throw AppError.validation("A new version cannot start before the version now in effect", { remedy: "Start it now or later.", details: { field: "effective_from", earliest: live.effectiveFrom.toISOString() } });
   const version = (latest?.version ?? 0) + 1;
   const body = { ...parsed, id: input.rule_key, version };
   const status = input.effective_from.getTime() <= Date.now() ? "active" : "scheduled";
@@ -90,7 +101,8 @@ export async function activateDueRules(at: Date) {
     where status = 'scheduled' and archived_at is null and effective_from <= ${at.toISOString()}::timestamptz
     order by effective_from asc`;
   for (const r of due) {
-    await tx()`update pricing_rules set status = 'superseded' where merchant_id = ${r.merchant_id} and rule_key = ${r.rule_key} and status = 'active' and version < ${r.version}`;
+    // Whichever version was active gives way, newer number or not: start times decide, as they do for activeRules.
+    await tx()`update pricing_rules set status = 'superseded' where merchant_id = ${r.merchant_id} and rule_key = ${r.rule_key} and status = 'active' and id <> ${r.id}`;
     await tx()`update pricing_rules set status = 'active' where id = ${r.id}`;
   }
   return due;

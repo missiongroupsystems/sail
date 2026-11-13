@@ -185,8 +185,8 @@ describe("refund reference (quoteRefund)", () => {
       ["satay", 5, 480],
     ]);
     expect(q.tenders).toEqual([
-      { payment_id: "card", tender: "Card", is_cash: false, amount: 2000, rounding_cents: 0 },
-      { payment_id: "cash", tender: "Cash", is_cash: true, amount: 962, rounding_cents: -2 },
+      { payment_id: "card", tender: "Card", is_cash: false, amount: 2000, rounding_cents: 0, tip_cents: 0 },
+      { payment_id: "cash", tender: "Cash", is_cash: true, amount: 962, rounding_cents: -2, tip_cents: 0 },
     ]);
     expect(q.cash_out).toBe(960);
   });
@@ -198,7 +198,7 @@ describe("refund reference (quoteRefund)", () => {
     expect(l.base + l.discount + l.fee + l.tax).toBe(l.total);
     // Per-adjustment consistency: the SC share is 40 with GST 11/3 = 3.67 → 4; the comp share is −400.
     expect(l.adjustments).toEqual({ sc: { amount: 40, tax: 4 }, comp50: { amount: -400, tax: 0 } });
-    expect(q.tenders).toEqual([{ payment_id: "card", tender: "Card", is_cash: false, amount: 480, rounding_cents: 0 }]);
+    expect(q.tenders).toEqual([{ payment_id: "card", tender: "Card", is_cash: false, amount: 480, rounding_cents: 0, tip_cents: 0 }]);
   });
 
   it("F03: refund 2 of 3 prawn noodles: discount −800, fee 80, GST 119 × 2/3 = 79.33 → 79 (the leftover cent goes to the larger remainder, the 1/3 part), total 959.33 → 959, base 1600; F02 + F03 = the whole line", () => {
@@ -219,7 +219,7 @@ describe("refund reference (quoteRefund)", () => {
       quoteRefund([after1], [card(1439)], { kind: "lines", lines: [{ line_id: "prawn", quantity: 3 }] });
     } catch (e) {
       expect((e as RefundError).code).toBe("exceeds_line");
-      expect((e as RefundError).details).toEqual({ line_id: "prawn", remaining_quantity: 2 });
+      expect((e as RefundError).details).toEqual({ line_id: "prawn", quantity: 3, remaining_quantity: 2 });
     }
   });
 
@@ -249,8 +249,8 @@ describe("refund reference (quoteRefund)", () => {
     ]);
     expect(q.totals).toEqual({ base: 886, discount: -52, fee: 83, tax: 83, taxes: sgTax(83), total: 1000 });
     expect(q.tenders).toEqual([
-      { payment_id: "card", tender: "Card", is_cash: false, amount: 806, rounding_cents: 0 },
-      { payment_id: "cash", tender: "Cash", is_cash: true, amount: 194, rounding_cents: 1 },
+      { payment_id: "card", tender: "Card", is_cash: false, amount: 806, rounding_cents: 0, tip_cents: 0 },
+      { payment_id: "cash", tender: "Cash", is_cash: true, amount: 194, rounding_cents: 1, tip_cents: 0 },
     ]);
     expect(q.cash_out).toBe(195);
   });
@@ -259,26 +259,26 @@ describe("refund reference (quoteRefund)", () => {
     const q = quoteRefund([R3], [card(2000), cash(962)], { kind: "full" }, { tenderSplit: [{ payment_id: "card", amount: 237 }, { payment_id: "cash", amount: 243 }], cashRoundingIncrement: 5 });
     expect(q.totals.total).toBe(480);
     expect(q.tenders).toEqual([
-      { payment_id: "card", tender: "Card", is_cash: false, amount: 237, rounding_cents: 0 },
-      { payment_id: "cash", tender: "Cash", is_cash: true, amount: 243, rounding_cents: 2 },
+      { payment_id: "card", tender: "Card", is_cash: false, amount: 237, rounding_cents: 0, tip_cents: 0 },
+      { payment_id: "cash", tender: "Cash", is_cash: true, amount: 243, rounding_cents: 2, tip_cents: 0 },
     ]);
     expect(q.cash_out).toBe(245);
   });
 
   it("F08: halves round up: at a 10-cent increment cash 245 (remainder 5) rounds to 250 (+5), while 244 would round to 240 (−4)", () => {
     const up = quoteRefund([R3], [card(2000), cash(962)], { kind: "full" }, { tenderSplit: [{ payment_id: "card", amount: 235 }, { payment_id: "cash", amount: 245 }], cashRoundingIncrement: 10 });
-    expect(up.tenders.find((t) => t.payment_id === "cash")).toEqual({ payment_id: "cash", tender: "Cash", is_cash: true, amount: 245, rounding_cents: 5 });
+    expect(up.tenders.find((t) => t.payment_id === "cash")).toEqual({ payment_id: "cash", tender: "Cash", is_cash: true, amount: 245, rounding_cents: 5, tip_cents: 0 });
     expect(up.cash_out).toBe(250);
     const down = quoteRefund([R3], [card(2000), cash(962)], { kind: "full" }, { tenderSplit: [{ payment_id: "card", amount: 236 }, { payment_id: "cash", amount: 244 }], cashRoundingIncrement: 10 });
-    expect(down.tenders.find((t) => t.payment_id === "cash")).toEqual({ payment_id: "cash", tender: "Cash", is_cash: true, amount: 244, rounding_cents: -4 });
+    expect(down.tenders.find((t) => t.payment_id === "cash")).toEqual({ payment_id: "cash", tender: "Cash", is_cash: true, amount: 244, rounding_cents: -4, tip_cents: 0 });
     expect(down.cash_out).toBe(240);
   });
 
   it("F09: default tender split uses what each payment can still return: card 2000 with 1500 refunded (500 left) and cash 962 → 480 × 500/1462 = 164.16 → 164, 480 × 962/1462 = 315.84 → 316; cash 316 → 315 (−1)", () => {
     const q = quoteRefund([R3], [card(2000, 1500), cash(962)], { kind: "full" }, { cashRoundingIncrement: 5 });
     expect(q.tenders).toEqual([
-      { payment_id: "card", tender: "Card", is_cash: false, amount: 164, rounding_cents: 0 },
-      { payment_id: "cash", tender: "Cash", is_cash: true, amount: 316, rounding_cents: -1 },
+      { payment_id: "card", tender: "Card", is_cash: false, amount: 164, rounding_cents: 0, tip_cents: 0 },
+      { payment_id: "cash", tender: "Cash", is_cash: true, amount: 316, rounding_cents: -1, tip_cents: 0 },
     ]);
     expect(q.cash_out).toBe(315);
   });
@@ -337,7 +337,7 @@ describe("refund reference (quoteRefund)", () => {
     const q = quoteRefund([R1, R2, satayDone], [card(2962)], { kind: "full" });
     expect(q.lines.map((l) => l.line_id)).toEqual(["chicken-rice", "beer"]);
     expect(q.totals.total).toBe(1079 + 1403);
-    expect(q.tenders).toEqual([{ payment_id: "card", tender: "Card", is_cash: false, amount: 2482, rounding_cents: 0 }]);
+    expect(q.tenders).toEqual([{ payment_id: "card", tender: "Card", is_cash: false, amount: 2482, rounding_cents: 0, tip_cents: 0 }]);
   });
 
   it("F14: full refund after a 300 goodwill (base 250, fee 25, GST 25, no units): the whole remaining 779 comes back with both units: base 650, fee 65, GST 64", () => {
@@ -347,5 +347,35 @@ describe("refund reference (quoteRefund)", () => {
     const q = quoteRefund([l1], [card(1079)], { kind: "full" });
     expect(q.lines[0]).toMatchObject({ quantity: 2, base: 650, discount: 0, fee: 65, tax: 64, total: 779 });
     expect(q.totals.total).toBe(1079 - 300);
+  });
+
+  it("F15: a whole-bill refund gives the tip back too: the 2962 bill paid 2000 card + 400 tip and 962 cash + 100 tip; tenders card 2000 + 400, cash 962 − 2 + 100; the bill's totals are unchanged by the tips; given back 2962 − 2 + 500 = 3460", () => {
+    const q = quoteRefund([R1, R2, R3], [{ ...card(2000), tip: 400 }, { ...cash(962), tip: 100 }], { kind: "full" }, { cashRoundingIncrement: 5 });
+    expect(q.totals.total).toBe(2962);
+    expect(q.tenders).toEqual([
+      { payment_id: "card", tender: "Card", is_cash: false, amount: 2000, rounding_cents: 0, tip_cents: 400 },
+      { payment_id: "cash", tender: "Cash", is_cash: true, amount: 962, rounding_cents: -2, tip_cents: 100 },
+    ]);
+    expect(q.tip).toBe(500);
+    expect(q.cash_out).toBe(960 + 100);
+    expect(q.given_back).toBe(3460);
+  });
+
+  it("F16: a refund by item or by amount never touches the tip; a later whole-bill refund gives back the rest of the bill and the whole tip, and once only", () => {
+    const tipped = { ...card(2962), tip: 450 };
+    const byItem = quoteRefund([R1, R2, R3], [tipped], { kind: "lines", lines: [{ line_id: "satay", quantity: 5 }] });
+    expect([byItem.totals.total, byItem.tip, byItem.tenders[0]!.tip_cents, byItem.given_back]).toEqual([480, 0, 0, 480]);
+    const byAmount = quoteRefund([R1, R2, R3], [tipped], { kind: "amount", amount: 1000 });
+    expect([byAmount.tip, byAmount.given_back]).toEqual([0, 1000]);
+    // After the satay (480) went back: the rest is 2482 of the bill and all 450 of the tip.
+    const satayDone: RefundableLine = { ...R3, refunded: { quantity: 5, base: 400, discount: 0, fee: 40, taxes: sgTax(40), total: 480 } };
+    const rest = quoteRefund([R1, R2, satayDone], [{ ...tipped, refunded: 480 }], { kind: "full" });
+    expect(rest.tenders).toEqual([{ payment_id: "card", tender: "Card", is_cash: false, amount: 2482, rounding_cents: 0, tip_cents: 450 }]);
+    expect(rest.given_back).toBe(2482 + 450);
+    // A bill refunded in full before tips were given back keeps only its tip: a whole-bill refund then returns just that.
+    const allDone = [R1, R2, R3].map((l) => ({ ...l, refunded: { quantity: l.quantity, base: l.base, discount: l.discount, fee: l.fee, taxes: l.taxes, total: l.total } }));
+    const tipOnly = quoteRefund(allDone, [{ ...tipped, refunded: 2962 }], { kind: "full" });
+    expect([tipOnly.lines, tipOnly.totals.total, tipOnly.tenders, tipOnly.given_back]).toEqual([[], 0, [{ payment_id: "card", tender: "Card", is_cash: false, amount: 0, rounding_cents: 0, tip_cents: 450 }], 450]);
+    expect(() => quoteRefund(allDone, [{ ...tipped, refunded: 2962, refunded_tip: 450 }], { kind: "full" })).toThrow(expect.objectContaining({ code: "nothing_to_refund" }));
   });
 });
