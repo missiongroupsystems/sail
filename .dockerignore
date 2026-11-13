@@ -1,0 +1,14 @@
+# The images copy only what they name, but the whole context is sent to the builder first.
+**/node_modules
+**/dist
+**/.next
+**/.next-setup
+**/.turbo
+**/*.tsbuildinfo
+**/.env
+**/.env.*
+packages/server/.pg
+packages/server/.dev-local.json
+packages/e2e/test-results
+packages/e2e/playwright-report
+.git
