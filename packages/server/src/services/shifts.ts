@@ -220,8 +220,9 @@ export async function closeBusinessDay(principal: Principal, outletId: string, b
   const { today } = await businessToday(principal.merchantId, outletId);
   await assertNoOtherBrands(principal, "day", { outletId, businessDate });
   if (businessDate > today) throw AppError.state(`Business day ${businessDate} has not started yet`, [], "Close a business day once it has started.");
-  const [openShift] = await db().select({ id: shifts.id }).from(shifts).where(and(eq(shifts.outletId, outletId), eq(shifts.status, "open"))).limit(1);
-  if (openShift) throw AppError.invariant("open_shifts", "Every shift must be closed before the business day", "Close the open shifts first.");
+  // The day's own shifts: the next day's drawer, opened before anyone closed the night, counts on its own day.
+  const [openShift] = await db().select({ id: shifts.id }).from(shifts).where(and(eq(shifts.outletId, outletId), eq(shifts.status, "open"), eq(shifts.businessDate, businessDate))).limit(1);
+  if (openShift) throw AppError.invariant("open_shifts", `Every shift of business day ${businessDate} must be closed before the day`, "Close the open shifts first.");
   // A day closes once, with nothing left to change it: an order still open would add its sale after the report was stored.
   const [already] = await db().select({ id: businessDayCloses.id }).from(businessDayCloses).where(and(eq(businessDayCloses.outletId, outletId), eq(businessDayCloses.businessDate, businessDate))).limit(1);
   if (already) throw AppError.state(`Business day ${businessDate} is already closed`, [], "Its Z-report was stored at the close; read it from the business day.");

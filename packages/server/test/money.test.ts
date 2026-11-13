@@ -443,6 +443,21 @@ describe("shifts, business days and the Z-report", () => {
     reconciles(closed.data.report);
   });
 
+  it("yesterday's business day still closes after the morning crew has opened today's shift", async () => {
+    const r = await regionMerchant("Morning", { preset: "sg", timeZone: "Asia/Singapore" }, [180]);
+    const night = await r.must<{ data: { id: string; business_date: string } }>("POST", "/v1/shifts", { outlet_id: r.m.outletId, station_id: null, float_cents: 0 });
+    const s = await r.order([{ p: 0 }]);
+    await r.must("POST", `/v1/checks/${s.checks[0]!.id}/payments`, { payment_id: randomUUID(), tender_type_id: r.ids.cash, amount: s.balance });
+    await r.must("POST", `/v1/shifts/${night.data.id}/close`, { counted_cash_cents: s.balance });
+    // Past the cutoff the next day's crew opens its drawer before anyone has closed the night.
+    const morning = await r.must<{ data: { id: string } }>("POST", "/v1/shifts", { outlet_id: r.m.outletId, station_id: null, float_cents: 0 });
+    const next = new Date(Date.parse(`${night.data.business_date}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+    await db.sql`update shifts set business_date = ${next} where id = ${morning.data.id}`;
+    const closed = await call<{ data: { business_date: string; report: Z } }>("POST", `/v1/outlets/${r.m.outletId}/business-days/close`, { token: r.t, body: { business_date: night.data.business_date } });
+    expect(closed.status, JSON.stringify(closed.body)).toBe(200);
+    expect(closed.body.data.report.sales.total).toBe(s.balance);
+  });
+
   it("cash needs an open shift; a business day closes once, only with its orders settled, and later activity goes to the next day", async () => {
     const r = await regionMerchant("Close", { preset: "sg", timeZone: "Asia/Singapore" }, [180, 12_000]);
     const s1 = await r.order([{ p: 0 }]);
