@@ -232,6 +232,52 @@ describe("a brand-scoped agent's report figures", () => {
   });
 });
 
+describe("a brand-scoped manager at an outlet two brands share", () => {
+  it("cannot close the shared drawer or the business day on one brand's figures, nor with the other brand's order still open", async () => {
+    const outlet = randomUUID();
+    const other = randomUUID();
+    const menu2 = randomUUID();
+    const must = async (method: string, path: string, body: unknown, token = w.m.admin.token) => {
+      const r = await call(method, path, { token, body });
+      if (r.status >= 300) throw new Error(`${path} ${r.status} ${JSON.stringify(r.body)}`);
+      return r.body as { data: Snap & { id: string } };
+    };
+    await must("POST", "/v1/outlets", { id: outlet, name: "Food hall" });
+    await must("POST", "/v1/brands", { id: other, name: "Hall brand" });
+    await must("POST", "/v1/menus", { id: menu2, brand_id: other, name: "M2", sections: [{ name: "All", items: [{ product_id: w.ids.wine }] }] });
+    await must("POST", "/v1/channel-links", { channel: "pos", outlet_id: outlet, brand_id: w.m.brandId, menu_id: w.ids.menu });
+    await must("POST", "/v1/channel-links", { channel: "pos", outlet_id: outlet, brand_id: other, menu_id: menu2 });
+    const shift = await must("POST", "/v1/shifts", { outlet_id: outlet, station_id: null, float_cents: 0 });
+    const order = async (brand: string, product: string) => {
+      const o = await must("POST", "/v1/orders", { order_id: randomUUID(), order_type: "takeaway", takeaway_ref: "H", outlet_id: outlet, brand_id: brand });
+      const s = (await must("POST", `/v1/orders/${o.data.id}/lines`, { lines: [{ line_id: randomUUID(), product_id: product, quantity: 1 }] })).data;
+      await must("POST", `/v1/orders/${s.id}/fire`, {});
+      return s;
+    };
+    const pay = (s: Snap) => must("POST", `/v1/checks/${s.checks[0]!.id}/payments`, { payment_id: randomUUID(), tender_type_id: w.ids.cash, amount: s.balance, tendered: s.balance });
+    const mine = await order(w.m.brandId, w.ids.laksa);
+    const theirs = await order(other, w.ids.wine);
+    await pay(mine);
+    await pay(theirs);
+    const drawer = mine.balance + theirs.balance;
+    await db.sql`update staff set brand_ids = ${db.sql.array([w.m.brandId])}::uuid[] where id = ${w.m.manager.id}`;
+    try {
+      // The drawer holds both brands' cash: closed on this brand's figures, the shift would store a false expected cash.
+      const shiftClose = await call<{ data: { expected_cash_cents: number } }>("POST", `/v1/shifts/${shift.data.id}/close`, { token: w.m.manager.token, body: { counted_cash_cents: drawer, variance_reason: "count" } });
+      expect(shiftClose.status, JSON.stringify(shiftClose.body)).not.toBe(200);
+      await must("POST", `/v1/shifts/${shift.data.id}/close`, { counted_cash_cents: drawer });
+      // The other brand still has an order open: the day must not close, and never on one brand's sales.
+      await order(other, w.ids.wine);
+      const dayClose = await call("POST", `/v1/outlets/${outlet}/business-days/close`, { token: w.m.manager.token, body: {} });
+      expect(dayClose.status, JSON.stringify(dayClose.body)).not.toBe(200);
+      const [stored] = await db.sql<{ n: number }[]>`select count(*)::int as n from business_day_closes where outlet_id = ${outlet}`;
+      expect(stored!.n).toBe(0);
+    } finally {
+      await db.sql`update staff set brand_ids = '{}' where id = ${w.m.manager.id}`;
+    }
+  });
+});
+
 describe("tips and QR codes are a person's call", () => {
   it("an agent cannot rotate every QR code or switch tips on; a tip an agent adds is a proposal, refused at approval while tips are off", async () => {
     const tok = await agent({ role: "admin", toolsets: ["pos.order", "pos.read", "pos.payment", "config.author", "guest"] });

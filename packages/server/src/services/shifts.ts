@@ -4,7 +4,7 @@ import { db, tx } from "../db/client.js";
 import { businessDayCloses, merchantSettings, orderAdjustments, orderLines, orders, payments, shifts, staff } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { businessToday } from "./business-day.js";
-import type { Principal } from "../auth/principal.js";
+import { brandScopeFor, type Principal } from "../auth/principal.js";
 
 /**
  * Shifts and the basic Z-report. The
@@ -159,12 +159,37 @@ export async function openShift(principal: Principal, input: { outletId: string;
   return row!;
 }
 
+/**
+ * A drawer and a business day belong to the whole outlet. A person scoped to some brands sees only those brands' orders
+ * and payments, so their close would store one brand's figures as the outlet's (a false expected cash, a Z-report short
+ * of the other brands' sales) and miss the other brands' open orders. They may close only when nothing of another brand
+ * is in it; otherwise it is refused, and someone who sees every brand closes it.
+ */
+async function assertNoOtherBrands(principal: Principal, what: "shift" | "day", scope: { outletId: string; businessDate: string; shiftId?: string }) {
+  const brands = brandScopeFor(principal);
+  if (brands === "*") return;
+  const mine = brands.split(",");
+  await tx()`select set_config('app.current_brands', '*', true)`;
+  try {
+    const [r] = scope.shiftId
+      ? await tx()<{ other: boolean }[]>`select exists (select 1 from payments p join orders o on o.id = p.order_id where p.shift_id = ${scope.shiftId} and not (o.brand_id = any(${mine}::uuid[])))
+          or exists (select 1 from refunds f join orders o on o.id = f.order_id where f.shift_id = ${scope.shiftId} and not (o.brand_id = any(${mine}::uuid[]))) as other`
+      : await tx()<{ other: boolean }[]>`select exists (select 1 from orders o where o.outlet_id = ${scope.outletId} and o.business_date = ${scope.businessDate} and not (o.brand_id = any(${mine}::uuid[])))
+          or exists (select 1 from payments p join orders o on o.id = p.order_id where p.outlet_id = ${scope.outletId} and p.business_date = ${scope.businessDate} and not (o.brand_id = any(${mine}::uuid[])))
+          or exists (select 1 from refunds f join orders o on o.id = f.order_id where f.outlet_id = ${scope.outletId} and f.business_date = ${scope.businessDate} and not (o.brand_id = any(${mine}::uuid[]))) as other`;
+    if (r!.other) throw new AppError("permission_denied", what === "shift" ? "This drawer also holds another brand's payments" : "This business day also has another brand's orders", { remedy: `Ask someone who works for every brand at this outlet to close the ${what === "shift" ? "shift" : "business day"}.` });
+  } finally {
+    await tx()`select set_config('app.current_brands', ${brands}, true)`;
+  }
+}
+
 export async function closeShift(principal: Principal, shiftId: string, input: { countedCashCents: number; countedCounts: Record<string, number> | null; varianceReason: string | null }) {
   // Locked, so a payment void in this shift either commits first (and is counted) or waits and finds the shift closed.
   await tx()`select id from shifts where id = ${shiftId} for update`;
   const [shift] = await db().select().from(shifts).where(eq(shifts.id, shiftId)).limit(1);
   if (!shift) throw AppError.notFound("shift", shiftId);
   if (shift.status === "closed") throw AppError.state("The shift is already closed", []);
+  await assertNoOtherBrands(principal, "shift", { outletId: shift.outletId, businessDate: shift.businessDate, shiftId: shift.id });
   assertCountsMatch(input.countedCounts, input.countedCashCents, "counted cash");
   // A void still waiting for the provider would change this shift's figures after they were counted.
   const [voiding] = await tx()<{ n: number }[]>`select count(*)::int as n from payment_intents i join payments p on p.id = i.payment_id where p.shift_id = ${shiftId} and i.void_requested_at is not null and i.provider_voided_at is null`;
@@ -193,6 +218,7 @@ export async function closeBusinessDay(principal: Principal, outletId: string, b
   const [voiding] = await tx()<{ n: number }[]>`select count(*)::int as n from payment_intents where outlet_id = ${outletId} and void_requested_at is not null and provider_voided_at is null`;
   if ((voiding?.n ?? 0) > 0) throw AppError.state("A card void at this outlet is waiting for the terminal", [], "Wait for the terminal to confirm the void, then close the business day.");
   const { today } = await businessToday(principal.merchantId, outletId);
+  await assertNoOtherBrands(principal, "day", { outletId, businessDate });
   if (businessDate > today) throw AppError.state(`Business day ${businessDate} has not started yet`, [], "Close a business day once it has started.");
   const [openShift] = await db().select({ id: shifts.id }).from(shifts).where(and(eq(shifts.outletId, outletId), eq(shifts.status, "open"))).limit(1);
   if (openShift) throw AppError.invariant("open_shifts", "Every shift must be closed before the business day", "Close the open shifts first.");
