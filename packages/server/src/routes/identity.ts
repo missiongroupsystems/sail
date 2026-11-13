@@ -11,7 +11,7 @@ import { recordAudit } from "../lib/audit.js";
 import { createMerchant, presetSettings } from "../bootstrap.js";
 import { checkPassword, endSessions, issueSession, localSubject, normaliseEmail, PASSWORD_MAX_LENGTH, preAuthoriseLogin, setLocalLogin } from "../auth/identity.js";
 import { hashSecret, randomToken, sha256, verifySecret } from "../auth/tokens.js";
-import { clearPinFailures, takePinAttempt, type AttemptLimits } from "../services/pin-attempts.js";
+import { clearPinFailures, returnPinAttempt, takePinAttempt, type AttemptLimits } from "../services/pin-attempts.js";
 
 /**
  * Back-office identity: first-run setup, email and password sign-in, sessions, invitations, reset links and access
@@ -38,13 +38,14 @@ const NO_MERCHANT = "00000000-0000-0000-0000-000000000000";
 /**
  * Sign-in lockout, chosen so that guessing stays slow without letting anyone who knows an email lock its owner out:
  * - an address and email pair locks after 5 failures for 15 minutes (the guesser, not the owner at their own address);
- * - an address locks after 20 failures for 15 minutes, whatever the emails (password spraying);
+ * - an address locks after 20 failures for 15 minutes, whatever the emails (password spraying); its right sign-ins do
+ *   not count, so a restaurant whose staff all sign in from one address is not locked out by them;
  * - an email, from all addresses together, pauses after its 5th failure for 2, 4, 8 ... seconds up to 3 minutes, which
  *   keeps distributed guessing near 20 an hour, and locks for 15 minutes after 50, which also tells the merchant's
  *   Admins through the audit log. An hour without failures forgets them.
  */
 const PAIR_LIMITS: AttemptLimits = { maxFailures: 5, lockSeconds: 15 * 60, what: "sign-in attempts for this email from this address" };
-const ADDRESS_LIMITS: AttemptLimits = { maxFailures: 20, lockSeconds: 15 * 60, what: "sign-in attempts from this address" };
+const ADDRESS_LIMITS: AttemptLimits = { maxFailures: 20, lockSeconds: 15 * 60, what: "sign-in attempts from this address", forgetAfterSeconds: 60 * 60 };
 const EMAIL_LIMITS: AttemptLimits = { maxFailures: 50, lockSeconds: 15 * 60, what: "sign-in attempts for this email", delay: { after: 5, maxSeconds: 180 }, forgetAfterSeconds: 60 * 60 };
 const PASSWORD_CHANGE_LIMITS: AttemptLimits = { maxFailures: 5, lockSeconds: 15 * 60, what: "wrong current passwords" };
 const emailScope = (email: string) => `signin-email:${sha256(email)}`;
@@ -139,9 +140,11 @@ export function identityRoutes(app: OpenAPIHono<AppEnv>) {
       return { session, member };
     });
     if (!signedIn) throw notRecognised();
-    // A right password clears the email's and the pair's counts but never a lock, and never the address's count.
+    // A right password clears the email's and the pair's counts but never a lock. The address keeps its failures, so a
+    // known password cannot reset a spray, but this attempt was not one.
     await clearPinFailures(NO_MERCHANT, emailScope(email));
     await clearPinFailures(NO_MERCHANT, pairScope(address, email));
+    await returnPinAttempt(NO_MERCHANT, `signin-address:${address}`);
     return c.json({ data: { ...signedIn.session, staff: { id: signedIn.member.id, name: signedIn.member.name, role: signedIn.member.role } } }, 201);
   });
 

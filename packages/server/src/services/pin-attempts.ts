@@ -49,6 +49,11 @@ export async function takePinAttempt(merchantId: string, scope: string, limits: 
   return { lockedNow: r.lockedNow };
 }
 
+/** Take back one counted attempt that turned out right, keeping the scope's failures and any lock. */
+export async function returnPinAttempt(merchantId: string, scope: string): Promise<void> {
+  await withOwnTransaction((sql) => sql`update pin_attempts set failures = greatest(failures - 1, 0) where merchant_id = ${merchantId} and scope = ${scope}`);
+}
+
 /**
  * A right PIN clears the count but never a lock: otherwise anyone who knows one PIN could sign in between guesses and
  * keep guessing manager PINs for ever.

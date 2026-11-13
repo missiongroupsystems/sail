@@ -161,6 +161,19 @@ describe("lockout", () => {
     await db.sql`delete from pin_attempts`;
   });
 
+  it("a restaurant whose staff all sign in from one address is never locked out by its own sign-ins, or by typos weeks apart", async () => {
+    const email = await givePassword(A, A.manager.id);
+    const office = "203.0.113.9";
+    for (let i = 0; i < 25; i++) expect((await signIn(email, PASSWORD, office)).status).toBe(201);
+    // Typos spread over weeks: each one an hour or more after the last is a fresh count, as for an email.
+    for (let i = 0; i < 25; i++) {
+      expect((await signIn(`typo.${i}@nowhere.test`, "a typo", office)).status).toBe(401);
+      await db.sql`update pin_attempts set updated_at = now() - interval '61 minutes' where scope like 'signin-%'`;
+    }
+    expect((await signIn(email, PASSWORD, office)).status).toBe(201);
+    await db.sql`delete from pin_attempts`;
+  });
+
   it("20 failures from one address lock that address for every email, even with the right password, and a right password does not reset it", async () => {
     const email = await givePassword(A, A.outlet2Cashier.id);
     const from = "203.0.113.7";
