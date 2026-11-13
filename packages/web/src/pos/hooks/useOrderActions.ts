@@ -184,12 +184,24 @@ export function useOrderActions(orderId: string) {
       };
       const label = `Added ${input.product.name}${input.quantity > 1 ? ` ×${input.quantity}` : ""}`;
       try {
+        // A request that may have reached the register (its reply never came) is sent again exactly as it was, with the
+        // same key: the register then replays its answer instead of refusing the key for a different request. Its
+        // version is kept here, because the order's version on screen moves on when the station hears the add landed.
+        let sent: number | null = null;
+        let maybeLanded = false;
         // A version conflict means another station changed the order meanwhile; adding is safe to replay.
         const exec = (overrideId: string | null) =>
-          run((expected) => reg.addLines(api, orderId, [body], { key: idem, expectedVersion: expected, overrideId }), {
-            onConflict: "retry-unversioned",
-            onRetried: () => notify({ text: "Your 1 new line was kept", tone: "info", orderId }, 4000),
-          });
+          run(
+            (expected) => {
+              // A version conflict proves the request did not land, so its unversioned retry (expected null) goes as it is.
+              sent = maybeLanded && expected !== null ? sent : expected;
+              return reg.addLines(api, orderId, [body], { key: idem, expectedVersion: sent, overrideId });
+            },
+            {
+              onConflict: "retry-unversioned",
+              onRetried: () => notify({ text: "Your 1 new line was kept", tone: "info", orderId }, 4000),
+            },
+          );
         // An add that never reached the register keeps its line on screen and is sent again, with the same line id and
         // key (so it lands once), as soon as the station is back online.
         const queued = async (overrideId: string | null): Promise<OrderSnapshot | null> => {
@@ -198,6 +210,7 @@ export function useOrderActions(orderId: string) {
               return await exec(overrideId);
             } catch (e) {
               if (!unreachable(e)) throw e;
+              maybeLanded = true;
               reportUnreachable();
               notify({ text: `Offline · ${input.product.name} is kept`, remedy: "It goes to the register as soon as the connection is back.", tone: "info", orderId }, 8000);
               await whenOnline();
