@@ -58,6 +58,10 @@ jobs:
         run: pnpm --filter @sail/web build
         env:
           NEXT_PUBLIC_API_URL: http://localhost:8080
+      - name: Build guest
+        run: pnpm --filter @sail/guest build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8080
 
   e2e:
     # The browser runs in another time zone and language from the servers, one pairing behind UTC and one ahead, so a

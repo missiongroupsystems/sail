@@ -33,6 +33,9 @@
       "@embedded-postgres/darwin-x64",
       "esbuild",
       "sharp"
-    ]
+    ],
+    "patchedDependencies": {
+      "next@15.5.29": "patches/next@15.5.29.patch"
+    }
   }
 }

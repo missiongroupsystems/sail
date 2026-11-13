@@ -4,6 +4,8 @@ ARG SAIL_VERSION=dev
 WORKDIR /repo
 RUN corepack enable && corepack prepare pnpm@10.17.1 --activate
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
+# The root manifest names patched dependencies; pnpm refuses to install without the patch files.
+COPY patches patches
 COPY packages/shared/package.json packages/shared/
 COPY packages/server/package.json packages/server/
 RUN pnpm install --frozen-lockfile --filter @sail/server... --ignore-scripts
@@ -17,6 +19,8 @@ ENV NODE_ENV=production SAIL_VERSION=${SAIL_VERSION} PORT=8080
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.17.1 --activate
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+# The root manifest names patched dependencies; pnpm refuses to install without the patch files.
+COPY patches patches
 COPY packages/shared/package.json packages/shared/
 COPY packages/server/package.json packages/server/
 RUN pnpm install --frozen-lockfile --prod --filter @sail/server... --ignore-scripts && pnpm store prune

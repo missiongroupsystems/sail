@@ -4,6 +4,8 @@ FROM node:22-slim AS build
 WORKDIR /repo
 RUN corepack enable && corepack prepare pnpm@10.17.1 --activate
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
+# The root manifest names patched dependencies; pnpm refuses to install without the patch files.
+COPY patches patches
 COPY packages/relay/package.json packages/relay/
 RUN pnpm install --frozen-lockfile --filter @sail/relay... --ignore-scripts
 COPY packages/relay packages/relay

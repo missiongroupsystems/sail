@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  next@15.5.29:
+    hash: 1f32b203d0dfd9ce90b9d94ad42e378e00f8e20a652d390deb71bbea25db95e0
+    path: patches/next@15.5.29.patch
+
 importers:
 
   .:
@@ -49,7 +54,7 @@ importers:
         version: 0.577.0(react@19.3.1)
       next:
         specifier: ^15.5.0
-        version: 15.5.29(@babel/core@7.29.13)(@playwright/test@1.65.0)(@types/node@22.20.5)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        version: 15.5.29(patch_hash=1f32b203d0dfd9ce90b9d94ad42e378e00f8e20a652d390deb71bbea25db95e0)(@babel/core@7.29.13)(@playwright/test@1.65.0)(@types/node@22.20.5)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       openapi-fetch:
         specifier: ^0.17.0
         version: 0.17.0
@@ -263,7 +268,7 @@ importers:
         version: 0.577.0(react@19.3.1)
       next:
         specifier: ^15.5.0
-        version: 15.5.29(@babel/core@7.29.13)(@playwright/test@1.65.0)(@types/node@22.20.5)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        version: 15.5.29(patch_hash=1f32b203d0dfd9ce90b9d94ad42e378e00f8e20a652d390deb71bbea25db95e0)(@babel/core@7.29.13)(@playwright/test@1.65.0)(@types/node@22.20.5)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       openapi-fetch:
         specifier: ^0.17.0
         version: 0.17.0
@@ -5620,7 +5625,7 @@ snapshots:
     dependencies:
       content-type: 2.1.0
 
-  next@15.5.29(@babel/core@7.29.13)(@playwright/test@1.65.0)(@types/node@22.20.5)(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
+  next@15.5.29(patch_hash=1f32b203d0dfd9ce90b9d94ad42e378e00f8e20a652d390deb71bbea25db95e0)(@babel/core@7.29.13)(@playwright/test@1.65.0)(@types/node@22.20.5)(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
     dependencies:
       '@next/env': 15.5.29
       '@swc/helpers': 0.5.15
