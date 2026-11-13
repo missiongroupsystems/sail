@@ -21,7 +21,8 @@
     "dev:local": "tsx scripts/dev-local.ts",
     "sim:payments": "tsx scripts/payment-simulator.ts",
     "load:local": "tsx scripts/load-local.ts",
-    "bootstrap": "tsx scripts/bootstrap.ts"
+    "bootstrap": "tsx scripts/bootstrap.ts",
+    "demo:seed": "tsx scripts/demo-seed.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.0",
