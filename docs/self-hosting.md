@@ -14,7 +14,7 @@ Sail is beta software and has not run in production anywhere yet. Read the READM
 | Print relay | `relay` | `pnpm --filter @sail/relay build`, then `node packages/relay/dist/index.js` (or the Docker image) | One per outlet, on the outlet network. Outbound HTTPS only. |
 | PostgreSQL | | | Tests, CI and `dev:local` use 17.6. Older versions are untested. |
 
-The API, worker and MCP adapter are one build: `pnpm --filter @sail/server build` writes `packages/server/dist`. `packages/server/Dockerfile` and `packages/relay/Dockerfile` build images (run `docker build -f packages/server/Dockerfile .` from the repository root). `examples/fly/fly.toml` is one example of a deployment (Fly.io), with the commands to use it in its comments; nothing in the code depends on a provider, and the project's CI deploys nothing. With `NODE_ENV=production` the API refuses to start if a token secret still has a placeholder value from the repository (`change-me-...` or the `local-...` values `dev:local` uses) or is shorter than 32 characters.
+The API, worker and MCP adapter are one build: `pnpm --filter @sail/server build` writes `packages/server/dist`. `packages/server/Dockerfile` and `packages/relay/Dockerfile` build images (run `docker build -f packages/server/Dockerfile .` from the repository root). `examples/fly/fly.toml` is one example of a deployment (Fly.io), with the commands to use it in its comments, and [`examples/preview`](../examples/preview/README.md) is a one-machine demo on Fly.io, Supabase and Vercel with seeded demo merchants; nothing in the code depends on a provider, and the project's CI deploys nothing. With `NODE_ENV=production` the API refuses to start if a token secret still has a placeholder value from the repository (`change-me-...` or the `local-...` values `dev:local` uses) or is shorter than 32 characters.
 
 ## Environment variables
 
@@ -44,7 +44,7 @@ Read in `packages/server/src/config.ts`; `packages/server/.env.example` has a te
 | `WEB_APP_URL` | The back office's address, for example `https://backoffice.example.com`: invite and password-reset links point at it. Required in production: every role refuses to start without it. In development it can be left unset: a link then opens the back office it was made from. | In production |
 | `SAIL_VERSION` | Reported by `/health` and the spec. The Dockerfile sets it from a build argument. | No |
 | `SAIL_ROLE` | Alternative to `--role`. | No |
-| `PAYMENT_SIMULATOR_URL` | Development and tests: the terminal simulator behind the `simulator` payment provider. Leave unset in production. | No |
+| `PAYMENT_SIMULATOR_URL` | Development, tests and demos: the terminal simulator behind the `simulator` payment provider (`node dist/payment-simulator.js` in a built image). Leave unset in production. | No |
 | `MIGRATE_DATABASE_URL` | Used by `db:migrate` and `bootstrap`: a direct session connection. | Yes |
 
 ### Web (back office and POS)
