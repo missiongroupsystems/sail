@@ -60,9 +60,23 @@ jobs:
           NEXT_PUBLIC_API_URL: http://localhost:8080
 
   e2e:
-    name: End-to-end (Playwright)
+    # The browser runs in another time zone and language from the servers, one pairing behind UTC and one ahead, so a
+    # page that renders the device's zone, language or clock on the server fails hydration here.
+    name: End-to-end (Playwright, ${{ matrix.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: server UTC, browser New York de-DE
+            server_tz: UTC
+            browser_tz: America/New_York
+            browser_locale: de-DE
+          - name: server Tokyo, browser Kolkata ja-JP
+            server_tz: Asia/Tokyo
+            browser_tz: Asia/Kolkata
+            browser_locale: ja-JP
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -73,13 +87,17 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Install Chromium
-        run: pnpm --filter @sail/e2e exec playwright install --with-deps chromium
+      - name: Install Chromium and WebKit
+        run: pnpm --filter @sail/e2e exec playwright install --with-deps chromium webkit
       - name: Back office, POS and guest app in a browser
         run: pnpm test:e2e
+        env:
+          E2E_SERVER_TZ: ${{ matrix.server_tz }}
+          E2E_BROWSER_TZ: ${{ matrix.browser_tz }}
+          E2E_BROWSER_LOCALE: ${{ matrix.browser_locale }}
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-results
+          name: playwright-results-${{ strategy.job-index }}
           path: packages/e2e/test-results
           retention-days: 7

@@ -9,6 +9,9 @@ import { defineConfig, devices } from "@playwright/test";
  * First-run setup needs an empty database, so it gets a second API (E2E_SETUP_API_URL, default :8091) with no demo
  * merchants and a second back office (E2E_SETUP_WEB_URL, default :3002, with its own build directory, so the two dev
  * servers do not collide).
+ * The browser runs in a different time zone and language from the servers (E2E_BROWSER_TZ, E2E_BROWSER_LOCALE and
+ * E2E_SERVER_TZ; by default New York and German against UTC), so a page that renders the device's zone, language or
+ * clock on the server fails hydration here rather than on a till in another country. CI runs a second pairing.
  */
 const reuse = Boolean(process.env.E2E_REUSE_SERVERS);
 const api = process.env.E2E_API_URL ?? "http://localhost:8080";
@@ -16,6 +19,9 @@ const web = process.env.E2E_WEB_URL ?? "http://localhost:3000";
 const guest = process.env.E2E_GUEST_URL ?? "http://localhost:3001";
 const setupApi = process.env.E2E_SETUP_API_URL ?? "http://localhost:8091";
 const setupWeb = process.env.E2E_SETUP_WEB_URL ?? "http://localhost:3002";
+const TZ = process.env.E2E_SERVER_TZ ?? "UTC";
+const timezoneId = process.env.E2E_BROWSER_TZ ?? "America/New_York";
+const locale = process.env.E2E_BROWSER_LOCALE ?? "de-DE";
 
 export default defineConfig({
   testDir: "./tests",
@@ -35,14 +41,14 @@ export default defineConfig({
   },
   // The usability-review checks also run in WebKit, the engine of the iPad and of the guests' iPhones.
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
-    { name: "webkit", use: { ...devices["Desktop Safari"] }, testMatch: /ux-panel\.spec\.ts$/ },
+    { name: "chromium", use: { ...devices["Desktop Chrome"], timezoneId, locale } },
+    { name: "webkit", use: { ...devices["Desktop Safari"], timezoneId, locale }, testMatch: /ux-panel\.spec\.ts$/ },
   ],
   webServer: [
-    { command: "pnpm --filter @sail/server dev:local", env: { PORT: new URL(api).port, GUEST_APP_URL: guest, WEB_APP_URL: web }, url: `${api}/health`, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
-    { command: `pnpm --filter @sail/web exec next dev -p ${new URL(web).port}`, env: { NEXT_PUBLIC_API_URL: api }, url: `${web}/login`, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
-    { command: `pnpm --filter @sail/guest exec next dev -p ${new URL(guest).port}`, env: { NEXT_PUBLIC_API_URL: api }, url: guest, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
-    { command: "pnpm --filter @sail/server dev:local", env: { PORT: new URL(setupApi).port, SAIL_DEV_EMPTY: "1", WEB_APP_URL: setupWeb }, url: `${setupApi}/health`, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
-    { command: `pnpm --filter @sail/web exec next dev -p ${new URL(setupWeb).port}`, env: { NEXT_PUBLIC_API_URL: setupApi, SAIL_WEB_DIST_DIR: ".next-setup" }, url: `${setupWeb}/login`, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
+    { command: "pnpm --filter @sail/server dev:local", env: { TZ, PORT: new URL(api).port, GUEST_APP_URL: guest, WEB_APP_URL: web }, url: `${api}/health`, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
+    { command: `pnpm --filter @sail/web exec next dev -p ${new URL(web).port}`, env: { TZ, NEXT_PUBLIC_API_URL: api }, url: `${web}/login`, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
+    { command: `pnpm --filter @sail/guest exec next dev -p ${new URL(guest).port}`, env: { TZ, NEXT_PUBLIC_API_URL: api }, url: guest, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
+    { command: "pnpm --filter @sail/server dev:local", env: { TZ, PORT: new URL(setupApi).port, SAIL_DEV_EMPTY: "1", WEB_APP_URL: setupWeb }, url: `${setupApi}/health`, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
+    { command: `pnpm --filter @sail/web exec next dev -p ${new URL(setupWeb).port}`, env: { TZ, NEXT_PUBLIC_API_URL: setupApi, SAIL_WEB_DIST_DIR: ".next-setup" }, url: `${setupWeb}/login`, timeout: 180_000, reuseExistingServer: reuse, stdout: "ignore", stderr: "pipe" },
   ],
 });

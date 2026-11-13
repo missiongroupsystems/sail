@@ -217,6 +217,30 @@ test.describe("iPad landscape 1180×820", () => {
     await expect(order.getByRole("button", { name: /^1 Chicken Rice/ })).toHaveCount(1);
   });
 
+  test("offline: an add the register took but whose reply was lost stays on screen once, with no error, when it is sent again", async ({ page, watch }) => {
+    test.setTimeout(300_000);
+    watch.allowConsole(/ERR_INTERNET_DISCONNECTED|internal error|Load failed|network connection|Failed to fetch/i);
+    await pairAndSignIn(page, CASHIER_PIN);
+    await newTakeaway(page);
+    await addAndSend(page, ["Mee Goreng"]);
+    const order = page.getByRole("region", { name: "Order" });
+    // The add reaches the register and is saved, but its reply is lost on the way back. The first resend is lost too,
+    // and meanwhile the station's event stream has caught up with the order (a newer version) before the next one.
+    let posts = 0;
+    await page.route("**/v1/orders/*/lines", async (route) => {
+      if (route.request().method() !== "POST" || ++posts > 2) return route.fallback();
+      if (posts === 1) await route.fetch();
+      else await page.waitForTimeout(2_000);
+      await route.abort("internetdisconnected");
+    });
+    await page.getByRole("button", { name: /^Chicken Rice,/ }).click();
+    await expect(page.getByText(/^Offline · .* is kept$/)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("button", { name: "Send 1 to kitchen" })).toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(3_000);
+    await expect(order.getByRole("button", { name: /^1 Chicken Rice/ })).toHaveCount(1);
+    await expect(page.getByText(/already used with a different request/)).toHaveCount(0);
+  });
+
   test("a terminal payment still pending is found again: its method is shown waiting, and another method says why it is blocked", async ({ page }) => {
     test.setTimeout(300_000);
     const { payment_simulator } = devLocal();
