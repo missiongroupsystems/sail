@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import postgres, { type Sql } from "postgres";
 import { inject } from "vitest";
-import { presetSeedRules, REGION_PRESETS, type PricingRuleInput, type RegionPresetKey, type Role } from "@sail/shared";
+import { localParts, presetSeedRules, REGION_PRESETS, type PricingRuleInput, type RegionPresetKey, type Role } from "@sail/shared";
 import { applyPreset, type MerchantSettingsInput } from "../src/bootstrap.js";
 import { setConfigForTests, loadConfig } from "../src/config.js";
 import { PG_TYPES, setPoolForTests } from "../src/db/client.js";
@@ -116,6 +116,15 @@ export async function seedMerchant(sql: Sql, name = "Test Merchant", region: { p
     server: await mk("server", "Sam Server", [], "444444"),
     outlet2Cashier: await mk("cashier", "Olive Outlet Two", [outlet2Id], "555555"),
   };
+}
+
+/**
+ * The wall-clock time ("HH:MM") in a merchant's zone `minutes` from now (negative for the past), by the same clock the
+ * register reads. A test that needs "now" outside or inside an availability window builds the window from this, so it
+ * holds at any time of day. The zone defaults to seedMerchant's.
+ */
+export function merchantClockIn(minutes: number, timeZone = "Asia/Singapore"): string {
+  return localParts(new Date(Date.now() + minutes * 60_000), timeZone).time;
 }
 
 export { signSailToken };
