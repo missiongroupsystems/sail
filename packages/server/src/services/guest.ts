@@ -236,7 +236,13 @@ export async function guestOrderView(p: Extract<Principal, { type: "guest" }>) {
   const rounds = await db().select().from(guestRounds).where(eq(guestRounds.guestSessionId, p.sessionId)).orderBy(guestRounds.submittedAt);
   const requests = await db().select().from(serviceRequests).where(eq(serviceRequests.guestSessionId, p.sessionId)).orderBy(serviceRequests.createdAt);
   const canOrder = !!link?.enabled && (orderId != null || !!link.openOnFirstScan);
-  if (!orderId) return { order: null, order_open: false, can_order: canOrder, hold_orders: link?.holdOrders ?? true, lines: [], rounds: rounds.map(toRound), requests: requests.map(toRequest), table_id: p.tableId };
+  const toLine = (l: typeof orderLines.$inferSelect) => ({ id: l.id, name: l.name, quantity: l.quantity, modifiers: l.modifiers.map((m) => m.name), notes: l.notes, seat_no: l.seatNo, status: l.status, source: l.source, round_id: l.roundId, mine: rounds.some((r) => r.lineIds.includes(l.id)), amount: l.baseAmount });
+  if (!orderId) {
+    // A rejection that closed the order (M2) leaves this phone unbound: it still shows what its turned-down rounds held, struck through.
+    const rejectedIds = rounds.filter((r) => r.status === "rejected").flatMap((r) => r.lineIds);
+    const rejectedLines = rejectedIds.length ? await asSystem(() => db().select().from(orderLines).where(and(inArray(orderLines.id, rejectedIds), eq(orderLines.merchantId, p.merchantId), eq(orderLines.status, "voided"))).orderBy(orderLines.sort)) : [];
+    return { order: null, order_open: false, can_order: canOrder, hold_orders: link?.holdOrders ?? true, lines: rejectedLines.map(toLine), rounds: rounds.map(toRound), requests: requests.map(toRequest), table_id: p.tableId };
+  }
   const [order] = await db().select().from(orders).where(eq(orders.id, orderId)).limit(1);
   const allRounds = order ? await db().select().from(guestRounds).where(eq(guestRounds.orderId, orderId)).orderBy(guestRounds.submittedAt) : [];
   // Voided lines stay out, except those of a round staff turned down: it still shows what it held, struck through
@@ -257,7 +263,7 @@ export async function guestOrderView(p: Extract<Principal, { type: "guest" }>) {
     order: order ? { id: order.id, order_no: order.orderNo, status: order.status, opened_at: order.openedAt.toISOString(), bill_requested: order.billRequestedAt != null } : null,
     // Each line's amount (menu price and choices, before discounts) and the table's totals as the register priced them,
     // so the phone shows them without adding anything up. Payments and balances stay at the POS.
-    lines: lines.map((l) => ({ id: l.id, name: l.name, quantity: l.quantity, modifiers: l.modifiers.map((m) => m.name), notes: l.notes, seat_no: l.seatNo, status: l.status, source: l.source, round_id: l.roundId, mine: rounds.some((r) => r.lineIds.includes(l.id)), amount: l.baseAmount })),
+    lines: lines.map(toLine),
     totals: order ? await guestTotals(order) : null,
     rounds: allRounds.map((r) => ({ ...toRound(r), mine: r.guestSessionId === p.sessionId })),
     requests: requests.map(toRequest),
