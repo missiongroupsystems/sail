@@ -90,10 +90,21 @@ test("back office: an Admin invites a staff member, who sets a password in anoth
     await expect(theirs.getByRole("heading", { name: "Set your password" })).toBeVisible({ timeout: 180_000 });
     // The token leaves the address bar once read.
     await expect.poll(() => theirs.url()).not.toContain("token=");
+    // The page names the account once its lookup of the link answers; submitting before that let a slow lookup reach
+    // the register after the link was used (404).
+    await expect(theirs.getByText(email).first()).toBeVisible({ timeout: 180_000 });
+    // A press before the form hydrates is lost, so it is retried; once the form has been sent the link is spent and is
+    // never sent again: only the wait for /today repeats (the first visit can compile for a while).
+    let sent = false;
+    theirs.on("request", (r) => {
+      if (r.method() === "POST" && r.url() === `${WEB}/api/session`) sent = true;
+    });
     await expect(async () => {
-      await theirs.getByLabel("New password").fill("invited manager password");
-      await theirs.getByLabel("Type it again").fill("invited manager password");
-      await theirs.getByRole("button", { name: "Set password and sign in" }).click({ timeout: 10_000 });
+      if (!sent) {
+        await theirs.getByLabel("New password").fill("invited manager password");
+        await theirs.getByLabel("Type it again").fill("invited manager password");
+        await theirs.getByRole("button", { name: "Set password and sign in" }).click({ timeout: 10_000 });
+      }
       await theirs.waitForURL(`${WEB}/today`, { timeout: 30_000 });
     }).toPass({ timeout: 300_000 });
     await expect(theirs.getByRole("button", { name: new RegExp(`^${name}, Manager`) })).toBeVisible();
