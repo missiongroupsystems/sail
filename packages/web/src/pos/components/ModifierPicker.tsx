@@ -90,6 +90,8 @@ export function ModifierPicker({ menu, product, selection, onChange, isDisabled 
   const toggle = (g: CompiledGroup, pid: string) => {
     const cur = selection[g.id] ?? [];
     let next: string[];
+    // A required single choice stays chosen when tapped again: it can only be changed for another (B notes).
+    if (cur.includes(pid) && g.max_select === 1 && (g.min_select ?? 0) >= 1) return;
     if (cur.includes(pid)) next = cur.filter((x) => x !== pid);
     else if (g.max_select === 1) next = [pid];
     else if (g.max_select != null && cur.length >= g.max_select) return;
@@ -134,7 +136,7 @@ export function ModifierPicker({ menu, product, selection, onChange, isDisabled 
                   >
                     <span className="flex min-w-0 items-center gap-2">
                       {on ? <Icon icon={Check} size={16} className="shrink-0" /> : null}
-                      <span className="truncate">{o.name}</span>
+                      <span className="leading-tight line-clamp-2 [overflow-wrap:normal]">{o.name}</span>
                     </span>
                     {o.price > 0 ? <span className={"shrink-0 text-caption tabular " + "text-ink-2"}>{money(o.price, { signed: true })}</span> : null}
                   </AriaButton>

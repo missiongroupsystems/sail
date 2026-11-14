@@ -15,6 +15,6 @@ const fieldControlBase =
 /** The 44px field (the default everywhere). */
 export const fieldControl = `${fieldControlBase} min-h-11 px-3 text-body`;
 /** The 36px back-office field for filter rows above a table (opt-in: `size="sm"`). Never on the POS. */
-export const fieldControlSm = `${fieldControlBase} min-h-9 px-2.5 text-[14px] leading-5`;
+export const fieldControlSm = `${fieldControlBase} min-h-9 max-sm:min-h-11 px-2.5 text-[14px] leading-5`;
 export type FieldSize = "md" | "sm";
 export const fieldWrap = "flex flex-col gap-1.5";

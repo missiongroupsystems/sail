@@ -31,6 +31,8 @@ export type CrudConfig<TTable extends PgTable, TApi extends z.ZodTypeAny, TCreat
   toApi: (row: TTable["$inferSelect"]) => z.infer<TApi>;
   fromCreate: (body: z.infer<TCreate>, principal: Principal) => TTable["$inferInsert"];
   fromPatch: (body: z.infer<TPatch>) => Partial<TTable["$inferInsert"]>;
+  /** Checks a change against the stored row before it is written (the row as it would be after the patch). */
+  checkUpdate?: (merged: TTable["$inferSelect"]) => void;
   /** Roles: reads default to server, writes default to admin (config.edit). */
   roles?: { read?: Role | null; write?: Role };
   principals?: { read?: PrincipalKind[]; write?: PrincipalKind[] };
@@ -74,6 +76,9 @@ export function defineCrud<TTable extends PgTable, TApi extends z.ZodTypeAny, TC
   defineOp(app, ({ op: `${g}.list`, method: "get", path: cfg.path, tags: [cfg.tag], request: { query: listQuery }, responses: { 200: jsonResponse(listResponse(cfg.api)), ...errorResponses } }) as never, (async (c: any) => {
     const p = c.get("principal");
     const q = c.req.valid("query") as Record<string, unknown> & { include_archived?: string; outlet_id?: string };
+    // An outlet the person cannot see (another merchant's, or one outside their scope) is refused, not ignored: a list
+    // without outlets would otherwise answer with the merchant's own rows as if the filter applied (F notes).
+    if (q.outlet_id && !(await outletVisible(p, q.outlet_id))) throw AppError.notFound("outlet", q.outlet_id);
     const conds: SQL[] = [eq(cfg.columns.merchantId, p.merchantId)];
     if (cfg.columns.archivedAt && q.include_archived !== "true") conds.push(isNull(cfg.columns.archivedAt));
     if (cfg.columns.outletId && q.outlet_id) conds.push(eq(cfg.columns.outletId, q.outlet_id));
@@ -123,6 +128,10 @@ export function defineCrud<TTable extends PgTable, TApi extends z.ZodTypeAny, TC
     const set = cfg.fromPatch(body) as Record<string, unknown>;
     if (cfg.columns.archivedAt && body.archived !== undefined) set["archivedAt"] = body.archived ? new Date() : null;
     if (Object.keys(set).length === 0) throw AppError.validation("Nothing to update");
+    if (cfg.checkUpdate) {
+      const [stored] = await db().select().from(cfg.table as PgTable).where(and(eq(cfg.columns.id, id), eq(cfg.columns.merchantId, p.merchantId))).limit(1);
+      if (stored) cfg.checkUpdate({ ...(stored as TTable["$inferSelect"]), ...set } as TTable["$inferSelect"]);
+    }
     const [row] = await db()
       .update(cfg.table as PgTable)
       .set(set as never)

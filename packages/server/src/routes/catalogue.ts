@@ -104,6 +104,10 @@ const MenuSchema = z.object({ id: z.string(), brand_id: z.string(), name: z.stri
 const MenuCreate = z.object({ id: z.uuid().optional(), brand_id: z.uuid(), name: z.string().trim().min(1), legacy_id: z.string().nullable().optional(), sections: z.array(SectionInput).optional() });
 const MenuPatch = z.object({ name: z.string().trim().min(1).optional(), archived: z.boolean().optional(), sections: z.array(SectionInput).optional() });
 
+/** A window ending before it starts runs overnight (22:00 to 02:00); one that ends when it starts would be empty, so it is refused. */
+function assertWindow(start: string | null | undefined, end: string | null | undefined) {
+  if (start && end && start === end) throw AppError.validation("The window ends when it starts", { remedy: "Choose an end time after the start, or before it for a window that runs past midnight (22:00 to 02:00)." });
+}
 const AvailabilitySchema = z.object({ id: z.string(), target_kind: z.enum(["product", "section"]), target_id: z.string(), outlet_ids: z.array(z.string()), channels: z.array(z.string()), days_of_week: z.array(z.number().int()), start_time: z.string().nullable(), end_time: z.string().nullable() });
 const AvailabilityCreate = z.object({ id: z.uuid().optional(), target_kind: z.enum(["product", "section"]), target_id: z.uuid(), outlet_ids: z.array(z.uuid()).optional(), channels: z.array(z.enum(["pos", "scan_to_order"])).optional(), days_of_week: z.array(z.number().int().min(0).max(6)).optional(), start_time: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(), end_time: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional() });
 const AvailabilityPatch = AvailabilityCreate.omit({ id: true, target_kind: true, target_id: true }).partial();
@@ -476,8 +480,10 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
     listQuery: z.object({ target_id: z.uuid().optional() }),
     listWhere: (q) => (q.target_id ? [eq(availabilityRules.targetId, q.target_id as string)] : []),
     toApi: (r) => ({ id: r.id, target_kind: r.targetKind, target_id: r.targetId, outlet_ids: r.outletIds, channels: r.channels, days_of_week: r.daysOfWeek, start_time: r.startTime, end_time: r.endTime }),
-    fromCreate: (b) => ({ id: b.id, merchantId: "", targetKind: b.target_kind, targetId: b.target_id, outletIds: b.outlet_ids ?? [], channels: b.channels ?? [], daysOfWeek: b.days_of_week ?? [], startTime: b.start_time ?? null, endTime: b.end_time ?? null }),
-    fromPatch: (b) => compact({ outletIds: b.outlet_ids, channels: b.channels, daysOfWeek: b.days_of_week, startTime: b.start_time, endTime: b.end_time }),
+    fromCreate: (b) => (assertWindow(b.start_time, b.end_time), { id: b.id, merchantId: "", targetKind: b.target_kind, targetId: b.target_id, outletIds: b.outlet_ids ?? [], channels: b.channels ?? [], daysOfWeek: b.days_of_week ?? [], startTime: b.start_time ?? null, endTime: b.end_time ?? null }),
+    // A patch of one end is checked against the other end as stored (E-N3).
+    checkUpdate: (r) => assertWindow(r.startTime, r.endTime),
+    fromPatch: (b) => (assertWindow(b.start_time, b.end_time), compact({ outletIds: b.outlet_ids, channels: b.channels, daysOfWeek: b.days_of_week, startTime: b.start_time, endTime: b.end_time })),
   });
 
   /* Compiled menu */

@@ -210,7 +210,7 @@ async function invariants(c: Ctx): Promise<string[]> {
   return v;
 }
 
-type Z = { scope: { business_date: string }; sales: { gross: number; discounts: number; fees: number; tax: number; taxes: Tax[]; refunds: number; net: number; total: number; net_before_refunds: number; total_after_refunds: number }; tenders: { amount: number }[]; refunds: { amount: number; net: number; fees: number; tax: number; tips: number; taxes: Tax[] }; cash: { expected: number }; reconciliation: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number } };
+type Z = { scope: { business_date: string }; sales: { gross: number; discounts: number; fees: number; tax: number; taxes: Tax[]; refunds: number; net: number; total: number; net_before_refunds: number; total_after_refunds: number }; tenders: { amount: number }[]; refunds: { amount: number; net: number; fees: number; tax: number; tips: number; taxes: Tax[] }; cash: { expected: number; open_shifts?: { expected: number } }; reconciliation: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number } };
 type Summary = { totals: { total: number; net: number; tax: number; net_before_refunds: number; total_after_refunds: number }; refunds: { amount: number; net: number; fees: number; tax: number; tips: number }; by_tender: { amount: number }[]; by_day: { net: number }[]; by_category: { net: number }[]; by_order_type: { net: number }[] };
 
 async function reports(c: Ctx): Promise<string[]> {
@@ -230,7 +230,9 @@ async function reports(c: Ctx): Promise<string[]> {
   const tenders = sum(Z.tenders.map((t) => t.amount));
   if (tenders !== sum(pays.map((p) => p.amount))) v.push(`Z tenders ${tenders} differ from the payments`);
   const cash = (shift[0]?.bd === bd ? c.float : 0) + sum(pays.filter((p) => p.is_cash).map((p) => p.amount + p.rounding_cents + p.tip_cents)) - cashBack[0]!.n;
-  if (Z.cash.expected !== cash) v.push(`Z expected cash ${Z.cash.expected}, rows say ${cash}`);
+  // The day's drawer figures are its closed shifts', the open ones apart (E-N1): together they are every drawer of the day.
+  const dayExpected = Z.cash.expected + (Z.cash.open_shifts?.expected ?? 0);
+  if (dayExpected !== cash) v.push(`Z expected cash ${dayExpected}, rows say ${cash}`);
   if (Z.refunds.amount !== refundTotal[0]!.n) v.push("Z refunds differ from the refunds");
   if (Z.sales.total !== done[0]!.n) v.push(`Z sales ${Z.sales.total}, completed orders ${done[0]!.n}`);
   if (Z.sales.net + Z.sales.refunds + Z.sales.fees + Z.sales.tax !== Z.sales.total) v.push("Z: net + refunds + fees + tax is not the total");

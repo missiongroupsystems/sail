@@ -44,8 +44,8 @@ export function TenderGrid({ tenders, selectedId, onSelect, visible = 3, isDisab
           className={cx(tender, t.id === selectedId ? "border-transparent bg-primary text-on-primary" : "border-rule-strong bg-surface text-ink data-[hovered]:bg-surface-2")}
         >
           <Icon icon={t.is_cash ? Banknote : t.is_terminal ? CreditCard : WalletCards} size={18} className="shrink-0" />
-          {/* One line: a long name ends in an ellipsis rather than breaking mid-word; the full name is the button's name. */}
-          <span className="min-w-0 truncate text-left" title={t.name}>{t.name}</span>
+          {/* Up to two lines, broken between words ("Card" / "(terminal)"), so a usual name is never cut (A-N6, C-9). */}
+          <span className="min-w-0 text-left leading-tight line-clamp-2 [overflow-wrap:normal]" title={t.name}>{t.name}</span>
         </AriaButton>
       ))}
       {rest > 0 && !more && !selectedHidden ? (

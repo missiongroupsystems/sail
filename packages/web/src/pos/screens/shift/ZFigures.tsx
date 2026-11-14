@@ -16,6 +16,8 @@ export function ZFigures({ report, title }: { report: { data?: ZReport; isError:
   const { money } = useLocale();
   const r = report.data;
   const taxMode = useMerchant().data?.settings.tax_mode ?? "exclusive";
+  // A merchant without tips sees no tips row, unless a tip was taken anyway (F notes).
+  const tipsOn = Boolean(useMerchant().data?.settings.tips_enabled);
   const tax = taxRows(r?.sales.taxes ?? [], taxMode);
   // Terminal tenders are compared one by one; the register does not return a combined figure and the iPad never adds one up.
   const nonCash = r ? r.tenders.filter((t) => !t.is_cash) : [];
@@ -77,12 +79,17 @@ export function ZFigures({ report, title }: { report: { data?: ZReport; isError:
               <Row label="Float" cents={r.cash.float} />
               <Row label="Cash payments" cents={r.cash.cash_payments} />
               <Row label="Cash rounding" cents={r.cash.rounding} />
-              <Row label="Cash tips" cents={r.cash.tips} />
+              {tipsOn || r.cash.tips ? <Row label="Cash tips" cents={r.cash.tips} /> : null}
               <Row label="Cash refunds" cents={-r.cash.refunds} />
               <Row label="Expected" cents={r.cash.expected} strong />
               {r.cash.counted != null ? <Row label="Counted" cents={r.cash.counted} strong /> : null}
               {r.cash.variance != null ? <Row label="Variance" cents={r.cash.variance} strong tone={r.cash.variance === 0 ? "paid" : "alert"} /> : <p className="pt-2 text-caption text-ink-2">Counted and variance appear once the shift is closed.</p>}
             </dl>
+            {r.cash.open_shifts?.count ? (
+              <p className="pt-2 text-caption text-ink-2">
+                Closed shifts only. {r.cash.open_shifts.count === 1 ? "1 shift is" : `${r.cash.open_shifts.count} shifts are`} still open: float {money(r.cash.open_shifts.float)}, expected so far {money(r.cash.open_shifts.expected)}.
+              </p>
+            ) : null}
           </section>
 
           <section className={group}>
@@ -100,7 +107,7 @@ export function ZFigures({ report, title }: { report: { data?: ZReport; isError:
                   <dd className="text-caption text-ink-2 tabular">{n}</dd>
                 </div>
               ))}
-              <Row label={`Voids · ${r.voids.count} (${r.voids.quantity} items)`} cents={r.voids.value} />
+              <Row label={`Voids · ${r.voids.count} (${r.voids.quantity} ${r.voids.quantity === 1 ? "item" : "items"})`} cents={r.voids.value} />
               <Row label={`Refunds · ${r.refunds.count}`} cents={-r.refunds.amount} />
             </dl>
           </section>
@@ -116,3 +123,4 @@ export function ZFigures({ report, title }: { report: { data?: ZReport; isError:
     </section>
   );
 }
+

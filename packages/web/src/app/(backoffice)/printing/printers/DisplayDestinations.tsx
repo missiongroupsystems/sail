@@ -13,6 +13,7 @@ import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { paths } from "@/lib/api/schema";
 import type { Station } from "@/lib/api/types";
+import { useFreshErrors } from "@/lib/fresh-errors";
 
 type Destination = paths["/v1/display-destinations"]["get"]["responses"][200]["content"]["application/json"]["data"][number];
 type SheetState = { mode: "create" } | { mode: "edit"; destination: Destination } | null;
@@ -125,6 +126,7 @@ function DestinationSheet({ state, outletId, canEdit, onClose }: { state: SheetS
   });
   const busy = save.isPending || archive.isPending;
 
+  useFreshErrors(state, form.watch(), save, archive);
   return (
     <Sheet
       isOpen={state !== null}

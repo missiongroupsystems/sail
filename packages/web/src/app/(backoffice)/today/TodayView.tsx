@@ -19,6 +19,7 @@ import type { Outlet } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
 import { useSession } from "@/lib/session-context";
 import { orderJobs } from "../printing/jobs/PrintJobsView";
+import { useCan } from "@/lib/can";
 
 const POLL = 15_000;
 
@@ -33,6 +34,9 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
   const { outletId, setOutletId } = useOutletChoice(outlets, scope, initialOutletId);
   const canDecide = can(me, "rounds.accept");
   const canAck = can(me, "service_requests.acknowledge");
+  // What this role may read: a Server sees no takings, and only a Manager or above has the Reports pages.
+  const canZ = useCan("business_days.z_report").ok;
+  const canReports = useCan("reports.daily").ok;
   const [note, setNote] = useState<{ text: string; warnings: string[] } | null>(null);
   const [rejecting, setRejecting] = useState<GuestRound | null>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -49,7 +53,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
       { queryKey: boKeys.relays(id), queryFn: () => req(api.GET("/v1/relays", { params: { query: { outlet_id: id } } })).then((r) => r.data), enabled, refetchInterval: POLL },
       { queryKey: boKeys.shifts(id, { status: "open" }), queryFn: () => req(api.GET("/v1/outlets/{id}/shifts", { params: { path: { id }, query: { status: "open" } } })).then((r) => r.data as unknown as Shift[]), enabled, refetchInterval: POLL },
       // The register's current business day (its cutoff, and the next day after an early close), not the browser's date.
-      { queryKey: boKeys.zReport(id, "current", null), queryFn: () => req(api.GET("/v1/outlets/{id}/z-report", { params: { path: { id } } })).then((r) => r.data as unknown as ZReport), enabled, refetchInterval: POLL },
+      { queryKey: boKeys.zReport(id, "current", null), queryFn: () => req(api.GET("/v1/outlets/{id}/z-report", { params: { path: { id } } })).then((r) => r.data as unknown as ZReport), enabled: enabled && canZ, refetchInterval: POLL },
     ],
   });
   const printers = useQuery({
@@ -107,7 +111,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
           hint={
             <>
               Add the first one in{" "}
-              <Link href="/settings/outlets" className="text-ink underline underline-offset-4">
+              <Link href="/settings/outlets" className="text-ink underline underline-offset-4 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
                 Settings
               </Link>
               .
@@ -175,7 +179,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                 )
               ) : null}
               <p className="border-t border-rule-subtle px-5 py-3 text-caption text-ink-2">
-                <Link href="/orders" className="text-ink underline underline-offset-4">
+                <Link href="/orders" className="text-ink underline underline-offset-4 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
                   Open Orders
                 </Link>{" "}
                 for the detail drawer.
@@ -285,7 +289,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                   hint={
                     <>
                       Nothing will print until one is paired in{" "}
-                      <Link href="/printing/relays" className="text-ink underline underline-offset-4">
+                      <Link href="/printing/relays" className="text-ink underline underline-offset-4 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
                         Printing
                       </Link>
                       .
@@ -323,14 +327,17 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                   </li>
                 ))}
               </ul>
-              <p className="border-t border-rule-subtle px-5 py-3 text-caption text-ink-2">
-                <Link href="/reports/shifts" className="text-ink underline underline-offset-4">
-                  Shifts
-                </Link>{" "}
-                has the closed ones with expected, counted and variance.
-              </p>
+              {canReports ? (
+                <p className="border-t border-rule-subtle px-5 py-3 text-caption text-ink-2">
+                  <Link href="/reports/shifts" className="text-ink underline underline-offset-4 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
+                    Shifts
+                  </Link>{" "}
+                  has the closed ones with expected, counted and variance.
+                </p>
+              ) : null}
             </Panel>
 
+            {canZ ? (
             <Panel title="Today so far" body="flush" aside={z.data ? <>business day <BusinessDay value={z.data.scope.business_date} /></> : "loading"}>
               {z.data ? (
                 <div className="flex flex-col gap-4 px-5 py-4">
@@ -351,15 +358,18 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                     ))}
                     {z.data.tenders.length === 0 ? <li className="text-caption text-ink-2">No payments yet.</li> : null}
                   </ul>
-                  <p className="text-caption text-ink-2">
-                    Register figures.{" "}
-                    <Link href="/reports/z-report" className="text-ink underline underline-offset-4">
-                      Full Z-report
-                    </Link>
-                  </p>
+                  {canReports ? (
+                    <p className="text-caption text-ink-2">
+                      Register figures.{" "}
+                      <Link href="/reports/z-report" className="text-ink underline underline-offset-4 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
+                        Full Z-report
+                      </Link>
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
             </Panel>
+            ) : null}
           </div>
         </div>
       ) : null}

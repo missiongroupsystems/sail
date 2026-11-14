@@ -101,6 +101,8 @@ export const BillModifierSchema = z.object({
   name: z.string().min(1),
   /** Price of the modifier for the line (already multiplied by quantity), 0 when free. */
   price: CentsSchema,
+  /** The same price for one item, so a screen can say "+€1.00 each" beside the line's "€8.50 each". */
+  unit_price: CentsSchema.optional(),
 });
 export type BillModifier = z.infer<typeof BillModifierSchema>;
 
@@ -150,6 +152,8 @@ export const BillPaymentSchema = z.object({
   tip: CentsSchema.optional(),
   /** Change handed back; printed when non-zero. */
   change: CentsSchema.optional(),
+  /** What the guest was charged with this tender: amount, cash rounding and tip, as the register recorded it. */
+  charged: CentsSchema.optional(),
 });
 export type BillPayment = z.infer<typeof BillPaymentSchema>;
 

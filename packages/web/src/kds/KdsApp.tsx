@@ -96,9 +96,9 @@ function useTicketStream(outletId: string): ConnectionStatus {
       outletId,
       getToken: () => useDisplayStore.getState().token,
       fetchEvents: (after) => listEvents(api, outletId, after),
-      // Tickets keep the order as it was sent, so only ticket events change the board.
+      // Tickets keep the order as it was sent, so only ticket events change the board, and a move, which changes the table.
       onEvents: (events) => {
-        if (events.some((e) => e.type.startsWith("kitchen_ticket."))) refresh();
+        if (events.some((e) => e.type.startsWith("kitchen_ticket.") || e.type === "order.moved")) refresh();
       },
       onStatus: (s) => setStatus(s),
       onConnected: (first) => {
@@ -153,9 +153,10 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
       <header className="flex h-14 shrink-0 items-center gap-x-4 border-b border-rule bg-surface px-5 max-[960px]:gap-x-3 max-[960px]:px-4">
         <h1 className="flex shrink-0 items-center gap-2 font-heading text-[18px] font-semibold text-ink">
           <Icon icon={ChefHat} size={20} />
-          Kitchen
+          {/* In portrait the icon stands for "Kitchen", so the station's own name has the room (C-11). */}
+          <span className="max-[960px]:sr-only">Kitchen</span>
         </h1>
-        <p className="min-w-0 truncate text-[14px] text-ink-2">{station.name}</p>
+        <p className="min-w-0 text-[14px] leading-tight text-ink-2 line-clamp-2">{station.name}</p>
         <p className="flex shrink-0 items-center gap-2 text-[14.5px] text-ink">
           <span className="tabular">{open.length === 1 ? "1 ticket" : `${open.length} tickets`}</span>
           {lateCount > 0 ? <Pill tone="alert">{lateCount} late</Pill> : null}
@@ -237,7 +238,17 @@ function TicketCard({ ticket: t, now, warn, late, pending, onBump }: { ticket: K
     >
       <span className="flex items-start justify-between gap-3 px-4 pt-3.5 pb-2.5">
         <span className="min-w-0">
-          <span className={cx("block font-heading text-[22px] leading-tight font-semibold break-words min-[1600px]:text-[26px]", cancelled ? "text-ink-2 line-through" : "text-ink")}>{title}</span>
+          <span className={cx("block font-heading text-[22px] leading-tight font-semibold break-words hyphens-auto min-[1600px]:text-[26px]", cancelled ? "text-ink-2 line-through" : "text-ink")}>
+            {/* The order number never splits ("P-" / "0007"); a long name wraps between words, hyphenated only when one word is wider than the card. */}
+            {t.order_type === "dine_in" && t.table_name ? (
+              `Table ${t.table_name}`
+            ) : (
+              <>
+                {t.customer_name ? <>{t.customer_name} · </> : null}
+                <span className="whitespace-nowrap">{t.order_no}</span>
+              </>
+            )}
+          </span>
           {meta ? <span className="mt-1 block text-[13px] text-ink-2 break-words min-[1600px]:text-[15px]">{meta}</span> : null}
         </span>
         <span className={cx("shrink-0 rounded-full px-2.5 py-1 font-heading text-[15px] leading-none font-semibold tabular min-[1600px]:text-[18px]", AGE_CHIP[tone])}>{formatElapsed(seconds)}</span>
@@ -273,7 +284,7 @@ function TicketLine({ line: l }: { line: KitchenTicketLine }) {
       <span className={cx("font-heading text-[18px] leading-[1.25] font-semibold tabular min-[1600px]:text-[22px]", struck ? "text-ink-2 line-through" : "text-ink")}>{struck ? l.quantity : left}</span>
       <span className="min-w-0">
         <span className={cx("flex flex-wrap items-baseline gap-x-2 text-[17px] leading-[1.25] font-medium min-[1600px]:text-[21px]", struck ? "text-ink-2" : "text-ink")}>
-          <span className={cx("min-w-0 break-words", struck && "line-through")}>{l.name}</span>
+          <span className={cx("min-w-0 break-words hyphens-auto", struck && "line-through")}>{l.name}</span>
           {l.seat_no != null ? <span className="shrink-0 text-[13px] font-medium text-ink-3 tabular">S{l.seat_no}</span> : null}
         </span>
         {l.modifiers.map((m, i) => (
@@ -298,7 +309,7 @@ function AllDay({ items }: { items: AllDayItem[] }) {
       <ul className="min-h-0 flex-1 divide-y divide-rule-subtle overflow-y-auto px-4 pb-4">
         {items.map((i) => (
           <li key={`${i.product_id}:${i.name}`} className="flex items-baseline justify-between gap-3 py-2.5">
-            <span className="min-w-0 text-[15.5px] text-ink break-words">{i.name}</span>
+            <span className="min-w-0 text-[15.5px] text-ink break-words hyphens-auto">{i.name}</span>
             <span className="shrink-0 font-heading text-[18px] font-semibold text-ink tabular">{i.quantity}</span>
           </li>
         ))}

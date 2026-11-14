@@ -71,3 +71,26 @@ describe("dates: the weekday always belongs to the date shown", () => {
     expect(la.businessDay(la.isoDate(at))).toBe("Fri, Nov 13, 2026");
   });
 });
+
+describe("one date string in every engine (E-N7)", () => {
+  it("joins a date to its time with a comma whatever the engine's connector", async () => {
+    const { joinDateParts } = await import("./locale-format");
+    // As WebKit writes en-US dayClock: "Nov 14 at 12:17 AM" (with a narrow no-break space before the day period).
+    const webkit: Intl.DateTimeFormatPart[] = [
+      { type: "month", value: "Nov" }, { type: "literal", value: " " }, { type: "day", value: "14" }, { type: "literal", value: " at " },
+      { type: "hour", value: "12" }, { type: "literal", value: ":" }, { type: "minute", value: "17" }, { type: "literal", value: " " }, { type: "dayPeriod", value: "AM" },
+    ];
+    const v8: Intl.DateTimeFormatPart[] = [...webkit.slice(0, 3), { type: "literal", value: ", " }, ...webkit.slice(4)];
+    expect(joinDateParts(webkit)).toBe("Nov 14, 12:17 am");
+    expect(joinDateParts(v8)).toBe("Nov 14, 12:17 am");
+    // A date with its year keeps its own literals; only the join to the time changes.
+    const withYear: Intl.DateTimeFormatPart[] = [{ type: "day", value: "14" }, { type: "literal", value: " " }, { type: "month", value: "Nov" }, { type: "literal", value: " " }, { type: "year", value: "2026" }, { type: "literal", value: " um " }, { type: "hour", value: "09" }, { type: "literal", value: ":" }, { type: "minute", value: "05" }];
+    expect(joinDateParts(withYear)).toBe("14 Nov 2026, 09:05");
+  });
+
+  it("the formatter itself gives the joined form for a stamp", () => {
+    const f = makeLocaleFormat({ currency: "USD", currencyExponent: 2, locale: "en-US", timeZone: "America/New_York" });
+    expect(f.dayClock("2026-11-14T05:17:00Z")).toBe("Nov 14, 12:17 am");
+    expect(f.stamp("2026-11-14T05:17:00Z")).toBe("Nov 14, 2026, 12:17 am");
+  });
+});

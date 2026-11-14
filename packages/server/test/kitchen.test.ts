@@ -132,7 +132,7 @@ describe("tickets from the fire", () => {
     expect(jobs.filter((j) => j.printer_id === ids.passPrinter)).toHaveLength(1);
   });
 
-  it("a ticket keeps the table it was sent to when the order moves", async () => {
+  it("a ticket shows the table the order moved to (C-1)", async () => {
     const moved = await sendOrder([{ product_id: ids.bread }], undefined, false);
     const table2 = randomUUID();
     await must("POST", "/v1/tables", A.admin.token, { id: table2, outlet_id: A.outletId, area_id: ids.area, name: "14" });
@@ -142,7 +142,7 @@ describe("tickets from the fire", () => {
     await must("POST", "/v1/tables", A.admin.token, { id: table3, outlet_id: A.outletId, area_id: ids.area, name: "15" });
     await must("POST", `/v1/orders/${sent.orderId}/move-table`, tokens.server, { table_id: table3 });
     const t = (await list(tokens.d2)).body.data.find((x) => x.order_id === sent.orderId)!;
-    expect(t.table_name).toBe("14");
+    expect(t.table_name).toBe("15");
     for (const x of (await list(tokens.d2)).body.data.filter((y) => y.order_id === sent.orderId || y.order_id === moved.orderId)) await act(tokens.d2, x.id, "bump");
   });
 

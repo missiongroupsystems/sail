@@ -164,7 +164,8 @@ registerRefundTotals(async (scope) => {
     .select({ amount: sql<number>`coalesce(sum(${refundTenders.amount} + ${refundTenders.roundingCents} + ${refundTenders.tipCents}),0)::bigint` })
     .from(refundTenders)
     .innerJoin(refunds, eq(refunds.id, refundTenders.refundId))
-    .where(and(where, eq(refundTenders.isCash, true)));
+    // For a day's drawer figures, only the cash given back out of the named (closed) shifts.
+    .where(and(scope.cashShiftIds?.length ? and(eq(refunds.outletId, scope.outletId), inArray(refunds.shiftId, scope.cashShiftIds)) : where, eq(refundTenders.isCash, true)));
   const taxes = await db()
     .select({ name: sql<string>`t->>'name'`, bps: sql<number>`(t->>'bps')::int`, amount: sql<number>`coalesce(sum((t->>'amount')::bigint),0)::bigint` })
     .from(sql`${refunds} cross join lateral jsonb_array_elements(${refunds.taxes}) t`)

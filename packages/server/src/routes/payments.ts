@@ -300,10 +300,13 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     const q = c.req.valid("query");
     if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
     const businessDate = q.business_date ?? (await currentBusinessDate(p.merchantId, id));
-    const closedShifts = await db().select().from(shifts).where(and(eq(shifts.outletId, id), eq(shifts.businessDate, businessDate), q.station_id ? eq(shifts.stationId, q.station_id) : sql`true`));
-    const float = closedShifts.reduce((s, x) => s + x.floatCents, 0);
-    const counted = closedShifts.filter((x) => x.status === "closed").reduce((s, x) => s + (x.countedCashCents ?? 0), 0);
-    const report = await zReport({ outletId: id, businessDate, stationId: q.station_id ?? null }, { float, counted: closedShifts.some((x) => x.status === "closed") ? counted : null });
+    const dayShifts = await db().select().from(shifts).where(and(eq(shifts.outletId, id), eq(shifts.businessDate, businessDate), q.station_id ? eq(shifts.stationId, q.station_id) : sql`true`));
+    // Float, expected, counted and variance all cover the closed shifts; a drawer still open is only listed in open_shifts.
+    const closed = dayShifts.filter((x) => x.status === "closed");
+    const open = dayShifts.filter((x) => x.status !== "closed");
+    const float = closed.reduce((s, x) => s + x.floatCents, 0);
+    const counted = closed.reduce((s, x) => s + (x.countedCashCents ?? 0), 0);
+    const report = await zReport({ outletId: id, businessDate, stationId: q.station_id ?? null, cashShiftIds: closed.map((x) => x.id) }, { float, counted: closed.length ? counted : null, openShifts: { ids: open.map((x) => x.id), float: open.reduce((s, x) => s + x.floatCents, 0) } });
     return c.json({ data: report }, 200);
   });
 

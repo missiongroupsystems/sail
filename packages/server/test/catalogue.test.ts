@@ -146,7 +146,8 @@ describe("catalogue", () => {
     const mine = await call<{ data: unknown[] }>("GET", `/v1/tables?outlet_id=${A.outletId}`, { token: A.admin.token });
     expect(mine.body.data).toHaveLength(1);
     const theirs = await call<{ data: unknown[] }>("GET", `/v1/tables?outlet_id=${A.outletId}`, { token: A.outlet2Cashier.token });
-    expect(theirs.body.data).toHaveLength(0);
+    // An outlet outside the person's scope is refused outright, not answered with an empty list.
+    expect(theirs.status).toBe(404);
   });
 
   it("reference lists and customers", async () => {

@@ -83,19 +83,23 @@ export function createApp() {
 
 type Issue = z.core.$ZodIssue;
 
+/** Wire names whose plain words differ from the name itself. */
+const FIELD_WORDS: Record<string, string> = { bps: "the rate", rate_bps: "the rate", value_bps: "the percentage", tip_cents: "the tip", float_cents: "the opening float", counted_cash_cents: "the counted cash", open_price: "the price" };
+
 /**
  * A validation failure as a sentence a person can act on: the field in words and what it needs, never the validator's
  * own text or an amount in minor units. The raw issues stay in `details.issues` for clients.
  */
 export function plainIssue(i: Issue): string {
   const key = [...i.path].reverse().find((x) => typeof x === "string");
-  const words = typeof key === "string" ? key.replace(/_/g, " ") : "";
+  const words = typeof key === "string" ? (FIELD_WORDS[key] ?? key.replace(/_cents$/, "").replace(/_/g, " ")) : "";
   const field = words ? words.charAt(0).toUpperCase() + words.slice(1) : "The request";
   switch (i.code) {
     case "too_small": {
       const min = Number(i.minimum);
       if (i.origin === "string") return min <= 1 ? `${field} cannot be empty` : `${field} needs at least ${min} characters`;
       if (i.origin === "array" || i.origin === "set") return min <= 1 ? `${field} needs at least one item` : `${field} needs at least ${min} items`;
+      if (min === 0 && i.inclusive !== false) return `${field} cannot be negative`;
       return i.inclusive === false ? `${field} must be more than ${min}` : `${field} must be at least ${min}`;
     }
     case "too_big": {

@@ -36,7 +36,7 @@ export function Dialog({ isOpen, onOpenChange, title, children, footer, isDismis
         )}
       >
         <AriaDialog role={role} className="flex flex-col outline-none">
-          <Heading slot="title" className="px-5 pt-5 font-heading text-heading text-ink">
+          <Heading slot="title" className="px-5 pt-5 font-heading text-heading text-ink [overflow-wrap:anywhere]">
             {title}
           </Heading>
           {children ? <div className="px-5 pt-2 pb-4 text-body text-ink-2">{children}</div> : null}

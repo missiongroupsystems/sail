@@ -3715,7 +3715,7 @@
         "variance_reason",
         "void_reason"
       ],
-      "description": "Move an order to another table\n\nThe target table must have no open order.\n\nRisk tier T1. Needs role server or above. Emits order.moved.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "description": "Move an order to another table\n\nThe target table must have no open order. The order's kitchen tickets show the new table.\n\nRisk tier T1. Needs role server or above. Emits order.moved.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
         "properties": {

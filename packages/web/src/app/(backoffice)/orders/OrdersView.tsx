@@ -104,7 +104,8 @@ export function OrdersView({ outlets, scope, initialOutletId }: { outlets: Outle
   const columns: DataTableColumn<OrderSnapshot>[] = [
     { key: "order_no", header: "Order", isRowHeader: true, render: (o) => <span className="font-medium text-ink">{o.order_no}</span> },
     { key: "opened_at", header: "Opened", sortable: true, render: (o) => <span className="tabular whitespace-nowrap" title={dayClock(o.opened_at)}>{range === "today" ? clock(o.opened_at) : dayClock(o.opened_at)}</span> },
-    { key: "order_type", header: "Type", sortable: true, render: (o) => label(ORDER_TYPE_LABEL, o.order_type) },
+    // Below 1280px Type and Items step aside so Total and Balance fit without a sideways scroll (F-N2).
+    { key: "order_type", header: "Type", sortable: true, hideBelow: "xl", render: (o) => label(ORDER_TYPE_LABEL, o.order_type) },
     { key: "status", header: "Status", sortable: true, render: (o) => <Badge tone={statusTone(o.status)} icon={statusIcon(o.status)}>{label(ORDER_STATUS_LABEL, o.status)}</Badge> },
     {
       key: "who",
@@ -117,7 +118,7 @@ export function OrdersView({ outlets, scope, initialOutletId }: { outlets: Outle
         </span>
       ),
     },
-    { key: "lines", header: "Items", numeric: true, render: (o) => o.lines.filter((l) => l.status !== "voided").reduce((n, l) => n + l.quantity, 0) },
+    { key: "lines", header: "Items", numeric: true, hideBelow: "xl", render: (o) => o.lines.filter((l) => l.status !== "voided").reduce((n, l) => n + l.quantity, 0) },
     { key: "total", header: "Total", numeric: true, sortable: true, sortValue: (o) => o.totals.total, render: (o) => <Money cents={o.totals.total} /> },
         // "Paid" only for money that was paid: a cancelled order, or one with nothing on it yet, has no balance to settle (C-8, E-L12).
     { key: "balance", header: "Balance", numeric: true, render: (o) => (o.status === "cancelled" ? <span className="text-ink-2">Cancelled</span> : o.balance !== 0 ? <Money cents={o.balance} className="font-medium text-status-sent" /> : o.paid_total > 0 ? <span className="text-ink-2">Paid</span> : <span className="text-ink-2">—</span>) },

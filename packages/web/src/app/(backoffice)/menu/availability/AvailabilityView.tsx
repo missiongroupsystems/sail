@@ -12,6 +12,8 @@ import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { AvailabilityRule, MenuSummary, Outlet, Product } from "@/lib/api/types";
 import { keys } from "@/lib/query";
+import { useFreshErrors } from "@/lib/fresh-errors";
+import { useCan } from "@/lib/can";
 
 type SheetState = { mode: "create" } | { mode: "edit"; rule: AvailabilityRule } | null;
 
@@ -35,6 +37,7 @@ function describeDays(days: number[]): string {
 
 /** Availability rules: when a product or section can be ordered, by outlet, channel, weekday and time window. */
 export function AvailabilityView({ initialRules, outlets, menus }: { initialRules: AvailabilityRule[]; outlets: Outlet[]; menus: MenuSummary[] }) {
+  const canCreate = useCan("availability.create");
   const [sheet, setSheet] = useState<SheetState>(null);
 
   const rules = useQuery({
@@ -83,16 +86,18 @@ export function AvailabilityView({ initialRules, outlets, menus }: { initialRule
     { key: "outlets", header: "Outlets", render: (r) => <Quiet>{r.outlet_ids.length ? r.outlet_ids.map((id) => outletName.get(id) ?? "Unknown").join(", ") : "All outlets"}</Quiet> },
     { key: "channels", header: "Channels", render: (r) => <Quiet>{r.channels.length ? r.channels.map((c) => CHANNEL_LABEL[c] ?? c).join(", ") : "All channels"}</Quiet> },
     { key: "days", header: "Days", render: (r) => <Quiet>{describeDays(r.days_of_week)}</Quiet> },
-    { key: "time", header: "Time", render: (r) => <span className="tabular text-ink-2">{r.start_time || r.end_time ? `${r.start_time ?? "open"} – ${r.end_time ?? "close"}` : "All day"}</span> },
+    { key: "time", header: "Time", render: (r) => <span className="tabular text-ink-2">{r.start_time || r.end_time ? `${r.start_time ?? "open"} – ${r.end_time ?? "close"}${r.start_time && r.end_time && r.end_time < r.start_time ? " (next day)" : ""}` : "All day"}</span> },
   ];
 
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-[14px] text-ink-2">A rule limits when something can be ordered. Without a rule, an item is always available where its menu is live.</p>
-        <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
+        {canCreate.ok ? (
+          <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
           Add availability rule
         </Button>
+        ) : null}
       </div>
       <DataTable
         aria-label="Availability rules"
@@ -160,6 +165,17 @@ function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetSt
     },
   });
 
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  useEffect(() => setConfirmDelete(false), [state]);
+  const remove = useMutation<unknown, ApiError>({
+    mutationFn: () => req(api.DELETE("/v1/availability-rules/{id}", { params: { path: { id: rule!.id } }, body: {} })),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: keys.availability });
+      onClose();
+    },
+  });
+  const mayEdit = useCan("availability.update");
+  useFreshErrors(state, form, save, remove);
   return (
     <Sheet
       isOpen={state !== null}
@@ -168,14 +184,31 @@ function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetSt
       title={rule ? "Availability rule" : "New availability rule"}
       description={rule ? "The target of a rule cannot change; add a new rule for another item." : "Choose what the rule applies to, then narrow where and when it can be ordered."}
       footer={
-        <>
-          <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={save.isPending}>
-            Cancel
-          </Button>
-          <Button variant="primary" isDisabled={!targetId} isPending={save.isPending} onPress={() => save.mutate()}>
-            {rule ? "Save rule" : "Add rule"}
-          </Button>
-        </>
+        confirmDelete ? (
+          <>
+            <span className="mr-auto text-body text-ink">Delete this rule? The item is then available whenever its menu is live, unless another rule limits it.</span>
+            <Button variant="secondary" className={greyPill} onPress={() => setConfirmDelete(false)} isDisabled={remove.isPending}>
+              Keep rule
+            </Button>
+            <Button variant="destructive" isPending={remove.isPending} onPress={() => remove.mutate()}>
+              Delete rule
+            </Button>
+          </>
+        ) : (
+          <>
+            {rule ? (
+              <Button variant="destructive" className="mr-auto" onPress={() => setConfirmDelete(true)} isDisabled={save.isPending}>
+                Delete rule
+              </Button>
+            ) : null}
+            <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={save.isPending}>
+              Cancel
+            </Button>
+            <Button variant="primary" isDisabled={!mayEdit.ok || !targetId} isPending={save.isPending} onPress={() => save.mutate()}>
+              {rule ? "Save rule" : "Add rule"}
+            </Button>
+          </>
+        )
       }
     >
       <div className="flex flex-col gap-7">
@@ -237,11 +270,12 @@ function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetSt
         </CheckboxGroup>
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField label="From" type="time" numeric value={form.start_time} onChange={(v) => set("start_time", v)} description="Empty means from opening." />
-          <TextField label="Until" type="time" numeric value={form.end_time} onChange={(v) => set("end_time", v)} description="Empty means until closing." />
+          <TextField label="Until" type="time" numeric value={form.end_time} onChange={(v) => set("end_time", v)} description="Empty means until closing. Earlier than From runs past midnight." />
         </div>
         </SheetSection>
         <Warnings warnings={warnings} />
-        <InlineError error={save.error} />
+        {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
+        <InlineError error={save.error ?? remove.error} />
       </div>
     </Sheet>
   );

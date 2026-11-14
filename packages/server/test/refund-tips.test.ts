@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import "../src/modules.js";
 import { buildApp } from "../src/app.js";
-import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
+import { api, freshDb, seedMerchant, wholeDayCash, type SeededMerchant, type TestDb } from "./helpers.js";
 
 /**
  * A tip is not part of the bill, but it is money the guest paid: a whole-bill refund gives it back with the bill, a
@@ -54,7 +54,8 @@ async function tippedSale(tender: "card" | "cash", tip: number) {
 
 const quote = (checkId: string, request: unknown) => call<{ data: Quote } & Err>("POST", `/v1/checks/${checkId}/refunds/quote`, { token: m.manager.token, body: { request } });
 const refund = (checkId: string, request: unknown) => call<{ data: Snap; refund: { id: string; tip: number; totals: { total: number }; quote: Quote } } & Err>("POST", `/v1/checks/${checkId}/refunds`, { token: m.manager.token, body: { refund_id: randomUUID(), request, reason: "Guest complaint", print: false } });
-const zReport = async () => (await call<{ data: { sales: { net: number; fees: number; tax: number; total: number; refunds: number; net_before_refunds: number; total_after_refunds: number }; refunds: Refunds; tenders: { tender: string; tips: number }[]; tenders_summary: { tips: number }; cash: { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number } } }>("GET", `/v1/outlets/${m.outletId}/z-report`, { token: m.manager.token })).body.data;
+const withDayCash = <T extends { cash: Parameters<typeof wholeDayCash>[0] }>(z: T): T => ({ ...z, cash: wholeDayCash(z.cash) });
+const zReport = async () => withDayCash((await call<{ data: { sales: { net: number; fees: number; tax: number; total: number; refunds: number; net_before_refunds: number; total_after_refunds: number }; refunds: Refunds; tenders: { tender: string; tips: number }[]; tenders_summary: { tips: number }; cash: { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number } } }>("GET", `/v1/outlets/${m.outletId}/z-report`, { token: m.manager.token })).body.data);
 const salesSummary = async () => (await call<{ data: { totals: { net: number; fees: number; tax: number; total: number; refunds: number; tips: number; net_before_refunds: number; total_after_refunds: number }; refunds: Refunds } }>("GET", `/v1/reports/sales-summary?outlet_id=${m.outletId}`, { token: m.manager.token })).body.data;
 
 describe("a whole-bill refund gives the tip back", () => {
@@ -365,7 +366,7 @@ describe("the refund sheet's refunded quantities are per bill (B step 26)", () =
 describe("after tips are given back the Z-report still reconciles", () => {
   it("tenders keep what was taken, refunds hold the bills' share and the tips, and the drawer counts the cash tips given back once", async () => {
     // Every sale and refund above is on this business day: check each Z-report figure against the rows it sums.
-    const z = (await call<{ data: { scope: { business_date: string }; sales: { total: number }; tenders: { amount: number; tips: number; is_cash: boolean }[]; tenders_summary: { tips: number; cash: number; non_cash: number }; refunds: Refunds; cash: { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number }; reconciliation: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number } } }>("GET", `/v1/outlets/${m.outletId}/z-report`, { token: m.manager.token })).body.data;
+    const z = withDayCash((await call<{ data: { scope: { business_date: string }; sales: { total: number }; tenders: { amount: number; tips: number; is_cash: boolean }[]; tenders_summary: { tips: number; cash: number; non_cash: number }; refunds: Refunds; cash: { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number }; reconciliation: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number } } }>("GET", `/v1/outlets/${m.outletId}/z-report`, { token: m.manager.token })).body.data);
     const [taken] = await db.sql<{ amount: string; tips: string; cash_tips: string }[]>`select coalesce(sum(amount),0) as amount, coalesce(sum(tip_cents),0) as tips, coalesce(sum(tip_cents) filter (where is_cash),0) as cash_tips from payments where merchant_id = ${m.merchantId} and status = 'recorded'`;
     const [back] = await db.sql<{ count: number; amount: string; tips: string }[]>`select count(*)::int as count, coalesce(sum(total),0) as amount, coalesce(sum(tip),0) as tips from refunds where merchant_id = ${m.merchantId}`;
     const [cashBack] = await db.sql<{ amount: string; tips: string }[]>`select coalesce(sum(amount + rounding_cents + tip_cents),0) as amount, coalesce(sum(tip_cents),0) as tips from refund_tenders where merchant_id = ${m.merchantId} and is_cash`;

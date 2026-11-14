@@ -32,7 +32,8 @@ const variants: Record<ButtonVariant, string> = {
 };
 
 const sizes: Record<ButtonSize, { text: string; icon: string }> = {
-  sm: { text: "min-h-9 px-3.5 text-[14px] leading-5", icon: "min-h-9 min-w-9 px-0 text-[14px]" },
+  // At phone width (under 640px) the 36px size is 44px tall, so it can be tapped (live test E-N14, F-N3).
+  sm: { text: "min-h-9 max-sm:min-h-11 px-3.5 text-[14px] leading-5", icon: "min-h-9 min-w-9 max-sm:min-h-11 max-sm:min-w-11 px-0 text-[14px]" },
   md: { text: "min-h-11 px-4 text-line", icon: "min-h-11 min-w-11 px-0 text-line" },
   lg: { text: "min-h-14 px-6 text-line", icon: "min-h-14 min-w-14 px-0 text-line" },
 };

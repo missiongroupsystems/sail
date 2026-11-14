@@ -12,6 +12,7 @@ import { api } from "@/lib/api.browser";
 import type { Outlet } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
 import { useSession } from "@/lib/session-context";
+import { useFreshErrors } from "@/lib/fresh-errors";
 
 export function RelaysView({ outlets, scope, initialOutletId, initialRelays, initialPrinters }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; initialRelays: Relay[]; initialPrinters: Printer[] }) {
   const { dayClock, locale } = useLocale();
@@ -140,6 +141,7 @@ function RelaySheet({ relay, printers, canEdit, canPair, onClose }: { relay: Rel
   const printerName = (id: string) => printers.find((p) => p.id === id)?.name ?? `Printer ${id.slice(0, 8)}`;
   const statuses = relay ? Object.entries(relay.printer_status) : [];
 
+  useFreshErrors(relay?.id ?? null, null, patch);
   return (
     <Sheet
       isOpen={relay !== null}

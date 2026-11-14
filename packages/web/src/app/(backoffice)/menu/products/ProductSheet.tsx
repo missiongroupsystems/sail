@@ -20,6 +20,8 @@ import { api } from "@/lib/api.browser";
 import type { Brand, Category, PricesByOrderType, Product, ProductCreate } from "@/lib/api/types";
 import { keys } from "@/lib/query";
 import { categoryLabels } from "./ProductsView";
+import { useFreshErrors } from "@/lib/fresh-errors";
+import { useCan } from "@/lib/can";
 
 export type ProductSheetState = { mode: "create" } | { mode: "edit"; product: Product } | null;
 
@@ -139,6 +141,8 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
   });
   const busy = save.isPending || archive.isPending;
 
+  const mayEdit = useCan("products.update");
+  useFreshErrors(state, form.watch(), save, archive);
   return (
     <Sheet
       isOpen={state !== null}
@@ -156,7 +160,7 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
           <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" type="submit" form="product-form" isPending={save.isPending} isDisabled={archive.isPending}>
+          <Button variant="primary" type="submit" form="product-form" isPending={save.isPending} isDisabled={!mayEdit.ok || archive.isPending}>
             {product ? "Save changes" : "Add product"}
           </Button>
         </>
@@ -285,6 +289,7 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
         </SheetSection>
 
         <Warnings warnings={warnings} />
+        {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
         <InlineError error={save.error ?? archive.error} />
       </form>
     </Sheet>

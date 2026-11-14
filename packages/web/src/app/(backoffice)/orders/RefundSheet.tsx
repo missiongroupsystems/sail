@@ -10,6 +10,7 @@ import { idempotencyKey, req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { OrderSnapshot } from "@/lib/api/types";
 import { keys } from "@/lib/query";
+import { useFreshErrors } from "@/lib/fresh-errors";
 
 type StepId = "bill" | "what" | "why" | "review";
 type What = "full" | "lines" | "amount";
@@ -121,6 +122,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
 
   const lineName = (id: string) => lineById.get(id)?.name ?? `Line ${id.slice(0, 8)}`;
 
+  useFreshErrors(isOpen && order.id, null, refund, creditNote);
   return (
     <Sheet
       isOpen={isOpen}

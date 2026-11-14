@@ -155,7 +155,7 @@ export type ZReport = {
   sales: { gross: number; discounts: number; fees: number; tax: number; taxes: TaxBreakdown[]; refunds: number; net: number; total: number; net_before_refunds?: number; total_after_refunds?: number };
   adjustments: { rule_key: string; name: string; kind: string; report_class: string; total: number; count: number }[];
   tenders: { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number }[];
-  cash: { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number; counted: number | null; variance: number | null };
+  cash: { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number; counted: number | null; variance: number | null; open_shifts?: { count: number; float: number; expected: number } };
   voids: { count: number; quantity: number; value: number };
   /** `net`, `fees`, `tax`, `tips` and `taxes` arrive with the before/after-refunds figures; until then only `count` and `amount`. */
   refunds: { count: number; amount: number; net?: number; fees?: number; tax?: number; tips?: number; taxes?: TaxAmount[] };

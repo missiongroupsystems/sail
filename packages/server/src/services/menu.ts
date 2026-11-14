@@ -108,9 +108,7 @@ export async function compileMenu(channelLinkId: string, at: Date): Promise<Comp
     for (const r of rs) {
       if (r.outletIds.length && !r.outletIds.includes(link.outletId)) continue;
       if (r.channels.length && !r.channels.includes(link.channel)) continue;
-      if (r.daysOfWeek.length && !r.daysOfWeek.includes(dow)) continue;
-      if (r.startTime && local.time < r.startTime) continue;
-      if (r.endTime && local.time >= r.endTime) continue;
+      if (!inAvailabilityWindow(r, local.time, dow)) continue;
       return { ok: true, reason: null };
     }
     const timed = rs.find((r) => r.startTime || r.endTime || r.daysOfWeek.length);
@@ -178,4 +176,18 @@ export async function compileMenu(channelLinkId: string, at: Date): Promise<Comp
     compiled_at: at.toISOString(),
     version: versionSource,
   };
+}
+
+/**
+ * Whether a rule's days and times include a local wall-clock time (`time` "HH:MM" on weekday `dow`, 0 = Sunday, in the
+ * merchant's zone). A window ending before it starts runs overnight, and its early hours belong to the day it started:
+ * Friday 22:00 to 02:00 is open on Friday at 23:00 and on Saturday at 01:00.
+ */
+export function inAvailabilityWindow(r: { startTime: string | null; endTime: string | null; daysOfWeek: number[] }, time: string, dow: number): boolean {
+  const onDay = (d: number) => !r.daysOfWeek.length || r.daysOfWeek.includes(d);
+  if (r.startTime && r.endTime && r.endTime < r.startTime) return (onDay(dow) && time >= r.startTime) || (onDay((dow + 6) % 7) && time < r.endTime);
+  if (!onDay(dow)) return false;
+  if (r.startTime && time < r.startTime) return false;
+  if (r.endTime && time >= r.endTime) return false;
+  return true;
 }

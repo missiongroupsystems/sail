@@ -2,7 +2,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { AmountSchema, ORDER_STATUSES, OrderTypeSchema, PERMISSIONS, PricingRuleSchema, isFreezable, localParts, operation, price, registerOperations, roleAtLeast, validateManualApplication, type OrderType, type OperationSpec, type Role } from "@sail/shared";
 import { db, markDryRun, settleInvariants, tx } from "../db/client.js";
-import { areas, channelLinks, customerGroupMembers, customers, orderLines, orderManualApplications, orders, stations, tables, voidReasons } from "../db/schema/index.js";
+import { areas, channelLinks, customerGroupMembers, customers, kitchenTickets, orderLines, orderManualApplications, orders, stations, tables, voidReasons } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppContext, AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
@@ -33,7 +33,7 @@ registerOperations({
   "orders.change_type": op({ op: "orders.change_type", summary: "Change the order type", description: "Re-prices with the new type's prices and fees. Blocked after the first payment.", emits: ["order.type_changed", "order.repriced"] }),
   "orders.attach_customer": op({ op: "orders.attach_customer", summary: "Attach a customer", description: "Customer-group conditions re-evaluate; frozen order-level results stay frozen.", emits: ["order.customer_attached", "order.repriced"] }),
   "orders.detach_customer": op({ op: "orders.detach_customer", summary: "Detach the customer", description: "Removes the customer; group discounts re-evaluate.", emits: ["order.customer_detached", "order.repriced"] }),
-  "orders.move_table": op({ op: "orders.move_table", summary: "Move an order to another table", description: "The target table must have no open order.", emits: ["order.moved"] }),
+  "orders.move_table": op({ op: "orders.move_table", summary: "Move an order to another table", description: "The target table must have no open order. The order's kitchen tickets show the new table.", emits: ["order.moved"] }),
   "orders.fire": op({ op: "orders.fire", summary: "Send lines to the kitchen", description: "Fires the given lines (default: every pending, unheld line). Creates one print job per target printer in the same transaction. On a pay-before-firing station, blocked until the balance is 0.", tier: "T2", emits: ["order.fired", "print_job.created"], mcp: { expose: true, toolsets: ["pos.order", "kitchen"] } }),
   "orders.mark_ready": op({ op: "orders.mark_ready", summary: "Mark an order ready", description: "From fired to ready (pickup and delivery lists).", emits: ["order.status_changed"], mcp: { expose: true, toolsets: ["pos.order", "kitchen"] } }),
   "orders.mark_out_for_delivery": op({ op: "orders.mark_out_for_delivery", summary: "Mark a delivery order out for delivery", description: "Delivery orders only, from ready.", emits: ["order.status_changed"] }),
@@ -371,6 +371,9 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     if (!(await tableExists(b.table_id, o.outletId))) throw AppError.notFound("table", b.table_id);
     if (await openOrderForTable(b.table_id)) throw AppError.state("That table already has an open order", ["choose a free table"], "Choose a table without an open order.");
     await db().update(orders).set({ tableId: b.table_id }).where(eq(orders.id, id));
+    // The kitchen works from the ticket: it shows the table the order is at now, not the one it was sent from.
+    const [to] = await db().select({ name: tables.name }).from(tables).where(eq(tables.id, b.table_id)).limit(1);
+    await db().update(kitchenTickets).set({ tableName: to?.name ?? null }).where(eq(kitchenTickets.orderId, id));
     await recordAudit(p, { action: "orders.move_table", targetKind: "order", targetId: id, outletId: o.outletId, details: { from: o.tableId, to: b.table_id } });
     return finish(c, p, id, [() => emit(c, p, o, "order.moved", { from_table_id: o.tableId, to_table_id: b.table_id })]);
   });

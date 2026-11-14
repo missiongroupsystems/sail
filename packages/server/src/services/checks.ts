@@ -253,11 +253,11 @@ export async function billDocumentFor(checkId: string, kind: "prebill" | "receip
     check_label: allChecks.length > 1 ? `${c.label} of ${allChecks.length}` : c.label,
     lines: lines.map((l) => {
       const a = allocs.find((x) => x.orderLineId === l.id)!;
-      return { quantity: l.quantity, name: l.name, unit_price: l.unitPrice, amount: a.base, modifiers: l.modifiers.map((m) => ({ name: m.quantity > 1 ? `${m.quantity}× ${m.name}` : m.name, price: m.price * m.quantity * l.quantity })), seat_no: l.seatNo ?? undefined, share: a.shareNum === a.shareDen ? undefined : `${a.shareNum}/${a.shareDen}` };
+      return { quantity: l.quantity, name: l.name, unit_price: l.unitPrice, amount: a.base, modifiers: l.modifiers.map((m) => ({ name: m.quantity > 1 ? `${m.quantity}× ${m.name}` : m.name, price: m.price * m.quantity * l.quantity, unit_price: m.price * m.quantity })), seat_no: l.seatNo ?? undefined, share: a.shareNum === a.shareDen ? undefined : `${a.shareNum}/${a.shareDen}` };
     }),
     adjustments: adjs.filter((a) => (adjustmentTotals.get(a.id) ?? 0) !== 0).map((a) => ({ name: a.name, amount: adjustmentTotals.get(a.id)!, kind: a.kind as "fee" | "discount" })),
     totals: { subtotal: c.subtotal, discount_total: c.discountTotal, fee_total: c.feeTotal, tax_total: c.taxTotal, taxes: c.taxes, total: c.total, tax_mode: o.taxMode as "inclusive" | "exclusive" },
-    payments: kind === "receipt" ? pays.map((p) => ({ tender: p.tenderName, amount: p.amount, rounding_cents: p.roundingCents || undefined, reference: p.reference ?? undefined, tip: p.tipCents || undefined, change: p.changeCents || undefined })) : undefined,
+    payments: kind === "receipt" ? pays.map((p) => ({ tender: p.tenderName, amount: p.amount, rounding_cents: p.roundingCents || undefined, reference: p.reference ?? undefined, tip: p.tipCents || undefined, change: p.changeCents || undefined, charged: p.tipCents || p.roundingCents ? p.amount + p.roundingCents + p.tipCents : undefined })) : undefined,
     balance: c.total - c.paidTotal > 0 ? c.total - c.paidTotal : undefined,
     invoice_no: c.invoiceNo ?? undefined,
     footer_lines: settings.receiptFooter ? settings.receiptFooter.split("\n") : undefined,

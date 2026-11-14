@@ -14,6 +14,7 @@ import { api } from "@/lib/api.browser";
 import type { Outlet, Product, StockEntry } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
 import { keys } from "@/lib/query";
+import { useFreshErrors } from "@/lib/fresh-errors";
 
 type Until = "today" | "indefinite" | "at";
 type Mode = { kind: "sold_out"; product: Product | null } | { kind: "cap"; product: Product | null } | null;
@@ -57,6 +58,8 @@ export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: {
     onSuccess: (r) => settle(r.warnings),
   });
 
+  useFreshErrors(mode?.kind ?? null, { product: mode?.product?.id ?? null, cap, until, untilAt }, soldOut, dailyCap);
+  useFreshErrors(outletId, null, restore);
   const columns: DataTableColumn<StockEntry>[] = useMemo(
     () => [
       { key: "product", header: "Product", isRowHeader: true, width: "2fr", render: (e) => <TwoLine primary={productName(byId, e.product_id)} /> },
@@ -137,7 +140,7 @@ export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: {
           emptyState={<EmptyState variant="centred" title="Everything is available" hint="Tap Mark sold out when the kitchen runs out of something." />}
         />
       )}
-      <InlineError error={stock.error ?? restore.error ?? dailyCap.error} className="mt-4" />
+      <InlineError error={stock.error ?? restore.error} className="mt-4" />
       <Warnings warnings={warnings} className="mt-4" />
 
       <Sheet

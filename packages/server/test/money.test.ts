@@ -9,7 +9,7 @@ import { MAX_AMOUNT, presetSeedRules, REGION_PRESETS, type RegionPresetKey } fro
 import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
 import type { MerchantSettingsInput } from "../src/bootstrap.js";
 import { bootWorld, orderHelpers, type Call, type World } from "./world.js";
-import { seedMerchant, type TestDb } from "./helpers.js";
+import { seedMerchant, wholeDayCash, type TestDb } from "./helpers.js";
 
 /**
  * Money review: regression tests for the findings of the adversarial money
@@ -179,7 +179,7 @@ describe("documents of a paid bill", () => {
   });
 });
 
-type ZReport = { sales: { total: number; net: number; tax: number }; tenders: { amount: number }[]; cash: { expected: number; counted: number | null; variance: number | null; cash_payments: number } };
+type ZReport = { sales: { total: number; net: number; tax: number }; tenders: { amount: number }[]; cash: { expected: number; counted: number | null; variance: number | null; cash_payments: number; float: number; rounding: number; tips: number; refunds: number; open_shifts?: { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number } } };
 
 describe("currencies on PDF documents", () => {
   /** The strings a PDF draws, decoded from its content streams as WinAnsi bytes. */
@@ -258,7 +258,7 @@ describe("amounts beyond 32 bits", () => {
       const z = await r.must<{ data: ZReport }>("GET", `/v1/outlets/${r.m.outletId}/z-report`);
       expect(z.data.sales.total).toBe(taken);
       expect(z.data.tenders.reduce((a, t) => a + t.amount, 0)).toBe(taken);
-      expect(z.data.cash.expected).toBe(taken);
+      expect(wholeDayCash(z.data.cash).expected).toBe(taken);
       const sum = await r.must<{ data: { totals: { total: number } } }>("GET", `/v1/reports/sales-summary?outlet_id=${r.m.outletId}`);
       expect(sum.data.totals.total).toBe(taken);
       const closed = await r.must<{ data: { variance_cents: number; expected_cash_cents: number } }>("POST", `/v1/shifts/${shift.data.id}/close`, { counted_cash_cents: taken });
@@ -337,7 +337,7 @@ describe("refunds", () => {
     // 40 × 0.03 = 1.20 refunded: the drawer pays out 1.20, rounded on the running total, not 40 × 0.05 = 2.00.
     expect(cashOut).toBe(120);
     const z = await r.must<{ data: ZReport & { cash: { refunds: number } } }>("GET", `/v1/outlets/${r.m.outletId}/z-report`);
-    expect(z.data.cash.refunds).toBe(120);
+    expect(wholeDayCash(z.data.cash).refunds).toBe(120);
   });
 });
 
@@ -438,10 +438,14 @@ describe("shifts, business days and the Z-report", () => {
       const z = (await call<{ data: Z }>("GET", `/v1/outlets/${w.m.outletId}/z-report?station_id=${station}`, { token: w.m.admin.token })).body.data;
       reconciles(z);
     }
+    // One scope for a station's report (C-2): the order belongs to station 2, which settled it, so its sale and its
+    // tender are both station 2's, and station 1's report has neither.
+    const [settled] = await db.sql<{ n: number }[]>`select count(*)::int as n from payments where order_id = ${o.body.data.id} and station_id = ${w.ids.station2}`;
+    expect(settled!.n).toBe(1);
     const z2 = (await call<{ data: Z }>("GET", `/v1/outlets/${w.m.outletId}/z-report?station_id=${w.ids.station2}`, { token: w.m.admin.token })).body.data;
-    expect(z2.reconciliation.paid_on_other_orders).toBeGreaterThanOrEqual(a.body.data.balance);
+    expect(z2.reconciliation.tenders).toBeGreaterThanOrEqual(a.body.data.balance);
     const z1 = (await call<{ data: Z }>("GET", `/v1/outlets/${w.m.outletId}/z-report?station_id=${w.ids.station}`, { token: w.m.admin.token })).body.data;
-    expect(z1.reconciliation.paid_elsewhere).toBeGreaterThanOrEqual(a.body.data.balance);
+    reconciles(z1);
     const all = (await call<{ data: Z }>("GET", `/v1/outlets/${w.m.outletId}/z-report`, { token: w.m.admin.token })).body.data;
     reconciles(all);
   });

@@ -32,14 +32,15 @@ export function OurTableView({ session, orderView, loading, error, onBack, onCal
   const inRound = new Set(rounds.flatMap((r) => r.line_ids));
   const staffLines = lines.filter((l) => !inRound.has(l.id));
 
-  const renderLine = (l: GuestLine) => (
+  // "Yours" once per round: on the round's header when the round is this guest's, on a line only where the round is not (D notes).
+  const renderLine = (l: GuestLine, roundIsMine = false) => (
     <li key={l.id} className="flex flex-col gap-1 py-3">
       <LineText line={l} struck={l.status === "voided"} />
       <span className="flex items-center gap-2">
         <Pill size="sm" tone={pillTone[lineStatusTone(l, order)]}>
           {lineStatusLabel(l, order)}
         </Pill>
-        {l.mine ? yours : null}
+        {l.mine && !roundIsMine ? yours : null}
       </span>
     </li>
   );
@@ -79,7 +80,7 @@ export function OurTableView({ session, orderView, loading, error, onBack, onCal
                 extra={r.mine && r.guest_name ? yours : null}
               />
               {stage === "rejected" && r.reject_reason ? <p className="px-4 pb-2 text-[13.5px] text-status-alert wrap-anywhere">Not accepted: {r.reject_reason}</p> : null}
-              {rl.length ? <ul className="flex flex-col divide-y divide-rule-subtle border-t border-rule-subtle px-4">{rl.map(renderLine)}</ul> : null}
+              {rl.length ? <ul className="flex flex-col divide-y divide-rule-subtle border-t border-rule-subtle px-4">{rl.map((l) => renderLine(l, r.mine))}</ul> : null}
             </section>
           );
         })}
@@ -88,7 +89,7 @@ export function OurTableView({ session, orderView, loading, error, onBack, onCal
             <div className="px-4 pt-3.5 pb-2.5">
               <p className="font-display text-[15.5px] font-semibold text-ink">Added by staff</p>
             </div>
-            <ul className="flex flex-col divide-y divide-rule-subtle border-t border-rule-subtle px-4">{staffLines.map(renderLine)}</ul>
+            <ul className="flex flex-col divide-y divide-rule-subtle border-t border-rule-subtle px-4">{staffLines.map((l) => renderLine(l))}</ul>
           </section>
         ) : null}
 

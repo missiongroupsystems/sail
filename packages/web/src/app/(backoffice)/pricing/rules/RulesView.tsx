@@ -12,6 +12,7 @@ import { formatBps } from "@/lib/format";
 import { keys } from "@/lib/query";
 import { RuleSheet, type RuleSheetState } from "./RuleSheet";
 import { bodyOf, type RuleBody } from "./rule-form";
+import { useCan } from "@/lib/can";
 
 export type RuleRow = { rule_key: string; current: PricingRuleVersion; versions: PricingRuleVersion[]; body: RuleBody };
 
@@ -74,6 +75,8 @@ export function describeScope(b: RuleBody, categories: Category[]): string {
 }
 
 export function RulesView({ initialVersions, outlets, brands, categories, groups }: { initialVersions: PricingRuleVersion[]; outlets: Outlet[]; brands: Brand[]; categories: Category[]; groups: CustomerGroup[] }) {
+  const canCreate = useCan("pricing_rules.create_version");
+  const canValidate = useCan("pricing_rules.validate").ok;
   const { locale, stamp, businessDay, isoDate } = useLocale();
   const [sheet, setSheet] = useState<RuleSheetState>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -86,6 +89,8 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
   const validation = useQuery({
     queryKey: keys.pricingValidation,
     queryFn: () => req(api.POST("/v1/pricing-rules/validate", { body: {} })).then((r) => r.data.warnings),
+    // The checks are a Manager's: below that they are left out rather than shown as a refusal.
+    enabled: canValidate,
     staleTime: 30_000,
   });
 
@@ -141,6 +146,14 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
             {/* A database seeded before the fix holds the epoch for "from the start"; it is not a date anyone set. */}
             {new Date(r.current.effective_from).getTime() <= 0 ? "from the start" : businessDay(isoDate(new Date(r.current.effective_from)))}
           </span>
+          {/* A later version waiting to take over is shown on the rule's row, not hidden behind the active one (E-N11). */}
+          {r.versions
+            .filter((v) => v.status === "scheduled" && v.version > r.current.version)
+            .map((v) => (
+              <span key={v.version} className="text-[12.5px] leading-4 whitespace-nowrap text-status-sent tabular" title={stamp(v.effective_from)}>
+                v{v.version} scheduled from {businessDay(isoDate(new Date(v.effective_from)))}
+              </span>
+            ))}
         </span>
       ),
     },
@@ -165,10 +178,14 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
           ) : null}
         </p>
         <div className="flex items-center gap-2">
-          <Button size="sm" onPress={() => setSheet({ mode: "create", kind: "discount" })}>Add discount</Button>
-          <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create", kind: "fee" })}>
+          {canCreate.ok ? (
+            <Button size="sm" onPress={() => setSheet({ mode: "create", kind: "discount" })}>Add discount</Button>
+          ) : null}
+          {canCreate.ok ? (
+            <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create", kind: "fee" })}>
             Add fee
           </Button>
+          ) : null}
         </div>
       </div>
 
@@ -223,19 +240,22 @@ function ValidationPanel({ blocking, advisory, rows, isPending, error, onOpen }:
       {open && total ? (
         <ul className="flex flex-col border-t border-rule-subtle">
           {[...blocking, ...advisory].map((w, i) => (
-            <li key={`${w.code}-${i}`} className="flex flex-wrap items-start gap-3 border-b border-rule-subtle px-5 py-2.5 last:border-b-0">
-              <Icon icon={w.severity === "blocking" ? AlertTriangle : Info} size={16} className={`mt-0.5 ${w.severity === "blocking" ? "text-status-alert" : "text-ink-2"}`} />
-              <span className="min-w-0 flex-1">
+            // The message takes the row; the rule buttons go under it when the row is narrow, never squeezing it to a word a line (F-N1).
+            // The check's code is for machines, so it is not shown (E-N12).
+            <li key={`${w.code}-${i}`} className="flex items-start gap-3 border-b border-rule-subtle px-5 py-2.5 last:border-b-0">
+              <Icon icon={w.severity === "blocking" ? AlertTriangle : Info} size={16} className={`mt-0.5 shrink-0 ${w.severity === "blocking" ? "text-status-alert" : "text-ink-2"}`} />
+              <span className="flex min-w-0 flex-1 flex-wrap items-start justify-between gap-x-3 gap-y-1">
+              <span className="min-w-[min(100%,240px)] flex-1">
                 <span className="text-ink">{w.message}</span>
-                <span className="ml-2 text-caption text-ink-2">{w.code}</span>
                 {w.product_ids?.length ? <span className="ml-2 text-caption text-ink-2">{w.product_ids.length} products</span> : null}
               </span>
               <span className="flex flex-wrap gap-1">
                 {w.rule_ids.map((id) => (
-                  <Button key={id} variant="quiet" className="min-h-8 px-2 text-caption" onPress={() => onOpen(id)}>
+                  <Button key={id} variant="quiet" className="min-h-11 px-2 text-caption" onPress={() => onOpen(id)}>
                     {nameOf(id)}
                   </Button>
                 ))}
+              </span>
               </span>
             </li>
           ))}

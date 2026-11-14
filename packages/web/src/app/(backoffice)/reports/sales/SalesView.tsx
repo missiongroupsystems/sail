@@ -56,16 +56,19 @@ export function SalesView({ outlets, scope, initialOutletId, today }: { outlets:
     queryKey: ["reports", "sales", range.query],
     queryFn: () => req(api.GET("/v1/reports/sales-summary", { params: { query: range.query } })).then((r) => (r as { data: SalesSummary }).data),
     enabled: range.outletId !== null && range.valid,
-    placeholderData: keepPreviousData,
+    // Dates that cannot make a range show no figures, not the last range's under the new dates (E-N9).
+    placeholderData: range.valid ? keepPreviousData : undefined,
   });
   const t = report.data?.totals;
   const taxMode = useSession().merchant.settings.tax_mode;
+  // Tips and rounding columns only where the merchant has them (F notes), so the table fits at 1024 (F-N2).
+  const tipsEnabled = Boolean(useSession().merchant.settings.tips_enabled);
   const blocks = report.data && t && report.data.refunds ? refundBlocks({ ...t, taxes: report.data.taxes }, report.data.refunds, taxMode, report.data.tax_due) : null;
 
   return (
     <>
       <ReportRange outlets={outlets} scope={scope} range={range} />
-      {report.isPending && range.outletId ? <Skeleton lines={6} /> : null}
+      {report.isPending && range.outletId && range.valid ? <Skeleton lines={6} /> : null}
       <InlineError error={report.error} />
       {report.data && t ? (
         <div className={report.isPlaceholderData ? "grid items-start gap-6 opacity-60 lg:grid-cols-2" : "grid items-start gap-6 lg:grid-cols-2"}>
@@ -117,7 +120,7 @@ export function SalesView({ outlets, scope, initialOutletId, today }: { outlets:
           )}
           <div className="flex min-w-0 flex-col gap-6">
             <Panel title="By tender" body="flush">
-              <DataTable aria-label="Sales by tender" flush="inset" columns={tenderColumns} rows={report.data.by_tender} rowKey={(t) => t.tender} emptyState={<EmptyState variant="centred" title="No payments in this range" />} />
+              <DataTable aria-label="Sales by tender" flush="inset" columns={tenderColumns.filter((c) => (c.key !== "tips" || tipsEnabled || report.data!.by_tender.some((t) => t.tips)) && (c.key !== "rounding" || report.data!.by_tender.some((t) => t.rounding)))} rows={report.data.by_tender} rowKey={(t) => t.tender} emptyState={<EmptyState variant="centred" title="No payments in this range" />} />
             </Panel>
             <Panel title="By category" body="flush">
               <DataTable aria-label="Sales by category" flush="inset" columns={categoryColumns} rows={report.data.by_category} rowKey={(c) => c.category_id ?? c.category} emptyState={<EmptyState variant="centred" title="No items in this range" />} />

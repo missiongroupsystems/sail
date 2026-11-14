@@ -43,7 +43,8 @@ export function ActionDock({ primary, secondaries = [], offline, className }: Ac
   // a narrow column (under 360px) does so always. Their names stay for screen readers, and the row still wraps as a
   // last resort, so the primary action is never cut off.
   const crowded = secondaries.length >= 3 || [primary, ...secondaries].some((a) => a.needsApproval && !(offline && a.mutates !== false));
-  const iconOnly = crowded ? "sr-only" : "@max-[360px]:sr-only";
+  // Two secondaries keep their names in the 1024-wide order column (about 330px of dock); only a narrower one drops them (B notes).
+  const iconOnly = crowded ? "sr-only" : secondaries.length <= 2 ? "@max-[300px]:sr-only" : "@max-[360px]:sr-only";
   const render = (a: DockAction, variant: "primary" | "secondary") => {
     const blocked = offline && a.mutates !== false;
     return (

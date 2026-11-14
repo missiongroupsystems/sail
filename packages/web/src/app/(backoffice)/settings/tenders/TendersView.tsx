@@ -13,6 +13,8 @@ import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { TenderType } from "@/lib/api/types";
 import { keys } from "@/lib/query";
+import { useFreshErrors } from "@/lib/fresh-errors";
+import { useCan } from "@/lib/can";
 
 type SheetState = { mode: "create" } | { mode: "edit"; tender: TenderType } | null;
 
@@ -31,6 +33,7 @@ const defaults = (t: TenderType | null): Values => ({ name: t?.name ?? "", is_ca
 
 /** Payment methods (the API says tender). */
 export function TendersView({ initialTenders }: { initialTenders: TenderType[] }) {
+  const canCreate = useCan("tender_types.create");
   const [showArchived, setShowArchived] = useState(false);
   const [sheet, setSheet] = useState<SheetState>(null);
   const tenders = useQuery({
@@ -58,9 +61,11 @@ export function TendersView({ initialTenders }: { initialTenders: TenderType[] }
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
           </Switch>
-          <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
+          {canCreate.ok ? (
+            <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
             Add payment method
           </Button>
+          ) : null}
         </div>
       </div>
       <DataTable
@@ -109,6 +114,8 @@ function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
     onSuccess: settle,
   });
   const busy = save.isPending || archive.isPending;
+  const mayEdit = useCan("tender_types.update");
+  useFreshErrors(state, form.watch(), save, archive);
   return (
     <Sheet
       isOpen={state !== null}
@@ -125,7 +132,7 @@ function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
           <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" type="submit" form="tender-form" isPending={save.isPending}>
+          <Button variant="primary" type="submit" form="tender-form" isDisabled={!mayEdit.ok} isPending={save.isPending}>
             {tender ? "Save changes" : "Add payment method"}
           </Button>
         </>
@@ -138,6 +145,12 @@ function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
             <RhfTextField control={form.control} name="sort" label="Order" numeric inputMode="numeric" placeholder={String(nextSort)} />
           </div>
         </SheetSection>
+        {(tender as { provider?: string | null } | null)?.provider ? (
+          // The provider is set where the payment provider is configured; its own sheet says which it is (E-L10).
+          <SheetSection title="Payment provider">
+            <TwoLine primary={`Sent to ${(tender as { provider?: string | null }).provider}`} meta={(tender as { terminal_id?: string | null }).terminal_id ? `Terminal ${(tender as { terminal_id?: string | null }).terminal_id}` : "The amount goes to the terminal and the bill updates when the guest has paid."} />
+          </SheetSection>
+        ) : null}
         <SheetSection title="Behaviour">
           <RhfSwitch control={form.control} name="is_cash" description="Cash rounding applies and change is calculated.">
             Cash
@@ -155,6 +168,7 @@ function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
             Needs a reference
           </RhfSwitch>
         </SheetSection>
+        {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
         <InlineError error={save.error ?? archive.error} />
       </form>
     </Sheet>

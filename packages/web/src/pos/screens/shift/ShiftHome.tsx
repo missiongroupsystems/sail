@@ -1,6 +1,7 @@
 "use client";
 
 import { Button, CashCounter, cx, cashCounterTotal, Checklist, Money, ReasonPicker, Skeleton, type CashCounterMode, type ChecklistItem, useLocale } from "@sail/ui";
+import { drawerCap } from "@sail/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toApiError } from "@/lib/api";
@@ -25,7 +26,7 @@ function varianceRefusal(details: Record<string, unknown> | undefined): Variance
 type Phase = { kind: "idle" } | { kind: "checklist" } | { kind: "count" } | { kind: "reason"; cash: VarianceRefusal; reason?: string | null } | { kind: "result"; shift: Shift; report: ZReport };
 
 /** Open shift → float; Close shift → checklist, blind count, result with the register's expected, counted and variance. */
-export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
+export function ShiftHome({ onShowReport, onCounting }: { onShowReport: () => void; onCounting?: (counting: boolean) => void }) {
   const { money, clock } = useLocale();
   const api = useApi();
   const qc = useQueryClient();
@@ -48,6 +49,8 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [left, setLeft] = useState<Set<string>>(new Set());
+  const counting = phase.kind === "checklist" || phase.kind === "count" || phase.kind === "reason";
+  useEffect(() => onCounting?.(counting), [counting, onCounting]);
 
   // The float defaults to the last close's figure.
   useEffect(() => {
@@ -60,6 +63,8 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
   }, [closed.data, lastClosed, mine, seeded, denominations.length]);
 
   const total = cashCounterTotal(mode, digits, counts, denominations);
+  const cap = drawerCap(denominations.map((d) => d.cents));
+  const over = total > cap;
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ["pos", "shifts", station.outlet_id] });
     void qc.invalidateQueries({ queryKey: ["pos", "z-report", station.outlet_id] });
@@ -86,8 +91,11 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
   const rounds = usePendingRounds(station.outlet_id);
   const late = useLateJobs(station.outlet_id);
   const requests = useOpenServiceRequests(station.outlet_id);
-  const openTables = (orders.data ?? []).filter((o) => o.order_type === "dine_in").length;
-  const openElsewhere = (orders.data ?? []).length - openTables;
+  // A station's shift counts the orders opened at this station; an outlet-wide shift counts them all. QR orders, tickets
+  // and table requests belong to no station, so those lines say "at this outlet" (B notes).
+  const mineOrders = (orders.data ?? []).filter((o) => !mine?.station_id || o.station_id === mine.station_id);
+  const openTables = mineOrders.filter((o) => o.order_type === "dine_in").length;
+  const openElsewhere = mineOrders.length - openTables;
   const where = [openTables ? `${openTables} on the floor` : null, openElsewhere ? `${openElsewhere} in Orders` : null].filter(Boolean).join(", ");
   const openOrdersDetail = `${where ? `${where}. ` : ""}Pay or cancel them, or carry them to the next shift.`;
   const checklist: ChecklistItem[] = useMemo(() => {
@@ -103,12 +111,12 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
     return [
       // Tables are on the floor and the rest in Orders: the line says how many are where, and View opens Orders when
       // anything is there (the floor otherwise), so it never opens an empty list.
-      mk("orders", (orders.data ?? []).length, "open order", "open orders", openOrdersDetail, () => go({ kind: openElsewhere > 0 ? "orders" : "floor" })),
-      mk("rounds", (rounds.data ?? []).length, "QR order waiting", "QR orders waiting", "Accept or reject them from the Now rail.", () => go({ kind: "floor" })),
-      mk("late", (late.data ?? []).length, "ticket not printed", "tickets not printed", "Send them to the backup printer or retry from the banner.", () => go({ kind: "floor" })),
-      mk("requests", (requests.data ?? []).length, "table request open", "table requests open", "Mark them done from the Now rail.", () => go({ kind: "floor" })),
+      mk("orders", mineOrders.length, mine?.station_id ? "open order from this station" : "open order", mine?.station_id ? "open orders from this station" : "open orders", openOrdersDetail, () => go({ kind: openElsewhere > 0 ? "orders" : "floor" })),
+      mk("rounds", (rounds.data ?? []).length, "QR order waiting at this outlet", "QR orders waiting at this outlet", "Accept or reject them from the Now rail.", () => go({ kind: "floor" })),
+      mk("late", (late.data ?? []).length, "ticket not printed at this outlet", "tickets not printed at this outlet", "Send them to the backup printer or retry from the banner.", () => go({ kind: "floor" })),
+      mk("requests", (requests.data ?? []).length, "table request open at this outlet", "table requests open at this outlet", "Mark them done from the Now rail.", () => go({ kind: "floor" })),
     ];
-  }, [orders.data, rounds.data, late.data, requests.data, left, go, openElsewhere, openOrdersDetail]);
+  }, [mineOrders.length, mine?.station_id, rounds.data, late.data, requests.data, left, go, openElsewhere, openOrdersDetail]);
   const checklistDone = checklist.every((c) => c.status !== "open");
 
   const startClose = () => {
@@ -277,13 +285,13 @@ export function ShiftHome({ onShowReport }: { onShowReport: () => void }) {
         footer={
           <>
             {!canOpen ? <p className="text-body text-ink-2">Opening a shift needs a Cashier or above. Switch user to open it.</p> : null}
-            <Button size="lg" variant="primary" isDisabled={offline || busy || !canOpen || !entered} isPending={busy} onPress={doOpen}>
+            <Button size="lg" variant="primary" isDisabled={offline || busy || !canOpen || !entered || over} isPending={busy} onPress={doOpen}>
               {offline ? "Offline" : entered ? `Open shift with ${money(total)}` : "Open shift"}
             </Button>
           </>
         }
       >
-        <CashCounter mode={mode} onModeChange={setMode} totalDigits={digits} onTotalDigitsChange={setDigits} counts={counts} onCountsChange={setCounts} denominations={denominations} isDisabled={busy || !canOpen} totalLabel="Opening float" />
+        <CashCounter mode={mode} onModeChange={setMode} totalDigits={digits} onTotalDigitsChange={setDigits} counts={counts} onCountsChange={setCounts} denominations={denominations} isDisabled={busy || !canOpen} totalLabel="Opening float" max={cap} />
       </Card>
     );
   }

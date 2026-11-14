@@ -31,7 +31,7 @@ export default async function TodayPage() {
         description={
           <>
             {longDate()} · {summary}.{" "}
-            <Link href="/settings/merchant" className="whitespace-nowrap text-ink underline underline-offset-4">
+            <Link href="/settings/merchant" className="whitespace-nowrap text-ink underline underline-offset-4 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
               Merchant settings
             </Link>
           </>

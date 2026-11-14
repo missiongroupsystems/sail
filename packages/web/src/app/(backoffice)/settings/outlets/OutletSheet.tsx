@@ -15,6 +15,8 @@ import { api } from "@/lib/api.browser";
 import type { Outlet, OutletCreate } from "@/lib/api/types";
 import { useSession } from "@/lib/session-context";
 import { formToHours, hoursToForm, TIME_RE, WEEKDAY_LABEL, WEEKDAYS, type HoursForm } from "@/lib/hours";
+import { useFreshErrors } from "@/lib/fresh-errors";
+import { useCan } from "@/lib/can";
 
 export type OutletSheetState = { mode: "create" } | { mode: "edit"; outlet: Outlet } | null;
 
@@ -102,6 +104,8 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
   const busy = save.isPending || archive.isPending;
   const error = save.error ?? archive.error;
 
+  const mayEdit = useCan("outlets.update");
+  useFreshErrors(state, form.watch(), save, archive);
   return (
     <Sheet
       isOpen={state !== null}
@@ -126,7 +130,7 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
           <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" type="submit" form="outlet-form" isPending={save.isPending} isDisabled={archive.isPending}>
+          <Button variant="primary" type="submit" form="outlet-form" isPending={save.isPending} isDisabled={!mayEdit.ok || archive.isPending}>
             {outlet ? "Save changes" : "Add outlet"}
           </Button>
         </>

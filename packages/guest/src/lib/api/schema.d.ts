@@ -124,6 +124,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/links/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Whose password a link sets
+         * @description No authentication; reads a live invitation or reset link without using it, so the page can name the account (its name and email) before the password is chosen.
+         */
+        post: operations["auth.inspect_link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/links/accept": {
         parameters: {
             query?: never;
@@ -1592,6 +1612,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/stations/unpair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unpair this device from its station
+         * @description Called by the paired device itself (its station token). Ends the pairing: the token stops working, the PIN sessions on the device end, and the back office shows the station as not paired until it is paired again with a new code.
+         */
+        post: operations["stations.unpair"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/stations/sessions": {
         parameters: {
             query?: never;
@@ -1791,7 +1831,7 @@ export interface paths {
         put?: never;
         /**
          * Move an order to another table
-         * @description The target table must have no open order.
+         * @description The target table must have no open order. The order's kitchen tickets show the new table.
          */
         post: operations["orders.move_table"];
         delete?: never;
@@ -3716,6 +3756,7 @@ export interface operations {
                             /** @enum {string|null} */
                             role: "server" | "cashier" | "manager" | "finance" | "admin" | null;
                             name: string | null;
+                            initials: string | null;
                             outlet_scope: string;
                             outlet_id: string | null;
                             station_id: string | null;
@@ -4281,6 +4322,142 @@ export interface operations {
                             businessDate: string;
                         }[];
                         warnings: string[];
+                    };
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Permission denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Conflict (state, version or idempotency) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Invariant violation or unavailable */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    "auth.inspect_link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Request body */
+        requestBody: {
+            content: {
+                "application/json": {
+                    token: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @enum {string} */
+                            kind: "invite" | "reset";
+                            name: string;
+                            email: string;
+                        };
                     };
                 };
             };
@@ -19579,6 +19756,147 @@ export interface operations {
                                 [key: string]: unknown;
                             };
                         };
+                    };
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Permission denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Conflict (state, version or idempotency) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Invariant violation or unavailable */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    "stations.unpair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Request body */
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            unpaired: boolean;
+                        };
+                        events: {
+                            id: string;
+                            seq: number;
+                            type: string;
+                            occurredAt: string;
+                            businessDate: string;
+                        }[];
+                        warnings: string[];
                     };
                 };
             };

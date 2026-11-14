@@ -6,8 +6,8 @@ export type GuestStreamOptions = {
   /** Something about the table's order changed (or may have): refetch `/v1/guest/order`. */
   onChange: () => void;
   onStatus?: (status: GuestStreamStatus) => void;
-  /** The register rejected the token: the table session has ended. */
-  onUnauthenticated?: () => void;
+  /** The register rejected the token: the table session has ended (its reason in `details.reason`, when it gives one). */
+  onUnauthenticated?: (details?: Record<string, unknown>) => void;
   /** How often to refetch while there is no order to stream (15 s). */
   pollMs?: number;
 };
@@ -118,7 +118,8 @@ export class GuestStream {
       const res = await fetch(`${this.opts.baseUrl}/v1/guest/stream`, { headers: { authorization: `Bearer ${token}`, accept: "text/event-stream" }, signal: controller.signal, cache: "no-store" });
       if (res.status === 401) {
         this.abort = null;
-        this.opts.onUnauthenticated?.();
+        const body = (await res.json().catch(() => null)) as { details?: Record<string, unknown> } | null;
+        this.opts.onUnauthenticated?.(body?.details);
         this.stop();
         return;
       }

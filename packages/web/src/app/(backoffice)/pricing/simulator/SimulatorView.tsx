@@ -4,7 +4,7 @@ import { zonedInputToIso } from "@sail/shared";
 import { Badge, Button, Checkbox, CheckboxGroup, EmptyState, Icon, InlineError, Money, MoneyField, Panel, PercentField, Select, taxRows, TextField, useLocale, ValueRows, kindTone, DateField } from "@sail/ui";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Minus, Plus, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CHANNELS, CHANNEL_LABEL, ORDER_TYPES, ORDER_TYPE_LABEL, label } from "@/components/backoffice/labels";
 import { ProductSearch } from "@/components/backoffice/ProductSearch";
 import { Warnings } from "@/components/backoffice/Warnings";
@@ -55,6 +55,9 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
           },
         }),
       ).then((r) => r.data),
+    onMutate: () => {
+      pricedFor.current = inputs;
+    },
   });
 
   const addLine = (p: Product) =>
@@ -64,7 +67,17 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
       return [...prev, { line_id: crypto.randomUUID(), product: p, quantity: 1, open_price: null }];
     });
   const setQty = (id: string, d: number) => setLines((prev) => prev.map((l) => (l.line_id === id ? { ...l, quantity: Math.max(1, l.quantity + d) } : l)));
-  const lineName = (id: string) => lines.find((l) => l.line_id === id)?.product.name ?? id.slice(0, 8);
+  const lineName = (id: string) => lines.find((l) => l.line_id === id)?.product.name ?? "a removed line";
+  // A result belongs to the basket it was priced for: any change to the basket or the options clears it (E-N5).
+  const inputs = JSON.stringify([outletId, brandId, orderType, channel, groupIds, lines.map((l) => [l.line_id, l.product.id, l.quantity, l.open_price]), manuals, taxMode, at]);
+  const resetSim = simulate.reset;
+  const pricedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (pricedFor.current !== null && pricedFor.current !== inputs) {
+      pricedFor.current = null;
+      resetSim();
+    }
+  }, [inputs, resetSim]);
   const taxClasses = useQuery({ queryKey: ["tax-classes", "simulator"], queryFn: () => req(api.GET("/v1/tax-classes")).then((r) => r.data as unknown as { id: string; name: string; rates?: { id: string; name: string }[] }[]), staleTime: 300_000 });
   // The register's trace names lines and rates by id; people read the basket's names (live-test E-L11, F-9).
   const taxNames = new Map((taxClasses.data ?? []).flatMap((c) => [[c.id, c.name] as const, ...(c.rates ?? []).map((r) => [r.id, r.name] as const)]));
@@ -143,7 +156,8 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
               const open = rule?.body.value.type === "open";
               const percent = rule?.body.calc === "percent";
               return (
-                <div key={m.application_id} className="grid gap-3 rounded-[12px] border border-rule p-3 sm:grid-cols-[1fr_140px_1fr_auto]">
+                // The reason gets its own full-width row: squeezed into the rule's row it was 18px wide (E-N6).
+                <div key={m.application_id} className="grid gap-3 rounded-[12px] border border-rule p-3 sm:grid-cols-[minmax(0,1fr)_140px_auto]">
                   <Select aria-label="Manual rule" selectedKey={m.rule_id} onSelectionChange={(k) => k && setManuals((prev) => prev.map((x, j) => (j === i ? { ...x, rule_id: k } : x)))} items={manualRules.map((r) => ({ id: r.v.rule_key, label: r.body.name }))} />
                   {open ? (
                     percent ? (
@@ -154,10 +168,10 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
                   ) : (
                     <span className="self-center text-caption text-ink-2">Fixed value</span>
                   )}
-                  <TextField aria-label="Reason" placeholder="Reason" value={m.reason} onChange={(v) => setManuals((prev) => prev.map((x, j) => (j === i ? { ...x, reason: v } : x)))} />
                   <Button variant="quiet" iconOnly aria-label="Remove manual rule" onPress={() => setManuals((prev) => prev.filter((_, j) => j !== i))}>
                     <Icon icon={X} size={16} />
                   </Button>
+                  <TextField aria-label="Reason" placeholder="Reason" value={m.reason} onChange={(v) => setManuals((prev) => prev.map((x, j) => (j === i ? { ...x, reason: v } : x)))} className="sm:col-span-3" />
                 </div>
               );
             })}
@@ -182,7 +196,7 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
 
       <div className="flex min-w-0 flex-col gap-6">
         {!result ? (
-          <EmptyState title="No result yet" hint="Build a basket and tap Price this basket." />
+          <EmptyState title="No result yet" hint={lines.length ? "Tap Price this basket for the register's figures for it as it is now." : "Build a basket and tap Price this basket."} />
         ) : (
           <>
             <Panel title="Totals" aside={<Badge tone={result.pricing_status === "frozen" ? "sent" : "paid"}>{result.pricing_status}</Badge>}>

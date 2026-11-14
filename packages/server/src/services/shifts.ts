@@ -1,5 +1,5 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
-import { formatMoney, type TaxAmount, type TaxBreakdown } from "@sail/shared";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { drawerCap, formatMoney, type TaxAmount, type TaxBreakdown } from "@sail/shared";
 import { db, tx } from "../db/client.js";
 import { businessDayCloses, merchantSettings, orderAdjustments, orderLines, orders, payments, shifts, staff } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -29,8 +29,12 @@ export type ZReport = {
   tenders: { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number }[];
   /** Register-computed totals across tenders, so clients never add rows up: `non_cash` is the figure to compare with the terminal's end-of-day total. */
   tenders_summary: { cash: number; non_cash: number; tips: number; count: number };
-  /** `expected = float + cash_payments + rounding + tips - refunds`: cash tips stay in the drawer until they are paid out; `refunds` is the cash given back, tips included. */
-  cash: { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number; counted: number | null; variance: number | null };
+  /**
+   * `expected = float + cash_payments + rounding + tips - refunds`: cash tips stay in the drawer until they are paid out; `refunds` is the cash given back, tips included.
+   * For a day or a station-day every figure here covers the same drawers, the closed shifts, so expected, counted and variance agree;
+   * drawers still open are left out and given apart in `open_shifts` (their number, floats and the cash expected in them so far).
+   */
+  cash: { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number; counted: number | null; variance: number | null; open_shifts: { count: number; float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number } };
   voids: { count: number; quantity: number; value: number };
   /**
    * `amount` is the bills' share given back, `net + fees + tax = amount`; `taxes` is the tax given back, by component: a
@@ -52,7 +56,7 @@ export type ZReport = {
   generated_at: string;
 };
 
-type Scope = { outletId: string; businessDate: string; stationId?: string | null; shiftId?: string | null };
+type Scope = { outletId: string; businessDate: string; stationId?: string | null; shiftId?: string | null; cashShiftIds?: string[] | null };
 
 /** Refund figures arrive in v0.7 through this provider. */
 let refundProvider: (scope: Scope) => Promise<{ count: number; amount: number; net: number; tax: number; tips: number; cash_amount: number; taxes: TaxAmount[] }> = async () => ({ count: 0, amount: 0, net: 0, tax: 0, tips: 0, cash_amount: 0, taxes: [] });
@@ -60,19 +64,22 @@ export function registerRefundTotals(fn: typeof refundProvider) {
   refundProvider = fn;
 }
 
-export async function zReport(scope: Scope, cashCounts: { float: number; counted: number | null } = { float: 0, counted: null }): Promise<ZReport> {
-  const orderWhere = and(eq(orders.outletId, scope.outletId), eq(orders.businessDate, scope.businessDate), scope.stationId ? eq(orders.stationId, scope.stationId) : sql`true`);
+export async function zReport(scope: Scope, cashCounts: { float: number; counted: number | null; openShifts?: { ids: string[]; float: number } } = { float: 0, counted: null }): Promise<ZReport> {
+  // One scope for a station's report: an order belongs to the station that settled it (took its last payment), or to
+  // the station that opened it while nothing is paid. The tenders are what the station took, so its sales, Collected and
+  // tenders cover the same orders; an order paid at two stations shows up in `reconciliation`.
+  const orderWhere = and(eq(orders.outletId, scope.outletId), eq(orders.businessDate, scope.businessDate), scope.stationId ? sql`coalesce((select p.station_id from payments p where p.order_id = ${orders.id} and p.status = 'recorded' order by p.created_at desc, p.id desc limit 1), ${orders.stationId}) = ${scope.stationId}` : sql`true`);
   const completed = and(orderWhere, eq(orders.status, "completed"));
   const [o] = await tx()<{ count: number; covers: number; gross: number; discounts: number; fees: number; tax: number; net: number; total: number }[]>`
     select count(*)::int as count, coalesce(sum(pax),0)::bigint as covers, coalesce(sum(subtotal),0)::bigint as gross, coalesce(sum(discount_total),0)::bigint as discounts,
            coalesce(sum(fees_net),0)::bigint as fees, coalesce(sum(tax_total),0)::bigint as tax, coalesce(sum(net_sales),0)::bigint as net, coalesce(sum(total),0)::bigint as total
     from report_orders r
-    where r.outlet_id = ${scope.outletId} and r.business_date = ${scope.businessDate} ${scope.stationId ? tx()`and r.station_id = ${scope.stationId}` : tx()``}`;
+    where r.outlet_id = ${scope.outletId} and r.business_date = ${scope.businessDate} ${scope.stationId ? tx()`and coalesce((select p.station_id from payments p where p.order_id = r.order_id and p.status = 'recorded' order by p.created_at desc, p.id desc limit 1), r.station_id) = ${scope.stationId}` : tx()``}`;
   const byType = await db().select({ t: orders.orderType, n: sql<number>`count(*)::int` }).from(orders).where(completed).groupBy(orders.orderType);
   const taxes = await tx()<TaxBreakdown[]>`
     select t->>'name' as name, (t->>'bps')::int as bps, coalesce(sum((t->>'taxable')::bigint),0)::bigint as taxable, coalesce(sum((t->>'amount')::bigint),0)::bigint as amount
     from orders o, jsonb_array_elements(o.taxes) t
-    where o.outlet_id = ${scope.outletId} and o.business_date = ${scope.businessDate} and o.status = 'completed' ${scope.stationId ? tx()`and o.station_id = ${scope.stationId}` : tx()``}
+    where o.outlet_id = ${scope.outletId} and o.business_date = ${scope.businessDate} and o.status = 'completed' ${scope.stationId ? tx()`and coalesce((select p.station_id from payments p where p.order_id = o.id and p.status = 'recorded' order by p.created_at desc, p.id desc limit 1), o.station_id) = ${scope.stationId}` : tx()``}
     group by 1, 2 order by 2 desc, 1`;
   const [open] = await db().select({ n: sql<number>`count(*)::int` }).from(orders).where(and(orderWhere, sql`${orders.status} in ('open','fired','ready','out_for_delivery')`));
   const adj = await db()
@@ -95,6 +102,9 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
     .innerJoin(orders, eq(orders.id, orderLines.orderId))
     .where(and(orderWhere, eq(orderLines.status, "voided")));
   const refunds = await refundProvider(scope);
+  // The drawer figures of a day cover its closed shifts only (see `cash`), so they need their own cash totals.
+  const drawerIds = scope.shiftId ? null : (scope.cashShiftIds ?? null);
+  const drawer = drawerIds ? await drawerCash(scope, drawerIds) : null;
   const reversed = await db()
     .select({ payment_id: payments.id, order_no: orders.orderNo, tender: payments.tenderName, is_cash: payments.isCash, amount: payments.amount, reversed_at: payments.reversedAt, reversed_by: staff.name, reason: payments.reversedReason })
     .from(payments)
@@ -113,9 +123,11 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
     // A payment with no shift or no station makes the scope NULL, not false; it was still paid outside this report.
     .where(and(completed, eq(payments.status, "recorded"), sql`not coalesce(${payScope}, false)`));
   const cashPayments = tenders.filter((t) => t.is_cash).reduce((s, t) => s + t.amount, 0);
-  const rounding = tenders.filter((t) => t.is_cash).reduce((s, t) => s + t.rounding, 0);
-  const cashTips = tenders.filter((t) => t.is_cash).reduce((s, t) => s + t.tips, 0);
-  const expected = cashCounts.float + cashPayments + rounding + cashTips - refunds.cash_amount;
+  const drawerPayments = drawer ? drawer.payments : cashPayments;
+  const rounding = drawer ? drawer.rounding : tenders.filter((t) => t.is_cash).reduce((s, t) => s + t.rounding, 0);
+  const cashTips = drawer ? drawer.tips : tenders.filter((t) => t.is_cash).reduce((s, t) => s + t.tips, 0);
+  const drawerRefunds = drawer ? drawer.refunds : refunds.cash_amount;
+  const expected = cashCounts.float + drawerPayments + rounding + cashTips - drawerRefunds;
   return {
     scope: { outlet_id: scope.outletId, station_id: scope.stationId ?? null, business_date: scope.businessDate, shift_id: scope.shiftId ?? null },
     orders: { count: o?.count ?? 0, by_type: Object.fromEntries(byType.map((b) => [b.t, b.n])), covers: o?.covers ?? 0, open_count: open?.n ?? 0 },
@@ -123,7 +135,7 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
     adjustments: adj,
     tenders,
     tenders_summary: { cash: cashPayments, non_cash: tenders.filter((t) => !t.is_cash).reduce((s, t) => s + t.amount, 0), tips: tenders.reduce((s, t) => s + t.tips, 0), count: tenders.reduce((s, t) => s + t.count, 0) },
-    cash: { float: cashCounts.float, cash_payments: cashPayments, rounding, tips: cashTips, refunds: refunds.cash_amount, expected, counted: cashCounts.counted, variance: cashCounts.counted == null ? null : cashCounts.counted - expected },
+    cash: { float: cashCounts.float, cash_payments: drawerPayments, rounding, tips: cashTips, refunds: drawerRefunds, expected, counted: cashCounts.counted, variance: cashCounts.counted == null ? null : cashCounts.counted - expected, open_shifts: await openDrawers(scope, cashCounts.openShifts) },
     voids: voidRows[0] ?? { count: 0, quantity: 0, value: 0 },
     refunds: { count: refunds.count, amount: refunds.amount, net: refunds.net, fees: refunds.amount - refunds.net - refunds.tax, tax: refunds.tax, tips: refunds.tips, taxes: refunds.taxes },
     // Sales here are scoped by outlet, day and station, refunds by shift when one is named: a shift's tax due would mix the
@@ -138,6 +150,23 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
     reconciliation: { tenders: tenders.reduce((s, t) => s + t.amount, 0), sales_total: o?.total ?? 0, paid_on_other_orders: otherOrders?.amount ?? 0, paid_elsewhere: elsewhere?.amount ?? 0 },
     generated_at: new Date().toISOString(),
   };
+}
+
+/** The cash taken into and given back out of the named shifts' drawers. */
+async function drawerCash(scope: Scope, ids: string[]) {
+  if (!ids.length) return { payments: 0, rounding: 0, tips: 0, refunds: 0 };
+  const [p] = await db()
+    .select({ amount: sql<number>`coalesce(sum(amount),0)::bigint`, rounding: sql<number>`coalesce(sum(rounding_cents),0)::bigint`, tips: sql<number>`coalesce(sum(tip_cents),0)::bigint` })
+    .from(payments)
+    .where(and(eq(payments.outletId, scope.outletId), eq(payments.status, "recorded"), eq(payments.isCash, true), inArray(payments.shiftId, ids)));
+  const r = await refundProvider({ outletId: scope.outletId, businessDate: scope.businessDate, cashShiftIds: ids });
+  return { payments: Number(p?.amount ?? 0), rounding: Number(p?.rounding ?? 0), tips: Number(p?.tips ?? 0), refunds: r.cash_amount };
+}
+
+async function openDrawers(scope: Scope, open: { ids: string[]; float: number } | undefined) {
+  if (!open || !open.ids.length) return { count: 0, float: 0, cash_payments: 0, rounding: 0, tips: 0, refunds: 0, expected: 0 };
+  const d = await drawerCash(scope, open.ids);
+  return { count: open.ids.length, float: open.float, cash_payments: d.payments, rounding: d.rounding, tips: d.tips, refunds: d.refunds, expected: open.float + d.payments + d.rounding + d.tips - d.refunds };
 }
 
 /**
@@ -156,8 +185,17 @@ export function assertCountsMatch(counts: Record<string, number> | null | undefi
   if (sum !== totalCents) throw AppError.validation(`${what}: the notes and coins counted do not add up to the total`, { remedy: "Count again, or clear the denominations and enter the total.", details: { counted_from_denominations: sum, total: totalCents } });
 }
 
+/** A float above what a drawer can hold (the cash counter's own limit) is a typing slip; refuse it in plain words. */
+async function assertDrawerAmount(merchantId: string, cents: number, what: "opening float") {
+  const [m] = await db().select({ denominations: merchantSettings.cashDenominations, currency: merchantSettings.currency, locale: merchantSettings.locale }).from(merchantSettings).where(eq(merchantSettings.merchantId, merchantId)).limit(1);
+  if (!m) return;
+  const cap = drawerCap(m.denominations);
+  if (cents > cap) throw AppError.validation(`The ${what} can be at most ${formatMoney(cap, m)}`, { remedy: "Check the amount: that is more than a drawer holds.", details: { max_cents: cap } });
+}
+
 export async function openShift(principal: Principal, input: { outletId: string; stationId: string | null; name: string | null; floatCents: number; floatCounts: Record<string, number> | null; businessDate: string }) {
   assertCountsMatch(input.floatCounts, input.floatCents, "float");
+  await assertDrawerAmount(principal.merchantId, input.floatCents, "opening float");
   const [existing] = await db()
     .select({ id: shifts.id })
     .from(shifts)
@@ -202,6 +240,7 @@ export async function closeShift(principal: Principal, shiftId: string, input: {
   if (!shift) throw AppError.notFound("shift", shiftId);
   if (shift.status === "closed") throw AppError.state("The shift is already closed", []);
   await assertNoOtherBrands(principal, "shift", { outletId: shift.outletId, businessDate: shift.businessDate, shiftId: shift.id });
+  // The count is not capped: a close records what is in the drawer, whatever it is (the float's cap catches the typing slip).
   assertCountsMatch(input.countedCounts, input.countedCashCents, "counted cash");
   // A void still waiting for the provider would change this shift's figures after they were counted.
   const [voiding] = await tx()<{ n: number }[]>`select count(*)::int as n from payment_intents i join payments p on p.id = i.payment_id where p.shift_id = ${shiftId} and i.void_requested_at is not null and i.provider_voided_at is null`;
@@ -243,7 +282,7 @@ export async function closeBusinessDay(principal: Principal, outletId: string, b
   const closed = await db().select().from(shifts).where(and(eq(shifts.outletId, outletId), eq(shifts.businessDate, businessDate), eq(shifts.status, "closed")));
   const float = closed.reduce((s, x) => s + x.floatCents, 0);
   const counted = closed.reduce((s, x) => s + (x.countedCashCents ?? 0), 0);
-  const report = await zReport({ outletId, businessDate }, { float, counted: closed.length ? counted : null });
+  const report = await zReport({ outletId, businessDate, cashShiftIds: closed.map((x) => x.id) }, { float, counted: closed.length ? counted : null });
   const [row] = await db()
     .insert(businessDayCloses)
     .values({ merchantId: principal.merchantId, outletId, businessDate, closedBy: principal.type === "staff" ? principal.id : null, closedByName: "name" in principal ? principal.name : null, zReport: report })

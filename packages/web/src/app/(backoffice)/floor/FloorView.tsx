@@ -15,6 +15,7 @@ import type { Area, Outlet, Table, TablePatch } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
 import { keys } from "@/lib/query";
 import { useSession } from "@/lib/session-context";
+import { useCan } from "@/lib/can";
 
 const COLS = 24;
 const ROWS = 14;
@@ -34,6 +35,7 @@ function clampTable(t: { x: number; y: number; w: number; h: number }) {
 
 /** Floor plan editor (FloorCanvas / TableShape, editor variant). Grid units are what the API stores. */
 export function FloorView({ outlets, scope, initialOutletId, initialAreas, initialTables }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; initialAreas: Area[]; initialTables: Table[] }) {
+  const canCreate = useCan("areas.create");
   const qc = useQueryClient();
   const { me } = useSession();
   const admin = roleIs(me, "admin");
@@ -135,9 +137,11 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
         </div>
         <div className="flex flex-wrap items-start gap-2">
           {outlet ? <QrSheetButton outletId={outlet.id} outletName={outlet.name} canRotate={admin} /> : null}
-          <Button size="sm" onPress={() => { setAreaName(""); setAreaDialog({ mode: "create" }); }} isDisabled={!outletId}>
+          {canCreate.ok ? (
+            <Button size="sm" onPress={() => { setAreaName(""); setAreaDialog({ mode: "create" }); }} isDisabled={!outletId}>
             Add area
           </Button>
+          ) : null}
           <Button size="sm" variant="primary" onPress={() => addTable.mutate()} isDisabled={!area} isPending={addTable.isPending}>
             Add table
           </Button>

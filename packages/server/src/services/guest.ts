@@ -89,10 +89,12 @@ function tableToken(rowId: string): string {
 export async function rotateTableToken(table: { id: string; merchantId: string; outletId: string }): Promise<{ token: string; url: string }> {
   const id = randomUUID();
   const token = tableToken(id);
-  await db().update(tableQrTokens).set({ rotatedAt: new Date() }).where(and(eq(tableQrTokens.tableId, table.id), isNull(tableQrTokens.rotatedAt)));
+  // One instant for both: a session ended at exactly the moment its table's code was replaced was ended by the rotation.
+  const now = new Date();
+  await db().update(tableQrTokens).set({ rotatedAt: now }).where(and(eq(tableQrTokens.tableId, table.id), isNull(tableQrTokens.rotatedAt)));
   await db().insert(tableQrTokens).values({ id, merchantId: table.merchantId, outletId: table.outletId, tableId: table.id, tokenHash: sha256(token) });
   // Phones that scanned the old code lose their sessions too: a rotation stops the old card working at once.
-  await db().update(guestSessions).set({ revokedAt: new Date() }).where(and(eq(guestSessions.tableId, table.id), isNull(guestSessions.revokedAt)));
+  await db().update(guestSessions).set({ revokedAt: now }).where(and(eq(guestSessions.tableId, table.id), isNull(guestSessions.revokedAt)));
   return { token, url: guestUrl(token) };
 }
 
@@ -159,7 +161,12 @@ export async function openOrderIdForTable(tableId: string): Promise<string | nul
 
 export async function createGuestSession(input: { token: string; deviceId: string; guestName?: string | null }): Promise<{ sessionToken: string; session: typeof guestSessions.$inferSelect; link: typeof channelLinks.$inferSelect; table: typeof tables.$inferSelect; orderOpen: boolean }> {
   const [tok] = await db().select().from(tableQrTokens).where(and(eq(tableQrTokens.tokenHash, sha256(input.token)), isNull(tableQrTokens.rotatedAt))).limit(1);
-  if (!tok) throw AppError.notFound("table code", undefined);
+  if (!tok) {
+    // A code replaced by "Rotate code" is not a typo: the guest is told the table has a new one to scan (D-N1).
+    const [old] = await db().select({ id: tableQrTokens.id }).from(tableQrTokens).where(eq(tableQrTokens.tokenHash, sha256(input.token))).limit(1);
+    if (old) throw new AppError("not_found", "This table has a new QR code", { remedy: "Scan the code on the table again to keep ordering.", details: { reason: "code_rotated" } });
+    throw AppError.notFound("table code", undefined);
+  }
   const [table] = await db().select().from(tables).where(and(eq(tables.id, tok.tableId), isNull(tables.archivedAt))).limit(1);
   if (!table) throw AppError.notFound("table");
   const deviceHash = sha256(`${tok.merchantId}:${input.deviceId}`);

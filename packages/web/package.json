@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "gen:api": "openapi-typescript ../server/openapi.json -o src/lib/api/schema.d.ts",
+    "gen:api": "openapi-typescript ../server/openapi.json -o src/lib/api/schema.d.ts && node scripts/op-roles.mjs",
     "pos:smoke": "tsx --tsconfig scripts/tsconfig.json scripts/pos-smoke.ts",
     "lint": "eslint --max-warnings 0 ."
   },

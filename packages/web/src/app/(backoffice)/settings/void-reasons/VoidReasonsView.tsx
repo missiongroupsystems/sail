@@ -13,6 +13,8 @@ import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { VoidReason } from "@/lib/api/types";
 import { keys } from "@/lib/query";
+import { useFreshErrors } from "@/lib/fresh-errors";
+import { useCan } from "@/lib/can";
 
 type SheetState = { mode: "create" } | { mode: "edit"; reason: VoidReason } | null;
 
@@ -22,6 +24,7 @@ const defaults = (r: VoidReason | null): Values => ({ name: r?.name ?? "", for_r
 
 /** Reasons staff pick when voiding a sent line or refunding (ReasonPicker). */
 export function VoidReasonsView({ initialReasons }: { initialReasons: VoidReason[] }) {
+  const canCreate = useCan("void_reasons.create");
   const [showArchived, setShowArchived] = useState(false);
   const [sheet, setSheet] = useState<SheetState>(null);
   const reasons = useQuery({
@@ -44,9 +47,11 @@ export function VoidReasonsView({ initialReasons }: { initialReasons: VoidReason
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
           </Switch>
-          <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
+          {canCreate.ok ? (
+            <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
             Add void reason
           </Button>
+          ) : null}
         </div>
       </div>
       <DataTable
@@ -90,6 +95,8 @@ function ReasonSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
     onSuccess: settle,
   });
   const busy = save.isPending || archive.isPending;
+  const mayEdit = useCan("void_reasons.update");
+  useFreshErrors(state, form.watch(), save, archive);
   return (
     <Sheet
       isOpen={state !== null}
@@ -106,7 +113,7 @@ function ReasonSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
           <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" type="submit" form="reason-form" isPending={save.isPending}>
+          <Button variant="primary" type="submit" form="reason-form" isDisabled={!mayEdit.ok} isPending={save.isPending}>
             {reason ? "Save changes" : "Add void reason"}
           </Button>
         </>
@@ -122,6 +129,7 @@ function ReasonSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
             Also a refund reason
           </RhfSwitch>
         </SheetSection>
+        {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
         <InlineError error={save.error ?? archive.error} />
       </form>
     </Sheet>

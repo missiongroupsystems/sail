@@ -22,10 +22,10 @@ export type BillDocumentLike = {
   /** Decimal places of the currency's minor unit, from the register. */
   currency_exponent: number;
   check_label: string;
-  lines: { quantity: number; name: string; unit_price: number; amount: number; modifiers: { name: string; price: number }[]; seat_no?: number; share?: string }[];
+  lines: { quantity: number; name: string; unit_price: number; amount: number; modifiers: { name: string; price: number; unit_price?: number }[]; seat_no?: number; share?: string }[];
   adjustments: { name: string; amount: number; kind: "fee" | "discount" }[];
   totals: { subtotal: number; discount_total: number; fee_total: number; tax_total: number; total: number; tax_mode: "inclusive" | "exclusive"; taxes: { name: string; bps: number; amount: number }[] };
-  payments?: { tender: string; amount: number; rounding_cents?: number; reference?: string; tip?: number; change?: number }[];
+  payments?: { tender: string; amount: number; rounding_cents?: number; reference?: string; tip?: number; change?: number; charged?: number }[];
   balance?: number;
   invoice_no?: string;
   credit_note_no?: string;
@@ -107,7 +107,14 @@ export function BillDocumentView({ document: doc, className }: BillDocumentViewP
             {l.modifiers.map((m, j) => (
               <div key={j} className="flex items-baseline gap-3 text-[13.5px] text-ink-2">
                 <span className="min-w-0 flex-1 wrap-anywhere">{m.name}</span>
-                {m.price ? <Money cents={m.price} size="caption" signed /> : null}
+                {/* Per item beside the line's "each", as the guest's review showed it (D notes); for one item, the same figure. */}
+                {l.quantity > 1 && m.unit_price ? (
+                  <span>
+                    <Money cents={m.unit_price} size="caption" signed /> each
+                  </span>
+                ) : m.price ? (
+                  <Money cents={m.price} size="caption" signed />
+                ) : null}
               </div>
             ))}
             {l.quantity > 1 ? (
@@ -143,6 +150,7 @@ export function BillDocumentView({ document: doc, className }: BillDocumentViewP
               {p.reference ? <p className="font-mono text-caption text-ink-2">Ref {p.reference}</p> : null}
               {p.rounding_cents ? <Row label="Cash rounding" cents={p.rounding_cents} muted signed /> : null}
               {p.tip ? <Row label="Tip" cents={p.tip} muted /> : null}
+              {p.charged ? <Row label="Charged" cents={p.charged} /> : null}
               {p.change ? <Row label="Change" cents={p.change} muted /> : null}
             </div>
           ))}

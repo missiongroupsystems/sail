@@ -103,7 +103,8 @@ export function OrdersScreen() {
             <li key={o.id} className="border-b border-rule-subtle py-1 last:border-b-0">
               <div className="flex items-stretch gap-2">
                 <AriaButton
-                  onPress={() => openOrderScreen(o.id, "orders")}
+                  // A cancelled order has nothing left to do on it: opening it used to bounce to the Open list (C-8).
+                  onPress={() => (o.status === "cancelled" ? notify({ text: `${o.order_no} was cancelled${o.cancelled_at ? ` at ${clock(o.cancelled_at)}` : ""}`, remedy: "Nothing was paid on it, so there is nothing to refund or reprint.", tone: "info" }, 5000) : openOrderScreen(o.id, "orders"))}
                   className="press pos-touch flex min-h-16 flex-1 items-center gap-4 rounded-tile px-3 text-left outline-none data-[pressed]:bg-surface-3 data-[hovered]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated"
                   aria-label={`${ORDER_TYPE_LABEL[o.order_type]} ${o.order_no}${o.customer_ref?.name ? `, ${o.customer_ref.name}` : ""}, ${ORDER_STATUS_LABEL[o.status]}`}
                 >

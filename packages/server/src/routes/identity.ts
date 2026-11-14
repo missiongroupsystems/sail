@@ -25,6 +25,7 @@ registerOperations({
   "auth.sign_in": op({ op: "auth.sign_in", summary: "Sign in to the back office with email and password", description: "No authentication; `local` provider only. Returns a 12-hour back-office session token. Unknown emails and wrong passwords get the same answer. Repeated failures lock the email for 15 minutes after 5 attempts, and the client address after 20.", tier: "T0", minRole: null, principals: [] }),
   "auth.sign_out": op({ op: "auth.sign_out", summary: "Sign out of the back office", description: "Ends the caller's back-office session. Station PIN sessions use staff_sessions.end.", tier: "T0", minRole: null, principals: ["staff"] }),
   "auth.change_password": op({ op: "auth.change_password", summary: "Change your back-office password", description: "`local` provider only. Needs the current password; wrong ones count towards the email's sign-in lockout. Ends the caller's other sessions.", tier: "T1", minRole: null, principals: ["staff"] }),
+  "auth.inspect_link": op({ op: "auth.inspect_link", summary: "Whose password a link sets", description: "No authentication; reads a live invitation or reset link without using it, so the page can name the account (its name and email) before the password is chosen.", tier: "T0", minRole: null, principals: [] }),
   "auth.accept_link": op({ op: "auth.accept_link", summary: "Set a password from an invitation or reset link", description: "No authentication; the link's token is single-use and expires (invitations after 7 days, resets after 24 hours). Sets the password, ends every earlier session of that person and signs them in.", tier: "T3", minRole: null, principals: [] }),
   "setup.create": op({ op: "setup.create", summary: "First-run setup", description: "No authentication, and only while the server has no merchant: creates the merchant from a region preset, its first brand, outlet and station, and the first Admin with a back-office login, then signs the Admin in. Refused once any merchant exists, including when two setups race.", tier: "T3", minRole: null, principals: [] }),
   "staff.access": op({ op: "staff.access", summary: "A staff member's back-office access", description: "Admin. Whether the person can sign in to the back office, has an invitation pending, or neither, and the open link's expiry. Never returns a link.", tier: "T0", minRole: "admin", principals: ["staff"] }),
@@ -165,6 +166,7 @@ export function identityRoutes(app: OpenAPIHono<AppEnv>) {
     checkPassword(body.new_password);
     const [login] = await db().select({ email: backofficeLogins.email }).from(backofficeLogins).where(and(eq(backofficeLogins.staffId, p.id), eq(backofficeLogins.merchantId, p.merchantId))).limit(1);
     if (!login) throw new AppError("unauthenticated", "Your back-office session has ended", { remedy: "Sign in again." });
+    checkPassword(body.new_password, login.email);
     await takePinAttempt(NO_MERCHANT, `password-change:${p.id}`, PASSWORD_CHANGE_LIMITS);
     // Hashes are read and written as the connection owner: request roles have no access to them.
     const ended = await withOwnTransaction(async (sql) => {
@@ -180,6 +182,26 @@ export function identityRoutes(app: OpenAPIHono<AppEnv>) {
     await clearPinFailures(NO_MERCHANT, `password-change:${p.id}`);
     await recordAudit(p, { action: "auth.change_password", targetKind: "staff", targetId: p.id, details: { sessions_ended: ended } });
     return c.json({ data: { changed: true, sessions_ended: ended }, events: [], warnings: [] }, 200);
+  });
+
+  defineOp(app, { op: "auth.inspect_link", method: "post", path: "/v1/auth/links/inspect", tags: ["auth"], request: { body: jsonBody(z.object({ token: secret(z.string().min(1).max(200)) })) }, responses: { 200: jsonResponse(dataResponse(z.object({ kind: z.enum(["invite", "reset"]), name: z.string(), email: z.string() }))), ...errorResponses } }, async (c) => {
+    requireLocal("Password links");
+    const body = c.req.valid("json");
+    // The set-password page names the account it is for (F-N4): read as the connection owner, nothing is changed.
+    const found = await withTransaction(async (t) => {
+      const [link] = await t.sql<{ staff_id: string; merchant_id: string; kind: "invite" | "reset" }[]>`select staff_id, merchant_id, kind from backoffice_links
+        where token_hash = ${sha256(body.token)} and used_at is null and revoked_at is null and expires_at > now() limit 1`;
+      if (!link) return null;
+      const [row] = await t.db.select().from(staff).where(and(eq(staff.id, link.staff_id), eq(staff.merchantId, link.merchant_id), eq(staff.active, true))).limit(1);
+      if (!row) return null;
+      const [login] = await t.db.select({ email: backofficeLogins.email }).from(backofficeLogins).where(eq(backofficeLogins.staffId, row.id)).limit(1);
+      const email = link.kind === "reset" ? login?.email : row.email;
+      // The same refusal as accept_link: a reset of an account that signs in elsewhere sets nothing.
+      if (!email || (link.kind === "reset" && row.authSubject !== localSubject(row.id))) return null;
+      return { kind: link.kind, name: row.name, email };
+    });
+    if (!found) throw new AppError("not_found", "This link has expired or was already used", { remedy: "Ask an Admin for a new link." });
+    return c.json({ data: found }, 200);
   });
 
   defineOp(app, { op: "auth.accept_link", method: "post", path: "/v1/auth/links/accept", tags: ["auth"], request: { body: jsonBody(z.object({ token: secret(z.string().min(1).max(200)), password: Password })) }, responses: { 201: jsonResponse(dataResponse(SessionOut)), ...errorResponses } }, async (c) => {
@@ -223,7 +245,7 @@ export function identityRoutes(app: OpenAPIHono<AppEnv>) {
     const local = identityProviderKind() === "local";
     if (local) {
       if (!b.admin.password) throw AppError.validation("The first Admin needs a password", { remedy: "Choose a password of at least 12 characters." });
-      checkPassword(b.admin.password);
+      checkPassword(b.admin.password, b.admin.email);
     }
     const input = { merchantName: b.business_name, outletName: b.outlet_name, preset: b.preset as RegionPresetKey, timeZone: b.time_zone, currency: b.currency, locale: b.locale, admin: { name: b.admin.name, email: b.admin.email, password: local ? b.admin.password : undefined } };
     try {

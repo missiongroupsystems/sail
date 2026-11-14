@@ -33,16 +33,42 @@ const AUDIT_ACTION: Record<string, string> = {
   "adjustments.apply_manual": "Applied a discount", "adjustments.remove": "Removed a discount", "payments.record": "Took a payment",
   "payments.cancel": "Voided a payment", "refunds.create": "Refunded", "overrides.grant": "Approved an override", "shifts.open": "Opened shift",
   "shifts.close": "Closed shift", "business_days.close": "Closed the business day", "imports.apply": "Imported a menu",
+  "stock.set_daily_cap": "Set a daily cap",
+  "categories.create": "Created a category", "categories.update": "Changed a category", "stations.unpair": "Unpaired a station",
 };
+/** "categories" → "category", "classes" → "class", "rules" → "rule" (E-N8: not "categorie"). */
+function singular(word: string): string {
+  if (/ies$/.test(word)) return word.replace(/ies$/, "y");
+  if (/(ss|sh|ch|x)es$/.test(word)) return word.replace(/es$/, "");
+  return word.replace(/s$/, "");
+}
 export function auditActionLabel(action: string): string {
   if (AUDIT_ACTION[action]) return AUDIT_ACTION[action]!;
   const [what = "", verb = ""] = action.split(".");
-  const words = `${verb.replace(/_/g, " ")} ${what.replace(/_/g, " ").replace(/s$/, "")}`.trim();
+  const noun = what.split("_").map((w, i, all) => (i === all.length - 1 ? singular(w) : w)).join(" ");
+  const words = `${verb.replace(/_/g, " ")} ${noun}`.trim();
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : action;
 }
+/** Target kinds whose words differ from their name: a "report_category" is the menu's category. */
+const AUDIT_TARGET: Record<string, string> = { report_category: "Category", order_line: "Order line", import_job: "Menu import", availability_rule: "Availability rule", agent_identity: "Assistant", print_job: "Print job", business_day: "Business day" };
 /** "pricing_rule" reads "Pricing rule". */
 export function auditTargetLabel(kind: string | null | undefined): string {
   if (!kind) return "—";
+  if (AUDIT_TARGET[kind]) return AUDIT_TARGET[kind]!;
   const words = kind.replace(/_/g, " ");
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** Event names in words (E-L11): "order.repriced" reads "Prices worked out again", "line.voided" reads "Line voided". */
+const EVENT_LABEL: Record<string, string> = {
+  "order.opened": "Order opened", "order.repriced": "Prices worked out again", "order.fired": "Sent to the kitchen", "order.completed": "Order completed", "order.cancelled": "Order cancelled",
+  "order.reopened": "Order reopened", "order.moved": "Moved table", "line.added": "Item added", "line.updated": "Item changed", "line.voided": "Item voided", "payment.recorded": "Payment taken",
+  "payment.voided": "Payment voided", "refund.created": "Refunded", "kitchen_ticket.created": "Kitchen ticket printed", "kitchen_ticket.bumped": "Kitchen ticket bumped", "round.submitted": "QR order sent",
+  "round.accepted": "QR order accepted", "round.rejected": "QR order rejected", "adjustment.applied": "Discount applied", "adjustment.removed": "Discount removed", "print_job.created": "Print job created",
+};
+export function eventLabel(type: string): string {
+  if (EVENT_LABEL[type]) return EVENT_LABEL[type]!;
+  const [what = "", verb = ""] = type.split(".");
+  const words = `${what.replace(/_/g, " ")} ${verb.replace(/_/g, " ")}`.trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : type;
 }

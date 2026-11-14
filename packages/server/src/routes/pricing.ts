@@ -1,8 +1,8 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { AmountSchema, ChannelTypeSchema, OrderTypeSchema, PricingContextSchema, PricingLineSchema, PricingResultSchema, PricingRuleSchema, ManualApplicationSchema, MAX_AMOUNT, price, registerOperations, sumCents, validateRuleSet, type PricingRuleInput } from "@sail/shared";
+import { AmountSchema, ChannelTypeSchema, formatMoney, OrderTypeSchema, PricingContextSchema, PricingLineSchema, PricingResultSchema, PricingRuleSchema, ManualApplicationSchema, MAX_AMOUNT, price, registerOperations, sumCents, validateRuleSet, type PricingRuleInput } from "@sail/shared";
 import { db, tx } from "../db/client.js";
-import { products, reportCategories } from "../db/schema/index.js";
+import { merchantSettings, products, reportCategories } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, plainIssue, z, untrusted } from "../lib/openapi.js";
@@ -98,6 +98,7 @@ export function pricingRoutes(app: OpenAPIHono<AppEnv>) {
       { order_type: b.order_type, channel: b.channel, outlet_id: b.outlet_id, brand_id: b.brand_id, customer_group_ids: b.customer_group_ids, lines, manual_applications: b.manual_applications },
       rules,
       PricingContextSchema.parse({ tax_mode: b.tax_mode ?? tax.taxMode, tax_rounding: tax.taxRounding, tax_rates: tax.taxRates, now: at.toISOString() }),
+      { money: await moneyWords(p.merchantId) },
     );
     return c.json({ data: result }, 200);
   });
@@ -168,4 +169,10 @@ export async function expandLines(merchantId: string, lines: z.infer<typeof Simu
     });
   });
   return [...full, ...expanded];
+}
+
+/** The trace's amounts in the merchant's currency, as people read them. */
+async function moneyWords(merchantId: string): Promise<((cents: number) => string) | undefined> {
+  const [m] = await db().select({ currency: merchantSettings.currency, locale: merchantSettings.locale }).from(merchantSettings).where(eq(merchantSettings.merchantId, merchantId)).limit(1);
+  return m ? (cents: number) => formatMoney(cents, m) : undefined;
 }

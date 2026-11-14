@@ -130,8 +130,11 @@ function ChangeTypeSheet({ isOpen, onClose, order, actions }: SheetProps) {
   const needsCustomer = type === "pickup" || type === "delivery";
   const { timeZone } = useLocale();
   const ready = readyBy ? todayAt(readyBy, timeZone) : null;
+  // The same type keeps the sheet useful for its details: an open takeaway can be given a name (C-12).
+  const sameType = type === order.order_type;
+  const detailsChanged = sameType && type !== "dine_in" && (name.trim() !== (order.customer_ref?.name ?? "") || mobile.trim() !== (order.customer_ref?.mobile ?? "") || (type === "delivery" && address.trim() !== (order.delivery_address ?? "")));
   const valid =
-    type !== order.order_type &&
+    (!sameType || detailsChanged) &&
     (type !== "dine_in" || tableId) &&
     (!needsCustomer || name.trim() || mobile.trim()) &&
     (type !== "delivery" || address.trim()) &&
@@ -139,6 +142,12 @@ function ChangeTypeSheet({ isOpen, onClose, order, actions }: SheetProps) {
 
   const submit = async () => {
     setBusy(true);
+    if (sameType) {
+      const snap = await actions.updateDetails({ customer_ref: { ...(name.trim() ? { name: name.trim() } : {}), ...(mobile.trim() ? { mobile: mobile.trim() } : {}) }, ...(type === "delivery" ? { delivery_address: address.trim() } : {}) });
+      setBusy(false);
+      if (snap) onClose();
+      return;
+    }
     const snap = await actions.changeType({
       order_type: type,
       table_id: type === "dine_in" ? tableId : null,
@@ -160,7 +169,7 @@ function ChangeTypeSheet({ isOpen, onClose, order, actions }: SheetProps) {
       isDismissable={!busy}
       footer={
         <Button variant="primary" size="lg" isDisabled={!valid || busy} isPending={busy} onPress={submit}>
-          Change to {ORDER_TYPE_LABEL[type]}
+          {sameType ? "Save details" : `Change to ${ORDER_TYPE_LABEL[type]}`}
         </Button>
       }
     >

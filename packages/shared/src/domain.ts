@@ -53,6 +53,15 @@ export const NonNegativeCentsSchema = z.number().int().min(0);
  * products it needs (amount × rate) in BigInt.
  */
 export const MAX_AMOUNT = 1_000_000_000_000;
+/** The most pieces of one note or coin a cash count takes. */
+export const MAX_PIECES = 999;
+/**
+ * The most a drawer can hold in a cash count, a float or a counted close: `MAX_PIECES` of every note and coin the
+ * merchant uses. Without denominations the general amount limit applies.
+ */
+export function drawerCap(denominations: readonly number[]): number {
+  return denominations.length ? MAX_PIECES * denominations.reduce((s, d) => s + d, 0) : MAX_AMOUNT;
+}
 /** A non-negative amount a request may carry: at most `MAX_AMOUNT`, refused with a validation error above it. */
 export const AmountSchema = z.number().int().min(0).max(MAX_AMOUNT, `amount is above the largest the register accepts (${MAX_AMOUNT} minor units)`);
 

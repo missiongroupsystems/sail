@@ -3,6 +3,9 @@ import { RoleSchema } from "@sail/shared";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonResponse, z } from "../lib/openapi.js";
 import { outletScopeFor, principalRole } from "../auth/principal.js";
+import { eq } from "drizzle-orm";
+import { db } from "../db/client.js";
+import { staff } from "../db/schema/index.js";
 
 export const MeSchema = z.object({
   type: z.enum(["staff", "station", "guest", "relay", "agent"]),
@@ -10,6 +13,8 @@ export const MeSchema = z.object({
   merchant_id: z.string(),
   role: RoleSchema.nullable(),
   name: z.string().nullable(),
+  /** The initials set on the staff record, so every chip shows the same ones as Team (null: worked out from the name). */
+  initials: z.string().nullable(),
   outlet_scope: z.string(),
   outlet_id: z.string().nullable(),
   station_id: z.string().nullable(),
@@ -21,6 +26,7 @@ export const MeSchema = z.object({
 export function authRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "auth.me", method: "get", path: "/v1/me", tags: ["auth"], responses: { 200: jsonResponse(dataResponse(MeSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
+    const [row] = p.type === "staff" ? await db().select({ initials: staff.initials }).from(staff).where(eq(staff.id, p.id)).limit(1) : [];
     return c.json(
       {
         data: {
@@ -29,6 +35,7 @@ export function authRoutes(app: OpenAPIHono<AppEnv>) {
           merchant_id: p.merchantId,
           role: principalRole(p),
           name: "name" in p ? p.name : null,
+          initials: row?.initials ?? null,
           outlet_scope: outletScopeFor(p),
           outlet_id: "outletId" in p ? (p.outletId ?? null) : null,
           station_id: "stationId" in p ? (p.stationId ?? null) : null,

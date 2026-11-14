@@ -90,12 +90,18 @@ describe("Scan to Order", () => {
     const menuPath = `/v1/channel-links/${ids.qrLink}/menu`;
     expect((await guestCall("GET", menuPath, before)).status).toBe(200);
     qrUrl12 = (await call<{ data: { url: string } }>("POST", `/v1/tables/${ids.table12}/qr/rotate`, { token: A.admin.token, body: {} })).body.data.url;
-    expect((await guestCall("GET", menuPath, before)).status).toBe(401);
+    const ended = await guestCall("GET", menuPath, before);
+    expect(ended.status).toBe(401);
+    // The phone is told the table has a new code (D-N1), not offered a Start again that dead-ends.
+    expect(ended.body).toMatchObject({ message: "This table has a new QR code", details: { reason: "code_rotated" } });
     // Rotating every code is a separate, deliberate action: the earlier URLs are dead after it.
     const rotated = await call<{ data: { rotated: number } }>("POST", `/v1/outlets/${A.outletId}/qr/rotate`, { token: A.admin.token, body: {} });
     expect(rotated.status, JSON.stringify(rotated.body)).toBe(200);
     expect(rotated.body.data.rotated).toBeGreaterThanOrEqual(2);
     expect(await alive(qrUrl12, "device-dead-0001")).toBe(404);
+    const stale = await call<{ message: string; details: { reason: string } }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl12), device_id: "device-dead-0002" }, idempotencyKey: null });
+    expect(stale.body).toMatchObject({ message: "This table has a new QR code", details: { reason: "code_rotated" } });
+    expect((await call<{ message: string }>("POST", "/v1/guest/sessions", { body: { token: "not-a-code-at-all", device_id: "device-dead-0003" }, idempotencyKey: null })).body.message).not.toMatch(/new QR code/);
     qrUrl12 = (await call<{ data: { url: string } }>("POST", `/v1/tables/${ids.table12}/qr/rotate`, { token: A.admin.token, body: {} })).body.data.url;
     qrUrl13 = (await call<{ data: { url: string } }>("POST", `/v1/tables/${ids.table13}/qr/rotate`, { token: A.admin.token, body: {} })).body.data.url;
   });

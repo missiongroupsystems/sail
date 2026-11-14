@@ -114,13 +114,13 @@ export type GroupHeaderProps = {
 /** A state group header in the order sheet (NEW / HELD / SENT rounds). */
 export function GroupHeader({ label, detail, action, className }: GroupHeaderProps) {
   return (
-    <div className={cx("flex min-h-9 items-center justify-between gap-2 px-2.5 pt-3 pb-1", className)}>
+    <div className={cx("flex min-h-11 items-center justify-between gap-2 px-2.5 pt-2 pb-1", className)}>
       <span className="text-[12px] font-semibold uppercase tracking-[0.04em] text-ink-3">
         {label}
         {detail ? <span className="font-medium normal-case tracking-normal"> · {detail}</span> : null}
       </span>
       {action ? (
-        <AriaButton onPress={action.onPress} isDisabled={action.isDisabled} className="press pos-touch relative min-h-9 rounded-chip bg-surface-2 px-3 text-caption font-medium text-ink outline-none before:absolute before:-inset-y-1 before:inset-x-0 before:content-[''] data-[pressed]:bg-surface-3 data-[hovered]:bg-surface-3 data-[disabled]:text-ink-disabled">
+        <AriaButton onPress={action.onPress} isDisabled={action.isDisabled} className="press pos-touch min-h-11 min-w-11 rounded-chip bg-surface-2 px-4 text-caption font-medium text-ink outline-none data-[pressed]:bg-surface-3 data-[hovered]:bg-surface-3 data-[disabled]:text-ink-disabled">
           {action.label}
         </AriaButton>
       ) : null}

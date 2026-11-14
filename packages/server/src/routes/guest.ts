@@ -2,7 +2,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { registerOperations, type OperationSpec } from "@sail/shared";
 import { db, settleInvariants, tx, withTransaction, type RequestTx } from "../db/client.js";
-import { channelLinks, guestRounds, guestSessions, orderLines, orders, outlets, printers, serviceRequests, tables } from "../db/schema/index.js";
+import { channelLinks, guestRounds, guestSessions, orderLines, orders, outlets, printers, serviceRequests, tableQrTokens, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted, secret } from "../lib/openapi.js";
@@ -47,6 +47,12 @@ registerOperations({
 registerGuestResolver(async (token: string, t: RequestTx) => {
   const claims = await verifySailToken(token, "guest");
   const [s] = await t.db.select().from(guestSessions).where(eq(guestSessions.id, claims.session_id!)).limit(1);
+  if (s?.revokedAt) {
+    // Ended by "Rotate code": the card this phone scanned no longer works, so starting again from it would dead-end (D-N1).
+    // A rotation marks the old code with the same instant it ends the sessions with.
+    const [rotated] = await t.db.select({ id: tableQrTokens.id }).from(tableQrTokens).where(and(eq(tableQrTokens.tableId, s.tableId), eq(tableQrTokens.rotatedAt, s.revokedAt))).limit(1);
+    if (rotated) throw new AppError("unauthenticated", "This table has a new QR code", { remedy: "Scan the code on the table again to keep ordering.", details: { reason: "code_rotated" } });
+  }
   if (!s || s.revokedAt || s.expiresAt.getTime() < Date.now()) throw new AppError("unauthenticated", "This table session has ended", { remedy: "Scan the table's QR code again." });
   await t.db.update(guestSessions).set({ lastSeenAt: new Date() }).where(eq(guestSessions.id, s.id));
   return { type: "guest", id: s.id, merchantId: s.merchantId, outletId: s.outletId, brandId: s.brandId, tableId: s.tableId, orderId: s.orderId, channelLinkId: s.channelLinkId, sessionId: s.id };

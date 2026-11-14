@@ -13,7 +13,9 @@ describe("back-office sizes are opt-in", () => {
     expect(renderToStaticMarkup(<Button>Save</Button>)).toContain("min-h-11");
     const sm = renderToStaticMarkup(<Button size="sm">Export</Button>);
     expect(sm).toContain("min-h-9");
-    expect(sm).not.toContain("min-h-11");
+    // 36px on a laptop, 44px at phone width (E-N14, F-N3): only the phone breakpoint raises it.
+    expect(sm).toMatch(/max-sm:min-h-11/);
+    expect(sm).not.toMatch(/(^|[\s"])min-h-11/);
     expect(renderToStaticMarkup(<Button size="lg">Send</Button>)).toContain("min-h-14");
   });
 
@@ -23,7 +25,7 @@ describe("back-office sizes are opt-in", () => {
     const sm = renderToStaticMarkup(<TextField aria-label="Search" size="sm" />);
     expect(sm).toContain("min-h-9");
     expect(sm).toContain("bg-surface-2");
-    expect(sm).not.toContain("min-h-11");
+    expect(sm).not.toMatch(/(^|[\s"])min-h-11/);
     const items = [{ id: "a", label: "All brands" }];
     expect(renderToStaticMarkup(<Select aria-label="Brand" items={items} selectedKey="a" onSelectionChange={() => {}} />)).toContain("min-h-11");
     expect(renderToStaticMarkup(<Select aria-label="Brand" items={items} selectedKey="a" onSelectionChange={() => {}} size="sm" />)).toContain("min-h-9");

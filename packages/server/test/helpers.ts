@@ -193,3 +193,14 @@ export async function settleOpenOrders(sql: Sql, call: ReturnType<typeof api>["c
     await call("POST", `/v1/orders/${id}/complete`, { token, body: {} });
   }
 }
+
+type DayCash = { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number; open_shifts?: { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number } };
+/**
+ * A day's Z-report gives its drawer figures for the closed shifts, and the open ones apart (live test E-N1). Tests that
+ * follow every drawer of the day through an open shift add the two back together.
+ */
+export function wholeDayCash<C extends DayCash>(c: C): C {
+  const o = c.open_shifts;
+  if (!o) return c;
+  return { ...c, float: c.float + o.float, cash_payments: c.cash_payments + o.cash_payments, rounding: c.rounding + o.rounding, tips: c.tips + o.tips, refunds: c.refunds + o.refunds, expected: c.expected + o.expected };
+}

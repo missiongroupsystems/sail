@@ -100,6 +100,15 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
 
   const tenderSplit = useMemo(() => (split ? Object.entries(split).map(([payment_id, amount]) => ({ payment_id, amount })).filter((t) => t.amount > 0) : undefined), [split]);
 
+  // Nothing picked: the last quote no longer applies, so no tender, hand-back or total of it stays on screen (B-N3).
+  useEffect(() => {
+    if (request) return;
+    if (timer.current) clearTimeout(timer.current);
+    setQuote(null);
+    setQuoteError(null);
+    setQuoting(false);
+  }, [request]);
+
   // The register quotes every change: per line, service charge, tax, rounding and the tender split.
   useEffect(() => {
     if (!isOpen || !check || !request || step === "bill" || step === "done") return;

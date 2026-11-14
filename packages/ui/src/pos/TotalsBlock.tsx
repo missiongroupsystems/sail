@@ -77,7 +77,7 @@ export function TotalsBlock({ rows, pricing, className }: TotalsBlockProps) {
                   onPress={r.onRemove}
                   isDisabled={r.removeDisabled}
                   aria-label={`Remove ${r.label}`}
-                  className="press pos-touch relative flex size-7 items-center justify-center rounded-chip text-ink-2 outline-none before:absolute before:-inset-2 before:content-[''] data-[pressed]:bg-surface-3 data-[hovered]:bg-surface-2 data-[disabled]:text-ink-disabled"
+                  className="press pos-touch -my-2.5 flex size-11 shrink-0 items-center justify-center rounded-chip text-ink-2 outline-none data-[pressed]:bg-surface-3 data-[hovered]:bg-surface-2 data-[disabled]:text-ink-disabled"
                 >
                   <Icon icon={X} size={14} />
                 </AriaButton>

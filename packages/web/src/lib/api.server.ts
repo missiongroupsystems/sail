@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { forbidden, redirect } from "next/navigation";
 import { ApiError, createApi, req, type ApiClient } from "./api";
 import { parseScope, parseTheme, SCOPE_COOKIE, SESSION_COOKIE, THEME_COOKIE, type Scope, type Theme } from "./cookies";
+import { roleAtLeast, type Role } from "@sail/shared";
 
 /** Server side only: the register's address. The browser goes through /api/v1 instead. */
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080").replace(/\/+$/, "");
@@ -52,4 +53,14 @@ export async function orSignIn<T>(call: Promise<T>): Promise<T> {
     if (e instanceof ApiError && e.code === "permission_denied") forbidden();
     throw e;
   }
+}
+
+/**
+ * A page the signed-in role may not read at all: show the same refusal page (forbidden.tsx) the register's 403 gives,
+ * before any part of the page loads and fails on its own.
+ */
+export async function requireRole(min: Role): Promise<void> {
+  const api = await requireApi();
+  const me = await orSignIn(req(api.GET("/v1/me")));
+  if (!roleAtLeast(me.data.role as Role, min)) forbidden();
 }

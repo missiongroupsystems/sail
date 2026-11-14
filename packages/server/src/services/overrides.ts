@@ -27,6 +27,10 @@ function canonical(v: unknown): string {
 }
 
 const sessionOf = (p: Principal) => (p.type === "staff" ? (p.sessionId ?? null) : null);
+const label = (r: Role) => r.charAt(0).toUpperCase() + r.slice(1);
+/** "a Cashier or above", "an Admin": who can approve an action that needs `r`. */
+const roleWords = (r: Role) => (r === "admin" ? "an Admin" : `${/^[AEIOU]/.test(label(r)) ? "an" : "a"} ${label(r)} or above`);
+
 const stationOf = (p: Principal) => (p.type === "staff" ? (p.stationId ?? null) : null);
 
 /**
@@ -43,11 +47,16 @@ export async function grantOverride(requester: Extract<Principal, { type: "staff
     .where(and(eq(staff.merchantId, requester.merchantId), eq(staff.active, true)));
   // Your own PIN neither counts as an attempt nor clears the count, so it cannot reset a guessing run.
   const self = candidates.find((s) => s.id === requester.id);
-  if (self && verifySecret(input.approverPin, self.pinHash)) throw new AppError("permission_denied", "You cannot approve your own action", { remedy: "Ask another manager to approve it." });
+  const who = roleWords(input.requiredRole);
+  if (self && verifySecret(input.approverPin, self.pinHash)) throw new AppError("permission_denied", "You cannot approve your own action", { remedy: `Ask ${who} to enter their PIN.`, details: { required_role: input.requiredRole } });
   await takePinAttempt(requester.merchantId, scope);
-  const approver = candidates.find((s) => s.id !== requester.id && roleAtLeast(s.role, input.requiredRole) && (s.outletIds.length === 0 || s.outletIds.includes(input.outletId)) && verifySecret(input.approverPin, s.pinHash));
+  const owner = candidates.find((s) => s.id !== requester.id && verifySecret(input.approverPin, s.pinHash));
+  const approver = owner && roleAtLeast(owner.role, input.requiredRole) && (owner.outletIds.length === 0 || owner.outletIds.includes(input.outletId)) ? owner : null;
   if (!approver) {
-    throw new AppError("permission_denied", "PIN not recognised for a manager at this outlet", { remedy: `Ask a ${input.requiredRole} or above to enter their PIN.`, details: { required_role: input.requiredRole } });
+    // A PIN that is someone's, but not enough for this action, is told apart from one that is nobody's.
+    if (owner && !roleAtLeast(owner.role, input.requiredRole)) throw new AppError("permission_denied", `That PIN is a ${label(owner.role)}'s, and this needs ${who}`, { remedy: `Ask ${who} to enter their PIN.`, details: { required_role: input.requiredRole } });
+    if (owner) throw new AppError("permission_denied", "That PIN is for someone who does not work at this outlet", { remedy: `Ask ${who} at this outlet to enter their PIN.`, details: { required_role: input.requiredRole } });
+    throw new AppError("permission_denied", "PIN not recognised", { remedy: `Check the PIN, or ask ${who} to enter theirs.`, details: { required_role: input.requiredRole } });
   }
   await clearPinFailures(requester.merchantId, scope);
   const [row] = await db()

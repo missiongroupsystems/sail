@@ -1,11 +1,13 @@
 import { ApiError, req } from "@/lib/api";
-import { getScope, orSignIn, requireApi } from "@/lib/api.server";
+import { getScope, orSignIn, requireApi, requireRole } from "@/lib/api.server";
 import type { PricingRuleVersion } from "@/lib/api/types";
 import { SimulatorView } from "./SimulatorView";
 
 export const metadata = { title: "Pricing simulator" };
 
 export default async function SimulatorPage() {
+  // Running the simulator is a Manager's (pricing.simulate).
+  await requireRole("manager");
   const api = await requireApi();
   const scope = await getScope();
   const [outlets, brands, groups, merchant] = await orSignIn(Promise.all([req(api.GET("/v1/outlets")), req(api.GET("/v1/brands")), req(api.GET("/v1/customer-groups")), req(api.GET("/v1/merchant"))]));

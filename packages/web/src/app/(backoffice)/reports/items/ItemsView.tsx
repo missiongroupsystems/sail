@@ -42,7 +42,8 @@ export function ItemsView({ outlets, scope, initialOutletId, today }: { outlets:
     queryKey: ["reports", "product-mix", query],
     queryFn: () => req(api.GET("/v1/reports/product-mix", { params: { query } })).then((r) => (r as { data: MixRow[] }).data),
     enabled: range.outletId !== null && range.valid,
-    placeholderData: keepPreviousData,
+    // Dates that cannot make a range show no figures, not the last range's under the new dates (E-N9).
+    placeholderData: range.valid ? keepPreviousData : undefined,
   });
 
   return (
@@ -53,7 +54,7 @@ export function ItemsView({ outlets, scope, initialOutletId, today }: { outlets:
           <Select aria-label="Group by" variant="toolbar" size="sm" selectedKey={groupBy} onSelectionChange={(k) => setGroupBy(k as GroupBy)} items={GROUPS} />
         </div>
       </div>
-      {report.isPending && range.outletId ? <Skeleton lines={6} /> : null}
+      {report.isPending && range.outletId && range.valid ? <Skeleton lines={6} /> : null}
       <InlineError error={report.error} />
       {report.data ? (
         <DataTable aria-label="Items sold" columns={columns} rows={report.data} rowKey={(r) => r.key ?? r.name} defaultSort={{ column: "net", direction: "descending" }} emptyState={<EmptyState title="Nothing sold in this range" />} className={report.isPlaceholderData ? "opacity-60" : undefined} />

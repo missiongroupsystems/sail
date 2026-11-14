@@ -8,6 +8,8 @@ import { Warnings } from "@/components/backoffice/Warnings";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Product } from "@/lib/api/types";
+import { useFreshErrors } from "@/lib/fresh-errors";
+import { useCan } from "@/lib/can";
 
 type Mode = "set" | "add" | "percent";
 
@@ -60,6 +62,8 @@ export function BulkPriceSheet({ isOpen, products, onClose, onSaved }: { isOpen:
 
   const ready = mode === "set" ? amount !== null : mode === "add" ? amount !== null && amount !== 0 : bps !== null && bps !== 0;
 
+  const mayEdit = useCan("products.bulk_price");
+  useFreshErrors(isOpen, { mode, amount, bps, alsoByOrderType }, save);
   return (
     <Sheet
       isOpen={isOpen}
@@ -73,7 +77,7 @@ export function BulkPriceSheet({ isOpen, products, onClose, onSaved }: { isOpen:
           <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={save.isPending}>
             Cancel
           </Button>
-          <Button variant="primary" onPress={() => save.mutate()} isPending={save.isPending} isDisabled={!ready}>
+          <Button variant="primary" onPress={() => save.mutate()} isPending={save.isPending} isDisabled={!mayEdit.ok || !ready}>
             Save {products.length} {products.length === 1 ? "price" : "prices"}
           </Button>
         </>
@@ -142,6 +146,7 @@ export function BulkPriceSheet({ isOpen, products, onClose, onSaved }: { isOpen:
         </SheetSection>
 
         <Warnings warnings={warnings} />
+        {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
         <InlineError error={save.error} />
       </div>
     </Sheet>

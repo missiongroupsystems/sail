@@ -8,6 +8,7 @@ import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Staff } from "@/lib/api/types";
 import { useSession } from "@/lib/session-context";
+import { useFreshErrors } from "@/lib/fresh-errors";
 
 type Shown = { kind: "link" | "pre_authorised"; email: string; url: string | null };
 
@@ -37,6 +38,7 @@ export function AccessSection({ staff, emailUnsaved }: { staff: Staff; emailUnsa
     },
   });
 
+  useFreshErrors(staff.id, null, act);
   const a = access.data;
   const local = a?.provider === "local";
   const copy = async () => {

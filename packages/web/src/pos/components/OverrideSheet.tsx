@@ -40,8 +40,8 @@ export function OverrideSheet() {
       setTimeout(() => settle({ override_id: grant.override_id, approverName: name }), 700);
     } catch (e) {
       const err = toApiError(e);
-      // The register's refusal is written for staff (what was refused, and who can approve it): shown as given.
-      setError(`${err.message}${err.remedy ? ` ${err.remedy}` : ""}`);
+      // The register's refusal is written for staff (what was refused, and who can approve it): two sentences, as given.
+      setError(sentences(err.message, err.remedy));
       setPin("");
     } finally {
       setPending(false);
@@ -49,7 +49,7 @@ export function OverrideSheet() {
   };
 
   return (
-    <Sheet labelledClose isOpen={Boolean(request)} onOpenChange={(open) => (!open ? settle(null) : undefined)} title="Manager approval" description={request?.title} isDismissable={!pending}>
+    <Sheet labelledClose isOpen={Boolean(request)} onOpenChange={(open) => (!open ? settle(null) : undefined)} title={`${ROLE_LABEL[request?.minRole ?? "manager"] ?? "Manager"} approval`} description={request?.title} isDismissable={!pending}>
       {request ? (
         <div className="flex flex-col items-center gap-6">
           {/* What is being approved, as a bordered card with one row per part of the register's quote. */}
@@ -79,4 +79,10 @@ export function OverrideSheet() {
       ) : null}
     </Sheet>
   );
+}
+
+/** An error and its remedy as two sentences: "Too many wrong PINs. Try again in 29 seconds." */
+export function sentences(message: string, remedy?: string | null): string {
+  const first = /[.!?]$/.test(message.trim()) ? message.trim() : `${message.trim()}.`;
+  return remedy ? `${first} ${remedy.trim()}` : first;
 }

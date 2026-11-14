@@ -35,7 +35,12 @@ import {
  * total; tax is rounded per line or once per rate (`context.tax_rounding`).
  * See docs/pricing-semantics.md for every interpretation decision.
  */
-export function price(orderIn: PricingOrderInput, rulesIn: readonly PricingRuleInput[], contextIn: PricingContextInput): PricingResult {
+/**
+ * `opts.money` writes the trace's amounts for people ("$17.00", not "1700"); the figures themselves are unchanged and
+ * stay integer minor units in every field (live test F-R1-9).
+ */
+export function price(orderIn: PricingOrderInput, rulesIn: readonly PricingRuleInput[], contextIn: PricingContextInput, opts: { money?: (cents: number) => string } = {}): PricingResult {
+  const m = opts.money ?? ((c: number) => String(c));
   const order = PricingOrderSchema.parse(orderIn);
   const context = PricingContextSchema.parse(contextIn);
   const rules = sortRules(rulesIn.map((r) => PricingRuleSchema.parse(r)));
@@ -66,7 +71,7 @@ export function price(orderIn: PricingOrderInput, rulesIn: readonly PricingRuleI
     title: "Base prices",
     entries: states.map((s) => ({
       outcome: "info",
-      detail: `${s.line.name ?? s.line.line_id}: (${s.unitPrice} + ${s.modifiersPerUnit} modifiers) × ${s.line.quantity}${
+      detail: `${s.line.name ?? s.line.line_id}: (${m(s.unitPrice)} + ${m(s.modifiersPerUnit)} modifiers) × ${s.line.quantity}${
         s.line.open_price != null ? " (open price)" : s.line.prices.by_order_type?.[order.order_type] != null ? ` (${order.order_type} price)` : ""
       }`,
       amount: s.base,
@@ -165,7 +170,7 @@ export function price(orderIn: PricingOrderInput, rulesIn: readonly PricingRuleI
         rule_id: rule.id,
         rule_name: rule.name,
         outcome: "applied",
-        detail: `${describeValue(rule, value)} on ${discountEligible.length} line${discountEligible.length === 1 ? "" : "s"}${capped ? ` (capped at ${rule.cap})` : ""}${
+        detail: `${describeValue(rule, value, m)} on ${discountEligible.length} line${discountEligible.length === 1 ? "" : "s"}${capped ? ` (capped at ${rule.cap == null ? "" : m(rule.cap)})` : ""}${
           rule.stacking === "exclusive" && rule.kind === "discount" ? "; exclusive" : ""
         }`,
         amount: adj.total,
@@ -212,8 +217,8 @@ export function price(orderIn: PricingOrderInput, rulesIn: readonly PricingRuleI
     step: 5,
     title: `Tax (${context.tax_mode}, rounded ${context.tax_rounding === "per_line" ? "per line" : "once per rate"})`,
     entries: [
-      ...lines.map((l) => ({ outcome: "info" as const, detail: `${l.line_id}: on net ${l.net_amount} → ${l.tax_on_net}; on fees ${l.fee_amount} → ${l.tax_on_fees}`, amount: l.tax_on_net + l.tax_on_fees })),
-      ...tax.breakdown.map((b) => ({ outcome: "info" as const, detail: `${b.name}: ${b.bps / 100}% on ${b.taxable}`, amount: b.amount })),
+      ...lines.map((l) => ({ outcome: "info" as const, detail: `${l.line_id}: on net ${m(l.net_amount)} → ${m(l.tax_on_net)}; on fees ${m(l.fee_amount)} → ${m(l.tax_on_fees)}`, amount: l.tax_on_net + l.tax_on_fees })),
+      ...tax.breakdown.map((b) => ({ outcome: "info" as const, detail: `${b.name}: ${b.bps / 100}% on ${m(b.taxable)}`, amount: b.amount })),
     ],
   });
 
@@ -338,10 +343,10 @@ export function resolveValue(rule: PricingRule, app: ManualApplication | null): 
   return v;
 }
 
-function describeValue(rule: PricingRule, value: number): string {
+function describeValue(rule: PricingRule, value: number, m: (cents: number) => string = String): string {
   if (rule.calc === "percent") return `${value / 100}%`;
-  if (rule.calc === "fixed_per_unit") return `${value} per unit`;
-  return `${value} per order`;
+  if (rule.calc === "fixed_per_unit") return `${m(value)} per unit`;
+  return `${m(value)} per order`;
 }
 
 /** Per-line magnitudes (always >= 0) for the rule, after its cap. */

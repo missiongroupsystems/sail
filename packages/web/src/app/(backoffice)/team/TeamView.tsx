@@ -17,6 +17,8 @@ import type { Scope } from "@/lib/cookies";
 import { keys } from "@/lib/query";
 import { useSession } from "@/lib/session-context";
 import { AccessSection } from "./AccessSection";
+import { useFreshErrors } from "@/lib/fresh-errors";
+import { useCan } from "@/lib/can";
 
 const ROLE_LABEL: Record<Role, string> = { server: "Server", cashier: "Cashier", manager: "Manager", finance: "Finance", admin: "Admin" };
 const ROLE_HINT: Record<Role, string> = {
@@ -66,6 +68,7 @@ function defaults(s: Staff | null): Values {
 }
 
 export function TeamView({ initialStaff, outlets, brands, scope }: { initialStaff: Staff[]; outlets: Outlet[]; brands: Brand[]; scope: Scope }) {
+  const canCreate = useCan("staff.create");
   const [showInactive, setShowInactive] = useState(false);
   const [sheet, setSheet] = useState<SheetState>(null);
   const staff = useQuery({
@@ -125,9 +128,11 @@ export function TeamView({ initialStaff, outlets, brands, scope }: { initialStaf
           <Switch isSelected={showInactive} onChange={setShowInactive} className="min-h-11 py-0">
             Show inactive
           </Switch>
-          <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
+          {canCreate.ok ? (
+            <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
             Add staff member
           </Button>
+          ) : null}
         </div>
       </div>
       <DataTable
@@ -186,6 +191,8 @@ function StaffSheet({ state, outlets, brands, onClose }: { state: SheetState; ou
     onError: (e) => applyServerErrors(form.setError, e, Object.keys(form.getValues())),
   });
 
+  const mayEdit = useCan("staff.update");
+  useFreshErrors(state, form.watch(), save);
   return (
     <Sheet
       isOpen={state !== null}
@@ -198,7 +205,7 @@ function StaffSheet({ state, outlets, brands, onClose }: { state: SheetState; ou
           <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={save.isPending}>
             Cancel
           </Button>
-          <Button variant="primary" type="submit" form="staff-form" isPending={save.isPending}>
+          <Button variant="primary" type="submit" form="staff-form" isDisabled={!mayEdit.ok} isPending={save.isPending}>
             {staff ? "Save changes" : "Add staff member"}
           </Button>
         </>
@@ -247,6 +254,8 @@ function StaffSheet({ state, outlets, brands, onClose }: { state: SheetState; ou
         ) : null}
 
         {staff && me.role === "admin" ? <AccessSection staff={staff} emailUnsaved={email.trim() !== (staff.email ?? "")} /> : null}
+
+        {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
 
         <InlineError error={save.error} />
       </form>

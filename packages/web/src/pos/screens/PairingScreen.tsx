@@ -7,6 +7,7 @@ import { pairStation } from "../api/register";
 import { useApi } from "../hooks/useApi";
 import type { Station } from "../api/types";
 import { useStationStore } from "../state/station";
+import { useSessionStore } from "../state/session";
 
 export type PairingScreenProps = {
   /** What is being paired, in the copy: "iPad", or "screen" for a kitchen display. */
@@ -33,6 +34,9 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
     setError(null);
     try {
       const res = await pairStation(api, code, label.trim(), kind);
+      // Pairing ends every PIN session on this station, an old one left on this iPad included: forget it quietly, so the
+      // lock screen does not open on "Your session ended" (A and C notes).
+      useSessionStore.getState().lock(null);
       (onPaired ?? setPaired)(res.station_token, res.station, label.trim());
     } catch (e) {
       // The code stays on the pad, so a slip can be corrected rather than typed again.
@@ -71,6 +75,7 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
               setError(null);
             }}
             onComplete={() => void 0}
+            onEnter={() => void pair()}
             unlockHint={false}
             error={error ? error.message : null}
             showErrorText={false}

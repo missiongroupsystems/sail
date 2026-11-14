@@ -10,12 +10,12 @@ import { usePos } from "../components/PosContext";
 import { GREY_PILL, PANEL } from "../components/styles";
 import { ReceiptChooser } from "../components/ReceiptChooser";
 import { VoidPaymentSheet } from "../components/ReasonSheets";
-import { useMerchant, useOrder, usePaymentIntents, useTenderTypes } from "../hooks/queries";
+import { useMerchant, useOrder, usePaymentIntents, useShifts, useTenderTypes } from "../hooks/queries";
 import { likelyTendered, useCashDenominations } from "../lib/cash";
 import { roleAtLeast, useOrderActions } from "../hooks/useOrderActions";
 import { useNavStore } from "../state/nav";
 import { useUiStore } from "../state/ui";
-import { billLabel, billRows, shareText } from "./BillScreen";
+import { billLabel, billRows, lineOrder, shareText } from "./BillScreen";
 
 /** A dry run's answer with the inputs it was asked for, so an answer for the last inputs is never shown against new ones. */
 type Preview = { figures: PaymentFigures; left: number; key: string } | null;
@@ -57,6 +57,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const intents = usePaymentIntents(orderId);
   const denominations = useCashDenominations();
   const merchant = useMerchant();
+  const openShifts = useShifts(station.outlet_id, "open");
   const actions = useOrderActions(orderId);
   const snap = order.data;
   const check = snap?.checks.find((c) => c.id === checkId) ?? null;
@@ -191,18 +192,31 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   // The register previews cash rounding and change, the tip, and the balance left after a part payment, on every change.
   // A dry run still waiting when the inputs change, or when the payment is taken, is dropped with the effect.
   const tipKey = tipping ? JSON.stringify(tipFields(tip)) : "";
+  // Cash needs a drawer: with no shift open here the register would refuse, so the dry run is not sent and the screen says
+  // why (live test D-N4). Cash handed over that is short of the amount is not sent either; the register's cash rounding can
+  // only move the amount by less than one rounding step.
+  const shiftOpen = (openShifts.data ?? []).some((s) => s.station_id === station.id || s.station_id === null);
+  const noShift = Boolean(tender?.is_cash) && openShifts.isSuccess && !shiftOpen;
+  const step = merchant.data?.settings.cash_rounding_increment ?? 0;
+  const shortCash = Boolean(tender?.is_cash) && tendered != null && tendered + step < amount;
+  const localStop = noShift ? "No shift is open here to take cash into. Open a shift (with its float) first, or take the payment by card." : shortCash ? "The cash handed over is less than the amount. Enter the cash given, or lower the amount for a part payment." : null;
   // Only the answer for what is on screen now: a cash note tapped a moment ago must not show the last answer's
   // change (it read $0.00 for an instant, live-test A-10) while its own dry run is on the wire.
   const currentKey = tender ? previewKey(tender.id, amount, tender.is_cash ? tendered : null, tipKey ? (JSON.parse(tipKey) as { tip_bps?: number; tip_cents?: number }) : {}) : "";
   const fresh = preview && preview.key === currentKey ? preview : null;
   useEffect(() => {
     if (!tender || !check || done || busy) return;
+    if (localStop) {
+      setPreview(null);
+      setPreviewError(null);
+      return undefined;
+    }
     const tipped = tipKey ? (JSON.parse(tipKey) as { tip_bps?: number; tip_cents?: number }) : {};
     if (tender.is_cash || (part && !tender.provider) || tipKey) return runPreview(tender, amount, tender.is_cash ? tendered : null, tipped);
     setPreview(null);
     setPreviewError(amount > balance ? "Amount above the balance. Enter the balance or a smaller part payment." : null);
     return undefined;
-  }, [tender, check, amount, tendered, part, balance, done, busy, runPreview, tipKey]);
+  }, [tender, check, amount, tendered, part, balance, done, busy, runPreview, tipKey, localStop]);
 
   const selectTender = (id: string) => {
     if (id === watched?.tender_type_id) setOtherMethod(false);
@@ -249,7 +263,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
     try {
       await previewInFlight.current?.catch(() => undefined);
       if (tipCents === null) return;
-      const res = await actions.pay(check, { payment_id: id, tender_type_id: tender.id, amount, ...(tender.is_cash && tendered != null ? { tendered } : {}), ...(tipCents ? { tip_cents: tipCents } : {}), ...(reference.trim() ? { reference: reference.trim() } : {}) }, tender.name, { onRefused: (e) => (tipRefused(e) ? backToTip() : undefined) });
+      const res = await actions.pay(check, { payment_id: id, tender_type_id: tender.id, amount, ...(tender.is_cash && tendered != null ? { tendered } : {}), ...(tipCents ? { tip_cents: tipCents } : {}), ...(reference.trim() ? { reference: reference.trim() } : {}) }, tender.name, { onRefused: (e) => (tipRefused(e) ? backToTip() : undefined), dueCents: fresh?.figures.due_cents ?? null });
       if (res) {
         const after = res.data.checks.find((c) => c.id === check.id) ?? check;
         setDone({ check: after, order: res.data, figures: res.payment });
@@ -288,16 +302,19 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   if (done) {
     const paidAmount = done.figures.amount ?? amount;
     const change = done.figures.change_due;
+    // A part payment leaves this bill open: the screen says so, and its way on is the rest of the same bill.
+    const partPaid = done.check.status === "open" && done.check.balance > 0;
     return (
       // No back or title row: the result is the screen. Leaving is the done button (or the 4 s auto-return).
       <Frame>
         <VoidPaymentSheet label={voiding ? `${money(voiding.amount)} by ${voiding.tender}` : null} onTerminal={voiding ? mine.some((i) => i.payment_id === voiding.id) : false} isOpen={voiding !== null} onClose={() => setVoiding(null)} onVoid={voidPayment} />
         <ReceiptChooser
-          autoReturnMs={voiding ? 0 : undefined}
+          // With change to hand over, the screen stays until it is tapped: the figure must not vanish mid-count (A-N5).
+          autoReturnMs={voiding || partPaid || (tender.is_cash && change > 0) ? 0 : undefined}
           order={done.order}
           check={done.check}
           actions={actions}
-          caption={`Paid · ${done.check.label} · ${where}`}
+          caption={`${partPaid ? "Part paid" : "Paid"} · ${done.check.label} · ${where}`}
           amount={paidAmount}
           extra={
             done.figures.id && !voidWaiting(done.figures.id) ? (
@@ -310,8 +327,18 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
             main: tender.is_cash && change > 0 ? `Change ${money(change)}` : null,
             minor: [done.figures.tip_cents ? `Tip ${money(done.figures.tip_cents)}` : null, !(tender.is_cash && change > 0) && done.figures.rounding_cents ? `Cash rounding ${money(done.figures.rounding_cents)}` : null].filter(Boolean).join(" · ") || null,
           }}
-          onDone={leave}
-          doneLabel={done.order.status === "completed" ? (screen.kind === "pay" && screen.from === "orders" ? "Back to orders" : "Back to floor") : done.order.checks.some((c) => c.status === "open") ? "Next bill" : "Back to the order"}
+          onDone={
+            partPaid
+              ? () => {
+                  setDone(null);
+                  setDigits(null);
+                  setTendered(null);
+                  setTip({ kind: "none" });
+                  padTo("amount");
+                }
+              : leave
+          }
+          doneLabel={partPaid ? `Pay the rest of ${done.check.label}` : done.order.status === "completed" ? (screen.kind === "pay" && screen.from === "orders" ? "Back to orders" : "Back to floor") : done.order.checks.some((c) => c.status === "open") ? "Next bill" : "Back to the order"}
         />
       </Frame>
     );
@@ -325,24 +352,31 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   // What the guest hands over: the amount, cash rounding and tip, as the register's dry run returned it.
   const due = figures?.due_cents ?? amount;
   const verb = tender.is_cash ? `Take ${money(tendered ?? due)} cash` : onTerminal ? `Send ${money(due)} to the terminal` : tender.is_terminal ? (part || tipping ? `Take ${money(due)} by ${tender.name}` : `Paid by ${tender.name}`) : `Take ${money(due)} by ${tender.name}`;
-  const label = `${verb}${part && left != null ? ` · ${money(left)} left` : ""}`;
+  // A tip still being checked has no confirmed total yet: the button never shows the amount without it (D notes, B WebKit).
+  const label = tipping && !figures && !localStop ? "Checking the tip…" : `${verb}${part && left != null ? ` · ${money(left)} left` : ""}`;
   // Too little cash for the rounded amount comes back from the dry run as a validation error, which blocks the button with its remedy.
   // Cash and a tip wait for the dry run, so the button never shows a figure the register has not confirmed.
   const waitingForRegister = (tender.is_cash || tipping) && !figures;
   // The terminal cannot take an approval, so a Server cannot send a card payment to it; every other method asks for one.
   const terminalNeedsCashier = onTerminal && !canPay;
-  const blocked = offline || busy || amount <= 0 || Boolean(previewError) || waitingForRegister || watched?.state === "pending" || terminalNeedsCashier;
+  const blocked = offline || busy || amount <= 0 || Boolean(previewError) || Boolean(localStop) || waitingForRegister || watched?.state === "pending" || terminalNeedsCashier;
   const tipText = tipping && figures ? money(figures.tip_cents ?? 0) : null;
 
   // The keypad: which figure it types into, what it shows, and what a key does to it.
   const padTarget: PadTarget = pad.target === "cash" && !tender.is_cash ? "amount" : pad.target === "tip" && !tipsOffered ? "amount" : pad.target;
-  const padDigitsShown = padTarget === "amount" ? (digits ?? String(balance)) : padTarget === "cash" ? (tendered != null ? String(tendered) : String(due)) : tip.kind === "amount" ? tip.digits : "";
+  const padDigitsShown = padTarget === "amount" ? (digits ?? String(balance)) : padTarget === "cash" ? (tendered != null ? String(tendered) : String(due)) : tip.kind === "amount" ? tip.digits : tip.kind === "percent" && figures?.tip_cents != null ? String(figures.tip_cents) : "";
   const padFresh = pad.fresh;
   const onPad = (next: string) => {
     const d = typed(padDigitsShown, next, padFresh);
     // Cleared to nothing, the figure goes back to its prefilled value, and the next key replaces it again.
     setPad({ target: padTarget, fresh: d === "" });
-    if (padTarget === "amount") setDigits(d);
+    // Cash typed above the balance is the cash handed over (A-N1): the register records the balance and gives change, and
+    // the screen says exactly that instead of "will record" a figure it will not.
+    if (padTarget === "amount" && tender.is_cash && d !== "" && Number(d) > balance) {
+      setDigits(null);
+      setTendered(Number(d));
+      setPad({ target: "cash", fresh: false });
+    } else if (padTarget === "amount") setDigits(d);
     else if (padTarget === "cash") setTendered(d ? Number(d) : null);
     else {
       // A new tip is a new dry run: the old figures must not be paid while it runs.
@@ -361,7 +395,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
         <section className={PANEL + " flex w-[340px] shrink-0 flex-col overflow-hidden max-[1100px]:w-[280px] max-[960px]:max-h-[380px] max-[960px]:w-auto"} aria-label="Bill">
           <h2 className="flex h-12 shrink-0 items-center border-b border-rule px-4 font-heading text-[17px] font-semibold text-ink">{billLabel(check)}</h2>
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2 max-[960px]:min-h-[108px]">
-            {check.allocations.map((a) => {
+            {[...check.allocations].sort((a, b) => lineOrder(snap, a.line_id) - lineOrder(snap, b.line_id)).map((a) => {
               const l = linesById.get(a.line_id);
               if (!l) return null;
               return (
@@ -491,8 +525,11 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
                     </div>
                   </div>
                   <div className="rounded-tile bg-surface-2 px-4 py-3 text-[15px] tabular" role="status" aria-live="polite">
-                    {figures ? (
+                    {localStop ? (
+                      <span className="text-status-alert">{localStop}</span>
+                    ) : figures ? (
                       <dl className="flex flex-col gap-0.5">
+                        {tendered != null ? <SummaryRow label="Cash handed over" cents={tendered} /> : null}
                         <SummaryRow label={part ? "Part payment the register will record" : "The register will record"} cents={amount} />
                         {rounding !== 0 ? <SummaryRow label="Cash rounding" cents={rounding} /> : null}
                         {tipping ? <SummaryRow label="Tip" cents={figures.tip_cents ?? 0} /> : null}
@@ -640,3 +677,4 @@ function SummaryRow({ label, cents, strong }: { label: string; cents: number; st
     </div>
   );
 }
+

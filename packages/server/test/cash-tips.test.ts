@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import "../src/modules.js";
 import { buildApp } from "../src/app.js";
-import { api, freshDb, seedMerchant, type TestDb } from "./helpers.js";
+import { api, freshDb, seedMerchant, wholeDayCash, type TestDb } from "./helpers.js";
 
 /**
  * A cash tip is part of what the guest hands over and stays in the drawer: the change never gives it back, and the
@@ -17,7 +17,7 @@ beforeAll(async () => {
 });
 afterAll(async () => db.drop());
 
-type Cash = { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number };
+type Cash = { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number; open_shifts?: { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number } };
 
 async function merchant(name: string, currency: string, rounding: number | null, price: number, tips = true) {
   const m = await seedMerchant(db.sql, name, { preset: "blank", timeZone: "Europe/London", currency, locale: "en-GB", cashRoundingIncrement: rounding });
@@ -54,7 +54,7 @@ async function receiptPayment(w: Awaited<ReturnType<typeof merchant>>, checkId: 
 
 async function closeAgrees(w: Awaited<ReturnType<typeof merchant>>, shiftId: string, drawer: number) {
   const z = await call<{ data: { cash: Cash } }>("GET", `/v1/outlets/${w.m.outletId}/z-report`, { token: w.token });
-  expect(z.body.data.cash.expected).toBe(drawer);
+  expect(wholeDayCash(z.body.data.cash).expected).toBe(drawer);
   const closed = await call<{ data: { variance_cents: number; report: { cash: Cash } } }>("POST", `/v1/shifts/${shiftId}/close`, { token: w.token, body: { counted_cash_cents: drawer } });
   expect(closed.status, JSON.stringify(closed.body)).toBe(200);
   expect(closed.body.data.variance_cents).toBe(0);
@@ -179,9 +179,9 @@ describe("tips with refunds and the Z-report, in 0, 2 and 3 decimals", () => {
       expect(cashOut).toBeGreaterThanOrEqual(p.amount + p.rounding_cents + tip - (rounding ?? 1));
       const z = (await call<{ data: { cash: Cash; reconciliation: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number }; tenders_summary: { tips: number } } }>("GET", `/v1/outlets/${w.m.outletId}/z-report`, { token: w.token })).body.data;
       expect(z.tenders_summary.tips).toBe(tip);
-      expect(z.cash.expected).toBe(10_000 + p.amount + p.rounding_cents + tip - cashOut);
+      expect(wholeDayCash(z.cash).expected).toBe(10_000 + p.amount + p.rounding_cents + tip - cashOut);
       expect(z.reconciliation.tenders).toBe(z.reconciliation.sales_total + z.reconciliation.paid_on_other_orders - z.reconciliation.paid_elsewhere);
-      await closeAgrees(w, sale.shiftId, z.cash.expected);
+      await closeAgrees(w, sale.shiftId, wholeDayCash(z.cash).expected);
     });
   }
 });

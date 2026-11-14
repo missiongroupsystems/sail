@@ -81,7 +81,7 @@ describe("tax rates", () => {
     const before = cls.rates.find((r) => r.outlet_id == null && r.order_type == null)!.components;
     const r = await call<Err>("PUT", `/v1/tax-classes/${cls.id}/rates`, { token: w.m.admin.token, body: { outlet_id: null, order_type: null, components: [{ name: "VAT", bps: -500 }] } });
     expect(r.status).toBe(400);
-    expect(r.body.message).toMatch(/at least 0/);
+    expect(r.body.message).toBe("The rate cannot be negative");
     const after = (await call<{ data: { id: string; rates: { outlet_id: string | null; order_type: string | null; components: unknown }[] }[] }>("GET", "/v1/tax-classes", { token: w.m.admin.token })).body.data.find((k) => k.id === cls.id)!;
     expect(after.rates.find((x) => x.outlet_id == null && x.order_type == null)!.components).toEqual(before);
   });

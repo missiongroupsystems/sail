@@ -2,6 +2,7 @@
 
 import { Minus, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
+import { MAX_PIECES } from "@sail/shared";
 import { Button as AriaButton, Input, Label, TextField as AriaTextField } from "react-aria-components";
 import { cx } from "../lib/cx";
 import { Money } from "../components/Money";
@@ -37,6 +38,8 @@ export type CashCounterProps = {
   isDisabled?: boolean;
   /** The total field's label ("Opening float", "Cash counted in the drawer"). */
   totalLabel?: string;
+  /** The most a drawer can hold (`drawerCap`); above it the counter says so and the caller keeps its action off. */
+  max?: number;
   className?: string;
 };
 
@@ -94,10 +97,11 @@ function TotalField({ label, digits, onChange, isDisabled }: { label: string; di
  * counter with a row per note and coin adding up live. Used for the float at
  * open and the blind count at close.
  */
-export function CashCounter({ mode, onModeChange, totalDigits, onTotalDigitsChange, counts, onCountsChange, denominations, isDisabled, totalLabel = "Cash in the drawer", className }: CashCounterProps) {
+export function CashCounter({ mode, onModeChange, totalDigits, onTotalDigitsChange, counts, onCountsChange, denominations, isDisabled, totalLabel = "Cash in the drawer", max, className }: CashCounterProps) {
   const { money } = useLocale();
   const total = cashCounterTotal(mode, totalDigits, counts, denominations);
-  const setCount = (k: string, n: number) => onCountsChange({ ...counts, [k]: Math.max(0, Math.min(999, n)) });
+  const over = max !== undefined && total > max;
+  const setCount = (k: string, n: number) => onCountsChange({ ...counts, [k]: Math.max(0, Math.min(MAX_PIECES, n)) });
   return (
     <div className={cx("flex flex-col gap-4", className)}>
       {/* A merchant with no notes and coins configured counts one total only. */}
@@ -151,6 +155,11 @@ export function CashCounter({ mode, onModeChange, totalDigits, onTotalDigitsChan
           </div>
         </div>
       )}
+      {over ? (
+        <p role="alert" className="text-body text-status-alert">
+          That is more than a drawer holds. Check the amount: at most {money(max ?? 0)}.
+        </p>
+      ) : null}
     </div>
   );
 }

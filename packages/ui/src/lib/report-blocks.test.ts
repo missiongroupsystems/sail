@@ -53,7 +53,7 @@ describe("refundBlocks", () => {
     expect(b.taxDue.map((r) => [r.label, r.amount])).toEqual([["GST due", 410]]);
     expect(refundBlocks(full, refunds, "exclusive")!.taxDue).toEqual([]);
     const two = refundBlocks(full, refunds, "exclusive", [{ name: "GST", bps: 900, amount: 410 }, { name: "GST", bps: 800, amount: -20 }])!;
-    expect(two.taxDue.map((r) => r.label)).toEqual(["GST (9%) due", "GST (8%) due"]);
+    expect(two.taxDue.map((r) => r.label)).toEqual(["GST (8%) due", "GST (9%) due"]);
   });
 });
 
@@ -63,5 +63,18 @@ describe("refundableQuantity", () => {
     expect(refundableQuantity(3, undefined)).toBe(3);
     expect(refundableQuantity(2, 2)).toBe(0);
     expect(refundableQuantity(1, 4)).toBe(0);
+  });
+});
+
+describe("one rate order in every block (F notes)", () => {
+  it("lists refunded tax and tax due lowest rate first, as the sales block does", async () => {
+    const { refundBlocks } = await import("./report-blocks");
+    const sales = { gross: 1000, discounts: 0, fees: 0, total: 1000, net: 800, net_before_refunds: 850, total_after_refunds: 900, taxes: [{ name: "VAT 20%", bps: 2000, amount: 100 }, { name: "VAT 10%", bps: 1000, amount: 50 }] };
+    const refunds = { count: 1, amount: 100, net: 50, fees: 0, tax: 10, tips: 0, taxes: [{ name: "VAT 20%", bps: 2000, amount: 6 }, { name: "VAT 10%", bps: 1000, amount: 4 }] };
+    const b = refundBlocks(sales, refunds, "inclusive", [{ name: "VAT 20%", bps: 2000, amount: 94 }, { name: "VAT 10%", bps: 1000, amount: 46 }])!;
+    const order = (rows: { label: string }[]) => rows.filter((r) => r.label.startsWith("VAT")).map((r) => r.label.replace(" (included)", "").replace(" due", ""));
+    expect(order(b.before)).toEqual(["VAT 10%", "VAT 20%"]);
+    expect(order(b.refunds)).toEqual(["VAT 10%", "VAT 20%"]);
+    expect(order(b.taxDue)).toEqual(["VAT 10%", "VAT 20%"]);
   });
 });

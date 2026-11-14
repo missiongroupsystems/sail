@@ -12,6 +12,7 @@ import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Customer, CustomerGroup, CustomerUpsert } from "@/lib/api/types";
 import { keys } from "@/lib/query";
+import { useFreshErrors } from "@/lib/fresh-errors";
 
 type CustomerSheet = { mode: "create" } | { mode: "edit"; customer: Customer } | null;
 type GroupSheet = { mode: "create" } | { mode: "edit"; group: CustomerGroup } | null;
@@ -189,6 +190,7 @@ function CustomerFormSheet({ state, groups, onClose }: { state: CustomerSheet; g
   });
   const busy = save.isPending || archive.isPending;
 
+  useFreshErrors(state, form.watch(), save, archive);
   return (
     <Sheet
       isOpen={state !== null}
@@ -259,6 +261,7 @@ function GroupFormSheet({ state, onClose }: { state: GroupSheet; onClose: () => 
     onSuccess: settle,
   });
   const busy = save.isPending || archive.isPending;
+  useFreshErrors(state, form.watch(), save, archive);
   return (
     <Sheet
       isOpen={state !== null}

@@ -3,6 +3,8 @@
 import { Button, Money, QuantityStepper, ReasonPicker, Sheet, sortTaxes, TextField } from "@sail/ui";
 import { Fragment, useEffect, useState } from "react";
 import type { OrderSnapshot, SnapshotLine } from "../api/types";
+import { updateLine } from "../api/register";
+import { useApi } from "../hooks/useApi";
 import { useVoidReasons } from "../hooks/queries";
 import type { useOrderActions } from "../hooks/useOrderActions";
 import { ModifierPicker, QUICK_NOTES, selectionFromLine, toModifiers, unmetRequirement, type Selection } from "./ModifierPicker";
@@ -29,6 +31,32 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
   const [selection, setSelection] = useState<Selection>({});
   const [removing, setRemoving] = useState(false);
   const [busy, setBusy] = useState(false);
+  const api = useApi();
+  /** The register's figures for the quantity on the stepper (a dry run), so the box follows it both ways (A-N2). */
+  const [priced, setPriced] = useState<SnapshotLine | null>(null);
+  const [pricedFailed, setPricedFailed] = useState(false);
+  const lineId = line?.id ?? null;
+  const unsent = line ? line.status !== "fired" : false;
+  const savedQty = line?.quantity ?? 0;
+  useEffect(() => {
+    setPriced(null);
+    setPricedFailed(false);
+    if (!lineId || !unsent || quantity === savedQty || offline) return;
+    let gone = false;
+    const t = setTimeout(async () => {
+      try {
+        const res = await updateLine(api, order.id, lineId, { quantity, dry_run: true });
+        if (!gone) setPriced(res.data.lines.find((l) => l.id === lineId) ?? null);
+      } catch {
+        // No figure is better than a wrong one: the box says the total shows once saved.
+        if (!gone) setPricedFailed(true);
+      }
+    }, 200);
+    return () => {
+      gone = true;
+      clearTimeout(t);
+    };
+  }, [api, order.id, lineId, unsent, quantity, savedQty, offline]);
 
   useEffect(() => {
     if (!line) return;
@@ -139,7 +167,18 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
             <QuantityStepper value={quantity} onChange={setQuantity} min={1} max={sent ? line.quantity : 999} />
           </section>
           {sent ? <p className="text-body text-ink-2">A sent line cannot be changed. Lower the quantity to void part of it.</p> : null}
-          <LineTotal line={line} taxMode={order.totals.tax_mode} />
+          {quantity === line.quantity || priced?.quantity === quantity ? (
+            <LineTotal line={quantity === line.quantity ? line : priced!} taxMode={order.totals.tax_mode} />
+          ) : sent ? (
+            <>
+              <LineTotal line={line} taxMode={order.totals.tax_mode} />
+              <p className="text-body text-ink-2">Voiding {quantity} of {line.quantity}. The figures above are the whole line as sent.</p>
+            </>
+          ) : (
+            <p className="rounded-tile border border-rule px-4 py-3 text-body text-ink-2" role="status">
+              {quantity} × {line.name} · {pricedFailed ? "the register gives the total once saved." : "checking the price with the register…"}
+            </p>
+          )}
           {station.seats_enabled && order.order_type === "dine_in" && !sent ? (
             <section>
               <h3 className="mb-2 text-[16px] font-medium text-ink">Seat</h3>

@@ -172,7 +172,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
       <Sheet labelledClose isOpen={sheet?.kind === "receipt"} onOpenChange={(o) => (!o ? setSheet(null) : undefined)} title={receiptCheck ? `Receipt · ${receiptCheck.label}` : "Receipt"} width="lg">
         {snap && receiptCheck ? <ReceiptChooser order={snap} check={receiptCheck} actions={actions} caption={`Paid · ${receiptCheck.label}`} amount={receiptCheck.paid_total} autoReturnMs={0} onDone={() => setSheet(null)} doneLabel="Done" /> : null}
       </Sheet>
-      <ReopenSheet isOpen={sheet?.kind === "reopen"} onClose={() => setSheet(null)} onReopen={(reason) => actions.reopen(reason)} />
+      <ReopenSheet isOpen={sheet?.kind === "reopen"} onClose={() => setSheet(null)} onReopen={(reason) => actions.reopen(reason)} payments={(order.data?.checks ?? []).flatMap((c) => c.payments.filter((p) => p.status === "recorded").map((p) => `${p.tender} ${money(p.amount)}`))} />
       <RejectRoundSheet isOpen={sheet?.kind === "reject"} roundLabel={sheet?.kind === "reject" ? `${sheet.round.lines.length} ${sheet.round.lines.length === 1 ? "item" : "items"}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null} onClose={() => setSheet(null)} onReject={(reason) => (sheet?.kind === "reject" ? actions.rejectRound(sheet.round.id, reason) : Promise.resolve(null))} />
     </Frame>
   );

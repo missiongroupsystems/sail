@@ -7,7 +7,7 @@ import { usePos } from "../components/PosContext";
 import { PrintersView } from "./shift/PrintersView";
 import { ShiftHome } from "./shift/ShiftHome";
 import { SoldOutView } from "./shift/SoldOutView";
-import { ZReportView } from "./shift/ZReportView";
+import { BlindNote, ZReportView } from "./shift/ZReportView";
 import { DayPanel } from "./shift/DayPanel";
 import { ZFigures } from "./shift/ZFigures";
 import { useZReport } from "../hooks/queries";
@@ -27,6 +27,8 @@ export function ShiftScreen() {
   const { floor } = usePos();
   const { businessDay } = useLocale();
   const [tab, setTab] = useState<ShiftTab>("shift");
+  // The close is a blind count: from the checklist to the register's answer, nothing that gives expected cash away is shown (A-N3, C-3).
+  const [counting, setCounting] = useState(false);
   // The line under the title: the business day and its state (the outlet and station are in the top bar).
   const meta = floor?.business_date ? (
     <span className="inline-flex items-center gap-2">
@@ -42,28 +44,30 @@ export function ShiftScreen() {
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
           <div className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] items-start gap-4 max-[960px]:grid-cols-1">
             <div className="flex h-fit max-h-[calc(100dvh-148px)] min-h-0 flex-col">
-              <ShiftHome onShowReport={() => setTab("zreport")} />
+              <ShiftHome onShowReport={() => setTab("zreport")} onCounting={setCounting} />
             </div>
             <DayPanel />
           </div>
-          <FiguresSoFar />
+          <FiguresSoFar blind={counting} />
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto">{tab === "zreport" ? <ZReportView /> : tab === "soldout" ? <SoldOutView /> : <PrintersView />}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto">{tab === "zreport" ? <ZReportView blind={counting} /> : tab === "soldout" ? <SoldOutView /> : <PrintersView />}</div>
       )}
     </Frame>
   );
 }
 
 /** "Z-report · figures so far" for this station, from the register, four panels in a row on a landscape iPad. */
-function FiguresSoFar() {
+function FiguresSoFar({ blind }: { blind: boolean }) {
   const { station, staff } = usePos();
-  const report = useZReport(station.outlet_id, station.id, null, roleAtLeast(staff.role, "cashier"));
+  const report = useZReport(station.outlet_id, station.id, null, roleAtLeast(staff.role, "cashier") && !blind);
   // The Z-report needs a Cashier: a Server's Shift page leaves the section out rather than showing a refusal each visit.
   if (!roleAtLeast(staff.role, "cashier")) return null;
+  if (blind) return <BlindNote />;
   return (
     <div className="mt-4">
       <ZFigures report={report} title="Z-report · figures so far" />
     </div>
   );
 }
+

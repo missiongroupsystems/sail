@@ -13,6 +13,7 @@ import type { Scope } from "@/lib/cookies";
 import { keys } from "@/lib/query";
 import { BulkPriceSheet } from "./BulkPriceSheet";
 import { ProductSheet, type ProductSheetState } from "./ProductSheet";
+import { useCan } from "@/lib/can";
 
 const ANY = "__any__";
 const PAGE = 50;
@@ -40,6 +41,7 @@ function useDebounced(value: string, ms = 250): string {
 }
 
 export function ProductsView({ initialPage, categories, brands, scope }: { initialPage: ProductPage; categories: Category[]; brands: Brand[]; scope: Scope }) {
+  const canCreate = useCan("products.create");
   const [q, setQ] = useState("");
   const [tag, setTag] = useState("");
   const [brandId, setBrandId] = useState<string | null>(scope.brandId);
@@ -215,9 +217,11 @@ export function ProductsView({ initialPage, categories, brands, scope }: { initi
           ) : (
             <>
               <Button size="sm" onPress={() => setSelecting(true)}>Bulk price edit</Button>
-              <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
+              {canCreate.ok ? (
+                <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
                 Add product
               </Button>
+              ) : null}
             </>
           )}
         </div>

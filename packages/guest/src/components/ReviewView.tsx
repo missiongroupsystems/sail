@@ -1,7 +1,7 @@
 "use client";
 
 import { BrandButton, GuestStepper, Icon, InlineError, Money } from "@sail/ui";
-import { ShoppingBag, Trash2 } from "lucide-react";
+import { Pencil, ShoppingBag, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button as AriaButton, Input, Label, Text, TextField as AriaTextField } from "react-aria-components";
 import type { BasketItem } from "@/lib/basket";
@@ -72,6 +72,8 @@ export function ReviewView({ session, menu, items, guestName, onGuestName, canOr
     return () => clearInterval(t);
   }, [error]);
 
+  // The menu already says these are gone: flag them here and keep Send off until they are removed (D-N3).
+  const goneKeys = new Set(items.filter((i) => { const p = menu.products[i.product_id]; return !p || p.sold_out || !p.available_now; }).map((i) => i.key));
   const generalError = error && !badKey && error.kind !== "table_not_open" && error.kind !== "rate_limited" ? error.error : null;
 
   return (
@@ -130,13 +132,28 @@ export function ReviewView({ session, menu, items, guestName, onGuestName, canOr
                       <Money cents={item.unit_price} className="text-[15.5px] font-medium text-ink" /> each
                     </p>
                   </div>
+                  {goneKeys.has(item.key) ? (
+                    <p role="alert" className="text-[14.5px] leading-snug text-status-alert">
+                      {menu.products[item.product_id]?.sold_out || !menu.products[item.product_id] ? "Sold out." : (menu.products[item.product_id]?.unavailable_reason ?? "Not available right now.").replace(/([^.!?])$/, "$1.")} Remove it to send the rest.
+                    </p>
+                  ) : null}
                   {itemError ? <InlineError error={{ message: itemError.message, remedy: itemError.remedy ?? (error?.kind === "group" ? "Tap the item to choose." : null) }} /> : null}
-                  <div className="flex items-center justify-between gap-3">
+                  {/* Wraps rather than widening the page: stepper, Edit and Remove fit one row at 360 px, and never push past it. */}
+                  <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                     <GuestStepper value={item.quantity} onChange={(q) => (sending ? undefined : onQuantity(item.key, q))} min={1} max={maxQuantity(menu, item.product_id)} label={`Quantity of ${item.name}`} />
-                    <BrandButton variant="quiet" onPress={() => onRemove(item.key)} isDisabled={sending} aria-label={`Remove ${item.name}`} className="min-h-11 gap-1.5 px-3 text-[14.5px] text-ink-2">
-                      <Icon icon={Trash2} size={18} />
-                      Remove
-                    </BrandButton>
+                    <span className="ml-auto flex items-center">
+                      {/* A visible way to change the choices or the note, 44px tall (D-N2); the item's words open it too. */}
+                      {!goneKeys.has(item.key) ? (
+                        <BrandButton variant="quiet" onPress={() => onEdit(item.key)} isDisabled={sending} aria-label={`Edit ${item.name}`} className="min-h-11 gap-1.5 px-2.5 text-[14.5px] text-ink-2">
+                          <Icon icon={Pencil} size={18} />
+                          Edit
+                        </BrandButton>
+                      ) : null}
+                      <BrandButton variant="quiet" onPress={() => onRemove(item.key)} isDisabled={sending} aria-label={`Remove ${item.name}`} className="min-h-11 gap-1.5 px-2.5 text-[14.5px] text-ink-2">
+                        <Icon icon={Trash2} size={18} />
+                        Remove
+                      </BrandButton>
+                    </span>
                   </div>
                 </li>
               );
@@ -176,8 +193,8 @@ export function ReviewView({ session, menu, items, guestName, onGuestName, canOr
                 {error.error.message} · Try again in {retryIn} s
               </p>
             ) : null}
-            <BrandButton variant="accent" block className="min-h-14 text-[16.5px]" onPress={onSend} isPending={sending} isDisabled={!canOrder || retryIn > 0}>
-              {canOrder ? `Send ${count} ${count === 1 ? "item" : "items"} to the kitchen` : "Waiting for staff to seat you"}
+            <BrandButton variant="accent" block className="min-h-14 text-[16.5px]" onPress={onSend} isPending={sending} isDisabled={!canOrder || retryIn > 0 || goneKeys.size > 0}>
+              {!canOrder ? "Waiting for staff to seat you" : goneKeys.size ? `Remove the ${goneKeys.size === 1 ? "sold-out item" : `${goneKeys.size} sold-out items`} to send` : `Send ${count} ${count === 1 ? "item" : "items"} to the kitchen`}
             </BrandButton>
           </div>
         </Dock>

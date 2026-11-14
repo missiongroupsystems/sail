@@ -24,15 +24,16 @@ export const greyPillAlert = `${greyPill} not-data-[disabled]:text-status-alert!
 export function TwoLine({ primary, meta, mono, className }: { primary: ReactNode; meta?: ReactNode; mono?: boolean; className?: string }) {
   return (
     <span className={cx("block min-w-0", className)}>
-      <span className={cx("block font-medium text-ink break-words", mono && "font-mono text-[13px]")}>{primary}</span>
-      {meta ? <span className="block text-[12px] leading-[1.45] text-ink-3 break-words">{meta}</span> : null}
+      {/* "anywhere", not "break-word": a 126-character name then wraps in its column instead of pushing the others off (E-L2). */}
+      <span className={cx("block font-medium text-ink [overflow-wrap:anywhere]", mono && "font-mono text-[13px]")}>{primary}</span>
+      {meta ? <span className="block text-[12px] leading-[1.45] text-ink-3 [overflow-wrap:anywhere]">{meta}</span> : null}
     </span>
   );
 }
 
 /** A quieter single-line cell value that still wraps a long unbroken word. */
 export function Quiet({ children, className }: { children: ReactNode; className?: string }) {
-  return <span className={cx("text-ink-2 break-words", className)}>{children}</span>;
+  return <span className={cx("text-ink-2 [overflow-wrap:anywhere]", className)}>{children}</span>;
 }
 
 /** The upper-case label over a group in a sheet or a page: 12px, semibold, tertiary ink. */

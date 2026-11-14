@@ -3,7 +3,7 @@
 import { Button, PinPad, SailLogo, useLocale } from "@sail/ui";
 import { useCallback, useEffect, useState } from "react";
 import { toApiError } from "@/lib/api";
-import { startSession } from "../api/register";
+import { startSession, unpairStation } from "../api/register";
 import { useChannelLink, useLayout, useMenu } from "../hooks/queries";
 import { useApi } from "../hooks/useApi";
 import { useNow } from "../lib/device";
@@ -36,6 +36,23 @@ export function LockScreen() {
   const [lockedUntil, setLockedUntil] = useState<number | null>(null);
   const [pending, setPending] = useState(false);
   const [confirmUnpair, setConfirmUnpair] = useState(false);
+  const [unpairing, setUnpairing] = useState(false);
+  const [unpairError, setUnpairError] = useState<string | null>(null);
+  // The register ends the pairing first; only then does this iPad forget it. Offline, nothing changes and it says so.
+  const doUnpair = async () => {
+    setUnpairing(true);
+    setUnpairError(null);
+    try {
+      await unpairStation(api);
+      unpair();
+    } catch (e) {
+      const err = toApiError(e);
+      if (err.code === "unauthenticated") unpair();
+      else setUnpairError(err.status === 0 ? "This iPad is offline, so it is still paired. Unpair it once it is back online." : err.remedy ? `${err.message}. ${err.remedy}` : err.message);
+    } finally {
+      setUnpairing(false);
+    }
+  };
   const lockedFor = lockedUntil ? Math.max(0, Math.ceil((lockedUntil - now) / 1000)) : 0;
   // The lockout's message goes with the lock: once the countdown ends, the pad is clear to try again (live-test A-11).
   useEffect(() => {
@@ -86,11 +103,12 @@ export function LockScreen() {
           {confirmUnpair ? (
             <div className="mt-8 flex max-w-[400px] flex-col gap-3 rounded-tile border border-rule bg-surface p-4" role="group" aria-label="Pair this iPad again">
               <p className="text-body text-ink">This iPad stops working as {station.name} until it is paired again with a new code from the back office.</p>
+              {unpairError ? <p role="alert" className="text-body text-status-alert">{unpairError}</p> : null}
               <div className="flex flex-wrap gap-2">
-                <Button variant="destructive" size="lg" onPress={unpair}>
+                <Button variant="destructive" size="lg" isPending={unpairing} onPress={() => void doUnpair()}>
                   Unpair this iPad
                 </Button>
-                <Button variant="quiet" size="lg" onPress={() => setConfirmUnpair(false)} className={GREY_PILL}>
+                <Button variant="quiet" size="lg" isDisabled={unpairing} onPress={() => { setConfirmUnpair(false); setUnpairError(null); }} className={GREY_PILL}>
                   Keep this iPad paired
                 </Button>
               </div>

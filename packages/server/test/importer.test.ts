@@ -98,7 +98,7 @@ describe("legacy importer", () => {
     expect(e.brands).toMatchObject({ creates: 1, rejected: [] });
     expect(e.categories).toMatchObject({ creates: 3 });
     expect(e.products!.creates).toBe(4);
-    expect(e.products!.rejected.map((x) => x.reason)).toEqual(['price "abc" is not an amount in SGD', 'tax class "Luxury" not found']);
+    expect(e.products!.rejected.map((x) => x.reason)).toEqual(['price "abc" is not an amount: write it like 4.50', 'tax class "Luxury" not found']);
     expect(e.modifier_options!.creates).toBe(1);
     expect(e.modifier_options!.rejected[0]!.reason).toMatch(/MISSING not found/);
     expect(e.menu_items!.creates).toBe(3);
@@ -181,7 +181,7 @@ describe("money review: importer amounts", () => {
     const job = await call<{ data: Job }>("GET", `/v1/imports/${r.body.data.id}`, { token: B.admin.token });
     const e = job.body.data.report!.entities;
     expect(e.modifier_options!.creates).toBe(0);
-    expect(e.modifier_options!.rejected.map((x) => x.reason)).toEqual(['price_override "0,50" is not an amount in SGD']);
+    expect(e.modifier_options!.rejected.map((x) => x.reason)).toEqual(['price_override "0,50" is not an amount: write it like 4.50']);
     expect(e.products!.rejected.map((x) => x.reason)).toEqual(['price "99999999999999999999" is above the largest amount the register accepts']);
   });
 });

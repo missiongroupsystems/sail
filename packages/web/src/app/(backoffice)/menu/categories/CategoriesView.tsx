@@ -14,6 +14,8 @@ import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Category } from "@/lib/api/types";
 import { keys } from "@/lib/query";
+import { useFreshErrors } from "@/lib/fresh-errors";
+import { useCan } from "@/lib/can";
 
 const ROOT = "__root__";
 type SheetState = { mode: "create"; parentId: string | null } | { mode: "edit"; category: Category } | null;
@@ -28,6 +30,7 @@ function bySort(locale: string) {
 
 /** The two-level category tree: parents with their children, each editable, each movable among its siblings. */
 export function CategoriesView({ initialCategories }: { initialCategories: Category[] }) {
+  const canCreate = useCan("categories.create");
   const qc = useQueryClient();
   const [showArchived, setShowArchived] = useState(false);
   const [sheet, setSheet] = useState<SheetState>(null);
@@ -67,7 +70,7 @@ export function CategoriesView({ initialCategories }: { initialCategories: Categ
           {c.archived ? <Pill size="sm" tone="neutral" className="ml-1">Archived</Pill> : null}
           {c.legacy_id ? <span className="ml-1 truncate text-[12px] text-ink-3">{c.legacy_id}</span> : null}
         </Button>
-        {depth === 0 ? (
+        {depth === 0 && canCreate.ok ? (
           <Button variant="quiet" onPress={() => setSheet({ mode: "create", parentId: c.id })} className="text-[13px] text-ink-2">
             <Icon icon={Plus} size={14} /> Sub-category
           </Button>
@@ -90,9 +93,11 @@ export function CategoriesView({ initialCategories }: { initialCategories: Categ
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
           </Switch>
-          <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create", parentId: null })}>
+          {canCreate.ok ? (
+            <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create", parentId: null })}>
             Add category
           </Button>
+          ) : null}
         </div>
       </div>
 
@@ -149,6 +154,8 @@ function CategorySheet({ state, parents, parentIds, onClose }: { state: SheetSta
   // A category with sub-categories stays at the top level (two levels only).
   const canHaveParent = !category || !parentIds.has(category.id);
 
+  const mayEdit = useCan("categories.update");
+  useFreshErrors(state, form.watch(), save, archive);
   return (
     <Sheet
       isOpen={state !== null}
@@ -166,7 +173,7 @@ function CategorySheet({ state, parents, parentIds, onClose }: { state: SheetSta
           <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" type="submit" form="category-form" isPending={save.isPending} isDisabled={archive.isPending}>
+          <Button variant="primary" type="submit" form="category-form" isPending={save.isPending} isDisabled={!mayEdit.ok || archive.isPending}>
             {category ? "Save changes" : "Add category"}
           </Button>
         </>
@@ -185,6 +192,7 @@ function CategorySheet({ state, parents, parentIds, onClose }: { state: SheetSta
             />
           ) : null}
         </SheetSection>
+        {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
         <InlineError error={save.error ?? archive.error} />
       </form>
     </Sheet>

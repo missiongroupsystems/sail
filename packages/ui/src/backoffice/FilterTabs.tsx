@@ -22,7 +22,7 @@ export type FilterTabsProps<K extends string = string> = {
  */
 export function FilterTabs<K extends string = string>({ options, selectedId, onSelect, className, ...rest }: FilterTabsProps<K>) {
   return (
-    <div role="group" aria-label={rest["aria-label"]} className={cx("inline-flex h-9 max-w-full items-center gap-0.5 overflow-x-auto rounded-[10px] bg-surface-2 p-0.5", className)}>
+    <div role="group" aria-label={rest["aria-label"]} className={cx("inline-flex h-9 max-sm:h-12 max-w-full items-center gap-0.5 overflow-x-auto rounded-[10px] bg-surface-2 p-0.5", className)}>
       {options.map((o) => {
         const active = o.id === selectedId;
         return (
@@ -32,7 +32,7 @@ export function FilterTabs<K extends string = string>({ options, selectedId, onS
             isDisabled={o.isDisabled}
             onPress={() => onSelect(o.id)}
             className={cx(
-              "press inline-flex h-8 shrink-0 cursor-default items-center gap-1.5 whitespace-nowrap rounded-[8px] px-3 text-[13px] font-medium outline-none transition-colors duration-[120ms]",
+              "press inline-flex h-8 max-sm:h-11 shrink-0 cursor-default items-center gap-1.5 whitespace-nowrap rounded-[8px] px-3 text-[13px] font-medium outline-none transition-colors duration-[120ms]",
               "data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-[-2px] data-[focus-visible]:outline-focus data-[disabled]:text-ink-disabled",
               active ? "bg-surface text-ink shadow-segment" : "text-ink-2 data-[hovered]:text-ink",
             )}

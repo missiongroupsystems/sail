@@ -36,13 +36,14 @@ export function PrintHealthView({ outlets, scope, initialOutletId, today }: { ou
     queryKey: ["reports", "print-health", range.query],
     queryFn: () => req(api.GET("/v1/reports/print-health", { params: { query: { outlet_id, from, to } } })).then((r) => (r as { data: PrintHealthRow[] }).data),
     enabled: range.outletId !== null && range.valid,
-    placeholderData: keepPreviousData,
+    // Dates that cannot make a range show no figures, not the last range's under the new dates (E-N9).
+    placeholderData: range.valid ? keepPreviousData : undefined,
   });
 
   return (
     <>
       <ReportRange outlets={outlets} scope={scope} range={range} />
-      {report.isPending && range.outletId ? <Skeleton lines={4} /> : null}
+      {report.isPending && range.outletId && range.valid ? <Skeleton lines={4} /> : null}
       <InlineError error={report.error} />
       {report.data ? (
         <DataTable aria-label="Print health by printer" columns={columns} rows={report.data} rowKey={(r) => r.printer_id ?? "none"} emptyState={<EmptyState title="No print jobs in this range" />} className={report.isPlaceholderData ? "opacity-60" : undefined} />

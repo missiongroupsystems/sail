@@ -46,7 +46,7 @@ export function DateField({ label, prefix, value, onChange, type = "date", place
       <div
         className={cx(
           "sail-field group relative flex w-full items-center gap-2 rounded-field border border-transparent bg-surface-2 text-ink transition-colors duration-[120ms] has-[:focus-visible]:border-ink has-[:hover]:bg-surface-3",
-          size === "sm" ? "min-h-9 px-2.5 text-[14px]" : "min-h-11 px-3 text-body",
+          size === "sm" ? "min-h-9 max-sm:min-h-11 px-2.5 text-[14px]" : "min-h-11 px-3 text-body",
           isInvalid && "border-status-alert",
         )}
         data-invalid={isInvalid || undefined}

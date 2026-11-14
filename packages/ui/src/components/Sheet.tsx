@@ -54,10 +54,10 @@ export function Sheet({ isOpen, onOpenChange, title, description, children, foot
             <>
               <header className="flex items-start justify-between gap-4 px-5 pt-4 pb-3 border-b border-rule-subtle">
                 <div className="min-w-0 pt-2">
-                  <Heading slot="title" className="font-heading text-[20px] leading-tight font-semibold tracking-[-0.01em] text-ink">
+                  <Heading slot="title" className="font-heading text-[20px] leading-tight font-semibold tracking-[-0.01em] text-ink [overflow-wrap:anywhere]">
                     {title}
                   </Heading>
-                  {description ? <p className="mt-0.5 text-body text-ink-2">{description}</p> : null}
+                  {description ? <p className="mt-0.5 text-body text-ink-2 [overflow-wrap:anywhere]">{description}</p> : null}
                 </div>
                 {labelledClose ? (
                   <Button variant="quiet" size="md" onPress={close} className="-mr-2 gap-1.5 text-ink-2!">

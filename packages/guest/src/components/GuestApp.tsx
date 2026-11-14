@@ -22,7 +22,7 @@ import { OurTableView } from "./OurTableView";
 import { ReviewView } from "./ReviewView";
 import { StatusView } from "./StatusView";
 
-type Phase = { kind: "loading" } | { kind: "invalid" } | { kind: "ended" } | { kind: "unavailable"; error: ApiError } | { kind: "ready" };
+type Phase = { kind: "loading" } | { kind: "invalid" } | { kind: "ended" } | { kind: "rotated" } | { kind: "unavailable"; error: ApiError } | { kind: "ready" };
 
 /** The screens inside the one page. The URL hash carries them so the phone's back button works. */
 export type View = "menu" | "review" | "status" | "table";
@@ -89,8 +89,8 @@ function GuestAppInner({ token }: { token: string }) {
   const basket = useStore(basketStore);
 
   // One client for the page; the token and the 401 handler are read on each request.
-  const onUnauthenticatedRef = useRef<() => void>(() => {});
-  const api = useMemo(() => createGuestApi({ getToken: () => sessionRef.current?.guest_token ?? null, onUnauthenticated: () => onUnauthenticatedRef.current() }), []);
+  const onUnauthenticatedRef = useRef<(details?: Record<string, unknown>) => void>(() => {});
+  const api = useMemo(() => createGuestApi({ getToken: () => sessionRef.current?.guest_token ?? null, onUnauthenticated: (e) => onUnauthenticatedRef.current(e.details) }), []);
 
   const applySession = useCallback(
     (s: GuestSession) => {
@@ -118,7 +118,8 @@ function GuestAppInner({ token }: { token: string }) {
       } catch (e) {
         const err = toApiError(e);
         // A code of the wrong length is refused by the register's validator: to a guest it is simply not a valid code (D-5).
-        if (err.isNotFound || err.code === "validation") setPhase({ kind: "invalid" });
+        if (err.details?.reason === "code_rotated") setPhase({ kind: "rotated" });
+        else if (err.isNotFound || err.code === "validation") setPhase({ kind: "invalid" });
         else setPhase({ kind: "unavailable", error: err });
       }
     },
@@ -131,18 +132,19 @@ function GuestAppInner({ token }: { token: string }) {
    * table was paid while the tab was away), so that one is exchanged again
    * quietly; a session that was live on this page ends with a clear notice.
    */
-  const onUnauthenticated = useCallback(() => {
+  const onUnauthenticated = useCallback((details?: Record<string, unknown>) => {
+    const rotated = details?.reason === "code_rotated";
     const current = sessionRef.current?.session_id ?? "";
     if (endedSession.current === current) return;
     endedSession.current = current;
     clearSession(token);
-    if (restored.current) {
+    if (restored.current && !rotated) {
       restored.current = false;
       void startSession(true);
       return;
     }
     setSession(null);
-    setPhase({ kind: "ended" });
+    setPhase({ kind: rotated ? "rotated" : "ended" });
   }, [token, startSession]);
   onUnauthenticatedRef.current = onUnauthenticated;
 
@@ -285,7 +287,7 @@ function GuestAppInner({ token }: { token: string }) {
         if (cancelled) return;
         const err = toApiError(e);
         if (err.isNotFound) {
-          setPhase({ kind: "invalid" });
+          setPhase({ kind: err.details?.reason === "code_rotated" ? "rotated" : "invalid" });
           return;
         }
         // The register limits sessions per device; wait as long as it says, then try again.
@@ -363,6 +365,7 @@ function GuestAppInner({ token }: { token: string }) {
 
   /* ---- Screens ---- */
   if (phase.kind === "invalid") return <Notice icon={QrCode} tone="warning" title="This code isn't valid." body="Ask a member of staff." />;
+  if (phase.kind === "rotated") return <Notice icon={QrCode} title="This table has a new QR code." body="Scan the code on the table again to keep ordering." />;
   if (phase.kind === "ended") {
     return (
       <Notice icon={Clock} title="This table session has ended." body="Scan the QR code on the table again, or start again here.">

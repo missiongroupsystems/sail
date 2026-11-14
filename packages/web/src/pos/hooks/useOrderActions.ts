@@ -13,6 +13,8 @@ import { applySnapshot, posKeys } from "./queries";
 import { useApi } from "./useApi";
 
 /** The Send on the wire for each order, shared by every screen that offers Send. */
+/** Adds on the wire per order from this station: a conflict between two of them is this station's own, not another's. */
+const adding = new Map<string, number>();
 const sending = new Map<string, Promise<OrderSnapshot | null>>();
 
 const RANK: Record<Role, number> = { server: 10, cashier: 20, manager: 30, finance: 40, admin: 50 };
@@ -188,6 +190,9 @@ export function useOrderActions(orderId: string) {
         open_price: input.openPrice ?? null,
       };
       const label = `Added ${input.product.name}${input.quantity > 1 ? ` ×${input.quantity}` : ""}`;
+      // Two quick taps make two adds: the second meets the first's new version, which is no news to anyone (C-6).
+      let ownConflict = (adding.get(orderId) ?? 0) > 0;
+      adding.set(orderId, (adding.get(orderId) ?? 0) + 1);
       try {
         // A request that may have reached the register (its reply never came) is sent again exactly as it was, with the
         // same key: the register then replays its answer instead of refusing the key for a different request. Its
@@ -204,7 +209,10 @@ export function useOrderActions(orderId: string) {
             },
             {
               onConflict: "retry-unversioned",
-              onRetried: () => notify({ text: "Your 1 new line was kept", tone: "info", orderId }, 4000),
+              onRetried: () => {
+                ownConflict ||= (adding.get(orderId) ?? 0) > 1;
+                if (!ownConflict) notify({ text: "The order changed on another station. Your 1 new line was kept", tone: "info", orderId }, 4000);
+              },
             },
           );
         // An add that never reached the register keeps its line on screen and is sent again, with the same line id and
@@ -239,6 +247,8 @@ export function useOrderActions(orderId: string) {
         qc.setQueryData<OrderSnapshot>(key, (s) => (s ? { ...s, lines: s.lines.filter((l) => l.id !== lineId) } : s));
         fail(e);
         return null;
+      } finally {
+        adding.set(orderId, Math.max(0, (adding.get(orderId) ?? 1) - 1));
       }
     },
     [api, fail, key, money, notify, orderId, qc, run, showUndo, withApproval],
@@ -304,6 +314,8 @@ export function useOrderActions(orderId: string) {
     const request = (async () => {
       try {
         const res = await run((expected) => reg.fireOrder(api, orderId, {}, { expectedVersion: expected }));
+        // Undoing an add once it is sent is a kitchen void, a Manager's: below that the Undo is not offered (C-5).
+        if (res && !roleAtLeast(role, "manager")) useUiStore.getState().clearUndo();
         if (res) notify({ text: "Sent to the kitchen", tone: "success", orderId }, 3000);
         return res;
       } catch (e) {
@@ -315,7 +327,7 @@ export function useOrderActions(orderId: string) {
     })();
     sending.set(orderId, request);
     return request;
-  }, [api, fail, notify, orderId, run]);
+  }, [api, fail, notify, orderId, role, run]);
 
   const holdAllNew = useCallback(async () => {
     const s = snapshot();
@@ -569,13 +581,16 @@ export function useOrderActions(orderId: string) {
    * a Server gets the Manager approval sheet.
    */
   const pay = useCallback(
-    async (check: CheckSnapshot, input: Omit<reg.PaymentInput, "dry_run">, tenderName: string, opts: { onRefused?: (e: ApiError) => void } = {}): Promise<PaymentResult | null> => {
+    async (check: CheckSnapshot, input: Omit<reg.PaymentInput, "dry_run">, tenderName: string, opts: { onRefused?: (e: ApiError) => void; dueCents?: number | null } = {}): Promise<PaymentResult | null> => {
       beginMutation(orderId);
       try {
+        // The approver sees what the guest is charged: the amount, the tip and the total, as the register's dry run gave it (B-N1).
+        const tip = input.tip_cents ?? 0;
+        const due = opts.dueCents ?? null;
         const res = await withApproval(
-          { action: "payments.record", target_kind: "order", target_id: orderId, args: { check_id: check.id, tender_type_id: input.tender_type_id, amount: input.amount, tip_cents: input.tip_cents ?? 0, reference: input.reference ?? null } },
-          `Take ${money(input.amount)} by ${tenderName}`,
-          `${check.label} · balance ${money(check.balance)}`,
+          { action: "payments.record", target_kind: "order", target_id: orderId, args: { check_id: check.id, tender_type_id: input.tender_type_id, amount: input.amount, tip_cents: tip, reference: input.reference ?? null } },
+          `Take ${money(due ?? input.amount)} by ${tenderName}`,
+          [`${check.label} · balance ${money(check.balance)}`, `Amount ${money(input.amount)}`, tip ? `Tip ${money(tip)}` : null, due != null && due !== input.amount ? `Total charged ${money(due)}` : null].filter(Boolean).join(" · "),
           (overrideId) => reg.recordPayment(api, check.id, input, { key: input.payment_id, expectedVersion: snapshot()?.version ?? null, overrideId }),
         );
         if (!res) return null;
@@ -670,13 +685,17 @@ export function useOrderActions(orderId: string) {
   const reopen = useCallback(
     async (reason: string) => {
       try {
-        return await withApproval({ action: "orders.reopen", target_kind: "order", target_id: orderId, args: {} }, "Reopen this order", `Reason: ${reason}`, (overrideId) => run((expected) => reg.reopenOrder(api, orderId, reason, { expectedVersion: expected, overrideId })));
+        const reversed = (snapshot()?.checks ?? []).flatMap((c) => c.payments.filter((p) => p.status === "recorded"));
+        const res = await withApproval({ action: "orders.reopen", target_kind: "order", target_id: orderId, args: {} }, "Reopen this order", `Reason: ${reason}`, (overrideId) => run((expected) => reg.reopenOrder(api, orderId, reason, { expectedVersion: expected, overrideId })));
+        // On the reopened order, the reversal is said once more where the bill now shows its balance again.
+        if (res && reversed.length) notify({ text: `Reopened. ${reversed.length === 1 ? "Its payment was" : `Its ${reversed.length} payments were`} reversed`, remedy: "Take payment again for the balance.", tone: "info", orderId }, 8000);
+        return res;
       } catch (e) {
         fail(e);
         return null;
       }
     },
-    [api, fail, orderId, run, withApproval],
+    [api, fail, notify, orderId, run, snapshot, withApproval],
   );
 
   /* ---- Receipts and documents ---- */

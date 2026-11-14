@@ -21,6 +21,8 @@ export function ZReportBody({ report, stationName }: { report: ZReport; stationN
   const { stamp } = useLocale();
   const r = report;
   const taxMode = useSession().merchant.settings.tax_mode;
+  // A merchant without tips sees no tips row, unless a tip was taken anyway (F notes).
+  const tipsShown = Boolean(useSession().merchant.settings.tips_enabled);
   const tax = taxRows(r.sales.taxes, taxMode);
   const types = Object.entries(r.orders.by_type);
   const blocks = refundBlocks(r.sales, r.refunds, taxMode, r.tax_due);
@@ -125,7 +127,7 @@ export function ZReportBody({ report, stationName }: { report: ZReport; stationN
                 { label: "Opening float", value: <Money cents={r.cash.float} /> },
                 { label: "Cash payments", value: <Money cents={r.cash.cash_payments} /> },
                 { label: "Rounding", value: <Money cents={r.cash.rounding} signed /> },
-                { label: "Cash tips", value: <Money cents={r.cash.tips} /> },
+                ...(tipsShown || r.cash.tips ? [{ label: "Cash tips", value: <Money cents={r.cash.tips} /> }] : []),
                 { label: "Cash refunds", value: <Money cents={-r.cash.refunds} /> },
                 { label: "Expected in the drawer", value: <Money cents={r.cash.expected} />, strong: true },
                 { label: "Counted", value: r.cash.counted === null ? <span className="text-ink-2">Not counted yet</span> : <Money cents={r.cash.counted} /> },
@@ -135,6 +137,11 @@ export function ZReportBody({ report, stationName }: { report: ZReport; stationN
                 },
               ]}
             />
+            {r.cash.open_shifts?.count ? (
+              <p className="mt-2 text-caption text-ink-2">
+                These figures cover closed shifts only. {r.cash.open_shifts.count === 1 ? "1 shift is" : `${r.cash.open_shifts.count} shifts are`} still open: float <Money cents={r.cash.open_shifts.float} />, expected so far <Money cents={r.cash.open_shifts.expected} />.
+              </p>
+            ) : null}
           </Panel>
         </div>
       </div>

@@ -23,6 +23,8 @@ export type PinPadProps = {
   unlockHint?: boolean;
   /** Busy while the register checks the PIN. */
   isPending?: boolean;
+  /** Enter on a physical keyboard (digits, Backspace and Escape always work while the pad is on screen). */
+  onEnter?: () => void;
   className?: string;
 };
 
@@ -32,7 +34,7 @@ const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "⌫"] 
  * The PIN pad: keys 88 × 72, six filled dots, Clear and delete either side of 0. Used for
  * sign-in and for manager approval (4.7).
  */
-export function PinPad({ value, onChange, onComplete, length = 6, error, showErrorText = true, lockedForSeconds, isDisabled, unlockHint = true, isPending, className }: PinPadProps) {
+export function PinPad({ value, onChange, onComplete, length = 6, error, showErrorText = true, lockedForSeconds, isDisabled, unlockHint = true, isPending, onEnter, className }: PinPadProps) {
   const [shaking, setShaking] = useState(0);
   const lastError = useRef<string | null | undefined>(undefined);
   const completed = useRef<string | null>(null);
@@ -72,6 +74,26 @@ export function PinPad({ value, onChange, onComplete, length = 6, error, showErr
     if (value.length >= length) return;
     onChange(value + key);
   };
+
+  // A physical keyboard types on the pad too: digits, Backspace, Escape to clear and Enter (live test, A and C notes).
+  // Keys typed into a text field elsewhere on the screen (the device name when pairing) stay that field's.
+  const keyRef = useRef<(e: KeyboardEvent) => void>(() => undefined);
+  keyRef.current = (e: KeyboardEvent) => {
+    if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    if (/^[0-9]$/.test(e.key)) press(e.key);
+    else if (e.key === "Backspace") press("⌫");
+    else if (e.key === "Escape") press("clear");
+    else if (e.key === "Enter") onEnter?.();
+    else return;
+    e.preventDefault();
+  };
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => keyRef.current(e);
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, []);
 
   return (
     <div className={cx("flex flex-col items-center gap-6 pos-touch", className)}>

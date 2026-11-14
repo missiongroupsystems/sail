@@ -41,6 +41,11 @@ function toInput(drafts: Draft[]): MenuSectionInput[] {
   return out;
 }
 
+/** Set while the open menu has changes not yet saved; switching menu or brand asks first (E-L4). */
+const unsavedMenu = { current: false };
+const LEAVE_UNSAVED = "This menu has changes that are not saved. Leave without saving them?";
+const leaveOk = () => !unsavedMenu.current || window.confirm(LEAVE_UNSAVED);
+
 export function MenusView({ initialMenus, brands, scope }: { initialMenus: MenuSummary[]; brands: Brand[]; scope: Scope }) {
   const qc = useQueryClient();
   const [brandId, setBrandId] = useState<string | null>(scope.brandId ?? brands[0]?.id ?? null);
@@ -73,12 +78,12 @@ export function MenusView({ initialMenus, brands, scope }: { initialMenus: MenuS
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <BrandChoice brands={brands} scope={scope} brandId={brandId} onChange={(id) => { setBrandId(id); setMenuId(null); }} />
+        <BrandChoice brands={brands} scope={scope} brandId={brandId} onChange={(id) => { if (!leaveOk()) return; setBrandId(id); setMenuId(null); }} />
         <Select
           aria-label="Menu"
           variant="toolbar" size="sm"
           selectedKey={current?.id ?? null}
-          onSelectionChange={setMenuId}
+          onSelectionChange={(id) => (id !== current?.id && !leaveOk() ? undefined : setMenuId(id))}
           placeholder={forBrand.length ? "Choose a menu" : "No menus for this brand"}
           items={forBrand.map((m) => ({ id: m.id, label: m.name, description: m.archived ? "Archived" : undefined }))}
           isDisabled={forBrand.length === 0}
@@ -139,7 +144,22 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
       e.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
+    // Leaving for another tab or page inside the back office asks too (E-L4): a link click is held until the person agrees.
+    const onLink = (e: MouseEvent) => {
+      const a = (e.target as HTMLElement | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a || a.target === "_blank" || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey) return;
+      if (!window.confirm(LEAVE_UNSAVED)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    document.addEventListener("click", onLink, true);
+    unsavedMenu.current = true;
+    return () => {
+      window.removeEventListener("beforeunload", warn);
+      document.removeEventListener("click", onLink, true);
+      unsavedMenu.current = false;
+    };
   }, [dirty]);
   const { locale } = useLocale();
   const [warnings, setWarnings] = useState<string[]>([]);

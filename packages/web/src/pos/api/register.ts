@@ -81,6 +81,11 @@ export async function startSession(api: PosApi, pin: string): Promise<SessionSta
   return res.data as unknown as SessionStart;
 }
 
+/** Ends this iPad's pairing on the register: its station token stops working and the back office shows it as not paired. */
+export async function unpairStation(api: PosApi): Promise<void> {
+  await req(api.POST("/v1/stations/unpair", { body: {}, headers: headers() }));
+}
+
 /** Ends a PIN session on the register: the one signed in, or `token`'s when the station has already locked. */
 export async function endSession(api: PosApi, token?: string | null): Promise<void> {
   await req(api.POST("/v1/stations/sessions/end", { body: {}, headers: { ...headers(), ...(token ? { authorization: `Bearer ${token}` } : {}) } }));
@@ -231,7 +236,7 @@ export async function addLines(api: PosApi, orderId: string, lines: LineInput[],
   return asResult(await req(api.POST("/v1/orders/{id}/lines", { params: { path: { id: orderId } }, body: { ...mutation(opts), lines }, headers: headers(opts) })));
 }
 
-export type LinePatch = { quantity?: number; notes?: string | null; seat_no?: number | null; hold?: boolean; modifiers?: { group_id: string; product_id: string; quantity?: number }[] };
+export type LinePatch = { dry_run?: boolean; quantity?: number; notes?: string | null; seat_no?: number | null; hold?: boolean; modifiers?: { group_id: string; product_id: string; quantity?: number }[] };
 
 export async function updateLine(api: PosApi, orderId: string, lineId: string, patch: LinePatch, opts?: MutationOpts): Promise<MutationResult> {
   return asResult(await req(api.PATCH("/v1/orders/{id}/lines/{line_id}", { params: { path: { id: orderId, line_id: lineId } }, body: { ...mutation(opts), ...patch }, headers: headers(opts) })));

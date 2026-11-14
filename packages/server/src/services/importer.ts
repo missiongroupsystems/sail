@@ -84,7 +84,7 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
   /** A non-empty amount cell, in minor units; a row whose cell is not an amount is refused, never read as "no amount". */
   const amountCell = (field: string, value: string) => {
     const c = minorUnits(value, exponent);
-    if (c == null) throw new Error(`${field} "${value}" is not an amount in ${settings.currency}`);
+    if (c == null) throw new Error(/^\s*[-−]/.test(value) ? `${field} "${value}" cannot be negative` : `${field} "${value}" is not an amount: write it like 4.50`);
     if (c > MAX_AMOUNT) throw new Error(`${field} "${value}" is above the largest amount the register accepts`);
     return c;
   };

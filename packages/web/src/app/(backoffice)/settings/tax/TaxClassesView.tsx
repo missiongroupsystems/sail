@@ -16,6 +16,8 @@ import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Outlet, TaxClass, TaxRate } from "@/lib/api/types";
 import { keys } from "@/lib/query";
+import { useFreshErrors } from "@/lib/fresh-errors";
+import { useCan } from "@/lib/can";
 
 type SheetState = { mode: "create" } | { mode: "edit"; id: string } | null;
 
@@ -59,6 +61,7 @@ type RateValues = z.infer<typeof RateSchema>;
 
 /** Tax classes and their rates (pricing semantics §8): what products and fees are taxed at, per outlet and order type. */
 export function TaxClassesView({ initialClasses, outlets }: { initialClasses: TaxClass[]; outlets: Outlet[] }) {
+  const canCreate = useCan("tax_classes.create");
   const [showArchived, setShowArchived] = useState(false);
   const [sheet, setSheet] = useState<SheetState>(null);
   const classes = useQuery({
@@ -99,9 +102,11 @@ export function TaxClassesView({ initialClasses, outlets }: { initialClasses: Ta
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
           </Switch>
-          <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
+          {canCreate.ok ? (
+            <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
             Add tax class
           </Button>
+          ) : null}
         </div>
       </div>
       <DataTable
@@ -172,6 +177,8 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
   const outletName = (id: string | null) => (id ? (outlets.find((o) => o.id === id)?.name ?? "Unknown outlet") : "Every outlet");
   const scopeText = (r: TaxRate) => (r.outlet_id === null && r.order_type === null ? "Default rate" : `${outletName(r.outlet_id)} · ${r.order_type ? ORDER_TYPE_LABEL[r.order_type] : "every order type"}`);
 
+  const mayEdit = useCan("tax_classes.update");
+  useFreshErrors(isOpen && (taxClass?.id ?? "new"), form.watch(), save, makeDefault, archive, removeRate);
   return (
     <Sheet
       isOpen={isOpen}
@@ -195,7 +202,7 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
           <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" type="submit" form="tax-class-form" isPending={save.isPending}>
+          <Button variant="primary" type="submit" form="tax-class-form" isDisabled={!mayEdit.ok} isPending={save.isPending}>
             {taxClass ? "Save name" : "Add tax class"}
           </Button>
         </>
@@ -216,6 +223,7 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
               </RhfSwitch>
             </>
           )}
+          {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
           <InlineError error={save.error ?? archive.error ?? makeDefault.error} />
         </form>
 
@@ -280,6 +288,8 @@ function RateEditor({ taxClass, rate, outlets, onDone }: { taxClass: TaxClass; r
     },
     onError: (e, v) => applyServerErrors(form.setError, e, componentFields(v.components)),
   });
+  const mayEdit = useCan("tax_classes.update");
+  useFreshErrors(rate?.id ?? "new", form.watch(), save);
   return (
     <form noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} aria-label={rate ? "Edit rate" : "New rate"} className="flex flex-col gap-4 rounded-panel border border-rule bg-surface-2/40 p-4">
       <div className="grid gap-4 sm:grid-cols-2">
@@ -287,12 +297,13 @@ function RateEditor({ taxClass, rate, outlets, onDone }: { taxClass: TaxClass; r
         <RhfSelect control={form.control} name="order_type" label="Order type" isDisabled={rate !== null} items={[{ id: NONE, label: "Every order type" }, ...ORDER_TYPES.map((t) => ({ id: t, label: ORDER_TYPE_LABEL[t]! }))]} />
       </div>
       <Controller control={form.control} name="components" render={({ field }) => <ComponentsEditor value={field.value} onChange={field.onChange} errors={form.formState.errors.components} />} />
+      {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
       <InlineError error={save.error} />
       <div className="flex justify-end gap-2">
         <Button variant="secondary" className={greyPill} onPress={onDone} isDisabled={save.isPending}>
           Cancel
         </Button>
-        <Button variant="primary" type="submit" isPending={save.isPending}>
+        <Button variant="primary" type="submit" isDisabled={!mayEdit.ok} isPending={save.isPending}>
           Save rate
         </Button>
       </div>

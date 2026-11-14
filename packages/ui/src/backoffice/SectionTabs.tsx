@@ -39,7 +39,7 @@ export function SectionTabs({ tabs, currentPath, LinkComponent = Anchor, classNa
   }, [currentPath, scroller, onScroll]);
   return (
     <div ref={scroller} onScroll={onScroll} className={cx("relative max-w-full overflow-x-auto [scrollbar-width:none]", fadeClass, className)}>
-      <nav aria-label={rest["aria-label"]} className="inline-flex h-9 items-center gap-0.5 rounded-[10px] bg-surface-2 p-0.5">
+      <nav aria-label={rest["aria-label"]} className="inline-flex h-9 max-sm:h-12 items-center gap-0.5 rounded-[10px] bg-surface-2 p-0.5">
         {tabs.map((tab) => {
           const active = currentPath === tab.href || (tab.match !== "exact" && currentPath.startsWith(`${tab.href}/`));
           return (
@@ -48,7 +48,7 @@ export function SectionTabs({ tabs, currentPath, LinkComponent = Anchor, classNa
               href={tab.href}
               aria-current={active ? "page" : undefined}
               className={cx(
-                "press flex h-8 items-center gap-1.5 whitespace-nowrap rounded-[8px] px-3 text-[13px] font-medium no-underline outline-none transition-colors duration-[120ms]",
+                "press flex h-8 max-sm:h-11 items-center gap-1.5 whitespace-nowrap rounded-[8px] px-3 text-[13px] font-medium no-underline outline-none transition-colors duration-[120ms]",
                 "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus",
                 active ? "bg-surface text-ink shadow-segment" : "text-ink-2 hover:text-ink",
               )}

@@ -21,6 +21,7 @@ import { config } from "../config.js";
 registerOperations({
   "stations.pairing_code": { op: "stations.pairing_code", summary: "Issue a one-time pairing code for a station", description: "Admin only. The 6-digit code is shown once and expires in 10 minutes. The iPad enters it in stations.pair.", tier: "T3", minRole: "admin", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: ["station.pairing_code_issued"], mcp: { expose: false, toolsets: [] } },
   "stations.pair": { op: "stations.pair", summary: "Pair an iPad to a station", description: "Exchanges a one-time pairing code for a long-lived station token. No authentication; the code is single-use. Pairing again replaces the previous token.", tier: "T3", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: [], emits: ["station.paired"], mcp: { expose: false, toolsets: [] } },
+  "stations.unpair": { op: "stations.unpair", summary: "Unpair this device from its station", description: "Called by the paired device itself (its station token). Ends the pairing: the token stops working, the PIN sessions on the device end, and the back office shows the station as not paired until it is paired again with a new code.", tier: "T1", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["station"], emits: ["station.unpaired"], mcp: { expose: false, toolsets: [] } },
   "staff_sessions.start": { op: "staff_sessions.start", summary: "Sign in on a station with a PIN", description: "Station token plus 6-digit PIN → a short-lived PIN session token for the staff member. Lockout after repeated failures. The session ends after inactivity.", tier: "T0", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["station"], emits: ["staff_session.started"], mcp: { expose: false, toolsets: [] } },
   "staff_sessions.end": { op: "staff_sessions.end", summary: "Sign out of a station", description: "Ends the current PIN session.", tier: "T1", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: ["staff_session.ended"], mcp: { expose: false, toolsets: [] } },
   "overrides.grant": { op: "overrides.grant", summary: "Manager override: approve one restricted action", description: "A Manager+ (or, for a manual pricing rule, a user of the rule's own minimum role) enters their PIN to authorise one action for the signed-in staff member, without switching users. Send the action, its target and `args`: the arguments the approver is shown (the void quantity, the open-price lines, the rule, entered value and lines, the payment, the refund request and its total, nothing for a reopen). For a refund, `args.total` is the quoted total shown to the approver; the register refuses the grant when its own quote differs. Returns a single-use grant valid for 2 minutes, bound to all of that and to the requesting PIN session and station. Pass it as `override_id` on the protected request, whose arguments must match exactly. The grant id is returned only here: it is not on the event log or the audit trail. Wrong PINs count towards the station's sign-in lockout (5 wrong PINs, sign-in and approval together, lock the station for 30 seconds).", tier: "T0", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: ["override.granted"], mcp: { expose: true, toolsets: ["pos.order"] } },
@@ -78,6 +79,17 @@ export function stationRoutes(app: OpenAPIHono<AppEnv>) {
       return { token, station: st! };
     });
     return c.json({ data: { station_token: result.token, station: toStation(result.station) } }, 200);
+  });
+
+  defineOp(app, { op: "stations.unpair", method: "post", path: "/v1/stations/unpair", tags: ["stations"], request: { body: jsonBody(z.object({}).passthrough()) }, responses: { 200: jsonResponse(mutationResponse(z.object({ unpaired: z.boolean() }))), ...errorResponses } }, async (c) => {
+    const p = c.get("principal");
+    if (p.type !== "station") throw new AppError("permission_denied", "Only the paired device can unpair itself", { remedy: "To take a station out of use from the back office, archive it." });
+    const [st] = await db().update(stations).set({ tokenHash: null, deviceLabel: null }).where(and(eq(stations.id, p.stationId), eq(stations.merchantId, p.merchantId))).returning();
+    if (!st) throw AppError.notFound("station", p.stationId);
+    await db().update(staffSessions).set({ endedAt: new Date() }).where(and(eq(staffSessions.stationId, st.id), isNull(staffSessions.endedAt)));
+    const ended = await appendEvent({ merchantId: st.merchantId, outletId: st.outletId, type: "station.unpaired", aggregate: { kind: "station", id: st.id }, operationId: "stations.unpair", payload: {}, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
+    await recordAudit(p, { action: "stations.unpair", targetKind: "station", targetId: st.id, outletId: st.outletId });
+    return c.json({ data: { unpaired: true }, events: [ended], warnings: [] }, 200);
   });
 
   defineOp(

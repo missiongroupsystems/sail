@@ -93,7 +93,7 @@ export type GuestApiOptions = {
   /** Read on every request, so one client follows the session token as it is created or replaced. */
   getToken: () => string | null;
   /** The register rejected the token (401): the table session has ended. The error still propagates. */
-  onUnauthenticated?: () => void;
+  onUnauthenticated?: (error: ApiError) => void;
   timeoutMs?: number;
 };
 
@@ -138,8 +138,9 @@ export function createGuestApi({ baseUrl = API_URL, getToken, onUnauthenticated,
       } catch {
         body = null;
       }
-      if (response.status === 401) onUnauthenticated?.();
-      throw ApiError.from(response.status, body);
+      const error = ApiError.from(response.status, body);
+      if (response.status === 401) onUnauthenticated?.(error);
+      throw error;
     },
   };
   client.use(conventions);

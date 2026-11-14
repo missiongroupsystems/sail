@@ -13,6 +13,8 @@ import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Brand, ChannelLink, MenuSummary, Outlet } from "@/lib/api/types";
 import { keys } from "@/lib/query";
+import { useFreshErrors } from "@/lib/fresh-errors";
+import { useCan } from "@/lib/can";
 
 type SheetState = { mode: "create" } | { mode: "edit"; link: ChannelLink } | null;
 
@@ -45,6 +47,7 @@ function defaults(l: ChannelLink | null): Values {
 
 /** Channel links: which menu a brand serves at an outlet on each channel, with the Scan to order behaviours. */
 export function ChannelsView({ initialLinks, outlets, brands, menus }: { initialLinks: ChannelLink[]; outlets: Outlet[]; brands: Brand[]; menus: MenuSummary[] }) {
+  const canCreate = useCan("channel_links.create");
   const [sheet, setSheet] = useState<SheetState>(null);
   const links = useQuery({
     queryKey: keys.channelLinks,
@@ -85,9 +88,11 @@ export function ChannelsView({ initialLinks, outlets, brands, menus }: { initial
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-[14px] text-ink-2">A channel link says which menu a brand serves at an outlet, on the POS or through Scan to order.</p>
-        <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
+        {canCreate.ok ? (
+          <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
           Add channel link
         </Button>
+        ) : null}
       </div>
       <DataTable
         aria-label="Channel links"
@@ -129,6 +134,8 @@ function LinkSheet({ state, outlets, brands, menus, onClose }: { state: SheetSta
     onSuccess: settle,
   });
 
+  const mayEdit = useCan("channel_links.update");
+  useFreshErrors(state, form.watch(), save);
   return (
     <Sheet
       isOpen={state !== null}
@@ -141,7 +148,7 @@ function LinkSheet({ state, outlets, brands, menus, onClose }: { state: SheetSta
           <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={save.isPending}>
             Cancel
           </Button>
-          <Button variant="primary" type="submit" form="link-form" isPending={save.isPending}>
+          <Button variant="primary" type="submit" form="link-form" isDisabled={!mayEdit.ok} isPending={save.isPending}>
             {link ? "Save changes" : "Add channel link"}
           </Button>
         </>
@@ -194,6 +201,7 @@ function LinkSheet({ state, outlets, brands, menus, onClose }: { state: SheetSta
             />
           </SheetSection>
         ) : null}
+        {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
         <InlineError error={save.error} />
       </form>
     </Sheet>

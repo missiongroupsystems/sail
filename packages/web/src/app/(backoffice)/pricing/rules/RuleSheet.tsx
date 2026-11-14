@@ -19,6 +19,8 @@ import type { Brand, Category, CustomerGroup, Outlet, PricingRuleVersion } from 
 import { keys } from "@/lib/query";
 import type { RuleRow } from "./RulesView";
 import { emptyForm, formFrom, NONE, RuleFormSchema, toBody, type RuleForm } from "./rule-form";
+import { useFreshErrors } from "@/lib/fresh-errors";
+import { useCan } from "@/lib/can";
 
 export type RuleSheetState = { mode: "create"; kind: "fee" | "discount" } | { mode: "edit"; row: RuleRow } | null;
 
@@ -115,6 +117,8 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
     />
   );
 
+  const mayEdit = useCan("pricing_rules.create_version");
+  useFreshErrors(state, form.watch(), save, archive);
   return (
     <Sheet
       isOpen={state !== null}
@@ -163,7 +167,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
             <Button variant="quiet" onPress={onClose} isDisabled={busy}>
               Cancel
             </Button>
-            <Button variant="primary" type="submit" form="rule-form" isPending={save.isPending} isDisabled={archive.isPending}>
+            <Button variant="primary" type="submit" form="rule-form" isPending={save.isPending} isDisabled={!mayEdit.ok || archive.isPending}>
               {effective === "at" ? "Save as new version, scheduled" : row ? "Save as new version, effective now" : "Add rule, effective now"}
             </Button>
           </>
@@ -407,6 +411,8 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
             </div>
             <RhfTextField control={form.control} name="note" label="Note" placeholder="Why this version exists" description="Kept with the version." />
           </FormSection>
+
+          {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
 
           <InlineError error={save.error ?? archive.error} />
         </form>

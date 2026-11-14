@@ -17,6 +17,8 @@ import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { ModifierGroup, ModifierGroupCreate } from "@/lib/api/types";
 import { keys } from "@/lib/query";
+import { useFreshErrors } from "@/lib/fresh-errors";
+import { useCan } from "@/lib/can";
 
 type SheetState = { mode: "create" } | { mode: "edit"; group: ModifierGroup } | null;
 const NONE = "__none__";
@@ -73,6 +75,7 @@ function rule(g: ModifierGroup): string {
 }
 
 export function ModifierGroupsView({ initialGroups }: { initialGroups: ModifierGroup[] }) {
+  const canCreate = useCan("modifier_groups.create");
   const [showArchived, setShowArchived] = useState(false);
   const [sheet, setSheet] = useState<SheetState>(null);
 
@@ -102,9 +105,11 @@ export function ModifierGroupsView({ initialGroups }: { initialGroups: ModifierG
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
           </Switch>
-          <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
+          {canCreate.ok ? (
+            <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
             Add modifier group
           </Button>
+          ) : null}
         </div>
       </div>
       <DataTable
@@ -156,6 +161,8 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
   });
   const busy = save.isPending || archive.isPending;
 
+  const mayEdit = useCan("modifier_groups.update");
+  useFreshErrors(state, form.watch(), save, archive);
   return (
     <Sheet
       isOpen={state !== null}
@@ -174,7 +181,7 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
           <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" type="submit" form="group-form" isPending={save.isPending} isDisabled={archive.isPending}>
+          <Button variant="primary" type="submit" form="group-form" isPending={save.isPending} isDisabled={!mayEdit.ok || archive.isPending}>
             {group ? "Save changes" : "Add modifier group"}
           </Button>
         </>
@@ -286,6 +293,7 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
         </SheetSection>
 
         <Warnings warnings={warnings} />
+        {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
         <InlineError error={save.error ?? archive.error} />
       </form>
     </Sheet>

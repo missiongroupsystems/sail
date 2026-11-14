@@ -84,7 +84,7 @@ test("B-F4, B-F13: a Server's cash payment asks for a Cashier's approval, as eve
     const take = page.getByRole("button", { name: /^Take \$[\d.,]+ cash/ });
     await expect(take).toBeEnabled();
     await take.click();
-    await expect(page.getByRole("dialog", { name: "Manager approval" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Cashier approval" })).toBeVisible();
     await page.keyboard.press("Escape");
   });
 });

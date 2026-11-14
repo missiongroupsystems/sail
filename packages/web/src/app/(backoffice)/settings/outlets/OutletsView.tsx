@@ -11,6 +11,7 @@ import { summariseHours } from "@/lib/hours";
 import { keys } from "@/lib/query";
 import { useSession } from "@/lib/session-context";
 import { OutletSheet, type OutletSheetState } from "./OutletSheet";
+import { useCan } from "@/lib/can";
 
 /** Registration columns are headed with the merchant's own labels. */
 const outletColumns = (labels: { business: string; tax: string }): DataTableColumn<Outlet>[] => [
@@ -31,6 +32,7 @@ const outletColumns = (labels: { business: string; tax: string }): DataTableColu
 ];
 
 export function OutletsView({ initialOutlets }: { initialOutlets: Outlet[] }) {
+  const canCreate = useCan("outlets.create");
   const { business_registration_label, tax_registration_label } = useSession().merchant.settings;
   const columns = outletColumns({ business: business_registration_label, tax: tax_registration_label });
   const [showArchived, setShowArchived] = useState(false);
@@ -56,9 +58,11 @@ export function OutletsView({ initialOutlets }: { initialOutlets: Outlet[] }) {
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
           </Switch>
-          <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
+          {canCreate.ok ? (
+            <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
             Add outlet
           </Button>
+          ) : null}
         </div>
       </div>
 

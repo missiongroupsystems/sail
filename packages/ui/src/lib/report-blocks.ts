@@ -1,4 +1,4 @@
-import { taxRows, type TaxAmountLike } from "./tax";
+import { sortTaxes, taxRows, type TaxAmountLike } from "./tax";
 
 /** One label/amount row of a report block. Amounts are the register's, never worked out here. */
 export type ReportRow = { key: string; label: string; amount: number; strong?: boolean; indent?: boolean; signed?: boolean };
@@ -54,7 +54,8 @@ export function refundBlocks(sales: ReportSales, refunds: ReportRefunds, taxMode
     { key: "refunds.net", label: "Net refunded", amount: refunds.net },
     { key: "refunds.fees", label: "Fees refunded", amount: refunds.fees },
     { key: "refunds.tax", label: "Tax refunded", amount: refunds.tax },
-    ...(refunds.taxes ?? []).map((t, i) => ({ key: `refunds.tax:${i}:${t.name}`, label: t.name, amount: t.amount, indent: true })),
+    // Every block lists rates in the one order (lowest first): the refund and tax-due blocks came in the register's (F notes).
+    ...sortTaxes(refunds.taxes ?? []).map((t, i) => ({ key: `refunds.tax:${i}:${t.name}`, label: t.name, amount: t.amount, indent: true })),
     { key: "refunds.amount", label: refunds.count === 1 ? "Refunded (1 refund)" : `Refunded (${refunds.count} refunds)`, amount: refunds.amount, strong: true },
   ];
   return {
@@ -66,7 +67,7 @@ export function refundBlocks(sales: ReportSales, refunds: ReportRefunds, taxMode
       { key: "total_after_refunds", label: "Collected after refunds", amount: totalAfter, strong: true },
     ],
     // A name the register reports at more than one rate (a refund at an old rate) carries its rate, so the rows differ.
-    taxDue: (taxDue ?? []).map((t, i, all) => ({ key: `tax_due:${i}:${t.name}`, label: all.some((o) => o !== t && o.name === t.name) ? `${t.name} (${t.bps / 100}%) due` : `${t.name} due`, amount: t.amount })),
+    taxDue: sortTaxes(taxDue ?? []).map((t, i, all) => ({ key: `tax_due:${i}:${t.name}`, label: all.some((o) => o !== t && o.name === t.name) ? `${t.name} (${t.bps / 100}%) due` : `${t.name} due`, amount: t.amount })),
   };
 }
 

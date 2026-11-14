@@ -92,11 +92,40 @@ function safeHourCycle(locale: string, timeZone: string): string | undefined {
 
 function dateFormatter(locale: string, opts: Intl.DateTimeFormatOptions): (d: Date) => string {
   const f = new Intl.DateTimeFormat(locale, opts);
-  return (d) =>
-    f
-      .formatToParts(d)
-      .map((p) => (p.type === "dayPeriod" ? p.value.toLowerCase() : p.type === "literal" ? p.value.replace(/\u202f/g, " ") : p.value))
-      .join("");
+  return (d) => joinDateParts(f.formatToParts(d));
+}
+
+const TIME_PARTS = new Set(["hour", "minute", "second", "dayPeriod", "fractionalSecond"]);
+const DATE_PARTS = new Set(["weekday", "era", "year", "month", "day"]);
+
+/**
+ * One string from Intl's parts that is the same in every engine and on the server. Engines join a date to its time
+ * differently (Safari "Nov 14 at 12:17 am", Node "Nov 14, 12:17 am"), which broke hydration (live test E-N7) and made
+ * receipts and reports differ by browser: the join is always ", ". The day period is lower-cased, and the narrow
+ * no-break space some engines put before it is a plain space.
+ */
+export function joinDateParts(parts: Intl.DateTimeFormatPart[]): string {
+  const kind = (p: Intl.DateTimeFormatPart) => (TIME_PARTS.has(p.type) ? "time" : DATE_PARTS.has(p.type) ? "date" : null);
+  const out: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i]!;
+    if (p.type === "literal") {
+      // A run of literals between a date part and a time part (either order) is the date-time join.
+      let before: string | null = null;
+      for (let j = i - 1; j >= 0 && before === null; j--) before = kind(parts[j]!);
+      let after: string | null = null;
+      let k = i;
+      while (k < parts.length && parts[k]!.type === "literal") k++;
+      if (k < parts.length) after = kind(parts[k]!);
+      if (before && after && before !== after) {
+        out.push(", ");
+        i = k - 1;
+        continue;
+      }
+      out.push(p.value.replace(/\u202f/g, " "));
+    } else out.push(p.type === "dayPeriod" ? p.value.toLowerCase() : p.value);
+  }
+  return out.join("");
 }
 
 /** Integer minor units as an exact decimal string ("-123450", 2 → "-1234.50"); no floating point. */

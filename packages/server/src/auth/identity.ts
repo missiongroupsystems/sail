@@ -28,11 +28,31 @@ export function normaliseEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-/** Length only: at least 12 characters, no composition rules. */
-export function checkPassword(password: string): void {
+/** At least 12 characters, no composition rules; refuses the trivially guessable, the most common passwords and the account's own email name. */
+export function checkPassword(password: string, email?: string | null): void {
   if (password.length < PASSWORD_MIN_LENGTH) throw AppError.validation(`A password needs at least ${PASSWORD_MIN_LENGTH} characters`, { remedy: "Use a longer password; a few unrelated words work well." });
   if (password.length > PASSWORD_MAX_LENGTH) throw AppError.validation(`A password can have at most ${PASSWORD_MAX_LENGTH} characters`);
   if (guessable(password)) throw AppError.validation("That password is too easy to guess", { remedy: "Avoid repeated characters, repeated blocks and runs such as 1234 or qwerty; a few unrelated words work well." });
+  if (common(password)) throw AppError.validation("That password is one of the most common ones", { remedy: "Choose something less predictable; a few unrelated words work well." });
+  const name = email ? normaliseEmail(email).split("@")[0]!.replace(/[^a-z0-9]/g, "") : "";
+  if (name.length >= 3 && password.toLowerCase().replace(/[^a-z0-9]/g, "").includes(name)) throw AppError.validation("That password contains your email name", { remedy: "Choose a password without your name or email in it." });
+}
+
+/** The start of every published list of most-used passwords, as words: one of them with only digits or symbols around it is refused. */
+const COMMON = ["password", "passw0rd", "qwerty", "letmein", "welcome", "iloveyou", "admin", "administrator", "monkey", "dragon", "football", "baseball", "sunshine", "princess", "trustno1", "abc123", "changeme", "master", "superman", "batman", "starwars", "shadow", "login", "secret", "michael", "jessica", "charlie", "freedom", "whatever", "hello", "summer", "winter", "spring", "autumn", "restaurant"];
+
+function common(password: string): boolean {
+  const p = password.toLowerCase().replace(/[@4]/g, "a").replace(/[$5]/g, "s").replace(/3/g, "e").replace(/[!1|]/g, "i").replace(/0/g, "o");
+  const raw = password.toLowerCase();
+  return COMMON.some((w) => {
+    for (const text of [raw, p]) {
+      if (!text.includes(w)) continue;
+      // What is left once the word is taken out: refused when it adds no more than a few letters.
+      const rest = text.split(w).join("").replace(/[^a-z]/g, "");
+      if (rest.length < 4) return true;
+    }
+    return false;
+  });
 }
 
 /** Long but trivial: few distinct characters, one block repeated, or a straight run along the alphabet, digits or keyboard. */
@@ -107,7 +127,7 @@ export function identityProvider(): IdentityProvider {
 
 /** Give a staff member a local login with this password, replacing any earlier one. Runs as the connection owner. */
 export async function setLocalLogin(sql: TransactionSql, member: { id: string; merchantId: string }, email: string, password: string): Promise<void> {
-  checkPassword(password);
+  checkPassword(password, email);
   const hash = hashSecret(password);
   await sql`insert into backoffice_logins (staff_id, merchant_id, email, password_hash, password_changed_at) values (${member.id}, ${member.merchantId}, ${normaliseEmail(email)}, ${hash}, now())
     on conflict (staff_id) do update set email = excluded.email, password_hash = excluded.password_hash, password_changed_at = now()`;

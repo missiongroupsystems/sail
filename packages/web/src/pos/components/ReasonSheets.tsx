@@ -8,10 +8,17 @@ export const VOID_PAYMENT_REASONS = ["Wrong payment method", "Charged twice", "W
 export const REJECT_ROUND_REASONS = ["Sold out", "Kitchen is closing", "Cannot make it right now", "Table did not order this"];
 
 /** Reopen a completed order: a reason, then the register's Manager check (same business day). */
-export function ReopenSheet({ isOpen, onClose, onReopen }: { isOpen: boolean; onClose: () => void; onReopen: (reason: string) => Promise<unknown> }) {
+export function ReopenSheet({ isOpen, onClose, onReopen, payments = [] }: { isOpen: boolean; onClose: () => void; onReopen: (reason: string) => Promise<unknown>; payments?: string[] }) {
   const [busy, setBusy] = useState(false);
   return (
     <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Reopen order" description="Why is it being reopened? Needs a Manager, and only on the same business day." isDismissable={!busy}>
+      {/* Reopening gives back what was paid (live test B-N2): said before anyone confirms, with each payment. */}
+      {payments.length ? (
+        <div role="note" className="mb-4 rounded-tile bg-status-bill-tint px-4 py-3 text-body text-ink">
+          <p className="font-medium">Reopening reverses {payments.length === 1 ? "its payment" : `its ${payments.length} payments`}.</p>
+          <p className="text-ink-2">{payments.join(" · ")}. The bill is then open for its full balance and is paid again.</p>
+        </div>
+      ) : null}
       <ReasonPicker
         reasons={REOPEN_REASONS.map((r) => ({ id: r, name: r }))}
         isDisabled={busy}

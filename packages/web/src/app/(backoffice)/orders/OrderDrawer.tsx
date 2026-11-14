@@ -16,6 +16,8 @@ import { keys } from "@/lib/query";
 import { useSession } from "@/lib/session-context";
 import { statusIcon, statusTone, whoFor } from "./OrdersView";
 import { RefundSheet, refundableChecks } from "./RefundSheet";
+import { useFreshErrors } from "@/lib/fresh-errors";
+import { eventLabel } from "@/lib/format";
 
 const REFUND_KIND_LABEL: Record<string, string> = { full: "Whole bill", lines: "Some items", amount: "An amount" };
 
@@ -111,6 +113,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
 
   const actionError = doReopen.error ?? printReceipt.error ?? issueInvoice.error ?? invoicePdf.error ?? creditNotePdf.error ?? printRefund.error;
 
+  useFreshErrors(orderId, null, doReopen, printReceipt, issueInvoice, invoicePdf, creditNotePdf, printRefund);
   return (
     <Sheet
       isOpen={orderId !== null}
@@ -410,7 +413,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                       <span className="tabular whitespace-nowrap text-ink-2" title={fullStamp(e.occurred_at)}>
                         {dayClock(e.occurred_at)}
                       </span>
-                      <span className="font-mono text-caption text-ink">{e.type}</span>
+                      <span className="text-caption text-ink" title={e.type}>{eventLabel(e.type)}</span>
                       <span className="text-caption text-ink-2">
                         seq {e.seq} · v{e.aggregate.version}
                         {typeof e.actor === "object" && e.actor && "name" in e.actor && e.actor.name ? ` · ${String(e.actor.name)}` : ""}

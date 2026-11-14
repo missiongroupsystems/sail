@@ -8,7 +8,7 @@ import { DayPanel } from "./DayPanel";
 import { ZFigures } from "./ZFigures";
 
 /** The Z-report: sales, tenders with the card total at 34pt, expected vs counted, voids, refunds and covers, every figure from the register. */
-export function ZReportView() {
+export function ZReportView({ blind = false }: { blind?: boolean }) {
   const { clock, businessDay } = useLocale();
   const { station } = usePos();
   const [scope, setScope] = useState<"station" | "outlet">("station");
@@ -28,7 +28,12 @@ export function ZReportView() {
       {/* The day's close sits above the figures, as on the Close page, so it never falls below the fold. */}
       <DayPanel layout="row" />
 
-      <ZFigures report={report} />
+      {blind ? <BlindNote /> : <ZFigures report={report} />}
     </div>
   );
+}
+
+/** In place of the figures while the drawer is counted. */
+export function BlindNote() {
+  return <p className="mt-4 rounded-panel border border-rule bg-surface px-5 py-4 text-body text-ink-2">The figures are hidden while the drawer is counted. They show again once the shift is closed.</p>;
 }

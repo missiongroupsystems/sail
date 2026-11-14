@@ -13,6 +13,7 @@ import { FormSection, RhfCheckboxGroup, RhfSelect, RhfSwitch, RhfTextField } fro
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Station } from "@/lib/api/types";
+import { useFreshErrors } from "@/lib/fresh-errors";
 
 export type PrinterSheetState = { mode: "create" } | { mode: "edit"; printer: Printer } | null;
 
@@ -132,6 +133,7 @@ export function PrinterSheet({ state, outletId, printers, stations, canEdit, onC
   });
   const busy = save.isPending || archive.isPending;
 
+  useFreshErrors(state, form.watch(), save, archive, test);
   return (
     <Sheet
       isOpen={state !== null}

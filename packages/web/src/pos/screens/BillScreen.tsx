@@ -182,7 +182,8 @@ export function BillScreen({ orderId }: { orderId: string }) {
   }));
 
   const cardLines = (check: CheckSnapshot): BillCardLine[] =>
-    check.allocations
+    [...check.allocations]
+      .sort((a, b) => lineOrder(snap, a.line_id) - lineOrder(snap, b.line_id))
       .map((a) => ({ a, line: linesById.get(a.line_id) }))
       .filter((x) => x.line)
       .map(({ a, line }) => ({
@@ -283,6 +284,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
                   key={check.id}
                   label={billLabel(check)}
                   status={check.status}
+                  partPaid={check.status === "open" && check.payments.some((p) => p.status === "recorded")}
                   lines={cardLines(check)}
                   rows={[{ key: "subtotal", label: "Subtotal", cents: check.totals.subtotal }, ...billRows(check, snap.totals.tax_mode)]}
                   tenders={check.payments
@@ -416,3 +418,8 @@ function ShareSheet({ line, checks, onClose, onShare }: { line: SnapshotLine | n
   );
 }
 
+/** Bill lines in the order's own line order, so the order panel and the pay screen list them alike at every size (C-10). */
+export function lineOrder(snap: OrderSnapshot, lineId: string): number {
+  const i = snap.lines.findIndex((l) => l.id === lineId);
+  return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+}
