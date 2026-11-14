@@ -377,7 +377,12 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
 
           <SheetSection label="Tickets" aside={<span className="text-caption text-ink-3 tabular">{jobs.data ? `${jobs.data.length}` : "loading"}</span>}>
             <InlineError error={jobs.error} />
-            {jobs.data && jobs.data.length === 0 ? <p className="text-ink-2">Nothing printed for this order yet.</p> : null}
+            {jobs.data && jobs.data.length === 0 ? (
+              <p className="text-ink-2">
+                {/* A ticket a kitchen display showed is no print job: the Events list says where it went (M3). */}
+                {(events.data ?? []).some((e) => e.type === "kitchen_ticket.created") ? "Nothing printed for this order: its tickets went to the kitchen display." : "Nothing printed for this order yet."}
+              </p>
+            ) : null}
             {(jobs.data ?? []).length ? (
               <Group>
                 <ul className="flex flex-col divide-y divide-rule-subtle">
