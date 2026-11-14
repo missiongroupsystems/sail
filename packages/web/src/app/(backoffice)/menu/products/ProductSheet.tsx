@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, InlineError, MoneyField, Select, Sheet, TagsField, useLocale } from "@sail/ui";
+import { Button, InlineError, MoneyField, Select, Sheet, TagsField, useLocale, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, X } from "lucide-react";
 import { Icon } from "@sail/ui";
@@ -144,6 +144,7 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
   const mayEdit = useCan("products.update");
   useFreshErrors(state, form.watch(), save, archive);
   return (
+    <FieldsLocked locked={!mayEdit.ok}>
     <Sheet
       isOpen={state !== null}
       onOpenChange={(open) => !open && onClose()}
@@ -262,13 +263,13 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
                       <li key={id} className="flex items-center gap-2 border-b border-rule-subtle py-1 pr-2 pl-4 last:border-b-0">
                         <span className="w-6 text-[13px] text-ink-3 tabular">{i + 1}.</span>
                         <span className="min-w-0 flex-1 truncate text-ink">{groupName.get(id) ?? id}</span>
-                        <Button variant="quiet" iconOnly aria-label="Move up" onPress={() => move(i, -1)} isDisabled={i === 0}>
+                        <Button variant="quiet" iconOnly aria-label="Move up" onPress={() => move(i, -1)} isDisabled={i === 0 || !mayEdit.ok}>
                           <Icon icon={ArrowUp} size={16} />
                         </Button>
-                        <Button variant="quiet" iconOnly aria-label="Move down" onPress={() => move(i, 1)} isDisabled={i === ids.length - 1}>
+                        <Button variant="quiet" iconOnly aria-label="Move down" onPress={() => move(i, 1)} isDisabled={i === ids.length - 1 || !mayEdit.ok}>
                           <Icon icon={ArrowDown} size={16} />
                         </Button>
-                        <Button variant="quiet" iconOnly aria-label={`Remove ${groupName.get(id) ?? "group"}`} onPress={() => field.onChange(ids.filter((x) => x !== id))}>
+                        <Button variant="quiet" iconOnly aria-label={`Remove ${groupName.get(id) ?? "group"}`} isDisabled={!mayEdit.ok} onPress={() => field.onChange(ids.filter((x) => x !== id))}>
                           <Icon icon={X} size={16} />
                         </Button>
                       </li>
@@ -293,5 +294,6 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
         <InlineError error={save.error ?? archive.error} />
       </form>
     </Sheet>
+    </FieldsLocked>
   );
 }

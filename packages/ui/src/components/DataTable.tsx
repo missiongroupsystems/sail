@@ -169,7 +169,7 @@ export function DataTable<RowT>({
               allowsSorting={col.sortable}
               width={col.width}
               className={cx(
-                "h-10 border-b border-rule px-3 py-2 text-[14px] leading-5 font-bold text-ink-2 whitespace-nowrap outline-none select-none",
+                "h-10 max-sm:h-11 border-b border-rule px-3 py-2 text-[14px] leading-5 font-bold text-ink-2 whitespace-nowrap outline-none select-none",
                 col.align === "end" || col.numeric ? "text-right" : "text-left",
                 col.sortable && "cursor-default data-[hovered]:text-ink",
                 col.hideBelow && HIDE_BELOW[col.hideBelow],

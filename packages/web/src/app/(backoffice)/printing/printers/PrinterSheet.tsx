@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, InlineError, Sheet, TagsField } from "@sail/ui";
+import { Button, InlineError, Sheet, TagsField, FieldsLocked } from "@sail/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -162,6 +162,7 @@ export function PrinterSheet({ state, outletId, printers, stations, canEdit, onC
     >
       <form id="printer-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
         <fieldset disabled={!canEdit} className="contents">
+        <FieldsLocked locked={!canEdit}>
           <FormSection>
             <RhfTextField control={form.control} name="name" label="Name" placeholder="Kitchen · Wok" autoFocus={!printer} />
             <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
@@ -237,6 +238,7 @@ export function PrinterSheet({ state, outletId, printers, stations, canEdit, onC
               Beep on kitchen tickets
             </RhfSwitch>
           </FormSection>
+        </FieldsLocked>
         </fieldset>
 
         {printer && !printer.archived ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Dialog, EmptyState, Icon, InlineError, Select, Switch, TextField, cx, useLocale, Pill } from "@sail/ui";
+import { Button, Dialog, EmptyState, FieldsLocked, Icon, InlineError, PageHeader, Select, Switch, TextField, cx, useLocale, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Users } from "lucide-react";
@@ -31,6 +31,15 @@ function clampTable(t: { x: number; y: number; w: number; h: number }) {
   const w = Math.max(1, Math.min(COLS, t.w));
   const h = Math.max(1, Math.min(ROWS, t.h));
   return { x: Math.max(0, Math.min(COLS - w, t.x)), y: Math.max(0, Math.min(ROWS - h, t.y)), w, h };
+}
+
+/** The page's intro says what the signed-in role can do here: an Admin edits the plan, a role below reads it (L1). */
+export function FloorIntro() {
+  const canEdit = useCan("tables.update").ok;
+  const description = canEdit
+    ? "Areas and tables per outlet. Drag a table to move it; tap it to edit. Download the QR sheet for the tables, or rotate one table's code."
+    : "Areas and tables per outlet. Tap a table to see its name, seats and shape. The QR codes and their sheet need an Admin.";
+  return <PageHeader title="Floor & QR" description={description} />;
 }
 
 /** Floor plan editor (FloorCanvas / TableShape, editor variant). Grid units are what the API stores. */
@@ -105,13 +114,14 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
   const canvasRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const startDrag = (e: ReactPointerEvent, t: Table, kind: Drag["kind"]) => {
+    // A tap always opens the table's details, for a role that may only read them too (L1); only a drag needs the right.
+    e.stopPropagation();
+    setSelected(t.id);
     if (t.archived || !canEditTable.ok) return;
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     e.preventDefault();
-    e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    setSelected(t.id);
     setDrag({ id: t.id, kind, startX: e.clientX, startY: e.clientY, origin: { x: t.x, y: t.y, w: t.w, h: t.h }, cell: rect.width / COLS, current: { x: t.x, y: t.y, w: t.w, h: t.h } });
   };
   const onMove = (e: ReactPointerEvent) => {
@@ -321,6 +331,7 @@ function TablePanel({ table, areas, onSave, saving, canRotateQr, denied, error }
         save();
       }}
     >
+      <FieldsLocked locked={denied !== null}>
       <TextField label="Name" value={name} onChange={setName} isInvalid={!!fieldError("name")} errorMessage={fieldError("name")} />
       <div className="grid grid-cols-2 gap-3">
         <TextField label="Seats" numeric inputMode="numeric" value={seats} onChange={setSeats} isInvalid={!!fieldError("seats")} errorMessage={fieldError("seats")} />
@@ -336,6 +347,7 @@ function TablePanel({ table, areas, onSave, saving, canRotateQr, denied, error }
       <p className="text-[12.5px] text-ink-3">
         Grid of {COLS} × {ROWS}. Position and size are in grid units.
       </p>
+      </FieldsLocked>
       <div className="flex flex-wrap items-center gap-2">
         <Button type="submit" variant="primary" isDisabled={!valid || denied !== null} isPending={saving}>
           Save table
@@ -347,7 +359,7 @@ function TablePanel({ table, areas, onSave, saving, canRotateQr, denied, error }
       {denied ? <p className="text-[12.5px] text-ink-3">{denied}</p> : null}
       <section className="flex flex-col gap-2.5 border-t border-rule-subtle pt-4">
         <SectionLabel>QR code</SectionLabel>
-        <RotateQrButton table={table} canRotate={canRotateQr} />
+        {canRotateQr ? <RotateQrButton table={table} canRotate /> : <p className="text-[12.5px] text-ink-3">The code on {table.name} is printed on the QR sheet. Downloading the sheet and rotating a code need an Admin.</p>}
       </section>
     </form>
   );

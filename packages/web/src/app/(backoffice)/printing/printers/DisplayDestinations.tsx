@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Badge, Button, DataTable, EmptyState, InlineError, SectionHead, Sheet, TagsField, type DataTableColumn } from "@sail/ui";
+import { Badge, Button, DataTable, EmptyState, InlineError, SectionHead, Sheet, TagsField, type DataTableColumn, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -154,6 +154,7 @@ function DestinationSheet({ state, outletId, canEdit, onClose }: { state: SheetS
     >
       <form id="destination-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
         <fieldset disabled={!canEdit} className="contents">
+        <FieldsLocked locked={!canEdit}>
           <FormSection>
             <RhfTextField control={form.control} name="name" label="Name" placeholder="Hot line" autoFocus={!destination} />
           </FormSection>
@@ -166,6 +167,7 @@ function DestinationSheet({ state, outletId, canEdit, onClose }: { state: SheetS
               Default display destination
             </RhfSwitch>
           </FormSection>
+        </FieldsLocked>
         </fieldset>
         <InlineError error={save.error ?? archive.error} />
       </form>

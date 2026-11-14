@@ -12,6 +12,7 @@ import {
   type ValidationResult,
 } from "react-aria-components";
 import { cx } from "../lib/cx";
+import { useLockedDisabled } from "./FieldsLocked";
 import { fieldControl, fieldControlSm, fieldDescription, fieldError, fieldLabel, fieldWrap, type FieldSize } from "./field";
 
 export type TextFieldProps = Omit<AriaTextFieldProps, "className" | "children"> & {
@@ -50,9 +51,10 @@ export function TextField({
   size = "md",
   ...rest
 }: TextFieldProps) {
+  const isDisabled = useLockedDisabled(rest.isDisabled);
   const control = cx(size === "sm" ? fieldControlSm : fieldControl, mono && "font-mono", numeric && "tabular", suffix ? "pr-12" : null, inputClassName);
   return (
-    <AriaTextField {...rest} validationBehavior={rest.validationBehavior ?? "aria"} className={cx(fieldWrap, className)}>
+    <AriaTextField {...rest} isDisabled={isDisabled} validationBehavior={rest.validationBehavior ?? "aria"} className={cx(fieldWrap, className)}>
       {label ? <Label className={fieldLabel}>{label}</Label> : null}
       <div className="relative">
         {multiline ? (

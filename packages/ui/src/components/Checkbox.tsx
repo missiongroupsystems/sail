@@ -14,6 +14,7 @@ import {
 import { cx } from "../lib/cx";
 import { fieldDescription, fieldError, fieldLabel, fieldWrap } from "./field";
 import { Icon } from "./Icon";
+import { useLockedDisabled } from "./FieldsLocked";
 
 export type CheckboxProps = Omit<AriaCheckboxProps, "className" | "children"> & {
   children: ReactNode;
@@ -22,9 +23,11 @@ export type CheckboxProps = Omit<AriaCheckboxProps, "className" | "children"> & 
 };
 
 export function Checkbox({ children, description, className, ...rest }: CheckboxProps) {
+  const isDisabled = useLockedDisabled(rest.isDisabled);
   return (
     <AriaCheckbox
       {...rest}
+      isDisabled={isDisabled}
       className={cx("group flex min-h-11 cursor-default items-start gap-3 py-2 text-body text-ink outline-none data-[disabled]:text-ink-disabled", className)}
     >
       <span
@@ -57,8 +60,9 @@ export type CheckboxGroupProps = Omit<AriaCheckboxGroupProps, "className" | "chi
 };
 
 export function CheckboxGroup({ label, description, errorMessage, children, className, columns = 1, ...rest }: CheckboxGroupProps) {
+  const isDisabled = useLockedDisabled(rest.isDisabled);
   return (
-    <AriaCheckboxGroup {...rest} className={cx(fieldWrap, className)}>
+    <AriaCheckboxGroup {...rest} isDisabled={isDisabled} className={cx(fieldWrap, className)}>
       {label ? <Label className={fieldLabel}>{label}</Label> : null}
       <div className={cx("grid gap-x-6", columns === 2 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1")}>{children}</div>
       {description ? (

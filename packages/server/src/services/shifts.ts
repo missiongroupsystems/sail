@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { drawerCap, formatMoney, type TaxAmount, type TaxBreakdown } from "@sail/shared";
 import { db, tx } from "../db/client.js";
 import { businessDayCloses, merchantSettings, orderAdjustments, orderLines, orders, payments, shifts, staff } from "../db/schema/index.js";
@@ -97,10 +97,11 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
     .groupBy(payments.tenderTypeId, payments.tenderName, payments.isCash);
   const voidRows = await db()
     // A voided line is worth quantity × (unit price + modifiers per unit); the same formula as the report_voids view.
+    // Only lines sent to the kitchen count: one removed before sending, or by cancelling an order with nothing sent, is no void (L2).
     .select({ count: sql<number>`count(*)::int`, quantity: sql<number>`coalesce(sum(${orderLines.quantity}),0)::bigint`, value: sql<number>`coalesce(sum(${orderLines.quantity} * (${orderLines.unitPrice} + coalesce((select sum((m->>'price')::bigint * (m->>'quantity')::bigint) from jsonb_array_elements(${orderLines.modifiers}) m), 0))),0)::bigint` })
     .from(orderLines)
     .innerJoin(orders, eq(orders.id, orderLines.orderId))
-    .where(and(orderWhere, eq(orderLines.status, "voided")));
+    .where(and(orderWhere, eq(orderLines.status, "voided"), isNotNull(orderLines.firedAt)));
   const refunds = await refundProvider(scope);
   // The drawer figures of a day cover its closed shifts only (see `cash`), so they need their own cash totals.
   const drawerIds = scope.shiftId ? null : (scope.cashShiftIds ?? null);

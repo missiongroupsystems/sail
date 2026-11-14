@@ -194,6 +194,8 @@ export function buildBillDocument(data: BillDocument, cols: number): DocLine[] {
       for (const t of moneyRow(label, p.amount, cols, fmt)) doc.push(text(t));
       if (p.rounding_cents !== undefined && p.rounding_cents !== 0) for (const t of moneyRow("Cash rounding", p.rounding_cents, cols, fmt)) doc.push(text(t));
       if (p.tip !== undefined && p.tip !== 0) for (const t of moneyRow("Tip", p.tip, cols, fmt)) doc.push(text(t));
+      // What the guest paid with this tender, as the register recorded it (the phone receipt shows the same row).
+      if (p.charged !== undefined && p.charged !== 0) for (const t of moneyRow("Charged", p.charged, cols, fmt)) doc.push(text(t));
       if (p.change !== undefined && p.change !== 0) for (const t of moneyRow("Change", p.change, cols, fmt)) doc.push(text(t));
     }
   }

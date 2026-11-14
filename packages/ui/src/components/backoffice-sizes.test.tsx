@@ -8,6 +8,7 @@ import { Select } from "./Select";
 import { StatCard, StatTile, StatTiles } from "./StatCard";
 import { TextField } from "./TextField";
 import { DateField } from "./DateField";
+import { sideNavRowClass } from "./SideNav";
 import { LocaleProvider } from "../lib/locale";
 
 describe("back-office sizes are opt-in", () => {
@@ -45,6 +46,16 @@ describe("date fields at phone width (R sizes)", () => {
     // The input covers the field's border too, so the tap area is the full 44px, not 42.
     expect(html).toContain("-inset-px");
     expect(html).toMatch(/aria-label="Clear From"[^>]*max-sm:size-11/);
+  });
+});
+
+describe("the side rail at phone width (L4)", () => {
+  it("every rail row, the footer's Sign out and user menu included, is 44px tall under 640px and 40px above", () => {
+    for (const collapsed of ["auto", true, false] as const) {
+      const row = sideNavRowClass(collapsed);
+      expect(row).toMatch(/(^|\s)h-10(\s|$)/);
+      expect(row).toMatch(/(^|\s)max-sm:h-11(\s|$)/);
+    }
   });
 });
 

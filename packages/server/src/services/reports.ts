@@ -98,7 +98,7 @@ export async function salesSummary(f: ReportFilters): Promise<SalesSummary> {
     from report_net_sales r left join report_categories c on c.id = r.category_id where ${w} ${catFilter} group by r.category_id, c.name order by net desc`;
   const byRule = await sql<SalesSummary["adjustments_by_rule"]>`select rule_key, name, kind, report_class, count(*)::int as count, coalesce(sum(total),0)::bigint as total from report_adjustments r where ${w} group by rule_key, name, kind, report_class order by kind, total`;
   const byClass = await sql<SalesSummary["adjustments_by_class"]>`select report_class, kind, count(*)::int as count, coalesce(sum(total),0)::bigint as total from report_adjustments r where ${w} group by report_class, kind order by kind, total`;
-  const [voids] = await sql<{ count: number; quantity: number; value: number }[]>`select count(*)::int as count, coalesce(sum(quantity),0)::bigint as quantity, coalesce(sum(value),0)::bigint as value from report_voids r where ${w}`;
+  const [voids] = await sql<{ count: number; quantity: number; value: number }[]>`select count(*)::int as count, coalesce(sum(quantity),0)::bigint as quantity, coalesce(sum(value),0)::bigint as value from report_voids r where ${w} and r.after_firing`;
   const [refunds] = await sql<{ count: number; amount: number; net: number; tax: number; tips: number }[]>`select count(*)::int as count, coalesce(sum(total),0)::bigint as amount, coalesce(sum(net),0)::bigint as net, coalesce(sum(tax),0)::bigint as tax, coalesce(sum(tip),0)::bigint as tips from report_refunds r where ${w}`;
   const refundTaxes = await sql<SalesSummary["refunds"]["taxes"]>`select t->>'name' as name, (t->>'bps')::int as bps, coalesce(sum((t->>'amount')::bigint),0)::bigint as amount from report_refunds r cross join lateral jsonb_array_elements(r.taxes) t where ${w} group by 1, 2 order by 2 desc, 1`;
   const refundKinds = await sql<{ kind: string; count: number; amount: number }[]>`select kind, count(*)::int as count, coalesce(sum(total),0)::bigint as amount from report_refunds r where ${w} group by kind order by kind`;
@@ -147,8 +147,10 @@ export type ExceptionsReport = {
 export async function exceptions(f: ReportFilters): Promise<ExceptionsReport> {
   const sql = tx();
   const w = orderWhere(f);
+  // A void is a line taken off after it was sent to the kitchen. A line removed before sending, or by cancelling an
+  // order with nothing sent, never reached the kitchen and is not a void in any report (L2).
   const voids = await sql<ExceptionsReport["voids"]>`select r.order_no, r.business_date, r.product_name, r.quantity, r.value, r.after_firing, r.void_reason as reason, s1.name as voided_by, s2.name as approved_by
-    from report_voids r left join staff s1 on s1.id = r.voided_by left join staff s2 on s2.id = r.void_approved_by where ${w} order by r.voided_at desc limit 1000`;
+    from report_voids r left join staff s1 on s1.id = r.voided_by left join staff s2 on s2.id = r.void_approved_by where ${w} and r.after_firing order by r.voided_at desc limit 1000`;
   const discounts = await sql<ExceptionsReport["discounts"]>`select r.order_no, r.business_date, r.rule_key, r.name, r.report_class, r.total, r.entered_value, s1.name as applied_by, s2.name as approved_by, r.reason
     from report_adjustments r left join staff s1 on s1.id::text = r.applied_by::text left join staff s2 on s2.id::text = r.approved_by::text where ${w} and r.kind = 'discount' and r.manual_application_id is not null order by r.business_date desc limit 1000`;
   const refunds = await sql<ExceptionsReport["refunds"]>`select order_no, business_date, kind, total, reason, refunded_by_name as refunded_by, approved_by_name as approved_by, refund_receipt_no, credit_note_no from report_refunds r where ${w} order by created_at desc limit 1000`;

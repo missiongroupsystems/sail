@@ -5,6 +5,7 @@ import { FieldError, Input, Label, Text, TextField as AriaTextField } from "reac
 import { cx } from "../lib/cx";
 import { fieldControl, fieldDescription, fieldError, fieldLabel, fieldWrap } from "../components/field";
 import { useLocale } from "../lib/locale";
+import { useLockedDisabled } from "../components/FieldsLocked";
 
 export type MoneyFieldProps = {
   label?: ReactNode;
@@ -72,9 +73,11 @@ export function MoneyField({
     onBlur?.();
   };
 
+  const isDisabled = useLockedDisabled(rest.isDisabled);
   return (
     <AriaTextField
       {...rest}
+      isDisabled={isDisabled}
       value={text}
       onChange={change}
       onBlur={blur}

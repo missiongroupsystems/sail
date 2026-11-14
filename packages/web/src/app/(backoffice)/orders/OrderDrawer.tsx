@@ -287,7 +287,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                           {l.name}
                           {l.seat_no ? <span className="ml-2 text-caption text-ink-2 no-underline">Seat {l.seat_no}</span> : null}
                           <Badge className="ml-2" tone={l.status === "fired" ? "sent" : l.status === "voided" ? "alert" : l.status === "held" ? "bill" : "neutral"}>
-                            {label(LINE_STATUS_LABEL, l.status)}
+                            {l.status === "voided" && !l.fired_at ? "Removed" : label(LINE_STATUS_LABEL, l.status)}
                           </Badge>
                         </span>
                         <span className="inline-flex flex-col items-end">
@@ -297,7 +297,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                       </div>
                       {l.modifiers.length ? <p className="pl-11 text-caption text-ink-2">{l.modifiers.map((m) => `${m.quantity > 1 ? `${m.quantity}× ` : ""}${m.name}`).join(", ")}</p> : null}
                       {l.notes ? <p className="pl-11 text-caption text-ink-2">“{l.notes}”</p> : null}
-                      {l.void_reason ? <p className="pl-11 text-caption text-status-alert no-underline">Voided: {l.void_reason}</p> : null}
+                      {l.void_reason ? <p className="pl-11 text-caption text-status-alert no-underline">{l.fired_at ? "Voided" : "Removed"}: {l.void_reason}</p> : null}
                       <p className="pl-11 text-caption text-ink-2 tabular">
                         {l.unit_price ? <Money cents={l.unit_price} size="caption" /> : "open price"} each{l.fired_at ? ` · sent ${dayClock(l.fired_at)}` : ""}
                         {l.added_by ? ` · ${l.added_by}` : ""}
@@ -413,7 +413,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                       <span className="tabular whitespace-nowrap text-ink-2" title={fullStamp(e.occurred_at)}>
                         {dayClock(e.occurred_at)}
                       </span>
-                      <span className="text-caption text-ink" title={e.type}>{eventLabel(e.type)}</span>
+                      <span className="text-caption text-ink" title={e.type}>{eventLabel(e.type, e.payload)}</span>
                       <span className="text-caption text-ink-2">
                         seq {e.seq} · v{e.aggregate.version}
                         {typeof e.actor === "object" && e.actor && "name" in e.actor && e.actor.name ? ` · ${String(e.actor.name)}` : ""}

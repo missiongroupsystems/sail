@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, DataTable, Dialog, EmptyState, InlineError, Select, Sheet, StatusDot, Switch, type DataTableColumn, Pill } from "@sail/ui";
+import { Button, DataTable, Dialog, EmptyState, InlineError, Select, Sheet, StatusDot, Switch, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -190,6 +190,7 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
   const mayEdit = useCan("stations.update");
   useFreshErrors(state, form.watch(), save, archive);
   return (
+    <FieldsLocked locked={!mayEdit.ok}>
     <>
     <Sheet
       isOpen={state !== null}
@@ -308,5 +309,6 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
       </Dialog>
     ) : null}
     </>
+    </FieldsLocked>
   );
 }

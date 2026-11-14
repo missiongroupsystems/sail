@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { Switch as AriaSwitch, type SwitchProps as AriaSwitchProps } from "react-aria-components";
 import { cx } from "../lib/cx";
+import { useLockedDisabled } from "./FieldsLocked";
 
 export type SwitchProps = Omit<AriaSwitchProps, "className" | "children"> & {
   /** The thing being switched, as a noun phrase: "Pay before sending", "Seats". */
@@ -13,9 +14,11 @@ export type SwitchProps = Omit<AriaSwitchProps, "className" | "children"> & {
 };
 
 export function Switch({ children, description, className, ...rest }: SwitchProps) {
+  const isDisabled = useLockedDisabled(rest.isDisabled);
   return (
     <AriaSwitch
       {...rest}
+      isDisabled={isDisabled}
       className={cx(
         // One line of label centres on the toggle; with a description under it, the toggle sits by the first line.
         "group flex min-h-11 cursor-default gap-3 py-2 text-body text-ink outline-none data-[disabled]:text-ink-disabled",

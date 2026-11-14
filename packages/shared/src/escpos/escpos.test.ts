@@ -361,6 +361,17 @@ describe("templates (golden text at both widths)", () => {
     expect(renderBill(receiptInclusiveCash, PROFILES["80mm"]).text).not.toMatch(/^Tip /m);
   });
 
+  it("prints the register's Charged figure after the tip and before the change, as the phone receipt does (L6)", () => {
+    // 53.68 + 0.02 rounding + 5.00 tip: the register's own figure is printed, not one added up here.
+    const out = renderBill({ ...receiptInclusiveCash, payments: [{ tender: "Cash", amount: 5368, rounding_cents: 2, tip: 500, change: 130, charged: 5870 }] }, PROFILES["80mm"]).text;
+    const at = (label: string) => out.search(new RegExp(`^${label} `, "m"));
+    expect(out).toMatch(/^Charged +\$58\.70$/m);
+    expect(at("Tip")).toBeLessThan(at("Charged"));
+    expect(at("Charged")).toBeLessThan(at("Change"));
+    expect(renderBill({ ...receiptInclusiveCash, payments: [{ tender: "Card", amount: 5368, tip: 200, charged: 5568 }] }, PROFILES["58mm"]).text).toMatch(/^Charged +\$55\.68$/m);
+    expect(renderBill(receiptInclusiveCash, PROFILES["80mm"]).text).not.toMatch(/^Charged /m);
+  });
+
   it("labels each tax row with its component name and formats money in the document's currency and locale", () => {
     const vat: BillDocument = {
       ...receiptInclusiveCash,

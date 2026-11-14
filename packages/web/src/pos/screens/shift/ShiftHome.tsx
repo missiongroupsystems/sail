@@ -167,8 +167,9 @@ export function ShiftHome({ onShowReport, onCounting }: { onShowReport: () => vo
         title="Shift closed"
         sub={
           <>
-            {phase.shift.opened_at ? `Opened ${clock(phase.shift.opened_at)}` : ""}
-            {phase.shift.closed_at ? ` · closed ${clock(phase.shift.closed_at)}` : ""} · {phase.shift.closed_by ?? staff.name}
+            {/* Who opened the drawer and who closed it: often two people (L5). */}
+            {phase.shift.opened_at ? `Opened ${clock(phase.shift.opened_at)}${phase.shift.opened_by ? ` by ${phase.shift.opened_by}` : ""}` : ""}
+            {` · closed ${phase.shift.closed_at ? `${clock(phase.shift.closed_at)} ` : ""}by ${phase.shift.closed_by ?? staff.name}`}
           </>
         }
         footer={

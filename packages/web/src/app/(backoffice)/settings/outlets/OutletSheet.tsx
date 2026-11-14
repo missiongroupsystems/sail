@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, InlineError, Sheet, Switch, TextField } from "@sail/ui";
+import { Button, InlineError, Sheet, Switch, TextField, FieldsLocked } from "@sail/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -109,6 +109,7 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
   const mayEdit = useCan("outlets.update");
   useFreshErrors(state, form.watch(), save, archive);
   return (
+    <FieldsLocked locked={!mayEdit.ok}>
     <Sheet
       isOpen={state !== null}
       onOpenChange={(open) => !open && onClose()}
@@ -217,5 +218,6 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
         <InlineError error={error} />
       </form>
     </Sheet>
+    </FieldsLocked>
   );
 }

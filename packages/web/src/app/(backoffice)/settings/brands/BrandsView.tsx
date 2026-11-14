@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, DataTable, EmptyState, InlineError, Sheet, StatusDot, Switch, type DataTableColumn, Pill } from "@sail/ui";
+import { Button, DataTable, EmptyState, InlineError, Sheet, StatusDot, Switch, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -144,6 +144,7 @@ function BrandSheet({ state, onClose }: { state: SheetState; onClose: () => void
   const mayEdit = useCan("brands.update");
   useFreshErrors(state, form.watch(), save, archive);
   return (
+    <FieldsLocked locked={!mayEdit.ok}>
     <Sheet
       isOpen={state !== null}
       onOpenChange={(open) => !open && onClose()}
@@ -175,6 +176,7 @@ function BrandSheet({ state, onClose }: { state: SheetState; onClose: () => void
               <span className="sr-only">Pick accent colour</span>
               <input
                 type="color"
+                disabled={!mayEdit.ok}
                 value={HEX_RE.test(accent) ? accent : "#5B4CD6"}
                 onChange={(e) => form.setValue("accent_color", e.target.value.toUpperCase(), { shouldDirty: true, shouldValidate: true })}
                 className="absolute inset-0 size-full cursor-default opacity-0"
@@ -205,7 +207,7 @@ function BrandSheet({ state, onClose }: { state: SheetState; onClose: () => void
                     A {check.suggestion.direction} variant passes: <span className="font-mono text-ink">{check.suggestion.hex}</span> at {formatRatio(check.suggestion.ratio)} with{" "}
                     {check.suggestion.textOn} text.
                   </span>
-                  <Button onPress={() => form.setValue("accent_color", check.suggestion!.hex, { shouldDirty: true, shouldValidate: true })}>
+                  <Button isDisabled={!mayEdit.ok} onPress={() => form.setValue("accent_color", check.suggestion!.hex, { shouldDirty: true, shouldValidate: true })}>
                     Use {check.suggestion.hex}
                   </Button>
                 </div>
@@ -217,5 +219,6 @@ function BrandSheet({ state, onClose }: { state: SheetState; onClose: () => void
         <InlineError error={save.error ?? archive.error} />
       </form>
     </Sheet>
+    </FieldsLocked>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, DataTable, EmptyState, InlineError, Sheet, Switch, type DataTableColumn, Pill } from "@sail/ui";
+import { Button, DataTable, EmptyState, InlineError, Sheet, Switch, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -98,6 +98,7 @@ function ReasonSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
   const mayEdit = useCan("void_reasons.update");
   useFreshErrors(state, form.watch(), save, archive);
   return (
+    <FieldsLocked locked={!mayEdit.ok}>
     <Sheet
       isOpen={state !== null}
       onOpenChange={(open) => !open && onClose()}
@@ -133,5 +134,6 @@ function ReasonSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
         <InlineError error={save.error ?? archive.error} />
       </form>
     </Sheet>
+    </FieldsLocked>
   );
 }

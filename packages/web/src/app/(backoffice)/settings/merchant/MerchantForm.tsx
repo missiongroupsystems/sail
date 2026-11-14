@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, InlineError, TagsField, useLocale, type LocaleFormat } from "@sail/ui";
+import { Button, InlineError, TagsField, useLocale, type LocaleFormat, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -106,6 +106,7 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
   });
 
   return (
+    <FieldsLocked locked={!mayEdit.ok}>
     <form
       noValidate
       onSubmit={form.handleSubmit((v) => {
@@ -222,5 +223,6 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
         {savedAt && !form.formState.isDirty ? <span className="text-caption text-ink-2">Saved · {clock(savedAt)}</span> : null}
       </div>
     </form>
+    </FieldsLocked>
   );
 }

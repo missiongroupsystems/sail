@@ -138,6 +138,7 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
       // The same rows, in the same order, as the thermal receipt and the digital one.
       if (p.rounding_cents) row("Cash rounding", p.rounding_cents);
       if (p.tip) row("Tip", p.tip);
+      if (p.charged) row("Charged", p.charged);
       if (p.change) row("Change", p.change);
     }
   }

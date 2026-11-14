@@ -64,8 +64,12 @@ beforeAll(async () => {
   });
   const o3 = await open({ order_type: "takeaway" });
   const lineToVoid = randomUUID();
-  const r3 = await complete(o3.body.data, ids.card, [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 3 }, { line_id: lineToVoid, product_id: ids.kopi, quantity: 1 }], async () => {
-    await call("POST", `/v1/orders/${o3.body.data.id}/lines/${lineToVoid}/void`, { token: cashierPin, body: { reason_id: ids.reason } });
+  const lineRemoved = randomUUID();
+  const r3 = await complete(o3.body.data, ids.card, [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 3 }, { line_id: lineToVoid, product_id: ids.kopi, quantity: 1 }, { line_id: lineRemoved, product_id: ids.kopi, quantity: 1 }], async () => {
+    // Removed before it was sent: not a void in any report (L2). The other line is voided after it was sent: a void.
+    await call("POST", `/v1/orders/${o3.body.data.id}/lines/${lineRemoved}/void`, { token: cashierPin, body: { reason_id: ids.reason } });
+    await call("POST", `/v1/orders/${o3.body.data.id}/fire`, { token: cashierPin, body: {} });
+    expect((await call("POST", `/v1/orders/${o3.body.data.id}/lines/${lineToVoid}/void`, { token: managerPin, body: { reason_id: ids.reason } })).status).toBe(200);
   });
   await call("POST", `/v1/checks/${r3.snap.checks[0]!.id}/refunds`, { token: managerPin, body: { refund_id: randomUUID(), request: { kind: "amount", amount: 100 }, reason: "Spilled", print: false } });
   await open({ order_type: "takeaway" }); // left open: not a sale yet
@@ -148,7 +152,8 @@ describe("reports", () => {
     expect(staff.body as unknown as string).toMatch(/Cal Cashier/);
 
     const ex = await call<{ data: { voids: { product_name: string; reason: string; voided_by: string; after_firing: boolean }[]; discounts: { rule_key: string; applied_by: string; reason: string }[]; refunds: { kind: string; refunded_by: string; reason: string; refund_receipt_no: string }[] } }>("GET", `/v1/reports/exceptions?outlet_id=${A.outletId}`, { token: A.manager.token });
-    expect(ex.body.data.voids[0]).toMatchObject({ product_name: "Kopi", reason: "Mistake", voided_by: "Cal Cashier", after_firing: false });
+    expect(ex.body.data.voids).toHaveLength(1);
+    expect(ex.body.data.voids[0]).toMatchObject({ product_name: "Kopi", reason: "Mistake", voided_by: "Mia Manager", after_firing: true });
     expect(ex.body.data.discounts[0]).toMatchObject({ rule_key: SEED_RULE_IDS.staffMeal, applied_by: "Cal Cashier", reason: "Staff lunch" });
     expect(ex.body.data.refunds[0]).toMatchObject({ kind: "amount", refunded_by: "Mia Manager", reason: "Spilled", refund_receipt_no: "RR-000001" });
 

@@ -372,7 +372,7 @@ function DragHandle({ handle, label }: { handle: Handle; label: string }) {
     <button
       type="button"
       aria-label={label}
-      className="press inline-flex size-9 shrink-0 cursor-grab touch-none items-center justify-center rounded-full text-ink-3 outline-none hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-focus active:cursor-grabbing"
+      className="press inline-flex size-9 max-sm:size-11 shrink-0 cursor-grab touch-none items-center justify-center rounded-full text-ink-3 outline-none hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-focus active:cursor-grabbing"
       {...handle.attributes}
       {...handle.listeners}
     >

@@ -2,7 +2,7 @@
 
 import { Users } from "lucide-react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Badge, Button, DataTable, EmptyState, InlineError, Panel, Pill, Sheet, StatusDot, TextField, type DataTableColumn } from "@sail/ui";
+import { Badge, Button, DataTable, EmptyState, InlineError, Panel, Pill, Sheet, StatusDot, TextField, type DataTableColumn, FieldsLocked } from "@sail/ui";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -134,13 +134,13 @@ export function CustomersView({ initialGroups, initialCustomers }: { initialGrou
         ) : (
           <ul className="flex flex-col gap-0.5 p-2">
             <li>
-              <Button variant="quiet" className={`min-h-10 w-full justify-start rounded-[10px] px-3 font-normal ${groupId === null ? "bg-surface-3 text-ink" : "text-ink-2"}`} onPress={() => setGroupId(null)}>
+              <Button variant="quiet" className={`min-h-10 max-sm:min-h-11 w-full justify-start rounded-[10px] px-3 font-normal ${groupId === null ? "bg-surface-3 text-ink" : "text-ink-2"}`} onPress={() => setGroupId(null)}>
                 All customers
               </Button>
             </li>
             {groups.data.map((g) => (
               <li key={g.id} className="flex items-center gap-1">
-                <Button variant="quiet" className={`min-h-10 min-w-0 flex-1 justify-start rounded-[10px] px-3 text-left font-normal ${groupId === g.id ? "bg-surface-3 text-ink" : "text-ink-2"}`} onPress={() => setGroupId(g.id)}>
+                <Button variant="quiet" className={`min-h-10 max-sm:min-h-11 min-w-0 flex-1 justify-start rounded-[10px] px-3 text-left font-normal ${groupId === g.id ? "bg-surface-3 text-ink" : "text-ink-2"}`} onPress={() => setGroupId(g.id)}>
                   <span className="truncate">{g.name}</span>
                   {g.archived ? <span className="ml-2 text-caption">archived</span> : null}
                 </Button>
@@ -203,6 +203,7 @@ function CustomerFormSheet({ state, groups, onClose }: { state: CustomerSheet; g
   useFreshErrors(state, form.watch(), save, archive);
   const mayEdit = useCan("customers.upsert");
   return (
+    <FieldsLocked locked={!mayEdit.ok}>
     <Sheet
       isOpen={state !== null}
       onOpenChange={(open) => !open && onClose()}
@@ -246,6 +247,7 @@ function CustomerFormSheet({ state, groups, onClose }: { state: CustomerSheet; g
         <InlineError error={save.error ?? archive.error} />
       </form>
     </Sheet>
+    </FieldsLocked>
   );
 }
 

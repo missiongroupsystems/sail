@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, EmptyState, Icon, InlineError, Sheet, Switch, useLocale, Pill } from "@sail/ui";
+import { Button, EmptyState, Icon, InlineError, Sheet, Switch, useLocale, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -31,6 +31,8 @@ function bySort(locale: string) {
 /** The two-level category tree: parents with their children, each editable, each movable among its siblings. */
 export function CategoriesView({ initialCategories }: { initialCategories: Category[] }) {
   const canCreate = useCan("categories.create");
+  // Reordering writes each category: a role that cannot change them gets no Move buttons (L3).
+  const canReorder = useCan("categories.update").ok;
   const qc = useQueryClient();
   const [showArchived, setShowArchived] = useState(false);
   const [sheet, setSheet] = useState<SheetState>(null);
@@ -75,12 +77,16 @@ export function CategoriesView({ initialCategories }: { initialCategories: Categ
             <Icon icon={Plus} size={14} /> Sub-category
           </Button>
         ) : null}
+        {canReorder ? (
+          <>
         <Button variant="quiet" iconOnly aria-label={`Move ${c.name} up`} isDisabled={i <= 0 || reorder.isPending} onPress={() => reorder.mutate({ siblings, from: i, to: i - 1 })}>
           <Icon icon={ArrowUp} size={16} />
         </Button>
         <Button variant="quiet" iconOnly aria-label={`Move ${c.name} down`} isDisabled={i < 0 || i >= siblings.length - 1 || reorder.isPending} onPress={() => reorder.mutate({ siblings, from: i, to: i + 1 })}>
           <Icon icon={ArrowDown} size={16} />
         </Button>
+          </>
+        ) : null}
       </li>
     );
   };
@@ -157,6 +163,7 @@ function CategorySheet({ state, parents, parentIds, onClose }: { state: SheetSta
   const mayEdit = useCan("categories.update");
   useFreshErrors(state, form.watch(), save, archive);
   return (
+    <FieldsLocked locked={!mayEdit.ok}>
     <Sheet
       isOpen={state !== null}
       onOpenChange={(open) => !open && onClose()}
@@ -196,5 +203,6 @@ function CategorySheet({ state, parents, parentIds, onClose }: { state: SheetSta
         <InlineError error={save.error ?? archive.error} />
       </form>
     </Sheet>
+    </FieldsLocked>
   );
 }

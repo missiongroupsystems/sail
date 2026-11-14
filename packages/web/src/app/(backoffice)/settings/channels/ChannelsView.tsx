@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, DataTable, EmptyState, InlineError, Sheet, TagsField, type DataTableColumn, Pill } from "@sail/ui";
+import { Button, DataTable, EmptyState, InlineError, Sheet, TagsField, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
@@ -137,6 +137,7 @@ function LinkSheet({ state, outlets, brands, menus, onClose }: { state: SheetSta
   const mayEdit = useCan("channel_links.update");
   useFreshErrors(state, form.watch(), save);
   return (
+    <FieldsLocked locked={!mayEdit.ok}>
     <Sheet
       isOpen={state !== null}
       onOpenChange={(open) => !open && onClose()}
@@ -205,5 +206,6 @@ function LinkSheet({ state, outlets, brands, menus, onClose }: { state: SheetSta
         <InlineError error={save.error} />
       </form>
     </Sheet>
+    </FieldsLocked>
   );
 }

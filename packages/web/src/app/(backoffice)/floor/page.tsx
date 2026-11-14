@@ -1,7 +1,6 @@
-import { PageHeader } from "@sail/ui";
 import { req } from "@/lib/api";
 import { getScope, orSignIn, requireApi } from "@/lib/api.server";
-import { FloorView } from "./FloorView";
+import { FloorIntro, FloorView } from "./FloorView";
 
 export const metadata = { title: "Floor & QR" };
 
@@ -15,7 +14,7 @@ export default async function FloorPage() {
     : [null, null];
   return (
     <>
-      <PageHeader title="Floor & QR" description="Areas and tables per outlet. Drag a table to move it; tap it to edit. Download the QR sheet for the tables, or rotate one table's code." />
+      <FloorIntro />
       <FloorView outlets={outlets.data} scope={scope} initialOutletId={outletId} initialAreas={areas?.data ?? []} initialTables={tables?.data ?? []} />
     </>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Badge, Button, Icon, InlineError, MoneyField, PercentField, Sheet, TagsField, TextField, useLocale } from "@sail/ui";
+import { Badge, Button, Icon, InlineError, MoneyField, PercentField, Sheet, TagsField, TextField, useLocale, FieldsLocked, useFieldsLocked } from "@sail/ui";
 import { zonedInputToIso } from "@sail/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
@@ -122,6 +122,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
   const mayEdit = useCan("pricing_rules.create_version");
   useFreshErrors(state, form.watch(), save, archive);
   return (
+    <FieldsLocked locked={!mayEdit.ok}>
     <Sheet
       isOpen={state !== null}
       onOpenChange={(open) => !open && onClose()}
@@ -420,10 +421,12 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
         </form>
       )}
     </Sheet>
+    </FieldsLocked>
   );
 }
 
 function ProductList({ control, name, byId, label }: { control: ReturnType<typeof useForm<RuleForm>>; name: "scope_product_ids" | "excl_product_ids"; byId: ReturnType<typeof useProductsById>["byId"]; label: string }) {
+  const locked = useFieldsLocked();
   return (
     <Controller
       control={control.control}
@@ -434,9 +437,9 @@ function ProductList({ control, name, byId, label }: { control: ReturnType<typeo
           {field.value.length ? (
             <ul className="flex flex-wrap gap-1.5">
               {field.value.map((id) => (
-                <li key={id} className="inline-flex h-8 items-center gap-1 rounded-chip bg-surface-2 pr-1 pl-3 text-caption text-ink">
+                <li key={id} className="inline-flex h-8 max-sm:h-11 items-center gap-1 rounded-chip bg-surface-2 pr-1 pl-3 text-caption text-ink">
                   {productName(byId, id)}
-                  <Button variant="quiet" iconOnly aria-label={`Remove ${productName(byId, id)}`} className="min-h-6 min-w-6 rounded-full" onPress={() => field.onChange(field.value.filter((x) => x !== id))}>
+                  <Button variant="quiet" iconOnly aria-label={`Remove ${productName(byId, id)}`} isDisabled={locked} className="min-h-6 min-w-6 max-sm:min-h-11 max-sm:min-w-11 rounded-full" onPress={() => field.onChange(field.value.filter((x) => x !== id))}>
                     <Icon icon={X} size={12} />
                   </Button>
                 </li>

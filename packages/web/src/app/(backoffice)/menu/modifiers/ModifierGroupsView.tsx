@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, Checkbox, DataTable, EmptyState, Icon, InlineError, Money, MoneyField, Select, Sheet, Switch, type DataTableColumn, Pill } from "@sail/ui";
+import { Button, Checkbox, DataTable, EmptyState, Icon, InlineError, Money, MoneyField, Select, Sheet, Switch, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -166,6 +166,7 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
   const mayEdit = useCan("modifier_groups.update");
   useFreshErrors(state, form.watch(), save, archive);
   return (
+    <FieldsLocked locked={!mayEdit.ok}>
     <Sheet
       isOpen={state !== null}
       onOpenChange={(open) => !open && onClose()}
@@ -263,13 +264,13 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
                                 </td>
                                 <td className="py-2 pr-2">
                                   <span className="flex items-center justify-end">
-                                    <Button variant="quiet" iconOnly aria-label="Move up" onPress={() => move(i, -1)} isDisabled={i === 0}>
+                                    <Button variant="quiet" iconOnly aria-label="Move up" onPress={() => move(i, -1)} isDisabled={i === 0 || !mayEdit.ok}>
                                       <Icon icon={ArrowUp} size={16} />
                                     </Button>
-                                    <Button variant="quiet" iconOnly aria-label="Move down" onPress={() => move(i, 1)} isDisabled={i === list.length - 1}>
+                                    <Button variant="quiet" iconOnly aria-label="Move down" onPress={() => move(i, 1)} isDisabled={i === list.length - 1 || !mayEdit.ok}>
                                       <Icon icon={ArrowDown} size={16} />
                                     </Button>
-                                    <Button variant="quiet" iconOnly aria-label={`Remove ${productName(byId, o.product_id)}`} onPress={() => field.onChange(list.filter((_, j) => j !== i))}>
+                                    <Button variant="quiet" iconOnly aria-label={`Remove ${productName(byId, o.product_id)}`} isDisabled={!mayEdit.ok} onPress={() => field.onChange(list.filter((_, j) => j !== i))}>
                                       <Icon icon={X} size={16} />
                                     </Button>
                                   </span>
@@ -299,5 +300,6 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
         <InlineError error={save.error ?? archive.error} />
       </form>
     </Sheet>
+    </FieldsLocked>
   );
 }

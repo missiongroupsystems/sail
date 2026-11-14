@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Checkbox, CheckboxGroup, DataTable, EmptyState, InlineError, Select, Sheet, TextField, Pill, type DataTableColumn } from "@sail/ui";
+import { Button, Checkbox, CheckboxGroup, DataTable, EmptyState, InlineError, Select, Sheet, TextField, Pill, type DataTableColumn, FieldsLocked } from "@sail/ui";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { greyPill, Quiet, SheetSection, TwoLine } from "@/components/office/parts";
@@ -177,6 +177,7 @@ function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetSt
   const mayEdit = useCan("availability.update");
   useFreshErrors(state, form, save, remove);
   return (
+    <FieldsLocked locked={!mayEdit.ok}>
     <Sheet
       isOpen={state !== null}
       onOpenChange={(open) => !open && onClose()}
@@ -197,7 +198,7 @@ function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetSt
         ) : (
           <>
             {rule ? (
-              <Button variant="destructive" className="mr-auto" onPress={() => setConfirmDelete(true)} isDisabled={save.isPending}>
+              <Button variant="destructive" className="mr-auto" onPress={() => setConfirmDelete(true)} isDisabled={save.isPending || !mayEdit.ok}>
                 Delete rule
               </Button>
             ) : null}
@@ -228,7 +229,7 @@ function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetSt
               form.product ? (
                 <div className="flex items-center justify-between gap-3 rounded-field bg-surface-2 py-1 pr-1 pl-3">
                   <span className="min-w-0 font-medium text-ink [overflow-wrap:anywhere]">{form.product.name}</span>
-                  <Button variant="secondary" onPress={() => set("product", null)}>
+                  <Button variant="secondary" onPress={() => set("product", null)} isDisabled={!mayEdit.ok}>
                     Change
                   </Button>
                 </div>
@@ -278,5 +279,6 @@ function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetSt
         <InlineError error={save.error ?? remove.error} />
       </div>
     </Sheet>
+    </FieldsLocked>
   );
 }

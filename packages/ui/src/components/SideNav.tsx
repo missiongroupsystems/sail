@@ -65,12 +65,12 @@ export function sideNavLabelClass(collapsed: boolean | "auto" = "auto"): string 
 }
 
 /**
- * The look of one row in the rail: 40px, 10px corners, 14px secondary ink, a grey fill on hover.
+ * The look of one row in the rail: 40px (44px at phone width, a tap target), 10px corners, 14px secondary ink, a grey fill on hover.
  * Exported so the footer's own links and buttons sit in the same column as the sections.
  */
 export function sideNavRowClass(collapsed: boolean | "auto" = "auto", active = false): string {
   return cx(
-    "press flex h-10 w-full items-center gap-2.5 rounded-[10px] px-3 text-left text-[14px] no-underline outline-none transition-colors duration-[120ms]",
+    "press flex h-10 max-sm:h-11 w-full items-center gap-2.5 rounded-[10px] px-3 text-left text-[14px] no-underline outline-none transition-colors duration-[120ms]",
     "hover:bg-surface-2 active:bg-surface-2",
     "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus",
     "data-[hovered]:bg-surface-2 data-[pressed]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-[-2px] data-[focus-visible]:outline-focus",

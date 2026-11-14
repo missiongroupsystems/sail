@@ -13,6 +13,7 @@ export { DateField, type DateFieldProps } from "./components/DateField";
 export type { FieldSize } from "./components/field";
 export { Select, type SelectProps, type SelectItem } from "./components/Select";
 export { Switch, type SwitchProps } from "./components/Switch";
+export { FieldsLocked, useFieldsLocked } from "./components/FieldsLocked";
 export { Checkbox, CheckboxGroup, type CheckboxProps, type CheckboxGroupProps } from "./components/Checkbox";
 export { Sheet, type SheetProps } from "./components/Sheet";
 export { Dialog, type DialogProps } from "./components/Dialog";

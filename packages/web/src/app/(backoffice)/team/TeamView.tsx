@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ROLES, type Role } from "@sail/shared";
-import { Button, DataTable, EmptyState, InlineError, initialsOf, Sheet, Switch, type DataTableColumn, Pill } from "@sail/ui";
+import { Button, DataTable, EmptyState, InlineError, initialsOf, Sheet, Switch, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -196,6 +196,7 @@ function StaffSheet({ state, outlets, brands, onClose }: { state: SheetState; ou
   const mayEdit = useCan("staff.update");
   useFreshErrors(state, form.watch(), save);
   return (
+    <FieldsLocked locked={!mayEdit.ok}>
     <Sheet
       isOpen={state !== null}
       onOpenChange={(open) => !open && onClose()}
@@ -232,11 +233,11 @@ function StaffSheet({ state, outlets, brands, onClose }: { state: SheetState; ou
           {staff ? (
             <div className="flex flex-wrap items-center gap-2">
               <span className="mr-2 text-[14px] text-ink-2">{staff.has_pin ? "A PIN is set." : "No PIN yet."}</span>
-              <Button variant={pinAction === "set" ? "primary" : "secondary"} onPress={() => form.setValue("pin_action", pinAction === "set" ? "keep" : "set", { shouldDirty: true })}>
+              <Button variant={pinAction === "set" ? "primary" : "secondary"} isDisabled={!mayEdit.ok} onPress={() => form.setValue("pin_action", pinAction === "set" ? "keep" : "set", { shouldDirty: true })}>
                 {pinAction === "set" ? "Keep the current PIN" : staff.has_pin ? "Set a new PIN" : "Set a PIN"}
               </Button>
               {staff.has_pin ? (
-                <Button variant={pinAction === "remove" ? "destructive" : "secondary"} className={pinAction === "remove" ? undefined : greyPillAlert} onPress={() => form.setValue("pin_action", pinAction === "remove" ? "keep" : "remove", { shouldDirty: true })}>
+                <Button variant={pinAction === "remove" ? "destructive" : "secondary"} isDisabled={!mayEdit.ok} className={pinAction === "remove" ? undefined : greyPillAlert} onPress={() => form.setValue("pin_action", pinAction === "remove" ? "keep" : "remove", { shouldDirty: true })}>
                   {pinAction === "remove" ? "Removing PIN on save" : "Remove PIN"}
                 </Button>
               ) : null}
@@ -262,5 +263,6 @@ function StaffSheet({ state, outlets, brands, onClose }: { state: SheetState; ou
         <InlineError error={save.error} />
       </form>
     </Sheet>
+    </FieldsLocked>
   );
 }

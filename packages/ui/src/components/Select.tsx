@@ -17,6 +17,7 @@ import {
 import { cx } from "../lib/cx";
 import { fieldControl, fieldControlSm, fieldDescription, fieldError, fieldLabel, fieldWrap, type FieldSize } from "./field";
 import { Icon } from "./Icon";
+import { useLockedDisabled } from "./FieldsLocked";
 
 export type SelectItem = {
   id: string;
@@ -69,9 +70,11 @@ export function Select({
   size = "md",
   ...rest
 }: SelectProps) {
+  const isDisabled = useLockedDisabled(rest.isDisabled);
   return (
     <AriaSelect
       {...rest}
+      isDisabled={isDisabled}
       selectedKey={selectedKey}
       onSelectionChange={(key: Key | null) => onSelectionChange(key === null ? null : String(key))}
       placeholder={placeholder}

@@ -6,6 +6,7 @@ import { Button as AriaButton, Input, Label, Text, TextField as AriaTextField } 
 import { cx } from "../lib/cx";
 import { fieldControl, fieldDescription, fieldError, fieldLabel, fieldWrap } from "../components/field";
 import { Icon } from "../components/Icon";
+import { useLockedDisabled } from "../components/FieldsLocked";
 
 export type TagsFieldProps = {
   label?: ReactNode;
@@ -23,7 +24,8 @@ export type TagsFieldProps = {
 };
 
 /** Chips with a text input. Enter, comma or Tab adds the typed tag; each chip has a labelled remove button. */
-export function TagsField({ label, description, errorMessage, value, onChange, placeholder = "Add a tag and press Enter", normalise = true, isDisabled, isInvalid, className, ...rest }: TagsFieldProps) {
+export function TagsField({ label, description, errorMessage, value, onChange, placeholder = "Add a tag and press Enter", normalise = true, isDisabled: ownDisabled, isInvalid, className, ...rest }: TagsFieldProps) {
+  const isDisabled = useLockedDisabled(ownDisabled);
   const [draft, setDraft] = useState("");
 
   const commit = () => {
@@ -61,13 +63,13 @@ export function TagsField({ label, description, errorMessage, value, onChange, p
       {label ? <Label className={fieldLabel}>{label}</Label> : null}
       <div className={cx(fieldControl, "flex min-h-11 flex-wrap items-center gap-1.5 py-1.5 focus-within:bg-surface-3", isDisabled && "text-ink-disabled")}>
         {value.map((tag) => (
-          <span key={tag} className="inline-flex h-7 items-center gap-1 rounded-chip bg-surface pr-1 pl-2.5 text-caption font-medium text-ink shadow-segment">
+          <span key={tag} className="inline-flex h-7 max-sm:h-11 items-center gap-1 rounded-chip bg-surface pr-1 pl-2.5 text-caption font-medium text-ink shadow-segment">
             {tag}
             <AriaButton
               aria-label={`Remove ${tag}`}
               isDisabled={isDisabled}
               onPress={() => onChange(value.filter((t) => t !== tag))}
-              className="press inline-flex size-5 items-center justify-center rounded-full text-ink-2 outline-none data-[hovered]:bg-surface-2 data-[hovered]:text-ink data-[focus-visible]:outline-2 data-[focus-visible]:outline-focus"
+              className="press inline-flex size-5 max-sm:size-11 items-center justify-center rounded-full text-ink-2 outline-none data-[hovered]:bg-surface-2 data-[hovered]:text-ink data-[focus-visible]:outline-2 data-[focus-visible]:outline-focus"
             >
               <Icon icon={X} size={12} />
             </AriaButton>

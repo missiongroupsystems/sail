@@ -19,7 +19,7 @@ export function shortId(id: string | null | undefined): string {
 /** Plain words for the register's audited actions ("orders.reopen" reads "Reopened order"); an unknown key is spelt out. */
 const AUDIT_ACTION: Record<string, string> = {
   "auth.sign_in": "Signed in", "auth.sign_out": "Signed out", "auth.change_password": "Changed password", "payments.void": "Voided a payment", "payments.start": "Sent to the terminal",
-  "lines.void_fired": "Voided a sent item", "lines.add_open_price": "Added an open-price item", "orders.move_table": "Moved table", "orders.change_type": "Changed order type",
+  "lines.void_fired": "Voided a sent item", "lines.void": "Removed an unsent item", "lines.add_open_price": "Added an open-price item", "orders.move_table": "Moved table", "orders.change_type": "Changed order type",
   "documents.issue_invoice": "Issued an invoice", "print_jobs.reprint": "Reprinted", "print_jobs.reroute": "Rerouted a ticket", "relays.pair": "Paired a print relay", "auth.pin_sign_in": "Signed in with PIN",
   "merchants.update_settings": "Changed merchant settings", "brands.create": "Added brand", "brands.update": "Changed brand",
   "outlets.create": "Added outlet", "outlets.update": "Changed outlet", "stations.create": "Added station", "stations.update": "Changed station",
@@ -66,7 +66,9 @@ const EVENT_LABEL: Record<string, string> = {
   "payment.voided": "Payment voided", "refund.created": "Refunded", "kitchen_ticket.created": "Kitchen ticket printed", "kitchen_ticket.bumped": "Kitchen ticket bumped", "round.submitted": "QR order sent",
   "round.accepted": "QR order accepted", "round.rejected": "QR order rejected", "adjustment.applied": "Discount applied", "adjustment.removed": "Discount removed", "print_job.created": "Print job created",
 };
-export function eventLabel(type: string): string {
+export function eventLabel(type: string, payload?: unknown): string {
+  // A line taken off before it was sent is removed, not voided: only a sent line is a void (L2).
+  if (type === "line.voided" && payload && typeof payload === "object" && (payload as { after_firing?: unknown }).after_firing === false) return "Item removed";
   if (EVENT_LABEL[type]) return EVENT_LABEL[type]!;
   const [what = "", verb = ""] = type.split(".");
   const words = `${what.replace(/_/g, " ")} ${verb.replace(/_/g, " ")}`.trim();

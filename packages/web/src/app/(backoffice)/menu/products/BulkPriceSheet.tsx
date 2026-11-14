@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, InlineError, Money, MoneyField, PercentField, Select, Sheet, useLocale } from "@sail/ui";
+import { Button, InlineError, Money, MoneyField, PercentField, Select, Sheet, useLocale, FieldsLocked } from "@sail/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { greyPill, Group, SheetSection } from "@/components/office/parts";
@@ -65,6 +65,7 @@ export function BulkPriceSheet({ isOpen, products, onClose, onSaved }: { isOpen:
   const mayEdit = useCan("products.bulk_price");
   useFreshErrors(isOpen, { mode, amount, bps, alsoByOrderType }, save);
   return (
+    <FieldsLocked locked={!mayEdit.ok}>
     <Sheet
       isOpen={isOpen}
       onOpenChange={(open) => !open && onClose()}
@@ -150,5 +151,6 @@ export function BulkPriceSheet({ isOpen, products, onClose, onSaved }: { isOpen:
         <InlineError error={save.error} />
       </div>
     </Sheet>
+    </FieldsLocked>
   );
 }

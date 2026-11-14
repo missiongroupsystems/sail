@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, DataTable, EmptyState, Icon, InlineError, parsePercent, percentText, Sheet, Switch, TextField, type DataTableColumn, Pill } from "@sail/ui";
+import { Button, DataTable, EmptyState, Icon, InlineError, parsePercent, percentText, Sheet, Switch, TextField, type DataTableColumn, Pill, FieldsLocked, useFieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -180,6 +180,7 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
   const mayEdit = useCan("tax_classes.update");
   useFreshErrors(isOpen && (taxClass?.id ?? "new"), form.watch(), save, makeDefault, archive, removeRate);
   return (
+    <FieldsLocked locked={!mayEdit.ok}>
     <Sheet
       isOpen={isOpen}
       onOpenChange={(open) => !open && onClose()}
@@ -195,7 +196,7 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
             </Button>
           ) : null}
           {taxClass && !taxClass.is_default && !taxClass.archived ? (
-            <Button variant="secondary" onPress={() => makeDefault.mutate()} isPending={makeDefault.isPending} isDisabled={save.isPending}>
+            <Button variant="secondary" onPress={() => makeDefault.mutate()} isPending={makeDefault.isPending} isDisabled={save.isPending || !mayEdit.ok}>
               Make default
             </Button>
           ) : null}
@@ -246,7 +247,7 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
                           Edit
                         </Button>
                         {isDefault ? null : (
-                          <Button variant="quiet" iconOnly aria-label={`Remove ${scopeText(r)}`} onPress={() => removeRate.mutate(r.id)} isDisabled={removeRate.isPending || taxClass.archived}>
+                          <Button variant="quiet" iconOnly aria-label={`Remove ${scopeText(r)}`} onPress={() => removeRate.mutate(r.id)} isDisabled={removeRate.isPending || taxClass.archived || !mayEdit.ok}>
                             <Icon icon={X} size={16} />
                           </Button>
                         )}
@@ -254,7 +255,7 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
                     );
                   })}
                 </ul>
-                <Button onPress={() => setRate("new")} isDisabled={taxClass.archived} className="self-start">
+                <Button onPress={() => setRate("new")} isDisabled={taxClass.archived || !mayEdit.ok} className="self-start">
                   <Icon icon={Plus} size={16} /> Add a rate
                 </Button>
                 <InlineError error={removeRate.error} />
@@ -264,6 +265,7 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
         ) : null}
       </div>
     </Sheet>
+    </FieldsLocked>
   );
 }
 
@@ -291,6 +293,7 @@ function RateEditor({ taxClass, rate, outlets, onDone }: { taxClass: TaxClass; r
   const mayEdit = useCan("tax_classes.update");
   useFreshErrors(rate?.id ?? "new", form.watch(), save);
   return (
+    <FieldsLocked locked={!mayEdit.ok}>
     <form noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} aria-label={rate ? "Edit rate" : "New rate"} className="flex flex-col gap-4 rounded-panel border border-rule bg-surface-2/40 p-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <RhfSelect control={form.control} name="outlet_id" label="Outlet" isDisabled={rate !== null} items={[{ id: NONE, label: "Every outlet" }, ...outlets.map((o) => ({ id: o.id, label: o.name }))]} />
@@ -308,11 +311,13 @@ function RateEditor({ taxClass, rate, outlets, onDone }: { taxClass: TaxClass; r
         </Button>
       </div>
     </form>
+    </FieldsLocked>
   );
 }
 
 /** The named components of a rate ("VAT 20%" at 20%); the name is printed on receipts as it stands. */
 function ComponentsEditor({ value, onChange, errors }: { value: ComponentValues; onChange: (v: ComponentValues) => void; errors?: FieldErrors<ClassValues>["components"] }) {
+  const locked = useFieldsLocked();
   const update = (i: number, patch: Partial<ComponentValues[number]>) => onChange(value.map((c, j) => (j === i ? { ...c, ...patch } : c)));
   return (
     <div className="flex flex-col gap-3">
@@ -321,12 +326,12 @@ function ComponentsEditor({ value, onChange, errors }: { value: ComponentValues;
         <div key={i} className="grid items-start gap-3 sm:grid-cols-[1fr_140px_auto]">
           <TextField label={i === 0 ? "Name on receipts" : undefined} aria-label={i === 0 ? undefined : `Component ${i + 1} name`} placeholder="VAT 20%" value={c.name} onChange={(name) => update(i, { name })} isInvalid={!!errors?.[i]?.name} errorMessage={errors?.[i]?.name?.message} />
           <RateField label={i === 0 ? "Rate" : undefined} aria-label={i === 0 ? undefined : `Component ${i + 1} rate`} value={c.bps} onChange={(bps) => update(i, { bps })} isInvalid={!!errors?.[i]?.bps} errorMessage={errors?.[i]?.bps?.message} />
-          <Button variant="quiet" iconOnly aria-label={`Remove ${c.name || `component ${i + 1}`}`} onPress={() => onChange(value.filter((_, j) => j !== i))} className={i === 0 ? "sm:mt-7" : undefined}>
+          <Button variant="quiet" iconOnly aria-label={`Remove ${c.name || `component ${i + 1}`}`} onPress={() => onChange(value.filter((_, j) => j !== i))} isDisabled={locked} className={i === 0 ? "sm:mt-7" : undefined}>
             <Icon icon={X} size={16} />
           </Button>
         </div>
       ))}
-      <Button variant="quiet" onPress={() => onChange([...value, { name: "", bps: null }])} className="self-start">
+      <Button variant="quiet" onPress={() => onChange([...value, { name: "", bps: null }])} isDisabled={locked} className="self-start">
         <Icon icon={Plus} size={16} /> Add a component
       </Button>
     </div>
