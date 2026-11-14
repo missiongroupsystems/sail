@@ -105,7 +105,9 @@ export function listMigrationFiles(folder: string): string[] {
 /**
  * The faked clock's half in Postgres (see test/fake-clock.ts): faketime.now() and faketime.clock_timestamp() run
  * `offsetMs` ahead of the real ones. The server's search_path puts faketime before pg_catalog, so a database that has
- * this schema before its migrations run reads and stamps the faked time everywhere.
+ * this schema before its migrations run reads and stamps the faked time everywhere. Only these two functions move:
+ * CURRENT_TIMESTAMP, CURRENT_DATE, statement_timestamp() and 'now'::timestamptz keep the real clock, so SQL in this
+ * repository reads the time with now() (or clock_timestamp()) only.
  */
 export async function installFakeClock(url: string, offsetMs: number): Promise<void> {
   if (!offsetMs) return;
