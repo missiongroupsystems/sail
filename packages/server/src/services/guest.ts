@@ -241,7 +241,7 @@ export async function guestOrderView(p: Extract<Principal, { type: "guest" }>) {
     // A rejection that closed the order (M2) leaves this phone unbound: it still shows what its turned-down rounds held, struck through.
     const rejectedIds = rounds.filter((r) => r.status === "rejected").flatMap((r) => r.lineIds);
     const rejectedLines = rejectedIds.length ? await asSystem(() => db().select().from(orderLines).where(and(inArray(orderLines.id, rejectedIds), eq(orderLines.merchantId, p.merchantId), eq(orderLines.status, "voided"))).orderBy(orderLines.sort)) : [];
-    return { order: null, order_open: false, can_order: canOrder, hold_orders: link?.holdOrders ?? true, lines: rejectedLines.map(toLine), rounds: rounds.map(toRound), requests: requests.map(toRequest), table_id: p.tableId };
+    return { order: null, order_open: false, can_order: canOrder, hold_orders: link?.holdOrders ?? true, lines: rejectedLines.map(toLine), rounds: rounds.map((r) => ({ ...toRound(r), mine: true })), requests: requests.map(toRequest), table_id: p.tableId };
   }
   const [order] = await db().select().from(orders).where(eq(orders.id, orderId)).limit(1);
   const allRounds = order ? await db().select().from(guestRounds).where(eq(guestRounds.orderId, orderId)).orderBy(guestRounds.submittedAt) : [];

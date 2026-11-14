@@ -18,7 +18,7 @@ const qr: Record<string, string> = {};
 const tokenFrom = (url: string) => url.split("/t/")[1]!;
 
 type Snap = { id: string; status: string; lines: { id: string; status: string }[] };
-type View = { data: { order: { id: string; status: string } | null; can_order: boolean; lines: { id: string; status: string }[]; rounds: { id: string; status: string; reject_reason: string | null }[] } };
+type View = { data: { order: { id: string; status: string } | null; can_order: boolean; lines: { id: string; status: string }[]; rounds: { id: string; status: string; reject_reason: string | null; mine: boolean }[] } };
 
 beforeAll(async () => {
   db = await freshDb({ GUEST_APP_URL: "https://order.example.test" });
@@ -81,7 +81,7 @@ describe("rejecting a guest's QR round (M2)", () => {
     // The phone's session carries on: it still shows its round as not accepted, with the round's items struck.
     const view = await call<View>("GET", "/v1/guest/order", { token: g });
     expect(view.status, JSON.stringify(view.body)).toBe(200);
-    expect(view.body.data.rounds.find((x) => x.id === roundId)).toMatchObject({ status: "rejected", reject_reason: "Kitchen closed" });
+    expect(view.body.data.rounds.find((x) => x.id === roundId)).toMatchObject({ status: "rejected", reject_reason: "Kitchen closed", mine: true });
     expect(view.body.data.lines.length).toBe(1);
     expect(view.body.data.lines[0]!.status).toBe("voided");
     expect(view.body.data.can_order).toBe(true);
