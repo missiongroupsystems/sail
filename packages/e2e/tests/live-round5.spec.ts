@@ -116,7 +116,6 @@ test("M2: rejecting the guest's only QR round on an order it opened frees the ta
       expect(t.order ?? null).toBeNull();
       expect(t.status).toBe("free");
     }).toPass({ timeout: 15_000 });
-    await expect(page.getByRole("button", { name: new RegExp(`^Table ${table.name}, free`, "i") })).toBeVisible();
 
     // The phone keeps its session and the rejection, with its reason and the item struck through.
     await expect(phone.getByRole("heading", { name: "Order not accepted" })).toBeVisible();

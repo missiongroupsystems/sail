@@ -13,7 +13,7 @@ let app: App;
 let A: SeededMerchant;
 let call: ReturnType<typeof api>["call"];
 let serverPin: string;
-const ids = { kopi: randomUUID(), menu: randomUUID(), posLink: randomUUID(), qrLink: randomUUID(), area: randomUUID(), t1: randomUUID(), t2: randomUUID(), t3: randomUUID(), t4: randomUUID(), station: randomUUID(), kitchen: randomUUID(), cash: randomUUID() };
+const ids = { kopi: randomUUID(), menu: randomUUID(), posLink: randomUUID(), qrLink: randomUUID(), area: randomUUID(), t1: randomUUID(), t2: randomUUID(), t3: randomUUID(), t4: randomUUID(), t5: randomUUID(), station: randomUUID(), kitchen: randomUUID(), cash: randomUUID() };
 const qr: Record<string, string> = {};
 const tokenFrom = (url: string) => url.split("/t/")[1]!;
 
@@ -37,7 +37,7 @@ beforeAll(async () => {
   await must("/v1/printers", { id: ids.kitchen, outlet_id: A.outletId, name: "Kitchen", ip: "10.0.0.1", is_default_kitchen: true });
   await must("/v1/channel-links", { id: ids.qrLink, channel: "scan_to_order", outlet_id: A.outletId, brand_id: A.brandId, menu_id: ids.menu, hold_orders: true, open_on_first_scan: true });
   await must("/v1/areas", { id: ids.area, outlet_id: A.outletId, name: "Main" });
-  for (const [k, name] of [["t1", "1"], ["t2", "2"], ["t3", "3"], ["t4", "4"]] as const) {
+  for (const [k, name] of [["t1", "1"], ["t2", "2"], ["t3", "3"], ["t4", "4"], ["t5", "5"]] as const) {
     await must("/v1/tables", { id: ids[k], outlet_id: A.outletId, area_id: ids.area, name });
     qr[k] = (await call<{ data: { url: string } }>("POST", `/v1/tables/${ids[k]}/qr/rotate`, { token: t, body: {} })).body.data.url;
   }
@@ -88,6 +88,19 @@ describe("rejecting a guest's QR round (M2)", () => {
     // Ordering again opens a fresh order on the free table.
     const again = await sendRound(g);
     expect(again.orderId).not.toBe(orderId);
+  });
+
+  it("keeps every phone at the table signed in: a second phone bound to the cancelled order is unbound, not ended", async () => {
+    const a = await phone("t5", "device-m2-0005");
+    const { roundId, orderId } = await sendRound(a);
+    const b = await phone("t5", "device-m2-0006");
+    expect((await call<View>("GET", "/v1/guest/order", { token: b })).body.data.order?.id).toBe(orderId);
+    expect((await reject(roundId)).status).toBe(200);
+    for (const g of [a, b]) {
+      const v = await call<View>("GET", "/v1/guest/order", { token: g });
+      expect(v.status, JSON.stringify(v.body)).toBe(200);
+      expect(v.body.data.order).toBeNull();
+    }
   });
 
   it("leaves the order open when it has other live lines", async () => {

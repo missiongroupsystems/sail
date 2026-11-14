@@ -3027,7 +3027,7 @@ export interface paths {
         put?: never;
         /**
          * Reject a held QR round
-         * @description Removes the round's lines with the given reason and releases daily caps.
+         * @description Removes the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled ("QR order rejected") and the table freed; the guest's phone keeps its session.
          */
         post: operations["rounds.reject"];
         delete?: never;
