@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { formatBpsText, useLocale } from "@sail/ui";
 import { useCallback, useMemo } from "react";
 import { ApiError, idempotencyKey, toApiError } from "@/lib/api";
+import { OP_MIN_ROLE } from "@/lib/op-roles";
 import * as reg from "../api/register";
 import { reportUnreachable } from "../events/stream";
 import type { CheckPayment, CheckSnapshot, CompiledProduct, ManualRule, MutationResult, OrderSnapshot, OrderType, OverrideAction, OverrideSubject, PaymentIntent, PaymentResult, ReceiptChannel, RefundRequest, RefundResult, Role, SnapshotLine } from "../api/types";
@@ -60,6 +61,7 @@ export function useOrderActions(orderId: string) {
   const api = useApi();
   const qc = useQueryClient();
   const role = useSessionStore((s) => s.staff?.role ?? null);
+  const mayReadInvoice = roleAtLeast(role, OP_MIN_ROLE["documents.invoice_pdf"] ?? "server");
   const { money } = useLocale();
   const { notify, showUndo, beginMutation, endMutation, requestOverride } = useUiStore.getState();
 
@@ -733,14 +735,38 @@ export function useOrderActions(orderId: string) {
       try {
         const inv = await reg.issueInvoice(api, checkId);
         void qc.invalidateQueries({ queryKey: key });
-        notify({ text: `${inv.reused ? "Invoice" : "Invoice issued"} ${inv.invoice_no}`, remedy: "The PDF is in the back office under the order.", tone: "success", orderId }, 6000);
+        // A role that may read the PDF opens it from the receipt screen; only one that may not is sent to the back office (M5).
+        notify({ text: `${inv.reused ? "Invoice" : "Invoice issued"} ${inv.invoice_no}`, remedy: mayReadInvoice ? undefined : "The PDF is in the back office under the order.", tone: "success", orderId }, 6000);
         return inv;
       } catch (e) {
         fail(e);
         return null;
       }
     },
-    [api, fail, key, notify, orderId, qc],
+    [api, fail, key, notify, orderId, qc, mayReadInvoice],
+  );
+
+  /** Download the bill's issued invoice as a PDF (Safari and the iPad open it in their viewer). */
+  const openInvoicePdf = useCallback(
+    async (checkId: string, invoiceNo: string) => {
+      try {
+        const blob = await reg.invoicePdf(api, checkId);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${invoiceNo}.pdf`;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        return true;
+      } catch (e) {
+        fail(e);
+        return false;
+      }
+    },
+    [api, fail],
   );
 
   /* ---- Refunds: the quote is the register's; Manager+ or an approval for the signed-in role. ---- */
@@ -867,6 +893,8 @@ export function useOrderActions(orderId: string) {
       printReceipt,
       sendReceipt,
       issueInvoice,
+      openInvoicePdf,
+      mayReadInvoice,
       quoteRefund,
       refund,
       printRefundReceipt,
@@ -875,7 +903,7 @@ export function useOrderActions(orderId: string) {
       reprint,
       role,
     }),
-    [addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, splitEven, splitBySeat, allocate, unsplit, prebill, previewPayment, pay, startTerminal, cancelTerminal, voidPayment, complete, reopen, printReceipt, sendReceipt, issueInvoice, quoteRefund, refund, printRefundReceipt, acceptRound, rejectRound, reprint, role],
+    [addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, splitEven, splitBySeat, allocate, unsplit, prebill, previewPayment, pay, startTerminal, cancelTerminal, voidPayment, complete, reopen, printReceipt, sendReceipt, issueInvoice, openInvoicePdf, mayReadInvoice, quoteRefund, refund, printRefundReceipt, acceptRound, rejectRound, reprint, role],
   );
 }
 

@@ -98,6 +98,14 @@ export function ReceiptChooser({ order, check, actions, caption, amount, extra, 
     if (inv) setInvoice(inv);
   };
 
+  const [opening, setOpening] = useState(false);
+  const openInvoice = async () => {
+    stop();
+    setOpening(true);
+    await actions.openInvoicePdf(check.id, invoice?.invoice_no ?? check.invoice_no ?? "invoice");
+    setOpening(false);
+  };
+
   // White receipt cards with an icon over the label, as on the paid screen's reference.
   const big = "min-h-24 w-[176px] flex-col gap-1.5 rounded-panel! border! border-rule! bg-surface! gap-1.5! text-[15px]! font-medium data-[hovered]:bg-surface-2! data-[pressed]:bg-surface-2!";
 
@@ -195,7 +203,12 @@ export function ReceiptChooser({ order, check, actions, caption, amount, extra, 
 
       <div className="flex flex-wrap items-center justify-center gap-3">
         {extra}
-        {check.invoice_no || invoice ? (
+        {(check.invoice_no || invoice) && actions.mayReadInvoice ? (
+          // The invoice just issued, or one issued before: its PDF opens here (M5).
+          <Button size="lg" variant="quiet" isDisabled={offline || busy} isPending={opening} onPress={openInvoice} className="tabular">
+            Invoice {invoice?.invoice_no ?? check.invoice_no} · PDF
+          </Button>
+        ) : check.invoice_no || invoice ? (
           <span className="rounded-chip bg-surface-2 px-3 py-2 text-body text-ink tabular">Invoice {invoice?.invoice_no ?? check.invoice_no}</span>
         ) : (
           <Button size="lg" variant="quiet" isDisabled={offline || busy} onPress={getInvoice}>

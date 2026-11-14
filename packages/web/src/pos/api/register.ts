@@ -400,6 +400,11 @@ export async function issueInvoice(api: PosApi, checkId: string, opts?: Mutation
   return (await req(api.POST("/v1/checks/{id}/invoice", { params: { path: { id: checkId } }, body: mutation(opts), headers: headers(opts) }))).data as unknown as Invoice;
 }
 
+/** The PDF of a bill's issued invoice, as the register rendered it. */
+export async function invoicePdf(api: PosApi, checkId: string): Promise<Blob> {
+  return (await req(api.GET("/v1/checks/{id}/invoice.pdf", { params: { path: { id: checkId } }, parseAs: "blob", headers: { accept: "application/pdf" } }))) as unknown as Blob;
+}
+
 /* ---- Refunds -------------------------------------------------------- */
 
 export type TenderSplit = { payment_id: string; amount: number }[];
