@@ -7132,7 +7132,8 @@
       ],
       "emits": [
         "round.rejected",
-        "line.voided"
+        "line.voided",
+        "order.cancelled"
       ],
       "untrusted": [
         "added_by",
@@ -7155,7 +7156,7 @@
         "variance_reason",
         "void_reason"
       ],
-      "description": "Reject a held QR round\n\nRemoves the round's lines with the given reason and releases daily caps.\n\nRisk tier T2. Needs role server or above. A reason is required. Emits round.rejected, line.voided.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "description": "Reject a held QR round\n\nRemoves the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled (\"QR order rejected\") and the table freed; the guest's phone keeps its session.\n\nRisk tier T2. Needs role server or above. A reason is required. Emits round.rejected, line.voided, order.cancelled.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
         "properties": {

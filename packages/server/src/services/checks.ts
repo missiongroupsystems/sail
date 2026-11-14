@@ -172,6 +172,10 @@ export type CheckSnapshot = {
   totals: { subtotal: number; discount_total: number; fee_total: number; tax_total: number; taxes: TaxAmount[]; total: number };
   paid_total: number;
   rounding_total: number;
+  /** Tips on the bill's recorded payments. */
+  tip_total: number;
+  /** What the guest was charged on the bill's recorded payments: amounts, cash rounding and tips. */
+  charged_total: number;
   refunded_total: number;
   balance: number;
   locked: boolean;
@@ -193,6 +197,7 @@ export async function checkSnapshots(orderId: string): Promise<CheckSnapshot[]> 
       ? db().select({ checkId: refunds.checkId, lineId: refundLines.orderLineId, quantity: sql<number>`sum(${refundLines.quantity})::int` }).from(refundLines).innerJoin(refunds, eq(refunds.id, refundLines.refundId)).where(inArray(refunds.checkId, refundedIds)).groupBy(refunds.checkId, refundLines.orderLineId)
       : Promise.resolve([]),
   ]);
+  const recorded = (checkId: string) => pays.filter((p) => p.checkId === checkId && p.status === "recorded");
   return chks.map((c) => ({
     id: c.id,
     index: c.index,
@@ -202,6 +207,8 @@ export async function checkSnapshots(orderId: string): Promise<CheckSnapshot[]> 
     totals: { subtotal: c.subtotal, discount_total: c.discountTotal, fee_total: c.feeTotal, tax_total: c.taxTotal, taxes: c.taxes, total: c.total },
     paid_total: c.paidTotal,
     rounding_total: c.roundingTotal,
+    tip_total: recorded(c.id).reduce((n, p) => n + p.tipCents, 0),
+    charged_total: recorded(c.id).reduce((n, p) => n + p.amount + p.roundingCents + p.tipCents, 0),
     refunded_total: c.refundedTotal,
     balance: c.total - c.paidTotal,
     locked: c.lockedAt != null,

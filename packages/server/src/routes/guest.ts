@@ -15,7 +15,7 @@ import { applyRls } from "../middleware/pipeline.js";
 import { serveStream } from "../sse/stream.js";
 import { compileMenu } from "../services/menu.js";
 import { buildLines, type LineInput } from "../services/lines.js";
-import { bumpVersion, loadSnapshot, lockOrder, nextOrderNo, registerOrderClosedHook, repriceOrder } from "../services/orders.js";
+import { bumpVersion, loadSnapshot, lockOrder, nextOrderNo, orderClosed, paidTotal, registerOrderClosedHook, repriceOrder } from "../services/orders.js";
 import { orderTaxSettings } from "../services/tax.js";
 import { createKitchenJobs, insertJob } from "../services/printing.js";
 import { releaseDailyCap } from "./catalogue.js";
@@ -35,7 +35,7 @@ registerOperations({
   "guest.stream": op({ op: "guest.stream", summary: "Guest live-update stream (SSE)", description: "Signals changes to the table's order (round accepted, order ready). Poll guest.order when there is no order yet.", tier: "T0", mcp: { expose: false, toolsets: [] } }),
   "rounds.list": op({ op: "rounds.list", summary: "QR rounds of an outlet", description: "Pending rounds waiting for acceptance, and recent decided ones.", tier: "T0", minRole: "server", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read"] } }),
   "rounds.accept": op({ op: "rounds.accept", summary: "Accept a held QR round", description: "Fires the round's lines and prints kitchen tickets.", tier: "T2", minRole: "server", dryRun: true, principals: ["staff", "agent"], emits: ["round.accepted", "order.fired", "print_job.created"], mcp: { expose: true, toolsets: ["pos.order"] } }),
-  "rounds.reject": op({ op: "rounds.reject", summary: "Reject a held QR round", description: "Removes the round's lines with the given reason and releases daily caps.", tier: "T2", minRole: "server", reasonRequired: true, dryRun: true, principals: ["staff", "agent"], emits: ["round.rejected", "line.voided"], mcp: { expose: true, toolsets: ["pos.order"] } }),
+  "rounds.reject": op({ op: "rounds.reject", summary: "Reject a held QR round", description: "Removes the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled (\"QR order rejected\") and the table freed; the guest's phone keeps its session.", tier: "T2", minRole: "server", reasonRequired: true, dryRun: true, principals: ["staff", "agent"], emits: ["round.rejected", "line.voided", "order.cancelled"], mcp: { expose: true, toolsets: ["pos.order"] } }),
   "service_requests.list": op({ op: "service_requests.list", summary: "Table requests of an outlet", description: "Open and recently acknowledged requests.", tier: "T0", minRole: "server", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read"] } }),
   "service_requests.acknowledge": op({ op: "service_requests.acknowledge", summary: "Acknowledge a table request", description: "Marks the request done. An agent may acknowledge at most 60 an hour.", agentPerHour: 60, minRole: "server", principals: ["staff", "agent"], emits: ["service_request.acknowledged"], mcp: { expose: true, toolsets: ["pos.order"] } }),
   "tables.rotate_qr_token": op({ op: "tables.rotate_qr_token", summary: "Rotate a table's QR token", description: "Old QR codes for the table stop working. Admin.", tier: "T3", minRole: "admin", principals: ["staff"], emits: ["table.qr_rotated"], mcp: { expose: false, toolsets: [] } }),
@@ -70,6 +70,29 @@ registerOrderClosedHook(async (orderId) => {
 });
 
 const LineInputSchema = z.object({ line_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1).max(50), modifiers: z.array(z.object({ group_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1).max(20).optional() })).max(40).optional(), notes: untrusted(z.string().max(200).nullable().optional()), seat_no: z.number().int().min(1).max(99).nullable().optional() });
+
+const REJECTED_CANCEL_REASON = "QR order rejected";
+
+/**
+ * After a rejected round (M2): an order a guest's scan opened that now holds no live line, has nothing sent and no
+ * payment is closed as cancelled, so the table is free again. An order staff opened (they seated the table) stays open.
+ * The table's phones are unbound from the order rather than ended, so they keep showing the rejection and can order
+ * again. Call with the order locked; returns whether it cancelled.
+ */
+async function cancelIfEmptyAfterReject(order: typeof orders.$inferSelect, now: Date): Promise<boolean> {
+  if (order.channel !== "scan_to_order" || order.openedBy != null) return false;
+  if (!["open", "fired", "ready"].includes(order.status)) return false;
+  const [row] = await db()
+    .select({ live: sql<number>`count(*) filter (where ${orderLines.status} <> 'voided')::int`, sent: sql<number>`count(*) filter (where ${orderLines.firedAt} is not null)::int` })
+    .from(orderLines)
+    .where(eq(orderLines.orderId, order.id));
+  if ((row?.live ?? 0) > 0 || (row?.sent ?? 0) > 0) return false;
+  if ((await paidTotal(order.id)) > 0) return false;
+  await db().update(orders).set({ status: "cancelled", cancelledAt: now, cancelReason: REJECTED_CANCEL_REASON }).where(eq(orders.id, order.id));
+  await asSystem(() => db().update(guestSessions).set({ orderId: null }).where(and(eq(guestSessions.orderId, order.id), isNull(guestSessions.revokedAt))));
+  await orderClosed(order.id);
+  return true;
+}
 
 function guestOnly(p: Principal): Extract<Principal, { type: "guest" }> {
   if (p.type !== "guest") throw new AppError("permission_denied", "Guest endpoints need a table session", { remedy: "Scan the table's QR code." });
@@ -206,6 +229,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     const now = new Date();
     const events: AppendedEvent[] = [];
     let warnings: string[] = [];
+    let cancelled = false;
     if (action === "accept") {
       await db().update(guestRounds).set({ status: "accepted", decidedAt: now, decidedBy: p.type === "staff" ? p.id : null, decidedByName: "name" in p ? p.name : null }).where(eq(guestRounds.id, roundId));
     } else {
@@ -216,8 +240,10 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
         await db().update(orderLines).set({ status: "voided", voidedAt: now, voidReason: `QR order rejected: ${reason}`, voidedBy: p.type === "staff" ? p.id : null, baseAmount: 0, discountAmount: 0, netAmount: 0, feeAmount: 0, taxAmount: 0, taxes: [], total: 0 }).where(eq(orderLines.id, l.id));
       }
       await db().update(guestRounds).set({ status: "rejected", decidedAt: now, decidedBy: p.type === "staff" ? p.id : null, decidedByName: "name" in p ? p.name : null, rejectReason: reason ?? null }).where(eq(guestRounds.id, roundId));
+      cancelled = await cancelIfEmptyAfterReject(order, now);
     }
-    await recordAudit(p, { action: `rounds.${action}`, targetKind: "order", targetId: order.id, outletId: order.outletId, reason: reason ?? null, details: { round_id: roundId } });
+    await recordAudit(p, { action: `rounds.${action}`, targetKind: "order", targetId: order.id, outletId: order.outletId, reason: reason ?? null, details: { round_id: roundId, ...(cancelled ? { order_cancelled: true } : {}) } });
+    if (cancelled) await recordAudit(p, { action: "orders.cancel", targetKind: "order", targetId: order.id, outletId: order.outletId, reason: REJECTED_CANCEL_REASON, details: { round_id: roundId } });
     // Price and check first; events (and the kitchen tickets of an accepted round) last, so the outlet's sequence lock is held briefly.
     await repriceOrder(order.id);
     const version = await bumpVersion(order.id);
@@ -227,6 +253,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
       warnings = await fireRound(c.get("correlationId"), p, order, roundId, bd, "rounds.accept"); // statuses only, no amounts
     } else {
       events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "round.rejected", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "rounds.reject", payload: { round_id: roundId, line_ids: round.lineIds }, reason: { text: reason }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
+      if (cancelled) events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "order.cancelled", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "rounds.reject", payload: { reason: REJECTED_CANCEL_REASON, round_id: roundId }, reason: { text: REJECTED_CANCEL_REASON }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
     }
     return c.json({ data: { ...(await loadSnapshot(order.id)), version }, events, warnings }, 200);
   };

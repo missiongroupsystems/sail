@@ -63,7 +63,7 @@ export function auditTargetLabel(kind: string | null | undefined): string {
 const EVENT_LABEL: Record<string, string> = {
   "order.opened": "Order opened", "order.repriced": "Prices worked out again", "order.fired": "Sent to the kitchen", "order.completed": "Order completed", "order.cancelled": "Order cancelled",
   "order.reopened": "Order reopened", "order.moved": "Moved table", "line.added": "Item added", "line.updated": "Item changed", "line.voided": "Item voided", "payment.recorded": "Payment taken",
-  "payment.voided": "Payment voided", "refund.created": "Refunded", "kitchen_ticket.created": "Kitchen ticket printed", "kitchen_ticket.bumped": "Kitchen ticket bumped", "round.submitted": "QR order sent",
+  "payment.voided": "Payment voided", "refund.created": "Refunded", "kitchen_ticket.created": "Shown on the kitchen display", "kitchen_ticket.bumped": "Bumped on the kitchen display", "round.submitted": "QR order sent",
   "round.accepted": "QR order accepted", "round.rejected": "QR order rejected", "adjustment.applied": "Discount applied", "adjustment.removed": "Discount removed", "print_job.created": "Print job created",
 };
 export function eventLabel(type: string, payload?: unknown): string {

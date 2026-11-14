@@ -317,6 +317,10 @@ export type CheckSnapshot = {
   totals: { subtotal: number; discount_total: number; fee_total: number; tax_total: number; taxes: TaxAmount[]; total: number };
   paid_total: number;
   rounding_total: number;
+  /** Tips on the bill's recorded payments, from the register. */
+  tip_total: number;
+  /** What the guest was charged on the bill: amounts, cash rounding and tips, from the register. */
+  charged_total: number;
   refunded_total: number;
   balance: number;
   locked: boolean;

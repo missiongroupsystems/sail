@@ -326,7 +326,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
           }
           sub={{
             main: tender.is_cash && change > 0 ? `Change ${money(change)}` : null,
-            minor: [done.figures.tip_cents ? `Tip ${money(done.figures.tip_cents)}` : null, !(tender.is_cash && change > 0) && done.figures.rounding_cents ? `Cash rounding ${money(done.figures.rounding_cents)}` : null].filter(Boolean).join(" · ") || null,
+            minor: [done.figures.tip_cents ? `Tip ${money(done.figures.tip_cents)}` : null, !(tender.is_cash && change > 0) && done.figures.rounding_cents ? `Cash rounding ${money(done.figures.rounding_cents)}` : null, done.figures.tip_cents && done.figures.due_cents != null ? `Charged ${money(done.figures.due_cents)}` : null].filter(Boolean).join(" · ") || null,
           }}
           onDone={
             partPaid

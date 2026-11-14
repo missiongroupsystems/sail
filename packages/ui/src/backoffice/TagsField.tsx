@@ -63,13 +63,14 @@ export function TagsField({ label, description, errorMessage, value, onChange, p
       {label ? <Label className={fieldLabel}>{label}</Label> : null}
       <div className={cx(fieldControl, "flex min-h-11 flex-wrap items-center gap-1.5 py-1.5 focus-within:bg-surface-3", isDisabled && "text-ink-disabled")}>
         {value.map((tag) => (
-          <span key={tag} className="inline-flex h-7 max-sm:h-11 items-center gap-1 rounded-chip bg-surface pr-1 pl-2.5 text-caption font-medium text-ink shadow-segment">
+          <span key={tag} className={cx("inline-flex h-7 max-sm:h-11 items-center gap-1 rounded-chip pr-1 pl-2.5 text-caption font-medium", isDisabled ? "bg-surface-2 text-ink-disabled" : "bg-surface text-ink shadow-segment")}>
             {tag}
             <AriaButton
               aria-label={`Remove ${tag}`}
               isDisabled={isDisabled}
               onPress={() => onChange(value.filter((t) => t !== tag))}
-              className="press inline-flex size-5 max-sm:size-11 items-center justify-center rounded-full text-ink-2 outline-none data-[hovered]:bg-surface-2 data-[hovered]:text-ink data-[focus-visible]:outline-2 data-[focus-visible]:outline-focus"
+              // A locked chip's × looks off, as other disabled controls do (M6).
+              className={cx("inline-flex size-5 max-sm:size-11 items-center justify-center rounded-full outline-none data-[focus-visible]:outline-2 data-[focus-visible]:outline-focus", isDisabled ? "cursor-not-allowed text-ink-disabled" : "press text-ink-2 data-[hovered]:bg-surface-2 data-[hovered]:text-ink")}
             >
               <Icon icon={X} size={12} />
             </AriaButton>

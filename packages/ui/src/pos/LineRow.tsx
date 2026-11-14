@@ -6,7 +6,8 @@ import { cx } from "../lib/cx";
 import { Icon } from "../components/Icon";
 import { Money } from "../components/Money";
 
-export type LineRowStatus = "new" | "held" | "sent" | "voided" | "pending";
+/** "voided": taken off after it was sent to the kitchen; "removed": taken off before it was sent. */
+export type LineRowStatus = "new" | "held" | "sent" | "voided" | "removed" | "pending";
 
 export type LineRowProps = {
   quantity: number;
@@ -44,7 +45,7 @@ const READY = { icon: Check, text: "ready", cls: "text-status-paid" } as const;
 
 /** An order line: quantity, name, modifiers, notes, seat chip, amount in tabular figures. */
 export function LineRow({ quantity, name, modifiers = [], notes, seat, amountCents, status, voidReason, flash, entering, printStatus, ready, chip, onPress, className }: LineRowProps) {
-  const voided = status === "voided";
+  const voided = status === "voided" || status === "removed";
   const print = status === "sent" && ready ? READY : status === "sent" && printStatus ? PRINT_STATUS[printStatus] : null;
   const body = (
     <>
@@ -66,7 +67,7 @@ export function LineRow({ quantity, name, modifiers = [], notes, seat, amountCen
           </span>
         ))}
         {notes ? <span className="mt-0.5 block truncate text-[13.5px] leading-[1.35] text-ink-2 italic">{notes}</span> : null}
-        {voided && voidReason ? <span className="mt-0.5 block truncate text-caption text-ink-3">Removed · {voidReason}</span> : null}
+        {voided && voidReason ? <span className="mt-0.5 block truncate text-caption text-ink-3">{status === "removed" ? "Removed" : "Voided"} · {voidReason}</span> : null}
       </span>
       <span className="shrink-0 pt-px text-right">
         {status === "pending" || amountCents == null ? (
