@@ -129,7 +129,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
     return "waiting";
   };
 
-  const row = (l: SnapshotLine, status: "new" | "held" | "sent" | "voided", printStatus: "printed" | "waiting" | "late" | null = null) => (
+  const row = (l: SnapshotLine, status: "new" | "held" | "sent" | "voided" | "removed", printStatus: "printed" | "waiting" | "late" | null = null) => (
     <LineRow
       key={l.id}
       quantity={l.quantity}
@@ -145,7 +145,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
       printStatus={printStatus}
       ready={status === "sent" && (readyLineIds?.has(l.id) ?? false)}
       chip={l.source === "guest" ? "QR" : null}
-      onPress={status === "voided" || closed ? undefined : () => onLine(l)}
+      onPress={status === "voided" || status === "removed" || closed ? undefined : () => onLine(l)}
     />
   );
 
@@ -204,14 +204,14 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
           return (
             <div key={round}>
               <GroupHeader label={`Sent ${firedAt ? clock(firedAt) : ""}`} detail={`round ${round}${ps === "late" ? " · ⚠ not printed" : ""}`} action={{ label: "Reprint", onPress: () => onReprintRound({ number: round, firedAt }), isDisabled: offline }} />
-              {lines.map((l) => row(l, l.status === "voided" ? "voided" : "sent", ps))}
+              {lines.map((l) => row(l, l.status === "voided" ? (l.fired_at ? "voided" : "removed") : "sent", ps))}
             </div>
           );
         })}
         {removed.length ? (
           <>
             <GroupHeader label="Removed" />
-            {removed.map((l) => row(l, "voided"))}
+            {removed.map((l) => row(l, l.fired_at ? "voided" : "removed"))}
           </>
         ) : null}
       </div>
