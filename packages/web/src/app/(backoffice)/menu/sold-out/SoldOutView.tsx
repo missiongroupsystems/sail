@@ -15,6 +15,7 @@ import type { Outlet, Product, StockEntry } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
 import { keys } from "@/lib/query";
 import { useFreshErrors } from "@/lib/fresh-errors";
+import { useCan } from "@/lib/can";
 
 type Until = "today" | "indefinite" | "at";
 type Mode = { kind: "sold_out"; product: Product | null } | { kind: "cap"; product: Product | null } | null;
@@ -24,6 +25,9 @@ export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: {
   const { dayClock, timeZone } = useLocale();
   const qc = useQueryClient();
   const { outletId, setOutletId } = useOutletChoice(outlets, scope, initialOutletId);
+  // Sold out needs a Cashier and a daily cap a Manager: a role below sees the list without those actions (R new 1).
+  const canSoldOut = useCan("stock.mark_sold_out").ok;
+  const canCap = useCan("stock.set_daily_cap").ok;
   const [mode, setMode] = useState<Mode>(null);
   const [until, setUntil] = useState<Until>("today");
   const [untilAt, setUntilAt] = useState("");
@@ -88,14 +92,14 @@ export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: {
         align: "end",
         render: (e) => (
           <span className="flex flex-wrap justify-end gap-1">
-            {e.sold_out ? (
+            {!canSoldOut ? null : e.sold_out ? (
               <Button onPress={() => restore.mutate(e.product_id)} isPending={restore.isPending && restore.variables === e.product_id}>
                 Restore
               </Button>
             ) : (
               <Button onPress={() => setMode({ kind: "sold_out", product: byId.get(e.product_id) ?? null })}>Mark sold out</Button>
             )}
-            {e.daily_cap !== null ? (
+            {!canCap ? null : e.daily_cap !== null ? (
               <Button variant="secondary" className={greyPill} onPress={() => dailyCap.mutate({ product_id: e.product_id, quantity: null })}>
                 Remove cap
               </Button>
@@ -108,7 +112,7 @@ export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: {
         ),
       },
     ],
-    [byId, restore, dailyCap, dayClock],
+    [byId, restore, dailyCap, dayClock, canSoldOut, canCap],
   );
 
   const picked = mode?.product ?? null;
@@ -119,12 +123,16 @@ export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <OutletChoice outlets={outlets} scope={scope} outletId={outletId} onChange={setOutletId} />
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" onPress={() => { setCap(""); setMode({ kind: "cap", product: null }); }} isDisabled={!outletId}>
-            Set a daily cap
-          </Button>
-          <Button size="sm" variant="primary" onPress={() => setMode({ kind: "sold_out", product: null })} isDisabled={!outletId}>
-            Mark sold out
-          </Button>
+          {canCap ? (
+            <Button size="sm" onPress={() => { setCap(""); setMode({ kind: "cap", product: null }); }} isDisabled={!outletId}>
+              Set a daily cap
+            </Button>
+          ) : null}
+          {canSoldOut ? (
+            <Button size="sm" variant="primary" onPress={() => setMode({ kind: "sold_out", product: null })} isDisabled={!outletId}>
+              Mark sold out
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -137,7 +145,7 @@ export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: {
           rows={entries}
           rowKey={(e) => e.product_id}
           isLoading={stock.isPending}
-          emptyState={<EmptyState variant="centred" title="Everything is available" hint="Tap Mark sold out when the kitchen runs out of something." />}
+          emptyState={<EmptyState variant="centred" title="Everything is available" hint={canSoldOut ? "Tap Mark sold out when the kitchen runs out of something." : "Nothing is marked sold out at this outlet."} />}
         />
       )}
       <InlineError error={stock.error ?? restore.error} className="mt-4" />

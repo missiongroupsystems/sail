@@ -36,6 +36,10 @@ function clampTable(t: { x: number; y: number; w: number; h: number }) {
 /** Floor plan editor (FloorCanvas / TableShape, editor variant). Grid units are what the API stores. */
 export function FloorView({ outlets, scope, initialOutletId, initialAreas, initialTables }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; initialAreas: Area[]; initialTables: Table[] }) {
   const canCreate = useCan("areas.create");
+  // What a role below Admin cannot do is left out or turned off with the reason, not refused after the act (R new 1).
+  const canAddTable = useCan("tables.create");
+  const canRenameArea = useCan("areas.update");
+  const canEditTable = useCan("tables.update");
   const qc = useQueryClient();
   const { me } = useSession();
   const admin = roleIs(me, "admin");
@@ -101,7 +105,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
   const canvasRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const startDrag = (e: ReactPointerEvent, t: Table, kind: Drag["kind"]) => {
-    if (t.archived) return;
+    if (t.archived || !canEditTable.ok) return;
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     e.preventDefault();
@@ -142,9 +146,11 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
             Add area
           </Button>
           ) : null}
-          <Button size="sm" variant="primary" onPress={() => addTable.mutate()} isDisabled={!area} isPending={addTable.isPending}>
-            Add table
-          </Button>
+          {canAddTable.ok ? (
+            <Button size="sm" variant="primary" onPress={() => addTable.mutate()} isDisabled={!area} isPending={addTable.isPending}>
+              Add table
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -158,20 +164,20 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
           <div className="flex min-w-0 flex-col gap-3">
             <nav aria-label="Areas" className="flex flex-wrap items-center gap-2">
               {/* The same tabs as every other back-office switcher (36px, small rounded tiles), not a 44px pill. */}
-              <span className="inline-flex h-9 max-w-full flex-wrap items-center gap-0.5 rounded-[10px] bg-surface-2 p-0.5">
+              <span className="inline-flex h-9 max-sm:h-auto max-w-full flex-wrap items-center gap-0.5 rounded-[10px] bg-surface-2 p-0.5">
                 {sortedAreas.map((a) => (
                   <Button
                     key={a.id}
                     variant="quiet"
                     aria-current={a.id === area?.id ? "true" : undefined}
                     onPress={() => setAreaId(a.id)}
-                    className={cx("h-8! min-h-8! rounded-[8px]! px-3! text-[13px]", a.id === area?.id ? "bg-surface! text-ink shadow-segment" : "text-ink-2")}
+                    className={cx("h-8! min-h-8! max-sm:h-11! max-sm:min-h-11! rounded-[8px]! px-3! text-[13px]", a.id === area?.id ? "bg-surface! text-ink shadow-segment" : "text-ink-2")}
                   >
                     {a.name}
                   </Button>
                 ))}
               </span>
-              {area ? (
+              {area && canRenameArea.ok ? (
                 <Button variant="quiet" className="text-[13px] text-ink-2" onPress={() => { setAreaName(area.name); setAreaDialog({ mode: "rename", area }); }}>
                   Rename {area.name}
                 </Button>
@@ -211,7 +217,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
                         setSelected(t.id);
                       }
                       const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
-                      if (d && !t.archived) {
+                      if (d && !t.archived && canEditTable.ok) {
                         e.preventDefault();
                         patchTable.mutate({ id: t.id, body: clampTable({ x: t.x + d[0]!, y: t.y + d[1]!, w: t.w, h: t.h }) });
                       }
@@ -222,7 +228,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
                       t.archived ? "border-dashed border-rule-dashed bg-surface-2/60 text-ink-3" : "border-dashed border-ink-3/60 bg-surface text-ink hover:border-ink-2",
                       isSelected && "border-solid border-ink outline-solid outline-2 outline-offset-2 outline-ink",
                       drag?.id === t.id && "cursor-grabbing shadow-sheet",
-                      !t.archived && !drag && "cursor-grab",
+                      !t.archived && !drag && canEditTable.ok && "cursor-grab",
                       "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
                     )}
                     style={{ left: `calc(${(pos.x / COLS) * 100}% + 3px)`, top: `calc(${(pos.y / ROWS) * 100}% + 3px)`, width: `calc(${(pos.w / COLS) * 100}% - 6px)`, height: `calc(${(pos.h / ROWS) * 100}% - 6px)` }}
@@ -234,7 +240,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
                         {t.seats}
                       </span>
                     </span>
-                    {isSelected && !t.archived ? (
+                    {isSelected && !t.archived && canEditTable.ok ? (
                       <span
                         role="presentation"
                         aria-hidden
@@ -245,7 +251,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
                   </div>
                 );
               })}
-              {areaTables.length === 0 ? <p className="absolute inset-x-0 top-1/2 -translate-y-1/2 px-4 text-center text-[15px] text-ink-2">No tables in {area?.name}. Tap Add table.</p> : null}
+              {areaTables.length === 0 ? <p className="absolute inset-x-0 top-1/2 -translate-y-1/2 px-4 text-center text-[15px] text-ink-2">No tables in {area?.name}.{canAddTable.ok ? " Tap Add table." : ""}</p> : null}
             </div>
             </div>
             <InlineError error={patchTable.error ?? addTable.error ?? areas.error ?? tables.error} />
@@ -257,9 +263,9 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
               {selectedTable ? selectedTable.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <span className="text-[13px] text-ink-3 tabular">{selectedTable.seats} seats</span> : null}
             </div>
             {selectedTable ? (
-              <TablePanel key={selectedTable.id} table={selectedTable} areas={sortedAreas} onSave={(body) => patchTable.mutate({ id: selectedTable.id, body })} saving={patchTable.isPending} canRotateQr={admin} error={patchTable.variables?.id === selectedTable.id ? patchTable.error : null} />
+              <TablePanel key={selectedTable.id} table={selectedTable} areas={sortedAreas} onSave={(body) => patchTable.mutate({ id: selectedTable.id, body })} saving={patchTable.isPending} canRotateQr={admin} denied={canEditTable.reason} error={patchTable.variables?.id === selectedTable.id ? patchTable.error : null} />
             ) : (
-              <p className="text-[14px] text-ink-2">Tap a table to edit its name, seats, shape and size, or to rotate its QR code. Drag it to move it; drag the corner to resize. Arrow keys nudge a focused table.</p>
+              <p className="text-[14px] text-ink-2">{canEditTable.ok ? "Tap a table to edit its name, seats, shape and size, or to rotate its QR code. Drag it to move it; drag the corner to resize. Arrow keys nudge a focused table." : `Tap a table to see its details. ${canEditTable.reason}`}</p>
             )}
           </aside>
         </div>
@@ -289,7 +295,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
   );
 }
 
-function TablePanel({ table, areas, onSave, saving, canRotateQr, error }: { table: Table; areas: Area[]; onSave: (body: TablePatch) => void; saving: boolean; canRotateQr: boolean; error: ApiError | null }) {
+function TablePanel({ table, areas, onSave, saving, canRotateQr, denied, error }: { table: Table; areas: Area[]; onSave: (body: TablePatch) => void; saving: boolean; canRotateQr: boolean; denied: string | null; error: ApiError | null }) {
   // A refusal that names a field (seats over the limit, a name) shows under that field as well as under the plan.
   const fieldError = (name: string) => serverFieldErrors(error).find((e) => e.field === name)?.message;
   const [name, setName] = useState(table.name);
@@ -302,7 +308,7 @@ function TablePanel({ table, areas, onSave, saving, canRotateQr, error }: { tabl
   const valid = name.trim() && int(seats) !== null && int(geom.x) !== null && int(geom.y) !== null && int(geom.w) !== null && int(geom.h) !== null;
 
   const save = () => {
-    if (!valid) return;
+    if (!valid || denied) return;
     const g = clampTable({ x: int(geom.x)!, y: int(geom.y)!, w: int(geom.w)!, h: int(geom.h)! });
     onSave({ name: name.trim(), seats: int(seats)!, shape: shape as "rect" | "round" | "square", area_id: areaId, ...g });
   };
@@ -331,13 +337,14 @@ function TablePanel({ table, areas, onSave, saving, canRotateQr, error }: { tabl
         Grid of {COLS} × {ROWS}. Position and size are in grid units.
       </p>
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="submit" variant="primary" isDisabled={!valid} isPending={saving}>
+        <Button type="submit" variant="primary" isDisabled={!valid || denied !== null} isPending={saving}>
           Save table
         </Button>
-        <Button variant="secondary" className={table.archived ? greyPill : greyPillAlert} onPress={() => onSave({ archived: !table.archived })} isDisabled={saving}>
+        <Button variant="secondary" className={table.archived ? greyPill : greyPillAlert} onPress={() => onSave({ archived: !table.archived })} isDisabled={saving || denied !== null}>
           {table.archived ? "Restore" : "Archive"}
         </Button>
       </div>
+      {denied ? <p className="text-[12.5px] text-ink-3">{denied}</p> : null}
       <section className="flex flex-col gap-2.5 border-t border-rule-subtle pt-4">
         <SectionLabel>QR code</SectionLabel>
         <RotateQrButton table={table} canRotate={canRotateQr} />

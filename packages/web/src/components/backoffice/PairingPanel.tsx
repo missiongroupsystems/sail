@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { PairingCode, Station } from "@/lib/api/types";
+import { useCan } from "@/lib/can";
 
 function useCountdown(until: string | null): string | null {
   const [left, setLeft] = useState<number | null>(null);
@@ -27,6 +28,8 @@ function useCountdown(until: string | null): string | null {
 /** "Pair an iPad" ("Pair a screen" for a kitchen display): a one-time 6-digit code, shown large with its expiry, and the address to open. */
 export function PairingPanel({ station: opened }: { station: Station }) {
   const { clock } = useLocale();
+  // Pairing is an Admin's; the station sheet around it already says so (R new 1).
+  const canPair = useCan("stations.pairing_code");
   const display = opened.kind === "display";
   const device = display ? "screen" : "iPad";
   const address = typeof window === "undefined" ? (display ? "/kds" : "/pos") : `${window.location.origin}${display ? "/kds" : "/pos"}`;
@@ -63,7 +66,7 @@ export function PairingPanel({ station: opened }: { station: Station }) {
       ) : null}
       {expired ? <p className="text-caption text-ink-2">That code expired. Issue a new one.</p> : null}
       <div>
-        <Button onPress={() => code.mutate()} isPending={code.isPending} isDisabled={station.archived}>
+        <Button onPress={() => code.mutate()} isPending={code.isPending} isDisabled={station.archived || !canPair.ok}>
           {code.data && !expired ? "Issue a new code" : station.paired ? `Pair another ${device}` : `Pair ${display ? "a screen" : "an iPad"}`}
         </Button>
       </div>

@@ -249,11 +249,11 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
                           {line!.modifiers.length ? <span className="block text-caption text-ink-2">{line!.modifiers.map((m) => m.name).join(", ")}</span> : null}
                         </span>
                         <span className="inline-flex items-center gap-1" role="group" aria-label={`Quantity of ${line!.name} to refund`}>
-                          <Button variant="quiet" iconOnly aria-label="Fewer" isDisabled={q <= 0} onPress={() => setQty({ ...qty, [alloc.line_id]: q - 1 })} className="min-h-9 min-w-9">
+                          <Button variant="quiet" iconOnly aria-label="Fewer" isDisabled={q <= 0} onPress={() => setQty({ ...qty, [alloc.line_id]: q - 1 })} className="min-h-9 min-w-9 max-sm:min-h-11 max-sm:min-w-11">
                             −
                           </Button>
                           <span className="w-8 text-center tabular text-ink">{q}</span>
-                          <Button variant="quiet" iconOnly aria-label="More" isDisabled={q >= max} onPress={() => setQty({ ...qty, [alloc.line_id]: q + 1 })} className="min-h-9 min-w-9">
+                          <Button variant="quiet" iconOnly aria-label="More" isDisabled={q >= max} onPress={() => setQty({ ...qty, [alloc.line_id]: q + 1 })} className="min-h-9 min-w-9 max-sm:min-h-11 max-sm:min-w-11">
                             +
                           </Button>
                         </span>

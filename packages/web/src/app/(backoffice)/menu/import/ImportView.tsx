@@ -12,6 +12,7 @@ import type { ImportEntity, ImportJob, ImportJobSummary, ImportMapping, ImportRe
 import { keys } from "@/lib/query";
 import { useSession } from "@/lib/session-context";
 import { autoMap, csvHeader, csvRowCount, ENTITY_LABEL, ENTITY_ORDER, FIELDS, guessEntity } from "./import-fields";
+import { useCan } from "@/lib/can";
 
 type Upload = { name: string; text: string; headers: string[]; rows: number; entity: ImportEntity | null; columns: Record<string, string> };
 
@@ -52,6 +53,8 @@ function readText(file: File): Promise<string> {
 export function ImportView({ initialJobs }: { initialJobs: ImportJobSummary[] }) {
   const { dayClock } = useLocale();
   const { me } = useSession();
+  // An import (even its dry run) is an Admin's: a role below sees the reason by the button (R new 1).
+  const canImport = useCan("imports.create");
   const qc = useQueryClient();
   const fileInput = useRef<HTMLInputElement>(null);
   const [uploads, setUploads] = useState<Upload[]>([]);
@@ -222,10 +225,11 @@ export function ImportView({ initialJobs }: { initialJobs: ImportJobSummary[] })
             <Warnings warnings={problems} tone="blocking" />
             <div className="flex flex-wrap items-center justify-between gap-3">
               <span className="text-[13px] text-ink-2">A dry run changes nothing. You read the report, then apply.</span>
-              <Button variant="primary" isDisabled={problems.length > 0} isPending={dryRun.isPending} onPress={() => dryRun.mutate()}>
+              <Button variant="primary" isDisabled={problems.length > 0 || !canImport.ok} isPending={dryRun.isPending} onPress={() => dryRun.mutate()}>
                 Run a dry run on {uploads.length} {uploads.length === 1 ? "file" : "files"}
               </Button>
             </div>
+            {canImport.reason ? <p className="text-[13px] text-ink-2">{canImport.reason}</p> : null}
             <InlineError error={dryRun.error} />
           </>
         ) : null}

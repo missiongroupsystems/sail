@@ -2645,7 +2645,7 @@ export interface paths {
         };
         /**
          * Z-report
-         * @description Sales, tenders, expected vs counted cash, rounding, voids and covers for an outlet (or station) and business date. Figures come from the register. `sales.net` is net sales: items after discounts, without tax and fees, less `sales.refunds` (the refunds' net); `sales.fees` excludes tax; `sales.total` is what was collected before refunds (`net + refunds + fees + tax = total`), and `refunds.amount` is the money refunded.
+         * @description Sales, tenders, expected vs counted cash, rounding, voids and covers for an outlet (or station) and business date. Figures come from the register. `sales.net` is net sales: items after discounts, without tax and fees, less `sales.refunds` (the refunds' net); `sales.fees` excludes tax; `sales.total` is what was collected before refunds (`net + refunds + fees + tax = total`), and `refunds.amount` is the money refunded. While any shift at the outlet is still open, a caller below Manager gets `withheld: "open_shift"` with only the scope, order counts, void and refund counts, and the open drawers' number and floats (a blind count).
          */
         get: operations["business_days.z_report"];
         put?: never;

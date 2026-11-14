@@ -19,6 +19,7 @@ import type { ModifierGroup, ModifierGroupCreate } from "@/lib/api/types";
 import { keys } from "@/lib/query";
 import { useFreshErrors } from "@/lib/fresh-errors";
 import { useCan } from "@/lib/can";
+import { useRecheckErrors } from "@/lib/recheck-errors";
 
 type SheetState = { mode: "create" } | { mode: "edit"; group: ModifierGroup } | null;
 const NONE = "__none__";
@@ -131,6 +132,7 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
   const qc = useQueryClient();
   const group = state?.mode === "edit" ? state.group : null;
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(group) });
+  useRecheckErrors(form);
   const [warnings, setWarnings] = useState<string[]>([]);
   const reset = form.reset;
   useEffect(() => {
@@ -173,7 +175,7 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
       description={group ? rule(group) : "Options a guest chooses when adding an item: sizes, sides, milk, spice level."}
       footer={
         <>
-          {group ? (
+          {group && mayEdit.ok ? (
             <Button variant="secondary" onPress={() => archive.mutate(!group.archived)} isPending={archive.isPending} isDisabled={save.isPending} className={`mr-auto ${group.archived ? greyPill : greyPillAlert}`}>
               {group.archived ? "Restore group" : "Archive group"}
             </Button>

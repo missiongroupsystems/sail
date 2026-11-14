@@ -8,7 +8,7 @@ import { useMemo, useState } from "react";
 import { label, ORDER_TYPE_LABEL } from "@/components/backoffice/labels";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
 import { isLate, JobRowActions, RerouteDialog, useJobMutations } from "@/components/backoffice/PrintJobActions";
-import { boKeys, can, formatElapsed, plural, REQUEST_TYPE_LABEL, type FloorSnapshot, type GuestRound, type PrintJob, type ServiceRequest, type Shift, type ZReport } from "@/components/backoffice/register";
+import { boKeys, can, formatElapsed, plural, REQUEST_TYPE_LABEL, type FloorSnapshot, type GuestRound, type PrintJob, type ServiceRequest, type Shift, type ZReport, type ZReportWithheld, isWithheld } from "@/components/backoffice/register";
 import { RelayStatus } from "@/components/backoffice/RelayPairingPanel";
 import { SetupChecklist } from "@/components/backoffice/SetupChecklist";
 import { StatTile, StatTiles } from "@/components/backoffice/StatTiles";
@@ -53,9 +53,11 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
       { queryKey: boKeys.relays(id), queryFn: () => req(api.GET("/v1/relays", { params: { query: { outlet_id: id } } })).then((r) => r.data), enabled, refetchInterval: POLL },
       { queryKey: boKeys.shifts(id, { status: "open" }), queryFn: () => req(api.GET("/v1/outlets/{id}/shifts", { params: { path: { id }, query: { status: "open" } } })).then((r) => r.data as unknown as Shift[]), enabled, refetchInterval: POLL },
       // The register's current business day (its cutoff, and the next day after an early close), not the browser's date.
-      { queryKey: boKeys.zReport(id, "current", null), queryFn: () => req(api.GET("/v1/outlets/{id}/z-report", { params: { path: { id } } })).then((r) => r.data as unknown as ZReport), enabled: enabled && canZ, refetchInterval: POLL },
+      { queryKey: boKeys.zReport(id, "current", null), queryFn: () => req(api.GET("/v1/outlets/{id}/z-report", { params: { path: { id } } })).then((r) => r.data as unknown as ZReport | ZReportWithheld), enabled: enabled && canZ, refetchInterval: POLL },
     ],
   });
+  // A role below Manager gets no money figure while a drawer is open (a blind count); the counts still show.
+  const zMoney = z.data && !isWithheld(z.data) ? z.data : undefined;
   const printers = useQuery({
     queryKey: boKeys.printers(id),
     queryFn: () => req(api.GET("/v1/printers", { params: { query: { outlet_id: id, include_archived: "true" } } })).then((r) => r.data),
@@ -129,7 +131,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
 
       {outlet ? (
         <StatTiles className="mb-6">
-          <StatTile label="Net sales, completed orders" value={z.data ? <Money cents={z.data.sales.net} size="title" /> : "—"} />
+          <StatTile label="Net sales, completed orders" value={zMoney ? <Money cents={zMoney.sales.net} size="title" /> : "—"} caption={z.data && !zMoney ? "Shows once shifts are closed" : undefined} />
           <StatTile label="Orders completed" value={z.data ? z.data.orders.count : "—"} caption={z.data ? <>business day <BusinessDay value={z.data.scope.business_date} /></> : undefined} />
           <StatTile label="Covers" value={z.data ? z.data.orders.covers : "—"} caption={z.data?.orders.open_count ? `${z.data.orders.open_count} still open` : undefined} />
           <StatTile label="Open now" value={floor.data ? floor.data.open_orders : "—"} />
@@ -199,10 +201,10 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                       </span>
                       {canDecide ? (
                         <span className="inline-flex gap-1">
-                          <Button variant="quiet" className="min-h-9 px-2.5 text-caption text-status-alert" onPress={() => { setRejectReason(""); setRejecting(r); }}>
+                          <Button variant="quiet" className="min-h-9 max-sm:min-h-11 px-2.5 text-caption text-status-alert" onPress={() => { setRejectReason(""); setRejecting(r); }}>
                             Reject…
                           </Button>
-                          <Button variant="primary" className="min-h-9 px-3 text-caption" onPress={() => accept.mutate(r)} isPending={accept.isPending && accept.variables?.id === r.id}>
+                          <Button variant="primary" className="min-h-9 max-sm:min-h-11 px-3 text-caption" onPress={() => accept.mutate(r)} isPending={accept.isPending && accept.variables?.id === r.id}>
                             Accept
                           </Button>
                         </span>
@@ -230,7 +232,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                       <span className="text-caption text-ink-2 tabular">{clock(r.created_at)} · waiting {formatElapsed((Date.now() - new Date(r.created_at).getTime()) / 1000)}</span>
                     </span>
                     {canAck ? (
-                      <Button variant="quiet" className="min-h-9 px-2.5 text-caption" onPress={() => acknowledge.mutate(r)} isPending={acknowledge.isPending && acknowledge.variables?.id === r.id}>
+                      <Button variant="quiet" className="min-h-9 max-sm:min-h-11 px-2.5 text-caption" onPress={() => acknowledge.mutate(r)} isPending={acknowledge.isPending && acknowledge.variables?.id === r.id}>
                         Acknowledge
                       </Button>
                     ) : null}
@@ -247,7 +249,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
               body="flush"
               aside={
                   lateJobs.length > 1 ? (
-                    <Button variant="quiet" className="min-h-9 px-2.5 text-caption" onPress={() => setRerouteLate(true)}>
+                    <Button variant="quiet" className="min-h-9 max-sm:min-h-11 px-2.5 text-caption" onPress={() => setRerouteLate(true)}>
                       Reroute all {lateJobs.length}
                     </Button>
                   ) : late.data ? (
@@ -339,16 +341,19 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
 
             {canZ ? (
             <Panel title="Today so far" body="flush" aside={z.data ? <>business day <BusinessDay value={z.data.scope.business_date} /></> : "loading"}>
-              {z.data ? (
+              {z.data && !zMoney ? (
+                <p className="px-5 py-4 text-body text-ink-2">The money figures show once every open shift is closed, so the drawer count stays blind.</p>
+              ) : null}
+              {zMoney ? (
                 <div className="flex flex-col gap-4 px-5 py-4">
                   <div className="flex flex-wrap gap-x-10 gap-y-4">
-                    {[...taxRows(z.data.sales.taxes, merchant.settings.tax_mode).before, ...taxRows(z.data.sales.taxes, merchant.settings.tax_mode).after].map((t) => (
+                    {[...taxRows(zMoney.sales.taxes, merchant.settings.tax_mode).before, ...taxRows(zMoney.sales.taxes, merchant.settings.tax_mode).after].map((t) => (
                       <Stat key={t.key} label={t.label} value={<Money cents={t.amount} size="heading" />} />
                     ))}
-                    {z.data.refunds.count ? <Stat label="Refunds" value={<Money cents={z.data.refunds.amount} size="heading" />} hint={plural(z.data.refunds.count, "refund")} /> : null}
+                    {zMoney.refunds.count ? <Stat label="Refunds" value={<Money cents={zMoney.refunds.amount} size="heading" />} hint={plural(zMoney.refunds.count, "refund")} /> : null}
                   </div>
                   <ul className="flex flex-wrap gap-x-10 gap-y-3">
-                    {z.data.tenders.map((t) => (
+                    {zMoney.tenders.map((t) => (
                       <li key={t.tender_type_id} className="flex flex-col">
                         <span className="text-caption text-ink-2">{t.tender}</span>
                         <span className="tabular text-ink">
@@ -356,7 +361,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                         </span>
                       </li>
                     ))}
-                    {z.data.tenders.length === 0 ? <li className="text-caption text-ink-2">No payments yet.</li> : null}
+                    {zMoney.tenders.length === 0 ? <li className="text-caption text-ink-2">No payments yet.</li> : null}
                   </ul>
                   {canReports ? (
                     <p className="text-caption text-ink-2">

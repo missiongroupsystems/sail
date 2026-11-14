@@ -7,6 +7,8 @@ import { EmptyState } from "./EmptyState";
 import { Select } from "./Select";
 import { StatCard, StatTile, StatTiles } from "./StatCard";
 import { TextField } from "./TextField";
+import { DateField } from "./DateField";
+import { LocaleProvider } from "../lib/locale";
 
 describe("back-office sizes are opt-in", () => {
   it("Button keeps 44px by default and offers a 36px sm", () => {
@@ -29,6 +31,20 @@ describe("back-office sizes are opt-in", () => {
     const items = [{ id: "a", label: "All brands" }];
     expect(renderToStaticMarkup(<Select aria-label="Brand" items={items} selectedKey="a" onSelectionChange={() => {}} />)).toContain("min-h-11");
     expect(renderToStaticMarkup(<Select aria-label="Brand" items={items} selectedKey="a" onSelectionChange={() => {}} size="sm" />)).toContain("min-h-9");
+  });
+});
+
+describe("date fields at phone width (R sizes)", () => {
+  it("the field and its Clear button are 44px tall under 640px", () => {
+    const html = renderToStaticMarkup(
+      <LocaleProvider settings={{ currency: "SGD", currencyExponent: 2, locale: "en-SG", timeZone: "Asia/Singapore" }}>
+        <DateField aria-label="From" prefix="From" value="2026-11-14" onChange={() => {}} />
+      </LocaleProvider>,
+    );
+    expect(html).toContain("max-sm:min-h-11");
+    // The input covers the field's border too, so the tap area is the full 44px, not 42.
+    expect(html).toContain("-inset-px");
+    expect(html).toMatch(/aria-label="Clear From"[^>]*max-sm:size-11/);
   });
 });
 

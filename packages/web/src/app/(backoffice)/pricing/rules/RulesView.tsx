@@ -189,7 +189,8 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
         </div>
       </div>
 
-      <ValidationPanel blocking={blocking} advisory={advisory} rows={rows} isPending={validation.isPending} error={validation.error} onOpen={(key) => { const r = rows.find((x) => x.rule_key === key); if (r) setSheet({ mode: "edit", row: r }); }} />
+      {/* A Server may read the rules but not run the checks: the panel is left out rather than waiting on a query that never runs (R new 3). */}
+      {canValidate ? <ValidationPanel blocking={blocking} advisory={advisory} rows={rows} isPending={validation.isPending} error={validation.error} onOpen={(key) => { const r = rows.find((x) => x.rule_key === key); if (r) setSheet({ mode: "edit", row: r }); }}/> : null}
 
       <DataTable
         aria-label="Pricing rules"

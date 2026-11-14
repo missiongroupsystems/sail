@@ -251,20 +251,20 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                   />
                   {!readOnly && paid ? (
                     <div className="flex flex-wrap items-center gap-1 px-3 py-2">
-                      <Button variant="quiet" className="min-h-9 px-2.5 text-caption" isDisabled={!canPrint} onPress={() => printReceipt.mutate(c)} isPending={printReceipt.isPending && printReceipt.variables?.id === c.id}>
+                      <Button variant="quiet" className="min-h-9 px-2.5 text-caption max-sm:min-h-11" isDisabled={!canPrint} onPress={() => printReceipt.mutate(c)} isPending={printReceipt.isPending && printReceipt.variables?.id === c.id}>
                         Print receipt
                       </Button>
                       {c.invoice_no ? (
-                        <Button variant="quiet" className="min-h-9 px-2.5 text-caption" onPress={() => invoicePdf.mutate(c)} isPending={invoicePdf.isPending && invoicePdf.variables?.id === c.id}>
+                        <Button variant="quiet" className="min-h-9 px-2.5 text-caption max-sm:min-h-11" onPress={() => invoicePdf.mutate(c)} isPending={invoicePdf.isPending && invoicePdf.variables?.id === c.id}>
                           Download invoice PDF
                         </Button>
                       ) : (
-                        <Button variant="quiet" className="min-h-9 px-2.5 text-caption" isDisabled={!canInvoice} onPress={() => issueInvoice.mutate(c)} isPending={issueInvoice.isPending && issueInvoice.variables?.id === c.id}>
+                        <Button variant="quiet" className="min-h-9 px-2.5 text-caption max-sm:min-h-11" isDisabled={!canInvoice} onPress={() => issueInvoice.mutate(c)} isPending={issueInvoice.isPending && issueInvoice.variables?.id === c.id}>
                           Get invoice
                         </Button>
                       )}
                       {refundable.some((r) => r.id === c.id) ? (
-                        <Button variant="quiet" className="min-h-9 px-2.5 text-caption" isDisabled={!canRefund} onPress={() => setRefund({ checkId: c.id })}>
+                        <Button variant="quiet" className="min-h-9 px-2.5 text-caption max-sm:min-h-11" isDisabled={!canRefund} onPress={() => setRefund({ checkId: c.id })}>
                           Refund…
                         </Button>
                       ) : null}
@@ -359,11 +359,11 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                       {!readOnly ? (
                         <div className="-ml-2.5 flex flex-wrap items-center gap-1">
                           {r.credit_note_no ? (
-                            <Button variant="quiet" className="min-h-9 px-2.5 text-caption" onPress={() => creditNotePdf.mutate(r)} isPending={creditNotePdf.isPending && creditNotePdf.variables?.id === r.id}>
+                            <Button variant="quiet" className="min-h-9 px-2.5 text-caption max-sm:min-h-11" onPress={() => creditNotePdf.mutate(r)} isPending={creditNotePdf.isPending && creditNotePdf.variables?.id === r.id}>
                               Download credit note PDF
                             </Button>
                           ) : null}
-                          <Button variant="quiet" className="min-h-9 px-2.5 text-caption" isDisabled={!canPrint} onPress={() => printRefund.mutate(r)} isPending={printRefund.isPending && printRefund.variables?.id === r.id}>
+                          <Button variant="quiet" className="min-h-9 px-2.5 text-caption max-sm:min-h-11" isDisabled={!canPrint} onPress={() => printRefund.mutate(r)} isPending={printRefund.isPending && printRefund.variables?.id === r.id}>
                             Reprint refund receipt
                           </Button>
                         </div>

@@ -15,6 +15,7 @@ import { api } from "@/lib/api.browser";
 import type { Merchant, MerchantSettingsPatch } from "@/lib/api/types";
 import { TIME_RE } from "@/lib/hours";
 import { keys } from "@/lib/query";
+import { useCan } from "@/lib/can";
 
 /** Increments in the merchant's minor units, labelled in its currency. */
 function roundingItems(money: LocaleFormat["money"]) {
@@ -88,6 +89,8 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
   const qc = useQueryClient();
   const router = useRouter();
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  // The settings are an Admin's: a role below reads them, with Save off and the reason (R new 1).
+  const mayEdit = useCan("merchants.update_settings");
   const merchant = useQuery({ queryKey: keys.merchant, queryFn: () => req(api.GET("/v1/merchant")).then((r) => r.data), initialData: initialMerchant });
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: toValues(merchant.data, moneyText) });
   const reset = form.reset;
@@ -115,6 +118,8 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
       })}
       className="flex max-w-[640px] flex-col gap-10"
     >
+      {/* Said at the top as well as by Save: the form is long, and a Manager reads it before reaching the button. */}
+      {mayEdit.reason ? <p className="-mb-6 text-body text-ink-2">{mayEdit.reason}</p> : null}
       <SheetSection title="Merchant">
         <RhfTextField control={form.control} name="name" label="Name" />
       </SheetSection>
@@ -210,9 +215,10 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
       <InlineError error={save.error} />
 
       <div className="flex flex-wrap items-center gap-4 border-t border-rule-subtle pt-6">
-        <Button variant="primary" type="submit" isPending={save.isPending} isDisabled={!form.formState.isDirty && !save.isError}>
+        <Button variant="primary" type="submit" isPending={save.isPending} isDisabled={!mayEdit.ok || (!form.formState.isDirty && !save.isError)}>
           Save changes
         </Button>
+        {mayEdit.reason ? <span className="text-caption text-ink-2">{mayEdit.reason}</span> : null}
         {savedAt && !form.formState.isDirty ? <span className="text-caption text-ink-2">Saved · {clock(savedAt)}</span> : null}
       </div>
     </form>

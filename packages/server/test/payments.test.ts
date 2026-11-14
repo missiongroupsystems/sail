@@ -300,7 +300,7 @@ describe("checks and payments", () => {
     const rounding = cash.body.payment!.rounding_cents;
     expect(total).toBe(1744);
     expect(rounding).toBe(1);
-    const z = await call<{ data: { tenders: { tender: string; amount: number; rounding: number }[]; cash: { expected: number; float: number } } }>("GET", `/v1/outlets/${A.outletId}/z-report`, { token: cashierPin });
+    const z = await call<{ data: { tenders: { tender: string; amount: number; rounding: number }[]; cash: { expected: number; float: number } } }>("GET", `/v1/outlets/${A.outletId}/z-report`, { token: A.manager.token });
     expect(z.status).toBe(200);
     const cashTender = z.body.data.tenders.find((t) => t.tender === "Cash")!;
     const [dayCash] = await db.sql`select coalesce(sum(amount),0)::int as amount, coalesce(sum(rounding_cents),0)::int as rounding from payments where outlet_id = ${A.outletId} and is_cash and status = 'recorded' and business_date = ${(await db.sql`select business_date from payments where id = ${cash.body.payment!.amount ? (await db.sql`select id from payments where check_id = ${added.body.data.checks[0]!.id}`)[0]!.id : ""}`)[0]!.business_date}`;
@@ -344,13 +344,22 @@ describe("checks and payments", () => {
     const shift = await call<{ data: { id: string } }>("POST", "/v1/shifts", { token: cashierPin, body: { float_cents: 1000 } });
     expect(shift.status, JSON.stringify(shift.body)).toBe(201);
     const over = { counted_cash_cents: 1301 };
+    // A Manager is told the figures (live test round 3: the person who counts, below Manager, is not).
     for (const body of [over, { ...over, dry_run: true }, { ...over, variance_reason: "" }]) {
-      const refused = await call<{ code: string; details: Record<string, number> }>("POST", `/v1/shifts/${shift.body.data.id}/close`, { token: cashierPin, body });
+      const refused = await call<{ code: string; details: Record<string, number> }>("POST", `/v1/shifts/${shift.body.data.id}/close`, { token: managerPin, body });
       expect(refused.status, JSON.stringify(refused.body)).toBe(400);
       expect(refused.body.details).toMatchObject({ expected: 1000, counted: 1301, variance: 301, variance_threshold: 300 });
       // Said in the merchant's money, not in minor units.
       expect((refused.body as { message?: string }).message).toBe("The drawer is $3.01 over, more than the $3.00 allowed without a reason");
     }
+    // The Cashier who counted is refused without the expected cash or the variance, and cannot try a close out first (S-9).
+    for (const body of [over, { ...over, variance_reason: "" }]) {
+      const refused = await call<{ code: string; details: Record<string, unknown> }>("POST", `/v1/shifts/${shift.body.data.id}/close`, { token: cashierPin, body });
+      expect(refused.status, JSON.stringify(refused.body)).toBe(400);
+      expect(refused.body.details).toEqual({ counted: 1301, variance_threshold: 300, withheld: true });
+      expect((refused.body as { message?: string }).message).toBe("The count is further from what the register expects than the $3.00 allowed without a reason");
+    }
+    expect((await call("POST", `/v1/shifts/${shift.body.data.id}/close`, { token: cashierPin, body: { ...over, dry_run: true } })).status).toBe(403);
     const closed = await call<{ data: { variance_cents: number; variance_reason: string } }>("POST", `/v1/shifts/${shift.body.data.id}/close`, { token: cashierPin, body: { ...over, variance_reason: "Float was not counted at open" } });
     expect(closed.status, JSON.stringify(closed.body)).toBe(200);
     expect(closed.body.data).toMatchObject({ variance_cents: 301, variance_reason: "Float was not counted at open" });

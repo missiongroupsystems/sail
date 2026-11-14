@@ -124,7 +124,7 @@ function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
       title={tender ? tender.name : "New payment method"}
       footer={
         <>
-          {tender ? (
+          {tender && mayEdit.ok ? (
             <Button variant="secondary" onPress={() => archive.mutate(!tender.archived)} isPending={archive.isPending} className={`mr-auto ${tender.archived ? greyPill : greyPillAlert}`}>
               {tender.archived ? "Restore" : "Archive"}
             </Button>

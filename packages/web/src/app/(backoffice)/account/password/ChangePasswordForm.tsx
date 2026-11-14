@@ -8,6 +8,7 @@ import { z } from "zod";
 import { FormSection, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
+import { useRecheckErrors } from "@/lib/recheck-errors";
 
 const Schema = z
   .object({ current: z.string().min(1, "Enter your current password"), password: z.string().min(12, "Use at least 12 characters"), confirm: z.string() })
@@ -16,6 +17,7 @@ type Values = z.infer<typeof Schema>;
 
 export function ChangePasswordForm() {
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: { current: "", password: "", confirm: "" } });
+  useRecheckErrors(form);
   const change = useMutation<{ sessions_ended: number }, ApiError, Values>({
     mutationFn: async (v) => (await req(api.POST("/v1/auth/password", { body: { current_password: v.current, new_password: v.password } }))).data,
     onSuccess: () => form.reset(),

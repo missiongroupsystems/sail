@@ -152,7 +152,7 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
       description={product ? (product.archived ? "Archived. Restore it to sell it again." : `Updated ${stamp(product.updated_at)}`) : "A product is anything that can be sold or added as a modifier."}
       footer={
         <>
-          {product ? (
+          {product && mayEdit.ok ? (
             <Button variant="secondary" onPress={() => archive.mutate(!product.archived)} isPending={archive.isPending} isDisabled={save.isPending} className={`mr-auto ${product.archived ? greyPill : greyPillAlert}`}>
               {product.archived ? "Restore product" : "Archive product"}
             </Button>

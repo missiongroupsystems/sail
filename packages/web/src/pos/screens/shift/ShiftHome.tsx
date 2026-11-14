@@ -18,7 +18,8 @@ import { useUiStore } from "../../state/ui";
 
 const VARIANCE_REASONS = ["Change given wrongly", "Cash paid out for a purchase", "Float was not counted at open", "Cash left in the drawer from the last shift"];
 /** What the register sends when a close needs a variance reason (shifts.close). */
-type VarianceRefusal = { expected: number; counted: number; variance: number; variance_threshold: number };
+/** Below Manager the register withholds `expected` and `variance` (a blind count, S-9): only the count and the threshold come back. */
+type VarianceRefusal = { expected?: number; counted: number; variance?: number; variance_threshold: number; withheld?: boolean };
 function varianceRefusal(details: Record<string, unknown> | undefined): VarianceRefusal | null {
   return details && typeof details.variance_threshold === "number" ? (details as VarianceRefusal) : null;
 }
@@ -202,8 +203,8 @@ export function ShiftHome({ onShowReport, onCounting }: { onShowReport: () => vo
     const reason = phase.reason ?? null;
     return (
       <Card
-        title={`Variance ${money(c.variance)}`}
-        sub={`The register expected ${money(c.expected)} and you counted ${money(c.counted)}. Above ${money(c.variance_threshold)} a reason is recorded with the close.`}
+        title={c.variance != null ? `Variance ${money(c.variance)}` : "Count outside the allowed variance"}
+        sub={c.expected != null ? `The register expected ${money(c.expected)} and you counted ${money(c.counted)}. Above ${money(c.variance_threshold)} a reason is recorded with the close.` : `You counted ${money(c.counted)}, more than ${money(c.variance_threshold)} away from what the register expects. Count again, or close with a reason; the figures show once the shift is closed.`}
         footer={
           <>
             <Button size="lg" variant="quiet" isDisabled={busy} onPress={() => setPhase({ kind: "count" })} className={GREY_PILL}>
@@ -215,11 +216,13 @@ export function ShiftHome({ onShowReport, onCounting }: { onShowReport: () => vo
           </>
         }
       >
-        <dl className="rounded-tile bg-surface-2 px-5 py-3">
-          <Row label="Expected" cents={c.expected} />
-          <Row label="Counted" cents={c.counted} />
-          <Row label="Variance" cents={c.variance} strong tone="alert" />
-        </dl>
+        {c.expected != null && c.variance != null ? (
+          <dl className="rounded-tile bg-surface-2 px-5 py-3">
+            <Row label="Expected" cents={c.expected} />
+            <Row label="Counted" cents={c.counted} />
+            <Row label="Variance" cents={c.variance} strong tone="alert" />
+          </dl>
+        ) : null}
         <ReasonPicker reasons={VARIANCE_REASONS.map((r) => ({ id: r, name: r }))} isDisabled={busy} selected={reason} onPick={(r) => setPhase({ kind: "reason", cash: c, reason: r.text })} />
       </Card>
     );
@@ -348,10 +351,10 @@ function Card({ title, sub, children, footer }: { title: string; sub: ReactNode;
   );
 }
 
-export function Row({ label, cents, strong, tone }: { label: string; cents: number; strong?: boolean; tone?: "paid" | "alert" }) {
+export function Row({ label, cents, strong, tone, indent }: { label: string; cents: number; strong?: boolean; tone?: "paid" | "alert"; indent?: boolean }) {
   return (
-    <div className={strong ? "flex min-h-10 items-center justify-between gap-3 pt-1 border-t border-rule" : "flex min-h-8 items-center justify-between gap-3"}>
-      <dt className={strong ? "text-body font-semibold text-ink" : "text-body text-ink-2"}>{label}</dt>
+    <div className={strong ? "flex min-h-10 items-center justify-between gap-3 pt-1 border-t border-rule first:border-t-0 first:pt-0" : "flex min-h-8 items-center justify-between gap-3"}>
+      <dt className={strong ? "text-body font-semibold text-ink" : cx("text-body text-ink-2", indent && "pl-3")}>{label}</dt>
       <dd>
         {/* A total is the same size as its rows, in semibold, so the panels keep one scale. */}
         <Money cents={cents} size="body" className={cx(strong && "font-semibold", tone === "paid" ? "text-status-paid" : tone === "alert" ? "text-status-alert" : "text-ink")} />

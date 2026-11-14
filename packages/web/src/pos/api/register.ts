@@ -42,6 +42,7 @@ import type {
   TenderType,
   VoidReason,
   ZReport,
+  ZReportWithheld,
 } from "./types";
 
 /**
@@ -444,8 +445,8 @@ export async function closeShift(api: PosApi, shiftId: string, input: { counted_
   return res as unknown as ShiftCloseResult;
 }
 
-export async function getZReport(api: PosApi, outletId: string, query: { business_date?: string; station_id?: string } = {}): Promise<ZReport> {
-  return (await req(api.GET("/v1/outlets/{id}/z-report", { params: { path: { id: outletId }, query } }))).data as unknown as ZReport;
+export async function getZReport(api: PosApi, outletId: string, query: { business_date?: string; station_id?: string } = {}): Promise<ZReport | ZReportWithheld> {
+  return (await req(api.GET("/v1/outlets/{id}/z-report", { params: { path: { id: outletId }, query } }))).data as unknown as ZReport | ZReportWithheld;
 }
 
 export async function closeBusinessDay(api: PosApi, outletId: string, businessDate?: string, opts?: MutationOpts): Promise<{ id: string; business_date: string; closed_at: string; report: ZReport }> {

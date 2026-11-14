@@ -301,6 +301,9 @@ export type CheckPayment = {
   status: string;
   recorded_by: string | null;
   created_at: string;
+  /** Why a `reversed` payment was reversed: a reopen of the paid order or a void; null while recorded. */
+  reversal?: "reopen" | "void" | null;
+  reversed_at?: string | null;
 };
 /** One line's part of a bill: `share` is "1" or a fraction such as "1/3". */
 /** `refunded_quantity`: units of the line already refunded from this bill (registers before tips went back with refunds leave it out). */
@@ -412,12 +415,24 @@ export type ZReport = {
   scope: { outlet_id: string; station_id: string | null; business_date: string; shift_id: string | null };
   orders: { count: number; by_type: Record<string, number>; covers: number; open_count: number };
   /** `net` is net sales: items after discounts, without tax and fees, less `refunds` (the refunds' net). `fees` excludes tax; `total` is what was collected before refunds. */
-  sales: { gross: number; discounts: number; fees: number; tax: number; taxes: TaxBreakdown[]; refunds: number; net: number; total: number };
+  sales: { gross: number; discounts: number; fees: number; tax: number; taxes: TaxBreakdown[]; refunds: number; net: number; total: number; net_before_refunds?: number; total_after_refunds?: number };
   adjustments: { rule_key: string; name: string; kind: string; report_class: string; total: number; count: number }[];
   tenders: { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number }[];
   cash: { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number; counted: number | null; variance: number | null; open_shifts?: { count: number; float: number; expected: number } };
   voids: { count: number; quantity: number; value: number };
-  refunds: { count: number; amount: number };
+  /** `net`, `fees`, `tax`, `tips` and `taxes` split the refunded amount; absent on older stored reports. */
+  refunds: { count: number; amount: number; net?: number; fees?: number; tax?: number; tips?: number; taxes?: TaxAmount[] };
+  tax_due?: TaxAmount[];
+  generated_at: string;
+};
+/** The Z-report a role below Manager gets while a drawer in it is still open (a blind count): no money figure but the floats. */
+export type ZReportWithheld = {
+  withheld: "open_shift";
+  scope: ZReport["scope"];
+  orders: ZReport["orders"];
+  voids: { count: number; quantity: number };
+  refunds: { count: number };
+  cash: { float: number; open_shifts: { count: number; float: number } };
   generated_at: string;
 };
 export type ShiftCloseResult = { data: Shift & { report: ZReport }; events: MutationEvent[]; warnings: string[] };

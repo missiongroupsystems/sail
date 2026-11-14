@@ -233,7 +233,7 @@ async function assertNoOtherBrands(principal: Principal, what: "shift" | "day", 
   }
 }
 
-export async function closeShift(principal: Principal, shiftId: string, input: { countedCashCents: number; countedCounts: Record<string, number> | null; varianceReason: string | null }) {
+export async function closeShift(principal: Principal, shiftId: string, input: { countedCashCents: number; countedCounts: Record<string, number> | null; varianceReason: string | null; blind?: boolean }) {
   // Locked, so a payment void in this shift either commits first (and is counted) or waits and finds the shift closed.
   await tx()`select id from shifts where id = ${shiftId} for update`;
   const [shift] = await db().select().from(shifts).where(eq(shifts.id, shiftId)).limit(1);
@@ -249,6 +249,12 @@ export async function closeShift(principal: Principal, shiftId: string, input: {
   const [settings] = await db().select({ threshold: merchantSettings.cashVarianceThreshold, currency: merchantSettings.currency, locale: merchantSettings.locale }).from(merchantSettings).where(eq(merchantSettings.merchantId, shift.merchantId)).limit(1);
   if (!settings) throw AppError.notFound("merchant");
   const variance = report.cash.variance ?? 0;
+  if (Math.abs(variance) > settings.threshold && !input.varianceReason?.trim() && input.blind)
+    // The person who counted may count again: the refusal gives no figure the expected cash could be worked out from.
+    throw AppError.validation(`The count is further from what the register expects than the ${formatMoney(settings.threshold, settings)} allowed without a reason`, {
+      remedy: "Count again, or close with a variance reason.",
+      details: { counted: input.countedCashCents, variance_threshold: settings.threshold, withheld: true },
+    });
   if (Math.abs(variance) > settings.threshold && !input.varianceReason?.trim())
     throw AppError.validation(`The drawer is ${formatMoney(Math.abs(variance), settings)} ${variance < 0 ? "short" : "over"}, more than the ${formatMoney(settings.threshold, settings)} allowed without a reason`, {
       remedy: "Count again, or close with a variance reason.",

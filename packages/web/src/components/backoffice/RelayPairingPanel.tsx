@@ -124,7 +124,7 @@ export function RelayPairingPanel({ relay, canPair }: { relay: Relay; canPair: b
           <div className="flex flex-col gap-2">
             <div className="flex items-baseline justify-between gap-3">
               <p className="text-caption text-ink-2">Install command (docs/runbooks/relay.md). Replace the host, registry and image tag; remove the code variable after the first start.</p>
-              <Button variant="quiet" className="min-h-9 shrink-0 text-caption" onPress={copy}>
+              <Button variant="quiet" className="min-h-9 max-sm:min-h-11 shrink-0 text-caption" onPress={copy}>
                 {copied ? "Copied" : "Copy command"}
               </Button>
             </div>

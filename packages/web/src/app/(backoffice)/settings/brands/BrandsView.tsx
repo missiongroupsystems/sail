@@ -152,7 +152,7 @@ function BrandSheet({ state, onClose }: { state: SheetState; onClose: () => void
       description={brand?.archived ? "Archived" : "The accent appears on chips here and on buttons in the guest app."}
       footer={
         <>
-          {brand ? (
+          {brand && mayEdit.ok ? (
             <Button variant="secondary" onPress={() => archive.mutate(!brand.archived)} isPending={archive.isPending} isDisabled={save.isPending} className={`mr-auto ${brand.archived ? greyPill : greyPillAlert}`}>
               {brand.archived ? "Restore brand" : "Archive brand"}
             </Button>
@@ -193,7 +193,7 @@ function BrandSheet({ state, onClose }: { state: SheetState; onClose: () => void
                 </span>
                 <span
                   aria-hidden
-                  className="inline-flex min-h-9 items-center rounded-tile px-3 text-caption"
+                  className="inline-flex min-h-9 max-sm:min-h-11 items-center rounded-tile px-3 text-caption"
                   style={{ background: check.hex, color: check.textOn === "white" ? "#FFFFFF" : "#0D0D0D" }}
                 >
                   Add to order

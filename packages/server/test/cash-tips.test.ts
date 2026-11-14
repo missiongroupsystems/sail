@@ -53,7 +53,7 @@ async function receiptPayment(w: Awaited<ReturnType<typeof merchant>>, checkId: 
 }
 
 async function closeAgrees(w: Awaited<ReturnType<typeof merchant>>, shiftId: string, drawer: number) {
-  const z = await call<{ data: { cash: Cash } }>("GET", `/v1/outlets/${w.m.outletId}/z-report`, { token: w.token });
+  const z = await call<{ data: { cash: Cash } }>("GET", `/v1/outlets/${w.m.outletId}/z-report`, { token: w.m.manager.token });
   expect(wholeDayCash(z.body.data.cash).expected).toBe(drawer);
   const closed = await call<{ data: { variance_cents: number; report: { cash: Cash } } }>("POST", `/v1/shifts/${shiftId}/close`, { token: w.token, body: { counted_cash_cents: drawer } });
   expect(closed.status, JSON.stringify(closed.body)).toBe(200);
@@ -177,7 +177,7 @@ describe("tips with refunds and the Z-report, in 0, 2 and 3 decimals", () => {
       // Cash back is the bill as taken (rounded on the payment's running total) plus the tip, never more than was taken.
       expect(cashOut).toBeLessThanOrEqual(p.amount + p.rounding_cents + tip);
       expect(cashOut).toBeGreaterThanOrEqual(p.amount + p.rounding_cents + tip - (rounding ?? 1));
-      const z = (await call<{ data: { cash: Cash; reconciliation: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number }; tenders_summary: { tips: number } } }>("GET", `/v1/outlets/${w.m.outletId}/z-report`, { token: w.token })).body.data;
+      const z = (await call<{ data: { cash: Cash; reconciliation: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number }; tenders_summary: { tips: number } } }>("GET", `/v1/outlets/${w.m.outletId}/z-report`, { token: w.m.manager.token })).body.data;
       expect(z.tenders_summary.tips).toBe(tip);
       expect(wholeDayCash(z.cash).expected).toBe(10_000 + p.amount + p.rounding_cents + tip - cashOut);
       expect(z.reconciliation.tenders).toBe(z.reconciliation.sales_total + z.reconciliation.paid_on_other_orders - z.reconciliation.paid_elsewhere);

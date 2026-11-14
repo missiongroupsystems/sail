@@ -65,10 +65,10 @@ export function DateField({ label, prefix, value, onChange, type = "date", place
           aria-invalid={isInvalid || undefined}
           aria-describedby={isInvalid && errorMessage ? `${id}-error` : description ? `${id}-description` : undefined}
           // Typing by keyboard shows the browser's own segments while the field has focus; the pointer still opens the calendar.
-          className="absolute inset-0 h-full w-full cursor-pointer rounded-field bg-surface px-2.5 text-[14px] text-ink opacity-0 outline-none focus-visible:opacity-100 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+          className="absolute -inset-px h-[calc(100%+2px)] w-[calc(100%+2px)] cursor-pointer rounded-field bg-surface px-2.5 text-[14px] text-ink opacity-0 outline-none focus-visible:opacity-100 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
         />
         {value ? (
-          <button type="button" onClick={() => onChange("")} aria-label={`Clear ${rest["aria-label"] ?? (typeof label === "string" ? label : "the date")}`} className="relative z-10 -mr-1 flex size-7 shrink-0 items-center justify-center rounded-full text-ink-3 outline-none hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-focus">
+          <button type="button" onClick={() => onChange("")} aria-label={`Clear ${rest["aria-label"] ?? (typeof label === "string" ? label : "the date")}`} className="relative z-10 -mr-1 flex size-7 shrink-0 items-center justify-center rounded-full max-sm:-my-2 max-sm:-mr-2.5 max-sm:size-11 text-ink-3 outline-none hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-focus">
             <Icon icon={X} size={14} />
           </button>
         ) : null}

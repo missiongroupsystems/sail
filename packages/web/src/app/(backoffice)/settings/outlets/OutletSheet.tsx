@@ -17,6 +17,7 @@ import { useSession } from "@/lib/session-context";
 import { formToHours, hoursToForm, TIME_RE, WEEKDAY_LABEL, WEEKDAYS, type HoursForm } from "@/lib/hours";
 import { useFreshErrors } from "@/lib/fresh-errors";
 import { useCan } from "@/lib/can";
+import { useRecheckErrors } from "@/lib/recheck-errors";
 
 export type OutletSheetState = { mode: "create" } | { mode: "edit"; outlet: Outlet } | null;
 
@@ -71,6 +72,7 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
   const { business_registration_label, tax_registration_label } = useSession().merchant.settings;
   const outlet = state?.mode === "edit" ? state.outlet : null;
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(outlet) });
+  useRecheckErrors(form);
 
   const reset = form.reset;
   useEffect(() => {
@@ -116,7 +118,7 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
       width="lg"
       footer={
         <>
-          {outlet ? (
+          {outlet && mayEdit.ok ? (
             <Button
               variant={outlet.archived ? "secondary" : "destructive"}
               onPress={() => archive.mutate(!outlet.archived)}

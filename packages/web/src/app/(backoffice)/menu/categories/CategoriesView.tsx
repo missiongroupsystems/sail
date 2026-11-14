@@ -165,7 +165,7 @@ function CategorySheet({ state, parents, parentIds, onClose }: { state: SheetSta
       description={category ? (category.archived ? "Archived" : "Rename or move the category.") : "Categories group products for reports and pricing scopes."}
       footer={
         <>
-          {category ? (
+          {category && mayEdit.ok ? (
             <Button variant="secondary" onPress={() => archive.mutate(!category.archived)} isPending={archive.isPending} isDisabled={save.isPending} className={`mr-auto ${category.archived ? greyPill : greyPillAlert}`}>
               {category.archived ? "Restore category" : "Archive category"}
             </Button>

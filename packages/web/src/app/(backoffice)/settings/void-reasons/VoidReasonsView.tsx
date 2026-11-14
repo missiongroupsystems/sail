@@ -105,7 +105,7 @@ function ReasonSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
       title={reason ? reason.name : "New void reason"}
       footer={
         <>
-          {reason ? (
+          {reason && mayEdit.ok ? (
             <Button variant="secondary" onPress={() => archive.mutate(!reason.archived)} isPending={archive.isPending} className={`mr-auto ${reason.archived ? greyPill : greyPillAlert}`}>
               {reason.archived ? "Restore" : "Archive"}
             </Button>

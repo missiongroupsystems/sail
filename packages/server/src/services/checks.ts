@@ -207,7 +207,7 @@ export async function checkSnapshots(orderId: string): Promise<CheckSnapshot[]> 
     locked: c.lockedAt != null,
     invoice_no: c.invoiceNo,
     allocations: allocs.filter((a) => a.checkId === c.id).map((a) => ({ line_id: a.orderLineId, share: a.shareNum === a.shareDen ? "1" : `${a.shareNum}/${a.shareDen}`, base: a.base, discount: a.discount, fee: a.fee, tax: a.tax, taxes: a.taxes, total: a.total, refunded_quantity: refunded.find((r) => r.checkId === c.id && r.lineId === a.orderLineId)?.quantity ?? 0 })),
-    payments: pays.filter((p) => p.checkId === c.id).map((p) => ({ id: p.id, tender_type_id: p.tenderTypeId, tender: p.tenderName, is_cash: p.isCash, amount: p.amount, rounding_cents: p.roundingCents, tendered: p.tendered, change_cents: p.changeCents, tip_cents: p.tipCents, reference: p.reference, status: p.status, recorded_by: p.recordedByName, created_at: p.createdAt.toISOString() })),
+    payments: pays.filter((p) => p.checkId === c.id).map((p) => ({ id: p.id, tender_type_id: p.tenderTypeId, tender: p.tenderName, is_cash: p.isCash, amount: p.amount, rounding_cents: p.roundingCents, tendered: p.tendered, change_cents: p.changeCents, tip_cents: p.tipCents, reference: p.reference, status: p.status, recorded_by: p.recordedByName, created_at: p.createdAt.toISOString(), reversal: p.status !== "reversed" ? null : p.reversedReason?.startsWith("reopened:") ? ("reopen" as const) : ("void" as const), reversed_at: p.reversedAt?.toISOString() ?? null })),
   }));
 }
 

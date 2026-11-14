@@ -23,7 +23,7 @@ export type PinPadProps = {
   unlockHint?: boolean;
   /** Busy while the register checks the PIN. */
   isPending?: boolean;
-  /** Enter on a physical keyboard (digits, Backspace and Escape always work while the pad is on screen). */
+  /** Enter on a physical keyboard; without it, Enter sends the digits typed so far to `onComplete` (digits, Backspace and Escape always work while the pad is on screen). */
   onEnter?: () => void;
   className?: string;
 };
@@ -85,7 +85,11 @@ export function PinPad({ value, onChange, onComplete, length = 6, error, showErr
     if (/^[0-9]$/.test(e.key)) press(e.key);
     else if (e.key === "Backspace") press("⌫");
     else if (e.key === "Escape") press("clear");
-    else if (e.key === "Enter") onEnter?.();
+    // Enter sends what is typed, even short of six digits: the register answers as for any wrong PIN (S-3).
+    else if (e.key === "Enter") {
+      if (onEnter) onEnter();
+      else if (!disabled && value.length > 0 && value.length < length) onComplete?.(value);
+    }
     else return;
     e.preventDefault();
   };

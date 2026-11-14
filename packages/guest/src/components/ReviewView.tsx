@@ -140,7 +140,8 @@ export function ReviewView({ session, menu, items, guestName, onGuestName, canOr
                   {itemError ? <InlineError error={{ message: itemError.message, remedy: itemError.remedy ?? (error?.kind === "group" ? "Tap the item to choose." : null) }} /> : null}
                   {/* Wraps rather than widening the page: stepper, Edit and Remove fit one row at 360 px, and never push past it. */}
                   <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-                    <GuestStepper value={item.quantity} onChange={(q) => (sending ? undefined : onQuantity(item.key, q))} min={1} max={maxQuantity(menu, item.product_id)} label={`Quantity of ${item.name}`} />
+                    {/* A sold-out or unavailable line cannot grow: its + is off, and Remove is the way on (S other). */}
+                    <GuestStepper value={item.quantity} onChange={(q) => (sending ? undefined : onQuantity(item.key, q))} min={1} max={goneKeys.has(item.key) ? item.quantity : maxQuantity(menu, item.product_id)} label={`Quantity of ${item.name}`} />
                     <span className="ml-auto flex items-center">
                       {/* A visible way to change the choices or the note, 44px tall (D-N2); the item's words open it too. */}
                       {!goneKeys.has(item.key) ? (

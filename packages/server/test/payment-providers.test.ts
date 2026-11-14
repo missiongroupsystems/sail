@@ -617,7 +617,7 @@ describe("payments.void", () => {
     // The guest paid by card in the end.
     expect((await pay(C, await snap(C, wrong.s.id), C.ids.card)).status).toBe(200);
     type Z = { cash: { expected: number; cash_payments: number }; tenders: { tender: string; count: number; amount: number }[] };
-    const z = (await call<{ data: Z }>("GET", `/v1/outlets/${C.m.outletId}/z-report`, { token: C.token })).body.data;
+    const z = (await call<{ data: Z }>("GET", `/v1/outlets/${C.m.outletId}/z-report`, { token: C.m.manager.token })).body.data;
     const shiftCash = await db.sql<{ n: number }[]>`select coalesce(sum(amount), 0)::int as n from payments where shift_id = ${shift.body.data.id} and status = 'recorded' and is_cash`;
     expect(shiftCash[0]!.n).toBe(kept.s.balance);
     const closed = await call<{ data: { expected_cash_cents: number; variance_cents: number; report: Z } }>("POST", `/v1/shifts/${shift.body.data.id}/close`, { token: C.token, body: { counted_cash_cents: 10_000 + kept.s.balance } });

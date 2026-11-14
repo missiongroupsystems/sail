@@ -131,7 +131,7 @@ export function JobRowActions({ job, printers, onDone, compact }: { job: PrintJo
   const { reprint, reroute } = useJobMutations(onDone);
   const [rerouting, setRerouting] = useState(false);
   const [preview, setPreview] = useState<PrintJob | null>(null);
-  const cls = compact ? "min-h-9 px-2.5 text-caption" : undefined;
+  const cls = compact ? "min-h-9 max-sm:min-h-11 px-2.5 text-caption" : undefined;
   return (
     <span className="inline-flex flex-wrap items-center gap-1">
       <Button variant="quiet" className={cls} onPress={() => setPreview(job)}>

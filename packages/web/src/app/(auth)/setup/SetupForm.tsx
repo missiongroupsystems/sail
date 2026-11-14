@@ -9,6 +9,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { FormSection, RhfSelect, RhfTextField } from "@/components/forms/fields";
 import { ApiError, toApiError } from "@/lib/api";
+import { useRecheckErrors } from "@/lib/recheck-errors";
 
 const PRESETS = Object.values(REGION_PRESETS);
 
@@ -39,6 +40,7 @@ export function SetupForm({ withPassword }: { withPassword: boolean }) {
     resolver: zodResolver(Schema),
     defaultValues: { business_name: "", preset: "blank", time_zone: "", currency: "", locale: "", outlet_name: "", name: "", email: "", password: "", withPassword },
   });
+  useRecheckErrors(form);
   const preset = form.watch("preset");
   const setValue = form.setValue;
   // The device's zone is known only in the browser, so the suggestion comes after the server render: the region whose

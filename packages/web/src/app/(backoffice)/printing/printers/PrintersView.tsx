@@ -156,7 +156,7 @@ export function PrintersView({ outlets, scope, initialOutletId, initialPrinters,
       align: "end",
       render: (p) =>
         admin && !p.archived ? (
-          <Button variant="quiet" className="min-h-9 px-2.5 text-caption" onPress={() => test.mutate(p)} isPending={test.isPending && test.variables?.id === p.id}>
+          <Button variant="quiet" className="min-h-9 max-sm:min-h-11 px-2.5 text-caption" onPress={() => test.mutate(p)} isPending={test.isPending && test.variables?.id === p.id}>
             Test print
           </Button>
         ) : null,

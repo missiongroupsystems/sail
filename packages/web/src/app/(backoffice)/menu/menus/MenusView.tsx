@@ -7,7 +7,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Badge, Button, Dialog, EmptyState, Icon, InlineError, Money, Select, Skeleton, Switch, TextField, useLocale, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { GripVertical, Pencil, Plus, X } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { BrandChoice } from "@/components/backoffice/OutletChoice";
 import { ProductSearch } from "@/components/backoffice/ProductSearch";
 import { Warnings } from "@/components/backoffice/Warnings";
@@ -18,6 +18,7 @@ import type { Brand, Menu, MenuSection, MenuSectionInput, MenuSummary } from "@/
 import type { Scope } from "@/lib/cookies";
 import { keys } from "@/lib/query";
 import { greyPill } from "@/components/office/parts";
+import { useCan } from "@/lib/can";
 
 /** Local editing shape: one level of sub-sections, items in order. */
 type Draft = { id: string; name: string; parent_id: string | null; items: string[] };
@@ -47,6 +48,7 @@ const LEAVE_UNSAVED = "This menu has changes that are not saved. Leave without s
 const leaveOk = () => !unsavedMenu.current || window.confirm(LEAVE_UNSAVED);
 
 export function MenusView({ initialMenus, brands, scope }: { initialMenus: MenuSummary[]; brands: Brand[]; scope: Scope }) {
+  const canCreate = useCan("menus.create");
   const qc = useQueryClient();
   const [brandId, setBrandId] = useState<string | null>(scope.brandId ?? brands[0]?.id ?? null);
   const [menuId, setMenuId] = useState<string | null>(null);
@@ -91,9 +93,11 @@ export function MenusView({ initialMenus, brands, scope }: { initialMenus: MenuS
         <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
           Show archived
         </Switch>
-        <Button size="sm" className="ml-auto" variant="primary" onPress={() => setAdding(true)} isDisabled={!brandId}>
-          Add menu
-        </Button>
+        {canCreate.ok ? (
+          <Button size="sm" className="ml-auto" variant="primary" onPress={() => setAdding(true)} isDisabled={!brandId}>
+            Add menu
+          </Button>
+        ) : null}
       </div>
 
       {!brandId ? (
@@ -101,7 +105,7 @@ export function MenusView({ initialMenus, brands, scope }: { initialMenus: MenuS
       ) : current ? (
         <MenuEditor key={current.id} summary={current} />
       ) : (
-        <EmptyState title="No menus for this brand" hint="Tap Add menu. A menu has sections (and one level of sub-sections) with products in order." />
+        <EmptyState title="No menus for this brand" hint={`${canCreate.ok ? "Tap Add menu. " : ""}A menu has sections (and one level of sub-sections) with products in order.`} />
       )}
 
       <Dialog
@@ -129,6 +133,8 @@ export function MenusView({ initialMenus, brands, scope }: { initialMenus: MenuS
 }
 
 function MenuEditor({ summary }: { summary: MenuSummary }) {
+  // A role below Admin reads the menu; what it cannot save is turned off with the reason (R new 1).
+  const mayEdit = useCan("menus.update");
   const qc = useQueryClient();
   const menu = useQuery({
     queryKey: keys.menu(summary.id),
@@ -258,9 +264,11 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
               <div className="min-w-0">
                 <div className="flex items-center gap-1">
                   <h2 className="font-heading text-[19px] leading-[1.3] font-semibold tracking-[-0.01em] text-ink [overflow-wrap:anywhere]">{summary.name}</h2>
-                  <Button variant="quiet" iconOnly aria-label="Rename menu" onPress={() => { setMenuName(summary.name); setRenaming(true); }}>
-                    <Icon icon={Pencil} size={16} />
-                  </Button>
+                  {mayEdit.ok ? (
+                    <Button variant="quiet" iconOnly aria-label="Rename menu" onPress={() => { setMenuName(summary.name); setRenaming(true); }}>
+                      <Icon icon={Pencil} size={16} />
+                    </Button>
+                  ) : null}
                   {summary.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : null}
                 </div>
                 <p className="text-[13px] text-ink-3 tabular">
@@ -270,6 +278,7 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
             </>
           )}
         </div>
+        {mayEdit.ok ? (
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="secondary" className={greyPill} onPress={() => patchMenu.mutate({ archived: !summary.archived })} isPending={patchMenu.isPending && patchMenu.variables?.archived !== undefined}>
             {summary.archived ? "Restore menu" : "Archive menu"}
@@ -281,10 +290,14 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
             {dirty ? "Save menu order" : "Saved"}
           </Button>
         </div>
+        ) : (
+          <p className="text-[13px] text-ink-2">{mayEdit.reason}</p>
+        )}
       </div>
       <Warnings warnings={warnings} />
       <InlineError error={save.error ?? patchMenu.error} />
 
+      <ReadOnly.Provider value={!mayEdit.ok}>
       {tops.length === 0 ? (
         <EmptyState variant="quiet" title="No sections yet" hint="Tap Add section, then search products to add them. The POS and the guest app show only products in a section. Drag the handle to reorder, then Save menu order." />
       ) : (
@@ -334,11 +347,15 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
           </SortableContext>
         </DndContext>
       )}
+      </ReadOnly.Provider>
     </div>
   );
 }
 
 type Handle = { attributes: DraggableAttributes; listeners: SyntheticListenerMap | undefined };
+
+/** A role that cannot save the menu reads it: no handles, no rename and no add or remove buttons (R new 1). */
+const ReadOnly = createContext(false);
 
 function SortableRow({ id, className, children }: { id: string; className?: string; children: (handle: Handle) => ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
@@ -350,6 +367,7 @@ function SortableRow({ id, className, children }: { id: string; className?: stri
 }
 
 function DragHandle({ handle, label }: { handle: Handle; label: string }) {
+  if (useContext(ReadOnly)) return null;
   return (
     <button
       type="button"
@@ -389,6 +407,7 @@ function SectionBlock({
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState(section.name);
+  const readOnly = useContext(ReadOnly);
 
   return (
     <div className="flex flex-col gap-2 p-3">
@@ -414,13 +433,16 @@ function SectionBlock({
         ) : (
           <>
             <h3 className={`min-w-0 font-heading font-semibold text-ink [overflow-wrap:anywhere] ${sub ? "text-[15px] leading-[1.35]" : "text-[16px] leading-[1.35] tracking-[-0.005em]"}`}>{section.name}</h3>
-            <Button variant="quiet" iconOnly aria-label={`Rename ${section.name}`} onPress={() => { setName(section.name); setEditing(true); }}>
-              <Icon icon={Pencil} size={16} />
-            </Button>
+            {readOnly ? null : (
+              <Button variant="quiet" iconOnly aria-label={`Rename ${section.name}`} onPress={() => { setName(section.name); setEditing(true); }}>
+                <Icon icon={Pencil} size={16} />
+              </Button>
+            )}
             <Badge>{section.items.length}</Badge>
           </>
         )}
         {/* On a phone the actions take their own line, tighter, so the × stays inside the card. */}
+        {readOnly ? null : (
         <span className="flex min-w-0 items-center gap-0.5 max-sm:w-full max-sm:[&>button]:px-2! sm:ml-auto sm:justify-end">
           {onAddSub ? (
             <Button variant="quiet" onPress={onAddSub}>
@@ -434,6 +456,7 @@ function SectionBlock({
             <Icon icon={X} size={16} />
           </Button>
         </span>
+        )}
       </div>
 
       {section.items.length ? (
@@ -451,9 +474,11 @@ function SectionBlock({
                         {p?.archived ? <span className="ml-2 text-[12px] text-ink-3">archived</span> : null}
                       </span>
                       {p ? <Money cents={p.price} className="text-[14px] text-ink-2" /> : null}
-                      <Button variant="quiet" iconOnly aria-label={`Remove ${p?.name ?? "item"} from ${section.name}`} onPress={() => onRemoveItem(pid)}>
-                        <Icon icon={X} size={16} />
-                      </Button>
+                      {readOnly ? null : (
+                        <Button variant="quiet" iconOnly aria-label={`Remove ${p?.name ?? "item"} from ${section.name}`} onPress={() => onRemoveItem(pid)}>
+                          <Icon icon={X} size={16} />
+                        </Button>
+                      )}
                     </div>
                   )}
                 </SortableRow>

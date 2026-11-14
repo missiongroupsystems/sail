@@ -19,6 +19,7 @@ import { useSession } from "@/lib/session-context";
 import { AccessSection } from "./AccessSection";
 import { useFreshErrors } from "@/lib/fresh-errors";
 import { useCan } from "@/lib/can";
+import { useRecheckErrors } from "@/lib/recheck-errors";
 
 const ROLE_LABEL: Record<Role, string> = { server: "Server", cashier: "Cashier", manager: "Manager", finance: "Finance", admin: "Admin" };
 const ROLE_HINT: Record<Role, string> = {
@@ -155,6 +156,7 @@ function StaffSheet({ state, outlets, brands, onClose }: { state: SheetState; ou
   const { me } = useSession();
   const staff = state?.mode === "edit" ? state.staff : null;
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(staff) });
+  useRecheckErrors(form);
   const reset = form.reset;
   useEffect(() => {
     if (state) reset(defaults(state.mode === "edit" ? state.staff : null));

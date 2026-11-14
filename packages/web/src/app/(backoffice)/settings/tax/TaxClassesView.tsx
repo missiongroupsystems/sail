@@ -189,7 +189,7 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
       description={taxClass ? (taxClass.archived ? "Archived" : taxClass.is_default ? "The default class: products without a class use it." : "Rename it, change its rates, or make it the default.") : "A class with its default rate. Add outlet or order-type rates after."}
       footer={
         <>
-          {taxClass ? (
+          {taxClass && mayEdit.ok ? (
             <Button variant="secondary" onPress={() => archive.mutate(!taxClass.archived)} isPending={archive.isPending} isDisabled={taxClass.is_default || save.isPending} className={`mr-auto ${taxClass.archived ? greyPill : greyPillAlert}`}>
               {taxClass.archived ? "Restore" : "Archive"}
             </Button>

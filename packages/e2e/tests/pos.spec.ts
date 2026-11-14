@@ -146,8 +146,10 @@ test("POS: pair, sign in, shift, order, split, cash and card, refund with a mana
     await page.getByRole("button", { name: /^Next: count the cash/ }).click();
     await page.getByRole("textbox", { name: "Cash counted in the drawer" }).fill("200.00");
     await page.getByRole("button", { name: /^Close shift · counted \$200\.00/ }).click();
-    // The count leaves out the day's cash takings, so the register asks why it is short before closing.
-    await expect(page.getByRole("heading", { name: /^Variance −\$/ })).toBeVisible();
+    // The count leaves out the day's cash takings, so the register asks why before closing. The Cashier who counted is
+    // not told the expected cash or the variance until the shift is closed (live test round 3, S-9).
+    await expect(page.getByRole("heading", { name: "Count outside the allowed variance" })).toBeVisible();
+    await expect(page.getByText(/The register expected/)).toHaveCount(0);
     await page.getByRole("group", { name: "Reason" }).getByRole("button", { name: "Change given wrongly" }).click();
     await page.getByRole("button", { name: "Close shift", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Shift closed" })).toBeVisible();

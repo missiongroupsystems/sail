@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { AmountSchema, PERMISSIONS, registerOperations, type OperationSpec } from "@sail/shared";
+import { AmountSchema, PERMISSIONS, registerOperations, roleAtLeast, type OperationSpec } from "@sail/shared";
 import { db, markDryRun, settleInvariants, withTransaction } from "../db/client.js";
 import { checks, orders, paymentIntents, payments, printers, shifts, stations, tenderTypes } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -36,7 +36,7 @@ registerOperations({
   "shifts.open": op({ op: "shifts.open", summary: "Open a shift", description: "With a counted float. One open shift per station (or per outlet when no station).", ...PERMISSIONS["shifts.open"], emits: ["shift.opened"] }),
   "shifts.close": op({ op: "shifts.close", summary: "Close a shift", description: "With the counted cash. Returns expected vs counted cash including rounding, and the shift's Z figures. A variance above the merchant's `cash_variance_threshold` needs `variance_reason`; without one the close is refused (400, `details` has expected, counted, variance and variance_threshold). Cashier+ for own shift; Manager+ for another's.", ...PERMISSIONS["shifts.close"], emits: ["shift.closed"] }),
   "shifts.list": op({ op: "shifts.list", summary: "Shifts of an outlet", description: "Open and closed shifts with their summaries.", tier: "T0", minRole: "server", dryRun: false, principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read", "reports"] } }),
-  "business_days.z_report": op({ op: "business_days.z_report", summary: "Z-report", description: "Sales, tenders, expected vs counted cash, rounding, voids and covers for an outlet (or station) and business date. Figures come from the register. `sales.net` is net sales: items after discounts, without tax and fees, less `sales.refunds` (the refunds' net); `sales.fees` excludes tax; `sales.total` is what was collected before refunds (`net + refunds + fees + tax = total`), and `refunds.amount` is the money refunded.", tier: "T0", minRole: "cashier", dryRun: false, principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["reports", "pos.read"] } }),
+  "business_days.z_report": op({ op: "business_days.z_report", summary: "Z-report", description: "Sales, tenders, expected vs counted cash, rounding, voids and covers for an outlet (or station) and business date. Figures come from the register. `sales.net` is net sales: items after discounts, without tax and fees, less `sales.refunds` (the refunds' net); `sales.fees` excludes tax; `sales.total` is what was collected before refunds (`net + refunds + fees + tax = total`), and `refunds.amount` is the money refunded. While any shift at the outlet is still open, a caller below Manager gets `withheld: \"open_shift\"` with only the scope, order counts, void and refund counts, and the open drawers' number and floats (a blind count).", tier: "T0", minRole: "cashier", dryRun: false, principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["reports", "pos.read"] } }),
   "business_days.close": op({ op: "business_days.close", summary: "Close a business day", description: "Snapshots the Z-report once every shift is closed. Manager+. T3: it cannot be undone and closes the day for the whole outlet.", tier: "T3", ...PERMISSIONS["business_days.close"], emits: ["business_day.closed"], mcp: { expose: true, toolsets: ["pos.payment"] } }),
 });
 
@@ -288,7 +288,11 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     const [shift] = await db().select().from(shifts).where(eq(shifts.id, id)).limit(1);
     if (!shift) throw AppError.notFound("shift", id);
     if (shift.openedBy !== p.id) await requireRoleOrOverride(p, principalRole(p), "manager", { action: "shifts.close", targetId: id, args: {}, overrideId: b.override_id, overrideAllowed: false });
-    const { shift: closed, report } = await closeShift(p, id, { countedCashCents: b.counted_cash_cents, countedCounts: b.counted_counts ?? null, varianceReason: b.variance_reason ?? null });
+    // A blind count (S-9): below Manager, a close cannot be tried out first, and a refused count does not say what was expected.
+    const closer = principalRole(p);
+    const blind = !(closer && roleAtLeast(closer, "manager"));
+    if (blind && b.dry_run) throw new AppError("permission_denied", "A shift close cannot be tried out first below Manager", { remedy: "Count the drawer and close the shift." });
+    const { shift: closed, report } = await closeShift(p, id, { countedCashCents: b.counted_cash_cents, countedCounts: b.counted_counts ?? null, varianceReason: b.variance_reason ?? null, blind });
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: shift.outletId, type: "shift.closed", aggregate: { kind: "shift", id }, operationId: "shifts.close", payload: { expected: report.cash.expected, counted: report.cash.counted, variance: report.cash.variance }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(p.merchantId, shift.outletId) }, p);
     await recordAudit(p, { action: "shifts.close", targetKind: "shift", targetId: id, outletId: shift.outletId, details: { expected: report.cash.expected, counted: report.cash.counted, variance: report.cash.variance, variance_reason: b.variance_reason ?? null } });
     return c.json({ data: { ...toShift(closed), report }, events: [ev], warnings: [] }, 200);
@@ -307,6 +311,15 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     const float = closed.reduce((s, x) => s + x.floatCents, 0);
     const counted = closed.reduce((s, x) => s + (x.countedCashCents ?? 0), 0);
     const report = await zReport({ outletId: id, businessDate, stationId: q.station_id ?? null, cashShiftIds: closed.map((x) => x.id) }, { float, counted: closed.length ? counted : null, openShifts: { ids: open.map((x) => x.id), float: open.reduce((s, x) => s + x.floatCents, 0) } });
+    // The close is a blind count (S-9): while a drawer at the outlet is open, a caller below Manager, who may be the one
+    // to count it, gets no money figure the open drawer's expected cash could be read or worked out from (its sales,
+    // tenders, cash and refunds all hold that drawer's takings). The floats, that shifts are open, and counts stay.
+    // Any drawer open at the outlet counts, not only this report's: a whole-outlet drawer takes this station's cash too.
+    const role = principalRole(p);
+    if (!(role && roleAtLeast(role, "manager"))) {
+      const drawers = await openFloats(id);
+      if (drawers.count > 0) return c.json({ data: withheldZReport(report, drawers) }, 200);
+    }
     return c.json({ data: report }, 200);
   });
 
@@ -323,6 +336,25 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     await recordAudit(p, { action: "business_days.close", targetKind: "business_day", targetId: close.id, outletId: id, details: { business_date: businessDate } });
     return c.json({ data: { id: close.id, business_date: businessDate, closed_at: close.closedAt.toISOString(), report }, events: [ev], warnings: [] }, 200);
   });
+}
+
+/** A Z-report with the money figures left out while a drawer is still open (see business_days.z_report). */
+function withheldZReport(r: Awaited<ReturnType<typeof zReport>>, drawers: { count: number; float: number }) {
+  return {
+    withheld: "open_shift" as const,
+    scope: r.scope,
+    orders: r.orders,
+    voids: { count: r.voids.count, quantity: r.voids.quantity },
+    refunds: { count: r.refunds.count },
+    cash: { float: r.cash.float, open_shifts: drawers },
+    generated_at: r.generated_at,
+  };
+}
+
+/** The number and floats of the drawers open at an outlet, whatever business day they opened on (one left open past the cutoff still takes cash). */
+async function openFloats(outletId: string) {
+  const [r] = await db().select({ count: sql<number>`count(*)::int`, float: sql<number>`coalesce(sum(${shifts.floatCents}),0)::bigint` }).from(shifts).where(and(eq(shifts.outletId, outletId), eq(shifts.status, "open")));
+  return { count: r?.count ?? 0, float: Number(r?.float ?? 0) };
 }
 
 export { repriceOrder };

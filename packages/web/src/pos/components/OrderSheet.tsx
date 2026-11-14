@@ -9,6 +9,7 @@ import { useUiStore } from "../state/ui";
 import { usePos } from "./PosContext";
 import { jobsForRound } from "./ReprintSheet";
 import { PANEL } from "./styles";
+import { ReopenedNote } from "./ReopenedNote";
 
 export type OrderSheetProps = {
   order: OrderSnapshot;
@@ -214,6 +215,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
           </>
         ) : null}
       </div>
+      {closed ? null : <ReopenedNote checks={order.checks} className="mx-3 mb-2 shrink-0" />}
       {/* An empty order has nothing to total: the figures appear with the first line. */}
       {empty ? null : (
         <div className="shrink-0 border-t border-rule px-1 pt-1">

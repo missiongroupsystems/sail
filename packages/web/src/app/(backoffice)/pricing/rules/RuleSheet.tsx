@@ -21,6 +21,7 @@ import type { RuleRow } from "./RulesView";
 import { emptyForm, formFrom, NONE, RuleFormSchema, toBody, type RuleForm } from "./rule-form";
 import { useFreshErrors } from "@/lib/fresh-errors";
 import { useCan } from "@/lib/can";
+import { useRecheckErrors } from "@/lib/recheck-errors";
 
 export type RuleSheetState = { mode: "create"; kind: "fee" | "discount" } | { mode: "edit"; row: RuleRow } | null;
 
@@ -36,6 +37,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
   const qc = useQueryClient();
   const row = state?.mode === "edit" ? state.row : null;
   const form = useForm<RuleForm>({ resolver: zodResolver(RuleFormSchema), defaultValues: state?.mode === "edit" ? formFrom(state.row.current, timeZone) : emptyForm(state?.mode === "create" ? state.kind : "fee") });
+  useRecheckErrors(form);
   const [saved, setSaved] = useState<{ version: PricingRuleVersion; warnings: string[] } | null>(null);
   const [archiving, setArchiving] = useState(false);
   const [reason, setReason] = useState("");
@@ -134,7 +136,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
               {STATUS_LABEL[row.current.status]} · v{row.current.version}
             </Badge>
             {row.body.seeded ? <Badge>Seeded</Badge> : null}
-            <Button variant="quiet" className="min-h-8 px-2 text-caption" onPress={() => setShowVersions((v) => !v)}>
+            <Button variant="quiet" className="min-h-8 max-sm:min-h-11 px-2 text-caption" onPress={() => setShowVersions((v) => !v)}>
               {showVersions ? "Hide" : "Show"} {row.versions.length} {row.versions.length === 1 ? "version" : "versions"}
             </Button>
           </span>
@@ -159,7 +161,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
           </>
         ) : (
           <>
-            {row && row.current.status !== "archived" ? (
+            {row && row.current.status !== "archived" && mayEdit.ok ? (
               <Button variant="destructive" onPress={() => setArchiving(true)} isDisabled={busy} className="mr-auto">
                 Archive rule…
               </Button>

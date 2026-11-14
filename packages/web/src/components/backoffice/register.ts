@@ -163,6 +163,19 @@ export type ZReport = {
   tax_due?: TaxAmount[];
   generated_at: string;
 };
+/** The Z-report a role below Manager gets while a drawer in it is still open (a blind count): no money figure but the floats. */
+export type ZReportWithheld = {
+  withheld: "open_shift";
+  scope: ZReport["scope"];
+  orders: ZReport["orders"];
+  voids: { count: number; quantity: number };
+  refunds: { count: number };
+  cash: { float: number; open_shifts: { count: number; float: number } };
+  generated_at: string;
+};
+export function isWithheld(r: ZReport | ZReportWithheld): r is ZReportWithheld {
+  return "withheld" in r && r.withheld === "open_shift";
+}
 /** GET /v1/outlets/{id}/shifts (routes/payments.ts toShift). */
 export type Shift = {
   id: string;

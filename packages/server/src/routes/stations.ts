@@ -28,7 +28,9 @@ registerOperations({
 });
 
 /** One variant per action a manager may approve: its target kind and the arguments the approver sees, which the protected request must repeat exactly. */
-const grantBase = { target_id: z.uuid(), approver_pin: secret(z.string().regex(/^\d{6}$/)), outlet_id: z.uuid().optional() };
+// A PIN is set as six digits; a shorter one typed and sent with Enter is refused as not recognised, like any wrong PIN (S-3).
+const PinTyped = z.string().regex(/^\d{1,6}$/);
+const grantBase = { target_id: z.uuid(), approver_pin: secret(PinTyped), outlet_id: z.uuid().optional() };
 const GrantRequest = z.discriminatedUnion("action", [
   z.object({ action: z.literal("lines.void_fired"), target_kind: z.literal("order_line"), ...grantBase, args: z.object({ quantity: z.number().int().min(1) }) }),
   z.object({ action: z.literal("lines.add_open_price"), target_kind: z.literal("order"), ...grantBase, args: z.object({ lines: z.array(z.object({ line_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1), open_price: AmountSchema })).min(1) }) }),
@@ -94,7 +96,7 @@ export function stationRoutes(app: OpenAPIHono<AppEnv>) {
 
   defineOp(
     app,
-    { op: "staff_sessions.start", method: "post", path: "/v1/stations/sessions", tags: ["stations"], request: { body: jsonBody(z.object({ pin: secret(z.string().regex(/^\d{6}$/)) })) }, responses: { 201: jsonResponse(dataResponse(z.object({ session_token: secret(z.string()), staff: z.object({ id: z.string(), name: z.string(), initials: z.string().nullable(), role: RoleSchema }), station: z.record(z.string(), z.unknown()), expires_in_seconds: z.number().int() }))), ...errorResponses } },
+    { op: "staff_sessions.start", method: "post", path: "/v1/stations/sessions", tags: ["stations"], request: { body: jsonBody(z.object({ pin: secret(PinTyped) })) }, responses: { 201: jsonResponse(dataResponse(z.object({ session_token: secret(z.string()), staff: z.object({ id: z.string(), name: z.string(), initials: z.string().nullable(), role: RoleSchema }), station: z.record(z.string(), z.unknown()), expires_in_seconds: z.number().int() }))), ...errorResponses } },
     async (c) => {
       const p = c.get("principal");
       if (p.type !== "station") throw new AppError("permission_denied", "Sign-in needs a station token", { remedy: "Pair this iPad to a station first." });

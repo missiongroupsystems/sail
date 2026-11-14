@@ -10,6 +10,7 @@ import { usePos } from "../components/PosContext";
 import { GREY_PILL, PANEL } from "../components/styles";
 import { ReceiptChooser } from "../components/ReceiptChooser";
 import { VoidPaymentSheet } from "../components/ReasonSheets";
+import { ReopenedNote } from "../components/ReopenedNote";
 import { useMerchant, useOrder, usePaymentIntents, useShifts, useTenderTypes } from "../hooks/queries";
 import { likelyTendered, useCashDenominations } from "../lib/cash";
 import { roleAtLeast, useOrderActions } from "../hooks/useOrderActions";
@@ -441,6 +442,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
                 ))}
             </ul>
           ) : null}
+          <ReopenedNote checks={[check]} className="mx-4 mb-3 shrink-0" />
           <VoidPaymentSheet label={voiding ? `${money(voiding.amount)} by ${voiding.tender}` : null} onTerminal={voiding ? mine.some((i) => i.payment_id === voiding.id) : false} isOpen={voiding !== null} onClose={() => setVoiding(null)} onVoid={voidPayment} />
         </section>
 

@@ -8,6 +8,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { RhfTextField } from "@/components/forms/fields";
 import { ApiError, toApiError } from "@/lib/api";
+import { useRecheckErrors } from "@/lib/recheck-errors";
 
 const Schema = z
   .object({ password: z.string().min(12, "Use at least 12 characters"), confirm: z.string() })
@@ -22,6 +23,7 @@ export function SetPasswordForm({ signedInAs }: { signedInAs: string | null }) {
   const [account, setAccount] = useState<{ name: string; email: string } | null>(null);
   const [dead, setDead] = useState<ApiError | null>(null);
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: { password: "", confirm: "" } });
+  useRecheckErrors(form);
 
   useEffect(() => {
     const found = new URLSearchParams(window.location.hash.slice(1)).get("token");

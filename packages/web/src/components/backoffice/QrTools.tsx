@@ -86,7 +86,7 @@ export function RotateQrButton({ table, canRotate }: { table: Table; canRotate: 
           <p className="text-[12.5px] text-ink-2">New guest link for {table.name}. Print a fresh card, or download the whole sheet.</p>
           <p className="break-all font-mono text-[12.5px] text-ink">{rotate.data.url}</p>
           <div>
-            <Button variant="secondary" className="min-h-9 px-3 text-[13px]" onPress={copy}>
+            <Button variant="secondary" className="min-h-9 max-sm:min-h-11 px-3 text-[13px]" onPress={copy}>
               {copied ? "Copied" : "Copy link"}
             </Button>
           </div>

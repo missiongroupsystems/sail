@@ -209,7 +209,7 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
       }
       footer={
         <>
-          {station ? (
+          {station && mayEdit.ok ? (
             <Button variant="secondary" onPress={() => (station.archived ? archive.mutate(false) : setConfirmArchive(true))} isPending={archive.isPending} isDisabled={save.isPending} className={`mr-auto ${station.archived ? greyPill : greyPillAlert}`}>
               {station.archived ? "Restore station" : "Archive station…"}
             </Button>
@@ -268,7 +268,7 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
               />
             </SheetSection>
             <SheetSection title="Service">
-              <RhfSwitch control={form.control} name="pay_before_firing" description="Nothing goes to the kitchen until the bill is paid. For counters and kiosks.">
+              <RhfSwitch control={form.control} name="pay_before_firing" description="An order sent from this station, of any type, goes to the kitchen only once it is paid in full. QR orders from guests’ phones are not held. For counters and kiosks.">
                 Pay before sending
               </RhfSwitch>
               <RhfSwitch control={form.control} name="seats_enabled" description="Shows the seat strip so lines can be assigned to guests.">

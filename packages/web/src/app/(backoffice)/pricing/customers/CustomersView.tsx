@@ -13,6 +13,7 @@ import { api } from "@/lib/api.browser";
 import type { Customer, CustomerGroup, CustomerUpsert } from "@/lib/api/types";
 import { keys } from "@/lib/query";
 import { useFreshErrors } from "@/lib/fresh-errors";
+import { useCan } from "@/lib/can";
 
 type CustomerSheet = { mode: "create" } | { mode: "edit"; customer: Customer } | null;
 type GroupSheet = { mode: "create" } | { mode: "edit"; group: CustomerGroup } | null;
@@ -65,6 +66,9 @@ export function CustomersView({ initialGroups, initialCustomers }: { initialGrou
     placeholderData: keepPreviousData,
     initialData: !dq && !groupId ? initialCustomers : undefined,
   });
+  // What the role cannot save is left out (R new 1): customers need a Cashier, groups a Manager.
+  const canCustomer = useCan("customers.upsert").ok;
+  const canGroup = useCan("customer_groups.create").ok;
   const groupName = useMemo(() => new Map(groups.data.map((g) => [g.id, g.name])), [groups.data]);
 
   const columns: DataTableColumn<Customer>[] = [
@@ -91,9 +95,11 @@ export function CustomersView({ initialGroups, initialCustomers }: { initialGrou
       <section className="min-w-0">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <TextField size="sm" aria-label="Find a customer" type="search" value={q} onChange={setQ} placeholder="Mobile number or name" className="w-[280px]" />
-          <Button size="sm" variant="primary" onPress={() => setCustomerSheet({ mode: "create" })}>
-            Add customer
-          </Button>
+          {canCustomer ? (
+            <Button size="sm" variant="primary" onPress={() => setCustomerSheet({ mode: "create" })}>
+              Add customer
+            </Button>
+          ) : null}
         </div>
         <DataTable
           aria-label="Customers"
@@ -116,9 +122,11 @@ export function CustomersView({ initialGroups, initialCustomers }: { initialGrou
         title="Groups"
         body="flush"
         aside={
-          <Button size="sm" onPress={() => setGroupSheet({ mode: "create" })}>
-            Add group
-          </Button>
+          canGroup ? (
+            <Button size="sm" onPress={() => setGroupSheet({ mode: "create" })}>
+              Add group
+            </Button>
+          ) : undefined
         }
       >
         {groups.data.length === 0 ? (
@@ -136,9 +144,11 @@ export function CustomersView({ initialGroups, initialCustomers }: { initialGrou
                   <span className="truncate">{g.name}</span>
                   {g.archived ? <span className="ml-2 text-caption">archived</span> : null}
                 </Button>
-                <Button variant="quiet" className="min-h-8 px-2.5 text-caption text-ink-2" onPress={() => setGroupSheet({ mode: "edit", group: g })}>
-                  Edit
-                </Button>
+                {canGroup ? (
+                  <Button variant="quiet" className="min-h-8 max-sm:min-h-11 px-2.5 text-caption text-ink-2" onPress={() => setGroupSheet({ mode: "edit", group: g })}>
+                    Edit
+                  </Button>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -191,6 +201,7 @@ function CustomerFormSheet({ state, groups, onClose }: { state: CustomerSheet; g
   const busy = save.isPending || archive.isPending;
 
   useFreshErrors(state, form.watch(), save, archive);
+  const mayEdit = useCan("customers.upsert");
   return (
     <Sheet
       isOpen={state !== null}
@@ -201,20 +212,21 @@ function CustomerFormSheet({ state, groups, onClose }: { state: CustomerSheet; g
       footer={
         <>
           {customer ? (
-            <Button variant={customer.archived ? "secondary" : "destructive"} onPress={() => archive.mutate(!customer.archived)} isPending={archive.isPending} isDisabled={save.isPending} className="mr-auto">
+            <Button variant={customer.archived ? "secondary" : "destructive"} onPress={() => archive.mutate(!customer.archived)} isPending={archive.isPending} isDisabled={save.isPending || !mayEdit.ok} className="mr-auto">
               {customer.archived ? "Restore customer" : "Archive customer"}
             </Button>
           ) : null}
           <Button variant="quiet" onPress={onClose} isDisabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" type="submit" form="customer-form" isPending={save.isPending} isDisabled={archive.isPending}>
+          <Button variant="primary" type="submit" form="customer-form" isPending={save.isPending} isDisabled={archive.isPending || !mayEdit.ok}>
             {customer ? "Save changes" : "Add customer"}
           </Button>
         </>
       }
     >
-      <form id="customer-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
+      <form id="customer-form" noValidate onSubmit={form.handleSubmit((v) => mayEdit.ok && save.mutate(v))} className="flex flex-col gap-8">
+        {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
         <FormSection>
           <RhfTextField control={form.control} name="name" label="Name" autoFocus={!customer} />
           <div className="grid gap-4 sm:grid-cols-2">
