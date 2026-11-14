@@ -77,7 +77,8 @@ test("M1, M3: a line voided after it was sent reads Voided on the POS, one taken
   await expect(drawer.getByText("Shown on the kitchen display").first()).toBeVisible();
   await expect(drawer.getByText("Kitchen ticket printed")).toHaveCount(0);
   await expect(drawer.getByText("Nothing printed for this order: its tickets went to the kitchen display.")).toBeVisible();
-  await page.screenshot({ path: "test-results/m3-drawer-tickets-events.png", fullPage: true });
+  await drawer.getByText("Nothing printed for this order: its tickets went to the kitchen display.").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: "test-results/m3-drawer-tickets-events.png" });
 });
 
 test("M2: rejecting the guest's only QR round on an order it opened frees the table, and the phone still shows the rejection", async ({ browser, page, watch }) => {
@@ -178,13 +179,17 @@ test("M4, M5: after a tipped card payment the receipt sheet shows Tip and Charge
   }
 });
 
-test("M6: in a read-only sheet the chips and their × are in the disabled ink, in light and dark", async ({ page }) => {
+test("M6: in a read-only form the chips and their × are in the disabled ink, in the Day and Service themes", async ({ page }) => {
   test.setTimeout(300_000);
   const who = await loginFor("manager");
   await officeSignIn(page, who.email, who.password);
+  // The back office's dark theme is "Service" (`data-theme="service"`), switched from the user menu.
   for (const scheme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: scheme });
     await page.goto(`${WEB}/settings/merchant`);
+    await page.evaluate((dark) => {
+      if (dark) document.documentElement.dataset.theme = "service";
+      else delete document.documentElement.dataset.theme;
+    }, scheme === "dark");
     const remove = page.getByRole("button", { name: /^Remove / }).first();
     await expect(remove).toBeDisabled();
     const [ink, disabled] = await remove.evaluate((el) => {
@@ -196,6 +201,7 @@ test("M6: in a read-only sheet the chips and their × are in the disabled ink, i
       return [getComputedStyle(el).color, want];
     });
     expect(ink, scheme).toBe(disabled);
+    await remove.scrollIntoViewIfNeeded();
     await page.screenshot({ path: `test-results/m6-locked-chips-${scheme}.png` });
   }
 });
