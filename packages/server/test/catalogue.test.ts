@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import "../src/modules.js";
 import { buildApp, type App } from "../src/app.js";
-import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
+import { api, freshDb, merchantClockIn, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
 
 let db: TestDb;
 let app: App;
@@ -94,11 +94,20 @@ describe("catalogue", () => {
 
     // Availability window that excludes right now → unavailable with a reason; a server cannot mark sold out.
     expect((await call("POST", "/v1/stock/sold-out", { token: A.server.token, body: { outlet_id: A.outletId, product_id: ids.laksa, until: "today" } })).status).toBe(403);
-    const rule = await call("POST", "/v1/availability-rules", { token: A.admin.token, body: { target_kind: "product", target_id: ids.laksa, days_of_week: [], start_time: "00:00", end_time: "00:01" } });
+    // The window is built from the merchant's clock (six to seven hours ahead, wrapping past midnight when it must), so
+    // "now" is outside it at any time of day.
+    const rule = await call("POST", "/v1/availability-rules", { token: A.admin.token, body: { target_kind: "product", target_id: ids.laksa, days_of_week: [], start_time: merchantClockIn(6 * 60), end_time: merchantClockIn(7 * 60) } });
     expect(rule.status).toBe(201);
     const m3 = await call<{ data: { products: Record<string, { available_now: boolean; unavailable_reason: string }> } }>("GET", `/v1/channel-links/${ids.link}/menu`, { token: A.server.token });
     expect(m3.body.data.products[ids.laksa]!.available_now).toBe(false);
     expect(m3.body.data.products[ids.laksa]!.unavailable_reason).toBe("Not available at this time");
+
+    // A second window around "now" (an hour either side) makes it available again: one matching rule is enough.
+    const around = await call("POST", "/v1/availability-rules", { token: A.admin.token, body: { target_kind: "product", target_id: ids.laksa, days_of_week: [], start_time: merchantClockIn(-60), end_time: merchantClockIn(60) } });
+    expect(around.status).toBe(201);
+    const m4 = await call<{ data: { products: Record<string, { available_now: boolean; unavailable_reason: string | null }> } }>("GET", `/v1/channel-links/${ids.link}/menu`, { token: A.server.token });
+    expect(m4.body.data.products[ids.laksa]!.available_now).toBe(true);
+    expect(m4.body.data.products[ids.laksa]!.unavailable_reason).toBeNull();
   });
 
   it("daily caps are set by Manager+ and count down atomically", async () => {

@@ -70,12 +70,13 @@ test("L1: Manager and Server open a table's details on Floor & QR, read only, an
   await expect(page.locator("aside").getByRole("textbox", { name: "Name" })).toBeEnabled();
 });
 
-test("L3: for Manager, Finance, Cashier and Server, a sheet or form whose Save is off has every field off too", async ({ page, watch }) => {
-  test.setTimeout(900_000);
-  watch.allow({ status: 403, url: /\/team$/, why: "Team is a higher-role page for some of these roles" });
-  // Pages with a record sheet behind a row, and the merchant settings form.
-  const sheets = ["/team", "/menu/products", "/menu/categories", "/menu/modifiers", "/menu/availability", "/pricing/rules", "/pricing/customers", "/printing/printers", "/settings/outlets", "/settings/brands", "/settings/stations", "/settings/tax", "/settings/tenders", "/settings/void-reasons", "/settings/channels"];
-  for (const role of ["manager", "finance", "cashier", "server"] as const) {
+// Pages with a record sheet behind a row, and the merchant settings form. One test per role, as in live-round3: the
+// four roles in one test needed a fifteen-minute timeout on the development servers.
+const SHEET_PAGES = ["/team", "/menu/products", "/menu/categories", "/menu/modifiers", "/menu/availability", "/pricing/rules", "/pricing/customers", "/printing/printers", "/settings/outlets", "/settings/brands", "/settings/stations", "/settings/tax", "/settings/tenders", "/settings/void-reasons", "/settings/channels"];
+for (const role of ["manager", "finance", "cashier", "server"] as const) {
+  test(`L3 (${role}): for a ${role}, a sheet or form whose Save is off has every field off too`, async ({ page, watch }) => {
+    test.setTimeout(300_000);
+    watch.allow({ status: 403, url: /\/team$/, why: "Team is a higher-role page for some of these roles" });
     const who = await loginFor(role);
     await officeSignIn(page, who.email, who.password);
     // The tester's case: the merchant settings' fields and the "Remove …" chips of the notes and coins.
@@ -101,7 +102,7 @@ test("L3: for Manager, Finance, Cashier and Server, a sheet or form whose Save i
     await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: /^Move .+ (up|down)$/ })).toHaveCount(0);
     let walked = 0;
-    for (const path of sheets) {
+    for (const path of SHEET_PAGES) {
       await page.goto(`${WEB}${path}`);
       await expect(page.locator("main")).toBeVisible();
       const row = page.getByRole("grid").getByRole("row").nth(1);
@@ -123,8 +124,8 @@ test("L3: for Manager, Finance, Cashier and Server, a sheet or form whose Save i
     }
     expect(walked, role).toBeGreaterThanOrEqual(8);
     await page.context().clearCookies();
-  }
-});
+  });
+}
 
 test("L4: at 390 wide the back office's Sign out and user menu are at least 44px tall", async ({ page }) => {
   test.setTimeout(300_000);

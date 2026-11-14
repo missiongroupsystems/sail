@@ -76,11 +76,12 @@ afterAll(async () => {
 
 describe("business date (daily caps and sold out follow the outlet's cutoff, not the calendar)", () => {
   it("a cap consumed before the cutoff is still shown as used by the stock list and the compiled menu", async () => {
-    // Put the cutoff two minutes ahead of the wall clock in Singapore: the business date is then yesterday while the calendar says today.
+    // Put the cutoff ten minutes ahead of the wall clock in Singapore: the business date is then yesterday while the calendar
+    // says today. (Two minutes, truncated to the minute, left as little as 61 s for a slow run to cross it.)
     const now = new Date();
-    const inTwo = localParts(new Date(now.getTime() + 2 * 60_000), "Asia/Singapore");
-    const sameDay = inTwo.date === localParts(now, "Asia/Singapore").date;
-    if (sameDay) expect((await call("PATCH", `/v1/outlets/${A.outletId}`, { token: A.admin.token, body: { business_day_cutoff: inTwo.time } })).status).toBe(200);
+    const ahead = localParts(new Date(now.getTime() + 10 * 60_000), "Asia/Singapore");
+    const sameDay = ahead.date === localParts(now, "Asia/Singapore").date;
+    if (sameDay) expect((await call("PATCH", `/v1/outlets/${A.outletId}`, { token: A.admin.token, body: { business_day_cutoff: ahead.time } })).status).toBe(200);
     try {
       await call("POST", "/v1/stock/daily-cap", { token: A.manager.token, body: { outlet_id: A.outletId, product_id: ids.kopi, quantity: 2 } });
       const o = await open(cashierPin, { order_type: "takeaway" });

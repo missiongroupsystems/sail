@@ -83,14 +83,16 @@ test("R new 2: the POS Z-report keeps one basis per block, with the back office'
   await expect(figures.getByText("Refunds (before tax)", { exact: true })).toHaveCount(0);
 });
 
-test("R new 1, R new 3: Manager, Finance, Cashier and Server meet no control that ends in a refusal, and a Server's pricing rules finish loading", async ({ page, watch }) => {
-  test.setTimeout(600_000);
-  watch.allow({ status: 403, url: /\/(reports|pricing\/simulator|team|audit|menu\/import)/, why: "pages a lower role is refused, shown as the higher-role page" });
-  const pages = ["/today", "/orders", "/floor", "/menu/products", "/menu/categories", "/menu/modifiers", "/menu/menus", "/menu/availability", "/menu/sold-out", "/menu/import", "/pricing/rules", "/pricing/customers", "/printing/printers", "/printing/jobs", "/printing/relays", "/settings/merchant", "/settings/outlets", "/settings/brands", "/settings/stations", "/settings/tax", "/settings/tenders", "/settings/void-reasons", "/settings/channels", "/team"];
-  for (const role of ["manager", "finance", "cashier", "server"] as const) {
+// One test per role: the four roles walk about 30 pages each, which in one test took the whole ten minutes on the
+// development servers and failed CI by timeout.
+const ROLE_PAGES = ["/today", "/orders", "/floor", "/menu/products", "/menu/categories", "/menu/modifiers", "/menu/menus", "/menu/availability", "/menu/sold-out", "/menu/import", "/pricing/rules", "/pricing/customers", "/printing/printers", "/printing/jobs", "/printing/relays", "/settings/merchant", "/settings/outlets", "/settings/brands", "/settings/stations", "/settings/tax", "/settings/tenders", "/settings/void-reasons", "/settings/channels", "/team"];
+for (const role of ["manager", "finance", "cashier", "server"] as const) {
+  test(`R new 1, R new 3 (${role}): a ${role} meets no control that ends in a refusal${role === "server" ? ", and a Server's pricing rules finish loading" : ""}`, async ({ page, watch }) => {
+    test.setTimeout(300_000);
+    watch.allow({ status: 403, url: /\/(reports|pricing\/simulator|team|audit|menu\/import)/, why: "pages a lower role is refused, shown as the higher-role page" });
     const who = await loginFor(role);
     await officeSignIn(page, who.email, who.password);
-    for (const path of pages) {
+    for (const path of ROLE_PAGES) {
       await page.goto(`${WEB}${path}`);
       await expect(page.locator("main")).toBeVisible();
     }
@@ -129,8 +131,8 @@ test("R new 1, R new 3: Manager, Finance, Cashier and Server meet no control tha
       await expect(page.getByText("Checking the active rule set…")).toHaveCount(0);
     }
     await signOut(page);
-  }
-});
+  });
+}
 
 test("R new 4: a field's error clears when the field it depends on changes", async ({ page }) => {
   test.setTimeout(300_000);
