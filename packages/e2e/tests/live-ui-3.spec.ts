@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { devLocal, expect, GUEST, pairAndSignIn, register, SG_ADMIN, test, WEB } from "./fixtures";
+import { devLocal, expect, GUEST, leaveChecklistOpen, pairAndSignIn, register, SG_ADMIN, test, WEB } from "./fixtures";
 
 const CASHIER_PIN = "333333";
 
@@ -54,7 +54,7 @@ test.describe("iPad landscape, small", () => {
       await page.getByRole("button", { name: "Open shift with $50.00" }).click();
     }
     await page.getByRole("button", { name: "Close shift", exact: true }).click();
-    for (const leave of await page.getByRole("list", { name: "Before closing" }).getByRole("button", { name: "Leave open" }).all()) await leave.click();
+    await leaveChecklistOpen(page);
     await page.getByRole("button", { name: /^Next: count the cash/ }).click();
     const counted = page.getByRole("textbox", { name: "Cash counted in the drawer" });
     await expect(counted).toBeInViewport({ ratio: 1 });

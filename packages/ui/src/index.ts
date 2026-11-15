@@ -89,7 +89,7 @@ export { SegmentedControl, type SegmentedControlProps, type SegmentOption } from
 export { BillCard, type BillCardProps, type BillCardLine, type BillCardRow, type BillCardStatus } from "./pos/BillCard";
 export { TenderGrid, type TenderGridProps, type Tender } from "./pos/TenderGrid";
 export { CashCounter, cashCounterTotal, denominationsFrom, type CashCounterProps, type CashCounterMode, type Denomination } from "./pos/CashCounter";
-export { Checklist, type ChecklistProps, type ChecklistItem, type ChecklistItemStatus } from "./pos/Checklist";
+export { Checklist, checklistDone, checklistStatus, type ChecklistProps, type ChecklistItem, type ChecklistItemStatus } from "./pos/Checklist";
 export { Panel, ValueRows, SheetSection, Group, type PanelProps, type ValueRowsProps, type SheetSectionProps, type GroupProps } from "./backoffice/Panel";
 export { FilterTabs, type FilterTabsProps, type FilterTabOption } from "./backoffice/FilterTabs";
 export { refundBlocks, refundableQuantity, type ReportBlocks, type ReportRow, type ReportSales, type ReportRefunds } from "./lib/report-blocks";

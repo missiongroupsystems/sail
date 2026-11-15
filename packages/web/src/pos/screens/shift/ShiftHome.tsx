@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, CashCounter, cx, cashCounterTotal, Checklist, Money, ReasonPicker, Skeleton, type CashCounterMode, type ChecklistItem, useLocale } from "@sail/ui";
+import { Button, CashCounter, cx, cashCounterTotal, Checklist, checklistDone as allDone, checklistStatus, Money, ReasonPicker, Skeleton, type CashCounterMode, type ChecklistItem, useLocale } from "@sail/ui";
 import { drawerCap } from "@sail/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -99,26 +99,36 @@ export function ShiftHome({ onShowReport, onCounting }: { onShowReport: () => vo
   const openElsewhere = mineOrders.length - openTables;
   const where = [openTables ? `${openTables} on the floor` : null, openElsewhere ? `${openElsewhere} in Orders` : null].filter(Boolean).join(", ");
   const openOrdersDetail = `${where ? `${where}. ` : ""}Pay or cancel them, or carry them to the next shift.`;
-  const checklist: ChecklistItem[] = useMemo(() => {
-    const mk = (id: string, n: number, one: string, many: string, detail: string, onView: () => void): ChecklistItem => ({
+  // Each item is the register's answer: until a read answers, its item is still being checked and the close cannot go on
+  // (a "No open orders" shown before the orders had loaded let the count start with orders still open).
+  const readOf = (q: { data?: unknown[]; isError: boolean }, count?: number) => ({ count: q.data ? (count ?? q.data.length) : null, failed: q.isError && !q.data });
+  const ordersRead = readOf(orders, mineOrders.length);
+  const roundsRead = readOf(rounds);
+  const lateRead = readOf(late);
+  const requestsRead = readOf(requests);
+  const mk = (id: string, read: { count: number | null; failed: boolean }, one: string, many: string, detail: string, onView: () => void): ChecklistItem => {
+    const n = read.count ?? 0;
+    const status = checklistStatus(read, left.has(id));
+    return {
       id,
-      title: n === 0 ? `No ${many}` : `${n} ${n === 1 ? one : many}`,
-      detail: n === 0 ? null : detail,
-      status: n === 0 ? "resolved" : left.has(id) ? "left" : "open",
+      title: status === "checking" ? `Checking ${many}…` : read.count === null ? `Could not check ${many}` : n === 0 ? `No ${many}` : `${n} ${n === 1 ? one : many}`,
+      detail: read.count === null ? (read.failed ? "The register did not answer. Leave it for the next shift, or try again in a moment." : null) : n === 0 ? null : detail,
+      status,
       onView,
-      onLeave: () => setLeft(new Set(left).add(id)),
+      onLeave: () => setLeft((prev) => new Set(prev).add(id)),
       leaveLabel: "Leave open",
-    });
-    return [
-      // Tables are on the floor and the rest in Orders: the line says how many are where, and View opens Orders when
-      // anything is there (the floor otherwise), so it never opens an empty list.
-      mk("orders", mineOrders.length, mine?.station_id ? "open order from this station" : "open order", mine?.station_id ? "open orders from this station" : "open orders", openOrdersDetail, () => go({ kind: openElsewhere > 0 ? "orders" : "floor" })),
-      mk("rounds", (rounds.data ?? []).length, "QR order waiting at this outlet", "QR orders waiting at this outlet", "Accept or reject them from the Now rail.", () => go({ kind: "floor" })),
-      mk("late", (late.data ?? []).length, "ticket not printed at this outlet", "tickets not printed at this outlet", "Send them to the backup printer or retry from the banner.", () => go({ kind: "floor" })),
-      mk("requests", (requests.data ?? []).length, "table request open at this outlet", "table requests open at this outlet", "Mark them done from the Now rail.", () => go({ kind: "floor" })),
-    ];
-  }, [mineOrders.length, mine?.station_id, rounds.data, late.data, requests.data, left, go, openElsewhere, openOrdersDetail]);
-  const checklistDone = checklist.every((c) => c.status !== "open");
+    };
+  };
+  const checklist: ChecklistItem[] = [
+    // Tables are on the floor and the rest in Orders: the line says how many are where, and View opens Orders when
+    // anything is there (the floor otherwise), so it never opens an empty list.
+    mk("orders", ordersRead, mine?.station_id ? "open order from this station" : "open order", mine?.station_id ? "open orders from this station" : "open orders", openOrdersDetail, () => go({ kind: openElsewhere > 0 ? "orders" : "floor" })),
+    mk("rounds", roundsRead, "QR order waiting at this outlet", "QR orders waiting at this outlet", "Accept or reject them from the Now rail.", () => go({ kind: "floor" })),
+    mk("late", lateRead, "ticket not printed at this outlet", "tickets not printed at this outlet", "Send them to the backup printer or retry from the banner.", () => go({ kind: "floor" })),
+    mk("requests", requestsRead, "table request open at this outlet", "table requests open at this outlet", "Mark them done from the Now rail.", () => go({ kind: "floor" })),
+  ];
+  const checklistDone = allDone(checklist);
+  const checking = checklist.some((c) => c.status === "checking");
 
   const startClose = () => {
     setLeft(new Set());
@@ -263,7 +273,7 @@ export function ShiftHome({ onShowReport, onCounting }: { onShowReport: () => vo
               Not now
             </Button>
             <Button size="lg" variant="primary" isDisabled={!checklistDone} onPress={() => setPhase({ kind: "count" })}>
-              {checklistDone ? "Next: count the cash" : "Resolve or leave each item"}
+              {checklistDone ? "Next: count the cash" : checking ? "Checking the register…" : "Resolve or leave each item"}
             </Button>
           </>
         }

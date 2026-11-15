@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { API, devLocal, expect, keyIn, pairAndSignIn, register, test, textContrast } from "./fixtures";
+import { API, devLocal, expect, keyIn, leaveChecklistOpen, pairAndSignIn, register, test, textContrast } from "./fixtures";
 
 const CASHIER_PIN = "333333"; // Cal Cashier (dev seed): can take payments and run the shift, not refund
 const MANAGER_PIN = "222222"; // Mia Manager approves the refund
@@ -141,8 +141,7 @@ test("POS: pair, sign in, shift, order, split, cash and card, refund with a mana
     await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Shift", exact: true }).click();
     await page.getByRole("button", { name: "Close shift", exact: true }).click();
     // Other specs may leave a table open: carry anything outstanding to the next shift.
-    const checklist = page.getByRole("list", { name: "Before closing" });
-    for (const leave of await checklist.getByRole("button", { name: "Leave open" }).all()) await leave.click();
+    await leaveChecklistOpen(page);
     await page.getByRole("button", { name: /^Next: count the cash/ }).click();
     await page.getByRole("textbox", { name: "Cash counted in the drawer" }).fill("200.00");
     await page.getByRole("button", { name: /^Close shift · counted \$200\.00/ }).click();
