@@ -23,6 +23,6 @@ child.stderr.on("data", (chunk) => {
   process.stderr.write(chunk);
 });
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, () => child.kill(signal));
-child.on("exit", (code, signal) => {
+child.on("close", (code, signal) => {
   log.end(`--- ${new Date().toISOString()} exit: ${signal ?? code}\n`, () => process.exit(code ?? 1));
 });

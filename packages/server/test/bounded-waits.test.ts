@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import "../src/modules.js";
 import { buildApp } from "../src/app.js";
-import { withTransaction } from "../src/db/client.js";
+import { withOwnTransaction, withTransaction } from "../src/db/client.js";
 import { databaseSnapshot } from "../src/middleware/slow-requests.js";
 import type { TransactionSql } from "postgres";
 import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
@@ -44,7 +44,9 @@ async function hold(lockSql: (t: TransactionSql) => Promise<unknown>) {
 
 /** Fails the test, rather than hanging it, when `p` takes longer than `ms`. */
 function within<T>(ms: number, p: Promise<T>): Promise<T> {
-  return Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`no answer within ${ms} ms`)), ms))]);
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<T>((_, reject) => (timer = setTimeout(() => reject(new Error(`no answer within ${ms} ms`)), ms)));
+  return Promise.race([p, late]).finally(() => clearTimeout(timer));
 }
 
 async function newRule() {
@@ -87,11 +89,13 @@ describe("bounded waits", () => {
     }
   });
 
-  it("a statement running past the statement timeout is cancelled, in the worker's transactions too", async () => {
+  it("a statement running past the statement timeout is cancelled, and the worker's and own transactions are bounded too", async () => {
     await expect(within(5_000, withTransaction((t) => t.sql`select pg_sleep(3)`))).rejects.toMatchObject({ code: "57014" });
+    await expect(within(5_000, withOwnTransaction((t) => t`select pg_sleep(3)`))).rejects.toMatchObject({ code: "57014" });
     const release = await hold((t) => t`select 1 from merchant_sequences where merchant_id = ${m.merchantId} for update`);
     try {
       await expect(within(5_000, withTransaction((t) => t.sql`select 1 from merchant_sequences where merchant_id = ${m.merchantId} for update`))).rejects.toMatchObject({ code: "55P03" });
+      await expect(within(5_000, withOwnTransaction((t) => t`select 1 from merchant_sequences where merchant_id = ${m.merchantId} for update`))).rejects.toMatchObject({ code: "55P03" });
     } finally {
       await release();
     }
@@ -101,10 +105,13 @@ describe("bounded waits", () => {
     const release = await hold((t) => t`select 1 from merchant_sequences where merchant_id = ${m.merchantId} for update`);
     try {
       const waiter = withTransaction((t) => t.sql`select 1 from merchant_sequences where merchant_id = ${m.merchantId} for update`).catch(() => undefined);
-      await new Promise((r) => setTimeout(r, 150));
-      const snap = await databaseSnapshot(db.sql);
-      const blocked = snap.sessions.find((s) => (s.blocked_by as number[]).length > 0);
-      expect(blocked, JSON.stringify(snap)).toBeDefined();
+      // Read until the waiter is seen waiting (it has DB_LOCK_TIMEOUT_MS before it gives up).
+      let snap = await databaseSnapshot(db.sql);
+      for (let i = 0; i < 20 && !snap.sessions.some((s) => (s.blocked_by as number[]).length > 0); i++) {
+        await new Promise((r) => setTimeout(r, 15));
+        snap = await databaseSnapshot(db.sql);
+      }
+      expect(snap.sessions.find((s) => (s.blocked_by as number[]).length > 0), JSON.stringify(snap)).toBeDefined();
       expect(snap.waiting_locks.length).toBeGreaterThan(0);
       await waiter;
     } finally {

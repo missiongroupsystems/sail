@@ -32,7 +32,7 @@ Read in `packages/server/src/config.ts`; `packages/server/.env.example` has a te
 | `ALLOW_POOLER_LISTEN` | `1` skips the port 5432 check, for a direct connection on another port. | No |
 | `DB_POOL_MAX` | Pool size per process (default 10). | No |
 | `TX_MAX`, `QUEUE_MAX`, `QUEUE_WAIT_MS` | Admission gate: concurrent request transactions (6), queued requests (64) and how long one waits (10000 ms) before a 503. | No |
-| `DB_LOCK_TIMEOUT_MS`, `DB_STATEMENT_TIMEOUT_MS` | The longest a transaction waits for a lock (5000 ms) and runs one statement (20000 ms). Past either, the request is rolled back and answers 503 `overloaded`, so it never goes unanswered. | No |
+| `DB_LOCK_TIMEOUT_MS`, `DB_STATEMENT_TIMEOUT_MS` | The longest a transaction waits for each lock (5000 ms) and runs each statement (20000 ms). Past either, the request is rolled back and answers 503 `overloaded`, so it never goes unanswered. | No |
 | `SLOW_REQUEST_LOG_MS` | Diagnostics, off by default: a request unanswered after this many ms is logged once with the admission gate's counters and the database's sessions and waiting locks. | No |
 | `CORS_ORIGIN` | Comma-separated origins allowed to call the API. Default `*`. | No |
 | `SESSION_TOKEN_SECRET` | Signs back-office sessions from the built-in sign-in. At least 16 characters, 32 in production. | Yes |

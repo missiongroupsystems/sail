@@ -156,6 +156,7 @@ test("E-N3, E-N4, E-N2: an overnight availability rule saves, is marked next day
   // The rule limits Kopi, which later tests order: whatever happens here, no rule this test made outlives it.
   type Rule = { id: string };
   const before = new Set((await register<{ data: Rule[] }>("GET", "/v1/availability-rules")).data.map((r) => r.id));
+  let passed = false;
   try {
     await officeSignIn(page);
     await page.goto(`${WEB}/menu/availability`);
@@ -185,11 +186,19 @@ test("E-N3, E-N4, E-N2: an overnight availability rule saves, is marked next day
     await edit.getByRole("button", { name: "Delete rule" }).click();
     await expect(edit).toBeHidden();
     await expect(page.getByRole("row").filter({ hasText: "(next day)" })).toHaveCount(0);
+    passed = true;
   } finally {
+    // Delete what this test made, retrying while the register is busy (a delete the page sent may land in between). When
+    // the test already failed, that failure stays the one reported.
     const made = async () => (await register<{ data: Rule[] }>("GET", "/v1/availability-rules")).data.filter((r) => !before.has(r.id));
-    // A delete the page sent may still land in between, so a 404 here is fine; what matters is that none is left.
-    for (const r of await made()) await register("DELETE", `/v1/availability-rules/${r.id}`, {}).catch(() => undefined);
-    expect(await made(), "availability rules this test left behind").toEqual([]);
+    const cleanUp = expect
+      .poll(async () => {
+        for (const r of await made()) await register("DELETE", `/v1/availability-rules/${r.id}`, {}).catch(() => undefined);
+        return (await made()).length;
+      }, { message: "availability rules this test left behind", timeout: 30_000 })
+      .toBe(0);
+    if (passed) await cleanUp;
+    else await cleanUp.catch(() => undefined);
   }
 });
 
