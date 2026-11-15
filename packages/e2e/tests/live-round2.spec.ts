@@ -153,34 +153,44 @@ test("E-M7: a Manager is not offered what needs an Admin, and a Server's refused
 test("E-N3, E-N4, E-N2: an overnight availability rule saves, is marked next day and can be deleted; a refusal clears when the sheet closes", async ({ page, watch }) => {
   test.setTimeout(300_000);
   watch.allow({ status: 400, url: /\/v1\/availability-rules/, why: "a window ending when it starts is refused on purpose" });
-  await officeSignIn(page);
-  await page.goto(`${WEB}/menu/availability`);
-  const add = async (from: string, until: string) => {
+  // The rule limits Kopi, which later tests order: whatever happens here, no rule this test made outlives it.
+  type Rule = { id: string };
+  const before = new Set((await register<{ data: Rule[] }>("GET", "/v1/availability-rules")).data.map((r) => r.id));
+  try {
+    await officeSignIn(page);
+    await page.goto(`${WEB}/menu/availability`);
+    const add = async (from: string, until: string) => {
+      await page.getByRole("button", { name: "Add availability rule" }).click();
+      const sheet = page.getByRole("dialog", { name: "New availability rule" });
+      await sheet.getByRole("searchbox", { name: "Product" }).fill("Kopi");
+      await sheet.getByRole("list", { name: "Results" }).getByRole("button").first().click();
+      await sheet.getByLabel("From").fill(from);
+      await sheet.getByLabel("Until").fill(until);
+      await sheet.getByRole("button", { name: "Add rule" }).click();
+      return sheet;
+    };
+    const refused = await add("10:00", "10:00");
+    await expect(refused.getByText("The window ends when it starts")).toBeVisible();
+    await refused.getByRole("button", { name: "Cancel" }).click();
     await page.getByRole("button", { name: "Add availability rule" }).click();
-    const sheet = page.getByRole("dialog", { name: "New availability rule" });
-    await sheet.getByRole("searchbox", { name: "Product" }).fill("Kopi");
-    await sheet.getByRole("list", { name: "Results" }).getByRole("button").first().click();
-    await sheet.getByLabel("From").fill(from);
-    await sheet.getByLabel("Until").fill(until);
-    await sheet.getByRole("button", { name: "Add rule" }).click();
-    return sheet;
-  };
-  const refused = await add("10:00", "10:00");
-  await expect(refused.getByText("The window ends when it starts")).toBeVisible();
-  await refused.getByRole("button", { name: "Cancel" }).click();
-  await page.getByRole("button", { name: "Add availability rule" }).click();
-  await expect(page.getByRole("dialog", { name: "New availability rule" }).getByText("The window ends when it starts")).toHaveCount(0);
-  await page.getByRole("dialog", { name: "New availability rule" }).getByRole("button", { name: "Cancel" }).click();
-  const saved = await add("22:00", "02:00");
-  await expect(saved).toBeHidden();
-  const row = page.getByRole("row").filter({ hasText: "(next day)" }).first();
-  await expect(row).toBeVisible();
-  await row.click();
-  const edit = page.getByRole("dialog", { name: "Availability rule" });
-  await edit.getByRole("button", { name: "Delete rule" }).click();
-  await edit.getByRole("button", { name: "Delete rule" }).click();
-  await expect(edit).toBeHidden();
-  await expect(page.getByRole("row").filter({ hasText: "(next day)" })).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "New availability rule" }).getByText("The window ends when it starts")).toHaveCount(0);
+    await page.getByRole("dialog", { name: "New availability rule" }).getByRole("button", { name: "Cancel" }).click();
+    const saved = await add("22:00", "02:00");
+    await expect(saved).toBeHidden();
+    const row = page.getByRole("row").filter({ hasText: "(next day)" }).first();
+    await expect(row).toBeVisible();
+    await row.click();
+    const edit = page.getByRole("dialog", { name: "Availability rule" });
+    await edit.getByRole("button", { name: "Delete rule" }).click();
+    await edit.getByRole("button", { name: "Delete rule" }).click();
+    await expect(edit).toBeHidden();
+    await expect(page.getByRole("row").filter({ hasText: "(next day)" })).toHaveCount(0);
+  } finally {
+    const made = async () => (await register<{ data: Rule[] }>("GET", "/v1/availability-rules")).data.filter((r) => !before.has(r.id));
+    // A delete the page sent may still land in between, so a 404 here is fine; what matters is that none is left.
+    for (const r of await made()) await register("DELETE", `/v1/availability-rules/${r.id}`, {}).catch(() => undefined);
+    expect(await made(), "availability rules this test left behind").toEqual([]);
+  }
 });
 
 test("E-N8, E-L13: the audit names actions in words and filters sign-ins and daily caps", async ({ page }) => {
