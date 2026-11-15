@@ -1,0 +1,41 @@
+# A one-machine demo of Sail on Fly.io: the API, the worker and the card-terminal simulator in one machine
+# (start.sh), with migrations as the release command. Not a production layout: see examples/fly/fly.toml for that.
+# The app name and region are not in this file; every command passes them (--app, --primary-region), so the file is
+# the same for anyone's demo. README.md in this folder has the commands.
+#
+# Secrets (fly secrets): DATABASE_URL, LISTEN_DATABASE_URL, MIGRATE_DATABASE_URL, the five *_TOKEN_SECRET values,
+# WEB_APP_URL, GUEST_APP_URL and CORS_ORIGIN. The last three are not secret, but they name the demo's web apps.
+
+[deploy]
+  # Runs in a temporary machine from the new image before the app machine is replaced; a failed migration stops the deploy.
+  release_command = "node dist/migrate.js"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  LOG_LEVEL = "info"
+  # start.sh runs the simulator on this address, inside the machine only.
+  PAYMENT_SIMULATOR_URL = "http://127.0.0.1:4010"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # A stopped machine takes long enough to wake that a till's first tap times out, so the demo machine never stops.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+  [http_service.concurrency]
+    # Every open POS, kitchen display and guest phone holds an event stream, which counts as a connection.
+    type = "connections"
+    soft_limit = 200
+    hard_limit = 400
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

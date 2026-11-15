@@ -1,0 +1,420 @@
+import { createHmac, randomUUID } from "node:crypto";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import "../src/modules.js";
+import { buildApp, type App } from "../src/app.js";
+import { withTransaction } from "../src/db/client.js";
+import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
+import { resetGuestRateLimitsForTests, revokeStaleSessions } from "../src/services/guest.js";
+import { startListener, stopListener } from "../src/sse/listener.js";
+import { api, freshDb, readSse, seedMerchant, TEST_SECRETS, type SeededMerchant, type TestDb, sgSeedRules } from "./helpers.js";
+
+let db: TestDb;
+let app: App;
+let A: SeededMerchant;
+let call: ReturnType<typeof api>["call"];
+let serverPin: string;
+let cashierPin: string;
+const ids = { laksa: randomUUID(), kopi: randomUUID(), prawn: randomUUID(), protein: randomUUID(), menu: randomUUID(), posLink: randomUUID(), qrLink: randomUUID(), area: randomUUID(), table12: randomUUID(), table13: randomUUID(), station: randomUUID(), kitchen: randomUUID(), slipPrinter: randomUUID(), cash: randomUUID() };
+let qrUrl12: string;
+let qrUrl13: string;
+const tokenFrom = (url: string) => url.split("/t/")[1]!;
+
+type Session = { guest_token: string; session_id: string; settings: Record<string, unknown>; table: { name: string }; order_open: boolean; can_order: boolean; hold_orders: boolean; service_requests: string[] };
+type Snap = { id: string; version: number; status: string; lines: { id: string; status: string; source: string; round_id: string | null }[]; totals: { total: number }; checks: { id: string; totals: { total: number } }[] };
+
+const guestCall = <T,>(method: string, path: string, token: string, body?: unknown) => call<T>(method, path, { token, body });
+
+beforeAll(async () => {
+  db = await freshDb({ GUEST_APP_URL: "https://order.example.test" });
+  app = buildApp();
+  call = api(app).call;
+  A = await seedMerchant(db.sql, "Alpha");
+  await withTransaction(() => seedRulesForMerchant(A.merchantId, sgSeedRules(A)));
+  const t = A.admin.token;
+  await call("POST", "/v1/products", { token: t, body: { id: ids.prawn, name: "Prawn", price: 200, kind: "component" } });
+  await call("POST", "/v1/modifier-groups", { token: t, body: { id: ids.protein, name: "Protein", min_select: 1, max_select: 1, options: [{ product_id: ids.prawn }] } });
+  await call("POST", "/v1/products", { token: t, body: { id: ids.laksa, name: "Laksa", price: 1600, tags: ["kitchen"], modifier_group_ids: [ids.protein] } });
+  await call("POST", "/v1/products", { token: t, body: { id: ids.kopi, name: "Kopi", price: 180, tags: ["kitchen"] } });
+  await call("POST", "/v1/menus", { token: t, body: { id: ids.menu, brand_id: A.brandId, name: "M", sections: [{ name: "All", items: [{ product_id: ids.laksa }, { product_id: ids.kopi }] }] } });
+  await call("POST", "/v1/channel-links", { token: t, body: { id: ids.posLink, channel: "pos", outlet_id: A.outletId, brand_id: A.brandId, menu_id: ids.menu } });
+  await call("POST", "/v1/printers", { token: t, body: { id: ids.kitchen, outlet_id: A.outletId, name: "Kitchen", ip: "10.0.0.1", include_tags: ["kitchen"] } });
+  await call("POST", "/v1/printers", { token: t, body: { id: ids.slipPrinter, outlet_id: A.outletId, name: "Pass", ip: "10.0.0.2", is_default_kitchen: true } });
+  await call("POST", "/v1/channel-links", { token: t, body: { id: ids.qrLink, channel: "scan_to_order", outlet_id: A.outletId, brand_id: A.brandId, menu_id: ids.menu, hold_orders: true, service_requests: ["Water", "Cutlery"], service_request_printer_id: ids.slipPrinter } });
+  await call("POST", "/v1/areas", { token: t, body: { id: ids.area, outlet_id: A.outletId, name: "Main" } });
+  await call("POST", "/v1/tables", { token: t, body: { id: ids.table12, outlet_id: A.outletId, area_id: ids.area, name: "12" } });
+  await call("POST", "/v1/tables", { token: t, body: { id: ids.table13, outlet_id: A.outletId, area_id: ids.area, name: "13" } });
+  await call("POST", "/v1/tender-types", { token: t, body: { id: ids.cash, name: "Cash", is_cash: true } });
+  // Cash goes into a shift's drawer: one outlet-wide shift for the file.
+  expect((await call("POST", "/v1/shifts", { token: t, body: { outlet_id: A.outletId, station_id: null, float_cents: 0 } })).status).toBe(201);
+  await call("POST", "/v1/stations", { token: t, body: { id: ids.station, outlet_id: A.outletId, brand_id: A.brandId, name: "Floor" } });
+  const code = await call<{ data: { code: string } }>("POST", `/v1/stations/${ids.station}/pairing-code`, { token: t, body: {} });
+  const paired = await call<{ data: { station_token: string } }>("POST", "/v1/stations/pair", { body: { code: code.body.data.code, device_label: "iPad" }, idempotencyKey: null });
+  const signIn = async (pin: string) => (await call<{ data: { session_token: string } }>("POST", "/v1/stations/sessions", { token: paired.body.data.station_token, body: { pin } })).body.data.session_token;
+  serverPin = await signIn("444444");
+  cashierPin = await signIn("333333");
+  qrUrl12 = (await call<{ data: { url: string } }>("POST", `/v1/tables/${ids.table12}/qr/rotate`, { token: t, body: {} })).body.data.url;
+  qrUrl13 = (await call<{ data: { url: string } }>("POST", `/v1/tables/${ids.table13}/qr/rotate`, { token: t, body: {} })).body.data.url;
+  await startListener();
+});
+afterAll(async () => {
+  await stopListener();
+  await db.drop();
+});
+
+describe("Scan to Order", () => {
+  it("rotating a token issues a guest-app URL; the QR sheet reprints the live codes and never rotates them; rotating them all is its own action; only Admin may do any of it", async () => {
+    expect(qrUrl12).toMatch(/^https:\/\/order\.example\.test\/t\/[A-Za-z0-9_-]+$/);
+    expect((await call("POST", `/v1/tables/${ids.table12}/qr/rotate`, { token: A.manager.token, body: {} })).status).toBe(403);
+    expect((await call("POST", `/v1/outlets/${A.outletId}/qr/rotate`, { token: A.manager.token, body: {} })).status).toBe(403);
+    const sheet = async () => {
+      const pdf = await app.request(`/v1/outlets/${A.outletId}/qr-sheet.pdf`, { method: "POST", headers: { authorization: `Bearer ${A.admin.token}`, "content-type": "application/json", "idempotency-key": randomUUID() }, body: "{}" });
+      expect(pdf.status).toBe(200);
+      expect(Buffer.from(await pdf.arrayBuffer()).subarray(0, 4).toString()).toBe("%PDF");
+    };
+    const alive = async (url: string, device: string) => (await call("POST", "/v1/guest/sessions", { body: { token: tokenFrom(url), device_id: device }, idempotencyKey: null })).status;
+    // Downloading the sheet, twice, leaves the codes on the tables working.
+    await sheet();
+    await sheet();
+    expect(await alive(qrUrl12, "device-live-0001")).toBe(201);
+    // A code the sheet cannot print again (one made before codes were derived) is never replaced quietly: the sheet is refused and names the table.
+    const [row] = await db.sql<{ id: string }[]>`select id from table_qr_tokens where table_id = ${ids.table13} and rotated_at is null`;
+    await db.sql`update table_qr_tokens set token_hash = 'legacy-random-code' where id = ${row!.id}`;
+    const refused = await app.request(`/v1/outlets/${A.outletId}/qr-sheet.pdf`, { method: "POST", headers: { authorization: `Bearer ${A.admin.token}`, "content-type": "application/json", "idempotency-key": randomUUID() }, body: "{}" });
+    expect(refused.status).toBe(409);
+    const body = (await refused.json()) as { message: string; remedy: string };
+    expect(body.message).toMatch(/cannot be printed again/);
+    expect(body.remedy).toMatch(/Rotate every code/);
+    expect(await alive(qrUrl12, "device-live-0002")).toBe(201);
+    // A phone that opened the table before a rotation is signed out by it, not only new scans of the old card.
+    const before = (await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl12), device_id: "device-live-0003" }, idempotencyKey: null })).body.data.guest_token;
+    const menuPath = `/v1/channel-links/${ids.qrLink}/menu`;
+    expect((await guestCall("GET", menuPath, before)).status).toBe(200);
+    qrUrl12 = (await call<{ data: { url: string } }>("POST", `/v1/tables/${ids.table12}/qr/rotate`, { token: A.admin.token, body: {} })).body.data.url;
+    const ended = await guestCall("GET", menuPath, before);
+    expect(ended.status).toBe(401);
+    // The phone is told the table has a new code (D-N1), not offered a Start again that dead-ends.
+    expect(ended.body).toMatchObject({ message: "This table has a new QR code", details: { reason: "code_rotated" } });
+    // Rotating every code is a separate, deliberate action: the earlier URLs are dead after it.
+    const rotated = await call<{ data: { rotated: number } }>("POST", `/v1/outlets/${A.outletId}/qr/rotate`, { token: A.admin.token, body: {} });
+    expect(rotated.status, JSON.stringify(rotated.body)).toBe(200);
+    expect(rotated.body.data.rotated).toBeGreaterThanOrEqual(2);
+    expect(await alive(qrUrl12, "device-dead-0001")).toBe(404);
+    const stale = await call<{ message: string; details: { reason: string } }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl12), device_id: "device-dead-0002" }, idempotencyKey: null });
+    expect(stale.body).toMatchObject({ message: "This table has a new QR code", details: { reason: "code_rotated" } });
+    expect((await call<{ message: string }>("POST", "/v1/guest/sessions", { body: { token: "not-a-code-at-all", device_id: "device-dead-0003" }, idempotencyKey: null })).body.message).not.toMatch(/new QR code/);
+    qrUrl12 = (await call<{ data: { url: string } }>("POST", `/v1/tables/${ids.table12}/qr/rotate`, { token: A.admin.token, body: {} })).body.data.url;
+    qrUrl13 = (await call<{ data: { url: string } }>("POST", `/v1/tables/${ids.table13}/qr/rotate`, { token: A.admin.token, body: {} })).body.data.url;
+  });
+
+  it("a photographed QR code for a table with no open order cannot create an order (default setting), but can browse the menu", async () => {
+    const s = await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl12), device_id: "device-aaaa-0001" }, idempotencyKey: null });
+    expect(s.status, JSON.stringify(s.body)).toBe(201);
+    expect(s.body.data).toMatchObject({ order_open: false, can_order: false, hold_orders: true, service_requests: ["Water", "Cutlery"] });
+    // The guest app formats with the merchant's settings, not the phone's.
+    expect(s.body.data.settings).toEqual({ currency: "SGD", locale: "en-SG", timezone: "Asia/Singapore", currency_exponent: 2 });
+    expect(s.body.data.table.name).toBe("12");
+    const g = s.body.data.guest_token;
+    const menu = await guestCall<{ data: { products: Record<string, { price: number }>; channel_link: { channel: string } } }>("GET", `/v1/channel-links/${ids.qrLink}/menu`, g);
+    expect(menu.status, JSON.stringify(menu.body)).toBe(200);
+    expect(menu.body.data.products[ids.laksa]!.price).toBe(1600);
+    expect(menu.body.data.channel_link.channel).toBe("scan_to_order");
+    const round = await guestCall<{ code: string; details: Record<string, unknown> }>("POST", "/v1/guest/rounds", g, { round_id: randomUUID(), lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] });
+    expect(round.status).toBe(409);
+    expect(round.body.details).toMatchObject({ table_not_open: true });
+    // Guests cannot touch staff endpoints or other tables.
+    expect((await guestCall("GET", `/v1/outlets/${A.outletId}/orders`, g)).status).toBe(403);
+    expect((await guestCall("GET", "/v1/staff", g)).status).toBe(403);
+    expect((await guestCall("GET", `/v1/channel-links/${ids.posLink}/menu`, g)).status).toBe(200); // same outlet's POS menu is still just a menu
+  });
+
+  it("a guest who scanned before the table was seated is bound to the table's order on the next read, without a new session", async () => {
+    const s = await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl12), device_id: "device-aaaa-0001-early" }, idempotencyKey: null });
+    const g = s.body.data.guest_token;
+    const before = await guestCall<{ data: { can_order: boolean; order_open: boolean; order: null } }>("GET", "/v1/guest/order", g);
+    expect(before.body.data).toMatchObject({ can_order: false, order_open: false, order: null });
+    expect((await guestCall("GET", "/v1/guest/stream", g)).status).toBe(409);
+    const seated = await call<{ data: Snap }>("POST", "/v1/orders", { token: serverPin, body: { order_id: randomUUID(), order_type: "dine_in", table_id: ids.table12, pax: 2 } });
+    expect(seated.status).toBe(201);
+    const after = await guestCall<{ data: { can_order: boolean; order_open: boolean; order: { id: string } } }>("GET", "/v1/guest/order", g);
+    expect(after.body.data).toMatchObject({ can_order: true, order_open: true });
+    expect(after.body.data.order.id).toBe(seated.body.data.id);
+    const round = await guestCall<{ data: { status: string } }>("POST", "/v1/guest/rounds", g, { round_id: randomUUID(), lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] });
+    expect(round.status, JSON.stringify(round.body)).toBe(201);
+    const stream = await app.request("/v1/guest/stream", { headers: { authorization: `Bearer ${g}` } });
+    expect(stream.status).toBe(200);
+    expect((await readSse(stream, 1, 2000))[0]!.event).toBe("hello");
+    // Leave table 12 free for the next scenario.
+    for (const r of (await call<{ data: { id: string }[] }>("GET", `/v1/outlets/${A.outletId}/rounds?status=pending`, { token: serverPin })).body.data) await call("POST", `/v1/rounds/${r.id}/reject`, { token: serverPin, body: { reason: "test" } });
+    expect((await call("POST", `/v1/orders/${seated.body.data.id}/cancel`, { token: serverPin, body: { reason: "test" } })).status).toBe(200);
+  });
+
+  it("with the table seated, a guest round waits for acceptance, staff accept it, it fires and prints, and the guest sees statuses; a QR order reaches the POS stream", async () => {
+    const seated = await call<{ data: Snap }>("POST", "/v1/orders", { token: serverPin, body: { order_id: randomUUID(), order_type: "dine_in", table_id: ids.table12, pax: 2 } });
+    expect(seated.status).toBe(201);
+    const s = await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl12), device_id: "device-bbbb-0002", guest_name: "Wei" }, idempotencyKey: null });
+    expect(s.body.data).toMatchObject({ order_open: true, can_order: true });
+    const g = s.body.data.guest_token;
+
+    const posStream = await app.request(`/v1/outlets/${A.outletId}/stream`, { headers: { authorization: `Bearer ${serverPin}` } });
+    const pending = readSse(posStream, 3, 5000);
+    await new Promise((r) => setTimeout(r, 100));
+
+    const bad = await guestCall<{ code: string; message: string }>("POST", "/v1/guest/rounds", g, { round_id: randomUUID(), lines: [{ line_id: randomUUID(), product_id: ids.laksa, quantity: 1 }] });
+    expect(bad.status).toBe(400);
+    expect(bad.body.message).toMatch(/Choose 1 more: Protein/);
+    const roundId = randomUUID();
+    const t0 = Date.now();
+    const round = await guestCall<{ data: { status: string; lines: { status: string; source: string; mine: boolean }[]; rounds: { id: string; status: string; mine: boolean }[] } }>("POST", "/v1/guest/rounds", g, { round_id: roundId, lines: [{ line_id: randomUUID(), product_id: ids.laksa, quantity: 1, modifiers: [{ group_id: ids.protein, product_id: ids.prawn }], notes: "less spicy" }, { line_id: randomUUID(), product_id: ids.kopi, quantity: 2 }] });
+    expect(round.status, JSON.stringify(round.body)).toBe(201);
+    expect(round.body.data.status).toBe("pending");
+    expect(round.body.data.lines.map((l) => [l.status, l.source, l.mine])).toEqual([["held", "guest", true], ["held", "guest", true]]);
+    const got = await pending;
+    expect(Date.now() - t0).toBeLessThan(2000); // the QR round reaches the POS within 2 s
+    expect(got.map((e) => (e.data as { type?: string }).type ?? e.event)).toEqual(["hello", "round.submitted", "order.repriced"]);
+
+    // Staff see the pending round on the floor and in the list; a server accepts; it fires and prints.
+    const floor = await call<{ data: { tables: { id: string; order: { pending_rounds: number } | null }[] } }>("GET", `/v1/outlets/${A.outletId}/floor`, { token: serverPin });
+    expect(floor.body.data.tables.find((t) => t.id === ids.table12)!.order!.pending_rounds).toBe(1);
+    const list = await call<{ data: { id: string; table_name: string; lines: { name: string; notes: string | null }[] }[] }>("GET", `/v1/outlets/${A.outletId}/rounds?status=pending`, { token: serverPin });
+    expect(list.body.data[0]).toMatchObject({ id: roundId, table_name: "12" });
+    expect(list.body.data[0]!.lines.map((l) => l.name)).toEqual(["Laksa", "Kopi"]);
+    const accepted = await call<{ data: Snap; events: { type: string }[] }>("POST", `/v1/rounds/${roundId}/accept`, { token: serverPin, body: {} });
+    expect(accepted.status, JSON.stringify(accepted.body)).toBe(200);
+    expect(accepted.body.data.lines.filter((l) => l.round_id === roundId).every((l) => l.status === "fired")).toBe(true);
+    expect(accepted.body.data.status).toBe("fired");
+    const jobs = await call<{ data: { kind: string; text: string }[] }>("GET", `/v1/outlets/${A.outletId}/print-jobs?order_id=${seated.body.data.id}`, { token: serverPin });
+    expect(jobs.body.data.filter((j) => j.kind === "kitchen")).toHaveLength(1);
+    expect(jobs.body.data[0]!.text).toMatch(/LESS SPICY/i);
+    type Totals = { tax_mode: string; subtotal: number; adjustments: { name: string; total: number }[]; taxes: { name: string; amount: number }[]; total: number };
+    const view = await guestCall<{ data: { rounds: { status: string }[]; order: { status: string }; lines: { name: string; amount: number }[]; totals: Totals } }>("GET", "/v1/guest/order", g);
+    expect(view.body.data.rounds[0]!.status).toBe("fired");
+    expect(view.body.data.order.status).toBe("fired");
+    // The table's totals as the register priced the order, figure for figure; each line carries its amount.
+    const staffView = (await call<{ data: { totals: { subtotal: number; tax_mode: string; taxes: { name: string; bps: number; amount: number }[]; total: number }; adjustments: { name: string; total: number }[]; lines: { name: string; amounts: { base: number } }[] } }>("GET", `/v1/orders/${seated.body.data.id}`, { token: serverPin })).body.data;
+    expect(view.body.data.totals).toEqual({ tax_mode: staffView.totals.tax_mode, subtotal: staffView.totals.subtotal, adjustments: staffView.adjustments.filter((a) => a.total !== 0).map((a) => ({ name: a.name, total: a.total })), taxes: staffView.totals.taxes.map((t) => ({ name: t.name, bps: t.bps, amount: t.amount })), total: staffView.totals.total });
+    expect(view.body.data.totals.subtotal).toBe(1800 + 360);
+    expect(view.body.data.totals.adjustments.length).toBeGreaterThan(0); // the seed's service charge
+    expect(view.body.data.lines.map((l) => [l.name, l.amount])).toEqual(staffView.lines.map((l) => [l.name, l.amounts.base]));
+    expect(JSON.stringify(view.body)).not.toMatch(/"(paid_total|balance|payments|checks)"/); // payments stay at the POS
+    // The guest stream signals order changes.
+    const gs = await app.request("/v1/guest/stream", { headers: { authorization: `Bearer ${g}` } });
+    expect(gs.status).toBe(200);
+    const gPending = readSse(gs, 2, 4000);
+    await new Promise((r) => setTimeout(r, 100));
+    await call("POST", `/v1/orders/${seated.body.data.id}/ready`, { token: serverPin, body: {} });
+    const gGot = await gPending;
+    expect(gGot[0]!.event).toBe("hello");
+    expect((gGot[1]!.data as { type: string }).type).toBe("order.status_changed");
+    // Accepting twice is a clean state conflict; rejecting a second round removes its lines.
+    expect((await call("POST", `/v1/rounds/${roundId}/accept`, { token: serverPin, body: {} })).status).toBe(409);
+    await resetGuestRateLimitsForTests();
+    const round2 = randomUUID();
+    await guestCall("POST", "/v1/guest/rounds", g, { round_id: round2, lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] });
+    const rejected = await call<{ data: Snap }>("POST", `/v1/rounds/${round2}/reject`, { token: serverPin, body: { reason: "Kitchen closed" } });
+    expect(rejected.status).toBe(200);
+    expect(rejected.body.data.lines.filter((l) => l.round_id === round2).every((l) => l.status === "voided")).toBe(true);
+    const view2 = await guestCall<{ data: { rounds: { id: string; status: string; reject_reason: string | null }[] } }>("GET", "/v1/guest/order", g);
+    expect(view2.body.data.rounds.find((r) => r.id === round2)).toMatchObject({ status: "rejected", reject_reason: "Kitchen closed" });
+    // D-8: the turned-down round still lists its item, voided, so the guest sees what was not accepted.
+    const view2Lines = (view2.body.data as unknown as { lines: { name: string; status: string; round_id: string | null }[] }).lines;
+    expect(view2Lines.filter((l) => l.round_id === round2).map((l) => [l.name, l.status])).toEqual([["Kopi", "voided"]]);
+    // A line of an accepted round that staff void later is the POS's business: it leaves the guest's view.
+    await resetGuestRateLimitsForTests();
+    const round3 = randomUUID();
+    const kopiLine = randomUUID();
+    await guestCall("POST", "/v1/guest/rounds", g, { round_id: round3, lines: [{ line_id: kopiLine, product_id: ids.kopi, quantity: 1 }] });
+    expect((await call("POST", `/v1/rounds/${round3}/accept`, { token: serverPin, body: {} })).status).toBe(200);
+    const kopi = { id: kopiLine };
+    const before = (await guestCall<{ data: { lines: { id: string; status: string }[] } }>("GET", "/v1/guest/order", g)).body.data.lines;
+    expect(before.find((l) => l.id === kopi.id)?.status).toBe("fired");
+    const voided = await call("POST", `/v1/orders/${seated.body.data.id}/lines/${kopi.id}/void`, { token: A.admin.token, body: { reason_text: "Spilt at the pass" } });
+    expect(voided.status, JSON.stringify(voided.body)).toBe(200);
+    const view3Lines = (await guestCall<{ data: { lines: { id: string; status: string; round_id: string | null }[] } }>("GET", "/v1/guest/order", g)).body.data.lines;
+    expect(view3Lines.find((l) => l.id === kopi.id)).toBeUndefined();
+    expect(view3Lines.filter((l) => l.round_id === round2).map((l) => l.status)).toEqual(["voided"]);
+  });
+
+  it("table requests reach the POS, print a slip, and call-for-bill marks the table; rate limits hold", async () => {
+    const s = await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl12), device_id: "device-cccc-0003" }, idempotencyKey: null });
+    const g = s.body.data.guest_token;
+    expect((await guestCall<{ code: string }>("POST", "/v1/guest/requests", g, { type: "Champagne" })).status).toBe(400);
+    const water = await guestCall<{ data: { id: string; type: string; status: string } }>("POST", "/v1/guest/requests", g, { type: "Water" });
+    expect(water.status, JSON.stringify(water.body)).toBe(201);
+    const again = await guestCall<{ code: string; details: { retry_after_seconds: number } }>("POST", "/v1/guest/requests", g, { type: "Water" });
+    expect(again.status).toBe(429);
+    expect(again.body.details.retry_after_seconds).toBeGreaterThan(0);
+    const bill = await guestCall<{ data: { id: string } }>("POST", "/v1/guest/requests", g, { type: "call_for_bill" });
+    expect(bill.status).toBe(201);
+    const floor = await call<{ data: { tables: { id: string; status: string; requests_waiting: number }[] } }>("GET", `/v1/outlets/${A.outletId}/floor`, { token: serverPin });
+    const t12 = floor.body.data.tables.find((t) => t.id === ids.table12)!;
+    expect(t12.status).toBe("bill_requested");
+    expect(t12.requests_waiting).toBe(2);
+    const slips = await call<{ data: { kind: string; printer_id: string; text: string }[] }>("GET", `/v1/outlets/${A.outletId}/print-jobs?status=queued`, { token: serverPin });
+    const slip = slips.body.data.filter((j) => j.kind === "service_slip");
+    expect(slip.length).toBe(2);
+    expect(slip.every((j) => j.printer_id === ids.slipPrinter)).toBe(true);
+    const open = await call<{ data: { id: string; type: string; table_name: string }[] }>("GET", `/v1/outlets/${A.outletId}/service-requests?status=open`, { token: cashierPin });
+    expect(open.body.data.map((r) => r.type)).toEqual(["Water", "call_for_bill"]);
+    const ack = await call<{ data: { status: string } }>("POST", `/v1/service-requests/${water.body.data.id}/acknowledge`, { token: serverPin, body: {} });
+    expect(ack.body.data.status).toBe("acknowledged");
+    expect((await call("POST", `/v1/service-requests/${water.body.data.id}/acknowledge`, { token: serverPin, body: {} })).status).toBe(404);
+    // Burst of sign-ins from one device is rate-limited.
+    await resetGuestRateLimitsForTests();
+    let limited = 0;
+    for (let i = 0; i < 12; i++) {
+      const r = await call("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl13), device_id: "device-burst-0009" }, idempotencyKey: null });
+      if (r.status === 429) limited++;
+    }
+    expect(limited).toBe(2);
+    await resetGuestRateLimitsForTests();
+  });
+
+  it("a guest and a station adding to the same order at once both succeed with no lost lines; the session ends when the order is paid", async () => {
+    const orderId = (await call<{ data: Snap[] }>("GET", `/v1/outlets/${A.outletId}/orders?table_id=${ids.table12}&open_only=true`, { token: serverPin })).body.data[0]!.id;
+    const s = await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl12), device_id: "device-dddd-0004" }, idempotencyKey: null });
+    const g = s.body.data.guest_token;
+    const [guestRound, staffAdd] = await Promise.all([
+      guestCall<{ data: { status: string } }>("POST", "/v1/guest/rounds", g, { round_id: randomUUID(), lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] }),
+      call<{ data: Snap }>("POST", `/v1/orders/${orderId}/lines`, { token: serverPin, body: { lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 3 }] } }),
+    ]);
+    expect(guestRound.status).toBe(201);
+    expect(staffAdd.status).toBe(200);
+    const snap = await call<{ data: Snap }>("GET", `/v1/orders/${orderId}`, { token: serverPin });
+    const live = snap.body.data.lines.filter((l) => l.status !== "voided");
+    expect(live.filter((l) => l.source === "guest")).toHaveLength(3); // 2 from the accepted round + 1 held
+    expect(live.filter((l) => l.source === "pos")).toHaveLength(1);
+    // Pay and close: guest session revoked.
+    const pendingRounds = await call<{ data: { id: string }[] }>("GET", `/v1/outlets/${A.outletId}/rounds?status=pending`, { token: serverPin });
+    for (const r of pendingRounds.body.data) await call("POST", `/v1/rounds/${r.id}/accept`, { token: serverPin, body: {} });
+    await call("POST", `/v1/orders/${orderId}/fire`, { token: serverPin, body: {} });
+    const current = await call<{ data: Snap }>("GET", `/v1/orders/${orderId}`, { token: cashierPin });
+    const paid = await call<{ data: Snap }>("POST", `/v1/checks/${current.body.data.checks[0]!.id}/payments`, { token: cashierPin, body: { payment_id: randomUUID(), tender_type_id: ids.cash, amount: current.body.data.checks[0]!.totals.total } });
+    expect(paid.status, JSON.stringify(paid.body)).toBe(200);
+    expect(paid.body.data.status).toBe("completed");
+    const afterClose = await guestCall<{ code: string; remedy: string }>("GET", "/v1/guest/order", g);
+    expect(afterClose.status).toBe(401);
+    expect(afterClose.body.remedy).toMatch(/Scan the table/);
+    expect(await withTransaction(() => revokeStaleSessions())).toBe(0); // the hook already revoked them
+  });
+
+  it("open on first scan lets a guest open the table's order", async () => {
+    await call("PATCH", `/v1/channel-links/${ids.qrLink}`, { token: A.admin.token, body: { open_on_first_scan: true, hold_orders: false } });
+    const s = await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl13), device_id: "device-eeee-0005" }, idempotencyKey: null });
+    expect(s.body.data).toMatchObject({ order_open: false, can_order: true });
+    const round = await guestCall<{ data: { status: string; order_opened: boolean; order: { order_no: string; status: string } } }>("POST", "/v1/guest/rounds", s.body.data.guest_token, { round_id: randomUUID(), lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] });
+    expect(round.status, JSON.stringify(round.body)).toBe(201);
+    expect(round.body.data.order_opened).toBe(true);
+    expect(round.body.data.status).toBe("accepted");
+    expect(round.body.data.order.order_no).toMatch(/^QR-\d{4}$/);
+    expect(round.body.data.order.status).toBe("fired");
+    const floor = await call<{ data: { tables: { id: string; status: string }[] } }>("GET", `/v1/outlets/${A.outletId}/floor`, { token: serverPin });
+    expect(floor.body.data.tables.find((t) => t.id === ids.table13)!.status).toBe("sent");
+  });
+
+  it("a second phone at the table sees the first phone's accepted round as a guest round, not as staff additions", async () => {
+    await resetGuestRateLimitsForTests();
+    const open = async (device: string) => (await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl13), device_id: device }, idempotencyKey: null })).body.data.guest_token;
+    const a = await open("device-eeee-0005"); // the phone that opened the order: its rounds go straight through
+    const b = await open("device-gggg-0007");
+    const roundId = randomUUID();
+    const lineId = randomUUID();
+    const sent = await guestCall("POST", "/v1/guest/rounds", a, { round_id: roundId, lines: [{ line_id: lineId, product_id: ids.kopi, quantity: 1 }] });
+    expect(sent.status, JSON.stringify(sent.body)).toBe(201);
+    type View = { data: { lines: { id: string; round_id: string | null; mine: boolean }[]; rounds: { id: string; line_ids: string[]; mine: boolean }[] } };
+    const viewA = (await guestCall<View>("GET", "/v1/guest/order", a)).body.data;
+    const viewB = (await guestCall<View>("GET", "/v1/guest/order", b)).body.data;
+    expect(viewA.rounds.find((r) => r.id === roundId)).toMatchObject({ line_ids: [lineId], mine: true });
+    // Phone B lists the same round (not its own), so the line is filed under a guest round.
+    expect(viewB.rounds.find((r) => r.id === roundId)).toMatchObject({ line_ids: [lineId], mine: false });
+    expect(viewB.lines.find((l) => l.id === lineId)).toMatchObject({ round_id: roundId, mine: false });
+    expect(viewB.rounds.map((r) => r.id).sort()).toEqual(viewA.rounds.map((r) => r.id).sort());
+  });
+});
+
+describe("with hold orders off, a phone is admitted to its seating", () => {
+  it("the first phone and phones staff accepted go straight to the kitchen; others wait, admission follows the order and ends with it", async () => {
+    const t = A.admin.token;
+    await call("PATCH", `/v1/channel-links/${ids.qrLink}`, { token: t, body: { open_on_first_scan: false, hold_orders: false } });
+    const [t14, t15] = [randomUUID(), randomUUID()];
+    for (const [id, name] of [[t14, "14"], [t15, "15"]] as const) await call("POST", "/v1/tables", { token: t, body: { id, outlet_id: A.outletId, area_id: ids.area, name } });
+    const code = async (id: string) => tokenFrom((await call<{ data: { url: string } }>("POST", `/v1/tables/${id}/qr/rotate`, { token: t, body: {} })).body.data.url);
+    const [code14, code15] = [await code(t14), await code(t15)];
+    const seat = async (tableId: string) => (await call<{ data: Snap }>("POST", "/v1/orders", { token: serverPin, body: { order_id: randomUUID(), order_type: "dine_in", table_id: tableId, pax: 4, outlet_id: A.outletId, brand_id: A.brandId } })).body.data.id;
+    const scan = async (tableCode: string, device: string) => (await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tableCode, device_id: device }, idempotencyKey: null })).body.data.guest_token;
+    const send = async (g: string) => {
+      await resetGuestRateLimitsForTests();
+      const r = await guestCall<{ data: { round_id: string; status: string } }>("POST", "/v1/guest/rounds", g, { round_id: randomUUID(), lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] });
+      expect(r.status, JSON.stringify(r.body)).toBe(201);
+      return r.body.data;
+    };
+    const roundOf = async (roundId: string) => (await call<{ data: { id: string; status: string; table_id: string }[] }>("GET", `/v1/outlets/${A.outletId}/rounds`, { token: serverPin })).body.data.find((r) => r.id === roundId)!;
+
+    const order = await seat(t14);
+    const a = await scan(code14, "phone-aaaa-0001");
+    expect((await send(a)).status).toBe("accepted"); // the seating's first phone
+    const b = await scan(code14, "phone-bbbb-0002");
+    const fromB = await send(b);
+    expect(fromB.status).toBe("pending"); // a second phone waits for one staff tap
+    expect((await roundOf(fromB.round_id)).status).toBe("pending");
+    expect((await send(a)).status).toBe("accepted");
+    // A rejected round admits nobody; an accepted one admits that phone.
+    expect((await call("POST", `/v1/rounds/${fromB.round_id}/reject`, { token: serverPin, body: { reason: "Not this table" } })).status).toBe(200);
+    const again = await send(b);
+    expect(again.status).toBe("pending");
+    expect((await call("POST", `/v1/rounds/${again.round_id}/accept`, { token: serverPin, body: {} })).status).toBe(200);
+    expect((await send(b)).status).toBe("accepted");
+
+    // The party moves to table 15: admission goes with the order, a phone new to it still waits.
+    expect((await call("POST", `/v1/orders/${order}/move-table`, { token: serverPin, body: { table_id: t15 } })).status).toBe(200);
+    const moved = await send(a);
+    expect(moved.status).toBe("accepted");
+    expect((await roundOf(moved.round_id)).table_id).toBe(t15);
+    expect((await send(await scan(code15, "phone-cccc-0003"))).status).toBe("pending");
+    // Phone A's session runs out; scanning again from the same phone keeps its admission.
+    await db.sql`update guest_sessions set expires_at = now() - interval '1 minute' where device_hash = encode(sha256(${`${A.merchantId}:phone-aaaa-0001`}::bytea), 'hex')`;
+    expect((await guestCall("GET", "/v1/guest/order", a)).status).toBe(401);
+    expect((await send(await scan(code15, "phone-aaaa-0001"))).status).toBe("accepted");
+
+    // A new party at table 14 is a new seating: its own first phone goes through, phone A starts again.
+    await seat(t14);
+    expect((await send(await scan(code14, "phone-dddd-0004"))).status).toBe("accepted");
+    expect((await send(await scan(code14, "phone-aaaa-0001"))).status).toBe("pending");
+  });
+
+  it("codes derived from the guest secret: the sheet's code admits as the rotated one did, rotating every code keeps a seated phone's admission, and the sheet is never stored for a replay", async () => {
+    const t = A.admin.token;
+    const t16 = randomUUID();
+    await call("POST", "/v1/tables", { token: t, body: { id: t16, outlet_id: A.outletId, area_id: ids.area, name: "16" } });
+    // What the sheet prints: the live row's code, derived from its id and GUEST_TOKEN_SECRET.
+    const printed = async () => {
+      const [row] = await db.sql<{ id: string }[]>`select id from table_qr_tokens where table_id = ${t16} and rotated_at is null`;
+      return createHmac("sha256", TEST_SECRETS.GUEST_TOKEN_SECRET).update(`table-qr:${row!.id}`).digest().subarray(0, 24).toString("base64url");
+    };
+    const key = randomUUID();
+    const sheet = await app.request(`/v1/outlets/${A.outletId}/qr-sheet.pdf`, { method: "POST", headers: { authorization: `Bearer ${t}`, "content-type": "application/json", "idempotency-key": key }, body: "{}" });
+    expect(sheet.status).toBe(200);
+    const [stored] = await db.sql<{ body: unknown }[]>`select body from idempotency_keys where key = ${key}`;
+    // Only a marker that the result was shown once is kept, never the PDF and the codes in it.
+    expect(stored!.body).toMatchObject({ code: "state_conflict" });
+    expect(JSON.stringify(stored!.body)).not.toContain("PDF");
+    const before = await printed();
+    await call("POST", "/v1/orders", { token: serverPin, body: { order_id: randomUUID(), order_type: "dine_in", table_id: t16, pax: 2, outlet_id: A.outletId, brand_id: A.brandId } });
+    const scan = async (code: string, device: string) => call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: code, device_id: device }, idempotencyKey: null });
+    const send = async (g: string) => {
+      await resetGuestRateLimitsForTests();
+      return (await guestCall<{ data: { status: string } }>("POST", "/v1/guest/rounds", g, { round_id: randomUUID(), lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] })).body.data.status;
+    };
+    const first = await scan(before, "phone-ffff-0006");
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    expect(await send(first.body.data.guest_token)).toBe("accepted");
+    expect((await call("POST", `/v1/outlets/${A.outletId}/qr/rotate`, { token: t, body: {} })).status).toBe(200);
+    const after = await printed();
+    expect(after).not.toBe(before);
+    expect((await scan(before, "phone-ffff-0006")).status).toBe(404);
+    // Admission belongs to the order and the phone, not to the code: the seated phone scanning the new card is still admitted.
+    const again = await scan(after, "phone-ffff-0006");
+    expect(again.status).toBe(201);
+    expect(await send(again.body.data.guest_token)).toBe("accepted");
+    expect(await send((await scan(after, "phone-gggg-0007")).body.data.guest_token)).toBe("pending");
+  });
+});

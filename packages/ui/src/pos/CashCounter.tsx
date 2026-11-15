@@ -1,0 +1,165 @@
+"use client";
+
+import { Minus, Plus } from "lucide-react";
+import { useEffect, useState } from "react";
+import { MAX_PIECES } from "@sail/shared";
+import { Button as AriaButton, Input, Label, TextField as AriaTextField } from "react-aria-components";
+import { cx } from "../lib/cx";
+import { Money } from "../components/Money";
+import { useLocale } from "../lib/locale";
+import type { LocaleFormat } from "../lib/locale-format";
+
+export type Denomination = { key: string; label: string; cents: number };
+
+/**
+ * Rows for the counter from the merchant's notes and coins in minor units (largest first). Keys are the value in
+ * minor units, so counts round-trip through the register's `float_counts`. Labels follow the merchant's currency.
+ */
+export function denominationsFrom(minorUnits: readonly number[], money: LocaleFormat["money"]): Denomination[] {
+  return [...new Set(minorUnits)]
+    .filter((v) => Number.isSafeInteger(v) && v > 0)
+    .sort((a, b) => b - a)
+    .map((v) => ({ key: String(v), label: money(v, { dropZeroFraction: true }), cents: v }));
+}
+
+export type CashCounterMode = "total" | "counts";
+
+export type CashCounterProps = {
+  mode: CashCounterMode;
+  onModeChange: (mode: CashCounterMode) => void;
+  /** The total in minor units as digits ("20000" is $200.00); "" while the field is empty. */
+  totalDigits: string;
+  onTotalDigitsChange: (digits: string) => void;
+  /** Pieces per denomination key in counts mode. */
+  counts: Record<string, number>;
+  onCountsChange: (counts: Record<string, number>) => void;
+  /** The merchant's notes and coins, largest first (see `denominationsFrom`). */
+  denominations: Denomination[];
+  isDisabled?: boolean;
+  /** The total field's label ("Opening float", "Cash counted in the drawer"). */
+  totalLabel?: string;
+  /** The most a drawer can hold (`drawerCap`); above it the counter says so and the caller keeps its action off. */
+  max?: number;
+  className?: string;
+};
+
+/** The amount a count adds up to: the person's own count, before the register compares it with expected cash. */
+export function cashCounterTotal(mode: CashCounterMode, totalDigits: string, counts: Record<string, number>, denominations: Denomination[]): number {
+  if (mode === "total") return Number(totalDigits || "0");
+  return denominations.reduce((sum, d) => sum + (counts[d.key] ?? 0) * d.cents, 0);
+}
+
+const key =
+  "press pos-touch flex size-11 items-center justify-center rounded-chip bg-surface-2 text-ink outline-none transition-colors duration-[120ms] " +
+  "data-[pressed]:scale-[0.97] data-[pressed]:bg-surface-3 data-[disabled]:text-ink-disabled data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus";
+
+/**
+ * One money field for the total: the person types the amount in the merchant's currency, the
+ * counter holds minor units. A malformed entry holds no figure, so the action that depends on it stays off.
+ */
+function TotalField({ label, digits, onChange, isDisabled }: { label: string; digits: string; onChange: (digits: string) => void; isDisabled?: boolean }) {
+  const { moneyText, parseMoney, money } = useLocale();
+  const cents = digits === "" ? null : Number(digits);
+  const [text, setText] = useState(() => (cents === null ? "" : moneyText(cents)));
+  // Follow outside changes (the last close's float, a reset) without fighting the typist.
+  useEffect(() => {
+    if ((parseMoney(text) ?? null) !== cents) setText(cents === null ? "" : moneyText(cents));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [digits]);
+  return (
+    <AriaTextField
+      value={text}
+      onChange={(next) => {
+        setText(next);
+        const parsed = parseMoney(next);
+        onChange(parsed === undefined || parsed === null || parsed < 0 ? "" : String(parsed));
+      }}
+      onBlur={() => {
+        const parsed = parseMoney(text);
+        if (parsed !== undefined && parsed !== null) setText(moneyText(parsed));
+      }}
+      isDisabled={isDisabled}
+      className="flex flex-col gap-1.5"
+    >
+      <Label className="text-body text-ink-2">{label}</Label>
+      <Input
+        inputMode="decimal"
+        autoComplete="off"
+        placeholder={money(0)}
+        className="h-14 w-full rounded-field border border-rule bg-surface-2 px-4 text-right text-line text-ink tabular placeholder:text-ink-3 outline-none transition-colors duration-[120ms] data-[hovered]:bg-surface-3 data-[focused]:border-ink data-[disabled]:text-ink-disabled"
+      />
+    </AriaTextField>
+  );
+}
+
+/**
+ * Cash count: a single total in one field, or a denomination
+ * counter with a row per note and coin adding up live. Used for the float at
+ * open and the blind count at close.
+ */
+export function CashCounter({ mode, onModeChange, totalDigits, onTotalDigitsChange, counts, onCountsChange, denominations, isDisabled, totalLabel = "Cash in the drawer", max, className }: CashCounterProps) {
+  const { money } = useLocale();
+  const total = cashCounterTotal(mode, totalDigits, counts, denominations);
+  const over = max !== undefined && total > max;
+  const setCount = (k: string, n: number) => onCountsChange({ ...counts, [k]: Math.max(0, Math.min(MAX_PIECES, n)) });
+  return (
+    <div className={cx("flex flex-col gap-4", className)}>
+      {/* A merchant with no notes and coins configured counts one total only. */}
+      {denominations.length ? (
+        <div role="group" aria-label="How to count" className="inline-flex self-start items-center gap-0.5 rounded-chip bg-surface-2 p-1">
+          {(["total", "counts"] as CashCounterMode[]).map((m) => (
+            <AriaButton
+              key={m}
+              aria-pressed={mode === m}
+              isDisabled={isDisabled}
+              onPress={() => onModeChange(m)}
+              className={cx("press pos-touch min-h-11 rounded-chip px-4 text-[14.5px] font-medium outline-none data-[pressed]:scale-[0.97] data-[focus-visible]:outline-2 data-[focus-visible]:outline-focus", mode === m ? "bg-surface text-ink shadow-segment" : "text-ink-2")}
+            >
+              {m === "total" ? "One total" : "Count notes and coins"}
+            </AriaButton>
+          ))}
+        </div>
+      ) : null}
+      {mode === "total" ? (
+        <TotalField label={totalLabel} digits={totalDigits} onChange={onTotalDigitsChange} isDisabled={isDisabled} />
+      ) : (
+        <div className="flex flex-col gap-1" role="group" aria-label="Notes and coins">
+          {denominations.map((d) => {
+            const n = counts[d.key] ?? 0;
+            return (
+              <div key={d.key} className="flex min-h-12 items-center gap-3">
+                <span className="min-w-14 text-line font-medium text-ink tabular">{d.label}</span>
+                <AriaButton onPress={() => setCount(d.key, n - 1)} isDisabled={isDisabled || n <= 0} aria-label={`Fewer ${d.label}`} className={key}>
+                  <Minus size={18} strokeWidth={1.75} aria-hidden />
+                </AriaButton>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  aria-label={`${d.label} count`}
+                  value={String(n)}
+                  disabled={isDisabled}
+                  onChange={(e) => setCount(d.key, Number(e.target.value.replace(/\D/g, "") || "0"))}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="h-11 w-16 rounded-field bg-surface-2 text-center text-line text-ink tabular outline-none transition-colors duration-[120ms] hover:bg-surface-3 focus:bg-surface-3 focus-visible:outline-2 focus-visible:outline-focus"
+                />
+                <AriaButton onPress={() => setCount(d.key, n + 1)} isDisabled={isDisabled} aria-label={`More ${d.label}`} className={key}>
+                  <Plus size={18} strokeWidth={1.75} aria-hidden />
+                </AriaButton>
+                <span className="ml-auto text-body text-ink-2 tabular">{n > 0 ? money(n * d.cents) : ""}</span>
+              </div>
+            );
+          })}
+          <div className="mt-2 flex items-center justify-between pt-2.5 hairline-t">
+            <span className="font-heading text-[17px] font-semibold text-ink">Counted</span>
+            <Money cents={total} size="title" className="font-heading text-ink" />
+          </div>
+        </div>
+      )}
+      {over ? (
+        <p role="alert" className="text-body text-status-alert">
+          That is more than a drawer holds. Check the amount: at most {money(max ?? 0)}.
+        </p>
+      ) : null}
+    </div>
+  );
+}

@@ -1,0 +1,243 @@
+"use client";
+
+import { ClipboardList, Plus, ShoppingBag } from "lucide-react";
+import { Badge, Button, EmptyState, Icon, Menu, MenuItem, MenuTrigger, Money, SegmentedControl, Sheet, Skeleton, TextField, type BadgeTone, useLocale } from "@sail/ui";
+import { useMemo, useState } from "react";
+import { Button as AriaButton } from "react-aria-components";
+import { idempotencyKey, toApiError } from "@/lib/api";
+import { markReady, openOrder, type OpenOrderInput } from "../api/register";
+import type { OrderSnapshot, OrderType } from "../api/types";
+import { Frame } from "../components/Frame";
+import { usePos } from "../components/PosContext";
+import { useApplySnapshot, useOpenOrders, useTodaysOrders } from "../hooks/queries";
+import { useApi } from "../hooks/useApi";
+import { ORDER_STATUS_LABEL, ORDER_TYPE_LABEL, todayAt } from "../lib/format";
+import { useNavStore } from "../state/nav";
+import { useUiStore } from "../state/ui";
+
+const STATUS_TONE: Record<string, BadgeTone> = { open: "seated", fired: "sent", ready: "paid", out_for_delivery: "bill", completed: "paid", cancelled: "neutral" };
+
+/** Orders: takeaway, pickup and delivery, sorted by ready-by, with New order and Ready; and today's closed orders for Refund and Reopen. */
+export function OrdersScreen() {
+  const { clock } = useLocale();
+  const api = useApi();
+  const { station, offline, tablesById } = usePos();
+  const [view, setView] = useState<"open" | "today">("open");
+  const orders = useOpenOrders(station.outlet_id);
+  // Today's closed orders are read once that tab has been opened (a refetch of the day's orders on every outlet event
+  // is too much to keep running on the Open tab); its count shows from then on.
+  const [seenToday, setSeenToday] = useState(false);
+  const today = useTodaysOrders(station.outlet_id, view === "today" || seenToday);
+  const applySnapshot = useApplySnapshot();
+  const openOrderScreen = useNavStore((s) => s.openOrder);
+  const notify = useUiStore((s) => s.notify);
+  const [creating, setCreating] = useState<OrderType | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const openList = useMemo(() => (orders.data ?? []).filter((o) => o.order_type !== "dine_in"), [orders.data]);
+  const closedList = useMemo(() => (today.data ?? []).filter((o) => o.status === "completed" || o.status === "cancelled").sort((a, b) => (b.completed_at ?? b.cancelled_at ?? b.opened_at).localeCompare(a.completed_at ?? a.cancelled_at ?? a.opened_at)), [today.data]);
+  const list = view === "open" ? openList : closedList;
+  const query = view === "open" ? orders : today;
+
+  const ready = async (o: OrderSnapshot) => {
+    setBusy(o.id);
+    try {
+      const res = await markReady(api, o.id, { expectedVersion: o.version });
+      applySnapshot(res.data);
+    } catch (e) {
+      const err = toApiError(e);
+      notify({ text: err.message, remedy: err.remedy ?? null, tone: "alert" }, 8000);
+      void orders.refetch();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <Frame>
+      <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+        <div className="flex min-h-[52px] shrink-0 items-center gap-3">
+          <SegmentedControl aria-label="Which orders" options={[{ id: "open", label: "Open", count: orders.data ? openList.length : undefined }, { id: "today", label: "Today's closed", count: today.data ? closedList.length : undefined }]} selectedId={view} onSelect={(id) => {
+            setView(id as "open" | "today");
+            if (id === "today") setSeenToday(true);
+          }} />
+          {view === "today" ? <span className="text-body text-ink-2">Tap a done order for Refund, Reopen and receipts.</span> : null}
+          <span className="flex-1" />
+          <MenuTrigger>
+            <Button variant="primary" size="lg" isDisabled={offline}>
+              {offline ? (
+                "Offline"
+              ) : (
+                <>
+                  <Icon icon={Plus} size={18} />
+                  New order
+                </>
+              )}
+            </Button>
+            <Menu minWidth={220} onAction={(k) => setCreating(k as OrderType)}>
+              <MenuItem id="takeaway">Takeaway</MenuItem>
+              <MenuItem id="pickup">Pickup</MenuItem>
+              <MenuItem id="delivery">Delivery</MenuItem>
+            </Menu>
+          </MenuTrigger>
+        </div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-panel border border-rule bg-surface">
+        {/* Column heads over the rows. */}
+        <div aria-hidden className="flex shrink-0 items-center gap-4 border-b border-rule px-5 py-3 text-[13px] font-semibold text-ink-2">
+          <span className="w-24 shrink-0">Order</span>
+          <span className="min-w-0 flex-1">For</span>
+          <span className="w-32 shrink-0">Status</span>
+          <span className="w-24 shrink-0 text-right">Total</span>
+          {/* The action column is there on both tabs, so Status and Total keep their place when switching. */}
+          <span className="w-[92px] shrink-0" />
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-2">
+        {query.isLoading && !query.data ? <Skeleton lines={4} /> : null}
+        {query.data && list.length === 0 ? (
+          <div className="flex flex-1 items-center justify-center">
+            {view === "open" ? <EmptyState variant="centred" icon={ShoppingBag} title="No open orders" hint="Tap New order to start a takeaway, pickup or delivery." /> : <EmptyState variant="centred" icon={ClipboardList} title="Nothing closed yet today" hint="Paid and cancelled orders from this business day appear here." />}
+          </div>
+        ) : null}
+        <ul className="flex flex-col">
+          {list.map((o) => (
+            <li key={o.id} className="border-b border-rule-subtle py-1 last:border-b-0">
+              <div className="flex items-stretch gap-2">
+                <AriaButton
+                  // A cancelled order has nothing left to do on it: opening it used to bounce to the Open list (C-8).
+                  onPress={() => (o.status === "cancelled" ? notify({ text: `${o.order_no} was cancelled${o.cancelled_at ? ` at ${clock(o.cancelled_at)}` : ""}`, remedy: "Nothing was paid on it, so there is nothing to refund or reprint.", tone: "info" }, 5000) : openOrderScreen(o.id, "orders"))}
+                  className="press pos-touch flex min-h-16 flex-1 items-center gap-4 rounded-tile px-3 text-left outline-none data-[pressed]:bg-surface-3 data-[hovered]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated"
+                  aria-label={`${ORDER_TYPE_LABEL[o.order_type]} ${o.order_no}${o.customer_ref?.name ? `, ${o.customer_ref.name}` : ""}, ${ORDER_STATUS_LABEL[o.status]}`}
+                >
+                  <span className="w-24 shrink-0 text-body text-ink-2 tabular">{o.order_no}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-line text-ink">
+                      {o.order_type === "dine_in" && o.table_id ? `Table ${tablesById.get(o.table_id)?.name ?? ""} · ` : ""}
+                      {ORDER_TYPE_LABEL[o.order_type]}
+                      {o.customer_ref?.name ? ` · ${o.customer_ref.name}` : ""}
+                      {o.customer_ref?.mobile ? <span className="text-ink-2"> · {o.customer_ref.mobile}</span> : null}
+                    </span>
+                    <span className="block truncate text-caption text-ink-2">
+                      {o.status === "completed" && o.completed_at ? `Paid ${clock(o.completed_at)}` : o.status === "cancelled" && o.cancelled_at ? `Cancelled ${clock(o.cancelled_at)}` : o.ready_by ? `Ready by ${clock(o.ready_by)}` : `Opened ${clock(o.opened_at)}`}
+                      {o.delivery_address ? ` · ${o.delivery_address}` : ""}
+                      {((n) => ` · ${n} ${n === 1 ? "item" : "items"}`)(o.lines.filter((l) => l.status !== "voided").reduce((n, l) => n + l.quantity, 0))}
+                      {o.status === "completed" ? ` · ${o.checks.length} ${o.checks.length === 1 ? "bill" : "bills"} · ${[...new Set(o.checks.flatMap((c) => c.payments.filter((p) => p.status === "recorded").map((p) => p.tender)))].join(", ")}` : ""}
+                      {o.checks.some((c) => c.refunded_total > 0) ? " · refunded" : ""}
+                    </span>
+                  </span>
+                  <span className="w-32 shrink-0">
+                    <Badge tone={STATUS_TONE[o.status] ?? "neutral"}>{ORDER_STATUS_LABEL[o.status]}</Badge>
+                  </span>
+                  <Money cents={o.status === "completed" ? o.paid_total : o.totals.total} size="line" className="w-24 shrink-0 text-right" />
+                </AriaButton>
+                {o.status === "fired" ? (
+                  <Button size="lg" variant="secondary" isDisabled={offline || busy === o.id} isPending={busy === o.id} onPress={() => void ready(o)} className="min-h-16 w-[92px]">
+                    {offline ? "Offline" : "Ready"}
+                  </Button>
+                ) : (
+                  <span aria-hidden className="w-[92px] shrink-0" />
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+        </div>
+      </div>
+      </div>
+      <NewOrderSheet
+        type={creating}
+        onClose={() => setCreating(null)}
+        onCreate={async (input) => {
+          const res = await openOrder(api, input, { key: input.order_id });
+          applySnapshot(res.data);
+          setCreating(null);
+          openOrderScreen(res.data.id, "orders");
+        }}
+      />
+    </Frame>
+  );
+}
+
+/** New order: Takeaway (optional name), Pickup (name, mobile, ready-by), Delivery (plus address and notes). */
+export function NewOrderSheet({ type, onClose, onCreate }: { type: OrderType | null; onClose: () => void; onCreate: (input: OpenOrderInput) => Promise<void> }) {
+  const [name, setName] = useState("");
+  const [mobile, setMobile] = useState("");
+  const [readyBy, setReadyBy] = useState("");
+  const [address, setAddress] = useState("");
+  const [notes, setNotes] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  // One order id per attempt: a retry after a timeout replays the same order instead of opening a second one.
+  const [orderId, setOrderId] = useState(idempotencyKey);
+
+  const reset = () => {
+    setName("");
+    setMobile("");
+    setReadyBy("");
+    setAddress("");
+    setNotes("");
+    setError(null);
+    setOrderId(idempotencyKey());
+  };
+  const close = () => {
+    reset();
+    onClose();
+  };
+
+  const needsCustomer = type === "pickup" || type === "delivery";
+  const { timeZone } = useLocale();
+  const ready = readyBy ? todayAt(readyBy, timeZone) : null;
+  const valid = type === "takeaway" || (needsCustomer && (name.trim() || mobile.trim()) && (!readyBy || ready) && (type !== "delivery" || address.trim()));
+
+  const submit = async () => {
+    if (!type || !valid) return;
+    setPending(true);
+    setError(null);
+    const input: OpenOrderInput = { order_id: orderId, order_type: type };
+    if (type === "takeaway" && name.trim()) input.takeaway_ref = name.trim();
+    if (needsCustomer) {
+      input.customer_ref = { ...(name.trim() ? { name: name.trim() } : {}), ...(mobile.trim() ? { mobile: mobile.trim() } : {}) };
+      if (ready) input.ready_by = ready;
+    }
+    if (type === "delivery") {
+      input.delivery_address = address.trim();
+      if (notes.trim()) input.delivery_notes = notes.trim();
+    }
+    try {
+      await onCreate(input);
+      reset();
+    } catch (e) {
+      const err = toApiError(e);
+      setError(err.remedy ? `${err.message}. ${err.remedy}` : err.message);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const title = type ? `New ${ORDER_TYPE_LABEL[type].toLowerCase()} order` : "";
+  return (
+    <Sheet labelledClose
+      isOpen={Boolean(type)}
+      onOpenChange={(o) => (!o ? close() : undefined)}
+      title={title}
+      isDismissable={!pending}
+      footer={
+        <Button variant="primary" size="lg" isDisabled={!valid} isPending={pending} onPress={submit}>
+          {type ? `Open ${ORDER_TYPE_LABEL[type].toLowerCase()} order` : "Open order"}
+        </Button>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <TextField label={type === "takeaway" ? "Name (optional)" : "Customer name"} value={name} onChange={setName} inputClassName="min-h-14 text-line" maxLength={80} autoFocus />
+        {needsCustomer ? <TextField label="Mobile" value={mobile} onChange={setMobile} type="tel" inputClassName="min-h-14 text-line tabular" maxLength={30} /> : null}
+        {needsCustomer ? <TextField label="Ready by (HH:MM, optional)" value={readyBy} onChange={setReadyBy} placeholder="19:30" inputClassName="min-h-14 text-line tabular" errorMessage={readyBy && !ready ? "Use HH:MM, for example 19:30" : undefined} isInvalid={Boolean(readyBy && !ready)} /> : null}
+        {type === "delivery" ? <TextField label="Delivery address" value={address} onChange={setAddress} multiline rows={2} inputClassName="text-line" maxLength={400} /> : null}
+        {type === "delivery" ? <TextField label="Delivery notes (optional)" value={notes} onChange={setNotes} inputClassName="min-h-14 text-line" maxLength={400} /> : null}
+        {error ? (
+          <p role="alert" className="text-body text-status-alert">
+            {error}
+          </p>
+        ) : null}
+      </div>
+    </Sheet>
+  );
+}

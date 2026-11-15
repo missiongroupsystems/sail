@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck, lint, test, contract checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Unit, property and reference-set tests (shared)
+        run: pnpm --filter @sail/shared test
+        env:
+          SAIL_REFERENCE_MIN: "60"
+      - name: Server tests on embedded Postgres (RLS replay, pipeline, SSE)
+        run: pnpm --filter @sail/server test
+      - name: Relay tests
+        run: pnpm --filter @sail/relay test
+      - name: OpenAPI contract is committed and reviewed
+        run: pnpm --filter @sail/server openapi:check
+      - name: MCP tool manifest matches the routes
+        run: pnpm --filter @sail/server manifest:check
+      - name: Migration drift (schema changes need a generated migration)
+        run: |
+          pnpm --filter @sail/server exec drizzle-kit generate --name ci_drift_check
+          if git status --porcelain packages/server/drizzle | grep -q .; then
+            echo "Schema differs from migrations. Run pnpm db:generate and commit the result."; git status --porcelain packages/server/drizzle; exit 1
+          fi
+      - name: No other POS named in the repo
+        run: |
+          if [ -n "$TERMS" ]; then printf '%s\n' "$TERMS" > "$RUNNER_TEMP/forbidden.txt"; export SAIL_FORBIDDEN_TERMS_FILE="$RUNNER_TEMP/forbidden.txt"; fi
+          pnpm check:no-other-pos
+        env:
+          TERMS: ${{ secrets.SAIL_FORBIDDEN_TERMS_FILE }}
+      - name: Build server image artefact
+        run: pnpm --filter @sail/server build
+      - name: Build web
+        run: pnpm --filter @sail/web build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8080
+      - name: Build guest
+        run: pnpm --filter @sail/guest build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8080
+
+  e2e:
+    # The browser runs in another time zone and language from the servers, one pairing behind UTC and one ahead, so a
+    # page that renders the device's zone, language or clock on the server fails hydration here.
+    name: End-to-end (Playwright, ${{ matrix.name }})
+    runs-on: ubuntu-latest
+    # The suite takes about 28 minutes in Chromium on the development servers (the role walks visit ~30 pages per role
+    # with full page loads, to catch hydration differences between the zones), plus install and WebKit.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: server UTC, browser New York de-DE
+            server_tz: UTC
+            browser_tz: America/New_York
+            browser_locale: de-DE
+          - name: server Tokyo, browser Kolkata ja-JP
+            server_tz: Asia/Tokyo
+            browser_tz: Asia/Kolkata
+            browser_locale: ja-JP
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Chromium and WebKit
+        run: pnpm --filter @sail/e2e exec playwright install --with-deps chromium webkit
+      - name: Back office, POS and guest app in a browser
+        run: pnpm test:e2e
+        env:
+          E2E_SERVER_TZ: ${{ matrix.server_tz }}
+          E2E_BROWSER_TZ: ${{ matrix.browser_tz }}
+          E2E_BROWSER_LOCALE: ${{ matrix.browser_locale }}
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results-${{ strategy.job-index }}
+          path: packages/e2e/test-results
+          retention-days: 7

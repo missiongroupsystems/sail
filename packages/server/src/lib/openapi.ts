@@ -1,0 +1,292 @@
+import { createRoute, OpenAPIHono, z, type RouteConfig, type RouteHandler } from "@hono/zod-openapi";
+import type { Next } from "hono";
+import { ApiErrorSchema, MAX_AMOUNT, operation, roleAtLeast, type OperationSpec } from "@sail/shared";
+import { AppError } from "./errors.js";
+import { markDryRun, maybeTx, tx } from "../db/client.js";
+import { aboveCeiling, createProposal, currentOrderMoney, directCeiling, moneyEffect, orderMoney, requestOrderId, sameOrderMoney, takeAgentBudget, toProposal } from "../services/agents.js";
+import type { MoneyEffect } from "../db/schema/index.js";
+import type { Principal } from "../auth/principal.js";
+import type { AppEnv } from "./context.js";
+import { principalRole } from "../auth/principal.js";
+import { carriesSecret, secretFieldsOf } from "./secrets.js";
+
+export { z };
+
+/**
+ * Marks a field as free text from outside the register: typed by a guest or customer, or by a person during service.
+ * The MCP adapter wraps it as `{ untrusted_text }` wherever its key comes back in a response. `returnedAs` names the
+ * keys it comes back under when they differ, and `key@group` limits it to the responses of one operation group (a
+ * customer's `name`, where `name` elsewhere is a product's). An unmarked free-text request field fails the MCP test.
+ */
+export function untrusted<T extends z.ZodType>(schema: T, ...returnedAs: string[]): T {
+  return schema.openapi({ "x-sail-untrusted": returnedAs.length ? returnedAs : true }) as T;
+}
+
+/**
+ * Marks a field as a secret: a PIN, password, credential, pairing code, grant, token or signed link. A request carrying
+ * one is never frozen into a proposal (a caller above its ceiling is refused instead), and a response holding one is
+ * never stored for an idempotent replay. Marking a response body itself (a PDF of QR codes) covers the whole response.
+ * A secret-looking field left unmarked fails the secrets test.
+ */
+export function secret<T extends z.ZodType>(schema: T): T {
+  return schema.openapi({ "x-sail-secret": true }) as T;
+}
+
+/** Shared response envelopes. */
+export const EventRefSchema = z.object({
+  id: z.string(),
+  seq: z.number().int(),
+  type: z.string(),
+  occurredAt: z.string(),
+  businessDate: z.string(),
+});
+
+export function dataResponse<T extends z.ZodTypeAny>(schema: T) {
+  return z.object({ data: schema });
+}
+export function listResponse<T extends z.ZodTypeAny>(schema: T) {
+  return z.object({ data: z.array(schema), next_cursor: z.string().nullable() });
+}
+export function mutationResponse<T extends z.ZodTypeAny>(schema: T) {
+  return z.object({ data: schema, events: z.array(EventRefSchema), warnings: z.array(z.string()) });
+}
+
+export const errorResponses = {
+  400: { description: "Validation error", content: { "application/json": { schema: ApiErrorSchema } } },
+  401: { description: "Unauthenticated", content: { "application/json": { schema: ApiErrorSchema } } },
+  403: { description: "Permission denied", content: { "application/json": { schema: ApiErrorSchema } } },
+  404: { description: "Not found", content: { "application/json": { schema: ApiErrorSchema } } },
+  409: { description: "Conflict (state, version or idempotency)", content: { "application/json": { schema: ApiErrorSchema } } },
+  422: { description: "Invariant violation or unavailable", content: { "application/json": { schema: ApiErrorSchema } } },
+} as const;
+
+export function jsonBody<T extends z.ZodTypeAny>(schema: T, description = "Request body") {
+  return { content: { "application/json": { schema } }, description, required: true };
+}
+export function jsonResponse<T extends z.ZodTypeAny>(schema: T, description = "OK") {
+  return { description, content: { "application/json": { schema } } };
+}
+
+export type OpRoute = Omit<RouteConfig, "operationId"> & { op: string };
+
+export function createApp() {
+  return new OpenAPIHono<AppEnv>({
+    defaultHook: (result) => {
+      if (!result.success) {
+        const issues = result.error.issues.map((i) => ({ path: i.path.join("."), message: i.message, code: i.code }));
+        const first = result.error.issues[0];
+        throw new AppError("validation", first ? plainIssue(first) : "Invalid request", { remedy: "Fix the listed fields and retry.", details: { issues } });
+      }
+    },
+  });
+}
+
+type Issue = z.core.$ZodIssue;
+
+/** Wire names whose plain words differ from the name itself. */
+const FIELD_WORDS: Record<string, string> = { bps: "the rate", rate_bps: "the rate", value_bps: "the percentage", tip_cents: "the tip", float_cents: "the opening float", counted_cash_cents: "the counted cash", open_price: "the price" };
+
+/**
+ * A validation failure as a sentence a person can act on: the field in words and what it needs, never the validator's
+ * own text or an amount in minor units. The raw issues stay in `details.issues` for clients.
+ */
+export function plainIssue(i: Issue): string {
+  const key = [...i.path].reverse().find((x) => typeof x === "string");
+  const words = typeof key === "string" ? (FIELD_WORDS[key] ?? key.replace(/_cents$/, "").replace(/_/g, " ")) : "";
+  const field = words ? words.charAt(0).toUpperCase() + words.slice(1) : "The request";
+  switch (i.code) {
+    case "too_small": {
+      const min = Number(i.minimum);
+      if (i.origin === "string") return min <= 1 ? `${field} cannot be empty` : `${field} needs at least ${min} characters`;
+      if (i.origin === "array" || i.origin === "set") return min <= 1 ? `${field} needs at least one item` : `${field} needs at least ${min} items`;
+      if (min === 0 && i.inclusive !== false) return `${field} cannot be negative`;
+      return i.inclusive === false ? `${field} must be more than ${min}` : `${field} must be at least ${min}`;
+    }
+    case "too_big": {
+      const max = Number(i.maximum);
+      if (i.origin === "string") return `${field} can have at most ${max} characters`;
+      if (i.origin === "array" || i.origin === "set") return `${field} can have at most ${max} items`;
+      if (max === MAX_AMOUNT) return `${field} is more than the largest amount the register accepts`;
+      return `${field} can be at most ${max}`;
+    }
+    case "invalid_type":
+      return /received undefined/.test(i.message) ? `${field} is required` : `${field} has the wrong kind of value`;
+    case "invalid_format":
+      return `${field} is not in the right format`;
+    case "invalid_value":
+      return i.values.length <= 6 ? `${field} must be one of: ${i.values.map(String).join(", ")}` : `${field} is not one of the allowed values`;
+    case "invalid_union":
+      return `${field} is not valid`;
+    case "unrecognized_keys":
+      return `${field} has fields this operation does not take: ${i.keys.join(", ")}`;
+    default:
+      // Custom checks carry messages written for people.
+      return words ? `${field}: ${i.message}` : i.message;
+  }
+}
+
+/**
+ * Define one operation: the route gets its `operationId` and `x-sail` manifest
+ * entry from the shared manifest, and the handler is wrapped with the manifest's
+ * principal and role checks. Every /v1 route goes through here, so no route
+ * checks roles by hand.
+ */
+/** The typed context a handler receives for a route (validated params, query and body). */
+export type OpContext<R extends OpRoute> = Parameters<RouteHandler<R & { operationId: string }, AppEnv>>[0];
+
+export function defineOp<R extends OpRoute>(app: OpenAPIHono<AppEnv>, route: R, handler: (c: OpContext<R>, next: Next) => Promise<Response> | Response) {
+  const { op, ...rest } = route;
+  const spec = operation(op);
+  const full = createRoute({
+    ...(rest as RouteConfig),
+    operationId: op,
+    description: rest.description ?? spec.description,
+    summary: rest.summary ?? spec.summary,
+    "x-sail": manifestExtension(spec),
+  } as unknown as R & { operationId: string });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  app.openapi(full, (async (c: any, next: any) => {
+    c.set("operationId", op);
+    enforce(c, spec);
+    const principal = c.get("principal") as AppEnv["Variables"]["principal"] | undefined;
+    if (principal?.type === "agent" && spec.agentPerHour) await takeAgentBudget({ id: principal.identityId, merchantId: principal.merchantId, name: principal.name }, { kind: `op:${spec.op}`, window: "hour", max: spec.agentPerHour, what: `${spec.op} calls this hour` });
+    const method = String(c.req.method).toUpperCase();
+    // An approved proposal with a money effect runs only at the figures its approver was shown. A rule starting or
+    // ending, a tax rate or a customer's groups can move them without touching the order's version, so re-quote.
+    const pinned = maybeTx()?.pinnedOrder;
+    if (pinned?.effect && method !== "GET") return requote(pinned.orderId, pinned.effect, () => handler(c, next));
+    // Reads, quotes and dry runs are T0 by nature; anything else above the caller's ceiling becomes a proposal.
+    const aboveTier = principal && method !== "GET" && spec.principals.length > 0 && aboveCeiling(principal, spec);
+    if (!principal || method === "GET" || (!aboveTier && principal.type !== "agent")) return handler(c, next);
+    const body = await readJson(c);
+    if (spec.dryRun && (body as { dry_run?: unknown } | null)?.dry_run === true) {
+      // A dry run commits nothing, so it is T0 by nature: mark the transaction here, so it rolls back even if the handler forgets to.
+      markDryRun();
+      c.set("dryRun", true);
+      return handler(c, next);
+    }
+    const path = c.req.path + (c.req.url.includes("?") ? c.req.url.slice(c.req.url.indexOf("?")) : "");
+    if (aboveTier) return propose(c, principal, spec, method, path, body);
+    // An agent at or below its ceiling: run the call, then compare the order's money before and after. If the call
+    // lowered the amount due or changed tax or fees, undo it and propose it instead, showing both.
+    const orderId = await requestOrderId(path, body);
+    if (!orderId) return handler(c, next);
+    await tx().unsafe("savepoint agent_money_effect");
+    const before = await currentOrderMoney(orderId);
+    const res = await handler(c, next);
+    if (res.status >= 400) return res;
+    const after = await orderMoney(orderId);
+    const reason = moneyEffect(before, after, body);
+    if (!reason) return res;
+    await tx().unsafe("rollback to savepoint agent_money_effect");
+    return propose(c, principal, spec, method, path, body, { reason, before, after });
+  }) as never);
+  return full;
+}
+
+async function requote(orderId: string, shown: MoneyEffect, run: () => Promise<Response> | Response): Promise<Response> {
+  const before = await currentOrderMoney(orderId);
+  const res = await run();
+  if (res.status >= 400) return res;
+  const after = await orderMoney(orderId);
+  if (sameOrderMoney(before, shown.before) && sameOrderMoney(after, shown.after)) return res;
+  throw new AppError("version_conflict", "The amounts have changed since this proposal was made, so it was not run", { remedy: "Reject it, and ask for it again at today's prices.", details: { order_id: orderId, shown: { before: shown.before, after: shown.after }, now: { before, after } } });
+}
+
+async function readJson(c: { req: { json(): Promise<unknown> } }): Promise<unknown> {
+  try {
+    return await c.req.json();
+  } catch {
+    return null;
+  }
+}
+
+type ProposeContext = { get(key: "idempotencyKey"): string | null | undefined; get(key: "correlationId"): string; req: { header(name: string): string | undefined }; json(body: unknown, status: 202): Response };
+
+/** Store the frozen request as a proposal and answer `requires_confirmation` (202). */
+async function propose(c: ProposeContext, principal: Principal, spec: OperationSpec, method: string, path: string, body: unknown, effect?: MoneyEffect): Promise<Response> {
+  // A proposal stores the request and, once approved, its result: neither may hold a secret.
+  const secrets = secretFieldsOf(spec.op);
+  if (secrets.response || carriesSecret(body, secrets.request)) throw new AppError("permission_denied", `${spec.op} carries a secret, so it cannot become a proposal`, { remedy: "Ask someone who may do it directly.", details: { action: spec.op, tier: spec.tier, secret_fields: secrets.request } });
+  const proposal = await createProposal({ principal, spec, method, path, body, idempotencyKey: c.get("idempotencyKey") ?? null, rationale: c.req.header("x-rationale") ?? null, correlationId: c.get("correlationId"), effect });
+  const ceiling = principal.type === "agent" || principal.type === "staff" ? directCeiling(principal.type, principal.riskCeiling) : null;
+  const who = principal.type === "agent" ? "agent" : "person";
+  return c.json(
+    {
+      code: "requires_confirmation",
+      message: effect ? `${spec.op} ${effect.reason}, which this ${who} may not do by itself; a proposal was created for a human to approve` : `${spec.op} is a ${spec.tier} operation, above this ${who}'s ${ceiling} ceiling; a proposal was created for a human to approve`,
+      remedy: `Ask a ${spec.minRole ?? "staff member"} or above to approve proposal ${proposal.id} on the POS or in the back office. Poll proposals.get for the outcome; propose again from the fresh state if it fails.`,
+      details: { proposal_id: proposal.id, tier: spec.tier, ceiling, expires_at: proposal.expiresAt.toISOString(), ...(effect ? { effect } : {}) },
+      data: toProposal(proposal),
+    },
+    202,
+  );
+}
+
+export function manifestExtension(spec: OperationSpec) {
+  return {
+    op: spec.op,
+    tier: spec.tier,
+    min_role: spec.minRole,
+    override_allowed: spec.overrideAllowed,
+    reason_required: spec.reasonRequired,
+    dry_run: spec.dryRun,
+    principals: callers(spec),
+    emits: spec.emits,
+    mcp: spec.mcp,
+  };
+}
+
+/** Who may call an operation. An agent reaches only what is exposed over MCP, whether it calls through MCP or over plain HTTP. */
+function callers(spec: OperationSpec): OperationSpec["principals"] {
+  return spec.mcp.expose ? spec.principals : spec.principals.filter((p) => p !== "agent");
+}
+
+function enforce(c: { get(k: "principal"): AppEnv["Variables"]["principal"] | undefined }, spec: OperationSpec) {
+  if (spec.principals.length === 0) return; // public route (health, dev token, pairing)
+  const principal = c.get("principal");
+  if (!principal) throw new AppError("unauthenticated", "Missing bearer token");
+  if (!callers(spec).includes(principal.type)) {
+    throw new AppError("permission_denied", principal.type === "station" ? "Sign in with your PIN to do this" : "This sign-in cannot do this", {
+      remedy: principal.type === "station" ? "Sign in with a PIN first." : "Use a staff or station token.",
+      details: { action: spec.op, principal_type: principal.type },
+    });
+  }
+  // An agent's toolsets bound what it may do, not only which tools it is shown.
+  if (principal.type === "agent" && !spec.mcp.toolsets.some((t) => principal.toolsets.includes(t))) {
+    throw new AppError("permission_denied", `${spec.op} is outside this agent's toolsets`, { remedy: "An Admin can widen the identity's toolsets.", details: { action: spec.op, toolsets: spec.mcp.toolsets } });
+  }
+  if (spec.minRole) {
+    const role = principalRole(principal);
+    if (!role) throw new AppError("permission_denied", "Sign in with your PIN to do this", { remedy: "Sign in with a PIN first.", details: { action: spec.op, required_role: spec.minRole } });
+    if (!roleAtLeast(role, spec.minRole)) {
+      // Manager override grants are checked by the handler (v0.4) when override_allowed; here the base role check fails.
+      // An agent never holds a grant, so an override header means nothing for it.
+      // A payment's dry run is a quote whose transaction is rolled back: a Server's Pay screen gets the change and rounding
+      // before it asks for approval (live-test B-F4). Recording the payment itself is still refused here.
+      const quoteOnly = spec.op === "payments.record" && principal.type === "staff" && isDryRun(c);
+      if (!quoteOnly && (!spec.overrideAllowed || principal.type === "agent" || !hasOverrideHeader(c))) throw AppError.permission(spec.minRole, spec.overrideAllowed, spec.op);
+    }
+  }
+}
+
+function isDryRun(c: unknown): boolean {
+  const ctx = c as { req?: { valid?(target: "json"): unknown } };
+  try {
+    return (ctx.req?.valid?.("json") as { dry_run?: unknown } | undefined)?.dry_run === true;
+  } catch {
+    return false;
+  }
+}
+
+/** An override grant may arrive as the `X-Override-Id` header or as `override_id` in the JSON body; the handler verifies it. */
+function hasOverrideHeader(c: unknown): boolean {
+  const ctx = c as { req?: { header(name: string): string | undefined; valid?(target: "json"): unknown } };
+  if (ctx.req?.header("x-override-id")) return true;
+  try {
+    const body = ctx.req?.valid?.("json") as { override_id?: unknown } | undefined;
+    return typeof body?.override_id === "string" && body.override_id.length > 0;
+  } catch {
+    return false;
+  }
+}

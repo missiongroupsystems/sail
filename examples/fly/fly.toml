@@ -1,0 +1,53 @@
+# Example: running the Sail API and worker on Fly.io. Not anyone's production; copy it and change the app name, region
+# and machine sizes to suit. Sail does not depend on Fly.io, and any host that runs the server image works.
+#
+# From the repository root:
+#   flyctl launch --no-deploy --copy-config --config examples/fly/fly.toml
+#   flyctl secrets set DATABASE_URL=... LISTEN_DATABASE_URL=... SESSION_TOKEN_SECRET=... STATION_TOKEN_SECRET=... \
+#     GUEST_TOKEN_SECRET=... RELAY_TOKEN_SECRET=... AGENT_TOKEN_SECRET=... CORS_ORIGIN=... GUEST_APP_URL=... WEB_APP_URL=...
+#   DATABASE_URL=... pnpm --filter @sail/server db:migrate
+#   flyctl deploy --config examples/fly/fly.toml --dockerfile packages/server/Dockerfile .
+# Generate each secret with `openssl rand -hex 32`: the API refuses to start in production with a placeholder.
+app = "my-sail-api"
+primary_region = "ams"
+
+[env]
+  NODE_ENV = "production"
+  LOG_LEVEL = "info"
+  DB_POOL_MAX = "10"
+  TX_MAX = "6"
+  QUEUE_MAX = "64"
+
+[processes]
+  app = "node dist/index.js --role=app"
+  worker = "node dist/index.js --role=worker"
+
+[http_service]
+  processes = ["app"]
+  internal_port = 8080
+  force_https = true
+  # Tills and printers must never be cut mid-service: no auto-stop, at least two machines.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 2
+  [http_service.concurrency]
+    # SSE streams (stations, relays, guests) count as connections.
+    type = "connections"
+    soft_limit = 200
+    hard_limit = 400
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  processes = ["app"]
+  size = "shared-cpu-2x"
+  memory = "1024mb"
+
+[[vm]]
+  processes = ["worker"]
+  size = "shared-cpu-1x"
+  memory = "512mb"

@@ -1,0 +1,22 @@
+{
+  "name": "@sail/relay",
+  "version": "0.9.0-beta.1",
+  "private": true,
+  "type": "module",
+  "description": "Sail print relay: pulls print jobs from the register and sends raw ESC/POS to network printers over TCP 9100.",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsup",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}

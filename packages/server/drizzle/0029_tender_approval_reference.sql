@@ -1,0 +1,2 @@
+ALTER TABLE "tender_types" ADD COLUMN "requires_approval" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "tender_types" ADD COLUMN "requires_reference" boolean DEFAULT false NOT NULL;
