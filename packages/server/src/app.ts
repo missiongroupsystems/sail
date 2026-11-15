@@ -9,6 +9,7 @@ import { loadSecretMarkers } from "./lib/secrets.js";
 import { requestPipeline } from "./middleware/pipeline.js";
 import { idempotency } from "./middleware/idempotency.js";
 import { logger } from "./logger.js";
+import { slowRequests } from "./middleware/slow-requests.js";
 import { healthRoutes } from "./routes/health.js";
 import { authRoutes } from "./routes/auth.js";
 import { identityRoutes } from "./routes/identity.js";
@@ -65,6 +66,12 @@ export function buildApp() {
     // SL400: a trigger's refusal written for people. Other trigger errors (P0001) name internal checks and amounts.
     if (pg.code === "SL400") return c.json({ code: "validation", message: pg.message ?? "This change is not allowed", remedy: "Change the values and try again." }, 400);
     if (pg.code === "23514" || pg.code === "P0001") return c.json({ code: "invariant_violation", message: "The change would break a rule the register keeps", remedy: "Check the values and try again." }, 422);
+    // A lock held too long elsewhere (lock_timeout) or a statement past statement_timeout (db/client.ts boundWaits): the
+    // transaction was rolled back, so the same request with the same Idempotency-Key can be sent again.
+    if (pg.code === "55P03" || pg.code === "57014") {
+      logger.warn({ requestId, code: pg.code, path: c.req.path, message: pg.message }, "database wait cut short");
+      return c.json({ code: "overloaded", message: "The register is busy and could not finish this in time", remedy: "Nothing was changed. Try again in a moment." }, 503);
+    }
     if (pg.code === "42501") {
       logger.warn({ err: pg, requestId, path: c.req.path }, "database refused the statement for this principal");
       return c.json({ code: "permission_denied", message: "You do not have access to this record" }, 403);
@@ -74,6 +81,7 @@ export function buildApp() {
     return c.json(body, 500);
   });
 
+  app.use("*", slowRequests);
   app.use("*", requestPipeline);
   app.use("/v1/*", idempotency);
 

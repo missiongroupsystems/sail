@@ -25,6 +25,18 @@ const EnvSchema = z.object({
   QUEUE_MAX: z.coerce.number().int().min(0).default(64),
   /** How long a queued request waits for a slot before a 503. */
   QUEUE_WAIT_MS: z.coerce.number().int().min(100).default(10_000),
+  /**
+   * Every transaction (requests and the worker) waits at most this long for a row or table lock, and runs each statement
+   * for at most DB_STATEMENT_TIMEOUT_MS. Past either, the statement fails and a request answers 503 `overloaded`
+   * instead of never answering. Both are set with SET LOCAL, so they are safe behind a transaction pooler.
+   */
+  DB_LOCK_TIMEOUT_MS: z.coerce.number().int().min(100).default(5_000),
+  DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(100).default(20_000),
+  /**
+   * Log a request still unanswered after this many milliseconds, with the admission gate's counters and the database's
+   * sessions and ungranted locks (read over a connection of its own). Unset: off.
+   */
+  SLOW_REQUEST_LOG_MS: z.coerce.number().int().min(100).optional(),
 
   CORS_ORIGIN: z.string().default("*"),
 
