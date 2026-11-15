@@ -25,7 +25,7 @@ POS / back office (web)   guest app   print relay   agents (MCP)
 Every request goes through `packages/server/src/middleware/pipeline.ts` (steps 1 to 4) and `middleware/idempotency.ts` (step 5):
 
 1. **Admission gate** (`lib/gate.ts`). At most `TX_MAX` request transactions run at once; up to `QUEUE_MAX` wait for `QUEUE_WAIT_MS`; beyond that the API returns 503 `overloaded`.
-2. **One transaction per request.** A response of 400 or above, or a dry run, rolls it back.
+2. **One transaction per request.** A response of 400 or above, or a dry run, rolls it back. Every transaction, the worker's included, waits at most `DB_LOCK_TIMEOUT_MS` for a lock and `DB_STATEMENT_TIMEOUT_MS` for a statement (`SET LOCAL`); past either it rolls back and the request answers 503 `overloaded`, so no request is left without an answer.
 3. **Principal.** `auth/resolve.ts` turns the bearer token into a principal (staff, station, guest, relay or agent).
 4. **RLS context.** `set_config('app.current_merchant' | 'app.current_outlets' | 'app.current_brands' | 'app.current_principal' | ...)` and `SET LOCAL ROLE` to the principal's database role.
 5. **Idempotency.** Every `POST`, `PUT`, `PATCH` and `DELETE`, except the public pairing and session-start routes and the streams, needs an `Idempotency-Key` header. A repeat with the same body replays the stored response; the same key with another body is `idempotency_conflict`.

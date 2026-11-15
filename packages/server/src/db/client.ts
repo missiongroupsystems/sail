@@ -87,6 +87,7 @@ export function setPoolForTests(sql: Sql | null) {
 export async function withTransaction<T>(fn: (ctx: RequestTx) => Promise<T>, principal: RequestTx["principal"] = null): Promise<T> {
   const sql = pool6543();
   return sql.begin(async (t) => {
+    await boundWaits(t);
     // Drizzle's postgres-js driver reads `client.options` (parsers/serializers); a
     // TransactionSql has none, so borrow the pool's options for the handle.
     const client = Object.assign(t, { options: (sql as unknown as { options: unknown }).options }) as unknown as Sql;
@@ -101,7 +102,21 @@ export async function withTransaction<T>(fn: (ctx: RequestTx) => Promise<T>, pri
  * request must still record (wrong PINs, rate-limit hits).
  */
 export async function withOwnTransaction<T>(fn: (sql: TransactionSql) => Promise<T>): Promise<T> {
-  return pool6543().begin(fn) as Promise<T>;
+  return pool6543().begin(async (t) => {
+    await boundWaits(t);
+    return fn(t);
+  }) as Promise<T>;
+}
+
+/**
+ * No transaction waits without end: a lock held elsewhere (another request, the worker, a session outside the API)
+ * fails this one after DB_LOCK_TIMEOUT_MS (55P03), and a statement running past DB_STATEMENT_TIMEOUT_MS is cancelled
+ * (57014). The request then answers 503 `overloaded`. Local to the transaction, so the pooler's connection is left as
+ * it was.
+ */
+async function boundWaits(t: TransactionSql) {
+  const cfg = config();
+  await t`select set_config('lock_timeout', ${`${cfg.DB_LOCK_TIMEOUT_MS}ms`}, true), set_config('statement_timeout', ${`${cfg.DB_STATEMENT_TIMEOUT_MS}ms`}, true)`;
 }
 
 /**
