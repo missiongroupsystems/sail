@@ -50,6 +50,8 @@ export function ShiftHome({ onShowReport, onCounting }: { onShowReport: () => vo
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [left, setLeft] = useState<Set<string>>(new Set());
+  // When the close started: the checklist takes only answers the register gave after it, not data cached by the floor.
+  const [closeStartedAt, setCloseStartedAt] = useState(0);
   const counting = phase.kind === "checklist" || phase.kind === "count" || phase.kind === "reason";
   useEffect(() => onCounting?.(counting), [counting, onCounting]);
 
@@ -99,9 +101,13 @@ export function ShiftHome({ onShowReport, onCounting }: { onShowReport: () => vo
   const openElsewhere = mineOrders.length - openTables;
   const where = [openTables ? `${openTables} on the floor` : null, openElsewhere ? `${openElsewhere} in Orders` : null].filter(Boolean).join(", ");
   const openOrdersDetail = `${where ? `${where}. ` : ""}Pay or cancel them, or carry them to the next shift.`;
-  // Each item is the register's answer: until a read answers, its item is still being checked and the close cannot go on
-  // (a "No open orders" shown before the orders had loaded let the count start with orders still open).
-  const readOf = (q: { data?: unknown[]; isError: boolean }, count?: number) => ({ count: q.data ? (count ?? q.data.length) : null, failed: q.isError && !q.data });
+  // Each item is the register's answer since the close started: until a read answers, its item is still being checked and
+  // the close cannot go on (a "No open orders" shown before the orders had loaded, or from a minute-old copy, let the
+  // count start with orders still open).
+  const readOf = (q: { data?: unknown[]; dataUpdatedAt: number; isError: boolean; errorUpdatedAt: number }, count?: number) => {
+    const answered = Boolean(q.data) && q.dataUpdatedAt >= closeStartedAt;
+    return { count: answered ? (count ?? q.data!.length) : null, failed: !answered && q.isError && q.errorUpdatedAt >= closeStartedAt };
+  };
   const ordersRead = readOf(orders, mineOrders.length);
   const roundsRead = readOf(rounds);
   const lateRead = readOf(late);
@@ -112,7 +118,7 @@ export function ShiftHome({ onShowReport, onCounting }: { onShowReport: () => vo
     return {
       id,
       title: status === "checking" ? `Checking ${many}…` : read.count === null ? `Could not check ${many}` : n === 0 ? `No ${many}` : `${n} ${n === 1 ? one : many}`,
-      detail: read.count === null ? (read.failed ? "The register did not answer. Leave it for the next shift, or try again in a moment." : null) : n === 0 ? null : detail,
+      detail: read.count === null ? (read.failed ? "The register did not answer. It is checked again shortly, or leave it for the next shift." : null) : n === 0 ? null : detail,
       status,
       onView,
       onLeave: () => setLeft((prev) => new Set(prev).add(id)),
@@ -131,6 +137,8 @@ export function ShiftHome({ onShowReport, onCounting }: { onShowReport: () => vo
   const checking = checklist.some((c) => c.status === "checking");
 
   const startClose = () => {
+    setCloseStartedAt(Date.now());
+    for (const q of [orders, rounds, late, requests]) void q.refetch();
     setLeft(new Set());
     setMode("total");
     setDigits("");
@@ -273,7 +281,7 @@ export function ShiftHome({ onShowReport, onCounting }: { onShowReport: () => vo
               Not now
             </Button>
             <Button size="lg" variant="primary" isDisabled={!checklistDone} onPress={() => setPhase({ kind: "count" })}>
-              {checklistDone ? "Next: count the cash" : checking ? "Checking the register…" : "Resolve or leave each item"}
+              {checklistDone ? "Next: count the cash" : checking ? (offline ? "Offline" : "Checking the register…") : "Resolve or leave each item"}
             </Button>
           </>
         }

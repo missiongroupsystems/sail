@@ -166,16 +166,16 @@ test("L5: the closed-shift card names who opened the shift and who closed it", a
   }
 });
 
-// The close-shift checklist is four register reads, and the shift itself is two more. Whichever answers last, an item
-// is not "resolved" until its own read has answered, and the count cannot start before then (a "No open orders" shown
-// while the orders were still loading let the count start with orders open, and a read answering while the person
-// pressed Next turned the button off under the press).
+// The close-shift checklist is four register reads. Whichever answers last, an item is not "resolved" until its own read
+// has answered since the close started, and the count cannot start before then (a "No open orders" shown while the
+// orders were still loading, or from a copy cached by an earlier screen, let the count start with orders open, and a
+// read answering while the person pressed Next turned the button off under the press).
 const READS = [
   { name: "open orders", url: /\/v1\/outlets\/[^/]+\/orders\?.*open_only=true/, item: /^Checking open orders from this station…$/ },
   { name: "QR orders", url: /\/v1\/outlets\/[^/]+\/rounds\?.*status=pending/, item: /^Checking QR orders waiting at this outlet…$/ },
   { name: "late tickets", url: /\/v1\/outlets\/[^/]+\/print-jobs\?.*late=true/, item: /^Checking tickets not printed at this outlet…$/ },
   { name: "table requests", url: /\/v1\/outlets\/[^/]+\/service-requests\?.*status=open/, item: /^Checking table requests open at this outlet…$/ },
-  { name: "shifts", url: /\/v1\/outlets\/[^/]+\/shifts\?/, item: null },
+  { name: "open orders, already loaded once,", url: /\/v1\/outlets\/[^/]+\/orders\?.*open_only=true/, item: /^Checking open orders from this station…$/, warm: true },
 ];
 for (const read of READS) {
   test(`L5 (${read.name} answer last): the close-shift checklist waits for the register's answer before the count`, async ({ page }) => {
@@ -184,29 +184,30 @@ for (const read of READS) {
     const shift = await register<{ data: { id: string } }>("POST", "/v1/shifts", { outlet_id: outletId, station_id: stationId, float_cents: 10_000 });
     let release = () => {};
     const released = new Promise<void>((r) => (release = r));
-    await page.route(read.url, async (route) => {
-      await released;
-      await route.continue();
-    });
+    const hold = () =>
+      page.route(read.url, async (route) => {
+        await released;
+        await route.continue();
+      });
     try {
+      if (!("warm" in read)) await hold();
       await pairAndSignIn(page, MANAGER_PIN);
-      await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Shift", exact: true }).click();
-      const closeShift = page.getByRole("button", { name: "Close shift", exact: true });
-      if (read.item) {
-        await closeShift.click();
-        const checklist = page.getByRole("list", { name: "Before closing" });
-        await expect(checklist.getByText(read.item)).toBeVisible();
-        await expect(page.getByRole("button", { name: "Checking the register…" })).toBeDisabled();
-        await expect(page.getByRole("button", { name: /^Next: count the cash/ })).toHaveCount(0);
-        release();
-        await expect(checklist.getByText(read.item)).toHaveCount(0);
-      } else {
-        // Until the shift reads answer there is no shift to close.
-        await expect(page.getByRole("region", { name: "This station's shift" })).toHaveCount(0);
-        await expect(closeShift).toHaveCount(0);
-        release();
-        await closeShift.click();
+      const destinations = page.getByRole("navigation", { name: "Destinations" });
+      const firstAnswer = "warm" in read ? page.waitForResponse(read.url) : null;
+      await destinations.getByRole("button", { name: "Shift", exact: true }).click();
+      if (firstAnswer) {
+        // The read answers once while the shift is open; the close must still wait for an answer of its own.
+        await firstAnswer;
+        await expect(page.getByRole("region", { name: "This station's shift" }).getByRole("heading", { name: "Shift open" })).toBeVisible();
+        await hold();
       }
+      await page.getByRole("button", { name: "Close shift", exact: true }).click();
+      const checklist = page.getByRole("list", { name: "Before closing" });
+      await expect(checklist.getByText(read.item)).toBeVisible();
+      await expect(page.getByRole("button", { name: "Checking the register…" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: /^Next: count the cash/ })).toHaveCount(0);
+      release();
+      await expect(checklist.getByText(read.item)).toHaveCount(0);
       await leaveChecklistOpen(page);
       await page.getByRole("button", { name: /^Next: count the cash/ }).click();
       await page.getByRole("textbox", { name: "Cash counted in the drawer" }).fill("100.00");

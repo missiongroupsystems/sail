@@ -130,18 +130,25 @@ export async function textContrast(page: Page, selector: string): Promise<{ rati
   }, selector);
 }
 
-/** Tap digits on a keypad (the PIN pad or an amount pad). */
 /**
  * On the close-shift checklist, leave every open item for the next shift once the register has answered each of its
- * reads (until then the primary button says "Checking the register…"). Each Leave open is found afresh: a left item
- * loses its button, so a list of the buttons taken up front points past the end.
+ * reads (until then the primary button says "Checking the register…"). Each Leave open is found afresh, and each click
+ * waits for its button to go: a left item loses its button, so a list of the buttons taken up front points past the end.
+ * The checklist has four items, so four clicks at most.
  */
 export async function leaveChecklistOpen(page: Page) {
   await expect(page.getByRole("button", { name: /^(Next: count the cash|Resolve or leave each item)$/ })).toBeVisible();
   const leave = page.getByRole("list", { name: "Before closing" }).getByRole("button", { name: "Leave open" });
-  while ((await leave.count()) > 0) await leave.first().click();
+  for (let i = 0; i < 4; i++) {
+    const open = await leave.count();
+    if (open === 0) break;
+    await leave.first().click();
+    await expect(leave).toHaveCount(open - 1);
+  }
+  await expect(leave).toHaveCount(0);
 }
 
+/** Tap digits on a keypad (the PIN pad or an amount pad). */
 export async function keyIn(page: Page, group: string, digits: string) {
   const pad = page.getByRole("group", { name: group }).last();
   for (const d of digits) await pad.getByRole("button", { name: d, exact: true }).click();

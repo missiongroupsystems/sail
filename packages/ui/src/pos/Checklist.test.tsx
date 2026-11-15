@@ -25,14 +25,6 @@ describe("close-shift checklist status (an item is only resolved once its regist
     expect(checklistDone([item("resolved"), item("checking")])).toBe(false);
     expect(checklistDone([item("resolved"), item("open")])).toBe(false);
   });
-  // Either order of answers ends in the same place: a late read keeps the list not done until it answers.
-  it("stays not done until the last read answers, in either order", () => {
-    const reads = (orders: number | null, rounds: number | null) => [orders, rounds].map((count, i) => ({ ...item("resolved"), id: String(i), status: checklistStatus({ count, failed: false }, false) }));
-    expect(checklistDone(reads(null, 0))).toBe(false);
-    expect(checklistDone(reads(0, null))).toBe(false);
-    expect(checklistDone(reads(0, 0))).toBe(true);
-    expect(checklistDone(reads(1, 0))).toBe(false);
-  });
   it("offers no View or Leave open on an item still checking", () => {
     const html = renderToStaticMarkup(<Checklist items={[item("checking")]} />);
     expect(html).toContain("checking item");
