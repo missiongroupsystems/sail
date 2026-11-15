@@ -230,6 +230,10 @@ test("D-N2, D-N3, D-N1: the review has a 44px Edit, flags a sold-out item and ke
     if (await phone.getByRole("button", { name: /^View your order/ }).isVisible().catch(() => false)) await phone.getByRole("button", { name: /^View your order/ }).click();
     await expect(phone.getByText("Sold out. Remove it to send the rest.")).toBeVisible();
     await expect(phone.getByRole("button", { name: /^Remove the sold-out item to send/ })).toBeDisabled();
+    // After Rotate code the open page's live update can reach the register before the reload does: its refetch gets the
+    // 401 (code_rotated), which clears the stored session, so the reload exchanges the old code again and is refused
+    // with 404 code_rotated. Either way the phone shows the new-code notice, checked below.
+    watch.allow({ status: 404, url: /\/v1\/guest\/sessions$/, why: "the reload exchanges the rotated code" });
     await register("POST", `/v1/tables/${table.id}/qr/rotate`, {});
     await phone.reload();
     await expect(phone.getByText("This table has a new QR code.")).toBeVisible();

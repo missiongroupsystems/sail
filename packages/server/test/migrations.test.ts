@@ -9,6 +9,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { afterAll, describe, expect, inject, it } from "vitest";
 import { migrationsFolder, runMigrations } from "../src/db/migrate.js";
 import { freshDb, type TestDb } from "./helpers.js";
+import { installFakeClock } from "./pg.js";
 import { bootWorld, orderHelpers } from "./world.js";
 
 /** A column whose name says it holds an amount in minor units (or a sum of them). */
@@ -81,6 +82,7 @@ describe("a database at the last migration before the bigint change migrates for
       writeFileSync(join(before, "meta/_journal.json"), JSON.stringify({ ...journal, entries: journal.entries.slice(0, first) }));
       for (const e of journal.entries.slice(0, first)) copyFileSync(join(folder, `${e.tag}.sql`), join(before, `${e.tag}.sql`));
       await admin.unsafe(`create database ${template}`);
+      await installFakeClock(`postgres://postgres@127.0.0.1:${inject("pgPort")}/${template}`, inject("clockOffsetMs"));
       const t = postgres(`postgres://postgres@127.0.0.1:${inject("pgPort")}/${template}`, { max: 1, onnotice: () => {} });
       await migrate(drizzle(t), { migrationsFolder: before });
       // The data is made by today's code, which reads the columns later migrations add: they are added for the seed and
