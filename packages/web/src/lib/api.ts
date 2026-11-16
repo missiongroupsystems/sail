@@ -171,6 +171,8 @@ export function createApi({ baseUrl, token, headers, timeoutMs = DEFAULT_TIMEOUT
       if (tracker) return await tracker.run(request, controller, () => fetch(request, { signal: controller.signal }));
       return await fetch(request, { signal: controller.signal });
     } catch (e) {
+      // Refused unsent by the tracker (the session has ended): say so, not "could not be reached".
+      if (e instanceof ApiError) throw e;
       const reason: unknown = controller.signal.reason;
       if (controller.signal.aborted && reason instanceof ApiError) throw reason;
       throw ApiError.network(e);

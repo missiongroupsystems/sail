@@ -83,6 +83,40 @@ test("back office: signing out while the page is still loading sends no request 
   expect(afterSignOut).toEqual([]);
 });
 
+test("back office: Sign out with unsaved menu changes asks once; staying keeps the session, leaving signs out", async ({ page }) => {
+  test.setTimeout(600_000);
+  await signIn(page, SG_ADMIN, devLocal().admin_password);
+  await page.goto(`${WEB}/menu/menus`);
+  const save = page.getByRole("button", { name: "Save menu order" });
+  await expect(async () => {
+    await page.getByRole("button", { name: "Add section" }).click({ timeout: 10_000 });
+    await expect(save).toBeEnabled({ timeout: 5_000 });
+  }).toPass({ timeout: 300_000 });
+  const asked: string[] = [];
+  // Stay: the page and its session are left as they were, and the next read still works.
+  page.once("dialog", (d) => {
+    asked.push(d.type());
+    void d.dismiss();
+  });
+  await page.getByRole("button", { name: /Open user menu/ }).click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
+  await expect(save).toBeEnabled();
+  expect(page.url()).toContain("/menu/menus");
+  await page.keyboard.press("Escape");
+  const token = await sessionToken(page);
+  expect(await meStatus(token)).toBe(200);
+  // Leave: one question (not a second "leave site?"), then sign-in.
+  page.on("dialog", (d) => {
+    asked.push(d.type());
+    void d.accept();
+  });
+  await page.getByRole("button", { name: /Open user menu/ }).click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
+  await page.waitForURL(/\/login/);
+  expect(asked).toEqual(["confirm", "confirm"]);
+  expect(await meStatus(token)).toBe(401);
+});
+
 test("back office: an Admin invites a staff member, who sets a password in another browser; revoking signs them out", async ({ browser, page, watch }) => {
   test.setTimeout(900_000);
   const suffix = String(Date.now()).slice(-6);

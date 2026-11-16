@@ -88,6 +88,10 @@ Notable changes to Sail, newest first. Field and operation names are as in `pack
 - Reports filtered by staff no longer fail. The POS lists today's closed orders by the business day. A dry run that skips an agent's ceiling always rolls back.
 - `events.list` filters by type instead of failing; print health counts a business day's jobs; a business-day cutoff in a daylight-saving gap or overlap ends the day once.
 - Front ends: unreadable text caused by a clashing colour token, a duplicate key on the PIN pad, the pay screen polling dry runs, smaller POS and guest defects.
+- Signing out of the back office stops the page's requests first (reads cancelled, writes finished, nothing new sent) and asks about unsaved menu changes, so no request reaches the register with the ended session; the POS lock does the same for its PIN session.
+- A cancelled order owes nothing: the back-office drawer shows no unpaid bill and no Refund for it, and the guest's phone drops "Pay at the counter" once a rejection has cancelled the order.
+- A POS tile's name wraps clear of its count badge; a disabled select, date or tags field reads in the disabled ink throughout, placeholder and chevron included.
+- The end-to-end specs' screenshots no longer write the caret style into a page before it hydrates (the intermittent hydration mismatch on Settings › Merchant).
 
 ### Tooling and docs
 - ESLint for `ui`, `web` and `guest`; a Playwright end-to-end suite (`pnpm test:e2e`) for the back office, POS and guest app.
