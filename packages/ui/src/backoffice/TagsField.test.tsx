@@ -24,3 +24,15 @@ describe("TagsField locked chips (M6)", () => {
     expect(tag).not.toContain("text-ink-disabled");
   });
 });
+
+describe("TagsField locked and empty (round 7)", () => {
+  const input = (isDisabled: boolean) => renderToStaticMarkup(<TagsField label="Tags" value={[]} onChange={() => {}} isDisabled={isDisabled} />).match(/<input\b[^>]*>/)![0];
+  it("asks for nothing and shows the not-allowed cursor over its input too", () => {
+    const html = input(true);
+    expect(html).not.toContain("Add a tag and press Enter");
+    expect(html).toContain("cursor-not-allowed");
+  });
+  it("an editable empty field still says how to add a tag", () => {
+    expect(input(false)).toContain('placeholder="Add a tag and press Enter"');
+  });
+});
