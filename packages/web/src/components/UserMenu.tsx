@@ -5,6 +5,7 @@ import { ChevronsUpDown, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
+import { browserRequests } from "@/lib/api.browser";
 import type { Me } from "@/lib/api/types";
 import type { Theme } from "@/lib/cookies";
 
@@ -24,9 +25,12 @@ export function UserMenu({ me, theme: initialTheme }: { me: Me; theme: Theme }) 
   };
 
   const signOut = async () => {
+    // Stop the page's reads and refuse new ones first: a query still loading (Today's set-up checklist, say) would
+    // otherwise reach the register after the session ended and be refused with a 401.
+    await browserRequests.close();
     await fetch("/api/session", { method: "DELETE" });
-    router.replace("/login");
-    router.refresh();
+    // A full load, not a client navigation: the closed client and the signed-out person's cached data go with the page.
+    window.location.replace("/login");
   };
 
   return (

@@ -40,6 +40,11 @@ export class ApiError extends Error {
     return new ApiError({ code: "unavailable", message: `The register did not reply within ${Math.round(ms / 1000)} seconds`, remedy: "Check the connection and try again." }, 0);
   }
 
+  /** Not sent: the session these requests belonged to has ended in this tab (sign-out, POS lock). */
+  static sessionEnded(): ApiError {
+    return new ApiError({ code: "session_ended", message: "Signed out", remedy: "Sign in again." }, 0);
+  }
+
   static network(cause: unknown): ApiError {
     return new ApiError({ code: "unavailable", message: "The register could not be reached", remedy: "Check the connection and that the API is running, then try again." }, 0, { cause });
   }
@@ -69,6 +74,58 @@ const autoKeyed = new WeakSet<Request>();
 const inFlight = new Map<string, Promise<Response>>();
 const SHARE_ANSWER_MS = 1000;
 
+type Live = { request: Request; controller: AbortController; settled: Promise<unknown> };
+
+/**
+ * The requests one browser client has on the wire. Ending a session goes through here first, so nothing that carries
+ * the session is still in flight, or sent, after the register ends it: a read on the wire is cancelled, a write is
+ * waited for (it may already have changed the register), and with `close` every later request is refused unsent.
+ */
+export type RequestTracker = {
+  /** Cancel the reads and wait for the writes that `match` picks (all by default). */
+  drain(match?: (request: Request) => boolean): Promise<void>;
+  /** Drain everything and refuse every later request: this tab's session is over until the page reloads. */
+  close(): Promise<void>;
+  readonly closed: boolean;
+  /** Internal: wraps one send. */
+  run(request: Request, controller: AbortController, send: () => Promise<Response>): Promise<Response>;
+};
+
+export function createRequestTracker(): RequestTracker {
+  const live = new Set<Live>();
+  let closed = false;
+  const drain = async (match: (request: Request) => boolean = () => true) => {
+    const writes: Promise<unknown>[] = [];
+    for (const l of live) {
+      if (!match(l.request)) continue;
+      if (MUTATING.has(l.request.method)) writes.push(l.settled);
+      else l.controller.abort(ApiError.sessionEnded());
+    }
+    await Promise.allSettled(writes);
+  };
+  return {
+    drain,
+    async close() {
+      closed = true;
+      await drain();
+    },
+    get closed() {
+      return closed;
+    },
+    async run(request, controller, send) {
+      if (closed) throw ApiError.sessionEnded();
+      const answer = send();
+      const entry: Live = { request, controller, settled: answer.catch(() => undefined) };
+      live.add(entry);
+      try {
+        return await answer;
+      } finally {
+        live.delete(entry);
+      }
+    },
+  };
+}
+
 export type ApiClientOptions = {
   /** "http://localhost:8080" on the server; "/api" in the browser (the Next proxy). */
   baseUrl: string;
@@ -77,6 +134,8 @@ export type ApiClientOptions = {
   /** Extra request headers, such as the browser's address on sign-in. */
   headers?: Record<string, string>;
   timeoutMs?: number;
+  /** Browser clients only: lets sign-out and lock stop this client's requests before the session ends. */
+  tracker?: RequestTracker;
 };
 
 /**
@@ -85,7 +144,7 @@ export type ApiClientOptions = {
  * when retrying), and errors thrown as `ApiError` so `data` is always present on
  * a resolved call.
  */
-export function createApi({ baseUrl, token, headers, timeoutMs = DEFAULT_TIMEOUT_MS }: ApiClientOptions) {
+export function createApi({ baseUrl, token, headers, timeoutMs = DEFAULT_TIMEOUT_MS, tracker }: ApiClientOptions) {
   const timedFetch = async (request: Request): Promise<Response> => {
     if (!autoKeyed.has(request)) return send(request);
     // The body is read once, as bytes, and sent as bytes: a request cloned to read it would go out as a stream.
@@ -109,6 +168,7 @@ export function createApi({ baseUrl, token, headers, timeoutMs = DEFAULT_TIMEOUT
     if (upstream.aborted) controller.abort(upstream.reason);
     else upstream.addEventListener("abort", () => controller.abort(upstream.reason), { once: true });
     try {
+      if (tracker) return await tracker.run(request, controller, () => fetch(request, { signal: controller.signal }));
       return await fetch(request, { signal: controller.signal });
     } catch (e) {
       const reason: unknown = controller.signal.reason;

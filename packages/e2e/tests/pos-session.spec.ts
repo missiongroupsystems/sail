@@ -30,6 +30,36 @@ test("Lock shows the PIN pad and ends the session on the register", async ({ pag
   await expect.poll(() => meStatus(token), { message: "the old token opens nothing" }).toBe(401);
 });
 
+test("Lock while a read is still on the wire: nothing reaches the register with the ended session", async ({ page }) => {
+  test.setTimeout(300_000);
+  await pairAndSignIn(page, CASHIER_PIN);
+  const token = await pinToken(page);
+  // Hold the reads the Orders tab sends with the PIN session until the register has ended that session: without
+  // the lock cancelling them first, they arrive afterwards and are refused with a 401 (the watch fixture fails on it).
+  let release!: () => void;
+  const ended = new Promise<void>((r) => (release = r));
+  let holding = false;
+  const ofSession = (r: { method(): string; headers(): Record<string, string> }) => holding && r.method() === "GET" && r.headers().authorization === `Bearer ${token}`;
+  await page.route(`${API}/v1/**`, async (route) => {
+    if (!ofSession(route.request())) return route.continue();
+    await ended;
+    await route.continue().catch(() => undefined);
+  });
+  page.on("response", (r) => {
+    if (r.url().endsWith("/v1/stations/sessions/end")) release();
+  });
+  const lock = page.getByRole("banner").getByRole("button", { name: "Lock", exact: true });
+  await expect(lock).toBeVisible();
+  holding = true;
+  const held = page.waitForRequest(ofSession);
+  await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Orders", exact: true }).click();
+  await held;
+  await lock.click();
+  await expect(page.getByRole("button", { name: "Pair this iPad again" })).toBeVisible();
+  await expect.poll(() => meStatus(token), { message: "the session ended on the register" }).toBe(401);
+  await page.waitForLoadState("networkidle");
+});
+
 test("a session ended on the register shows the PIN pad, not an error, and nothing carries over to the next sign-in", async ({ page, watch }) => {
   test.setTimeout(300_000);
   watch.allow({ status: 401, url: /\/v1\//, why: "the session was ended on the register on purpose; the station answers by locking" });

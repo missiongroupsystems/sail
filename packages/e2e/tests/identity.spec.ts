@@ -51,6 +51,38 @@ test("back office: a wrong password is refused, the right one signs in, and sign
   await page.waitForURL(/\/login/);
 });
 
+test("back office: signing out while the page is still loading sends no request with the ended session", async ({ page }) => {
+  test.setTimeout(600_000);
+  await signIn(page, SG_ADMIN, devLocal().admin_password);
+  // Hold the answer to the set-up checklist's menu list until the register has ended the session, so its dependent
+  // per-menu reads would start after sign-out (live sandbox runs: a 401 on GET /v1/menus/{id} in 7 of 41 loops).
+  let release!: () => void;
+  const ended = new Promise<void>((r) => (release = r));
+  await page.route(/\/api\/v1\/menus(\?.*)?$/, async (route) => {
+    const answer = await route.fetch();
+    await ended;
+    await route.fulfill({ response: answer }).catch(() => undefined);
+  });
+  const afterSignOut: string[] = [];
+  let signingOut = false;
+  page.on("request", (r) => {
+    if (signingOut && r.url().includes("/api/v1/")) afterSignOut.push(`${r.method()} ${r.url()}`);
+  });
+  page.on("response", (r) => {
+    if (r.request().method() === "DELETE" && r.url().endsWith("/api/session")) release();
+  });
+  const listSent = page.waitForRequest(/\/api\/v1\/menus(\?.*)?$/);
+  await page.goto(`${WEB}/today`);
+  await listSent;
+  await page.getByRole("button", { name: /Open user menu/ }).click();
+  signingOut = true;
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
+  await page.waitForURL(/\/login/);
+  await page.waitForLoadState("networkidle");
+  // Nothing goes out with the ended session (the watch fixture also fails the test on any 401).
+  expect(afterSignOut).toEqual([]);
+});
+
 test("back office: an Admin invites a staff member, who sets a password in another browser; revoking signs them out", async ({ browser, page, watch }) => {
   test.setTimeout(900_000);
   const suffix = String(Date.now()).slice(-6);
