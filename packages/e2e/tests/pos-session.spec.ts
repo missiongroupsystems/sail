@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { API, expect, pairAndSignIn, test } from "./fixtures";
+import { API, expect, keyIn, pairAndSignIn, shot, test } from "./fixtures";
 
 /**
  * PIN sessions: the register keeps one alive only while a person acts on it, and every lock ends it there too, so a
@@ -94,4 +94,28 @@ test("the inactivity lock ends the session on the register too", async ({ page }
   await expect(page.getByRole("button", { name: "Pair this iPad again" })).toBeVisible({ timeout: 40_000 });
   await expect(page.getByText("Locked after inactivity. Sign in to continue.")).toBeVisible();
   await expect.poll(() => meStatus(token), { message: "the idle session is ended, not left to expire" }).toBe(401);
+});
+
+test("Switch user promises the order stays open only when an order is open", async ({ page }) => {
+  test.setTimeout(300_000);
+  const note = page.getByText("Switch user: the order stays open for you.");
+  const switchUser = async () => {
+    await page.getByRole("button", { name: /Open user menu$/ }).click();
+    await page.getByRole("menuitem", { name: "Switch user" }).click();
+    await expect(page.getByRole("button", { name: "Pair this iPad again" })).toBeVisible();
+  };
+  await pairAndSignIn(page, CASHIER_PIN);
+  // On the floor, with no order open: the lock screen says nothing about an order (live check: it said it stayed open).
+  await switchUser();
+  await expect(note).toHaveCount(0);
+  await shot(page, test.info().outputPath("switch-user-no-order.png"));
+  await keyIn(page, "PIN keys", CASHIER_PIN);
+  await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Floor", exact: true }).click();
+  await page.getByRole("button", { name: "Takeaway order", exact: true }).click();
+  await expect(page.getByRole("navigation", { name: "Menu sections" })).toBeVisible();
+  // With the order on screen it is kept for the next person.
+  await switchUser();
+  await expect(note).toBeVisible();
+  await keyIn(page, "PIN keys", CASHIER_PIN);
+  await expect(page.getByRole("navigation", { name: "Menu sections" })).toBeVisible();
 });

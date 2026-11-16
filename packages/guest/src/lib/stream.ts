@@ -21,7 +21,8 @@ const COALESCE_MS = 150;
  * Live updates for the guest: `/v1/guest/stream` over
  * `fetch` streaming with the Bearer token. The stream only signals; every
  * `hello`, `change` and `resync` makes the app refetch the order view, as does
- * the tab becoming visible again. While the table has no order the register
+ * the tab becoming visible again. `ended` means the table session has ended:
+ * the stream stops and reports it as the register's refusal would. While the table has no order the register
  * answers 409, so the client polls instead and retries the stream each time.
  */
 export class GuestStream {
@@ -161,15 +162,29 @@ export class GuestStream {
 
   private frame(frame: string) {
     let event = "message";
+    let data = "";
     for (const line of frame.split("\n")) {
       if (line.startsWith("event:")) event = line.slice(6).trim();
-      // Comment lines (": ping") are heartbeats; data is not needed, the order view is the source of truth.
+      else if (line.startsWith("data:")) data = line.slice(5).trim();
+      // Comment lines (": ping") are heartbeats. Only `ended` reads its data; for the rest the order view is the source of truth.
     }
     if (event === "hello") {
       this.setStatus("live");
       this.change();
     } else if (event === "change" || event === "resync") {
       this.change();
+    } else if (event === "ended") {
+      // The table session has ended (the order was paid, say): nothing more goes out with its token, not even the
+      // refetch an earlier change had queued, which the register would refuse with a 401.
+      // Its data carries the reason the register's 401 would ("code_rotated" when the table has a new code).
+      this.stop();
+      let details: Record<string, unknown> | undefined;
+      try {
+        details = (JSON.parse(data) as Record<string, unknown> | null) ?? undefined;
+      } catch {
+        details = undefined;
+      }
+      this.opts.onUnauthenticated?.(details);
     }
   }
 }

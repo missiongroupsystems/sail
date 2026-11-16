@@ -173,7 +173,7 @@ test("L5: the closed-shift card names who opened the shift and who closed it", a
 const READS = [
   { name: "open orders", url: /\/v1\/outlets\/[^/]+\/orders\?.*open_only=true/, item: /^Checking open orders from this station…$/ },
   { name: "QR orders", url: /\/v1\/outlets\/[^/]+\/rounds\?.*status=pending/, item: /^Checking QR orders waiting at this outlet…$/ },
-  { name: "late tickets", url: /\/v1\/outlets\/[^/]+\/print-jobs\?.*late=true/, item: /^Checking tickets not printed at this outlet…$/ },
+  { name: "late tickets", url: /\/v1\/outlets\/[^/]+\/print-jobs\?.*late=true/, item: /^Checking ticket printing at this outlet…$/ },
   { name: "table requests", url: /\/v1\/outlets\/[^/]+\/service-requests\?.*status=open/, item: /^Checking table requests open at this outlet…$/ },
   { name: "open orders, already loaded once,", url: /\/v1\/outlets\/[^/]+\/orders\?.*open_only=true/, item: /^Checking open orders from this station…$/, warm: true },
 ];
@@ -208,6 +208,9 @@ for (const read of READS) {
       await expect(page.getByRole("button", { name: /^Next: count the cash/ })).toHaveCount(0);
       release();
       await expect(checklist.getByText(read.item)).toHaveCount(0);
+      // Each all-clear line says so plainly ("No tickets not printed at this outlet" was a double negative).
+      await expect(checklist.getByText(/^(Every ticket printed at this outlet|\d+ tickets? not printed at this outlet|Could not check ticket printing at this outlet)$/)).toBeVisible();
+      await expect(checklist.getByText(/^No tickets/)).toHaveCount(0);
       await leaveChecklistOpen(page);
       await page.getByRole("button", { name: /^Next: count the cash/ }).click();
       await page.getByRole("textbox", { name: "Cash counted in the drawer" }).fill("100.00");

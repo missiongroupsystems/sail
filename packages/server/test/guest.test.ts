@@ -288,9 +288,16 @@ describe("Scan to Order", () => {
     for (const r of pendingRounds.body.data) await call("POST", `/v1/rounds/${r.id}/accept`, { token: serverPin, body: {} });
     await call("POST", `/v1/orders/${orderId}/fire`, { token: serverPin, body: {} });
     const current = await call<{ data: Snap }>("GET", `/v1/orders/${orderId}`, { token: cashierPin });
+    // The phone on the order's stream hears `ended` instead of the payment's changes, and the stream closes: it never
+    // has to learn of the end from a refused refetch (live check: a 401 on GET /v1/guest/order after payment).
+    const gs = await app.request("/v1/guest/stream", { headers: { authorization: `Bearer ${g}` } });
+    expect(gs.status).toBe(200);
+    const frames = readSse(gs, 6, 3000);
+    await new Promise((r) => setTimeout(r, 100));
     const paid = await call<{ data: Snap }>("POST", `/v1/checks/${current.body.data.checks[0]!.id}/payments`, { token: cashierPin, body: { payment_id: randomUUID(), tender_type_id: ids.cash, amount: current.body.data.checks[0]!.totals.total } });
     expect(paid.status, JSON.stringify(paid.body)).toBe(200);
     expect(paid.body.data.status).toBe("completed");
+    expect((await frames).map((f) => f.event)).toEqual(["hello", "ended"]);
     const afterClose = await guestCall<{ code: string; remedy: string }>("GET", "/v1/guest/order", g);
     expect(afterClose.status).toBe(401);
     expect(afterClose.body.remedy).toMatch(/Scan the table/);
@@ -328,6 +335,22 @@ describe("Scan to Order", () => {
     expect(viewB.rounds.find((r) => r.id === roundId)).toMatchObject({ line_ids: [lineId], mine: false });
     expect(viewB.lines.find((l) => l.id === lineId)).toMatchObject({ round_id: roundId, mine: false });
     expect(viewB.rounds.map((r) => r.id).sort()).toEqual(viewA.rounds.map((r) => r.id).sort());
+  });
+
+  it("a phone whose session a code rotation ended hears `ended` with the reason on the next change, as its 401 would say", async () => {
+    await resetGuestRateLimitsForTests();
+    const s = await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl13), device_id: "device-hhhh-0008" }, idempotencyKey: null });
+    const g = s.body.data.guest_token;
+    const orderId = (await call<{ data: Snap[] }>("GET", `/v1/outlets/${A.outletId}/orders?table_id=${ids.table13}&open_only=true`, { token: serverPin })).body.data[0]!.id;
+    const gs = await app.request("/v1/guest/stream", { headers: { authorization: `Bearer ${g}` } });
+    expect(gs.status).toBe(200);
+    const frames = readSse(gs, 4, 3000);
+    await new Promise((r) => setTimeout(r, 100));
+    qrUrl13 = (await call<{ data: { url: string } }>("POST", `/v1/tables/${ids.table13}/qr/rotate`, { token: A.admin.token, body: {} })).body.data.url;
+    expect((await call("POST", `/v1/orders/${orderId}/lines`, { token: serverPin, body: { lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] } })).status).toBe(200);
+    const got = await frames;
+    expect(got.map((f) => f.event)).toEqual(["hello", "ended"]);
+    expect(got[1]!.data).toEqual({ reason: "code_rotated" });
   });
 });
 

@@ -77,7 +77,8 @@ export function TagsField({ label, description, errorMessage, value, onChange, p
             </AriaButton>
           </span>
         ))}
-        <Input placeholder={value.length ? "" : placeholder} className={cx("min-w-[8ch] flex-1 bg-transparent py-1 text-body outline-none", isDisabled ? "text-ink-disabled placeholder:text-ink-disabled" : "text-ink placeholder:text-ink-3")} />
+        {/* Locked, the field asks for nothing ("Add a tag and press Enter" is an instruction) and has one cursor throughout. */}
+        <Input placeholder={value.length || isDisabled ? "" : placeholder} className={cx("min-w-[8ch] flex-1 bg-transparent py-1 text-body outline-none", isDisabled ? "cursor-not-allowed text-ink-disabled" : "text-ink placeholder:text-ink-3")} />
       </div>
       {description ? (
         <Text slot="description" className={fieldDescription}>

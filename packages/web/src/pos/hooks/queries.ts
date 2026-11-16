@@ -28,7 +28,7 @@ import {
   listVoidReasons,
   quoteRefund,
 } from "../api/register";
-import type { CheckSnapshot, FloorSnapshot, OrderSnapshot } from "../api/types";
+import type { CheckSnapshot, FloorSnapshot, OrderSnapshot, SnapshotLine } from "../api/types";
 import { useApi } from "./useApi";
 
 /** Query keys, by resource. The event store invalidates by these. */
@@ -119,9 +119,47 @@ export function useOpenOrders(outletId: string | null) {
   return useQuery({ queryKey: posKeys.orders(outletId ?? ""), queryFn: () => listOpenOrders(api, outletId!), enabled: Boolean(outletId), staleTime: 5_000, refetchInterval: 60_000 });
 }
 
+/**
+ * Lines this station has added that the register has not answered for yet, per order. Every snapshot put on screen
+ * keeps them (after the register's lines), so a reply to an earlier add, or a refetch, never takes a tap's line, and
+ * the count on its tile, away again while its own add is still on the wire.
+ */
+const pendingLines = new Map<string, Map<string, SnapshotLine>>();
+
+export function holdPendingLine(orderId: string, line: SnapshotLine) {
+  const lines = pendingLines.get(orderId) ?? new Map<string, SnapshotLine>();
+  lines.set(line.id, line);
+  pendingLines.set(orderId, lines);
+}
+
+export function releasePendingLine(orderId: string, lineId: string) {
+  const lines = pendingLines.get(orderId);
+  lines?.delete(lineId);
+  if (lines && lines.size === 0) pendingLines.delete(orderId);
+}
+
+function withPendingLines(snapshot: OrderSnapshot): OrderSnapshot {
+  const pending = pendingLines.get(snapshot.id);
+  if (!pending?.size) return snapshot;
+  const known = new Set(snapshot.lines.map((l) => l.id));
+  const extra = Array.from(pending.values()).filter((l) => !known.has(l.id));
+  return extra.length ? { ...snapshot, lines: [...snapshot.lines, ...extra] } : snapshot;
+}
+
+/** The newer of two snapshots of one order: a read answered after a write it started before must not undo it on screen. */
+function newer(cached: OrderSnapshot | undefined, fresh: OrderSnapshot): OrderSnapshot {
+  return cached && cached.id === fresh.id && cached.version > fresh.version ? cached : fresh;
+}
+
 export function useOrder(orderId: string | null) {
   const api = useApi();
-  return useQuery<OrderSnapshot>({ queryKey: posKeys.order(orderId ?? ""), queryFn: () => getOrder(api, orderId!), enabled: Boolean(orderId), staleTime: 5_000 });
+  const qc = useQueryClient();
+  return useQuery<OrderSnapshot>({
+    queryKey: posKeys.order(orderId ?? ""),
+    queryFn: async () => withPendingLines(newer(qc.getQueryData<OrderSnapshot>(posKeys.order(orderId!)), await getOrder(api, orderId!))),
+    enabled: Boolean(orderId),
+    staleTime: 5_000,
+  });
 }
 
 /** Terminal payments of an order. The event stream refreshes it; no polling. */
@@ -142,7 +180,7 @@ export function useVoidReasons() {
 
 /** Put a register snapshot into the cache (after a mutation) and refresh the views that summarise it. */
 export function applySnapshot(qc: QueryClient, snapshot: OrderSnapshot) {
-  qc.setQueryData<OrderSnapshot>(posKeys.order(snapshot.id), snapshot);
+  qc.setQueryData<OrderSnapshot>(posKeys.order(snapshot.id), (cached) => withPendingLines(newer(cached, snapshot)));
   void qc.invalidateQueries({ queryKey: posKeys.floor(snapshot.outlet_id) });
   void qc.invalidateQueries({ queryKey: posKeys.orders(snapshot.outlet_id) });
 }

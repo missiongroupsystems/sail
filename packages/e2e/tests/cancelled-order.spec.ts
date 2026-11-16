@@ -74,6 +74,9 @@ test("a QR round rejected on the order it opened: the phone asks for no payment,
     await expect(drawer.getByText("Totals", { exact: true })).toBeVisible();
     await expect(drawer.getByText("Unpaid", { exact: true })).toHaveCount(0);
     await expect(drawer.getByRole("button", { name: /^Refund/ })).toHaveCount(0);
+    // Its only round was turned down, so it never went to the kitchen (it read "0 rounds", as if nothing was sent).
+    await expect(drawer.getByText(/· not sent to the kitchen$/)).toBeVisible();
+    await expect(drawer.getByText(/\b\d+ rounds?\b/)).toHaveCount(0);
     await shot(page, test.info().outputPath("drawer.png"));
   });
 });
@@ -102,6 +105,7 @@ test("a cancelled order whose payment was reversed still shows that bill and pay
   const drawer = page.getByRole("dialog");
   await expect(drawer.getByText("Bill 1", { exact: true })).toBeVisible();
   await expect(drawer.getByText(/· reversed/)).toBeVisible();
+  await expect(drawer.getByText(/· sent to the kitchen once$/)).toBeVisible();
   await expect(drawer.getByText("Unpaid", { exact: true })).toHaveCount(0);
   await expect(drawer.getByRole("button", { name: /^Refund/ })).toHaveCount(0);
   await drawer.getByText("Bill 1", { exact: true }).scrollIntoViewIfNeeded();

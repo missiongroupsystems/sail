@@ -195,14 +195,27 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data }, 201);
   });
 
-  defineOp(app, { op: "guest.stream", method: "get", path: "/v1/guest/stream", tags: ["guest"], responses: { 200: { description: "text/event-stream: hello, change, resync for the table's order", content: { "text/event-stream": { schema: z.string() } } }, ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "guest.stream", method: "get", path: "/v1/guest/stream", tags: ["guest"], responses: { 200: { description: "text/event-stream: hello, change, resync for the table's order; ended (then the stream closes) once the table session has ended", content: { "text/event-stream": { schema: z.string() } } }, ...errorResponses } }, async (c) => {
     const p = guestOnly(c.get("principal"));
     const orderId = await withTransaction(async (t) => {
       await applyRls(t, p);
       return bindSessionToTableOrder(p);
     });
     if (!orderId) throw AppError.state("No order yet for this table", [], "Ask staff to seat you, then try again.");
-    return serveStream(c, [`order:${orderId}`], { order_id: orderId }, (n) => n.kind === "resync" || (n.kind === "event" && n.aggregate_id === orderId));
+    // Paying or closing the order ends its guest sessions in the same transaction (a cancel after a rejected round
+    // unbinds them instead), and so does rotating the table's code: the phone hears `ended`, with the reason the
+    // resolver's 401 would give (`code_rotated`), and sends nothing more with the session.
+    const ended = () =>
+      withTransaction(async (t) => {
+        const [s] = await t.db.select({ revokedAt: guestSessions.revokedAt, expiresAt: guestSessions.expiresAt, tableId: guestSessions.tableId }).from(guestSessions).where(eq(guestSessions.id, p.sessionId)).limit(1);
+        if (s && !s.revokedAt && s.expiresAt.getTime() >= Date.now()) return null;
+        if (s?.revokedAt) {
+          const [rotated] = await t.db.select({ id: tableQrTokens.id }).from(tableQrTokens).where(and(eq(tableQrTokens.tableId, s.tableId), eq(tableQrTokens.rotatedAt, s.revokedAt))).limit(1);
+          if (rotated) return { reason: "code_rotated" };
+        }
+        return {};
+      });
+    return serveStream(c, [`order:${orderId}`], { order_id: orderId }, (n) => n.kind === "resync" || (n.kind === "event" && n.aggregate_id === orderId), ended);
   });
 
   /* ---- Staff side ---- */
