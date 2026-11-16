@@ -78245,7 +78245,7 @@
         },
         "responses": {
           "200": {
-            "description": "text/event-stream: hello, change, resync for the table's order",
+            "description": "text/event-stream: hello, change, resync for the table's order; ended (then the stream closes) once the table session has ended",
             "content": {
               "text/event-stream": {
                 "schema": {

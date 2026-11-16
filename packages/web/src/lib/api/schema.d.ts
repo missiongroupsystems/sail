@@ -30689,7 +30689,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description text/event-stream: hello, change, resync for the table's order */
+            /** @description text/event-stream: hello, change, resync for the table's order; ended (then the stream closes) once the table session has ended */
             200: {
                 headers: {
                     [name: string]: unknown;

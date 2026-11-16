@@ -288,9 +288,16 @@ describe("Scan to Order", () => {
     for (const r of pendingRounds.body.data) await call("POST", `/v1/rounds/${r.id}/accept`, { token: serverPin, body: {} });
     await call("POST", `/v1/orders/${orderId}/fire`, { token: serverPin, body: {} });
     const current = await call<{ data: Snap }>("GET", `/v1/orders/${orderId}`, { token: cashierPin });
+    // The phone on the order's stream hears `ended` instead of the payment's changes, and the stream closes: it never
+    // has to learn of the end from a refused refetch (live check: a 401 on GET /v1/guest/order after payment).
+    const gs = await app.request("/v1/guest/stream", { headers: { authorization: `Bearer ${g}` } });
+    expect(gs.status).toBe(200);
+    const frames = readSse(gs, 6, 3000);
+    await new Promise((r) => setTimeout(r, 100));
     const paid = await call<{ data: Snap }>("POST", `/v1/checks/${current.body.data.checks[0]!.id}/payments`, { token: cashierPin, body: { payment_id: randomUUID(), tender_type_id: ids.cash, amount: current.body.data.checks[0]!.totals.total } });
     expect(paid.status, JSON.stringify(paid.body)).toBe(200);
     expect(paid.body.data.status).toBe("completed");
+    expect((await frames).map((f) => f.event)).toEqual(["hello", "ended"]);
     const afterClose = await guestCall<{ code: string; remedy: string }>("GET", "/v1/guest/order", g);
     expect(afterClose.status).toBe(401);
     expect(afterClose.body.remedy).toMatch(/Scan the table/);
