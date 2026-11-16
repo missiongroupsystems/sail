@@ -10,13 +10,31 @@ import { reportUnreachable } from "../events/stream";
 import type { CheckPayment, CheckSnapshot, CompiledProduct, ManualRule, MutationResult, OrderSnapshot, OrderType, OverrideAction, OverrideSubject, PaymentIntent, PaymentResult, ReceiptChannel, RefundRequest, RefundResult, Role, SnapshotLine } from "../api/types";
 import { useSessionStore } from "../state/session";
 import { useConnectionStore, useUiStore } from "../state/ui";
-import { applySnapshot, posKeys } from "./queries";
+import { applySnapshot, holdPendingLine, posKeys, releasePendingLine } from "./queries";
 import { useApi } from "./useApi";
 
 /** The Send on the wire for each order, shared by every screen that offers Send. */
-/** Adds on the wire per order from this station: a conflict between two of them is this station's own, not another's. */
-const adding = new Map<string, number>();
 const sending = new Map<string, Promise<OrderSnapshot | null>>();
+/**
+ * The last write this station queued on each order. Writes to one order go one after another, each with the version
+ * the one before it left, so fast taps never race each other into a 409 (the register would refuse every add sent
+ * with a version an earlier add had already moved on).
+ */
+const writes = new Map<string, Promise<unknown>>();
+
+function inTurn<T>(orderId: string, write: () => Promise<T>): Promise<T> {
+  const previous = writes.get(orderId) ?? Promise.resolve();
+  const result = previous.then(write);
+  const settled = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  writes.set(orderId, settled);
+  void settled.then(() => {
+    if (writes.get(orderId) === settled) writes.delete(orderId);
+  });
+  return result;
+}
 
 const RANK: Record<Role, number> = { server: 10, cashier: 20, manager: 30, finance: 40, admin: 50 };
 const MIN_ROLE: Record<OverrideAction, Role> = { "lines.void_fired": "manager", "lines.add_open_price": "manager", "adjustments.apply_manual": "server", "adjustments.remove": "server", "payments.record": "cashier", "refunds.create": "manager", "orders.reopen": "manager", "payments.void": "manager" };
@@ -81,32 +99,36 @@ export function useOrderActions(orderId: string) {
    * Run a register mutation with `expected_version`, keep the snapshot it
    * returns, and handle a version conflict: refetch, then either retry once
    * without a version (safe for adding lines) or tell the user in one line.
+   * It waits for this station's earlier writes to the order (see `inTurn`), and
+   * reads the version only then, so a conflict is always another station's.
    */
   const run = useCallback(
     async (exec: (expectedVersion: number | null) => Promise<MutationResult>, opts: { versioned?: boolean; onConflict?: "retry-unversioned" | "refetch"; onRetried?: () => void } = {}): Promise<OrderSnapshot | null> => {
       beginMutation(orderId);
       try {
-        const current = snapshot();
-        const expected = opts.versioned === false ? null : (current?.version ?? null);
-        try {
-          const res = await exec(expected);
-          applySnapshot(qc, res.data);
-          for (const w of res.warnings) notify({ text: w, tone: "info", orderId }, 6000);
-          return res.data;
-        } catch (e) {
-          if (e instanceof ApiError && e.code === "version_conflict") {
-            await qc.invalidateQueries({ queryKey: key });
-            if (opts.onConflict === "retry-unversioned") {
-              const res = await exec(null);
-              applySnapshot(qc, res.data);
-              opts.onRetried?.();
-              return res.data;
+        return await inTurn(orderId, async () => {
+          const current = snapshot();
+          const expected = opts.versioned === false ? null : (current?.version ?? null);
+          try {
+            const res = await exec(expected);
+            applySnapshot(qc, res.data);
+            for (const w of res.warnings) notify({ text: w, tone: "info", orderId }, 6000);
+            return res.data;
+          } catch (e) {
+            if (e instanceof ApiError && e.code === "version_conflict") {
+              await qc.invalidateQueries({ queryKey: key });
+              if (opts.onConflict === "retry-unversioned") {
+                const res = await exec(null);
+                applySnapshot(qc, res.data);
+                opts.onRetried?.();
+                return res.data;
+              }
+              notify({ text: "The order changed on another station", remedy: "Check the order and try again.", tone: "info", orderId }, 6000);
+              return null;
             }
-            notify({ text: "The order changed on another station", remedy: "Check the order and try again.", tone: "info", orderId }, 6000);
-            return null;
+            throw e;
           }
-          throw e;
-        }
+        });
       } finally {
         endMutation(orderId);
       }
@@ -180,6 +202,7 @@ export function useOrderActions(orderId: string) {
         created_at: now,
         optimistic: true,
       };
+      holdPendingLine(orderId, optimistic);
       qc.setQueryData<OrderSnapshot>(key, (s) => (s ? { ...s, lines: [...s.lines, optimistic] } : s));
       const body: reg.LineInput = {
         line_id: lineId,
@@ -192,9 +215,7 @@ export function useOrderActions(orderId: string) {
         open_price: input.openPrice ?? null,
       };
       const label = `Added ${input.product.name}${input.quantity > 1 ? ` ×${input.quantity}` : ""}`;
-      // Two quick taps make two adds: the second meets the first's new version, which is no news to anyone (C-6).
-      let ownConflict = (adding.get(orderId) ?? 0) > 0;
-      adding.set(orderId, (adding.get(orderId) ?? 0) + 1);
+      // Two quick taps make two adds, sent one after the other (`run`): a conflict is another station's (C-6).
       try {
         // A request that may have reached the register (its reply never came) is sent again exactly as it was, with the
         // same key: the register then replays its answer instead of refusing the key for a different request. Its
@@ -211,10 +232,7 @@ export function useOrderActions(orderId: string) {
             },
             {
               onConflict: "retry-unversioned",
-              onRetried: () => {
-                ownConflict ||= (adding.get(orderId) ?? 0) > 1;
-                if (!ownConflict) notify({ text: "The order changed on another station. Your 1 new line was kept", tone: "info", orderId }, 4000);
-              },
+              onRetried: () => notify({ text: "The order changed on another station. Your 1 new line was kept", tone: "info", orderId }, 4000),
             },
           );
         // An add that never reached the register keeps its line on screen and is sent again, with the same line id and
@@ -234,6 +252,7 @@ export function useOrderActions(orderId: string) {
         };
         const snap = input.openPrice != null ? await withApproval({ action: "lines.add_open_price", target_kind: "order", target_id: orderId, args: { lines: [{ line_id: lineId, product_id: input.product.id, quantity: input.quantity, open_price: input.openPrice }] } }, `Add ${input.product.name} at ${money(input.openPrice)}`, "Open price · needs a manager", queued) : await queued(null);
         if (!snap) {
+          releasePendingLine(orderId, lineId);
           qc.setQueryData<OrderSnapshot>(key, (s) => (s ? { ...s, lines: s.lines.filter((l) => l.id !== lineId) } : s));
           return null;
         }
@@ -246,11 +265,12 @@ export function useOrderActions(orderId: string) {
         }, { screen: true });
         return snap;
       } catch (e) {
+        releasePendingLine(orderId, lineId);
         qc.setQueryData<OrderSnapshot>(key, (s) => (s ? { ...s, lines: s.lines.filter((l) => l.id !== lineId) } : s));
         fail(e);
         return null;
       } finally {
-        adding.set(orderId, Math.max(0, (adding.get(orderId) ?? 1) - 1));
+        releasePendingLine(orderId, lineId);
       }
     },
     [api, fail, key, money, notify, orderId, qc, run, showUndo, withApproval],

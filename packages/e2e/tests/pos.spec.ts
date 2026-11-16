@@ -45,7 +45,7 @@ test("POS: pair, sign in, shift, order, split, cash and card, refund with a mana
     await sheet.getByRole("button", { name: "Chicken", exact: true }).click();
     await sheet.getByRole("button", { name: "Add Laksa" }).click();
     await expect(sheet).toBeHidden();
-    // One tap at a time: a second add sent while the first is still in flight carries a stale version and is replayed after a 409.
+    // Adds go to the register one after another (pos-fast-taps.spec.ts); Send counts only the lines it has answered for.
     await expect(page.getByRole("button", { name: "Send 1 to kitchen" })).toBeVisible();
     await page.getByRole("button", { name: /^Mee Goreng,/ }).click();
     await expect(order.getByRole("button", { name: /Laksa/ })).toContainText("Chicken");
