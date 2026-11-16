@@ -83,7 +83,7 @@ test("a Manager's read-only product sheet: the modifier-group picker looks like 
     for (const c of placeholders) expect(c, `${theme}: a disabled field's placeholder`).toBe(ink);
     // One cursor over a locked field, its inner input included (the tags field's input had cursor:auto), and no
     // instruction to type in a field that takes none ("Add a tag and press Enter").
-    const inputs = await sheet.locator("input:disabled:not([type=checkbox]):not([type=radio]):not([type=hidden])").evaluateAll((els) => els.map((e) => ({ cursor: getComputedStyle(e).cursor, placeholder: (e as HTMLInputElement).placeholder, what: `${e.getAttribute("aria-label") ?? (e.labels?.[0]?.textContent ?? "")} ${e.getAttribute("type") ?? ""} ${e.className.slice(0, 80)}` })));
+    const inputs = await sheet.locator("input:disabled:not([type=checkbox]):not([type=radio]):not([type=hidden])").evaluateAll((els) => els.map((e) => ({ cursor: getComputedStyle(e).cursor, placeholder: (e as HTMLInputElement).placeholder, what: `${(e as HTMLInputElement).labels?.[0]?.textContent ?? e.getAttribute("aria-label") ?? ""} ${e.getAttribute("type") ?? ""}` })));
     expect(inputs.length).toBeGreaterThan(0);
     for (const i of inputs) expect(i.cursor, `${theme}: ${i.what}`).toBe("not-allowed");
     for (const i of inputs) expect(i.placeholder, `${theme}: a disabled input's placeholder`).not.toMatch(/^(Add|Type|Enter|Search)\b/);
