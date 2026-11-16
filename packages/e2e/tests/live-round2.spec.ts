@@ -138,7 +138,9 @@ test("E-M7: a Manager is not offered what needs an Admin, and a Server's refused
   await expect(page.getByRole("button", { name: "Add tax class" })).toHaveCount(0);
   await page.goto(`${WEB}/settings/stations`);
   await expect(page.getByRole("button", { name: "Add station" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Sign out" }).click().catch(() => undefined);
+  // Sign out ends with its own full load of /login: wait for it, or the next goto races it (net::ERR_ABORTED).
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await page.waitForURL(/\/login/);
   await page.context().clearCookies();
   const server = await loginFor("server");
   await officeSignIn(page, server.email, server.password);
