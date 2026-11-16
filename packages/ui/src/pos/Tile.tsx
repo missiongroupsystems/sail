@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import { Button as AriaButton } from "react-aria-components";
 import { cx } from "../lib/cx";
@@ -33,6 +34,21 @@ const base =
   "data-[hovered]:border-rule-strong data-[pressed]:scale-[0.97] data-[pressed]:bg-surface-2 " +
   "data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus";
 
+/** A tile's name: two lines at most, with the ellipsis at the end of the second when even that is not enough. */
+const nameClass = "line-clamp-2 text-line leading-[1.25] font-medium text-ink hyphens-auto [overflow-wrap:anywhere]";
+
+/**
+ * Keeps the first line clear of the mark in the tile's top-right corner: an invisible copy of it (so it is exactly as
+ * wide), floated right and only one line tall. It reaches 2px past the name's padding, as the mark does.
+ */
+function CornerSpacer({ className, children }: { className: string; children: ReactNode }) {
+  return (
+    <span aria-hidden className={cx("invisible float-right -mr-0.5 ml-1.5 h-4 overflow-hidden tabular", className)}>
+      {children}
+    </span>
+  );
+}
+
 /**
  * A catalogue tile: up to 136 × 96 (it fills a narrower grid cell) on the white sheet, the tile's colour as a small dot
  * beside the price (never a stripe along an edge), the name in medium, the price in tabular figures, and a count badge
@@ -52,9 +68,19 @@ export function Tile({ label, priceCents, colour, onPress, soldOut, unavailableR
         .join(", ")}
     >
       <span className="flex min-h-0 flex-1 flex-col justify-between px-3 pt-3 pb-2.5">
-        {/* The badge's corner is kept clear, and a word longer than the room left (“Cheeseburger” beside a count) breaks,
-            hyphenated where the language allows, rather than running under it. */}
-        <span className={cx("line-clamp-2 text-line leading-[1.25] font-medium text-ink hyphens-auto [overflow-wrap:anywhere]", lowStock ? "pr-14" : onOrder ? "pr-8" : null)}>{label}</span>
+        {/* The corner mark (count badge or "3 left") has an invisible twin floated into the first line, so only the text
+            beside it gives way: the second line keeps the tile's full width ("Cheeseburger deluxe" stays whole with a
+            12 badge). A word longer than the room beside the mark breaks, hyphenated where the language allows. */}
+        <span className={nameClass}>
+          <span className="block">
+            {lowStock ? (
+              <CornerSpacer className="text-caption leading-4 font-medium">{capRemaining} left</CornerSpacer>
+            ) : onOrder ? (
+              <CornerSpacer className="min-w-5 px-1.5 text-[12px] font-semibold">{onOrder}</CornerSpacer>
+            ) : null}
+            {label}
+          </span>
+        </span>
         <span className="flex items-end justify-between gap-2">
           <span className="flex items-center gap-1.5">
             <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: tileBand(colour) }} />
@@ -63,7 +89,7 @@ export function Tile({ label, priceCents, colour, onPress, soldOut, unavailableR
           {restrictedTo ? <span className="truncate rounded-chip bg-status-bill-tint px-2 text-caption font-medium text-status-bill">{restrictedTo} approval</span> : null}
         </span>
       </span>
-      {lowStock ? <span className="absolute top-3 right-2.5 text-caption font-medium text-status-sent tabular">{capRemaining} left</span> : onOrder ? <span aria-hidden className="absolute top-2.5 right-2.5 flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-ink px-1.5 text-[12px] font-semibold text-surface tabular">{onOrder}</span> : null}
+      {lowStock ? <span className="absolute top-2.5 right-2.5 text-caption leading-4 font-medium text-status-sent tabular">{capRemaining} left</span> : onOrder ? <span aria-hidden className="absolute top-2 right-2.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-ink px-1.5 text-[12px] font-semibold text-surface tabular">{onOrder}</span> : null}
       {unavailable ? (
         <span className="absolute inset-0 flex items-end bg-[color-mix(in_oklab,var(--bg)_78%,transparent)] px-3 pb-2.5">
           <span className="text-caption font-medium text-status-alert">{soldOut ? "Sold out" : "Unavailable"}</span>
@@ -86,13 +112,18 @@ export function FolderTile({ label, colour, count, onPress, className }: FolderT
   return (
     <AriaButton onPress={onPress} className={cx(base, className)} aria-label={`${label}, folder${count != null ? ` with ${count} items` : ""}`}>
       <span className="flex min-h-0 flex-1 flex-col justify-between px-3 pt-3 pb-2.5">
-        <span className="line-clamp-2 pr-5 text-line leading-[1.25] font-medium text-ink hyphens-auto [overflow-wrap:anywhere]">{label}</span>
+        <span className={nameClass}>
+          <span className="block">
+            <span aria-hidden className="float-right -mr-1 ml-1 h-4 w-[18px]" />
+            {label}
+          </span>
+        </span>
         <span className="flex items-center gap-1.5">
           <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: tileBand(colour) }} />
           <span className="text-[14px] text-ink-2 tabular">{count != null ? `${count} items` : "Open"}</span>
         </span>
       </span>
-      <Icon icon={ChevronRight} size={18} className="absolute top-3.5 right-2 text-ink-3" />
+      <Icon icon={ChevronRight} size={18} className="absolute top-2.5 right-2 text-ink-3" />
     </AriaButton>
   );
 }
