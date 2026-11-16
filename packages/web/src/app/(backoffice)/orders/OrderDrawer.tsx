@@ -22,11 +22,6 @@ import { eventLabel } from "@/lib/format";
 const REFUND_KIND_LABEL: Record<string, string> = { full: "Whole bill", lines: "Some items", amount: "An amount" };
 
 /**
- * The order drawer: lines, adjustments, bills, refunds,
- * tickets, events and audit, read-only for Servers. Other roles get the actions
- * their role allows; the register enforces every one of them again.
- */
-/**
  * How many times the order went to the kitchen (`round_count` counts sends, from the POS or an accepted QR round). A QR
  * round that was turned down never went, so an order whose only round was rejected reads "not sent to the kitchen".
  */
@@ -34,6 +29,11 @@ function kitchenSends(n: number): string {
   return n === 0 ? "not sent to the kitchen" : n === 1 ? "sent to the kitchen once" : `sent to the kitchen ${n} times`;
 }
 
+/**
+ * The order drawer: lines, adjustments, bills, refunds,
+ * tickets, events and audit, read-only for Servers. Other roles get the actions
+ * their role allows; the register enforces every one of them again.
+ */
 export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId: string | null; outletId: string | null; tableName: (id: string | null) => string; onClose: () => void }) {
   const { dayClock, fullStamp, money } = useLocale();
   const { me } = useSession();

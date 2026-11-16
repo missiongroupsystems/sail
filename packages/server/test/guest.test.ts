@@ -336,6 +336,22 @@ describe("Scan to Order", () => {
     expect(viewB.lines.find((l) => l.id === lineId)).toMatchObject({ round_id: roundId, mine: false });
     expect(viewB.rounds.map((r) => r.id).sort()).toEqual(viewA.rounds.map((r) => r.id).sort());
   });
+
+  it("a phone whose session a code rotation ended hears `ended` with the reason on the next change, as its 401 would say", async () => {
+    await resetGuestRateLimitsForTests();
+    const s = await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl13), device_id: "device-hhhh-0008" }, idempotencyKey: null });
+    const g = s.body.data.guest_token;
+    const orderId = (await call<{ data: Snap[] }>("GET", `/v1/outlets/${A.outletId}/orders?table_id=${ids.table13}&open_only=true`, { token: serverPin })).body.data[0]!.id;
+    const gs = await app.request("/v1/guest/stream", { headers: { authorization: `Bearer ${g}` } });
+    expect(gs.status).toBe(200);
+    const frames = readSse(gs, 4, 3000);
+    await new Promise((r) => setTimeout(r, 100));
+    qrUrl13 = (await call<{ data: { url: string } }>("POST", `/v1/tables/${ids.table13}/qr/rotate`, { token: A.admin.token, body: {} })).body.data.url;
+    expect((await call("POST", `/v1/orders/${orderId}/lines`, { token: serverPin, body: { lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] } })).status).toBe(200);
+    const got = await frames;
+    expect(got.map((f) => f.event)).toEqual(["hello", "ended"]);
+    expect(got[1]!.data).toEqual({ reason: "code_rotated" });
+  });
 });
 
 describe("with hold orders off, a phone is admitted to its seating", () => {

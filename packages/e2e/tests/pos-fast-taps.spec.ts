@@ -68,6 +68,8 @@ test("POS: 30 fast taps on a tile add 30 lines, with no 409 and a count that kee
   expect(new Set(live.map((l) => l.id)).size).toBe(TAPS);
   expect(live.reduce((n, l) => n + l.quantity, 0)).toBe(TAPS);
   await expect(tile).toHaveAccessibleName(new RegExp(`, ${TAPS} on the order`));
+  // Nothing was sent: cancel the order, so later specs do not meet it among the open ones.
+  await register("POST", `/v1/orders/${orderIdOf(adds)}/cancel`, { reason: "End-to-end test" });
 });
 
 test("POS: fast taps while another station adds to the same order keep every line once, and say so", async ({ page, watch }) => {
@@ -75,11 +77,23 @@ test("POS: fast taps while another station adds to the same order keep every lin
   watch.allow({ status: 409, url: /\/v1\/orders\/[^/]+\/lines$/, why: "another writer moved the order on while an add was on the wire; the add is replayed without a version" });
   await startTakeaway(page);
   const adds = watchAdds(page);
-  await slowAdds(page);
+  // The 5th add is held on its way to the register until the other writer has landed, so it surely carries a version
+  // the other writer has moved on: exactly one 409, which this station did not cause.
+  let sentAdds = 0;
+  let release = () => {};
+  const released = new Promise<void>((r) => (release = r));
+  let reached = () => {};
+  const heldAdd = new Promise<void>((r) => (reached = r));
+  await page.route(/\/v1\/orders\/[^/]+\/lines$/, async (route) => {
+    if (route.request().method() === "POST" && ++sentAdds === 5) {
+      reached();
+      await released;
+    }
+    await route.continue();
+  });
   const products = await register<{ data: { id: string; name: string }[] }>("GET", "/v1/products?limit=50");
   const kopi = products.data.find((p) => p.name === "Kopi")!;
   const tile = page.getByRole("button", { name: /^Mee Goreng,/ });
-  let other: Promise<unknown> | null = null;
   // Watched from the start: the notice shows for 4 s, and later notices may take its place.
   const told = page
     .getByText("The order changed on another station. Your 1 new line was kept")
@@ -88,24 +102,23 @@ test("POS: fast taps while another station adds to the same order keep every lin
       () => true,
       () => false,
     );
-  for (let i = 1; i <= TAPS; i++) {
-    await tile.click();
-    // The other writer adds a Kopi while this station's adds are queued.
-    if (i === 10) other = register("POST", `/v1/orders/${orderIdOf(adds)}/lines`, { lines: [{ line_id: crypto.randomUUID(), product_id: kopi.id, quantity: 1 }] });
-  }
-  await other;
+  for (let i = 1; i <= TAPS; i++) await tile.click();
+  // The other writer adds a Kopi while this station's 5th add is on the wire and the rest are queued behind it.
+  await heldAdd;
+  await register("POST", `/v1/orders/${orderIdOf(adds)}/lines`, { lines: [{ line_id: crypto.randomUUID(), product_id: kopi.id, quantity: 1 }] });
+  release();
   await expect(page.getByRole("button", { name: `Send ${TAPS + 1} to kitchen` })).toBeVisible({ timeout: 60_000 });
   await expect.poll(() => adds.filter((a) => a.status !== undefined).length).toBeGreaterThanOrEqual(TAPS);
-  const conflicts = adds.filter((a) => a.status === 409).length;
-  test.info().annotations.push({ type: "conflicts", description: String(conflicts) });
-  // At most the one add that was on the wire when the other writer landed meets a 409; it is replayed once.
-  expect(conflicts).toBeLessThanOrEqual(1);
+  // Only the add that was on the wire when the other writer landed meets a 409; it is replayed once and announced.
+  expect(adds.filter((a) => a.status === 409)).toHaveLength(1);
   expect(adds.filter((a) => a.status === 200)).toHaveLength(TAPS);
-  if (conflicts) expect(await told, "the replayed add is announced").toBe(true);
+  expect(await told, "the replayed add is announced").toBe(true);
   const order = await register<OrderLines>("GET", `/v1/orders/${orderIdOf(adds)}`);
   const live = order.data.lines.filter((l) => l.status !== "voided");
   expect(live.filter((l) => l.product_id === kopi.id)).toHaveLength(1);
   expect(live.filter((l) => l.product_id !== kopi.id)).toHaveLength(TAPS);
   expect(new Set(live.map((l) => l.id)).size).toBe(TAPS + 1);
   await expect(tile).toHaveAccessibleName(new RegExp(`, ${TAPS} on the order`));
+  // Nothing was sent: cancel the order, so later specs do not meet it among the open ones.
+  await register("POST", `/v1/orders/${orderIdOf(adds)}/cancel`, { reason: "End-to-end test" });
 });

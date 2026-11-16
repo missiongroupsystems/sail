@@ -55,7 +55,7 @@ export function ProductSearch({ onPick, label, placeholder = "Search products by
       <TextField aria-label={label ?? "Search products"} label={label} type="search" value={q} onChange={setQ} placeholder={placeholder} autoFocus={autoFocus} />
       {query ? (
         <ul className="flex flex-col rounded-tile hairline bg-surface" aria-label="Results">
-          {rows.length === 0 && !results.isPending ? <li className="px-3 py-3 text-caption text-ink-2">No products match “{query}”.</li> : null}
+          {rows.length === 0 && !results.isPending ? <li className="px-4 py-3 text-caption text-ink-2">No products match “{query}”.</li> : null}
           {rows.map((p) => (
             <li key={p.id} className="hairline-b last:border-b-0">
               <Button

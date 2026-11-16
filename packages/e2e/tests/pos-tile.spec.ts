@@ -11,7 +11,7 @@ const CASHIER_PIN = "333333";
 
 test.use({ viewport: { width: 1180, height: 820 } });
 
-type Layout = { overlaps: boolean; clipped: boolean; hidden: boolean; lines: number; mark: string | null; height: number; width: number };
+type Layout = { overlaps: boolean; clipped: boolean; hidden: boolean; lines: number; shown: number; lastRight: number; boxRight: number; mark: string | null; height: number; width: number };
 
 /** Where the tile's name and its corner mark sit, after giving the name `label` with the given `hyphens` (the demo menu has no long name). */
 async function layout(tile: import("@playwright/test").Locator, label: string, hyphens: "manual" | "auto"): Promise<Layout> {
@@ -36,6 +36,10 @@ async function layout(tile: import("@playwright/test").Locator, label: string, h
         clipped: rects.some((r) => r.right > box.right + 0.5 || r.left < box.left - 0.5),
         hidden: rects.some((r) => r.bottom > box.bottom + 0.5) || name.scrollHeight > name.clientHeight + 1,
         lines: tops.size,
+        // Lines the clamp lets through, and where the last of them ends.
+        shown: new Set(rects.filter((r) => r.bottom <= box.bottom + 0.5).map((r) => Math.round(r.top))).size,
+        lastRight: Math.max(...rects.filter((r) => r.bottom <= box.bottom + 0.5 && r.top >= Math.max(...rects.filter((q) => q.bottom <= box.bottom + 0.5).map((q) => q.top)) - 0.5).map((r) => r.right)),
+        boxRight: box.right,
         mark: mark.textContent,
         height: t.height,
         width: t.width,
@@ -87,6 +91,9 @@ test("POS tile: the count badge never covers the item's name, and only the line 
     const long = await layout(tile, "Cheeseburger deluxe with extra pickles", "manual");
     expect(long.overlaps).toBe(false);
     expect(long.clipped).toBe(false);
+    // Two full lines show, the second running to the box's end where the ellipsis is drawn.
+    expect(long.shown).toBe(2);
+    expect(long.boxRight - long.lastRight).toBeLessThan(24);
     await shot(tile, test.info().outputPath(`tile-12-long-${theme}.png`));
     await layout(tile, "Cheeseburger deluxe", "manual");
   }

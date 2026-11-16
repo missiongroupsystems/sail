@@ -202,11 +202,19 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
       return bindSessionToTableOrder(p);
     });
     if (!orderId) throw AppError.state("No order yet for this table", [], "Ask staff to seat you, then try again.");
-    // Closing the order (paid, or cancelled) ends its guest sessions in the same transaction: the phone hears `ended`.
-    const ended = async () => {
-      const [s] = await withTransaction((t) => t.db.select({ revokedAt: guestSessions.revokedAt, expiresAt: guestSessions.expiresAt }).from(guestSessions).where(eq(guestSessions.id, p.sessionId)).limit(1));
-      return !s || s.revokedAt != null || s.expiresAt.getTime() < Date.now();
-    };
+    // Paying or closing the order ends its guest sessions in the same transaction (a cancel after a rejected round
+    // unbinds them instead), and so does rotating the table's code: the phone hears `ended`, with the reason the
+    // resolver's 401 would give (`code_rotated`), and sends nothing more with the session.
+    const ended = () =>
+      withTransaction(async (t) => {
+        const [s] = await t.db.select({ revokedAt: guestSessions.revokedAt, expiresAt: guestSessions.expiresAt, tableId: guestSessions.tableId }).from(guestSessions).where(eq(guestSessions.id, p.sessionId)).limit(1);
+        if (s && !s.revokedAt && s.expiresAt.getTime() >= Date.now()) return null;
+        if (s?.revokedAt) {
+          const [rotated] = await t.db.select({ id: tableQrTokens.id }).from(tableQrTokens).where(and(eq(tableQrTokens.tableId, s.tableId), eq(tableQrTokens.rotatedAt, s.revokedAt))).limit(1);
+          if (rotated) return { reason: "code_rotated" };
+        }
+        return {};
+      });
     return serveStream(c, [`order:${orderId}`], { order_id: orderId }, (n) => n.kind === "resync" || (n.kind === "event" && n.aggregate_id === orderId), ended);
   });
 

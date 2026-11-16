@@ -162,9 +162,11 @@ export class GuestStream {
 
   private frame(frame: string) {
     let event = "message";
+    let data = "";
     for (const line of frame.split("\n")) {
       if (line.startsWith("event:")) event = line.slice(6).trim();
-      // Comment lines (": ping") are heartbeats; data is not needed, the order view is the source of truth.
+      else if (line.startsWith("data:")) data = line.slice(5).trim();
+      // Comment lines (": ping") are heartbeats. Only `ended` reads its data; for the rest the order view is the source of truth.
     }
     if (event === "hello") {
       this.setStatus("live");
@@ -174,8 +176,15 @@ export class GuestStream {
     } else if (event === "ended") {
       // The table session has ended (the order was paid, say): nothing more goes out with its token, not even the
       // refetch an earlier change had queued, which the register would refuse with a 401.
+      // Its data carries the reason the register's 401 would ("code_rotated" when the table has a new code).
       this.stop();
-      this.opts.onUnauthenticated?.();
+      let details: Record<string, unknown> | undefined;
+      try {
+        details = (JSON.parse(data) as Record<string, unknown> | null) ?? undefined;
+      } catch {
+        details = undefined;
+      }
+      this.opts.onUnauthenticated?.(details);
     }
   }
 }

@@ -11,10 +11,10 @@ const HEARTBEAT_MS = 20_000;
  *   - `change`  { seq, type }   a new event exists
  *   - `job`     { job_id, status } a print job changed (relays)
  *   - `resync`  {}              the LISTEN connection was re-established; catch up now
- *   - `ended`   {}              the stream's session has ended (`ended` below); the stream closes after it
+ *   - `ended`   { reason? }     the stream's session has ended (`ended` below); the stream closes after it
  *   - heartbeat comment every 20 s keeps proxies from closing idle connections
  */
-export function serveStream(c: AppContext, keys: string[], hello: Record<string, unknown>, filter?: (n: Notification) => boolean, ended?: () => Promise<boolean>) {
+export function serveStream(c: AppContext, keys: string[], hello: Record<string, unknown>, filter?: (n: Notification) => boolean, ended?: () => Promise<Record<string, unknown> | null>) {
   return streamSSE(c, async (stream) => {
     let id = 0;
     const send = (event: string, data: unknown) => stream.writeSSE({ event, data: JSON.stringify(data), id: String(++id) });
@@ -25,14 +25,16 @@ export function serveStream(c: AppContext, keys: string[], hello: Record<string,
     let over = false;
     const relay = async (n: Notification) => {
       if (over) return;
-      if (n.kind === "resync") return void (await send("resync", {}));
       if (n.kind === "print_job") return void (await send("job", { job_id: n.job_id, status: n.status, printer_id: n.printer_id }));
-      if (ended && (await ended().catch(() => false))) {
+      // A resync makes the client refetch too, so it is checked like a change.
+      const end = ended ? await ended().catch(() => null) : null;
+      if (end) {
         over = true;
-        await send("ended", {});
+        await send("ended", end);
         await stream.close();
         return;
       }
+      if (n.kind === "resync") return void (await send("resync", {}));
       await send("change", { seq: n.seq, type: n.type, outlet_id: n.outlet_id, aggregate_kind: n.aggregate_kind, aggregate_id: n.aggregate_id });
     };
     const unsubs = keys.map((k) =>

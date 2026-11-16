@@ -232,7 +232,11 @@ export function useOrderActions(orderId: string) {
             },
             {
               onConflict: "retry-unversioned",
-              onRetried: () => notify({ text: "The order changed on another station. Your 1 new line was kept", tone: "info", orderId }, 4000),
+              // An add replayed after a lost reply keeps the version it was first sent with, so its 409 may be this
+              // station's own earlier add landing on reconnect: no news to anyone then.
+              onRetried: () => {
+                if (!maybeLanded) notify({ text: "The order changed on another station. Your 1 new line was kept", tone: "info", orderId }, 4000);
+              },
             },
           );
         // An add that never reached the register keeps its line on screen and is sent again, with the same line id and
