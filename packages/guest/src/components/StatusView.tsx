@@ -5,7 +5,7 @@ import { Ban, Check, CheckCheck, ChefHat, ChevronRight, CircleAlert, ReceiptText
 import type { ReactNode } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import type { ApiError } from "@/lib/api";
-import { roundStage } from "@/lib/status";
+import { roundStage, showsPayPrompt } from "@/lib/status";
 import type { GuestStreamStatus } from "@/lib/stream";
 import type { GuestLine, GuestRound, GuestSession, OrderView } from "@/lib/types";
 import { Dock, PageHeader } from "./Shell";
@@ -110,7 +110,7 @@ export function StatusView({ session, orderView, loading, error, lastRoundId, st
         ) : null}
 
         {orderView?.totals && orderView.lines.some((l) => l.status !== "voided") ? <TotalsPanel totals={orderView.totals} /> : null}
-        <p className="px-1 text-[14px] leading-snug text-ink-2">Pay at the counter or ask your server for the bill.</p>
+        {showsPayPrompt(orderView) ? <p className="px-1 text-[14px] leading-snug text-ink-2">Pay at the counter or ask your server for the bill.</p> : null}
         <AriaButton
           onPress={onOurTable}
           className="press flex min-h-14 w-full items-center gap-3 rounded-sheet border border-rule px-4 py-3 text-left outline-none transition-colors duration-[120ms] data-[hovered]:bg-surface-2 data-[pressed]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus"

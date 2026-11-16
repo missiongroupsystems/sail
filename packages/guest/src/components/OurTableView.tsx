@@ -3,7 +3,7 @@
 import { BrandButton, Icon, InlineError, Pill, useLocale } from "@sail/ui";
 import { ReceiptText, Utensils } from "lucide-react";
 import type { ApiError } from "@/lib/api";
-import { lineStatusLabel, lineStatusTone, roundStage } from "@/lib/status";
+import { lineStatusLabel, lineStatusTone, roundStage, showsPayPrompt } from "@/lib/status";
 import type { GuestLine, GuestSession, OrderView } from "@/lib/types";
 import { Dock, PageHeader } from "./Shell";
 import { TotalsPanel } from "./TotalsPanel";
@@ -94,7 +94,7 @@ export function OurTableView({ session, orderView, loading, error, onBack, onCal
         ) : null}
 
         {orderView?.totals && lines.length ? <TotalsPanel totals={orderView.totals} /> : null}
-        <p className="px-1 pt-1 text-[14px] leading-snug text-ink-2">Pay at the counter or ask your server for the bill.</p>
+        {showsPayPrompt(orderView) ? <p className="px-1 pt-1 text-[14px] leading-snug text-ink-2">Pay at the counter or ask your server for the bill.</p> : null}
       </main>
 
       <Dock>
