@@ -92,6 +92,12 @@ Notable changes to Sail, newest first. Field and operation names are as in `pack
 - A cancelled order owes nothing: the back-office drawer shows no unpaid bill and no Refund for it, and the guest's phone drops "Pay at the counter" once a rejection has cancelled the order.
 - A POS tile's name wraps clear of its count badge; a disabled select, date or tags field reads in the disabled ink throughout, placeholder and chevron included.
 - The end-to-end specs' screenshots no longer write the caret style into a page before it hydrates (the intermittent hydration mismatch on Settings › Merchant).
+- POS tiles: only the line beside the count badge, "3 left" or a folder's chevron gives way to it, so a two-word name such as "Cheeseburger deluxe" stays whole with a two-digit count.
+- Fast taps on a POS tile: this station's writes to an order go one after another, so its own taps never meet a 409, and the tile's count keeps up with every tap. A change from another station is still replayed once and announced.
+- The guest stream sends `ended` (then closes) once the table session has ended, as when the table is paid; the phone shows that the session ended without a refused request.
+- The back-office order drawer says how often the order went to the kitchen ("not sent to the kitchen" for an order whose only QR round was rejected) instead of "0 rounds".
+- Switch user on the POS says the order stays open only when one is open; the close-shift checklist says each all-clear plainly ("Every ticket printed at this outlet").
+- A locked tags field has no "Add a tag" placeholder and one cursor; the product picker's results and the POS customer search read from the left.
 
 ### Tooling and docs
 - ESLint for `ui`, `web` and `guest`; a Playwright end-to-end suite (`pnpm test:e2e`) for the back office, POS and guest app.
