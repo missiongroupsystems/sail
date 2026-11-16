@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
-import { API, expect, register, signInToken, test, WEB } from "./fixtures";
+import { API, expect, register, shot, signInToken, test, WEB } from "./fixtures";
 
 /**
  * A read-only sheet's controls all read as one disabled grammar: the product sheet's "Attach a modifier group…" picker
@@ -29,7 +29,7 @@ async function look(control: Locator) {
   return control.evaluate((el) => {
     let opacity = 1;
     for (let n: Element | null = el; n; n = n.parentElement) opacity *= Number(getComputedStyle(n).opacity);
-    const text = [...el.querySelectorAll<HTMLElement>("*")].find((n) => n.childNodes.length && [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent!.trim())) ?? (el as HTMLElement);
+    const text = Array.from(el.querySelectorAll<HTMLElement>("*")).find((n) => n.childNodes.length && Array.from(n.childNodes).some((c) => c.nodeType === 3 && c.textContent!.trim())) ?? (el as HTMLElement);
     const textStyle = getComputedStyle(el instanceof HTMLInputElement ? el : text);
     const svg = el.querySelector("svg") ?? el.parentElement?.querySelector("svg");
     const s = getComputedStyle(el);
@@ -68,7 +68,7 @@ test("a Manager's read-only product sheet: the modifier-group picker looks like 
     // Every line of text inside the disabled selects, a selected item's description included ("Follows the default
     // class if it changes." under the tax class).
     const selectInks = await sheet.locator("button[data-disabled][aria-haspopup]").evaluateAll((els) =>
-      els.flatMap((el) => [...el.querySelectorAll("*")].filter((n) => [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent!.trim())).map((n) => `${n.textContent}: ${getComputedStyle(n).color}`)),
+      els.flatMap((el) => Array.from(el.querySelectorAll("*")).filter((n) => Array.from(n.childNodes).some((c) => c.nodeType === 3 && c.textContent!.trim())).map((n) => `${n.textContent}: ${getComputedStyle(n).color}`)),
     );
     expect(selectInks.length).toBeGreaterThan(2);
     for (const line of selectInks) expect(line, `${theme}: text in a disabled select`).toMatch(new RegExp(`: ${ink.replace(/[()]/g, "\\$&")}$`));
@@ -82,6 +82,6 @@ test("a Manager's read-only product sheet: the modifier-group picker looks like 
     const placeholders = await sheet.locator("input:disabled[placeholder]").evaluateAll((els) => els.filter((e) => !(e as HTMLInputElement).value && (e as HTMLInputElement).placeholder).map((e) => getComputedStyle(e, "::placeholder").color));
     for (const c of placeholders) expect(c, `${theme}: a disabled field's placeholder`).toBe(ink);
     await picker.scrollIntoViewIfNeeded();
-    await page.screenshot({ path: test.info().outputPath(`product-readonly-${theme}.png`) });
+    await shot(page, test.info().outputPath(`product-readonly-${theme}.png`));
   }
 });

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { expect, test as base, type Page, type Response } from "@playwright/test";
+import { expect, test as base, type Locator, type Page, type Response } from "@playwright/test";
 
 export const API = process.env.E2E_API_URL ?? "http://localhost:8080";
 export const WEB = process.env.E2E_WEB_URL ?? "http://localhost:3000";
@@ -90,6 +90,16 @@ export const test = base.extend<{ watch: { allow: (a: Allowed) => void; /** A co
 });
 
 export { expect };
+
+/**
+ * A screenshot for the record that leaves the page alone. Playwright hides the text caret by writing
+ * `caret-color: transparent !important` into every input's inline style for the shot, then restores it; on a page the
+ * development server has not hydrated yet, React then finds a style the server never rendered and reports a hydration
+ * mismatch (live-round5 M6 on /settings/merchant, 5 of 6 sandbox runs). `caret: "initial"` touches no element.
+ */
+export async function shot(target: Page | Locator, path: string): Promise<void> {
+  await target.screenshot({ path, caret: "initial" });
+}
 
 /**
  * WCAG 2 contrast ratio of an element's text colour against the first opaque background behind it.

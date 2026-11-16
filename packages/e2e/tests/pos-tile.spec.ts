@@ -1,4 +1,4 @@
-import { expect, pairAndSignIn, test } from "./fixtures";
+import { expect, pairAndSignIn, shot, test } from "./fixtures";
 
 /**
  * A catalogue tile's name and its count badge never overlap: a one-word name too long for the tile (live check:
@@ -13,12 +13,12 @@ async function layout(page: import("@playwright/test").Page, label: string) {
   return page.getByRole("button", { name: /^Mee Goreng,/ }).evaluate((tile, text) => {
     const name = tile.querySelector<HTMLElement>("span > span")!;
     name.firstChild!.textContent = text;
-    const badge = [...tile.querySelectorAll<HTMLElement>("span")].find((s) => getComputedStyle(s).position === "absolute")!;
+    const badge = Array.from(tile.querySelectorAll<HTMLElement>("span")).find((s) => getComputedStyle(s).position === "absolute")!;
     const range = document.createRange();
     range.selectNodeContents(name);
     const b = badge.getBoundingClientRect();
     const t = tile.getBoundingClientRect();
-    const lines = [...range.getClientRects()].map((r) => ({ left: r.left, right: r.right, top: r.top, bottom: r.bottom }));
+    const lines = Array.from(range.getClientRects()).map((r) => ({ left: r.left, right: r.right, top: r.top, bottom: r.bottom }));
     return {
       overlaps: lines.some((r) => r.right > b.left && r.left < b.right && r.bottom > b.top && r.top < b.bottom),
       clipped: lines.some((r) => r.right > t.right - 1) || name.scrollWidth > name.clientWidth,
@@ -57,6 +57,6 @@ test("POS tile: the count badge never covers the item's name, with long names an
       expect(l.overlaps, `“${label}” runs under the 12 badge (${theme})`).toBe(false);
       expect(l.clipped, `“${label}” is cut off (${theme})`).toBe(false);
     }
-    await tile.screenshot({ path: test.info().outputPath(`tile-${theme}.png`) });
+    await shot(tile, test.info().outputPath(`tile-${theme}.png`));
   }
 });

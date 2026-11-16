@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { devLocal, expect, GUEST, register, SG_ADMIN, test, WEB } from "./fixtures";
+import { devLocal, expect, GUEST, register, SG_ADMIN, shot, test, WEB } from "./fixtures";
 
 /**
  * An order cancelled because its only QR round was rejected owes nothing: the guest's phone does not ask them to pay,
@@ -51,13 +51,13 @@ test("a QR round rejected on the order it opened: the phone asks for no payment,
       await expect(phone.getByRole("heading", { name: "Order not accepted" })).toBeVisible();
       await expect(phone.getByRole("button", { name: /Order more/ }).first()).toBeVisible();
       await expect(phone.getByText("Pay at the counter or ask your server for the bill.")).toHaveCount(0);
-      await phone.screenshot({ path: test.info().outputPath("phone-status.png") });
+      await shot(phone, test.info().outputPath("phone-status.png"));
       await phone.reload();
       await expect(phone.getByRole("heading", { name: "Order not accepted" })).toBeVisible();
       await expect(phone.getByText("Pay at the counter or ask your server for the bill.")).toHaveCount(0);
       await phone.getByRole("button", { name: /^Our table/ }).click();
       await expect(phone.getByText("Pay at the counter or ask your server for the bill.")).toHaveCount(0);
-      await phone.screenshot({ path: test.info().outputPath("phone-our-table.png") });
+      await shot(phone, test.info().outputPath("phone-our-table.png"));
     });
   } finally {
     await phone.close();
@@ -74,7 +74,7 @@ test("a QR round rejected on the order it opened: the phone asks for no payment,
     await expect(drawer.getByText("Totals", { exact: true })).toBeVisible();
     await expect(drawer.getByText("Unpaid", { exact: true })).toHaveCount(0);
     await expect(drawer.getByRole("button", { name: /^Refund/ })).toHaveCount(0);
-    await page.screenshot({ path: test.info().outputPath("drawer.png") });
+    await shot(page, test.info().outputPath("drawer.png"));
   });
 });
 
@@ -105,5 +105,5 @@ test("a cancelled order whose payment was reversed still shows that bill and pay
   await expect(drawer.getByText("Unpaid", { exact: true })).toHaveCount(0);
   await expect(drawer.getByRole("button", { name: /^Refund/ })).toHaveCount(0);
   await drawer.getByText("Bill 1", { exact: true }).scrollIntoViewIfNeeded();
-  await page.screenshot({ path: test.info().outputPath("drawer-reversed.png") });
+  await shot(page, test.info().outputPath("drawer-reversed.png"));
 });
