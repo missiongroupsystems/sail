@@ -52,7 +52,9 @@ export function Tile({ label, priceCents, colour, onPress, soldOut, unavailableR
         .join(", ")}
     >
       <span className="flex min-h-0 flex-1 flex-col justify-between px-3 pt-3 pb-2.5">
-        <span className={cx("line-clamp-2 text-line leading-[1.25] font-medium text-ink", lowStock ? "pr-14" : onOrder ? "pr-8" : null)}>{label}</span>
+        {/* The badge's corner is kept clear, and a word longer than the room left (“Cheeseburger” beside a count) breaks,
+            hyphenated where the language allows, rather than running under it. */}
+        <span className={cx("line-clamp-2 text-line leading-[1.25] font-medium text-ink hyphens-auto [overflow-wrap:anywhere]", lowStock ? "pr-14" : onOrder ? "pr-8" : null)}>{label}</span>
         <span className="flex items-end justify-between gap-2">
           <span className="flex items-center gap-1.5">
             <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: tileBand(colour) }} />
@@ -84,7 +86,7 @@ export function FolderTile({ label, colour, count, onPress, className }: FolderT
   return (
     <AriaButton onPress={onPress} className={cx(base, className)} aria-label={`${label}, folder${count != null ? ` with ${count} items` : ""}`}>
       <span className="flex min-h-0 flex-1 flex-col justify-between px-3 pt-3 pb-2.5">
-        <span className="line-clamp-2 pr-5 text-line leading-[1.25] font-medium text-ink">{label}</span>
+        <span className="line-clamp-2 pr-5 text-line leading-[1.25] font-medium text-ink hyphens-auto [overflow-wrap:anywhere]">{label}</span>
         <span className="flex items-center gap-1.5">
           <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: tileBand(colour) }} />
           <span className="text-[14px] text-ink-2 tabular">{count != null ? `${count} items` : "Open"}</span>
