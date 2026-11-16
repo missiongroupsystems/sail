@@ -304,9 +304,12 @@ function CustomerSheet({ isOpen, onClose, order, actions }: SheetProps) {
             <ul className="flex flex-col gap-2">
               {search.data.map((c) => (
                 <li key={c.id}>
-                  <Button size="lg" variant="secondary" isDisabled={busy} onPress={() => void attach(c.id)} className="w-full justify-between">
-                    <span>{c.name}</span>
-                    <span className="text-caption text-ink-2 tabular">{c.mobile}</span>
+                  <Button size="lg" variant="secondary" isDisabled={busy} onPress={() => void attach(c.id)} className="w-full">
+                    {/* Name left, number right: Button centres its content, so the row has its own full-width box. */}
+                    <span className="flex w-full min-w-0 items-center justify-between gap-3">
+                      <span className="min-w-0 truncate">{c.name}</span>
+                      <span className="text-caption text-ink-2 tabular">{c.mobile}</span>
+                    </span>
                   </Button>
                 </li>
               ))}

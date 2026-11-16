@@ -60,18 +60,22 @@ export function ProductSearch({ onPick, label, placeholder = "Search products by
             <li key={p.id} className="hairline-b last:border-b-0">
               <Button
                 variant="quiet"
-                className="w-full justify-between rounded-none px-3 text-left font-normal"
+                className="w-full rounded-none text-left font-normal"
                 onPress={() => {
                   onPick(p);
                   if (!keepQuery) setQ("");
                 }}
               >
-                <span className="min-w-0 truncate">
-                  <span className="text-ink">{p.name}</span>
-                  {p.sku ? <span className="ml-2 text-caption text-ink-2 tabular">{p.sku}</span> : null}
-                  {p.archived ? <span className="ml-2 text-caption text-ink-2">archived</span> : null}
+                {/* The row's own full-width box: Button centres its content, and class names are not merged, so a
+                    justify-between on the Button itself lost to that and the text sat in the middle. */}
+                <span className="flex w-full min-w-0 items-center justify-between gap-2">
+                  <span className="min-w-0 truncate">
+                    <span className="text-ink">{p.name}</span>
+                    {p.sku ? <span className="ml-2 text-caption text-ink-2 tabular">{p.sku}</span> : null}
+                    {p.archived ? <span className="ml-2 text-caption text-ink-2">archived</span> : null}
+                  </span>
+                  <Money cents={p.price} className="text-ink-2" />
                 </span>
-                <Money cents={p.price} className="text-ink-2" />
               </Button>
             </li>
           ))}
