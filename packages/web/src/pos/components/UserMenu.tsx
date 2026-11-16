@@ -25,7 +25,8 @@ export function UserMenu() {
   const onAction = (key: React.Key) => {
     switch (key) {
       case "switch":
-        return void end("Switch user: the order stays open for you.", false);
+        // The promise about the order is made only when one is open on screen; the next person comes back to it.
+        return void end(["order", "bill", "pay"].includes(useNavStore.getState().screen.kind) ? "Switch user: the order stays open for you." : null, false);
       case "signout":
         return void end(null, true);
       case "theme-auto":
