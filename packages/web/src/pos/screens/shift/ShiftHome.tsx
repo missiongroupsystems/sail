@@ -112,12 +112,18 @@ export function ShiftHome({ onShowReport, onCounting }: { onShowReport: () => vo
   const roundsRead = readOf(rounds);
   const lateRead = readOf(late);
   const requestsRead = readOf(requests);
-  const mk = (id: string, read: { count: number | null; failed: boolean }, one: string, many: string, detail: string, onView: () => void): ChecklistItem => {
+  /**
+   * One checklist line in each state: `subject` while checking or when the register did not answer ("Checking …",
+   * "Could not check …"), `clear` when nothing is left (said plainly: "Every ticket printed", never "No tickets not
+   * printed"), else the count with `one` or `many`.
+   */
+  type Wording = { subject: string; clear: string; one: string; many: string };
+  const mk = (id: string, read: { count: number | null; failed: boolean }, w: Wording, detail: string, onView: () => void): ChecklistItem => {
     const n = read.count ?? 0;
     const status = checklistStatus(read, left.has(id));
     return {
       id,
-      title: status === "checking" ? `Checking ${many}…` : read.count === null ? `Could not check ${many}` : n === 0 ? `No ${many}` : `${n} ${n === 1 ? one : many}`,
+      title: status === "checking" ? `Checking ${w.subject}…` : read.count === null ? `Could not check ${w.subject}` : n === 0 ? w.clear : `${n} ${n === 1 ? w.one : w.many}`,
       detail: read.count === null ? (read.failed ? "The register did not answer. It is checked again shortly, or leave it for the next shift." : null) : n === 0 ? null : detail,
       status,
       onView,
@@ -125,13 +131,14 @@ export function ShiftHome({ onShowReport, onCounting }: { onShowReport: () => vo
       leaveLabel: "Leave open",
     };
   };
+  const ordersFrom = mine?.station_id ? " from this station" : "";
   const checklist: ChecklistItem[] = [
     // Tables are on the floor and the rest in Orders: the line says how many are where, and View opens Orders when
     // anything is there (the floor otherwise), so it never opens an empty list.
-    mk("orders", ordersRead, mine?.station_id ? "open order from this station" : "open order", mine?.station_id ? "open orders from this station" : "open orders", openOrdersDetail, () => go({ kind: openElsewhere > 0 ? "orders" : "floor" })),
-    mk("rounds", roundsRead, "QR order waiting at this outlet", "QR orders waiting at this outlet", "Accept or reject them from the Now rail.", () => go({ kind: "floor" })),
-    mk("late", lateRead, "ticket not printed at this outlet", "tickets not printed at this outlet", "Send them to the backup printer or retry from the banner.", () => go({ kind: "floor" })),
-    mk("requests", requestsRead, "table request open at this outlet", "table requests open at this outlet", "Mark them done from the Now rail.", () => go({ kind: "floor" })),
+    mk("orders", ordersRead, { subject: `open orders${ordersFrom}`, clear: `No open orders${ordersFrom}`, one: `open order${ordersFrom}`, many: `open orders${ordersFrom}` }, openOrdersDetail, () => go({ kind: openElsewhere > 0 ? "orders" : "floor" })),
+    mk("rounds", roundsRead, { subject: "QR orders waiting at this outlet", clear: "No QR orders waiting at this outlet", one: "QR order waiting at this outlet", many: "QR orders waiting at this outlet" }, "Accept or reject them from the Now rail.", () => go({ kind: "floor" })),
+    mk("late", lateRead, { subject: "ticket printing at this outlet", clear: "Every ticket printed at this outlet", one: "ticket not printed at this outlet", many: "tickets not printed at this outlet" }, "Send them to the backup printer or retry from the banner.", () => go({ kind: "floor" })),
+    mk("requests", requestsRead, { subject: "table requests open at this outlet", clear: "No table requests open at this outlet", one: "table request open at this outlet", many: "table requests open at this outlet" }, "Mark them done from the Now rail.", () => go({ kind: "floor" })),
   ];
   const checklistDone = allDone(checklist);
   const checking = checklist.some((c) => c.status === "checking");
