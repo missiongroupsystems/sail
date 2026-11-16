@@ -11,7 +11,7 @@ const fieldControlBase =
   "sail-field w-full rounded-field border border-transparent bg-surface-2 text-ink placeholder:text-ink-3 outline-none " +
   "transition-colors duration-[120ms] " +
   "data-[hovered]:bg-surface-3 data-[focused]:border-ink data-[focused]:bg-surface-3 " +
-  "data-[invalid]:border-status-alert data-[disabled]:cursor-not-allowed data-[disabled]:bg-surface-2 data-[disabled]:text-ink-disabled";
+  "data-[invalid]:border-status-alert data-[disabled]:cursor-not-allowed data-[disabled]:bg-surface-2 data-[disabled]:text-ink-disabled data-[disabled]:placeholder:text-ink-disabled";
 /** The 44px field (the default everywhere). */
 export const fieldControl = `${fieldControlBase} min-h-11 px-3 text-body`;
 /** The 36px back-office field for filter rows above a table (opt-in: `size="sm"`). Never on the POS. */

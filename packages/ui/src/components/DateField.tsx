@@ -53,10 +53,11 @@ export function DateField({ label, prefix, value, onChange, type = "date", place
           locked && "cursor-not-allowed text-ink-disabled has-[:hover]:bg-surface-2",
         )}
         data-invalid={isInvalid || undefined}
+        data-disabled={locked || undefined}
       >
-        <Icon icon={CalendarDays} size={16} className="shrink-0 text-ink-3" />
-        <span aria-hidden className={cx("min-w-0 flex-1 truncate tabular", !value && "text-ink-3")}>
-          {prefix ? <span className="text-ink-2">{prefix} </span> : null}
+        <Icon icon={CalendarDays} size={16} className={cx("shrink-0", locked ? "text-ink-disabled" : "text-ink-3")} />
+        <span aria-hidden className={cx("min-w-0 flex-1 truncate tabular", !value && !locked && "text-ink-3")}>
+          {prefix ? <span className={locked ? undefined : "text-ink-2"}>{prefix} </span> : null}
           {shown}
         </span>
         <input
