@@ -16,6 +16,8 @@ export type CallStaffSheetProps = {
   guestName: string;
   /** A request reached the staff: the page says so once the sheet has closed. */
   onSent?: (label: string) => void;
+  /** "Pay at the counter…": left out when nothing is owed (showsPayPrompt). */
+  payPrompt?: boolean;
 };
 
 type Outcome = { kind: "sending" } | { kind: "sent" } | { kind: "too_soon"; remedy: string | null } | { kind: "error"; message: string; remedy: string | null };
@@ -26,7 +28,7 @@ const SENT = "Sent. Someone will be with you shortly.";
 const tooSoon = (remedy: string | null) => `Already asked from this table, someone is on the way. ${remedy ?? "Please give us a moment."}`;
 
 /** Call staff: the channel's requests as large rows, plus "Ask for the bill". Each confirms under its row; repeats say so. */
-export function CallStaffSheet({ isOpen, onOpenChange, api, requests, guestName, onSent }: CallStaffSheetProps) {
+export function CallStaffSheet({ isOpen, onOpenChange, api, requests, guestName, onSent, payPrompt = true }: CallStaffSheetProps) {
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({});
   const rows = useRef<HTMLUListElement>(null);
   useEffect(() => {
@@ -75,7 +77,7 @@ export function CallStaffSheet({ isOpen, onOpenChange, api, requests, guestName,
           );
         })}
       </ul>
-      <p className="mt-2 rounded-sheet bg-surface-2 px-4 py-3 text-[14px] leading-snug text-ink-2">Pay at the counter or ask your server for the bill.</p>
+      {payPrompt ? <p className="mt-2 rounded-sheet bg-surface-2 px-4 py-3 text-[14px] leading-snug text-ink-2">Pay at the counter or ask your server for the bill.</p> : null}
     </BottomSheet>
   );
 }

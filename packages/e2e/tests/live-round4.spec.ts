@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
-import { API, devLocal, expect, leaveChecklistOpen, pairAndSignIn, register, SG_ADMIN, signInToken, test, WEB } from "./fixtures";
+import { API, devLocal, expect, leaveChecklistOpen, pairAndSignIn, register, SG_ADMIN, shot, signInToken, test, WEB } from "./fixtures";
 
 /**
  * The fourth live test's findings that show on screen (tester S, `bda1270`, "Other things noticed"). The finding's id
@@ -160,7 +160,7 @@ test("L5: the closed-shift card names who opened the shift and who closed it", a
     await expect(line).toBeVisible();
     const closer = (await line.textContent())!.replace(/^.* · closed .+ by /, "");
     expect(closer).not.toBe(opener);
-    await page.screenshot({ path: "test-results/pos-shift-closed-names.png" });
+    await shot(page, "test-results/pos-shift-closed-names.png");
   } finally {
     await register("POST", `/v1/shifts/${shift.data.id}/close`, { counted_cash_cents: 10_000 }).catch(() => undefined);
   }

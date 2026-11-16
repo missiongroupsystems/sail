@@ -80,6 +80,11 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
   const lines = useMemo(() => (o?.lines ?? []).slice().sort((a, b) => (a.seat_no ?? 0) - (b.seat_no ?? 0) || a.sort - b.sort), [o]);
   const checks = useMemo(() => ((o?.checks ?? []) as CheckSnapshot[]).slice().sort((a, b) => a.index - b.index), [o]);
   const refundable = useMemo(() => refundableChecks(checks), [checks]);
+  // A cancelled order owes nothing: it shows only the bills money went through (a payment reversed before the
+  // cancel, say), none of them as "Unpaid", and a refund control only while something is left to refund. One cancelled
+  // before any payment (its only QR round rejected) shows no bill and no Refund.
+  const cancelled = o?.status === "cancelled";
+  const shownChecks = useMemo(() => (cancelled ? checks.filter((c) => c.payments.length > 0 || c.paid_total !== 0 || c.refunded_total !== 0) : checks), [cancelled, checks]);
   // Reopening is for the register's current business day, not the browser's calendar day.
   const today = useBusinessDate(outletId);
   const sameDay = o ? o.business_date === today : false;
@@ -184,7 +189,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                 ]}
               />
             </Group>
-            {!readOnly ? (
+            {!readOnly && !(cancelled && refundable.length === 0) ? (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Button size="sm" onPress={() => setRefund({ checkId: null })} isDisabled={!canRefund || refundable.length === 0}>
                   Refund…
@@ -206,9 +211,9 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
             ) : null}
           </SheetSection>
 
-          <SheetSection label="Bills" aside={<span className="text-caption text-ink-3 tabular">{checks.length}</span>}>
-            {checks.length === 0 ? <p className="text-ink-2">No bills yet.</p> : null}
-            {checks.map((c) => {
+          <SheetSection label="Bills" aside={<span className="text-caption text-ink-3 tabular">{shownChecks.length}</span>}>
+            {shownChecks.length === 0 ? <p className="text-ink-2">{cancelled ? "None: the order was cancelled before anything was paid." : "No bills yet."}</p> : null}
+            {shownChecks.map((c) => {
               const paid = c.locked && c.paid_total > 0;
               return (
                 <Group key={c.id}>
@@ -218,7 +223,9 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                       {c.seat_no ? <span className="text-caption text-ink-2">Seat {c.seat_no}</span> : null}
                       {c.invoice_no ? <span className="font-mono text-caption text-ink-2">Invoice {c.invoice_no}</span> : null}
                     </span>
-                    <Badge tone={c.status === "paid" ? "paid" : c.status === "open" ? "neutral" : "bill"} icon={c.status === "paid" ? Check : c.status === "open" ? Circle : RotateCcw}>{label(CHECK_STATUS_LABEL, c.status)}</Badge>
+                    {cancelled && c.status === "open" ? null : (
+                      <Badge tone={c.status === "paid" ? "paid" : c.status === "open" ? "neutral" : "bill"} icon={c.status === "paid" ? Check : c.status === "open" ? Circle : RotateCcw}>{label(CHECK_STATUS_LABEL, c.status)}</Badge>
+                    )}
                   </div>
                   {c.payments.length ? (
                     <ul className="flex flex-col gap-1 px-4 py-3">

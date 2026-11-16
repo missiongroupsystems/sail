@@ -6,7 +6,7 @@ import { Button as AriaButton, Input, SearchField } from "react-aria-components"
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BasketItem } from "@/lib/basket";
 import type { CompiledMenu, CompiledProduct, CompiledSection, GuestSession, OrderView } from "@/lib/types";
-import { billNote } from "@/lib/status";
+import { billNote, showsPayPrompt } from "@/lib/status";
 import { BasketBar } from "./BasketBar";
 import { StaffBanner } from "./StaffBanner";
 
@@ -245,7 +245,7 @@ export function MenuView({ session, menu, canOrder, basketItems, orderView, onOp
         ))}
         <div className="mx-4 mt-8 flex flex-col gap-1 rounded-sheet bg-surface-2 px-4 py-3.5 text-[13.5px] leading-relaxed text-ink-2">
           <p>{billNote(orderView?.totals?.tax_mode)}</p>
-          <p>Pay at the counter or ask your server for the bill.</p>
+          {showsPayPrompt(orderView) ? <p>Pay at the counter or ask your server for the bill.</p> : null}
         </div>
       </main>
 

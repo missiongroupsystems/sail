@@ -1,5 +1,5 @@
 import type { RoundStage } from "@sail/ui";
-import type { GuestLine, GuestOrder, GuestRound } from "./types";
+import type { GuestLine, GuestOrder, GuestRound, OrderView } from "./types";
 
 /**
  * Where a round is: Sent → Accepted → Preparing → Done.
@@ -13,6 +13,16 @@ export function roundStage(round: Pick<GuestRound, "status">, order: Pick<GuestO
   if (order?.status === "ready" || order?.status === "completed") return "done";
   if (order?.status === "fired") return "preparing";
   return "accepted";
+}
+
+/**
+ * Whether to tell the guest how to pay. Not once the table's order is cancelled or completed, nor when this phone's
+ * rounds are on no order any more (its only round was rejected and the order closed): nothing is owed. Before the phone
+ * has sent anything, the line says how paying works.
+ */
+export function showsPayPrompt(view: Pick<OrderView, "order" | "rounds"> | null | undefined): boolean {
+  if (view?.order) return view.order.status !== "cancelled" && view.order.status !== "completed";
+  return (view?.rounds.length ?? 0) === 0;
 }
 
 /** A word for each line on the "Our table" list (never colour alone). */

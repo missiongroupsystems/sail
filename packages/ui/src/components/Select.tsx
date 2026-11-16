@@ -88,8 +88,10 @@ export function Select({
           variant === "toolbar" && "w-auto min-w-32",
         )}
       >
-        <SelectValue className="truncate data-[placeholder]:text-ink-3" />
-        <Icon icon={ChevronDown} size={16} className="text-ink-3" />
+        {/* Off, the placeholder and the chevron take the disabled ink like the value does: a placeholder in ink-3 read
+            darker than the disabled fields around it ("Attach a modifier group…" on a read-only product sheet). */}
+        <SelectValue className={cx("truncate", isDisabled ? "text-ink-disabled" : "data-[placeholder]:text-ink-3")} />
+        <Icon icon={ChevronDown} size={16} className={isDisabled ? "text-ink-disabled" : "text-ink-3"} />
       </Button>
       {description ? (
         <Text slot="description" className={fieldDescription}>
@@ -105,7 +107,7 @@ export function Select({
                 <>
                   <span className="min-w-0">
                     <span className="block truncate">{item.label}</span>
-                    {item.description ? <span className="block truncate text-caption text-ink-2">{item.description}</span> : null}
+                    {item.description ? <span className="block truncate text-caption text-ink-2 in-data-[disabled]:text-ink-disabled">{item.description}</span> : null}
                   </span>
                   {isSelected ? <Icon icon={Check} size={16} /> : <span className="size-4" />}
                 </>

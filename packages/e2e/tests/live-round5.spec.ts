@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { API, devLocal, expect, GUEST, pairAndSignIn, register, SG_ADMIN, signInToken, test, WEB } from "./fixtures";
+import { API, devLocal, expect, GUEST, pairAndSignIn, register, SG_ADMIN, shot, signInToken, test, WEB } from "./fixtures";
 
 /**
  * The fifth live test's findings that show on screen (tester S, `fa2dfd1`, "Other things noticed"). The finding's id
@@ -64,7 +64,7 @@ test("M1, M3: a line voided after it was sent reads Voided on the POS, one taken
   await expect(panel.getByText("Voided · Kitchen error")).toBeVisible();
   await expect(panel.getByText("Removed · Customer changed mind")).toBeVisible();
   await expect(panel.getByText("Removed · Kitchen error")).toHaveCount(0);
-  await page.screenshot({ path: "test-results/m1-pos-voided-removed.png" });
+  await shot(page, "test-results/m1-pos-voided-removed.png");
 
   // The back office says the same, and its events and Tickets agree: the demo has kitchen displays and no printer.
   await page.context().clearCookies();
@@ -78,7 +78,7 @@ test("M1, M3: a line voided after it was sent reads Voided on the POS, one taken
   await expect(drawer.getByText("Kitchen ticket printed")).toHaveCount(0);
   await expect(drawer.getByText("Nothing printed for this order: its tickets went to the kitchen display.")).toBeVisible();
   await drawer.getByText("Nothing printed for this order: its tickets went to the kitchen display.").scrollIntoViewIfNeeded();
-  await page.screenshot({ path: "test-results/m3-drawer-tickets-events.png" });
+  await shot(page, "test-results/m3-drawer-tickets-events.png");
 });
 
 test("M2: rejecting the guest's only QR round on an order it opened frees the table, and the phone still shows the rejection", async ({ browser, page, watch }) => {
@@ -121,8 +121,8 @@ test("M2: rejecting the guest's only QR round on an order it opened frees the ta
     await expect(phone.getByRole("heading", { name: "Order not accepted" })).toBeVisible();
     await phone.reload();
     await expect(phone.getByText("This table session has ended.")).toHaveCount(0);
-    await phone.screenshot({ path: "test-results/m2-phone-after-reject.png" });
-    await page.screenshot({ path: "test-results/m2-pos-floor-after-reject.png" });
+    await shot(phone, "test-results/m2-phone-after-reject.png");
+    await shot(page, "test-results/m2-pos-floor-after-reject.png");
   } finally {
     await register("PATCH", `/v1/channel-links/${link.id}`, { open_on_first_scan: link.open_on_first_scan });
   }
@@ -172,7 +172,7 @@ test("M4, M5: after a tipped card payment the receipt sheet shows Tip and Charge
     expect(charged).toBe(paid + tip!);
     const [again] = await Promise.all([page.waitForEvent("download"), sheet.getByRole("button", { name: /^Invoice INV-\d+ · PDF$/ }).click()]);
     expect(again.suggestedFilename()).toBe(download.suggestedFilename());
-    await page.screenshot({ path: "test-results/m4-m5-receipt-sheet.png" });
+    await shot(page, "test-results/m4-m5-receipt-sheet.png");
   } finally {
     await register("PATCH", "/v1/merchant/settings", { tips_enabled: false });
   }
@@ -201,6 +201,6 @@ test("M6: in a read-only form the chips and their × are in the disabled ink, in
     });
     expect(ink, scheme).toBe(disabled);
     await remove.scrollIntoViewIfNeeded();
-    await page.screenshot({ path: `test-results/m6-locked-chips-${scheme}.png` });
+    await shot(page, `test-results/m6-locked-chips-${scheme}.png`);
   }
 });

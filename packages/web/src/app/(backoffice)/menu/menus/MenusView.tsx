@@ -1,6 +1,7 @@
 "use client";
 
 import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent, type DraggableAttributes } from "@dnd-kit/core";
+import { unsavedChanges } from "@/lib/unsaved";
 import type { SyntheticListenerMap } from "@dnd-kit/core/dist/hooks/utilities";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -146,6 +147,8 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
   useEffect(() => {
     if (!dirty) return;
     const warn = (e: BeforeUnloadEvent) => {
+      // Sign out has already asked (lib/unsaved.ts).
+      if (unsavedChanges.leaving) return;
       e.preventDefault();
       e.returnValue = "";
     };
@@ -161,7 +164,9 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
     };
     document.addEventListener("click", onLink, true);
     unsavedMenu.current = true;
+    unsavedChanges.set(LEAVE_UNSAVED);
     return () => {
+      unsavedChanges.set(null);
       window.removeEventListener("beforeunload", warn);
       document.removeEventListener("click", onLink, true);
       unsavedMenu.current = false;

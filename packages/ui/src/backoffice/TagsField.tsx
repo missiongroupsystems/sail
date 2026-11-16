@@ -61,7 +61,8 @@ export function TagsField({ label, description, errorMessage, value, onChange, p
       className={cx(fieldWrap, className)}
     >
       {label ? <Label className={fieldLabel}>{label}</Label> : null}
-      <div className={cx(fieldControl, "flex min-h-11 flex-wrap items-center gap-1.5 py-1.5 focus-within:bg-surface-3", isDisabled && "text-ink-disabled")}>
+      {/* data-disabled gives it the disabled field's fill and no border in the back office, as other locked fields. */}
+      <div data-disabled={isDisabled || undefined} className={cx(fieldControl, "flex min-h-11 flex-wrap items-center gap-1.5 py-1.5 focus-within:bg-surface-3", isDisabled && "text-ink-disabled")}>
         {value.map((tag) => (
           <span key={tag} className={cx("inline-flex h-7 max-sm:h-11 items-center gap-1 rounded-chip pr-1 pl-2.5 text-caption font-medium", isDisabled ? "bg-surface-2 text-ink-disabled" : "bg-surface text-ink shadow-segment")}>
             {tag}
@@ -76,7 +77,7 @@ export function TagsField({ label, description, errorMessage, value, onChange, p
             </AriaButton>
           </span>
         ))}
-        <Input placeholder={value.length ? "" : placeholder} className="min-w-[8ch] flex-1 bg-transparent py-1 text-body text-ink outline-none placeholder:text-ink-3" />
+        <Input placeholder={value.length ? "" : placeholder} className={cx("min-w-[8ch] flex-1 bg-transparent py-1 text-body outline-none", isDisabled ? "text-ink-disabled placeholder:text-ink-disabled" : "text-ink placeholder:text-ink-3")} />
       </div>
       {description ? (
         <Text slot="description" className={fieldDescription}>

@@ -15,6 +15,9 @@ export function lockStation(api: PosApi, note: string | null): Promise<void> {
   useSessionStore.getState().lock(note);
   useUiStore.getState().clearForLock();
   if (!token) return Promise.resolve();
-  // The register may already have ended it (expired, or ended on another device); the station is locked either way.
-  return endSession(api, token).catch(() => undefined);
+  // Reads still on the wire with this session are cancelled and its writes waited for, so none reaches the register
+  // after the session ends and comes back 401. The register may already have ended it (expired, or ended on another
+  // device); the station is locked either way.
+  const ofSession = (r: Request) => r.headers.get("authorization") === `Bearer ${token}`;
+  return (api.requests?.drain(ofSession) ?? Promise.resolve()).then(() => endSession(api, token)).catch(() => undefined);
 }
