@@ -2,12 +2,20 @@ import { devLocal, expect, GUEST, keyIn, pairAndSignIn, register, test, WEB } fr
 
 /** Final review, front of house: the guest's phone, the POS floor and order screens, the kitchen display. */
 
+/** Orders this file seated: cancelled after each test, so the tables are free for the tests that run later. */
+const seated: string[] = [];
+test.afterEach(async () => {
+  for (const orderId of seated.splice(0)) await register("POST", `/v1/orders/${orderId}/cancel`, { reason: "End-to-end test" });
+});
+
 async function seatedTableToken(): Promise<{ token: string; tableId: string; tableName: string }> {
   const { outletId, brandId } = devLocal();
   const floor = await register<{ data: { tables: { id: string; name: string; order: unknown }[] } }>("GET", `/v1/outlets/${outletId}/floor`);
   const table = floor.data.tables.find((t) => !t.order);
   if (!table) throw new Error("No free table left in the demo outlet");
-  await register("POST", "/v1/orders", { order_id: crypto.randomUUID(), order_type: "dine_in", table_id: table.id, pax: 2, outlet_id: outletId, brand_id: brandId });
+  const orderId = crypto.randomUUID();
+  await register("POST", "/v1/orders", { order_id: orderId, order_type: "dine_in", table_id: table.id, pax: 2, outlet_id: outletId, brand_id: brandId });
+  seated.push(orderId);
   const qr = await register<{ data: { url: string } }>("POST", `/v1/tables/${table.id}/qr/rotate`, {});
   return { token: qr.data.url.split("/t/")[1]!, tableId: table.id, tableName: table.name };
 }

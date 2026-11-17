@@ -68,9 +68,9 @@ jobs:
     # page that renders the device's zone, language or clock on the server fails hydration here.
     name: End-to-end (Playwright, ${{ matrix.name }})
     runs-on: ubuntu-latest
-    # The suite takes about 28 minutes in Chromium on the development servers (the role walks visit ~30 pages per role
-    # with full page loads, to catch hydration differences between the zones), plus install and WebKit.
-    timeout-minutes: 45
+    # The suite takes about 35 minutes on the development servers (the role walks visit ~30 pages per role with full
+    # page loads, to catch hydration differences between the zones), plus install; a slow runner has gone past 45.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
