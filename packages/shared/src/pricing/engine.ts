@@ -398,25 +398,22 @@ export function resolveTaxRate(rates: readonly TaxRate[], taxClassId: string, ou
 }
 
 /**
- * Tax on an amount at a rate, by component. The rate is rounded once, half up,
- * at its combined bps (exclusive: a share of the amount; inclusive: the part of
- * a tax-inclusive amount), then split across the components by largest
- * remainder weighted by their bps, so a two-part rate never rounds twice.
+ * Tax on an amount at a rate, by component. Each component is rounded once, half up, at its own bps (exclusive: a
+ * share of the amount; inclusive: its part of the tax-inclusive amount at the combined rate), so every tax row a
+ * receipt, invoice or report prints is its own rate times its own taxable amount, checkable by hand.
  */
 function rateTax(amount: Cents, components: readonly TaxComponent[], context: PricingContext): Cents[] {
   const combined = sumCents(components.map((c) => c.bps));
   if (combined === 0) return components.map(() => 0);
-  let total: Cents;
-  if (context.tax_mode === "exclusive") total = percentOfCents(amount, combined);
-  else {
-    // Exact for large amounts: the product passes 2^53 for an IDR or VND order, so it is taken in BigInt.
-    const sign = amount < 0 ? -1 : 1;
-    const num = BigInt(Math.abs(amount)) * BigInt(combined);
-    const den = BigInt(10_000 + combined);
+  if (context.tax_mode === "exclusive") return components.map((c) => percentOfCents(amount, c.bps));
+  // Exact for large amounts: the product passes 2^53 for an IDR or VND order, so it is taken in BigInt.
+  const sign = amount < 0 ? -1 : 1;
+  const den = BigInt(10_000 + combined);
+  return components.map((c) => {
+    const num = BigInt(Math.abs(amount)) * BigInt(c.bps);
     const q = num / den;
-    total = sign * Number((num - q * den) * 2n >= den ? q + 1n : q);
-  }
-  return components.length === 1 ? [total] : allocateLargestRemainder(total, components.map((c) => c.bps));
+    return sign * Number((num - q * den) * 2n >= den ? q + 1n : q);
+  });
 }
 
 /** One amount that carries tax: a line's net amount, or one fee's amount on one line. */
@@ -427,9 +424,9 @@ const componentKey = (c: TaxComponent) => `${c.bps}|${c.name}`;
 /**
  * Step 5. Every taxed amount is an item with its resolved rate. In `per_line`
  * mode each item's tax is rounded on its own. In `per_rate` mode the items are
- * grouped by their rate (the same list of components), the rate is rounded
- * once on the group's total, and each component is spread back across the
- * items by largest remainder.
+ * grouped by their rate (the same list of components), each component is
+ * rounded once on the group's total, and spread back across the items by
+ * largest remainder.
  * Fee adjustment lines receive their tax here.
  */
 function computeTax(order: PricingOrder, states: readonly LineState[], adjustments: Adjustment[], context: PricingContext) {

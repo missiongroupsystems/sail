@@ -18,11 +18,24 @@ export function taxOf(amount: number, bps: number, mode: "inclusive" | "exclusiv
   return amount < 0 ? -t : t;
 }
 
+/**
+ * The tax on one amount at a rate of several components: each component is rounded on its own (exclusive: its bps of
+ * the amount; inclusive: its share of the tax inside the amount at the combined rate), and the rate's tax is their sum.
+ */
+export function rateTaxOf(amount: number, components: { bps: number }[], mode: string): number {
+  const combined = components.reduce((s, x) => s + x.bps, 0);
+  if (combined === 0) return 0;
+  const a = BigInt(Math.abs(amount));
+  let t = 0;
+  for (const c of components) t += Number(mode === "exclusive" ? halfUp(a * BigInt(c.bps), 10_000n) : halfUp(a * BigInt(c.bps), BigInt(10_000 + combined)));
+  return amount < 0 ? -t : t;
+}
+
 export type TaxedItem = { components: { name: string; bps: number }[]; amount: number; tax: number };
 
 /**
  * Check an order's tax against the rules. `per_line`: each taxed item (a line's net amount, one fee on one line) is
- * rounded on its own. `per_rate`: items are grouped by their rate and each group is rounded once on its total. Returns
+ * rounded on its own. `per_rate`: items are grouped by their rate and each component of a group is rounded once on its total. Returns
  * one message per item or group that disagrees.
  */
 export function taxDisagreements(items: TaxedItem[], mode: string, rounding: string): string[] {
@@ -30,21 +43,21 @@ export function taxDisagreements(items: TaxedItem[], mode: string, rounding: str
   const bpsOf = (c: TaxedItem["components"]) => c.reduce((s, x) => s + x.bps, 0);
   if (rounding === "per_line") {
     for (const i of items) {
-      const exp = taxOf(i.amount, bpsOf(i.components), mode);
+      const exp = rateTaxOf(i.amount, i.components, mode);
       if (exp !== i.tax) out.push(`per_line: tax on ${i.amount} at ${bpsOf(i.components)} bps is ${i.tax}, expected ${exp}`);
     }
     return out;
   }
-  const groups = new Map<string, { bps: number; amount: number; tax: number }>();
+  const groups = new Map<string, { bps: number; components: TaxedItem["components"]; amount: number; tax: number }>();
   for (const i of items) {
     const key = i.components.map((c) => `${c.bps}|${c.name}`).join("+");
-    const g = groups.get(key) ?? { bps: bpsOf(i.components), amount: 0, tax: 0 };
+    const g = groups.get(key) ?? { bps: bpsOf(i.components), components: i.components, amount: 0, tax: 0 };
     g.amount += i.amount;
     g.tax += i.tax;
     groups.set(key, g);
   }
   for (const [key, g] of groups) {
-    const exp = taxOf(g.amount, g.bps, mode);
+    const exp = rateTaxOf(g.amount, g.components, mode);
     if (exp !== g.tax) out.push(`per_rate: rate ${key} on ${g.amount} is ${g.tax}, expected ${exp}`);
   }
   return out;

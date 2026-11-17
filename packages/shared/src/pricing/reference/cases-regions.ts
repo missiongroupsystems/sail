@@ -221,22 +221,22 @@ export const REGION_CASES: RefCase[] = [
   },
   {
     id: "R162",
-    title: "A two-part rate is rounded once at its combined rate, then split between its components",
+    title: "A two-part rate: each component is its own rate on the taxable amount, rounded once",
     covers: ["tax_exclusive", "tax_components", "tax_per_rate"],
     working:
-      "One item at 1013 on State 4% + Local 4.5%. The combined 8.5%: 1013 × 0.085 = 86.105 → 86. Split by 400/450: 40.47 and 45.53 → floors 40 + 45 = 85, the leftover cent to local (.53) → 40/46. " +
-      "Rounding each component on its own would give 40.52 → 41 plus 45.585 → 46 = 87, a cent more than 8.5% of the amount.",
+      "One item at 1013 on State 4% + Local 4.5%. State: 1013 × 0.04 = 40.52 → 41. Local: 1013 × 0.045 = 45.585 → 46. Tax 87. " +
+      "Each row on a receipt is then its own rate times its taxable amount; rounding the combined 8.5% once (86) and splitting it would print a state line of 40, not 4% of 1013.",
     order: order([line("plate", 1013, { tax_class_id: "food" })]),
     rules: [],
     context: { tax_mode: "exclusive", tax_rounding: "per_rate", tax_rates: US_RATES, now: NOW },
     expect: {
-      line_taxes: { plate: { "State sales tax": 40, "Local sales tax": 46 } },
+      line_taxes: { plate: { "State sales tax": 41, "Local sales tax": 46 } },
       taxes: [
-        { name: "State sales tax", bps: 400, taxable: 1013, amount: 40 },
+        { name: "State sales tax", bps: 400, taxable: 1013, amount: 41 },
         { name: "Local sales tax", bps: 450, taxable: 1013, amount: 46 },
       ],
-      tax_total: 86,
-      total: 1099,
+      tax_total: 87,
+      total: 1100,
     },
   },
 ];
