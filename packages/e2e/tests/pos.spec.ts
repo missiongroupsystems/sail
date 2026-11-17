@@ -111,7 +111,7 @@ test("POS: pair, sign in, shift, order, split, cash and card, refund with a mana
   await test.step("pay bill 2 by card", async () => {
     await page.getByRole("region", { name: "Bill 2" }).getByRole("button", { name: /^Pay / }).click();
     await page.getByRole("group", { name: "Payment method" }).getByRole("button", { name: "Card", exact: true }).click();
-    await page.getByRole("button", { name: /^Paid by Card/ }).click();
+    await page.getByRole("button", { name: /^Take .+ by Card$/ }).click();
     await expect(page.getByText(/^Paid · Bill 2 · /)).toBeVisible();
     await page.getByRole("button", { name: "No receipt" }).click();
   });

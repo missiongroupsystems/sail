@@ -16,13 +16,15 @@ export type CatalogueProps = {
   order: OrderSnapshot;
   actions: ReturnType<typeof useOrderActions>;
   activeSeat: number | null;
+  /** Lines of a QR order still waiting for acceptance: not counted on the tiles. */
+  waitingLineIds?: ReadonlySet<string>;
 };
 
 /**
  * Section rail, catalogue grid and search. One tap adds a simple
  * item; items with required choices open the modifier sheet over the grid.
  */
-export function Catalogue({ order, actions, activeSeat }: CatalogueProps) {
+export function Catalogue({ order, actions, activeSeat, waitingLineIds }: CatalogueProps) {
   const { menu, layout, staff, offline } = usePos();
   const notify = useUiStore((s) => s.notify);
   const [pageId, setPageId] = useState<string | null>(null);
@@ -33,12 +35,13 @@ export function Catalogue({ order, actions, activeSeat }: CatalogueProps) {
   const page = layout?.pages.find((p) => p.id === pageId) ?? layout?.pages[0] ?? null;
   const layoutTiles = useMemo(() => tileIndex(layout), [layout]);
   const results = useMemo(() => (menu && query.trim() ? searchMenu(menu, query) : null), [menu, query]);
-  // How many of each item the order holds (voided ones out): a count on its tile.
+  // How many of each item the order holds (voided ones out, and a waiting QR order's, which is on no bill until
+  // accepted): a count on its tile (review 3, S8).
   const onOrder = useMemo(() => {
     const n = new Map<string, number>();
-    for (const l of order.lines) if (l.status !== "voided") n.set(l.product_id, (n.get(l.product_id) ?? 0) + l.quantity);
+    for (const l of order.lines) if (l.status !== "voided" && !waitingLineIds?.has(l.id)) n.set(l.product_id, (n.get(l.product_id) ?? 0) + l.quantity);
     return n;
-  }, [order.lines]);
+  }, [order.lines, waitingLineIds]);
 
   // Search results keep the layout's colour and access level, so search is never a way around a restricted tile.
   const tiles: ProductTile[] | null = results ? results.map((p) => ({ id: `s:${p.id}`, kind: "product", label: p.name, color: layoutTiles.get(p.id)?.color ?? "stone", access_level: layoutTiles.get(p.id)?.access_level ?? "everyone", product_id: p.id })) : null;

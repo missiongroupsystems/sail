@@ -47,6 +47,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
   const closed = snap?.status === "completed";
   const rounds = usePendingRounds(station.outlet_id);
   const pendingRounds = useMemo(() => (rounds.data ?? []).filter((r) => r.order_id === orderId), [rounds.data, orderId]);
+  const waitingLineIds = useMemo(() => new Set(pendingRounds.flatMap((r) => r.line_ids)), [pendingRounds]);
   const jobs = useOrderPrintJobs(station.outlet_id, orderId, Boolean(snap && snap.round_count > 0));
   const ready = useReadyLineIds(station.outlet_id, orderId, Boolean(snap && snap.round_count > 0));
   const late = useLateJobs(station.outlet_id);
@@ -149,7 +150,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
               <p className="text-body text-ink-2">Reopen the order to change it. Same business day, Manager approval.</p>
             </section>
           ) : (
-            <Catalogue order={snap} actions={actions} activeSeat={activeSeat} />
+            <Catalogue order={snap} actions={actions} activeSeat={activeSeat} waitingLineIds={waitingLineIds} />
           )}
           <OrderSheet
             order={snap}

@@ -11,7 +11,7 @@ import type { Customer, OrderSnapshot, OrderType } from "../api/types";
 import { useFloor } from "../hooks/queries";
 import { useApi } from "../hooks/useApi";
 import { roleAtLeast, type useOrderActions } from "../hooks/useOrderActions";
-import { ORDER_TYPE_LABEL, todayAt } from "../lib/format";
+import { ORDER_TYPE_LABEL, readyByExample, todayAt } from "../lib/format";
 import { useNavStore } from "../state/nav";
 import { useSessionStore } from "../state/session";
 import { usePos } from "./PosContext";
@@ -134,7 +134,8 @@ function ChangeTypeSheet({ isOpen, onClose, order, actions }: SheetProps) {
 
   const freeTables = (floor?.tables ?? []).filter((t) => t.status === "free" || t.id === order.table_id);
   const needsCustomer = type === "pickup" || type === "delivery";
-  const { timeZone } = useLocale();
+  const { timeZone, clock } = useLocale();
+  const example = readyByExample(clock);
   const ready = readyBy ? todayAt(readyBy, timeZone) : null;
   // The same type keeps the sheet useful for its details: an open takeaway can be given a name (C-12).
   const sameType = type === order.order_type;
@@ -203,7 +204,7 @@ function ChangeTypeSheet({ isOpen, onClose, order, actions }: SheetProps) {
         ) : null}
         {type !== "dine_in" ? <TextField label={type === "takeaway" ? "Name (optional)" : "Customer name"} value={name} onChange={setName} inputClassName="min-h-14 text-line" maxLength={80} /> : null}
         {needsCustomer ? <TextField label="Mobile" value={mobile} onChange={setMobile} type="tel" inputClassName="min-h-14 text-line" maxLength={30} /> : null}
-        {needsCustomer ? <TextField label="Ready by (HH:MM, optional)" value={readyBy} onChange={setReadyBy} placeholder="19:30" inputClassName="min-h-14 text-line tabular" isInvalid={Boolean(readyBy && !ready)} errorMessage={readyBy && !ready ? "Use HH:MM, for example 19:30" : undefined} /> : null}
+        {needsCustomer ? <TextField label="Ready by (optional)" value={readyBy} onChange={setReadyBy} placeholder={example} inputClassName="min-h-14 text-line tabular" isInvalid={Boolean(readyBy && !ready)} errorMessage={readyBy && !ready ? `Use a time, for example ${example}` : undefined} /> : null}
         {type === "delivery" ? <TextField label="Delivery address" value={address} onChange={setAddress} multiline rows={2} inputClassName="text-line" maxLength={400} /> : null}
       </div>
     </Sheet>

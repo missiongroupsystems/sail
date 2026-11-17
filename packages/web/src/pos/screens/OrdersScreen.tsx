@@ -11,7 +11,7 @@ import { Frame } from "../components/Frame";
 import { usePos } from "../components/PosContext";
 import { useApplySnapshot, useOpenOrders, useTodaysOrders } from "../hooks/queries";
 import { useApi } from "../hooks/useApi";
-import { ORDER_STATUS_LABEL, ORDER_TYPE_LABEL, todayAt } from "../lib/format";
+import { ORDER_STATUS_LABEL, ORDER_TYPE_LABEL, readyByExample, todayAt } from "../lib/format";
 import { useNavStore } from "../state/nav";
 import { useUiStore } from "../state/ui";
 
@@ -184,7 +184,8 @@ export function NewOrderSheet({ type, onClose, onCreate }: { type: OrderType | n
   };
 
   const needsCustomer = type === "pickup" || type === "delivery";
-  const { timeZone } = useLocale();
+  const { timeZone, clock } = useLocale();
+  const example = readyByExample(clock);
   const ready = readyBy ? todayAt(readyBy, timeZone) : null;
   const valid = type === "takeaway" || (needsCustomer && (name.trim() || mobile.trim()) && (!readyBy || ready) && (type !== "delivery" || address.trim()));
 
@@ -229,7 +230,7 @@ export function NewOrderSheet({ type, onClose, onCreate }: { type: OrderType | n
       <div className="flex flex-col gap-4">
         <TextField label={type === "takeaway" ? "Name (optional)" : "Customer name"} value={name} onChange={setName} inputClassName="min-h-14 text-line" maxLength={80} autoFocus />
         {needsCustomer ? <TextField label="Mobile" value={mobile} onChange={setMobile} type="tel" inputClassName="min-h-14 text-line" maxLength={30} /> : null}
-        {needsCustomer ? <TextField label="Ready by (HH:MM, optional)" value={readyBy} onChange={setReadyBy} placeholder="19:30" inputClassName="min-h-14 text-line tabular" errorMessage={readyBy && !ready ? "Use HH:MM, for example 19:30" : undefined} isInvalid={Boolean(readyBy && !ready)} /> : null}
+        {needsCustomer ? <TextField label="Ready by (optional)" value={readyBy} onChange={setReadyBy} placeholder={example} inputClassName="min-h-14 text-line tabular" isInvalid={Boolean(readyBy && !ready)} errorMessage={readyBy && !ready ? `Use a time, for example ${example}` : undefined} /> : null}
         {type === "delivery" ? <TextField label="Delivery address" value={address} onChange={setAddress} multiline rows={2} inputClassName="text-line" maxLength={400} /> : null}
         {type === "delivery" ? <TextField label="Delivery notes (optional)" value={notes} onChange={setNotes} inputClassName="min-h-14 text-line" maxLength={400} /> : null}
         {error ? (

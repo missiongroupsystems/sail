@@ -378,3 +378,41 @@ test("S7: one primary on the order screen while a QR order waits; the approval h
     await settle(order.id);
   }
 });
+
+test("S8: a kitchen ticket whose only line was voided offers Clear, as a cancelled one does", async ({ browser, watch }) => {
+  test.setTimeout(300_000);
+  const { outletId, brandId } = devLocal();
+  const stations = await register<{ data: { id: string; kind: string }[] }>("GET", `/v1/outlets/${outletId}/stations`);
+  const display = stations.data.find((s) => s.kind === "display")!;
+  const ids = await productIds();
+  const o = await register<{ data: { id: string } }>("POST", "/v1/orders", { order_id: crypto.randomUUID(), order_type: "takeaway", takeaway_ref: "R3 void", outlet_id: outletId, brand_id: brandId });
+  const keep = crypto.randomUUID();
+  const gone = crypto.randomUUID();
+  await register("POST", `/v1/orders/${o.data.id}/lines`, { lines: [{ line_id: keep, product_id: ids["Otah"]!, quantity: 1 }] });
+  await register("POST", `/v1/orders/${o.data.id}/fire`, {});
+  await register("POST", `/v1/orders/${o.data.id}/lines`, { lines: [{ line_id: gone, product_id: ids["Char Kway Teow"]!, quantity: 1 }] });
+  await register("POST", `/v1/orders/${o.data.id}/fire`, {});
+  await register("POST", `/v1/orders/${o.data.id}/lines/${gone}/void`, { reason_text: "Guest changed mind" });
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const kds = await ctx.newPage();
+  watch.attach(kds);
+  try {
+    const { data } = await register<{ data: { code: string } }>("POST", `/v1/stations/${display.id}/pairing-code`, {});
+    await kds.goto(`${WEB}/kds`);
+    await expect(kds.getByRole("heading", { name: "Pair this screen to a station" })).toBeVisible({ timeout: 180_000 });
+    await keyIn(kds, "PIN keys", data.code);
+    await kds.getByRole("button", { name: "Pair this screen" }).click();
+    const board = kds.getByRole("region", { name: "Tickets" });
+    // Round 1 (Otah) is still to make; round 2 lost its only line.
+    await expect(board.getByRole("button", { name: /^Bump R3 void .*1 item/ })).toBeVisible();
+    const cleared = board.getByRole("button", { name: /^Clear R3 void .*0 items.*voided/ });
+    await expect(cleared).toBeVisible();
+    await expect(cleared).toContainText("Voided");
+    await shot(kds, out("S8-kds-voided-round-clear.png"));
+    await cleared.click();
+    await expect(cleared).toHaveCount(0);
+  } finally {
+    await ctx.close();
+    await settle(o.data.id);
+  }
+});

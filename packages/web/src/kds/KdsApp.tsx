@@ -152,7 +152,7 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
   const board = useBoardPages(tickets.data);
   const open = tickets.data?.data ?? [];
   const last = tickets.data?.last_bumped ?? null;
-  const lateCount = open.filter((t) => t.status !== "cancelled" && (now - new Date(t.fired_at).getTime()) / 1000 >= late * 60).length;
+  const lateCount = open.filter((t) => !toClear(t) && (now - new Date(t.fired_at).getTime()) / 1000 >= late * 60).length;
 
   return (
     <main className="flex h-dvh w-full min-w-0 flex-col bg-bg">
@@ -216,7 +216,7 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
             {/* As many columns as fit: three or four on an iPad in landscape, more on a wall screen, two in portrait. */}
             <div className="h-full columns-[260px] gap-4 [column-fill:auto] min-[1600px]:columns-[320px]">
               {open.map((t) => (
-                <TicketCard key={t.id} ticket={t} now={now} warn={warn} late={late} pending={pendingId === t.id} onBump={() => act.mutate({ id: t.id, action: "bump", key: idempotencyKey(), done: `${ticketTitle(t)} ${t.status === "cancelled" ? "cleared" : "bumped"}` })} />
+                <TicketCard key={t.id} ticket={t} now={now} warn={warn} late={late} pending={pendingId === t.id} onBump={() => act.mutate({ id: t.id, action: "bump", key: idempotencyKey(), done: `${ticketTitle(t)} ${toClear(t) ? "cleared" : "bumped"}` })} />
               ))}
             </div>
             {/* Extends the board to whole pages, so the last page holds only its own columns. */}
@@ -313,6 +313,11 @@ function PageButton({ icon, count, word, onPress, trailing }: { icon: typeof Che
   );
 }
 
+/** A ticket with nothing left to make (cancelled, or every line voided) is cleared rather than bumped. */
+function toClear(t: KitchenTicket): boolean {
+  return t.status === "cancelled" || (t.lines.length > 0 && t.lines.every((l) => l.quantity - l.voided_quantity <= 0));
+}
+
 function ticketTitle(t: KitchenTicket): string {
   if (t.order_type === "dine_in" && t.table_name) return `Table ${t.table_name}`;
   return t.customer_name ? `${t.customer_name} · ${t.order_no}` : t.order_no;
@@ -328,19 +333,22 @@ const AGE_CHIP = { neutral: "bg-surface-2 text-ink", warn: "bg-status-sent-tint 
 function TicketCard({ ticket: t, now, warn, late, pending, onBump }: { ticket: KitchenTicket; now: number; warn: number; late: number; pending: boolean; onBump: () => void }) {
   const seconds = Math.max(0, (now - new Date(t.fired_at).getTime()) / 1000);
   const cancelled = t.status === "cancelled";
-  const tone = cancelled ? "neutral" : seconds >= late * 60 ? "late" : seconds >= warn * 60 ? "warn" : "neutral";
+  // Nothing left to make (every line voided): cleared like a cancelled ticket, not bumped as New (review 3, S8).
+  const voided = !cancelled && toClear(t);
+  const clear = cancelled || voided;
+  const tone = clear ? "neutral" : seconds >= late * 60 ? "late" : seconds >= warn * 60 ? "warn" : "neutral";
   const items = t.lines.reduce((n, l) => n + l.quantity - l.voided_quantity, 0);
   const title = ticketTitle(t);
   // A round the guest ordered by QR code says so; the name with it is whoever accepted it, not who took the order (final review C Low).
   const fromQr = t.lines.length > 0 && t.lines.every((l) => l.source === "guest");
   const meta = [t.order_type === "dine_in" ? t.order_no : ORDER_TYPE_LABEL[t.order_type as keyof typeof ORDER_TYPE_LABEL], t.pax ? `${t.pax} ${t.pax === 1 ? "guest" : "guests"}` : null, fromQr ? (t.server_name ? `QR order, accepted by ${t.server_name}` : "QR order") : t.server_name, t.round_no > 1 ? `round ${t.round_no}` : null].filter(Boolean).join(" · ");
-  const state = cancelled ? { label: "Cancelled", tone: "alert" as const, icon: Ban } : t.status === "recalled" ? { label: "Recalled", tone: "seated" as const, icon: RotateCcw } : t.status === "in_progress" ? { label: "In progress", tone: "sent" as const, icon: Flame } : { label: "New", tone: "seated" as const, icon: Circle };
+  const state = cancelled ? { label: "Cancelled", tone: "alert" as const, icon: Ban } : voided ? { label: "Voided", tone: "alert" as const, icon: Ban } : t.status === "recalled" ? { label: "Recalled", tone: "seated" as const, icon: RotateCcw } : t.status === "in_progress" ? { label: "In progress", tone: "sent" as const, icon: Flame } : { label: "New", tone: "seated" as const, icon: Circle };
   return (
     <AriaButton
       data-ticket
       onPress={onBump}
       isDisabled={pending}
-      aria-label={`${cancelled ? "Clear" : "Bump"} ${title}, ${items} ${items === 1 ? "item" : "items"}${tone === "late" ? ", late" : ""}${t.changed ? ", changed" : ""}${cancelled ? ", cancelled" : ""}`}
+      aria-label={`${clear ? "Clear" : "Bump"} ${title}, ${items} ${items === 1 ? "item" : "items"}${tone === "late" ? ", late" : ""}${t.changed ? ", changed" : ""}${cancelled ? ", cancelled" : voided ? ", voided" : ""}`}
       className={cx(
         "press pos-touch relative mb-4 flex w-full min-w-0 snap-start break-inside-avoid flex-col overflow-hidden rounded-panel border border-rule bg-surface text-left shadow-e1 outline-none",
         "transition-colors duration-[120ms] data-[pressed]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated data-[disabled]:opacity-45",
@@ -364,10 +372,10 @@ function TicketCard({ ticket: t, now, warn, late, pending, onBump }: { ticket: K
         </span>
         <span className={cx("shrink-0 rounded-full px-2.5 py-1 font-heading text-[15px] leading-none font-semibold tabular min-[1600px]:text-[18px]", AGE_CHIP[tone])}>{formatElapsed(seconds)}</span>
       </span>
-      {tone === "late" || t.changed ? (
+      {tone === "late" || (t.changed && !clear) ? (
         <span className="flex flex-wrap items-center gap-2 px-4 pb-2.5">
           {tone === "late" ? <Pill tone="alert" icon={AlertTriangle}>Late</Pill> : null}
-          {t.changed && !cancelled ? <Pill tone="alert" icon={Pencil}>Changed</Pill> : null}
+          {t.changed && !clear ? <Pill tone="alert" icon={Pencil}>Changed</Pill> : null}
         </span>
       ) : null}
       <span className="flex flex-1 flex-col gap-2 border-t border-rule px-4 py-3">
@@ -380,7 +388,7 @@ function TicketCard({ ticket: t, now, warn, late, pending, onBump }: { ticket: K
           {state.label}
         </Pill>
         <span aria-hidden className="flex h-11 min-w-[104px] items-center justify-center rounded-full bg-primary px-5 text-[15px] font-semibold text-on-primary">
-          {cancelled ? "Clear" : "Bump"}
+          {clear ? "Clear" : "Bump"}
         </span>
       </span>
     </AriaButton>

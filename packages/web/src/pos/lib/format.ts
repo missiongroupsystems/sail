@@ -45,11 +45,24 @@ export function initialsOf(name: string | null | undefined): string {
     .join("");
 }
 
-/** A time "HH:MM" today in the outlet's zone (not the iPad's) as an ISO string, tomorrow once it has passed (ready-by entry). */
+/** An example ready-by time in the clock the app shows: "7:30 pm" on a 12-hour clock, "19:30" on a 24-hour one. */
+export function readyByExample(clock: (d: Date) => string): string {
+  return /[ap]\.?\s?m/i.test(clock(new Date())) ? "7:30 pm" : "19:30";
+}
+
+/** A time ("19:30" or "7:30 pm") today in the outlet's zone (not the iPad's) as an ISO string, tomorrow once it has passed (ready-by entry). */
 export function todayAt(hhmm: string, timeZone: string, now = new Date()): string | null {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
-  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return null;
-  const time = `${m[1]!.padStart(2, "0")}:${m[2]}`;
+  // "19:30", or the 12-hour clock the app shows: "7:30 pm", "7:30pm", "7 pm" (review 3, S8).
+  const m = /^(\d{1,2})(?:[:.](\d{2}))?\s*([ap])?\.?\s*m?\.?$/i.exec(hhmm.trim());
+  if (!m || (!m[2] && !m[3])) return null;
+  let hour = Number(m[1]);
+  const minute = Number(m[2] ?? "0");
+  if (m[3]) {
+    if (hour < 1 || hour > 12) return null;
+    hour = (hour % 12) + (m[3].toLowerCase() === "p" ? 12 : 0);
+  }
+  if (hour > 23 || minute > 59) return null;
+  const time = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
   const today = localParts(now, timeZone).date;
   const at = zonedToUtc(today, time, timeZone);
   if (at.getTime() >= now.getTime() - 60_000) return at.toISOString();

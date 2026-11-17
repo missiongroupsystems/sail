@@ -60,7 +60,7 @@ test("EU VAT café: the POS bill and the guest receipt show both VAT rates in eu
   await test.step("pay by card and show the receipt QR", async () => {
     await page.getByRole("region", { name: "Bill 1" }).getByRole("button", { name: /^Pay / }).click();
     await page.getByRole("group", { name: "Payment method" }).getByRole("button", { name: "Card", exact: true }).click();
-    await page.getByRole("button", { name: /^Paid by Card/ }).click();
+    await page.getByRole("button", { name: /^Take .+ by Card$/ }).click();
     await expect(page.getByText(/^Paid · Bill 1 · /)).toBeVisible();
     const sent = page.waitForResponse((r) => /\/v1\/checks\/[^/]+\/receipt\/send$/.test(r.url()) && r.ok());
     await page.getByRole("button", { name: "QR on screen" }).click();

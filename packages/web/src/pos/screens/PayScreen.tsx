@@ -380,7 +380,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const left = fresh?.left ?? null;
   // What the guest hands over: the amount, cash rounding and tip, as the register's dry run returned it.
   const due = figures?.due_cents ?? amount;
-  const verb = tender.is_cash ? `Take ${money(tendered ?? due)} cash` : onTerminal ? `Send ${money(due)} to the terminal` : tender.is_terminal ? (part || tipping ? `Take ${money(due)} by ${tender.name}` : `Paid by ${tender.name}`) : `Take ${money(due)} by ${tender.name}`;
+  const verb = tender.is_cash ? `Take ${money(tendered ?? due)} cash` : onTerminal ? `Send ${money(due)} to the terminal` : `Take ${money(due)} by ${tender.name}`;
   // A tip still being checked has no confirmed total yet: the button never shows the amount without it (D notes, B WebKit).
   const label = tipping && !figures && !localStop ? "Checking the tip…" : `${verb}${part && left != null ? ` · ${money(left)} left` : ""}`;
   // Too little cash for the rounded amount comes back from the dry run as a validation error, which blocks the button with its remedy.
@@ -599,7 +599,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
                   ) : tender.is_terminal ? (
                     <p className="rounded-tile bg-surface-2 px-4 py-3 text-[15px] text-ink">
                       Take <span className="font-semibold tabular">{money(due)}</span> by {tender.name}
-                      {tipText ? `, including a ${tipText} tip` : ""}, then tap {part || tipping ? "Take" : "Paid"}.
+                      {tipText ? `, including a ${tipText} tip` : ""}, then tap Take.
                     </p>
                   ) : (
                     <p className="rounded-tile bg-surface-2 px-4 py-3 text-[15px] text-ink">Record {money(amount)} to {tender.name}.</p>

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { likelyTendered } from "./cash-given";
 
 const EUR = [5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5, 2, 1].map((cents) => ({ cents }));
+const USD = [10000, 5000, 2000, 1000, 500, 100, 25, 10, 5, 1].map((cents) => ({ cents }));
 const SGD = [10000, 5000, 1000, 500, 200, 100, 50, 20, 10, 5].map((cents) => ({ cents }));
 
 describe("cash given buttons", () => {
@@ -12,5 +13,10 @@ describe("cash given buttons", () => {
   it("keep the nearest round-ups and add the next single note when it is not among them", () => {
     expect(likelyTendered(1394, SGD)).toEqual([1400, 1500, 2000, 5000]);
     expect(likelyTendered(4747, SGD)).toEqual([5000, 10000]);
+  });
+
+  it("meet a whole amount with whole units: $3 and $5 for $2.00, never $2.25 (review 3, S8)", () => {
+    expect(likelyTendered(200, USD)).toEqual([300, 500, 1000]);
+    expect(likelyTendered(137, USD)).toEqual([150, 200, 500]);
   });
 });
