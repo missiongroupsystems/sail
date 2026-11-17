@@ -163,7 +163,8 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
           {/* In portrait the icon stands for "Kitchen", so the station's own name has the room (C-11). */}
           <span className="max-[960px]:sr-only">Kitchen</span>
         </h1>
-        <p className="min-w-0 text-[14px] leading-tight text-ink-2 line-clamp-2">{station.name}</p>
+        {/* The station's name keeps room for itself; the paging controls give way first (final2 B-6). */}
+        <p className="min-w-[9rem] text-[14px] leading-tight text-ink-2 line-clamp-2">{station.name}</p>
         <p className="flex shrink-0 items-center gap-2 text-[14.5px] text-ink">
           <span className="tabular">{open.length === 1 ? "1 ticket" : `${open.length} tickets`}{earlierView ? " from earlier days" : ""}</span>
           {lateCount > 0 ? <Pill tone="alert">{lateCount} late</Pill> : null}
@@ -177,8 +178,8 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
           <QuietButton onPress={() => setEarlierView(true)}>{earlierCount} from earlier days</QuietButton>
         ) : null}
         {/* Tickets past the screen's edge: how many, and a page across to them (final review B-P10). */}
-        {board.before > 0 ? <PageButton icon={ChevronLeft} label={`${board.before} before`} onPress={() => board.page(-1)} /> : null}
-        {board.after > 0 ? <PageButton icon={ChevronRight} label={`${board.after} more`} onPress={() => board.page(1)} trailing /> : null}
+        {board.before > 0 ? <PageButton icon={ChevronLeft} count={board.before} word="before" onPress={() => board.page(-1)} /> : null}
+        {board.after > 0 ? <PageButton icon={ChevronRight} count={board.after} word="more" onPress={() => board.page(1)} trailing /> : null}
         <span className="flex-1" />
         <AriaButton
           isDisabled={!last || act.isPending}
@@ -198,7 +199,9 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
       <div className="flex min-h-0 flex-1">
         {/* Tickets run down each column to the foot of the screen and on into the next, oldest first; columns past the edge
             are a swipe or a page away, so every ticket and its Bump is reachable without hunting (final review B-P10). */}
-        <section ref={board.ref} aria-label="Tickets" className="min-h-0 min-w-0 flex-1 snap-x snap-mandatory scroll-px-4 overflow-x-auto overflow-y-hidden p-4">
+        {/* The gutter sits outside the scrolling box, so a column paged away is clipped at the board's edge: nothing of it
+            shows in the gutter or takes a tap (final2 B-6). */}
+        <section aria-label="Tickets" className="flex min-h-0 min-w-0 flex-1 flex-col p-4">
           <InlineError error={tickets.error ?? act.error} className="mb-4" />
           {tickets.data && open.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
@@ -206,11 +209,15 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
               <p className="max-w-[40ch] text-[15px] text-ink-2">No tickets. Items appear here as soon as they are sent to the kitchen.</p>
             </div>
           ) : null}
-          {/* As many columns as fit: three or four on an iPad in landscape, more on a wall screen, two in portrait. */}
-          <div className={cx("h-full columns-[260px] gap-4 [column-fill:auto] min-[1600px]:columns-[320px]", tickets.error || act.error ? "h-[calc(100%-4rem)]" : "")}>
-            {open.map((t) => (
-              <TicketCard key={t.id} ticket={t} now={now} warn={warn} late={late} pending={pendingId === t.id} onBump={() => act.mutate({ id: t.id, action: "bump", key: idempotencyKey(), done: `${ticketTitle(t)} ${t.status === "cancelled" ? "cleared" : "bumped"}` })} />
-            ))}
+          <div ref={board.ref} className="relative min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden">
+            {/* As many columns as fit: three or four on an iPad in landscape, more on a wall screen, two in portrait. */}
+            <div className="h-full columns-[260px] gap-4 [column-fill:auto] min-[1600px]:columns-[320px]">
+              {open.map((t) => (
+                <TicketCard key={t.id} ticket={t} now={now} warn={warn} late={late} pending={pendingId === t.id} onBump={() => act.mutate({ id: t.id, action: "bump", key: idempotencyKey(), done: `${ticketTitle(t)} ${t.status === "cancelled" ? "cleared" : "bumped"}` })} />
+              ))}
+            </div>
+            {/* Extends the board to whole pages, so the last page holds only its own columns. */}
+            <span ref={board.spacer} aria-hidden className="pointer-events-none absolute top-0 left-0 h-px w-px" />
           </div>
         </section>
         <AllDay items={allDay.data ?? []} />
@@ -227,22 +234,31 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
 
 /**
  * How many tickets lie past each edge of the board, and a page across: the count follows scrolling, resizing and
- * every change to the tickets.
+ * every change to the tickets. A page is the board's whole width plus one column gap, so it always starts on a column;
+ * the spacer makes the scrolling width a whole number of pages, so the last page never pulls back the columns before it
+ * (final2 B-6).
  */
+const COLUMN_GAP = 16;
 function useBoardPages(data: unknown) {
-  const ref = useRef<HTMLElement>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const spacer = useRef<HTMLSpanElement>(null);
   const [hidden, setHidden] = useState({ before: 0, after: 0 });
   const measure = useCallback(() => {
     const el = ref.current;
     if (!el) return;
     const box = el.getBoundingClientRect();
+    const pageWidth = el.clientWidth + COLUMN_GAP;
     let before = 0;
     let after = 0;
+    let right = 0;
     for (const card of el.querySelectorAll<HTMLElement>("[data-ticket]")) {
       const r = card.getBoundingClientRect();
+      right = Math.max(right, r.right - box.left + el.scrollLeft);
       if (r.right > box.right + 1) after++;
       else if (r.left < box.left - 1) before++;
     }
+    const pages = Math.max(1, Math.ceil((right + COLUMN_GAP) / pageWidth - 0.01));
+    if (spacer.current) spacer.current.style.left = `${pages * pageWidth - COLUMN_GAP - 1}px`;
     setHidden((h) => (h.before === before && h.after === after ? h : { before, after }));
   }, []);
   useEffect(() => {
@@ -259,14 +275,13 @@ function useBoardPages(data: unknown) {
   }, [measure, data]);
   const page = (dir: 1 | -1) => {
     const el = ref.current;
-    const card = el?.querySelector<HTMLElement>("[data-ticket]");
-    if (!el || !card) return;
-    // A page is as many whole columns as the screen shows, so a column is never left half in view.
-    const step = card.getBoundingClientRect().width + 16;
-    const columns = Math.max(1, Math.floor((el.clientWidth - 32 + 16) / step));
-    el.scrollBy({ left: dir * columns * step, behavior: "smooth" });
+    if (!el) return;
+    // From the page in view (a swipe may have left the board between pages) to the next whole page.
+    const pageWidth = el.clientWidth + COLUMN_GAP;
+    const at = dir > 0 ? Math.floor(el.scrollLeft / pageWidth + 0.01) : Math.ceil(el.scrollLeft / pageWidth - 0.01);
+    el.scrollTo({ left: Math.max(0, (at + dir) * pageWidth), behavior: "smooth" });
   };
-  return { ref, before: hidden.before, after: hidden.after, page };
+  return { ref, spacer, before: hidden.before, after: hidden.after, page };
 }
 
 /** The kitchen bar's quiet pill, as Recall's. */
@@ -281,11 +296,15 @@ function QuietButton({ onPress, children }: { onPress: () => void; children: Rea
   );
 }
 
-function PageButton({ icon, label, onPress, trailing }: { icon: typeof ChevronLeft; label: string; onPress: () => void; trailing?: boolean }) {
+/** "3 more" with its chevron; on a narrow screen the number and chevron alone (the word stays for screen readers). */
+function PageButton({ icon, count, word, onPress, trailing }: { icon: typeof ChevronLeft; count: number; word: string; onPress: () => void; trailing?: boolean }) {
   return (
     <QuietButton onPress={onPress}>
       {trailing ? null : <Icon icon={icon} size={18} />}
-      {label}
+      <span>
+        {count}
+        <span className="max-[1180px]:sr-only"> {word}</span>
+      </span>
       {trailing ? <Icon icon={icon} size={18} /> : null}
     </QuietButton>
   );
