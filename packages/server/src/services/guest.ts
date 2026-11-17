@@ -6,6 +6,7 @@ import { db, tx, withOwnTransaction } from "../db/client.js";
 import { brands, channelLinks, guestRounds, guestSessions, orderAdjustments, orderLines, orders, outlets, serviceRequests, tableQrTokens, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { sha256, signSailToken } from "../auth/tokens.js";
+import { orderTaxSettings } from "./tax.js";
 import { config } from "../config.js";
 import type { Principal } from "../auth/principal.js";
 
@@ -236,12 +237,13 @@ export async function guestOrderView(p: Extract<Principal, { type: "guest" }>) {
   const rounds = await db().select().from(guestRounds).where(eq(guestRounds.guestSessionId, p.sessionId)).orderBy(guestRounds.submittedAt);
   const requests = await db().select().from(serviceRequests).where(eq(serviceRequests.guestSessionId, p.sessionId)).orderBy(serviceRequests.createdAt);
   const canOrder = !!link?.enabled && (orderId != null || !!link.openOnFirstScan);
+  const tax = await guestTax(p.merchantId, p.outletId);
   const toLine = (l: typeof orderLines.$inferSelect) => ({ id: l.id, name: l.name, quantity: l.quantity, modifiers: l.modifiers.map((m) => m.name), notes: l.notes, seat_no: l.seatNo, status: l.status, source: l.source, round_id: l.roundId, mine: rounds.some((r) => r.lineIds.includes(l.id)), amount: l.baseAmount });
   if (!orderId) {
     // A rejection that closed the order (M2) leaves this phone unbound: it still shows what its turned-down rounds held, struck through.
     const rejectedIds = rounds.filter((r) => r.status === "rejected").flatMap((r) => r.lineIds);
     const rejectedLines = rejectedIds.length ? await asSystem(() => db().select().from(orderLines).where(and(inArray(orderLines.id, rejectedIds), eq(orderLines.merchantId, p.merchantId), eq(orderLines.status, "voided"))).orderBy(orderLines.sort)) : [];
-    return { order: null, order_open: false, can_order: canOrder, hold_orders: link?.holdOrders ?? true, lines: rejectedLines.map(toLine), rounds: rounds.map((r) => ({ ...toRound(r), mine: true })), requests: requests.map(toRequest), table_id: p.tableId };
+    return { order: null, order_open: false, can_order: canOrder, hold_orders: link?.holdOrders ?? true, tax, lines: rejectedLines.map(toLine), rounds: rounds.map((r) => ({ ...toRound(r), mine: true })), requests: requests.map(toRequest), table_id: p.tableId };
   }
   const [order] = await db().select().from(orders).where(eq(orders.id, orderId)).limit(1);
   const allRounds = order ? await db().select().from(guestRounds).where(eq(guestRounds.orderId, orderId)).orderBy(guestRounds.submittedAt) : [];
@@ -260,6 +262,7 @@ export async function guestOrderView(p: Extract<Principal, { type: "guest" }>) {
     order_open: !!order,
     can_order: canOrder,
     hold_orders: link?.holdOrders ?? true,
+    tax,
     order: order ? { id: order.id, order_no: order.orderNo, status: order.status, opened_at: order.openedAt.toISOString(), bill_requested: order.billRequestedAt != null } : null,
     // Each line's amount (menu price and choices, before discounts) and the table's totals as the register priced them,
     // so the phone shows them without adding anything up. Payments and balances stay at the POS.
@@ -268,6 +271,16 @@ export async function guestOrderView(p: Extract<Principal, { type: "guest" }>) {
     rounds: allRounds.map((r) => ({ ...toRound(r), mine: r.guestSessionId === p.sessionId })),
     requests: requests.map(toRequest),
   };
+}
+
+/**
+ * Whether the menu prices include tax, and the tax's own name ("VAT", "GST", "State tax"), from the merchant's tax
+ * settings, so the phone can say so from the first scan, before the table has an order (live-test C-7).
+ */
+async function guestTax(merchantId: string, outletId: string): Promise<{ mode: "inclusive" | "exclusive"; names: string[] }> {
+  const t = await asSystem(() => orderTaxSettings(merchantId, outletId));
+  const names = [...new Set(t.taxRates.flatMap((r) => r.components.filter((c) => c.bps > 0).map((c) => c.name.replace(/\s*\(?\d+([.,]\d+)?\s*%\)?\s*$/, "").trim())).filter(Boolean))];
+  return { mode: t.taxMode, names };
 }
 
 /** The order's totals as the register stored them on its last pricing: subtotal, each fee and discount, tax, total. */
