@@ -161,9 +161,9 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
       <header className="flex h-14 shrink-0 items-center gap-x-4 border-b border-rule bg-surface px-5 max-[1180px]:gap-x-3 max-[960px]:gap-x-2 max-[960px]:px-4">
         {/* The left group gives way (its name truncates first, then the group clips); the right group never leaves the screen. */}
         <div className="flex min-w-0 flex-1 items-center gap-x-4 overflow-hidden max-[1180px]:gap-x-3 max-[960px]:gap-x-2">
-        <h1 className="flex shrink-0 items-center gap-2 font-heading text-[18px] font-semibold text-ink">
+        <h1 className="flex shrink-0 items-center gap-2 max-[1180px]:sr-only font-heading text-[18px] font-semibold text-ink">
           <Icon icon={ChefHat} size={20} />
-          {/* Below a wide screen the icon stands for "Kitchen", so the station's own name has the room (C-11). */}
+          {/* Below a wide screen the heading is for screen readers only: the station's own name beside it has the room (C-11). */}
           <span className="max-[1180px]:sr-only">Kitchen</span>
         </h1>
         {/* The station's name takes the room left over, on up to two lines, and truncates past that (whole on hover). */}
