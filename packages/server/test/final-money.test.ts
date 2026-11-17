@@ -390,10 +390,14 @@ describe("M5: an issued invoice shows on the bill wherever the bill is read", ()
     await call("POST", `/v1/checks/${checkId}/payments`, { token: US.admin.token, body: { payment_id: randomUUID(), tender_type_id: ids.card, amount: a.body.data.balance } });
     // Issued from the back office, as the owner does it (a signed-in session, not a station).
     const owner = await backOfficeSession(db.sql, US.merchantId, US.admin.id);
+    const before = await call<{ data: { version: number } }>("GET", `/v1/orders/${o.body.data.id}`, { token: owner });
     const inv = await call<{ data: { invoice_no: string } }>("POST", `/v1/checks/${checkId}/invoice`, { token: owner, body: {} });
     expect(inv.status, JSON.stringify(inv.body)).toBeLessThan(300);
     const again = await call<{ data: { checks: { id: string; invoice_no: string | null }[] } }>("GET", `/v1/orders/${o.body.data.id}`, { token: owner });
     expect(again.body.data.checks.find((c) => c.id === checkId)!.invoice_no).toBe(inv.body.data.invoice_no);
+    // The read is cached by the order's version (its ETag): a browser that had the order open must not be told
+    // "not modified" and keep showing the bill without its invoice.
+    expect((again.body.data as unknown as { version: number }).version).toBeGreaterThan(before.body.data.version);
     const list = await call<{ data: { id: string; invoice_no: string | null }[] }>("GET", `/v1/orders/${o.body.data.id}/checks`, { token: US.admin.token });
     expect(list.body.data.find((c) => c.id === checkId)!.invoice_no).toBe(inv.body.data.invoice_no);
   });

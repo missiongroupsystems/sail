@@ -203,6 +203,8 @@ export type CheckSnapshot = {
   balance: number;
   locked: boolean;
   invoice_no: string | null;
+  /** The line the bill prints when its tax for a rate carries rounding so the bills add up to the order's tax (N2). */
+  tax_note: string | null;
   /** `refunded_quantity` is how many units of the line were already refunded from this bill (a refund by amount refunds none). */
   allocations: { line_id: string; share: string; base: number; discount: number; fee: number; tax: number; taxes: TaxAmount[]; total: number; refunded_quantity: number }[];
   payments: { id: string; tender_type_id: string; tender: string; is_cash: boolean; amount: number; rounding_cents: number; tendered: number | null; change_cents: number; tip_cents: number; reference: string | null; status: string; recorded_by: string | null; created_at: string }[];
@@ -221,6 +223,10 @@ export async function checkSnapshots(orderId: string): Promise<CheckSnapshot[]> 
       : Promise.resolve([]),
   ]);
   const recorded = (checkId: string) => pays.filter((p) => p.checkId === checkId && p.status === "recorded");
+  // The same note the printed bill and the invoice carry, so the POS Bill screen says it too (review 2, N2).
+  const [order] = chks.length > 1 ? await db().select({ taxRounding: orders.taxRounding, taxMode: orders.taxMode }).from(orders).where(eq(orders.id, orderId)).limit(1) : [];
+  const noteLines = order?.taxRounding === "per_rate" ? await db().select({ id: orderLines.id, taxes: orderLines.taxes, netAmount: orderLines.netAmount }).from(orderLines).where(eq(orderLines.orderId, orderId)) : [];
+  const taxNote = (c: (typeof chks)[number]) => (order?.taxRounding === "per_rate" ? (splitTaxNote(c.taxes, allocs.filter((a) => a.checkId === c.id), noteLines, order.taxMode) ?? null) : null);
   return chks.map((c) => ({
     id: c.id,
     index: c.index,
@@ -236,6 +242,7 @@ export async function checkSnapshots(orderId: string): Promise<CheckSnapshot[]> 
     balance: c.total - c.paidTotal,
     locked: c.lockedAt != null,
     invoice_no: c.invoiceNo,
+    tax_note: taxNote(c),
     allocations: allocs.filter((a) => a.checkId === c.id).map((a) => ({ line_id: a.orderLineId, share: a.shareNum === a.shareDen ? "1" : `${a.shareNum}/${a.shareDen}`, base: a.base, discount: a.discount, fee: a.fee, tax: a.tax, taxes: a.taxes, total: a.total, refunded_quantity: refunded.find((r) => r.checkId === c.id && r.lineId === a.orderLineId)?.quantity ?? 0 })),
     payments: pays.filter((p) => p.checkId === c.id).map((p) => ({ id: p.id, tender_type_id: p.tenderTypeId, tender: p.tenderName, is_cash: p.isCash, amount: p.amount, rounding_cents: p.roundingCents, tendered: p.tendered, change_cents: p.changeCents, tip_cents: p.tipCents, reference: p.reference, status: p.status, recorded_by: p.recordedByName, created_at: p.createdAt.toISOString(), reversal: p.status !== "reversed" ? null : p.reversedReason?.startsWith("reopened:") ? ("reopen" as const) : ("void" as const), reversed_at: p.reversedAt?.toISOString() ?? null })),
   }));
@@ -289,7 +296,7 @@ export async function billDocumentFor(checkId: string, kind: "prebill" | "receip
     totals: { subtotal: c.subtotal, discount_total: c.discountTotal, fee_total: c.feeTotal, tax_total: c.taxTotal, taxes: c.taxes, total: c.total, tax_mode: o.taxMode as "inclusive" | "exclusive" },
     payments: kind === "receipt" ? pays.map((p) => ({ tender: p.tenderName, amount: p.amount, rounding_cents: p.roundingCents || undefined, reference: p.reference ?? undefined, tip: p.tipCents || undefined, change: p.changeCents || undefined, tendered: p.changeCents && p.tendered ? p.tendered : undefined, charged: p.tipCents || p.roundingCents ? p.amount + p.roundingCents + p.tipCents : undefined })) : undefined,
     balance: c.total - c.paidTotal > 0 ? c.total - c.paidTotal : undefined,
-    tax_note: o.taxRounding === "per_rate" && allChecks.length > 1 ? splitTaxNote(c.taxes, allocs, lines) : undefined,
+    tax_note: o.taxRounding === "per_rate" && allChecks.length > 1 ? splitTaxNote(c.taxes, allocs, lines, o.taxMode) : undefined,
     invoice_no: c.invoiceNo ?? undefined,
     footer_lines: settings.receiptFooter ? settings.receiptFooter.split("\n") : undefined,
     outlet_phone: settings.receiptShowOutletPhone && outlet?.phone ? outlet.phone : undefined,
@@ -302,15 +309,21 @@ export async function billDocumentFor(checkId: string, kind: "prebill" | "receip
  * When a split bill's tax for a rate is not its own rate times its own taxable amount (the cent the order's single rounding
  * leaves goes to one bill, by largest remainder), the bill says so in one line; otherwise nothing is printed.
  */
-function splitTaxNote(taxes: TaxAmount[], allocs: (typeof checkAllocations.$inferSelect)[], lines: (typeof orderLines.$inferSelect)[]): string | undefined {
+function splitTaxNote(taxes: TaxAmount[], allocs: (typeof checkAllocations.$inferSelect)[], lines: Pick<typeof orderLines.$inferSelect, "id" | "taxes" | "netAmount">[], taxMode: string): string | undefined {
   for (const t of taxes) {
-    const taxable = allocs.reduce((n, a) => {
+    // Exclusive: the rate on the bill's taxable amount. Inclusive: the component's part of the bill's tax-inclusive
+    // amount at the line's combined rate, as the engine takes it.
+    let base = 0;
+    let combined = t.bps;
+    for (const a of allocs) {
       const l = lines.find((x) => x.id === a.orderLineId);
       const b = l?.taxes.find((x) => x.name === t.name && x.bps === t.bps);
-      return n + (b ? (b.taxable * a.shareNum) / a.shareDen : 0);
-    }, 0);
-    const own = Math.floor((Math.round(taxable) * t.bps) / 10_000 + 0.5);
-    if (own !== t.amount) return "Tax includes a cent of rounding so the bills add up to the order's tax.";
+      if (!l || !b) continue;
+      if (taxMode === "inclusive") combined = l.taxes.reduce((n, x) => n + x.bps, 0);
+      base += ((taxMode === "inclusive" ? l.netAmount : b.taxable) * a.shareNum) / a.shareDen;
+    }
+    const own = taxMode === "inclusive" ? Math.floor((Math.round(base) * t.bps) / (10_000 + combined) + 0.5) : Math.floor((Math.round(base) * t.bps) / 10_000 + 0.5);
+    if (own !== t.amount) return "Tax includes rounding so the bills add up to the order's tax.";
   }
   return undefined;
 }

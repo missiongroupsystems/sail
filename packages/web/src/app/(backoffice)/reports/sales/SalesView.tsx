@@ -84,7 +84,7 @@ export function SalesView({ outlets, scope, initialOutletId, today, initialRange
                   rows={[
                     { label: "Orders", value: t.orders },
                     { label: "Covers", value: t.covers },
-                    { label: "Items", value: t.items },
+                    { label: "Items sold", value: t.items },
                     ...blockRows(blocks.before),
                     { label: "Cash rounding", value: <Money cents={t.rounding} signed /> },
                     { label: "Tips", value: <Money cents={t.tips} /> },
@@ -107,7 +107,7 @@ export function SalesView({ outlets, scope, initialOutletId, today, initialRange
               rows={[
                 { label: "Orders", value: t.orders },
                 { label: "Covers", value: t.covers },
-                { label: "Items", value: t.items },
+                { label: "Items sold", value: t.items },
                 { label: "Gross", value: <Money cents={t.gross} /> },
                 { label: "Discounts", value: <Money cents={-t.discounts} /> },
                 { label: "Refunds (before tax)", value: <Money cents={-t.refunds} /> },

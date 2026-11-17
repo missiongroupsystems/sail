@@ -9,6 +9,7 @@ import { sha256, signSailToken } from "../auth/tokens.js";
 import { orderTaxSettings } from "./tax.js";
 import { config } from "../config.js";
 import type { Principal } from "../auth/principal.js";
+import { savePdf } from "../lib/pdf-text.js";
 
 /**
  * Scan to Order services. Guests never pay. Sessions are bound
@@ -154,7 +155,7 @@ export async function qrSheetPdf(outletId: string, merchantId: string): Promise<
       page.drawText("Pay at the counter or ask your server for the bill", { x: x + 16, y: y + 16, size: 8, font, color: rgb(0.37, 0.35, 0.33) });
     }
   }
-  return pdf.save({ useObjectStreams: false });
+  return savePdf(pdf, [font, bold]);
 }
 
 /* ---- Sessions ---- */

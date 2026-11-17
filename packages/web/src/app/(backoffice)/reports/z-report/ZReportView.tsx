@@ -71,6 +71,8 @@ export function ZReportView({ outlets, scope, initialOutletId, today, initialDat
     ["Outlet", outlets.find((o) => o.id === outletId)?.name ?? ""],
     ["Business date", date],
     ["Station", stationName(stationId)],
+    // The state the screen shows under the title, so a file of a day still open says so (review 2, N11).
+    ...(closedToday ? [["Day", "Closed"] as [string, string]] : date === current ? [["Day", "Still open: figures so far"] as [string, string]] : []),
   ];
 
   return (

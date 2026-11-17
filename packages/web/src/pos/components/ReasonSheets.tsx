@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Checkbox, CheckboxGroup, ReasonPicker, Sheet } from "@sail/ui";
+import { Button, Checkbox, CheckboxGroup, ReasonPicker, Sheet, Skeleton } from "@sail/ui";
 import { useEffect, useState } from "react";
 
 export const REOPEN_REASONS = ["Guest came back", "Closed by mistake", "More items to add", "Payment recorded wrongly"];
@@ -23,23 +23,27 @@ export function ReopenSheet({ isOpen, onClose, onReopen, payments = [], checkRef
   }, [isOpen, checkRefusal]);
   if (refusal) {
     return (
-      <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="This order cannot be reopened" description={refusal.message}>
+      <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Reopen order" description={refusal.message}>
         {refusal.remedy ? <p className="text-body text-ink">{refusal.remedy}</p> : null}
       </Sheet>
     );
   }
   return (
     <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Reopen order" description="Why is it being reopened? Needs a Manager, and only on the same business day." isDismissable={!busy}>
-      {/* Reopening gives back what was paid (live test B-N2): said before anyone confirms, with each payment. */}
-      {payments.length ? (
+      {/* Reopening gives back what was paid (live test B-N2): said before anyone confirms, with each payment. Nothing is
+          said or asked until the register has answered the dry run, so a refused reopen never shows a reason or a
+          reversal it would not make (review 2, N3). */}
+      {refusal === null && payments.length ? (
         <div role="note" className="mb-4 rounded-tile bg-status-bill-tint px-4 py-3 text-body text-ink">
           <p className="font-medium">Reopening reverses {payments.length === 1 ? "its payment" : `its ${payments.length} payments`}.</p>
           <p className="text-ink-2">{payments.join(" · ")}. The bill is then open for its full balance and is paid again.</p>
         </div>
       ) : null}
+      {refusal === undefined ? <Skeleton lines={3} /> : null}
+      {refusal === null ? (
       <ReasonPicker
         reasons={REOPEN_REASONS.map((r) => ({ id: r, name: r }))}
-        isDisabled={busy || refusal === undefined}
+        isDisabled={busy}
         onPick={async (r) => {
           setBusy(true);
           const ok = await onReopen(r.text);
@@ -47,6 +51,7 @@ export function ReopenSheet({ isOpen, onClose, onReopen, payments = [], checkRef
           if (ok) onClose();
         }}
       />
+      ) : null}
     </Sheet>
   );
 }

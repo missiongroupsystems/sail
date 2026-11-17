@@ -873,6 +873,19 @@ export function useOrderActions(orderId: string) {
     [api, fail],
   );
 
+  /**
+   * The invoice control wherever an invoice is shown: issue it first when the bill has none, then open its PDF for a
+   * role that may read it (review 2, N8; the Bill screen did this already, M19).
+   */
+  const getInvoice = useCallback(
+    async (checkId: string, invoiceNo: string | null) => {
+      const no = invoiceNo ?? (await issueInvoice(checkId))?.invoice_no ?? null;
+      if (no && mayReadInvoice) await openInvoicePdf(checkId, no);
+      return no;
+    },
+    [issueInvoice, mayReadInvoice, openInvoicePdf],
+  );
+
   /* ---- Refunds: the quote is the register's; Manager+ or an approval for the signed-in role. ---- */
 
   const quoteRefund = useCallback(
@@ -1017,6 +1030,7 @@ export function useOrderActions(orderId: string) {
       sendReceipt,
       issueInvoice,
       openInvoicePdf,
+      getInvoice,
       mayReadInvoice,
       quoteRefund,
       refund,
@@ -1027,7 +1041,7 @@ export function useOrderActions(orderId: string) {
       reprint,
       role,
     }),
-    [addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, splitEven, splitBySeat, allocate, unsplit, prebill, previewPayment, pay, startTerminal, cancelTerminal, voidPayment, complete, reopen, reopenRefusal, printReceipt, sendReceipt, issueInvoice, openInvoicePdf, mayReadInvoice, quoteRefund, refund, printRefundReceipt, acceptRound, rejectRound, markSoldOut, reprint, role],
+    [addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, splitEven, splitBySeat, allocate, unsplit, prebill, previewPayment, pay, startTerminal, cancelTerminal, voidPayment, complete, reopen, reopenRefusal, printReceipt, sendReceipt, issueInvoice, openInvoicePdf, getInvoice, mayReadInvoice, quoteRefund, refund, printRefundReceipt, acceptRound, rejectRound, markSoldOut, reprint, role],
   );
 }
 

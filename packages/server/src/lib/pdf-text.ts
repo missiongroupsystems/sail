@@ -1,3 +1,4 @@
+import { PDFDict, PDFName, PDFNumber, type PDFDocument, type PDFFont } from "pdf-lib";
 import { formatMoney, type MoneyFormat } from "@sail/shared";
 
 /**
@@ -36,4 +37,44 @@ export function pdfDateTime(iso: string, locale: string, timeZone: string): stri
   if (!s.includes("?")) return s;
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(d).map((x) => [x.type, x.value]));
   return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+}
+
+/**
+ * WinAnsi (Windows-1252) codes 0x80–0x9F as Unicode; the rest of 32–255 is Latin-1. Written out, not decoded with
+ * `TextDecoder("windows-1252")`: some Node versions decode that range as control characters, which gave the euro sign
+ * a width of 0. A 0 is a code WinAnsi leaves unassigned.
+ */
+const WIN_ANSI_80_9F = [0x20ac, 0, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160, 0x2039, 0x0152, 0, 0x017d, 0, 0, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0, 0x017e, 0x0178];
+const winAnsiChar = (code: number): string | null => {
+  if (code < 0x80 || code > 0x9f) return String.fromCharCode(code);
+  const cp = WIN_ANSI_80_9F[code - 0x80]!;
+  return cp ? String.fromCharCode(cp) : null;
+};
+
+/**
+ * Save a PDF drawn with the standard fonts, with each font's glyph widths written into it. The standard fonts are not
+ * embedded and pdf-lib leaves out their `/Widths`, so a viewer takes the advances from whatever font it substitutes:
+ * Preview and Safari gave the euro sign none, and it sat on the first digit of every amount (review 2, N7). With the
+ * widths in the file every viewer places each glyph where the right-aligned columns were measured.
+ */
+export async function savePdf(pdf: PDFDocument, fonts: PDFFont[]): Promise<Uint8Array> {
+  for (const font of fonts) {
+    await font.embed();
+    const dict = pdf.context.lookup(font.ref, PDFDict);
+    const widths: number[] = [];
+    for (let code = 32; code <= 255; code++) {
+      const ch = winAnsiChar(code);
+      let w = 0;
+      try {
+        if (ch) w = Math.round(font.widthOfTextAtSize(ch, 1000));
+      } catch {
+        w = 0; // a glyph the font does not have
+      }
+      widths.push(w);
+    }
+    dict.set(PDFName.of("FirstChar"), PDFNumber.of(32));
+    dict.set(PDFName.of("LastChar"), PDFNumber.of(255));
+    dict.set(PDFName.of("Widths"), pdf.context.obj(widths));
+  }
+  return pdf.save({ useObjectStreams: false });
 }

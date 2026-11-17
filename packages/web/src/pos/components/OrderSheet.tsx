@@ -248,6 +248,9 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
               : live.length === 0
                 ? // Nothing on the order yet: a disabled Send, not "Pay $0.00".
                   { id: "send", label: "Send", ariaLabel: "Send to kitchen", onPress: () => undefined, isDisabled: true, trailingIcon: ArrowRight }
+                : order.balance <= 0 && pendingRounds.length > 0
+                  ? // Nothing to pay but a QR order waits: the primary opens the waiting sheet (Accept or Reject), not "Pay $0.00".
+                    { id: "pay", label: "Review QR order", ariaLabel: "Review the waiting QR order", onPress: onPay }
                 : { id: "pay", label: `Pay ${money(order.balance)}`, ariaLabel: `Pay ${money(order.balance)}`, onPress: onPay, isDisabled: live.length === 0 || (order.balance <= 0 && pendingRounds.length === 0), needsApproval: !["cashier", "manager", "finance", "admin"].includes(staff.role), approvalLabel: "Cashier approval" }
           }
           secondaries={[

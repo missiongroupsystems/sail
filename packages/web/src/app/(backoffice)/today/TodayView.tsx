@@ -133,7 +133,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
         <StatTiles className="mb-6">
           <StatTile label="Net sales after refunds" value={zMoney ? <Money cents={zMoney.sales.net} size="title" /> : "—"} caption={z.data && !zMoney ? "Shows once shifts are closed" : undefined} />
           <StatTile label="Orders completed" value={z.data ? z.data.orders.count : "—"} caption={z.data ? <>business day <BusinessDay value={z.data.scope.business_date} /></> : undefined} />
-          <StatTile label="Covers" value={z.data ? z.data.orders.covers : "—"} caption={z.data?.orders.open_count ? `${z.data.orders.open_count} still open` : undefined} />
+          <StatTile label="Covers" value={z.data ? z.data.orders.covers : "—"} caption={z.data?.orders.open_count ? `${z.data.orders.open_count} ${z.data.orders.open_count === 1 ? "order" : "orders"} still open` : undefined} />
           <StatTile label="Open now" value={floor.data ? floor.data.open_orders : "—"} />
         </StatTiles>
       ) : null}

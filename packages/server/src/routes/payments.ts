@@ -233,6 +233,8 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     const { check, document, reused } = await issueInvoice(id, bill);
     const events: AppendedEvent[] = [];
     if (!reused) {
+      // The order's read carries the bill's invoice number and is cached by the order's version: move it on.
+      await bumpVersion(check.orderId);
       events.push(await appendEvent({ merchantId: check.merchantId, outletId: check.outletId, type: "invoice.issued", aggregate: { kind: "order", id: check.orderId }, operationId: "documents.issue_invoice", payload: { check_id: id, invoice_no: document.invoice.number }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(check.merchantId, check.outletId) }, p));
       await recordAudit(p, { action: "documents.issue_invoice", targetKind: "check", targetId: id, outletId: check.outletId, details: { order_id: check.orderId, invoice_no: document.invoice.number } });
     }

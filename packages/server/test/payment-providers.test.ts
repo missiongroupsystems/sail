@@ -606,6 +606,11 @@ describe("payments.void", () => {
     const r = await call<Err>("POST", `/v1/orders/${s.id}/reopen`, { token: C.m.manager.token, body: { reason: "Wrong table" } });
     expect(r.status).toBe(422);
     expect(r.body.details).toMatchObject({ invariant: "terminal_payment" });
+    // A Cashier's dry run (the POS asks before showing a reason or a PIN) gets the same refusal, not "needs approval"
+    // (review 2, N3).
+    const dry = await call<Err>("POST", `/v1/orders/${s.id}/reopen`, { token: C.token, body: { reason: "dry run", dry_run: true } });
+    expect(dry.status, JSON.stringify(dry.body)).toBe(422);
+    expect(dry.body.details).toMatchObject({ invariant: "terminal_payment" });
   });
 
   it("after a void the shift's expected cash and the Z-report agree, and a closed shift's payments can no longer be voided", async () => {

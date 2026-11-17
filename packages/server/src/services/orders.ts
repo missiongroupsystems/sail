@@ -234,10 +234,22 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
   const pricingLines: PricingLineInput[] = liveLines.map(pricingLineOf);
   const manual: ManualApplication[] = apps.map((a) => ({ application_id: a.id, rule_id: a.ruleKey, entered_value: a.enteredValue, line_ids: a.lineIds, applied_by: a.appliedBy, approved_by: a.approvedBy, override_id: a.overrideId, reason: a.reason }));
 
+  // A paid bill's lines keep their tax; the unpaid lines at the same rate take the rest of the order's tax for that rate
+  // (rate × the whole order's taxable amount), as the open bill does in a split (review 2, N1). A line whose fees carry
+  // tax of their own is left out: its stored breakdown mixes two amounts. So is a line whose breakdown is not on its own
+  // net amount (an exempt line that only carries a fee's tax).
+  const taxedFee = new Set(storedAdjs.filter((a) => a.kind === "fee" && a.taxClassId != null).map((a) => a.id));
+  const onOwnNet = (l: (typeof lockedLines)[number]) => {
+    const tax = sumCents(l.taxes.map((t) => t.amount));
+    return l.taxes.every((t) => t.taxable === (order.taxMode === "inclusive" ? l.netAmount - tax : l.netAmount));
+  };
+  const carried = lockedLines
+    .filter((l) => l.taxes.length > 0 && onOwnNet(l) && !storedAdjLines.some((al) => al.orderLineId === l.id && taxedFee.has(al.adjustmentId)))
+    .map((l) => ({ components: l.taxes.map((t) => ({ name: t.name, bps: t.bps })), amount: l.netAmount, taxes: l.taxes.map((t) => t.amount) }));
   const engine = price(
     { order_type: order.orderType as OrderType, channel: order.channel as ChannelType, outlet_id: order.outletId, brand_id: order.brandId, customer_group_ids: groupIds, lines: pricingLines, manual_applications: manual },
     effectiveRules,
-    pricingContextOf(order, at, taxRates),
+    { ...pricingContextOf(order, at, taxRates), carried_tax: carried },
   );
 
   // Merge the paid lines back in: their stored amounts and their stored share of every adjustment.

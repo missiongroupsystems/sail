@@ -7745,6 +7745,9 @@ export interface operations {
                             details: {
                                 [key: string]: unknown;
                             };
+                            target_label: string | null;
+                            /** @enum {string|null} */
+                            value_kind: "percent" | "amount" | null;
                         }[];
                         next_cursor: string | null;
                     };

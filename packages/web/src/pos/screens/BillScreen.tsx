@@ -301,11 +301,8 @@ export function BillScreen({ orderId }: { orderId: string }) {
                           size="md"
                           variant="quiet"
                           isDisabled={offline}
-                          onPress={async () => {
-                            // The invoice opens wherever it is shown: issued first when the bill has none yet (M19).
-                            const no = check.invoice_no ?? (await actions.issueInvoice(check.id))?.invoice_no ?? null;
-                            if (no && actions.mayReadInvoice) await actions.openInvoicePdf(check.id, no);
-                          }}
+                          // The invoice opens wherever it is shown: issued first when the bill has none yet (M19).
+                          onPress={() => void actions.getInvoice(check.id, check.invoice_no)}
                         >
                           {check.invoice_no ? `Invoice ${check.invoice_no} · PDF` : "Get invoice"}
                         </Button>

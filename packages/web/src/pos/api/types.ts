@@ -327,6 +327,8 @@ export type CheckSnapshot = {
   balance: number;
   locked: boolean;
   invoice_no: string | null;
+  /** Set when the bill's tax carries rounding so the bills add up to the order's tax; the printed bill says the same. */
+  tax_note?: string | null;
   allocations: CheckAllocation[];
   payments: CheckPayment[];
 };

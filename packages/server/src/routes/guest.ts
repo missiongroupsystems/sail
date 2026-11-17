@@ -399,14 +399,19 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
   });
 }
 
-/** Fire a round's lines and print kitchen tickets (used by immediate rounds and by acceptance). */
+/**
+ * Fire a round's lines and print kitchen tickets (used by immediate rounds and by acceptance). Like a staff send, it
+ * takes a `ready` order back to `fired`: the order is ready only when every ticket it sent is bumped.
+ */
 async function fireRound(correlationId: string, p: Principal, order: typeof orders.$inferSelect, roundId: string, bd: { cutoff: string; timeZone: string }, operationId: "rounds.submit" | "rounds.accept" = "rounds.submit"): Promise<string[]> {
   const lines = await db().select().from(orderLines).where(and(eq(orderLines.roundId, roundId), inArray(orderLines.status, ["pending", "held"])));
   if (lines.length === 0) return [];
   const now = new Date();
   const round = order.roundCount + 1;
-  await db().update(orderLines).set({ status: "fired", firedAt: now, fireRound: round, updatedAt: now }).where(inArray(orderLines.id, lines.map((l) => l.id)));
-  await db().update(orders).set({ roundCount: round, status: order.status === "open" ? "fired" : order.status, firstFiredAt: order.firstFiredAt ?? now }).where(eq(orders.id, order.id));
+  // Staff accepting at a station sent the round, as a staff send records (the station's Z-report counts a later void there).
+  const firedFromStationId = p.type === "staff" && p.stationId ? p.stationId : null;
+  await db().update(orderLines).set({ status: "fired", firedAt: now, fireRound: round, firedBy: p.type === "staff" ? p.id : null, firedFromStationId, updatedAt: now }).where(inArray(orderLines.id, lines.map((l) => l.id)));
+  await db().update(orders).set({ roundCount: round, status: order.status === "open" || order.status === "ready" ? "fired" : order.status, firstFiredAt: order.firstFiredAt ?? now }).where(eq(orders.id, order.id));
   await db().update(guestRounds).set({ status: "fired" }).where(eq(guestRounds.id, roundId));
   await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "order.fired", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "rounds.submit", payload: { round, line_ids: lines.map((l) => l.id), source: "guest", round_id: roundId }, correlationId, businessDay: bd }, p);
   const { warnings } = await createKitchenJobs({ order: { ...order, roundCount: round }, lines: lines.map((l) => ({ ...l, status: "fired" as const })), round, stationId: null, principal: p, correlationId, operationId });

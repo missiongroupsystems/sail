@@ -161,6 +161,13 @@ export function ShiftHome({ onShowReport, onCounting }: { onShowReport: () => vo
       // Count first, then the register's expected figure (a blind count). Above the merchant's threshold the register refuses the close without a reason.
       const res = await closeShift(api, mine.id, { ...counted, variance_reason: varianceReason });
       setPhase({ kind: "result", shift: res.data, report: res.data.report });
+      // The next open starts from this shift's float, which the open form names as the last close's, not from the cash
+      // just counted (review 2, N11).
+      const floatCounts = mine.float_counts && Object.keys(mine.float_counts).length && denominations.length ? mine.float_counts : null;
+      setMode(floatCounts ? "counts" : "total");
+      setCounts(floatCounts ?? {});
+      setDigits(floatCounts ? "" : String(mine.float_cents));
+      setSeeded(true);
       refresh();
       void qc.invalidateQueries({ queryKey: posKeys.orders(station.outlet_id) });
     } catch (e) {

@@ -31,6 +31,19 @@ export function toCsv(rows: CsvRow[]): string {
 
 const SKIP = "[data-export='skip'],[aria-hidden='true'],button,[role='button'],svg";
 
+/** A figure cell: the "—" a page shows for "none" is an empty cell, so a spreadsheet's number column stays numbers. */
+const figure = (s: string) => (s === "—" ? "" : s);
+
+/**
+ * A value that pairs a count with an amount ("1 · 2.99", voids) is two cells, count then amount; every other value is
+ * one cell (review 2, N11: "0 · 0.00" sat in one cell).
+ */
+function valueCells(dd: Element, exponent: number): string[] {
+  const text = figure(cellText(dd, exponent));
+  const m = /^(-?\d+) · (-?\d+(?:\.\d+)?)$/.exec(text);
+  return m && dd.querySelectorAll("[data-cents]").length === 1 ? [m[1]!, m[2]!] : [text];
+}
+
 /** An element's text with each amount as a decimal and each business date as YYYY-MM-DD, whitespace collapsed. */
 export function cellText(el: Element, exponent: number): string {
   const parts: string[] = [];
@@ -80,7 +93,7 @@ export function reportRows(root: Element, exponent: number): CsvRow[] {
       for (const item of Array.from(el.children)) {
         const dt = item.querySelector("dt");
         const dd = item.querySelector("dd");
-        if (dt && dd) rows.push([cellText(dt, exponent), cellText(dd, exponent)]);
+        if (dt && dd) rows.push([cellText(dt, exponent), ...valueCells(dd, exponent)]);
       }
       return;
     }
@@ -91,7 +104,7 @@ export function reportRows(root: Element, exponent: number): CsvRow[] {
         const cells = Array.from(tr.querySelectorAll(":scope > th, :scope > td"));
         // An empty table's one wide cell is its empty-state line, not a row.
         if (cells.length !== header.length) continue;
-        rows.push(cells.map((c) => cellText(c, exponent)));
+        rows.push(cells.map((c) => figure(cellText(c, exponent))));
       }
       return;
     }
@@ -106,7 +119,11 @@ export function reportRows(root: Element, exponent: number): CsvRow[] {
       }
       return;
     }
-    if (el.tagName === "P") return;
+    // Notes are left out, except one the page marks as part of the figures (the Z-report's open-shift line).
+    if (el.tagName === "P") {
+      if (el.getAttribute("data-export") === "note") rows.push([cellText(el, exponent)]);
+      return;
+    }
     for (const child of Array.from(el.children)) visit(child);
   };
   visit(root);

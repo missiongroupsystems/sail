@@ -217,7 +217,8 @@ export function price(orderIn: PricingOrderInput, rulesIn: readonly PricingRuleI
     step: 5,
     title: `Tax (${context.tax_mode}, rounded ${context.tax_rounding === "per_line" ? "per line" : "once per rate"})`,
     entries: [
-      ...lines.map((l) => ({ outcome: "info" as const, detail: `${l.line_id}: on net ${m(l.net_amount)} → ${m(l.tax_on_net)}; on fees ${m(l.fee_amount)} → ${m(l.tax_on_fees)}`, amount: l.tax_on_net + l.tax_on_fees })),
+      // Prices that include tax say so: the tax is inside the amount, not on top of a net one (review 2, N11).
+      ...lines.map((l) => ({ outcome: "info" as const, detail: context.tax_mode === "inclusive" ? `${l.line_id}: included in ${m(l.net_amount)} → ${m(l.tax_on_net)}; in fees ${m(l.fee_amount)} → ${m(l.tax_on_fees)}` : `${l.line_id}: on net ${m(l.net_amount)} → ${m(l.tax_on_net)}; on fees ${m(l.fee_amount)} → ${m(l.tax_on_fees)}`, amount: l.tax_on_net + l.tax_on_fees })),
       ...tax.breakdown.map((b) => ({ outcome: "info" as const, detail: `${b.name}: ${b.bps / 100}% on ${m(b.taxable)}`, amount: b.amount })),
     ],
   });
@@ -449,10 +450,19 @@ function computeTax(order: PricingOrder, states: readonly LineState[], adjustmen
       g.push(item);
       groups.set(key, g);
     }
-    for (const group of groups.values()) {
+    for (const [key, group] of groups) {
       const base = sumCents(group.map((i) => i.amount));
       const weights = group.map((i) => i.amount);
-      const perComponent = rateTax(base, group[0]!.components, context).map((t) => allocateLargestRemainder(t, weights));
+      const own = rateTax(base, group[0]!.components, context);
+      // Amounts on a paid bill at the same rate: the rate is rounded once on the whole taxable amount, the paid part keeps
+      // its tax and these lines take the rest, so the order's tax stays its rate times its taxable amount.
+      const carried = context.carried_tax.filter((c) => c.components.map(componentKey).join("+") === key && c.taxes.length === c.components.length);
+      const carriedBase = sumCents(carried.map((c) => c.amount));
+      const whole = carried.length && base > 0 && carriedBase > 0 ? rateTax(base + carriedBase, group[0]!.components, context) : null;
+      const shares = whole ? whole.map((t, k) => t - sumCents(carried.map((c) => c.taxes[k]!))) : own;
+      // The order stays exact even when a paid bill already carries a rounding cent of its own (the open bill can then be
+      // two cents from its own rounding); only a negative tax falls back to these lines' own.
+      const perComponent = shares.map((t, k) => (t >= 0 ? t : own[k]!)).map((t) => allocateLargestRemainder(t, weights));
       group.forEach((item, k) => (item.taxes = perComponent.map((parts) => parts[k]!)));
     }
   }

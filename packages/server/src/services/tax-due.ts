@@ -18,5 +18,5 @@ export function taxDue(charged: readonly TaxAmount[], refunded: readonly TaxAmou
     const prev = due.get(k);
     due.set(k, { name: t.name, bps: t.bps, amount: (prev?.amount ?? 0) - t.amount });
   }
-  return [...due.values()].sort((a, b) => b.bps - a.bps || a.name.localeCompare(b.name));
+  return [...due.values()].sort((a, b) => a.bps - b.bps || a.name.localeCompare(b.name));
 }

@@ -74,10 +74,10 @@ export function OrderScreen({ orderId }: { orderId: string }) {
   const receiptCheck = sheet?.kind === "receipt" ? (snap?.checks.find((c) => c.id === sheet.checkId) ?? null) : null;
   const line: SnapshotLine | null = sheet?.kind === "line" ? (snap?.lines.find((l) => l.id === sheet.lineId) ?? null) : null;
 
-  const payNow = () => {
-    if (!snap) return;
-    const open = snap.checks.filter((c) => c.status === "open");
-    if (snap.checks.length === 1 && open[0]) openPay(orderId, open[0].id, "order");
+  const payNow = (s = snap) => {
+    if (!s) return;
+    const open = s.checks.filter((c) => c.status === "open");
+    if (s.checks.length === 1 && open[0]) openPay(orderId, open[0].id, "order");
     else openBill(orderId);
   };
   // A QR order waiting for acceptance is on no bill: Pay asks about it first.
@@ -134,9 +134,12 @@ export function OrderScreen({ orderId }: { orderId: string }) {
                     <Button size="md" variant="quiet" isDisabled={offline} onPress={() => setSheet({ kind: "receipt", checkId: c.id })}>
                       Receipt
                     </Button>
-                    <Button size="md" variant="quiet" isDisabled={offline} onPress={() => void actions.issueInvoice(c.id)}>
-                      {c.invoice_no ? "Invoice issued" : "Get invoice"}
-                    </Button>
+                    {c.invoice_no && !actions.mayReadInvoice ? null : (
+                      // A role that may not read the PDF sees the number in the line above, not a control that does nothing.
+                      <Button size="md" variant="quiet" isDisabled={offline} onPress={() => void actions.getInvoice(c.id, c.invoice_no)}>
+                        {c.invoice_no ? `Invoice ${c.invoice_no} · PDF` : "Get invoice"}
+                      </Button>
+                    )}
                     <Button size="md" variant="secondary" isDisabled={offline || c.status === "refunded" || c.paid_total === 0} onPress={() => setSheet({ kind: "refund", checkId: c.id })}>
                       Refund
                     </Button>
@@ -184,7 +187,15 @@ export function OrderScreen({ orderId }: { orderId: string }) {
         roundLabel={sheet?.kind === "waiting" ? `${sheet.round.lines.map((l) => `${l.quantity} ${l.name}`).join(", ")}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null}
         canPayRest={Boolean(snap && snap.balance > 0)}
         onClose={() => setSheet(null)}
-        onAccept={() => (sheet?.kind === "waiting" ? actions.acceptRound(sheet.round.id) : Promise.resolve(null))}
+        onAccept={async () => {
+          if (sheet?.kind !== "waiting") return null;
+          const ok = await actions.acceptRound(sheet.round.id);
+          // Opened from Pay: once accepted, ask about the next waiting round, else carry on to the payment (review 2, N11).
+          const next = pendingRounds.find((r) => r.id !== sheet.round.id);
+          if (ok && next) setTimeout(() => setSheet({ kind: "waiting", round: next }), 0);
+          else if (ok && ok.balance > 0) payNow(ok);
+          return ok;
+        }}
         onReject={() => (sheet?.kind === "waiting" ? setSheet({ kind: "reject", round: sheet.round }) : undefined)}
         onPayRest={() => {
           setSheet(null);
