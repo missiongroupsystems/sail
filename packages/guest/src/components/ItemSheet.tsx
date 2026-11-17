@@ -3,7 +3,7 @@
 import { BottomSheet, BrandButton, ChoiceGroup, cx, GuestStepper, Money, type ChoiceValue, useLocale } from "@sail/ui";
 import { useMemo, useState } from "react";
 import { uuid, type GuestApi } from "@/lib/api";
-import { Input, Label, TextField as AriaTextField } from "react-aria-components";
+import { Label, TextArea, TextField as AriaTextField } from "react-aria-components";
 import type { BasketItem } from "@/lib/basket";
 import { childGroup, defaultSelection, ruleText, selectionFromModifiers, setGroupValue, toModifiers, topGroups, unmetRequirement, type Selection } from "@/lib/modifiers";
 import type { CompiledGroup, CompiledMenu, CompiledProduct } from "@/lib/types";
@@ -164,7 +164,8 @@ export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupE
           <Label className="flex items-baseline justify-between gap-3">
             <span className="font-display text-[16px] font-semibold text-ink">Note for the kitchen</span>
           </Label>
-          <Input placeholder="Allergies, less spicy, no ice…" className="h-12 w-full rounded-sheet border border-transparent bg-surface-2 px-4 text-[16px] text-ink outline-none placeholder:text-ink-3 focus:border-rule-strong focus:bg-surface" />
+          {/* Several lines, so a long note is read whole before it goes (final review C Low). */}
+          <TextArea rows={3} placeholder="Allergies, less spicy, no ice…" className="min-h-12 w-full resize-none rounded-sheet border border-transparent bg-surface-2 px-4 py-3 text-[16px] leading-snug text-ink outline-none placeholder:text-ink-3 focus:border-rule-strong focus:bg-surface" />
         </AriaTextField>
         {product.cap_remaining != null && product.cap_remaining <= 5 ? <p className="text-caption text-ink-3">Only {product.cap_remaining} left today.</p> : null}
       </div>

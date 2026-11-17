@@ -6,9 +6,10 @@ import type { ReactNode } from "react";
  * A full-page, one-idea notice (empty and error states): one icon, a heading, one line of what to do and at most
  * one action under the thumb, centred on the page.
  */
-export function Notice({ title, body, icon, tone = "neutral", children }: { title: string; body?: ReactNode; icon?: LucideIcon; tone?: "neutral" | "warning"; children?: ReactNode }) {
+export function Notice({ title, body, icon, tone = "neutral", place, children }: { title: string; body?: ReactNode; icon?: LucideIcon; tone?: "neutral" | "warning"; /** The café and table, when the phone knows them (final review C Low). */ place?: string | null; children?: ReactNode }) {
   return (
     <main className="flex min-h-dvh w-full flex-col items-center justify-center gap-4 px-8 pb-16 text-center">
+      {place ? <p className="text-[14px] text-ink-3 wrap-anywhere">{place}</p> : null}
       {icon ? (
         <span className={`flex size-14 items-center justify-center rounded-full ${tone === "warning" ? "bg-status-sent-tint text-status-sent" : "bg-surface-2 text-ink"}`}>
           <Icon icon={icon} size={24} />

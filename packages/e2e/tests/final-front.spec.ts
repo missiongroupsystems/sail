@@ -231,3 +231,31 @@ test("kitchen display: with 12 tickets and a 10-line one, every ticket and its B
   const left = await register<{ data: { id: string; order_no: string; customer_name: string | null }[] }>("GET", `/v1/outlets/${outletId}/kitchen-tickets`).catch(() => ({ data: [] }));
   for (const t of left.data.filter((x) => (x.customer_name ?? "").startsWith("KDS "))) await register("POST", `/v1/kitchen-tickets/${t.id}/bump`, {}).catch(() => undefined);
 });
+
+test("guest: a fresh table orders, a long kitchen note shows whole, and the phone says when it is offline (C Low)", async ({ browser, watch }) => {
+  test.setTimeout(180_000);
+  const { token } = await seatedTableToken();
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const phone = await ctx.newPage();
+  watch.attach(phone);
+  await phone.goto(`${GUEST}/t/${token}`);
+  await phone.getByRole("button", { name: /: see everything the table has ordered$/ }).click();
+  await expect(phone.getByRole("button", { name: "Order", exact: true })).toBeVisible();
+  await expect(phone.getByRole("button", { name: "Order more" })).toHaveCount(0);
+  await phone.getByRole("button", { name: "Order", exact: true }).click();
+
+  await phone.getByRole("button", { name: /^Kopi,/ }).click();
+  const sheet = phone.getByRole("dialog", { name: "Kopi" });
+  const note = sheet.getByRole("textbox", { name: "Note for the kitchen" });
+  expect(await note.evaluate((el) => el.tagName)).toBe("TEXTAREA");
+  await note.fill("Severe nut allergy, please keep it away from anything with peanuts or tree nuts");
+  expect(await note.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+  await sheet.getByRole("button", { name: /^Add to order/ }).click();
+  await expect(sheet).toBeHidden();
+
+  await ctx.setOffline(true);
+  await expect(phone.getByRole("status").filter({ hasText: "No connection. Your order stays here until you are back online." })).toBeVisible();
+  await ctx.setOffline(false);
+  await expect(phone.getByText("No connection.")).toHaveCount(0);
+  await ctx.close();
+});

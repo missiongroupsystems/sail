@@ -102,8 +102,9 @@ export function OurTableView({ session, orderView, loading, error, onBack, onCal
           <BrandButton variant="secondary" className="min-h-14 flex-1 text-[16px]" onPress={onCallStaff}>
             Call staff
           </BrandButton>
+          {/* "Order more" once the table has ordered something; a fresh table simply orders. */}
           <BrandButton variant="accent" className="min-h-14 flex-[1.4] text-[16.5px]" onPress={onOrderMore}>
-            Order more
+            {lines.length ? "Order more" : "Order"}
           </BrandButton>
         </div>
       </Dock>

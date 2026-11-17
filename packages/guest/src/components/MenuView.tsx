@@ -78,13 +78,21 @@ export function MenuView({ session, menu, canOrder, basketItems, basketQuote, or
     let raf = 0;
     const update = () => {
       raf = 0;
-      const bottom = headerRef.current?.getBoundingClientRect().bottom ?? 0;
+      // The section that fills most of the screen under the bar is the current one, so a short last section ("Drinks")
+      // that can never scroll up to the bar is still selected once it is what the guest sees (final review C Low).
+      const top = headerRef.current?.getBoundingClientRect().bottom ?? 0;
+      const bottom = window.innerHeight;
       let current = groups[0]?.section.id ?? null;
+      let most = 0;
       for (const g of groups) {
         const el = document.getElementById(`section-${g.section.id}`);
         if (!el) continue;
-        if (el.getBoundingClientRect().top - bottom <= 12) current = g.section.id;
-        else break;
+        const r = el.getBoundingClientRect();
+        const shown = Math.min(r.bottom, bottom) - Math.max(r.top, top);
+        if (shown > most + 1) {
+          most = shown;
+          current = g.section.id;
+        }
       }
       setSelected(current);
     };

@@ -309,7 +309,9 @@ function TicketCard({ ticket: t, now, warn, late, pending, onBump }: { ticket: K
   const tone = cancelled ? "neutral" : seconds >= late * 60 ? "late" : seconds >= warn * 60 ? "warn" : "neutral";
   const items = t.lines.reduce((n, l) => n + l.quantity - l.voided_quantity, 0);
   const title = ticketTitle(t);
-  const meta = [t.order_type === "dine_in" ? t.order_no : ORDER_TYPE_LABEL[t.order_type as keyof typeof ORDER_TYPE_LABEL], t.pax ? `${t.pax} ${t.pax === 1 ? "guest" : "guests"}` : null, t.server_name, t.round_no > 1 ? `round ${t.round_no}` : null].filter(Boolean).join(" · ");
+  // A round the guest ordered by QR code says so; the name with it is whoever accepted it, not who took the order (final review C Low).
+  const fromQr = t.lines.length > 0 && t.lines.every((l) => l.source === "guest");
+  const meta = [t.order_type === "dine_in" ? t.order_no : ORDER_TYPE_LABEL[t.order_type as keyof typeof ORDER_TYPE_LABEL], t.pax ? `${t.pax} ${t.pax === 1 ? "guest" : "guests"}` : null, fromQr ? (t.server_name ? `QR order, accepted by ${t.server_name}` : "QR order") : t.server_name, t.round_no > 1 ? `round ${t.round_no}` : null].filter(Boolean).join(" · ");
   const state = cancelled ? { label: "Cancelled", tone: "alert" as const, icon: Ban } : t.status === "recalled" ? { label: "Recalled", tone: "seated" as const, icon: RotateCcw } : t.status === "in_progress" ? { label: "In progress", tone: "sent" as const, icon: Flame } : { label: "New", tone: "seated" as const, icon: Circle };
   return (
     <AriaButton

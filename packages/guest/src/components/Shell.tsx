@@ -2,7 +2,7 @@
 
 import { Icon } from "@sail/ui";
 import { ChevronLeft } from "lucide-react";
-import type { ReactNode } from "react";
+import { useSyncExternalStore, type ReactNode } from "react";
 import { Button as AriaButton } from "react-aria-components";
 
 /**
@@ -32,11 +32,38 @@ export function PageHeader({ title, subtitle, onBack, backLabel, right }: { titl
   );
 }
 
-/** The bottom bar that keeps a screen's actions under the thumb, clear of the home bar, in the column's width. */
+/** Whether the phone has a connection, as the browser knows it. */
+export function useOnline(): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      window.addEventListener("online", cb);
+      window.addEventListener("offline", cb);
+      return () => {
+        window.removeEventListener("online", cb);
+        window.removeEventListener("offline", cb);
+      };
+    },
+    () => navigator.onLine,
+    () => true,
+  );
+}
+
+/**
+ * The bottom bar that keeps a screen's actions under the thumb, clear of the home bar, in the column's width. Offline,
+ * it says so above them, before a send has to fail to tell the guest (final review C Low).
+ */
 export function Dock({ children }: { children: ReactNode }) {
+  const online = useOnline();
   return (
     <div className="fixed inset-x-0 bottom-0 z-30">
-      <div className="mx-auto w-full max-w-[480px] border-t border-rule-subtle bg-surface px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">{children}</div>
+      <div className="mx-auto w-full max-w-[480px] border-t border-rule-subtle bg-surface px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">
+        {online ? null : (
+          <p role="status" className="pb-2.5 text-center text-[13.5px] leading-snug text-ink-2">
+            No connection. Your order stays here until you are back online.
+          </p>
+        )}
+        {children}
+      </div>
     </div>
   );
 }

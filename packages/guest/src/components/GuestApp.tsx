@@ -69,6 +69,9 @@ function GuestAppInner({ token }: { token: string }) {
   }, [requestSent]);
   const sessionRef = useRef<GuestSession | null>(null);
   sessionRef.current = session;
+  // The café and table this phone was at, kept after its session ends so the notice can name them.
+  const placeRef = useRef<string | null>(null);
+  if (session) placeRef.current = `${session.outlet.name} · Table ${session.table.name}`;
   /** The session came from sessionStorage and has not yet been confirmed by the register. */
   const restored = useRef(false);
   /** The session id whose 401 has already been handled; concurrent requests all fail together. */
@@ -370,10 +373,10 @@ function GuestAppInner({ token }: { token: string }) {
 
   /* ---- Screens ---- */
   if (phase.kind === "invalid") return <Notice icon={QrCode} tone="warning" title="This code isn't valid." body="Ask a member of staff." />;
-  if (phase.kind === "rotated") return <Notice icon={QrCode} title="This table has a new QR code." body="Scan the code on the table again to keep ordering." />;
+  if (phase.kind === "rotated") return <Notice place={placeRef.current} icon={QrCode} title="This table has a new QR code." body="Scan the code on the table again to keep ordering." />;
   if (phase.kind === "ended") {
     return (
-      <Notice icon={Clock} title="This table session has ended." body="Scan the QR code on the table again, or start again here.">
+      <Notice place={placeRef.current} icon={Clock} title="This table session has ended." body="Scan the QR code on the table again, or start again here.">
         <BrandButton variant="accent" onPress={() => startSession(true)}>
           Start again
         </BrandButton>
@@ -391,7 +394,7 @@ function GuestAppInner({ token }: { token: string }) {
   if (menuQuery.isError && !menu) {
     const err = toApiError(menuQuery.error);
     return (
-      <Notice icon={AlertTriangle} title={err.message} body={err.remedy ?? "Try again in a moment."}>
+      <Notice place={placeRef.current} icon={AlertTriangle} title={err.message} body={err.remedy ?? "Try again in a moment."}>
         <RetryButton onPress={() => menuQuery.refetch()} />
       </Notice>
     );

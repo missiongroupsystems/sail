@@ -195,7 +195,7 @@ export function ReviewView({ session, menu, items, guestName, onGuestName, canOr
               <Text slot="description" className="sr-only">
                 So staff know whose order it is
               </Text>
-              <Input placeholder="So staff know whose order it is" className="h-12 w-full rounded-sheet border border-transparent bg-surface-2 px-4 text-[16px] text-ink outline-none placeholder:text-ink-3 focus:border-rule-strong focus:bg-surface disabled:text-ink-disabled" />
+              <Input placeholder="So staff know whose order it is" className="h-12 w-full scroll-mb-40 rounded-sheet border border-transparent bg-surface-2 px-4 text-[16px] text-ink outline-none placeholder:text-ink-3 focus:border-rule-strong focus:bg-surface disabled:text-ink-disabled" />
             </AriaTextField>
             <p className="text-[13.5px] leading-relaxed text-ink-3">{priceNote(tax)}</p>
           </>
