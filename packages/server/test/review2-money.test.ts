@@ -22,7 +22,7 @@ type Snap = {
 };
 type Mut = { data: Snap };
 
-type World = { m: SeededMerchant; pin: string; cash: string; card: string; hot: string; products: Record<string, string>; qr: Record<string, string> };
+type World = { m: SeededMerchant; pin: string; station: string; cash: string; card: string; hot: string; products: Record<string, string>; qr: Record<string, string> };
 
 async function world(name: string, preset: "us" | "eu-vat", products: { key: string; price: number; taxClass: string }[]): Promise<World> {
   const m = await seedMerchant(db.sql, name, preset === "us" ? { preset, timeZone: "America/New_York", locale: "en-US" } : { preset, timeZone: "Europe/Berlin", currency: "EUR", locale: "de-DE" });
@@ -62,7 +62,7 @@ async function world(name: string, preset: "us" | "eu-vat", products: { key: str
   const code = await call<{ data: { code: string } }>("POST", `/v1/stations/${station}/pairing-code`, { token: t, body: {} });
   const paired = await call<{ data: { station_token: string } }>("POST", "/v1/stations/pair", { body: { code: code.body.data.code, device_label: "iPad" }, idempotencyKey: null });
   const pin = (await call<{ data: { session_token: string } }>("POST", "/v1/stations/sessions", { token: paired.body.data.station_token, body: { pin: "333333" } })).body.data.session_token;
-  return { m, pin, cash, card, hot, products: ids, qr };
+  return { m, pin, station, cash, card, hot, products: ids, qr };
 }
 
 let US: World;
@@ -269,5 +269,24 @@ describe("N2: split by seat with a shared line", () => {
     }
     expect((s.checks as C[]).filter((c) => c.tax_note).length).toBeGreaterThan(0); // these prices leave a cent to place
     await settle(US, id);
+  });
+});
+
+describe("N5: a void of a sent item counts on the Z-report whatever became of its order", () => {
+  it("a QR order's sent soup voided with a Manager, then the order cancelled: Voids 1 on the outlet's and the station's Z-report", async () => {
+    type Z = { voids: { count: number; quantity: number; value: number } };
+    const z = async (station?: string) => (await call<{ data: Z }>("GET", `/v1/outlets/${EU.m.outletId}/z-report${station ? `?station_id=${station}` : ""}`, { token: EU.m.admin.token })).body.data.voids;
+    const before = { outlet: await z(), station: await z(EU.station) };
+    const g = await phone(EU, "4", "device-n5-0001");
+    const r = await guestRound(EU, g, ["soup"]);
+    expect((await call("POST", `/v1/rounds/${r.roundId}/accept`, { token: EU.pin, body: {} })).status).toBe(200);
+    const s = await snap(EU, r.orderId);
+    const line = s.lines.find((l) => l.status === "fired")!;
+    const v = await call("POST", `/v1/orders/${r.orderId}/lines/${line.id}/void`, { token: EU.m.manager.token, body: { reason_text: "Guest changed their mind" } });
+    expect(v.status, JSON.stringify(v.body).slice(0, 300)).toBe(200);
+    const cancel = await call("POST", `/v1/orders/${r.orderId}/cancel`, { token: EU.pin, body: { reason: "Guest left" } });
+    expect(cancel.status, JSON.stringify(cancel.body).slice(0, 300)).toBe(200);
+    expect(await z()).toEqual({ count: before.outlet.count + 1, quantity: before.outlet.quantity + 1, value: before.outlet.value + 650 });
+    expect(await z(EU.station)).toEqual({ count: before.station.count + 1, quantity: before.station.quantity + 1, value: before.station.value + 650 });
   });
 });

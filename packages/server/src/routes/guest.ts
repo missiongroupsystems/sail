@@ -393,7 +393,9 @@ async function fireRound(correlationId: string, p: Principal, order: typeof orde
   if (lines.length === 0) return [];
   const now = new Date();
   const round = order.roundCount + 1;
-  await db().update(orderLines).set({ status: "fired", firedAt: now, fireRound: round, updatedAt: now }).where(inArray(orderLines.id, lines.map((l) => l.id)));
+  // Staff accepting at a station sent the round, as a staff send records (the station's Z-report counts a later void there).
+  const firedFromStationId = p.type === "staff" && p.stationId ? p.stationId : null;
+  await db().update(orderLines).set({ status: "fired", firedAt: now, fireRound: round, firedBy: p.type === "staff" ? p.id : null, firedFromStationId, updatedAt: now }).where(inArray(orderLines.id, lines.map((l) => l.id)));
   await db().update(orders).set({ roundCount: round, status: order.status === "open" || order.status === "ready" ? "fired" : order.status, firstFiredAt: order.firstFiredAt ?? now }).where(eq(orders.id, order.id));
   await db().update(guestRounds).set({ status: "fired" }).where(eq(guestRounds.id, roundId));
   await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "order.fired", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "rounds.submit", payload: { round, line_ids: lines.map((l) => l.id), source: "guest", round_id: roundId }, correlationId, businessDay: bd }, p);
