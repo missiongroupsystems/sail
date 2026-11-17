@@ -255,8 +255,15 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
     if (!voiding) return false;
     const res = await actions.voidPayment(voiding, reason);
     if (!res) return false;
-    // A by-hand payment is reversed now and the bill is open again; a terminal one waits for the provider.
-    if (res.void.status === "voided") setDone(null);
+    // A by-hand payment is reversed now and the bill is open again; a terminal one waits for the provider. The pay screen
+    // starts afresh: the voided payment's cash handed over and tip are not this payment's (review 4 U7).
+    if (res.void.status === "voided") {
+      setDone(null);
+      setDigits(null);
+      setTendered(null);
+      setTip({ kind: "none" });
+      setPad({ target: "amount", fresh: true });
+    }
     setVoiding(null);
     return true;
   };

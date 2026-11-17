@@ -8,7 +8,7 @@ export const VOID_PAYMENT_REASONS = ["Wrong payment method", "Charged twice", "W
 export const REJECT_ROUND_REASONS = ["Sold out", "Kitchen is closing", "Cannot make it right now", "Table did not order this"];
 
 /** Reopen a completed order: a reason, then the register's Manager check (same business day). */
-export function ReopenSheet({ isOpen, onClose, onReopen, payments = [], checkRefusal }: { isOpen: boolean; onClose: () => void; onReopen: (reason: string) => Promise<unknown>; payments?: string[]; checkRefusal?: () => Promise<{ message: string; remedy: string | null } | null> }) {
+export function ReopenSheet({ isOpen, onClose, onReopen, payments = [], invoices = [], checkRefusal }: { isOpen: boolean; onClose: () => void; onReopen: (reason: string) => Promise<unknown>; payments?: string[]; invoices?: string[]; checkRefusal?: () => Promise<{ message: string; remedy: string | null } | null> }) {
   const [busy, setBusy] = useState(false);
   // The register is asked first (a dry run), so nobody gives a reason or a PIN for a reopen it would refuse.
   const [refusal, setRefusal] = useState<{ message: string; remedy: string | null } | null | undefined>(undefined);
@@ -36,7 +36,7 @@ export function ReopenSheet({ isOpen, onClose, onReopen, payments = [], checkRef
       {refusal === null && payments.length ? (
         <div role="note" className="mb-4 rounded-tile bg-status-bill-tint px-4 py-3 text-body text-ink">
           <p className="font-medium">Reopening reverses {payments.length === 1 ? "its payment" : `its ${payments.length} payments`}.</p>
-          <p className="text-ink-2">{payments.join(" · ")}. The bill is then open for its full balance and is paid again.</p>
+          <p className="text-ink-2">{payments.join(" · ")}. The bill is then open for its full balance and is paid again.{invoices.length ? ` ${invoices.length === 1 ? `Invoice ${invoices[0]} is` : `Invoices ${invoices.join(", ")} are`} cancelled by a credit note.` : ""}</p>
         </div>
       ) : null}
       {refusal === undefined ? <Skeleton lines={3} /> : null}

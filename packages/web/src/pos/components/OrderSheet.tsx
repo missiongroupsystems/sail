@@ -239,9 +239,8 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
         <ActionDock
           offline={offline}
           primary={order.balance < 0 ? { id: "refund", label: `Refund ${money(-order.balance)}`, ariaLabel: `Refund ${money(-order.balance)} owed to the guest`, onPress: onRefund, isDisabled: !canRefund, needsApproval: !managerPlus } : { id: "reopen", label: "Reopen", ariaLabel: "Reopen this order", onPress: onReopen, needsApproval: !managerPlus }}
-          secondaries={[
-            order.balance < 0 ? { id: "reopen", label: "Reopen", onPress: onReopen, needsApproval: !managerPlus } : { id: "refund", label: "Refund", onPress: onRefund, isDisabled: !canRefund, needsApproval: !managerPlus },
-          ]}
+          // Refund is on each bill of the closed order's summary; the dock does not repeat it (review 4 U7).
+          secondaries={order.balance < 0 ? [{ id: "reopen", label: "Reopen", onPress: onReopen, needsApproval: !managerPlus }] : []}
         />
       ) : (
         <ActionDock

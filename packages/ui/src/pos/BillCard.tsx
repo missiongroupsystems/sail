@@ -124,7 +124,8 @@ export function BillCard({ label, status, lines, rows, tenders, isTarget, onPres
     </>
   );
   const classes = cx(
-    "flex max-h-full w-[400px] shrink-0 flex-col self-start max-[1150px]:w-[340px] overflow-hidden rounded-panel border border-rule text-left max-[960px]:max-h-none max-[960px]:w-full",
+    // The bills share the row (three at 1180 wide, review 4 U7), each between 260 and 400 px; one per row when narrow.
+    "flex max-h-full min-w-[260px] max-w-[400px] flex-1 basis-[260px] flex-col self-start overflow-hidden rounded-panel border border-rule text-left max-[960px]:max-h-none max-[960px]:w-full max-[960px]:max-w-none",
     isTarget ? "border-transparent shadow-[inset_0_0_0_2px_var(--status-seated)] bg-status-seated-tint" : paid ? "bg-[color-mix(in_oklab,var(--status-paid-tint)_60%,var(--surface))]" : "bg-surface",
     className,
   );

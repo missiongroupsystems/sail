@@ -6,7 +6,7 @@ import { useState } from "react";
 import { toApiError } from "@/lib/api";
 import { closeBusinessDay } from "../../api/register";
 import { usePos } from "../../components/PosContext";
-import { useOpenOrders } from "../../hooks/queries";
+import { useOpenOrders, useShifts } from "../../hooks/queries";
 import { useApi } from "../../hooks/useApi";
 import { roleAtLeast } from "../../hooks/useOrderActions";
 import { ORDER_TYPE_LABEL } from "../../lib/format";
@@ -28,6 +28,9 @@ export function DayPanel({ className, layout = "panel" }: { className?: string; 
   const closedAt = closed && closed.day === floor?.business_date ? closed.at : null;
   const [confirming, setConfirming] = useState(false);
   const openOrders = useOpenOrders(station.outlet_id);
+  // The register refuses a day close while any shift is open: the button says so instead of offering it (review 4 U7).
+  const openShifts = useShifts(station.outlet_id, "open");
+  const shiftsOpen = openShifts.data?.length ?? 0;
   // Today's business day only, as the back office lists them.
   const stillOpen = (openOrders.data ?? []).filter((o) => o.business_date === floor?.business_date);
   const canCloseDay = roleAtLeast(staff.role, "manager");
@@ -52,9 +55,16 @@ export function DayPanel({ className, layout = "panel" }: { className?: string; 
     }
   };
 
-  const line = closedAt ? `Business day closed at ${clock(closedAt)}.` : canCloseDay ? "Close the business day once every shift is closed. The register snapshots the Z-report." : "Closing the business day needs a Manager.";
+  const line = closedAt
+    ? `Business day closed at ${clock(closedAt)}.`
+    : !canCloseDay
+      ? "Closing the business day needs a Manager."
+      : shiftsOpen > 0
+        ? `Close the business day once every shift is closed (${shiftsOpen === 1 ? "1 shift is" : `${shiftsOpen} shifts are`} open). The register snapshots the Z-report.`
+        : "Close the business day once every shift is closed. The register snapshots the Z-report.";
+  // Secondary: the screen's one primary is the shift's own action (Open shift or Close shift).
   const button = (
-    <Button size="lg" variant="primary" isDisabled={offline || busy || !canCloseDay || Boolean(closedAt)} isPending={busy} onPress={() => setConfirming(true)} className={layout === "panel" ? "w-full" : undefined}>
+    <Button size="lg" variant="secondary" isDisabled={offline || busy || !canCloseDay || Boolean(closedAt) || shiftsOpen > 0 || openShifts.isPending} isPending={busy} onPress={() => setConfirming(true)} className={layout === "panel" ? "w-full" : undefined}>
       {offline ? "Offline" : closedAt ? "Business day closed" : "Close the business day…"}
     </Button>
   );
