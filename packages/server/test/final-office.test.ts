@@ -96,3 +96,29 @@ describe("import report (A P13)", () => {
     for (const part of ["name is required", 'price "abc" is not an amount', 'kind "widget" is not product or component', 'tax class "Luxury" not found']) expect(reason).toContain(part);
   });
 });
+
+describe("forgotten password, without email (A P11)", () => {
+  it("the operator's reset link sets a new password once, ends the old sessions, and is in the audit log", async () => {
+    const { operatorResetLink } = await import("../src/services/operator-reset.js");
+    const s = seeded[0]!;
+    const before = await adminToken(s);
+    await expect(operatorResetLink(db.sql, "nobody@example.com", "https://office.example.com")).rejects.toThrow(/No back-office login/);
+    const link = await operatorResetLink(db.sql, s.adminEmail.toUpperCase(), "https://office.example.com/");
+    expect(link.url).toMatch(/^https:\/\/office\.example\.com\/set-password#token=/);
+    const token = new URL(link.url).hash.replace(/^#token=/, "");
+    const inspect = await call<{ data: { kind: string } }>("POST", "/v1/auth/links/inspect", { body: { token }, idempotencyKey: null });
+    expect(inspect.status).toBe(200);
+    expect(inspect.body.data.kind).toBe("reset");
+    const password = "a new long password for the owner";
+    const accepted = await call("POST", "/v1/auth/links/accept", { body: { token, password } });
+    expect(accepted.status, JSON.stringify(accepted.body)).toBeLessThan(300);
+    expect((await call("POST", "/v1/auth/links/accept", { body: { token, password } })).status).toBeGreaterThanOrEqual(400);
+    expect((await call("GET", "/v1/me", { token: before })).status).toBe(401);
+    const signIn = await call("POST", "/v1/auth/sign-in", { body: { email: s.adminEmail, password }, idempotencyKey: null });
+    expect(signIn.status).toBe(201);
+    const audit = await db.sql<{ actor_name: string }[]>`select actor_name from audit_log where merchant_id = ${s.merchantId} and action = 'staff.reset_password'`;
+    expect(audit.map((a) => a.actor_name)).toContain("Server operator");
+    // Later tests sign in with the seeded password.
+    s.adminPassword = password;
+  });
+});

@@ -259,3 +259,15 @@ test.describe("O8 (A P15), O11 (round 8 S-6): archive and remove ask once", () =
     await expect(sheet.getByRole("button", { name: "Archive product" })).toBeVisible();
   });
 });
+
+test("O5 (A P11): Forgotten your password? says how to get a reset link without an Admin above you", async ({ page }) => {
+  test.setTimeout(300_000);
+  await page.goto(`${WEB}/login`);
+  await page.getByRole("link", { name: "Forgotten your password?" }).click();
+  await expect(page).toHaveURL(`${WEB}/forgot-password`);
+  await expect(page.getByRole("heading", { level: 1, name: "Forgotten your password?" })).toBeVisible();
+  await expect(page.getByText("pnpm --filter @sail/server reset-link you@example.com")).toBeVisible();
+  await expect(page.getByText(/Ask an Admin for a reset link/)).toHaveCount(0);
+  await page.getByRole("link", { name: "Back to sign in" }).click();
+  await expect(page).toHaveURL(`${WEB}/login`);
+});

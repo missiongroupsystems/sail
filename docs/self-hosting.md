@@ -144,6 +144,17 @@ Admins manage access in **Team**: open a staff member and use **Back-office acce
 
 One email signs in to one staff record on the whole server, so an invite is refused if another merchant's staff member already signs in with that email.
 
+### A forgotten password
+
+**Forgotten your password?** on the sign-in page says how to get a reset link; Sail sends no email, so the page asks for nothing and says nothing about which emails have a login. Anyone with an Admin above them asks that Admin for a **Password reset link** (above). The owner is often the business's only Admin: then whoever runs the server makes the link with the owner connection, as for `bootstrap`:
+
+```bash
+MIGRATE_DATABASE_URL=postgres://...:5432/... WEB_APP_URL=https://backoffice.example.com \
+  pnpm --filter @sail/server reset-link owner@example.com
+```
+
+It prints the link once. The link is the same as an Admin's: it works once, for 24 hours, cancels any earlier open link, and using it ends the person's other sessions. The merchant's audit log records it as made by "Server operator". It is refused for an email with no back-office login, an inactive staff member, or someone who has not set a password yet (invite them instead). With the external identity provider, reset the password there instead.
+
 ### An external identity provider
 
 Set `SUPABASE_URL` or `SUPABASE_JWT_SECRET` on the API, and `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` on the web app. **Invite** then pre-authorises the staff member's email instead of giving a link. On their first sign-in through the identity provider with that email, Sail links the account to the staff record. Emails nobody pre-authorised are refused; Sail never creates staff from a sign-in. Only a token whose top-level `email_verified` claim is `true` is linked; a token without the claim, or with it set to anything else, is refused. Supabase Auth does not put that claim at the top level of its access tokens (it copies it into `user_metadata`, which users can edit themselves, so Sail never reads it there). On Supabase, add it with a [custom access token hook](https://supabase.com/docs/guides/auth/auth-hooks/custom-access-token-hook) that sets `email_verified` to `email_confirmed_at is not null` from `auth.users`. Once linked, later sign-ins match on the subject and need no claim.

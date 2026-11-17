@@ -20,7 +20,7 @@ export function middleware(request: NextRequest) {
     return signedIn ? NextResponse.redirect(new URL("/today", request.url)) : NextResponse.next();
   }
   // First-run setup and invitation or reset links are for people who are not signed in yet.
-  if (pathname === "/setup" || pathname === "/set-password") return NextResponse.next();
+  if (pathname === "/setup" || pathname === "/set-password" || pathname === "/forgot-password") return NextResponse.next();
   if (!signedIn) {
     const login = new URL("/login", request.url);
     // The deep link keeps its query (a report's date, a filter), so signing in lands where the link pointed.

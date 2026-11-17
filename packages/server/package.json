@@ -22,6 +22,7 @@
     "sim:payments": "tsx scripts/payment-simulator.ts",
     "load:local": "tsx scripts/load-local.ts",
     "bootstrap": "tsx scripts/bootstrap.ts",
+    "reset-link": "tsx scripts/reset-link.ts",
     "demo:seed": "tsx scripts/demo-seed.ts"
   },
   "dependencies": {
