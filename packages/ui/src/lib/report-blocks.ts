@@ -75,3 +75,45 @@ export function refundBlocks(sales: ReportSales, refunds: ReportRefunds, taxMode
 export function refundableQuantity(quantity: number, refunded: number | undefined): number {
   return Math.max(0, quantity - (refunded ?? 0));
 }
+
+/** A Z-report tender row as the register returns it; `refunds`, `reversed` and `net` arrive with the per-tender figures. */
+export type ReportTender = { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number; refunds?: number; reversed?: number; net?: number };
+
+/**
+ * One tender's rows: what was applied, then tips, rounding and refunds on it, and the net the terminal should show (a
+ * payment taken and reversed is named apart, counted nowhere). Every amount is the register's.
+ */
+export function tenderRows(t: ReportTender): ReportRow[] {
+  const k = t.tender_type_id;
+  const extras: ReportRow[] = [
+    ...(t.tips ? [{ key: `${k}:tips`, label: "Tips", amount: t.tips, indent: true }] : []),
+    ...(t.rounding ? [{ key: `${k}:rounding`, label: "Cash rounding", amount: t.rounding, indent: true, signed: true }] : []),
+    ...(t.refunds ? [{ key: `${k}:refunds`, label: "Refunded", amount: -t.refunds, indent: true, signed: true }] : []),
+  ];
+  const net = t.net !== undefined && extras.length ? [{ key: `${k}:net`, label: t.is_cash ? `${t.tender} net` : `${t.tender} net, as the terminal shows`, amount: t.net, strong: true }] : [];
+  const reversed = t.reversed ? [{ key: `${k}:reversed`, label: "Reversed, not counted", amount: t.reversed, indent: true }] : [];
+  return [{ key: k, label: t.count ? `${t.tender} (${t.count})` : t.tender, amount: t.amount, strong: !extras.length }, ...extras, ...net, ...reversed];
+}
+
+/** The Z-report's `reconciliation` block, once the register splits what is held on open orders. */
+export type ReportReconciliation = { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number; held_on_open_orders?: number; paid_for_other_orders?: number; beyond_order_totals?: number };
+
+/**
+ * How the payments taken come to the completed sales, one plain row each, so "Collected" and the payments read together:
+ * payments = collected on completed orders + held on open orders + paid for other orders − paid on another day + taken
+ * beyond the orders' totals (owed to guests).
+ * Null for a report from before the split, or when there is nothing to explain.
+ */
+export function reconciliationRows(r: ReportReconciliation | undefined): ReportRow[] | null {
+  if (!r || r.held_on_open_orders === undefined || r.paid_for_other_orders === undefined) return null;
+  const beyond = r.beyond_order_totals ?? 0;
+  if (r.held_on_open_orders === 0 && r.paid_for_other_orders === 0 && r.paid_elsewhere === 0 && beyond === 0) return null;
+  return [
+    { key: "rec:sales", label: "Collected on completed orders", amount: r.sales_total },
+    ...(r.held_on_open_orders ? [{ key: "rec:open", label: "Held on open orders", amount: r.held_on_open_orders, signed: true }] : []),
+    ...(r.paid_for_other_orders ? [{ key: "rec:other", label: "For orders of another day or station", amount: r.paid_for_other_orders, signed: true }] : []),
+    ...(r.paid_elsewhere ? [{ key: "rec:elsewhere", label: "Paid on another day or station", amount: -r.paid_elsewhere, signed: true }] : []),
+    ...(beyond ? [{ key: "rec:beyond", label: "Taken beyond the orders' totals, owed to guests", amount: beyond, signed: true }] : []),
+    { key: "rec:tenders", label: "Payments taken", amount: r.tenders, strong: true },
+  ];
+}

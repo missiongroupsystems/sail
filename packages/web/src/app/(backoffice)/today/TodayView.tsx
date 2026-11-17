@@ -131,7 +131,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
 
       {outlet ? (
         <StatTiles className="mb-6">
-          <StatTile label="Net sales, completed orders" value={zMoney ? <Money cents={zMoney.sales.net} size="title" /> : "—"} caption={z.data && !zMoney ? "Shows once shifts are closed" : undefined} />
+          <StatTile label="Net sales after refunds" value={zMoney ? <Money cents={zMoney.sales.net} size="title" /> : "—"} caption={z.data && !zMoney ? "Shows once shifts are closed" : undefined} />
           <StatTile label="Orders completed" value={z.data ? z.data.orders.count : "—"} caption={z.data ? <>business day <BusinessDay value={z.data.scope.business_date} /></> : undefined} />
           <StatTile label="Covers" value={z.data ? z.data.orders.covers : "—"} caption={z.data?.orders.open_count ? `${z.data.orders.open_count} still open` : undefined} />
           <StatTile label="Open now" value={floor.data ? floor.data.open_orders : "—"} />
@@ -259,7 +259,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                   )
                 }
               >
-              {late.data && lateJobs.length === 0 ? <EmptyState variant="centred" icon={Printer} className="py-8" title="Nothing waiting" hint="Every ticket printed within 10 seconds." /> : null}
+              {late.data && lateJobs.length === 0 ? <EmptyState variant="centred" icon={Printer} className="py-8" title="Nothing waiting" hint={relays.data && relays.data.filter((r) => !r.archived).length === 0 ? "No relay at this outlet, so nothing prints." : "Every ticket printed within 10 seconds."} /> : null}
               <ul className="flex flex-col divide-y divide-rule-subtle">
                 {lateJobs.map((j: PrintJob) => (
                   <li key={j.id} className="flex flex-col gap-1 px-5 py-3">
@@ -347,9 +347,10 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
               {zMoney ? (
                 <div className="flex flex-col gap-4 px-5 py-4">
                   <div className="flex flex-wrap gap-x-10 gap-y-4">
-                    {[...taxRows(zMoney.sales.taxes, merchant.settings.tax_mode).before, ...taxRows(zMoney.sales.taxes, merchant.settings.tax_mode).after].map((t) => (
-                      <Stat key={t.key} label={t.label} value={<Money cents={t.amount} size="heading" />} />
-                    ))}
+                    {/* One basis for the page, after refunds: the tile's net sales and the tax due, as the register reports both. */}
+                    {zMoney.tax_due
+                      ? zMoney.tax_due.map((t, i) => <Stat key={`due:${i}:${t.name}`} label={`${t.name} due`} value={<Money cents={t.amount} size="heading" />} />)
+                      : [...taxRows(zMoney.sales.taxes, merchant.settings.tax_mode).before, ...taxRows(zMoney.sales.taxes, merchant.settings.tax_mode).after].map((t) => <Stat key={t.key} label={t.label} value={<Money cents={t.amount} size="heading" />} />)}
                     {zMoney.refunds.count ? <Stat label="Refunds" value={<Money cents={zMoney.refunds.amount} size="heading" />} hint={plural(zMoney.refunds.count, "refund")} /> : null}
                   </div>
                   <ul className="flex flex-wrap gap-x-10 gap-y-3">

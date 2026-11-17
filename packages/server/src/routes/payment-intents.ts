@@ -116,13 +116,13 @@ export function paymentIntentRoutes(app: OpenAPIHono<AppEnv>) {
         // A dry run says what would happen and writes nothing (agents may not write intents at all).
         if (b.dry_run) return c.json({ data: { ...(await loadSnapshot(order.id)) }, void: { payment_id: id, status: "pending_provider" as const }, events, warnings: [] }, 200);
         await requestProviderVoid(intent, { reason: b.reason, requested_by: p.id, requested_by_name: "name" in p ? p.name : null, approver_id: approval?.id ?? null, approver_name: approval?.name ?? null, override_id: b.override_id ?? null, actor: actorOf(p) as EventActor });
-        await recordAudit(p, { ...audit, details: { amount: payment!.amount, tender: payment!.tenderName, provider: intent.provider, status: "pending_provider" } });
+        await recordAudit(p, { ...audit, details: { order_id: order.id, amount: payment!.amount, tender: payment!.tenderName, provider: intent.provider, status: "pending_provider" } });
         await settleInvariants();
         events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "payment.void_requested", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "payments.void", payload: { payment_id: id, check_id: payment!.checkId, amount: payment!.amount, intent_id: intent.id }, reason: { text: b.reason }, approval: approvalRef, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
         return c.json({ data: { ...(await loadSnapshot(order.id)) }, void: { payment_id: id, status: "pending_provider" as const }, events, warnings: [] }, 200);
       }
       await reversePayment(order, payment!, b.reason, p);
-      await recordAudit(p, { ...audit, details: { amount: payment!.amount, tender: payment!.tenderName, status: "voided" } });
+      await recordAudit(p, { ...audit, details: { order_id: order.id, amount: payment!.amount, tender: payment!.tenderName, status: "voided" } });
       const version = await bumpVersion(order.id);
       const snapshot = await loadSnapshot(order.id);
       await settleInvariants();

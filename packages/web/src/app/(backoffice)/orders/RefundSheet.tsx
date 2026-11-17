@@ -93,7 +93,8 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
   const quote = useQuery<RefundQuote, ApiError>({
     queryKey: ["refund-quote", checkId, request],
     queryFn: () => req(api.POST("/v1/checks/{id}/refunds/quote", { params: { path: { id: checkId! } }, body: { request: request! } })).then((r) => r.data as unknown as RefundQuote),
-    enabled: isOpen && step === "review" && checkId !== null && request !== null,
+    // An amount is checked as it is typed, so "more than was paid" is said beside the field, not only at Review.
+    enabled: isOpen && (step === "review" || (step === "what" && what === "amount")) && checkId !== null && request !== null,
     retry: false,
     staleTime: 0,
   });
@@ -118,7 +119,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
   const index = steps.findIndex((s) => s.id === step);
   const next = steps[index + 1]?.id;
   const prev = steps[index - 1]?.id;
-  const canContinue = step === "bill" ? checkId !== null : step === "what" ? request !== null : step === "why" ? reason.trim().length > 0 : false;
+  const canContinue = step === "bill" ? checkId !== null : step === "what" ? request !== null && !(what === "amount" && quote.isError) : step === "why" ? reason.trim().length > 0 : false;
 
   const lineName = (id: string) => lineById.get(id)?.name ?? `Line ${id.slice(0, 8)}`;
 
@@ -264,7 +265,10 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
                 </ul>
               ) : null}
               {what === "amount" ? (
-                <MoneyField label="Amount to refund" value={amount} onChange={setAmount} description={`${check.label} ${paidSoFar(check)}. The register spreads it across the bill's items and tenders, and refuses more than was paid.`} autoFocus className="max-w-[240px]" />
+                <>
+                  <MoneyField label="Amount to refund" value={amount} onChange={setAmount} description={`${check.label} ${paidSoFar(check)}. The register spreads it across the bill's items and tenders, and refuses more than was paid.`} autoFocus className="max-w-[240px]" />
+                  {request ? <InlineError error={quote.error} /> : null}
+                </>
               ) : null}
             </div>
           ) : null}

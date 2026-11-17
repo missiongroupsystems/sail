@@ -125,6 +125,8 @@ export type OrderLine = {
   sku: string | null;
   quantity: number;
   unit_price: number;
+  /** One item with its options, as the register adds them. */
+  unit_amount?: number;
   open_price: number | null;
   modifiers: { modifier_id: string; product_id: string; name: string; quantity: number; price: number; group_id: string }[];
   notes: string | null;
@@ -202,5 +204,7 @@ export type OrderSnapshot = {
   manual_applications: { id: string; rule_key: string; entered_value: number | null; line_ids: string[] | null; applied_by: string | null; approved_by?: string | null; reason: string | null }[];
   checks: unknown[];
   paid_total: number;
+  /** Sum of the bills' refunded totals, as the register adds them. */
+  refunded_total: number;
   balance: number;
 };

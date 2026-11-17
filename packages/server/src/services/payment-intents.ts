@@ -292,7 +292,7 @@ async function completeVoid(intentId: string): Promise<void> {
     }
     const by = principalFor(intent, request.actor);
     await reversePayment(order, payment, request.reason, by);
-    await recordAudit(by, { action: "payments.void", targetKind: "payment", targetId: payment.id, outletId: order.outletId, reason: request.reason, approver: request.approver_id ? { id: request.approver_id, name: request.approver_name } : null, overrideId: request.override_id, details: { amount: payment.amount, tender: payment.tenderName, provider: intent.provider, provider_ref: intent.providerRef } });
+    await recordAudit(by, { action: "payments.void", targetKind: "payment", targetId: payment.id, outletId: order.outletId, reason: request.reason, approver: request.approver_id ? { id: request.approver_id, name: request.approver_name } : null, overrideId: request.override_id, details: { order_id: order.id, amount: payment.amount, tender: payment.tenderName, provider: intent.provider, provider_ref: intent.providerRef } });
     const version = await bumpVersion(order.id);
     await settleInvariants();
     await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "payment.voided", aggregate: { kind: "order", id: order.id, version }, operationId: "payments.void", payload: { payment_id: payment.id, check_id: payment.checkId, amount: payment.amount, tip_cents: payment.tipCents, tender: payment.tenderName, intent_id: intent.id }, reason: { text: request.reason }, approval: request.approver_id ? { override_id: request.override_id ?? undefined, approver_id: request.approver_id, approver_name: request.approver_name ?? undefined } : null, actor: request.actor, correlationId: intent.id, businessDay: bd });

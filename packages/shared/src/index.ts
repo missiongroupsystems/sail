@@ -6,6 +6,7 @@ export * from "./pricing/index.js";
 export * from "./manifest.js";
 export * from "./escpos/index.js";
 export * from "./splits.js";
+export * from "./phone.js";
 export * from "./refunds.js";
 export * from "./presets.js";
 export * from "./time.js";

@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
-import { AmountSchema, ORDER_STATUSES, OrderTypeSchema, PERMISSIONS, PricingRuleSchema, isFreezable, localParts, operation, price, registerOperations, roleAtLeast, validateManualApplication, type OrderType, type OperationSpec, type Role } from "@sail/shared";
+import { AmountSchema, toE164, ORDER_STATUSES, OrderTypeSchema, PERMISSIONS, PricingRuleSchema, isFreezable, localParts, operation, price, registerOperations, roleAtLeast, validateManualApplication, type OrderType, type OperationSpec, type Role } from "@sail/shared";
 import { db, markDryRun, settleInvariants, tx } from "../db/client.js";
 import { areas, channelLinks, customerGroupMembers, customers, kitchenTickets, orderLines, orderManualApplications, orders, stations, tables, voidReasons } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -15,6 +15,8 @@ import { bumpVersion, getOrderRow, loadSnapshot, lockOrder, nextOrderNo, OPEN_ST
 import { orderTaxRates, orderTaxSettings, usedTaxClasses } from "../services/tax.js";
 import { assertAdjustmentUnlocked, assertLineUnlocked } from "../services/checks.js";
 import { requireRoleOrOverride } from "../services/overrides.js";
+import { maybeComplete } from "../services/payments.js";
+import { adoptLegacyMobile, merchantLocale } from "./customers.js";
 import { createProposal, toProposal } from "../services/agents.js";
 import { activeRules, ruleOrLastVersion } from "../services/pricing-rules.js";
 import { releaseDailyCap } from "./catalogue.js";
@@ -34,7 +36,7 @@ registerOperations({
   "orders.attach_customer": op({ op: "orders.attach_customer", summary: "Attach a customer", description: "Customer-group conditions re-evaluate; frozen order-level results stay frozen.", emits: ["order.customer_attached", "order.repriced"] }),
   "orders.detach_customer": op({ op: "orders.detach_customer", summary: "Detach the customer", description: "Removes the customer; group discounts re-evaluate.", emits: ["order.customer_detached", "order.repriced"] }),
   "orders.move_table": op({ op: "orders.move_table", summary: "Move an order to another table", description: "The target table must have no open order. The order's kitchen tickets show the new table.", emits: ["order.moved"] }),
-  "orders.fire": op({ op: "orders.fire", summary: "Send lines to the kitchen", description: "Fires the given lines (default: every pending, unheld line). Creates one print job per target printer in the same transaction. On a pay-before-firing station, blocked until the balance is 0.", tier: "T2", emits: ["order.fired", "print_job.created"], mcp: { expose: true, toolsets: ["pos.order", "kitchen"] } }),
+  "orders.fire": op({ op: "orders.fire", summary: "Send lines to the kitchen", description: "Fires the given lines (default: every pending, unheld line). Creates one print job per target printer in the same transaction. On a pay-before-firing station, blocked until the balance is 0. A dine-in or takeaway order already paid in full completes when its last item is sent, by the same rule as a payment that settles a sent order; a ready order sent another round is back to fired.", tier: "T2", emits: ["order.fired", "print_job.created", "order.completed"], mcp: { expose: true, toolsets: ["pos.order", "kitchen"] } }),
   "orders.mark_ready": op({ op: "orders.mark_ready", summary: "Mark an order ready", description: "From fired to ready (pickup and delivery lists).", emits: ["order.status_changed"], mcp: { expose: true, toolsets: ["pos.order", "kitchen"] } }),
   "orders.mark_out_for_delivery": op({ op: "orders.mark_out_for_delivery", summary: "Mark a delivery order out for delivery", description: "Delivery orders only, from ready.", emits: ["order.status_changed"] }),
   "orders.cancel": op({ op: "orders.cancel", summary: "Cancel an order", description: "Only with no payments and no fired lines (void fired lines first, which needs Manager+). Releases daily caps.", tier: "T2", reasonRequired: true, emits: ["order.cancelled"] }),
@@ -125,8 +127,10 @@ type PendingEvent = () => Promise<AppendedEvent | null>;
  * order becomes one or is given a mobile later (final review B-P9). An existing customer with that mobile keeps its name.
  */
 async function customerFromRef(merchantId: string, ref: { name?: string; mobile?: string }): Promise<string | null> {
-  const mobile = ref.mobile?.replace(/\s+/g, "");
-  if (!mobile) return null;
+  if (!ref.mobile) return null;
+  const locale = await merchantLocale(merchantId);
+  const mobile = toE164(ref.mobile, locale);
+  await adoptLegacyMobile(merchantId, mobile, locale);
   const [cust] = await db()
     .insert(customers)
     .values({ merchantId, name: ref.name ?? mobile, mobile })
@@ -520,10 +524,16 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       .update(orderLines)
       .set({ status: "fired", firedAt: now, fireRound: round, firedBy: p.type === "staff" ? p.id : null, firedFromStationId: station?.id ?? null, updatedAt: now })
       .where(inArray(orderLines.id, toFire.map((l) => l.id)));
-    await db().update(orders).set({ roundCount: round, status: o.status === "open" ? "fired" : o.status, firstFiredAt: o.firstFiredAt ?? now }).where(eq(orders.id, id));
+    // A new round puts a ready order back in the kitchen's hands until its tickets are bumped too.
+    await db().update(orders).set({ roundCount: round, status: o.status === "open" || o.status === "ready" ? "fired" : o.status, firstFiredAt: o.firstFiredAt ?? now }).where(eq(orders.id, id));
+    // Paid before sending (a takeaway paid at the counter, a pay-before-sending station): sending the last item completes it,
+    // exactly as a payment that settles an order whose items are all sent does.
+    // Pickup and delivery keep their own steps (ready, collected or out for delivery), so only dine-in and takeaway complete here.
+    const completed = (o.orderType === "dine_in" || o.orderType === "takeaway") && (await paidTotal(id)) > 0 && (await maybeComplete(id, now));
     const warnings: string[] = [];
     const pending: PendingEvent[] = [
       () => emit(c, p, o, "order.fired", { round, line_ids: toFire.map((l) => l.id), station_id: station?.id ?? null }),
+      ...(completed ? [() => emit(c, p, o, "order.completed", { order_no: o.orderNo })] : []),
       // Kitchen tickets are created in the same transaction as the fire; each job appends its own event.
       async () => {
         for (const hook of fireHooks) warnings.push(...(await hook({ order: { ...o, roundCount: round }, lines: toFire, round, station, principal: p, correlationId: c.get("correlationId") })));

@@ -217,10 +217,10 @@ describe("checks and payments", () => {
     const fired = await call<Mut["body"]>("POST", `/v1/orders/${o.body.data.id}/fire`, { token: counterCashierPin, body: {} });
     expect(fired.status).toBe(200);
     const final = await call<{ data: Snap }>("GET", `/v1/orders/${o.body.data.id}`, { token: counterCashierPin });
-    expect(final.body.data.status).toBe("fired"); // completion is a payment-time or explicit step
+    // Paid in full before it was sent: sending its last item completes it (final review M17), as paying a sent order does.
+    expect(final.body.data.status).toBe("completed");
     const complete = await call<Mut["body"]>("POST", `/v1/orders/${o.body.data.id}/complete`, { token: counterCashierPin, body: {} });
-    expect(complete.status).toBe(200);
-    expect(complete.body.data.status).toBe("completed");
+    expect(complete.status).toBe(409);
   });
 
   it("invoices are numbered gap-free even when issued concurrently; reissuing returns the same number; the PDF renders", async () => {

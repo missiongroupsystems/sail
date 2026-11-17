@@ -1,4 +1,4 @@
-import { allocateByShares, sumCents, type Cents, type Share } from "./money.js";
+import { allocateByShares, allocateLargestRemainder, sumCents, type Cents, type Share } from "./money.js";
 import type { TaxAmount } from "./pricing/schemas.js";
 
 /**
@@ -157,4 +157,72 @@ export function wholeTo(n: number, index: number): Share[] {
 /** Sum of check totals equals the order total: a helper for tests and invariants. */
 export function sumAllocations(parts: readonly AllocatedComponents[]): Cents {
   return sumCents(parts.map((p) => p.total));
+}
+
+/** One bill's allocation of one line, as `rebalanceBillTax` reads and adjusts it. */
+export type TaxRow = { check: number; lineId: string; shareNum: number; shareDen: number; taxes: TaxAmount[]; tax: Cents; total: Cents };
+
+const taxKey = (t: { name: string; bps: number }) => `${t.bps}|${t.name}`;
+
+/**
+ * Split bills under per-rate rounding: each bill's tax for a rate component is made the order's tax for that component
+ * spread across the bills by largest remainder, weighted by each bill's taxable amount, so a bill's tax row is its own
+ * rate times its own subtotal to within the one cent the order's single rounding leaves (the order's tax always wins and
+ * stays exact). Cents move between bills on a line the bills share, else between two whole lines of the same rate on
+ * the two bills (each keeps its total across bills; only lines in `movable` when given). Mutates `rows`; returns the per-line tax change by component key.
+ * `taxables[lineId][key]` is the line's taxable amount for that component.
+ */
+export function rebalanceBillTax(rows: TaxRow[], taxables: Record<string, Record<string, number>>, opts: { taxAddsToTotal: boolean; movable?: ReadonlySet<string> }): Map<string, Map<string, number>> {
+  const lineDelta = new Map<string, Map<string, number>>();
+  const checksSeen = [...new Set(rows.map((r) => r.check))].sort((a, b) => a - b);
+  if (checksSeen.length < 2) return lineDelta;
+  const keys = [...new Set(rows.flatMap((r) => r.taxes.map(taxKey)))];
+  const amountOf = (r: TaxRow, k: string) => r.taxes.find((t) => taxKey(t) === k)?.amount ?? 0;
+  const bump = (r: TaxRow, k: string, d: number) => {
+    const t = r.taxes.find((x) => taxKey(x) === k);
+    if (!t) return false;
+    t.amount += d;
+    r.tax += d;
+    if (opts.taxAddsToTotal) r.total += d;
+    return true;
+  };
+  for (const k of keys) {
+    const current = checksSeen.map((c) => sumCents(rows.filter((r) => r.check === c).map((r) => amountOf(r, k))));
+    const weights = checksSeen.map((c) => rows.filter((r) => r.check === c).reduce((s, r) => s + ((taxables[r.lineId]?.[k] ?? 0) * r.shareNum) / r.shareDen, 0));
+    const total = sumCents(current);
+    if (total <= 0 || weights.some((w) => w < 0) || weights.every((w) => w === 0)) continue;
+    const target = allocateLargestRemainder(total, weights);
+    const delta = checksSeen.map((_, i) => target[i]! - current[i]!);
+    for (let guard = 0; guard < 10_000; guard++) {
+      const from = delta.findIndex((d) => d < 0);
+      const to = delta.findIndex((d) => d > 0);
+      if (from < 0 || to < 0) break;
+      const cf = checksSeen[from]!;
+      const ct = checksSeen[to]!;
+      // A line on both bills: move the cent between its two allocations; the line's own tax is unchanged.
+      const shared = rows.find((r) => r.check === cf && amountOf(r, k) > 0 && rows.some((x) => x.check === ct && x.lineId === r.lineId && x.taxes.some((t) => taxKey(t) === k)));
+      if (shared) {
+        const other = rows.find((x) => x.check === ct && x.lineId === shared.lineId)!;
+        bump(shared, k, -1);
+        bump(other, k, 1);
+      } else {
+        // Two whole lines of the same rate: one gives a cent of its tax to the other, so the order's tax is unchanged.
+        // Only a line whose tax is all on its own amount (no fee carrying tax of its own) gives or takes a cent.
+        const whole = (r: TaxRow) => r.shareNum === r.shareDen && r.taxes.some((t) => taxKey(t) === k) && (opts.movable?.has(r.lineId) ?? true);
+        const giver = rows.find((r) => r.check === cf && whole(r) && amountOf(r, k) > 0);
+        const taker = rows.find((r) => r.check === ct && whole(r));
+        if (!giver || !taker) break;
+        bump(giver, k, -1);
+        bump(taker, k, 1);
+        for (const [id, d] of [[giver.lineId, -1], [taker.lineId, 1]] as const) {
+          const m = lineDelta.get(id) ?? new Map<string, number>();
+          m.set(k, (m.get(k) ?? 0) + d);
+          lineDelta.set(id, m);
+        }
+      }
+      delta[from]! += 1;
+      delta[to]! -= 1;
+    }
+  }
+  return lineDelta;
 }

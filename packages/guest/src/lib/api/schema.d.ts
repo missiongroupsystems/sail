@@ -1217,7 +1217,7 @@ export interface paths {
         };
         /**
          * Find customers
-         * @description By mobile (exact or prefix) or name prefix. Not available to agents: they cannot read customer contact details.
+         * @description By any 3 or more digits of the mobile (with or without "+", spaces or the country code) or by name prefix. Not available to agents: they cannot read customer contact details.
          */
         get: operations["customers.find"];
         /**
@@ -1911,7 +1911,7 @@ export interface paths {
         put?: never;
         /**
          * Send lines to the kitchen
-         * @description Fires the given lines (default: every pending, unheld line). Creates one print job per target printer in the same transaction. On a pay-before-firing station, blocked until the balance is 0.
+         * @description Fires the given lines (default: every pending, unheld line). Creates one print job per target printer in the same transaction. On a pay-before-firing station, blocked until the balance is 0. A dine-in or takeaway order already paid in full completes when its last item is sent, by the same rule as a payment that settles a sent order; a ready order sent another round is back to fired.
          */
         post: operations["orders.fire"];
         delete?: never;
@@ -2407,7 +2407,7 @@ export interface paths {
         put?: never;
         /**
          * Record a payment on a bill
-         * @description Applies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. A tip is `tip_cents`, or, on a dry run only, `tip_bps` (a percentage of the amount applied, which the dry run turns into `tip_cents`; in cash it is rounded to the cash rounding step); the reply's `payment.due_cents` is what the guest hands over (amount, cash rounding and tip). The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.
+         * @description Applies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. A tip is `tip_cents`, or, on a dry run only, `tip_bps` (a percentage of the amount applied, before tax where tax is added on top of prices, which the dry run turns into `tip_cents`; in cash it is rounded to the cash rounding step); the reply's `payment.due_cents` is what the guest hands over (amount, cash rounding and tip). The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.
          */
         post: operations["payments.record"];
         delete?: never;
@@ -3047,7 +3047,7 @@ export interface paths {
         put?: never;
         /**
          * Reject a held QR round
-         * @description Removes the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled ("QR order rejected") and the table freed; the guest's phone keeps its session.
+         * @description Removes the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled ("QR order rejected") and the table freed; the guest's phone keeps its session. An order paid while the round waited completes.
          */
         post: operations["rounds.reject"];
         delete?: never;
@@ -3559,7 +3559,7 @@ export interface paths {
         put?: never;
         /**
          * Bump a kitchen ticket (ready)
-         * @description Marks the ticket ready and takes it off the display; a cancelled ticket stays cancelled and only leaves the display. A second bump, from this display or another showing the same destination, returns the ticket unchanged.
+         * @description Marks the ticket ready and takes it off the display; a cancelled ticket stays cancelled and only leaves the display. When it was the order's last ticket still on a display (and nothing waits to be sent), a sent order becomes ready. A second bump, from this display or another showing the same destination, returns the ticket unchanged.
          */
         post: operations["kitchen_tickets.bump"];
         delete?: never;
@@ -7707,6 +7707,7 @@ export interface operations {
                 action?: string;
                 target_kind?: string;
                 target_id?: string;
+                order_id?: string;
                 from?: string;
                 to?: string;
                 limit?: number;

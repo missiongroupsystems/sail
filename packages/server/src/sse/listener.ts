@@ -26,6 +26,8 @@ export function channelKeys(n: Notification): string[] {
   const keys = [`merchant:${n.merchant_id}`];
   if (n.outlet_id) keys.push(`outlet:${n.outlet_id}`);
   if (n.aggregate_kind === "order") keys.push(`order:${n.aggregate_id}`);
+  // A table's own events (its QR code rotated) reach the phones at that table at once.
+  if (n.aggregate_kind === "table") keys.push(`table:${n.aggregate_id}`);
   return keys;
 }
 

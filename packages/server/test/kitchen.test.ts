@@ -209,7 +209,7 @@ describe("start, bump and recall", () => {
     const [a, b, c] = await Promise.all([act(tokens.d1, hotTicket.id, "bump"), act(tokens.d2, hotTicket.id, "bump"), act(tokens.d1, hotTicket.id, "bump")]);
     expect([a.status, b.status, c.status]).toEqual([200, 200, 200]);
     expect([a, b, c].map((r) => r.body.data.status)).toEqual(["ready", "ready", "ready"]);
-    expect([a, b, c].flatMap((r) => r.body.events.map((e) => e.type))).toEqual(["kitchen_ticket.bumped"]);
+    expect([a, b, c].flatMap((r) => r.body.events.map((e) => e.type))).toEqual(["kitchen_ticket.bumped", "order.kitchen_progress"]) // the order hears its kitchen too (final review M6);
     expect((await ticketEvents(after)).map((e) => e.type)).toEqual(["kitchen_ticket.bumped"]);
     const l = (await list(tokens.d2)).body;
     expect(l.data.some((x) => x.id === hotTicket.id)).toBe(false);
@@ -222,7 +222,7 @@ describe("start, bump and recall", () => {
     const key = randomUUID();
     const r1 = await act(tokens.d1, barTicket.id, "bump", key);
     const r2 = await act(tokens.d1, barTicket.id, "bump", key);
-    expect(r1.body.events.map((e) => e.type)).toEqual(["kitchen_ticket.bumped"]);
+    expect(r1.body.events.map((e) => e.type)).toEqual(["kitchen_ticket.bumped", "order.kitchen_progress"]);
     expect(r2.headers.get("idempotent-replayed")).toBe("true");
     expect(r2.body).toEqual(r1.body);
   });

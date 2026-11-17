@@ -172,8 +172,11 @@ describe("catalogue", () => {
     // Same mobile again updates the same customer.
     const again = await call<{ data: { id: string } }>("PUT", "/v1/customers", { token: A.cashier.token, body: { name: "Lim Wei Ling", mobile: "+6500004567" } });
     expect(again.body.data.id).toBe(cust.body.data.id);
+    // Any 3 or more digits of the number find it, wherever they are in it (final review M12).
     const found = await call<{ data: { name: string }[] }>("GET", "/v1/customers?mobile=0000", { token: A.server.token });
-    expect(found.body.data.map((c) => c.name)).toEqual([]);
+    expect(found.body.data.map((c) => c.name)).toEqual(["Lim Wei Ling"]);
+    const none = await call<{ data: { name: string }[] }>("GET", "/v1/customers?mobile=9999", { token: A.server.token });
+    expect(none.body.data.map((c) => c.name)).toEqual([]);
     const found2 = await call<{ data: { name: string }[] }>("GET", "/v1/customers?mobile=%2B6500", { token: A.server.token });
     expect(found2.body.data.map((c) => c.name)).toEqual(["Lim Wei Ling"]);
     const members = await call<{ data: { member_count: number } }>("POST", `/v1/customer-groups/${group.body.data.id}/members`, { token: A.manager.token, body: { remove: [cust.body.data.id] } });

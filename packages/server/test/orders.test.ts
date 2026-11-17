@@ -153,7 +153,7 @@ describe("orders of every type with server-authoritative pricing", () => {
     expect((await open(serverPin, { order_type: "delivery", customer_ref: { name: "Raj", mobile: "91112222" } })).status).toBe(400);
     const pickup = await open(serverPin, { order_type: "pickup", customer_ref: { name: "Raj", mobile: "9111 2222" }, ready_by: new Date(Date.now() + 1800_000).toISOString() });
     expect(pickup.status).toBe(201);
-    const [cust] = await db.sql`select name from customers where mobile = '91112222'`;
+    const [cust] = await db.sql`select name from customers where mobile = '+6591112222'`; // stored in E.164 with the merchant's country (final review M12)
     expect(cust!.name).toBe("Raj"); // pickup orders create or match a customer
     const take = await open(cashierPin, { order_type: "takeaway", takeaway_ref: "Tan" });
     expect(take.status).toBe(201);
