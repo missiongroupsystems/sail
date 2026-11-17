@@ -1,4 +1,5 @@
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { taxInPrices } from "../lib/tax-in-prices.js";
 import { drawerCap, formatMoney, type TaxAmount, type TaxBreakdown } from "@sail/shared";
 import { db, tx } from "../db/client.js";
 import { businessDayCloses, merchantSettings, orderAdjustments, orderLines, orders, payments, refundTenders, refunds as refundRows, shifts, staff } from "../db/schema/index.js";
@@ -24,7 +25,8 @@ export type ZReport = {
    * Before refunds, `net_before_refunds + fees + tax = total`; after them, `total_after_refunds = total - refunds.amount`
    * (the `refunds` block splits that amount into net, fees and tax).
    */
-  sales: { gross: number; discounts: number; fees: number; tax: number; taxes: TaxBreakdown[]; refunds: number; net: number; total: number; net_before_refunds: number; total_after_refunds: number };
+  /** `tax_in_prices`: with tax included in prices, the tax inside the items (gross less discounts less net before refunds), so the rows add up as written; 0 when tax is added on top. */
+  sales: { gross: number; discounts: number; fees: number; tax: number; taxes: TaxBreakdown[]; refunds: number; net: number; total: number; net_before_refunds: number; total_after_refunds: number; tax_in_prices: number };
   adjustments: { rule_key: string; name: string; kind: string; report_class: string; total: number; count: number }[];
   /**
    * Per tender: `amount` applied, `rounding` and `tips` on top, `refunds` given back on it (amount, rounding and tips),
@@ -171,7 +173,7 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
   return {
     scope: { outlet_id: scope.outletId, station_id: scope.stationId ?? null, business_date: scope.businessDate, shift_id: scope.shiftId ?? null },
     orders: { count: o?.count ?? 0, by_type: Object.fromEntries(byType.map((b) => [b.t, b.n])), covers: o?.covers ?? 0, open_count: open?.n ?? 0 },
-    sales: { gross: o?.gross ?? 0, discounts: o?.discounts ?? 0, fees: o?.fees ?? 0, tax: o?.tax ?? 0, taxes, refunds: refunds.net, net: (o?.net ?? 0) - refunds.net, total: o?.total ?? 0, net_before_refunds: o?.net ?? 0, total_after_refunds: (o?.total ?? 0) - refunds.amount },
+    sales: { gross: o?.gross ?? 0, discounts: o?.discounts ?? 0, fees: o?.fees ?? 0, tax: o?.tax ?? 0, taxes, refunds: refunds.net, net: (o?.net ?? 0) - refunds.net, total: o?.total ?? 0, net_before_refunds: o?.net ?? 0, total_after_refunds: (o?.total ?? 0) - refunds.amount, tax_in_prices: taxInPrices(o?.gross ?? 0, o?.discounts ?? 0, o?.net ?? 0) },
     adjustments: adj,
     tenders,
     tenders_summary: { cash: cashPayments, non_cash: tenders.filter((t) => !t.is_cash).reduce((s, t) => s + t.amount, 0), tips: tenders.reduce((s, t) => s + t.tips, 0), count: tenders.reduce((s, t) => s + t.count, 0) },

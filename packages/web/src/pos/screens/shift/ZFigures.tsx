@@ -1,6 +1,6 @@
 "use client";
 
-import { cx, reconciliationRows, refundBlocks, Skeleton, taxRows, tenderRows, useLocale, type ReportRow } from "@sail/ui";
+import { cx, reconciliationRows, refundBlocks, showsCardNet, Skeleton, taxRows, tenderRows, useLocale, type ReportRow } from "@sail/ui";
 import { toApiError } from "@/lib/api";
 import { useMerchant } from "../../hooks/queries";
 import { ORDER_TYPE_LABEL } from "../../lib/format";
@@ -33,7 +33,6 @@ export function ZFigures({ report, title }: { report: { data?: ZReport | ZReport
   ) : null;
   const rows = (list: ReportRow[]) => list.map((x) => <Row key={x.key} label={x.label} cents={x.amount} strong={x.strong} indent={x.indent} />);
   // Terminal tenders are compared one by one; the register does not return a combined figure and the iPad never adds one up.
-  const nonCash = r ? r.tenders.filter((t) => !t.is_cash) : [];
   const one = Boolean(title);
   // In the one panel each group is a column under a small grey heading; on the tab each is its own panel.
   const group = one ? "min-w-0" : "rounded-panel border border-rule bg-surface px-5 py-4";
@@ -107,7 +106,7 @@ export function ZFigures({ report, title }: { report: { data?: ZReport | ZReport
               {r.tenders.length === 0 ? <p className="py-2 text-body text-ink-2">No payments yet.</p> : null}
             </dl>
             {reconciliation ? <dl className="mt-2 border-t border-rule pt-2">{rows(reconciliation)}</dl> : null}
-            {nonCash.length ? <p className="pt-2 text-caption text-ink-2">Compare each card net with the terminal&rsquo;s end-of-day total.</p> : null}
+            {showsCardNet(r.tenders) ? <p className="pt-2 text-caption text-ink-2">Compare each card net with the terminal&rsquo;s end-of-day total.</p> : null}
           </section>
 
           <section className={group}>

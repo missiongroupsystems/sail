@@ -1,6 +1,6 @@
 "use client";
 
-import { BusinessDay, Badge, kindTone, Money, Panel, reconciliationRows, refundBlocks, taxRows, tenderRows, useLocale, ValueRows, type ReportRow } from "@sail/ui";
+import { BusinessDay, Badge, kindTone, Money, Panel, reconciliationRows, refundBlocks, showsCardNet, taxRows, tenderRows, useLocale, ValueRows, type ReportRow } from "@sail/ui";
 import { useSession } from "@/lib/session-context";
 import { label, ORDER_TYPE_LABEL, REPORT_CLASS_LABEL } from "./labels";
 import { plural, type ZReport } from "./register";
@@ -114,7 +114,7 @@ export function ZReportBody({ report, stationName }: { report: ZReport; stationN
               r.tenders.map((t: Tender, i: number) => <ValueRows key={t.tender_type_id} className={i ? "mt-1.5 border-t border-rule-subtle pt-1.5" : undefined} rows={blockRows(tenderRows(t))} />)
             )}
             {reconciliation ? <ValueRows className="mt-1.5 border-t border-rule-subtle pt-1.5" rows={blockRows(reconciliation)} /> : null}
-            {r.tenders.some((t) => !t.is_cash) ? <p className="mt-2 text-caption text-ink-2">Compare each card net with the terminal&rsquo;s end-of-day total.</p> : null}
+            {showsCardNet(r.tenders) ? <p className="mt-2 text-caption text-ink-2">Compare each card net with the terminal&rsquo;s end-of-day total.</p> : null}
           </Panel>
 
           {r.reversals?.count ? (

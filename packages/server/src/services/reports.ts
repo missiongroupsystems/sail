@@ -1,11 +1,12 @@
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, rgb } from "pdf-lib";
 import { zonedToUtc, type MoneyFormat, type TaxAmount, type TaxBreakdown } from "@sail/shared";
 import { tx } from "../db/client.js";
 import { toCsv } from "./csv.js";
 import { businessDayInputs } from "./business-day.js";
 import { shiftDate } from "../lib/time.js";
-import { pdfMoney, savePdf, winAnsi } from "../lib/pdf-text.js";
+import { embedPdfFonts, pdfMoney, pdfText, savePdf } from "../lib/pdf-text.js";
 import type { ZReport } from "./shifts.js";
+import { taxInPrices } from "../lib/tax-in-prices.js";
 import { taxDue } from "./tax-due.js";
 
 /**
@@ -49,7 +50,7 @@ export type SalesSummary = {
    * `net_before_refunds + fees + tax = total`; after refunds, `total_after_refunds = total - refunds.amount`.
    * Every `net` below (by day, order type, source and category) is the same figure split up.
    */
-  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; tax: number; refunds: number; net: number; total: number; rounding: number; tips: number; net_before_refunds: number; total_after_refunds: number };
+  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; tax: number; refunds: number; net: number; total: number; rounding: number; tips: number; net_before_refunds: number; total_after_refunds: number; tax_in_prices: number };
   /** totals.tax by component name and rate. */
   taxes: TaxBreakdown[];
   by_day: { business_date: string; orders: number; covers: number; gross: number; net: number }[];
@@ -106,7 +107,7 @@ export async function salesSummary(f: ReportFilters): Promise<SalesSummary> {
   const tips = byTender.reduce((s, x) => s + x.tips, 0);
   return {
     filters: f,
-    totals: { orders: t?.orders ?? 0, covers: t?.covers ?? 0, items: items?.n ?? 0, gross: t?.gross ?? 0, discounts: t?.discounts ?? 0, fees: t?.fees ?? 0, tax: t?.tax ?? 0, refunds: refunds?.net ?? 0, net: (t?.net ?? 0) - (refunds?.net ?? 0), total: t?.total ?? 0, rounding, tips, net_before_refunds: t?.net ?? 0, total_after_refunds: (t?.total ?? 0) - (refunds?.amount ?? 0) },
+    totals: { orders: t?.orders ?? 0, covers: t?.covers ?? 0, items: items?.n ?? 0, gross: t?.gross ?? 0, discounts: t?.discounts ?? 0, fees: t?.fees ?? 0, tax: t?.tax ?? 0, refunds: refunds?.net ?? 0, net: (t?.net ?? 0) - (refunds?.net ?? 0), total: t?.total ?? 0, rounding, tips, net_before_refunds: t?.net ?? 0, total_after_refunds: (t?.total ?? 0) - (refunds?.amount ?? 0), tax_in_prices: taxInPrices(t?.gross ?? 0, t?.discounts ?? 0, t?.net ?? 0) },
     taxes,
     by_day: byDay,
     by_order_type: byType,
@@ -190,7 +191,7 @@ export async function printHealth(f: Pick<ReportFilters, "merchantId" | "outletI
 
 export function salesSummaryCsv(s: SalesSummary): string {
   const rows: (string | number | boolean | null)[][] = [];
-  rows.push(["totals", "orders", s.totals.orders, "covers", s.totals.covers, "gross", s.totals.gross, "discounts", s.totals.discounts, "refunds", s.totals.refunds, "net", s.totals.net, "fees", s.totals.fees, "tax", s.totals.tax, "total", s.totals.total, "rounding", s.totals.rounding, "tips", s.totals.tips]);
+  rows.push(["totals", "orders", s.totals.orders, "covers", s.totals.covers, "gross", s.totals.gross, "discounts", s.totals.discounts, "tax_in_prices", s.totals.tax_in_prices, "refunds", s.totals.refunds, "net", s.totals.net, "fees", s.totals.fees, "tax", s.totals.tax, "total", s.totals.total, "rounding", s.totals.rounding, "tips", s.totals.tips]);
   for (const t of s.taxes) rows.push(["tax", t.name, t.bps, t.taxable, t.amount]);
   for (const d of s.by_day) rows.push(["by_day", d.business_date, d.orders, d.covers, d.gross, d.net]);
   for (const t of s.by_order_type) rows.push(["by_order_type", t.order_type, t.orders, t.net]);
@@ -216,9 +217,8 @@ export async function dailySummaryPdf(input: { outletName: string; businessDate:
   const pdf = await PDFDocument.create();
   pdf.setTitle(`Daily summary · ${input.outletName} · ${input.businessDate}`);
   const page = pdf.addPage([595.28, 841.89]);
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-  const safe = winAnsi;
+  const { font, bold } = await embedPdfFonts(pdf);
+  const safe = pdfText;
   let y = 790;
   const text = (s: string, x: number, size = 10, f = font) => page.drawText(safe(s), { x, y, size, font: f, color: rgb(0.11, 0.11, 0.12) });
   const right = (s: string, xRight: number, size = 10, f = font) => page.drawText(safe(s), { x: xRight - f.widthOfTextAtSize(safe(s), size), y, size, font: f, color: rgb(0.11, 0.11, 0.12) });
@@ -266,5 +266,5 @@ export async function dailySummaryPdf(input: { outletName: string; businessDate:
   row(`${input.z.voids.count} void${input.z.voids.count === 1 ? "" : "s"}, ${input.z.voids.quantity} item(s)`, formatCents(input.z.voids.value));
   section("By order type");
   for (const t of input.summary.by_order_type) row(`${t.order_type} (${t.orders})`, formatCents(t.net));
-  return savePdf(pdf, [font, bold]);
+  return savePdf(pdf);
 }

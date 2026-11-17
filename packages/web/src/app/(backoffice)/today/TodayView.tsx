@@ -8,7 +8,7 @@ import { useMemo, useState } from "react";
 import { label, ORDER_TYPE_LABEL } from "@/components/backoffice/labels";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
 import { isLate, JobRowActions, RerouteDialog, useJobMutations } from "@/components/backoffice/PrintJobActions";
-import { boKeys, can, formatElapsed, plural, REQUEST_TYPE_LABEL, type FloorSnapshot, type GuestRound, type PrintJob, type ServiceRequest, type Shift, type ZReport, type ZReportWithheld, isWithheld } from "@/components/backoffice/register";
+import { boKeys, can, formatElapsed, plural, REQUEST_TYPE_LABEL, type FloorSnapshot, type GuestRound, type PrintJob, type ServiceRequest, type Shift, type ZReport, type ZReportWithheld, isWithheld, shiftLabel } from "@/components/backoffice/register";
 import { RelayStatus } from "@/components/backoffice/RelayPairingPanel";
 import { SetupChecklist } from "@/components/backoffice/SetupChecklist";
 import { StatTile, StatTiles } from "@/components/backoffice/StatTiles";
@@ -320,7 +320,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                 {(shifts.data ?? []).map((s) => (
                   <li key={s.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-5 py-3">
                     <span className="inline-flex flex-wrap items-baseline gap-2">
-                      <span className="text-line text-ink">{s.name ?? (s.station_id ? "Station shift" : "Outlet shift")}</span>
+                      <span className="text-line text-ink">{shiftLabel(s)}</span>
                       <span className="text-caption text-ink-2">{s.opened_by ? `${s.opened_by} · ` : ""}since {clock(s.opened_at)}</span>
                     </span>
                     <span className="tabular text-ink-2">

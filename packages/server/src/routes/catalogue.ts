@@ -598,10 +598,10 @@ export function availabilityDeleteRoute(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "availability.delete", method: "delete", path: "/v1/availability-rules/{id}", tags: ["catalogue"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 200: jsonResponse(mutationResponse(z.object({ id: z.string() }))), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
-    const rows = await db().delete(availabilityRules).where(and(eq(availabilityRules.id, id), eq(availabilityRules.merchantId, p.merchantId))).returning({ id: availabilityRules.id, targetId: availabilityRules.targetId });
+    const rows = await db().delete(availabilityRules).where(and(eq(availabilityRules.id, id), eq(availabilityRules.merchantId, p.merchantId))).returning({ id: availabilityRules.id, targetId: availabilityRules.targetId, targetKind: availabilityRules.targetKind });
     if (!rows.length) throw AppError.notFound("availability rule", id);
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "availability_rule.deleted", aggregate: { kind: "availability_rule", id }, operationId: "availability.delete", payload: { target_id: rows[0]!.targetId }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
-    await recordAudit(p, { action: "availability.delete", targetKind: "availability_rule", targetId: id });
+    await recordAudit(p, { action: "availability.delete", targetKind: "availability_rule", targetId: id, details: { target_kind: rows[0]!.targetKind, target_id: rows[0]!.targetId } });
     return c.json({ data: { id }, events: [ev], warnings: [] }, 200);
   });
 }

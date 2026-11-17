@@ -102,7 +102,7 @@ export function ChannelsView({ initialLinks, outlets, brands, menus }: { initial
         defaultSort={{ column: "outlet", direction: "ascending" }}
         onRowAction={(l) => setSheet({ mode: "edit", link: l })}
         rowClassName={(l) => (l.enabled ? undefined : "text-ink-2")}
-        emptyState={<EmptyState variant="centred" title="No channel links yet" hint="Tap Add channel link to put a menu live at an outlet." />}
+        emptyState={<EmptyState variant="centred" title="No channel links yet" hint="Select Add channel link to put a menu live at an outlet." />}
       />
       <InlineError error={links.error} className="mt-4" />
       <LinkSheet state={sheet} outlets={outlets} brands={brands} menus={menus} onClose={() => setSheet(null)} />

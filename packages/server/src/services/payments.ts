@@ -8,6 +8,7 @@ import { orderClosed, repriceOrder, waitingLineIds } from "./orders.js";
 import { activeRules } from "./pricing-rules.js";
 import { syncAllocations } from "./checks.js";
 import { assertBusinessDayOpen, currentBusinessDate } from "./business-day.js";
+import { cancelInvoicesOfReversedBills } from "./documents.js";
 
 /**
  * Payments: several tenders per check, part payments until the
@@ -184,7 +185,7 @@ export async function tipsOn(checkId: string): Promise<number> {
 /** The open shift a payment or refund at this station counts in: the station's own, else the outlet's shared drawer. */
 export function openShiftFor(outletId: string, stationId: string | null) {
   return db()
-    .select({ id: shifts.id, businessDate: shifts.businessDate })
+    .select({ id: shifts.id, businessDate: shifts.businessDate, stationId: shifts.stationId })
     .from(shifts)
     .where(and(eq(shifts.outletId, outletId), eq(shifts.status, "open"), stationId ? sql`(${shifts.stationId} = ${stationId} or ${shifts.stationId} is null)` : sql`${shifts.stationId} is null`))
     .orderBy(sql`${shifts.stationId} nulls last`)
@@ -250,6 +251,7 @@ export async function reversePayment(order: typeof orders.$inferSelect, payment:
     await db().update(orders).set({ status, completedAt: null, pricingFrozenAt: null, frozenAdjustments: null, updatedAt: now }).where(eq(orders.id, order.id));
     await repriceOrder(order.id, now);
     await syncAllocations(order.id);
+    await cancelInvoicesOfReversedBills(order.id, `Payment voided: ${reason}`, by, now);
     return;
   }
   await db()
@@ -257,6 +259,7 @@ export async function reversePayment(order: typeof orders.$inferSelect, payment:
     .set({ paidTotal: sql`${checks.paidTotal} - ${payment.amount}`, roundingTotal: sql`${checks.roundingTotal} - ${payment.roundingCents}`, status: "open", paidAt: null, updatedAt: now })
     .where(eq(checks.id, payment.checkId));
   if (status !== order.status) await db().update(orders).set({ status, completedAt: null, updatedAt: now }).where(eq(orders.id, order.id));
+  await cancelInvoicesOfReversedBills(order.id, `Payment voided: ${reason}`, by, now);
 }
 
 /**
@@ -291,5 +294,6 @@ export async function reopenOrder(order: typeof orders.$inferSelect, principal: 
   await db().update(orders).set({ status: (hasFired?.n ?? 0) > 0 ? "fired" : "open", completedAt: null, pricingFrozenAt: null, frozenAdjustments: null, updatedAt: now }).where(eq(orders.id, order.id));
   await repriceOrder(order.id, now);
   await syncAllocations(order.id);
-  return reversed;
+  const cancelled = await cancelInvoicesOfReversedBills(order.id, `Order reopened: ${reason}`, principal, now);
+  return { reversed, cancelled };
 }

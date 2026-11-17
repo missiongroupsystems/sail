@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { refundableQuantity, refundBlocks } from "./report-blocks";
+import { refundableQuantity, refundBlocks, showsCardNet } from "./report-blocks";
 
 const sales = { gross: 6900, discounts: -1725, fees: 406, taxes: [{ name: "GST 9%", bps: 900, amount: 501 }], net: 4655, total: 6082 };
 
@@ -76,5 +76,22 @@ describe("one rate order in every block (F notes)", () => {
     expect(order(b.before)).toEqual(["VAT 10%", "VAT 20%"]);
     expect(order(b.refunds)).toEqual(["VAT 10%", "VAT 20%"]);
     expect(order(b.taxDue)).toEqual(["VAT 10%", "VAT 20%"]);
+  });
+});
+
+describe("tax inside prices (review 3, R5)", () => {
+  const refunds = { count: 0, amount: 0, net: 0, fees: 0, tax: 0, tips: 0, taxes: [] };
+  it("a VAT-inclusive report takes the tax in prices out between discounts and net, so the rows add up as written", () => {
+    const b = refundBlocks({ gross: 9895, discounts: 0, fees: 0, taxes: [{ name: "VAT 10%", bps: 1000, amount: 600 }, { name: "VAT 20%", bps: 2000, amount: 550 }], net: 8745, total: 9895, net_before_refunds: 8745, total_after_refunds: 9895, tax_in_prices: 1150 }, refunds, "inclusive")!;
+    expect(b.before.map((r) => r.key).slice(0, 4)).toEqual(["gross", "discounts", "tax_in_prices", "net_before_refunds"]);
+    expect(b.before[2]!.amount).toBe(-1150);
+  });
+  it("tax on top has no such row", () => {
+    const b = refundBlocks({ gross: 1000, discounts: 0, fees: 0, taxes: [], net: 1000, total: 1085, net_before_refunds: 1000, total_after_refunds: 1085, tax_in_prices: 0 }, refunds, "exclusive")!;
+    expect(b.before.some((r) => r.key === "tax_in_prices")).toBe(false);
+  });
+  it("the card-net hint shows only with a card net row", () => {
+    expect(showsCardNet([{ tender_type_id: "c", tender: "Card", is_cash: false, count: 2, amount: 4713, rounding: 0, tips: 0, refunds: 0, net: 4713 }])).toBe(false);
+    expect(showsCardNet([{ tender_type_id: "c", tender: "Card", is_cash: false, count: 2, amount: 4713, rounding: 0, tips: 200, refunds: 0, net: 4913 }])).toBe(true);
   });
 });

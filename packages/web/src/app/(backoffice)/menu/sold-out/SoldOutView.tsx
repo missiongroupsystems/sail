@@ -145,7 +145,7 @@ export function SoldOutView({ outlets, scope, initialOutletId, initialStock }: {
           rows={entries}
           rowKey={(e) => e.product_id}
           isLoading={stock.isPending}
-          emptyState={<EmptyState variant="centred" title="Everything is available" hint={canSoldOut ? "Tap Mark sold out when the kitchen runs out of something." : "Nothing is marked sold out at this outlet."} />}
+          emptyState={<EmptyState variant="centred" title="Everything is available" hint={canSoldOut ? "Select Mark sold out when the kitchen runs out of something." : "Nothing is marked sold out at this outlet."} />}
         />
       )}
       <InlineError error={stock.error ?? restore.error} className="mt-4" />

@@ -7,6 +7,7 @@ import { buildApp, type App } from "../src/app.js";
 import { withTransaction } from "../src/db/client.js";
 import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
 import { resetGuestRateLimitsForTests } from "../src/services/guest.js";
+import { pdfStrings } from "./pdf-strings.js";
 import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
 
 /** Second review round, money: a US diner (4% state + 4.5% local) and an EU café (VAT 10% and 20% inside the price). */
@@ -338,8 +339,8 @@ describe("N6: every row of the items report adds up after a refund", () => {
   });
 });
 
-describe("N7: the invoice PDF places the euro sign by its own width", () => {
-  it("each standard font carries its glyph widths (the euro is 556/1000 em wide), so no viewer draws it over the first digit", async () => {
+describe("N7 (review 3, R3): the invoice PDF draws with its own embedded font", () => {
+  it("embeds Instrument Sans, subset, with its widths, so no viewer substitutes a font and puts the euro sign on a digit", async () => {
     const o = await open(EU, { order_type: "takeaway" });
     await add(EU, o.body.data.id, ["wine", "juice"]);
     const s = await snap(EU, o.body.data.id);
@@ -347,15 +348,16 @@ describe("N7: the invoice PDF places the euro sign by its own width", () => {
     expect((await call("POST", `/v1/checks/${s.checks[0]!.id}/invoice`, { token: EU.pin, body: {} })).status).toBe(200);
     const res = await app.request(`/v1/checks/${s.checks[0]!.id}/invoice.pdf`, { headers: { authorization: `Bearer ${EU.m.admin.token}` } });
     expect(res.status).toBe(200);
-    const body = Buffer.from(await res.arrayBuffer()).toString("latin1");
-    const fonts = [...body.matchAll(/\/BaseFont \/(Helvetica(?:-Bold)?)\s+\/Encoding \/WinAnsiEncoding\s+\/FirstChar 32\s+\/LastChar 255\s+\/Widths \[([^\]]+)\]/g)];
-    expect(fonts.map((f) => f[1]).sort()).toEqual(["Helvetica", "Helvetica-Bold"]);
-    for (const f of fonts) {
-      const widths = f[2]!.trim().split(/\s+/).map(Number);
-      expect(widths).toHaveLength(224);
-      expect(widths[0x80 - 32]).toBe(556); // the euro sign
-      expect(widths["1".charCodeAt(0) - 32]).toBe(556);
-    }
+    const bytes = Buffer.from(await res.arrayBuffer());
+    const body = bytes.toString("latin1");
+    expect([...body.matchAll(/\/BaseFont \/(\w{6}\+InstrumentSans-\w+)/g)].map((m) => m[1]).sort()).toContain("SAILAA+InstrumentSans-Regular");
+    expect(body).toMatch(/\/FontFile2 \d+ 0 R/);
+    expect(body).not.toMatch(/\/BaseFont \/Helvetica/);
+    // Subset: the whole document stays small.
+    expect(bytes.length).toBeLessThan(60_000);
+    const strings = await pdfStrings(bytes);
+    expect(strings.some((x) => x.includes("€"))).toBe(true);
+    expect(strings.filter((x) => x.includes("?") || x.includes("\ufffd"))).toEqual([]);
     await call("POST", `/v1/orders/${o.body.data.id}/fire`, { token: EU.pin, body: {} });
   });
 });

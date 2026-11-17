@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
 import { allocateLine, currencyExponent, rebalanceBillTax, sumTaxes, type TaxRow, type BillDocument, type Share, type TaxAmount } from "@sail/shared";
 import { assertNotSettled, db } from "../db/client.js";
-import { brands, checkAllocations, checks, merchantSettings, orderAdjustmentLines, orderAdjustments, orderLines, orders, outlets, payments, refundLines, refunds, tables } from "../db/schema/index.js";
+import { brands, checkAllocations, checks, invoiceCancellations, merchantSettings, orderAdjustmentLines, orderAdjustments, orderLines, orders, outlets, payments, refundLines, refunds, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { waitingLineIds } from "./orders.js";
 
@@ -203,6 +203,8 @@ export type CheckSnapshot = {
   balance: number;
   locked: boolean;
   invoice_no: string | null;
+  /** Invoices of this bill cancelled by a credit note when a reopen or void reversed its payment (oldest first). */
+  cancelled_invoices: { id: string; invoice_no: string; credit_note_no: string; cancelled_at: string }[];
   /** The line the bill prints when its tax for a rate carries rounding so the bills add up to the order's tax (N2). */
   tax_note: string | null;
   /** `refunded_quantity` is how many units of the line were already refunded from this bill (a refund by amount refunds none). */
@@ -215,12 +217,13 @@ export async function checkSnapshots(orderId: string): Promise<CheckSnapshot[]> 
   if (chks.length === 0) return [];
   const ids = chks.map((c) => c.id);
   const refundedIds = chks.filter((c) => c.refundedTotal > 0).map((c) => c.id);
-  const [allocs, pays, refunded] = await Promise.all([
+  const [allocs, pays, refunded, cancelled] = await Promise.all([
     db().select().from(checkAllocations).where(inArray(checkAllocations.checkId, ids)),
     db().select().from(payments).where(inArray(payments.checkId, ids)).orderBy(asc(payments.createdAt)),
     refundedIds.length
       ? db().select({ checkId: refunds.checkId, lineId: refundLines.orderLineId, quantity: sql<number>`sum(${refundLines.quantity})::int` }).from(refundLines).innerJoin(refunds, eq(refunds.id, refundLines.refundId)).where(inArray(refunds.checkId, refundedIds)).groupBy(refunds.checkId, refundLines.orderLineId)
       : Promise.resolve([]),
+    db().select({ id: invoiceCancellations.id, checkId: invoiceCancellations.checkId, invoiceNo: invoiceCancellations.invoiceNo, creditNoteNo: invoiceCancellations.creditNoteNo, createdAt: invoiceCancellations.createdAt }).from(invoiceCancellations).where(inArray(invoiceCancellations.checkId, ids)).orderBy(asc(invoiceCancellations.createdAt)),
   ]);
   const recorded = (checkId: string) => pays.filter((p) => p.checkId === checkId && p.status === "recorded");
   // The same note the printed bill and the invoice carry, so the POS Bill screen says it too (review 2, N2).
@@ -242,6 +245,7 @@ export async function checkSnapshots(orderId: string): Promise<CheckSnapshot[]> 
     balance: c.total - c.paidTotal,
     locked: c.lockedAt != null,
     invoice_no: c.invoiceNo,
+    cancelled_invoices: cancelled.filter((x) => x.checkId === c.id).map((x) => ({ id: x.id, invoice_no: x.invoiceNo, credit_note_no: x.creditNoteNo, cancelled_at: x.createdAt.toISOString() })),
     tax_note: taxNote(c),
     allocations: allocs.filter((a) => a.checkId === c.id).map((a) => ({ line_id: a.orderLineId, share: a.shareNum === a.shareDen ? "1" : `${a.shareNum}/${a.shareDen}`, base: a.base, discount: a.discount, fee: a.fee, tax: a.tax, taxes: a.taxes, total: a.total, refunded_quantity: refunded.find((r) => r.checkId === c.id && r.lineId === a.orderLineId)?.quantity ?? 0 })),
     payments: pays.filter((p) => p.checkId === c.id).map((p) => ({ id: p.id, tender_type_id: p.tenderTypeId, tender: p.tenderName, is_cash: p.isCash, amount: p.amount, rounding_cents: p.roundingCents, tendered: p.tendered, change_cents: p.changeCents, tip_cents: p.tipCents, reference: p.reference, status: p.status, recorded_by: p.recordedByName, created_at: p.createdAt.toISOString(), reversal: p.status !== "reversed" ? null : p.reversedReason?.startsWith("reopened:") ? ("reopen" as const) : ("void" as const), reversed_at: p.reversedAt?.toISOString() ?? null })),

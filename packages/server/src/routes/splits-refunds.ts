@@ -70,17 +70,17 @@ export function splitRefundRoutes(app: OpenAPIHono<AppEnv>) {
   splitRoute("checks.allocate", "/v1/orders/{id}/checks/allocate", z.object({ moves: z.array(z.object({ line_id: z.uuid(), check_ids: z.array(z.uuid()).min(1).max(20) })).min(0), add_checks: z.number().int().min(0).max(20).optional() }), async (o, b) => ({ mode: "item", moves: b.moves, checks: (await allocateLines(o, b.moves as { line_id: string; check_ids: string[] }[], (b.add_checks as number) ?? 0)).length }), "checks.allocated");
   splitRoute("checks.unsplit", "/v1/orders/{id}/checks/unsplit", z.object({}), async (o) => ({ mode: "one", checks: (await unsplit(o)).length }), "checks.split");
 
-  defineOp(app, { op: "refunds.quote", method: "post", path: "/v1/checks/{id}/refunds/quote", tags: ["refunds"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({ request: RefundRequestSchema, tender_split: TenderSplit })) }, responses: { 200: jsonResponse(dataResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "refunds.quote", method: "post", path: "/v1/checks/{id}/refunds/quote", tags: ["refunds"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({ request: RefundRequestSchema, tender_split: TenderSplit, avoid_cash: z.boolean().optional().describe("Give nothing back to cash payments (no drawer to pay cash out of): the refund goes to the other payments only.") })) }, responses: { 200: jsonResponse(dataResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {
     const { id } = c.req.valid("param");
     const b = c.req.valid("json");
     const ref = await refundableFor(id);
-    const q = quote(ref, b.request, b.tender_split);
+    const q = quote(ref, b.request, b.tender_split, { avoidCash: b.avoid_cash });
     return c.json({ data: { ...q, check_id: id, remaining_after: { total: ref.check.total - ref.check.refundedTotal - q.totals.total }, payments: ref.paymentsList } }, 200);
   });
 
   defineOp(
     app,
-    { op: "refunds.create", method: "post", path: "/v1/checks/{id}/refunds", tags: ["refunds"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ refund_id: z.uuid(), request: RefundRequestSchema, tender_split: TenderSplit, reason: untrusted(z.string().min(1).max(200)), reference: untrusted(z.string().max(80).nullable().optional()), print: z.boolean().optional() })) }, responses: { 201: jsonResponse(OrderMutationResponse.extend({ refund: z.record(z.string(), z.unknown()) })), ...errorResponses } },
+    { op: "refunds.create", method: "post", path: "/v1/checks/{id}/refunds", tags: ["refunds"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(Mutation.extend({ refund_id: z.uuid(), request: RefundRequestSchema, tender_split: TenderSplit, reason: untrusted(z.string().min(1).max(200)), reference: untrusted(z.string().max(80).nullable().optional()), print: z.boolean().optional(), shift_id: z.uuid().optional().describe("The open shift whose drawer pays cash back, for a caller with no station (the back office). Optional when the outlet has one open shift."), avoid_cash: z.boolean().optional().describe("Give nothing back to cash payments: the refund goes to the other payments only.") })) }, responses: { 201: jsonResponse(OrderMutationResponse.extend({ refund: z.record(z.string(), z.unknown()) })), ...errorResponses } },
     async (c) => {
       const p = c.get("principal");
       const { id } = c.req.valid("param");
@@ -92,10 +92,10 @@ export function splitRefundRoutes(app: OpenAPIHono<AppEnv>) {
       // A void waiting for the provider is already giving money back; a refund on top would give it twice.
       if ((await voidsPendingOn(order.id)) > 0) throw AppError.state("A void of a payment on this order is waiting for the provider", [], "Wait for the terminal to confirm the void, then refund what is still owed back.");
       // The approval covers this request and what the approver was quoted: the total and, when one goes back, the tip.
-      const quoted = quote(await refundableFor(id), b.request, b.tender_split);
+      const quoted = quote(await refundableFor(id), b.request, b.tender_split, { avoidCash: b.avoid_cash });
       const total = quoted.totals.total;
       const approval = await requireRoleOrOverride(p, principalRole(p), PERMISSIONS["refunds.create"].minRole, { action: "refunds.create", targetId: id, args: { request: b.request, tender_split: b.tender_split, total, ...(quoted.tip > 0 ? { tip: quoted.tip } : {}) }, overrideId: b.override_id, overrideAllowed: PERMISSIONS["refunds.create"].overrideAllowed });
-      const created = await createRefund({ refundId: b.refund_id, checkId: id, request: b.request, tenderSplit: b.tender_split, reason: b.reason, reference: b.reference ?? null, principal: p, approver: approval, overrideId: b.override_id ?? null, stationId: p.type === "staff" ? (p.stationId ?? null) : null });
+      const created = await createRefund({ refundId: b.refund_id, checkId: id, request: b.request, tenderSplit: b.tender_split, reason: b.reason, reference: b.reference ?? null, principal: p, approver: approval, overrideId: b.override_id ?? null, stationId: p.type === "staff" ? (p.stationId ?? null) : null, shiftId: b.shift_id ?? null, avoidCash: b.avoid_cash });
       const version = await bumpVersion(order.id);
       const snapshot = await loadSnapshot(order.id);
       await settleInvariants();

@@ -1,7 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import { db } from "../db/client.js";
-import { brands, checks, customers, menus, modifierGroups, orders, outlets, payments, pricingRules, printers, products, staff, stations, tables, taxClasses } from "../db/schema/index.js";
+import { availabilityRules, brands, checks, customers, menuSections, menus, modifierGroups, orders, outlets, payments, pricingRules, printers, products, staff, stations, tables, taxClasses } from "../db/schema/index.js";
 
 type AuditRow = { id: string; targetKind: string; targetId: string | null; action: string; details: Record<string, unknown> };
 
@@ -36,10 +36,17 @@ export async function auditLabels(merchantId: string, rows: AuditRow[]): Promise
   const paymentRows = of("payment").filter(isUuid);
   const billOf = checkRows.length ? await db().select({ id: checks.id, orderId: checks.orderId, label: checks.label }).from(checks).where(and(eq(checks.merchantId, merchantId), inArray(checks.id, checkRows))) : [];
   const payOf = paymentRows.length ? await db().select({ id: payments.id, orderId: payments.orderId }).from(payments).where(and(eq(payments.merchantId, merchantId), inArray(payments.id, paymentRows))) : [];
+  // An availability rule reads as what it makes available: its product or menu section (the rule, or its entry once deleted).
+  const ruleIds = of("availability_rule").filter(isUuid);
+  const avail = new Map((ruleIds.length ? await db().select({ id: availabilityRules.id, kind: availabilityRules.targetKind, target: availabilityRules.targetId }).from(availabilityRules).where(and(eq(availabilityRules.merchantId, merchantId), inArray(availabilityRules.id, ruleIds))) : []).map((a) => [a.id, { kind: a.kind as string, target: a.target }]));
+  const availTarget = (r: AuditRow) => avail.get(r.targetId ?? "") ?? (str(r.details.target_id) ? { kind: str(r.details.target_kind) ?? "product", target: str(r.details.target_id)! } : null);
+  const availOf = (kind: string) => rows.filter((r) => r.targetKind === "availability_rule").map(availTarget).filter((t): t is { kind: string; target: string } => t?.kind === kind).map((t) => t.target);
+  const sectionIds = availOf("section").filter(isUuid);
+  const sectionName = new Map((sectionIds.length ? await db().select({ id: menuSections.id, name: menuSections.name }).from(menuSections).where(and(eq(menuSections.merchantId, merchantId), inArray(menuSections.id, sectionIds))) : []).map((x) => [x.id, x.name]));
   const orderIds = [...of("order"), ...rows.map(detailOrder).filter((x): x is string => !!x), ...billOf.map((b) => b.orderId), ...payOf.map((p) => p.orderId)];
   const [orderNo, product, menu, group, person, station, outlet, brand, table, taxClass, customer, printer] = await Promise.all([
     names(merchantId, orders, orders.orderNo, orderIds),
-    names(merchantId, products, products.name, of("product")),
+    names(merchantId, products, products.name, [...of("product"), ...availOf("product")]),
     names(merchantId, menus, menus.name, of("menu")),
     names(merchantId, modifierGroups, modifierGroups.name, of("modifier_group")),
     names(merchantId, staff, staff.name, of("staff")),
@@ -104,6 +111,10 @@ export async function auditLabels(merchantId: string, rows: AuditRow[]): Promise
         return customer.get(id) ?? str(r.details.name);
       case "printer":
         return printer.get(id) ?? str(r.details.name);
+      case "availability_rule": {
+        const t = availTarget(r);
+        return t ? ((t.kind === "section" ? sectionName.get(t.target) : product.get(t.target)) ?? null) : null;
+      }
       default:
         return str(r.details.name);
     }

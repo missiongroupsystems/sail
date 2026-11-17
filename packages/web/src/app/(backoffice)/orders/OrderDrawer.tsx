@@ -149,15 +149,16 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
     onSuccess: (r, c) => settle(r.data.reused ? `Invoice ${r.data.invoice_no} for ${c.label}.` : `Invoice ${r.data.invoice_no} issued for ${c.label}.`, r.warnings),
   });
   const invoicePdf = useMutation<void, ApiError, CheckSnapshot>({ mutationFn: (c) => openPdf(`/v1/checks/${c.id}/invoice.pdf`, `${c.invoice_no ?? "invoice"}.pdf`) });
+  const cancelledPdf = useMutation<void, ApiError, { id: string; file: string; doc: "invoice" | "credit-note" }>({ mutationFn: ({ id, file, doc }) => openPdf(`/v1/invoice-cancellations/${id}/${doc}.pdf`, `${file}.pdf`) });
   const creditNotePdf = useMutation<void, ApiError, Refund>({ mutationFn: (r) => openPdf(`/v1/refunds/${r.id}/credit-note.pdf`, `${r.credit_note_no ?? "credit-note"}.pdf`) });
   const printRefund = useMutation<{ warnings: string[] }, ApiError, Refund>({
     mutationFn: (r) => req(api.POST("/v1/refunds/{id}/receipt/print", { params: { path: { id: r.id } }, body: {} })),
     onSuccess: (res, r) => settle(`Refund receipt ${r.refund_receipt_no} queued on the receipt printer.`, res.warnings),
   });
 
-  const actionError = doReopen.error ?? printReceipt.error ?? issueInvoice.error ?? invoicePdf.error ?? creditNotePdf.error ?? printRefund.error;
+  const actionError = doReopen.error ?? printReceipt.error ?? issueInvoice.error ?? invoicePdf.error ?? cancelledPdf.error ?? creditNotePdf.error ?? printRefund.error;
 
-  useFreshErrors(orderId, null, doReopen, printReceipt, issueInvoice, invoicePdf, creditNotePdf, printRefund);
+  useFreshErrors(orderId, null, doReopen, printReceipt, issueInvoice, invoicePdf, cancelledPdf, creditNotePdf, printRefund);
   return (
     <Sheet
       isOpen={orderId !== null}
@@ -234,9 +235,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
             </Group>
             {!readOnly && !(cancelled && refundable.length === 0) ? (
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Button size="sm" onPress={() => setRefund({ checkId: null })} isDisabled={!canRefund || refundable.length === 0}>
-                  Refund…
-                </Button>
+                {/* Refund is on each paid bill below: one button per thing to refund, not a second one for the order. */}
                 {o.status === "completed" ? (
                   <Button
                     size="sm"
@@ -285,6 +284,26 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                             {p.rounding_cents ? ` (rounding ${money(p.rounding_cents, { signed: true })})` : ""}
                             {p.tip_cents ? ` · tip ` : ""}
                             {p.tip_cents ? <Money cents={p.tip_cents} size="caption" /> : null}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {c.cancelled_invoices?.length ? (
+                    // An invoice cancelled when a reopen or void reversed the bill's payment: kept, with its credit note.
+                    <ul className="flex flex-col gap-1 px-4 py-2" aria-label="Cancelled invoices">
+                      {c.cancelled_invoices.map((x) => (
+                        <li key={x.id} className="flex flex-wrap items-center justify-between gap-x-4 text-caption text-ink-2">
+                          <span>
+                            <span className="font-mono">{x.invoice_no}</span> cancelled by <span className="font-mono">{x.credit_note_no}</span> · {dayClock(x.cancelled_at)}
+                          </span>
+                          <span className="inline-flex gap-1">
+                            <Button variant="quiet" className="min-h-9 px-2.5 text-caption max-sm:min-h-11" onPress={() => cancelledPdf.mutate({ id: x.id, file: `${x.invoice_no}-cancelled`, doc: "invoice" })} isPending={cancelledPdf.isPending && cancelledPdf.variables?.id === x.id && cancelledPdf.variables.doc === "invoice"}>
+                              Invoice PDF
+                            </Button>
+                            <Button variant="quiet" className="min-h-9 px-2.5 text-caption max-sm:min-h-11" onPress={() => cancelledPdf.mutate({ id: x.id, file: x.credit_note_no, doc: "credit-note" })} isPending={cancelledPdf.isPending && cancelledPdf.variables?.id === x.id && cancelledPdf.variables.doc === "credit-note"}>
+                              Credit note PDF
+                            </Button>
                           </span>
                         </li>
                       ))}

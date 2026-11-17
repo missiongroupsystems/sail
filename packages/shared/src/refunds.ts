@@ -42,6 +42,13 @@ export type RefundablePayment = {
   refunded_tip?: Cents;
 };
 
+/**
+ * The order's tax still kept, per rate (one list of components), for `per_rate` rounding: `amount` is the taxable amount
+ * kept (net of tax when tax is added on top, the tax-inclusive amount when it is included) and `taxes` each component's
+ * tax kept, both over every bill of the order and net of earlier refunds.
+ */
+export type OrderTaxKept = { tax_mode: "exclusive" | "inclusive"; rates: { components: { name: string; bps: number }[]; amount: Cents; taxes: Cents[] }[] };
+
 export type RefundRequest = { kind: "full" } | { kind: "lines"; lines: { line_id: string; quantity: number }[] } | { kind: "amount"; amount: Cents };
 
 export type RefundLineResult = { line_id: string; quantity: number; base: Cents; discount: Cents; fee: Cents; tax: Cents; taxes: TaxAmount[]; total: Cents; adjustments: Record<string, { amount: Cents; tax: Cents }> };
@@ -123,7 +130,7 @@ function remainingOf(l: RefundableLine): Remaining {
  * payment's running refunded total, so repeated small refunds never pay out more
  * cash than the payment took.
  */
-export function quoteRefund(lines: readonly RefundableLine[], payments: readonly RefundablePayment[], request: RefundRequest, opts: { tenderSplit?: { payment_id: string; amount: Cents }[]; cashRoundingIncrement?: number | null; formatMoney?: (amount: Cents) => string } = {}): RefundQuote {
+export function quoteRefund(lines: readonly RefundableLine[], payments: readonly RefundablePayment[], request: RefundRequest, opts: { tenderSplit?: { payment_id: string; amount: Cents }[]; cashRoundingIncrement?: number | null; formatMoney?: (amount: Cents) => string; avoidCash?: boolean; orderTax?: OrderTaxKept } = {}): RefundQuote {
   const fmt = opts.formatMoney ?? String;
   const byId = new Map(lines.map((l) => [l.line_id, l]));
   const out: RefundLineResult[] = [];
@@ -159,14 +166,19 @@ export function quoteRefund(lines: readonly RefundableLine[], payments: readonly
     });
   }
 
+  // Refund by items, `per_rate` rounding: the tax given back is the order's tax before less its tax after, per rate, so
+  // what is kept is still its rate times its taxable amount (review 3, R4), never a line's own rounded share.
+  if (request.kind === "lines" && opts.orderTax) alignToOrderTax(out, byId, opts.orderTax);
+
   const totals = { base: sumCents(out.map((x) => x.base)), discount: sumCents(out.map((x) => x.discount)), fee: sumCents(out.map((x) => x.fee)), tax: sumCents(out.map((x) => x.tax)), taxes: sumTaxes(out.map((x) => x.taxes)), total: sumCents(out.map((x) => x.total)) };
   // A whole-bill refund gives back each payment's tip as well; any other refund leaves tips alone.
-  const tipBack = (p: RefundablePayment) => (request.kind === "full" ? Math.max(0, (p.tip ?? 0) - (p.refunded_tip ?? 0)) : 0);
+  // With `avoidCash` (no drawer to pay cash out of), nothing goes back to a cash payment, its tip included.
+  const tipBack = (p: RefundablePayment) => (request.kind === "full" && !(opts.avoidCash && p.is_cash) ? Math.max(0, (p.tip ?? 0) - (p.refunded_tip ?? 0)) : 0);
   const tip = sumCents(payments.map(tipBack));
   if (totals.total <= 0 && tip === 0) throw new RefundError("nothing_to_refund", "Nothing left to refund on this bill");
 
   // Tenders.
-  const refundable = payments.map((p) => ({ ...p, remaining: p.amount - p.refunded }));
+  const refundable = payments.map((p) => ({ ...p, remaining: opts.avoidCash && p.is_cash ? 0 : p.amount - p.refunded }));
   let tenderAmounts: { payment_id: string; amount: Cents }[];
   if (opts.tenderSplit) {
     // One payment named twice is one amount against that payment, checked once against what it can still return.
@@ -176,7 +188,7 @@ export function quoteRefund(lines: readonly RefundableLine[], payments: readonly
     if (sumCents(tenderAmounts.map((t) => t.amount)) !== totals.total) throw new RefundError("tender_mismatch", `the amounts for each payment add up to ${fmt(sumCents(tenderAmounts.map((t) => t.amount)))}, but the refund is ${fmt(totals.total)}`, { tenders: sumCents(tenderAmounts.map((t) => t.amount)), refund: totals.total });
   } else {
     const pool = sumCents(refundable.map((p) => Math.max(0, p.remaining)));
-    if (pool < totals.total) throw new RefundError("exceeds_payment", `payments can return at most ${fmt(pool)}`, { refundable: pool });
+    if (pool < totals.total) throw new RefundError("exceeds_payment", opts.avoidCash ? `payments other than cash can return at most ${fmt(pool)}` : `payments can return at most ${fmt(pool)}`, { refundable: pool, ...(opts.avoidCash ? { avoid_cash: true } : {}) });
     const parts = allocateLargestRemainder(totals.total, refundable.map((p) => Math.max(0, p.remaining)));
     tenderAmounts = refundable.map((p, i) => ({ payment_id: p.payment_id, amount: parts[i]! })).filter((t) => t.amount > 0);
   }
@@ -207,6 +219,80 @@ export function quoteRefund(lines: readonly RefundableLine[], payments: readonly
   const back = (t: RefundTenderResult) => t.amount + t.rounding_cents + t.tip_cents;
   const cashOut = sumCents(tenders.filter((t) => t.is_cash).map(back));
   return { lines: out, totals, tenders, tip, cash_out: cashOut, given_back: sumCents(tenders.map(back)) };
+}
+
+const rateKey = (cs: readonly { name: string; bps: number }[]) => cs.map((c) => `${c.bps}|${c.name}`).join("+");
+
+/** Each component's tax on an amount at a rate, rounded once, half up, as the pricing engine does (exclusive or inclusive). */
+function rateTaxOf(amount: Cents, components: readonly { bps: number }[], mode: "exclusive" | "inclusive"): Cents[] {
+  const combined = sumCents(components.map((c) => c.bps));
+  if (combined === 0) return components.map(() => 0);
+  if (mode === "exclusive") return components.map((c) => percentOfCents(amount, c.bps));
+  const sign = amount < 0 ? -1 : 1;
+  const den = BigInt(10_000 + combined);
+  return components.map((c) => {
+    const num = BigInt(Math.abs(amount)) * BigInt(c.bps);
+    const q = num / den;
+    return sign * Number((num - q * den) * 2n >= den ? q + 1n : q);
+  });
+}
+
+/**
+ * Move each refunded line's tax, per component, so the rate's total given back is the order's tax kept before less the
+ * tax on what is kept after. Only lines without a fee take part (a fee may carry another rate inside the same line).
+ * A row moves within what is still refundable on its line (its total moves with its tax when tax is on top; with tax
+ * included the total is what the guest paid and stays). The last units of a line give back all of its tax; a cent beyond
+ * that moves on a kept line of the same rate on this bill, as a row with no quantity and no price, only the tax (and,
+ * with tax on top, the same total): a cent more comes out of what it holds, a cent less is handed to it as a row of minus
+ * that cent. Each line's refunds, all added up, still never exceed what it took.
+ */
+function alignToOrderTax(out: RefundLineResult[], byId: Map<string, RefundableLine>, kept: OrderTaxKept) {
+  const inclusive = kept.tax_mode === "inclusive";
+  const eligible = (l: RefundableLine) => l.taxes.length > 0 && l.fee === 0;
+  const groups = new Map<string, RefundLineResult[]>();
+  for (const r of out) {
+    const l = byId.get(r.line_id)!;
+    if (!eligible(l) || r.quantity === 0) continue;
+    const key = rateKey(l.taxes);
+    groups.set(key, [...(groups.get(key) ?? []), r]);
+  }
+  for (const [key, rows] of groups) {
+    const rate = kept.rates.find((x) => rateKey(x.components) === key);
+    if (!rate) continue;
+    const refunded = sumCents(rows.map((r) => (inclusive ? r.total : r.total - r.tax)));
+    const after = rateTaxOf(rate.amount - refunded, rate.components, kept.tax_mode);
+    rate.components.forEach((_, k) => {
+      let delta = rate.taxes[k]! - after[k]! - sumCents(rows.map((r) => r.taxes[k]!.amount));
+      const move = (r: RefundLineResult, d: Cents) => {
+        r.taxes[k] = { ...r.taxes[k]!, amount: r.taxes[k]!.amount + d };
+        r.tax += d;
+        if (!inclusive) r.total += d;
+        delta -= d;
+      };
+      for (const r of rows) {
+        if (delta === 0) break;
+        const rem = remainingOf(byId.get(r.line_id)!);
+        if (delta < 0 && rem.quantity <= r.quantity) continue;
+        const next = clampMag(r.taxes[k]!.amount + delta, rem.taxes[k]!);
+        if (next !== r.taxes[k]!.amount) move(r, next - r.taxes[k]!.amount);
+      }
+      if (delta === 0) return;
+      // The rest moves on kept lines of the same rate on this bill: a cent more comes from the tax a kept line still holds;
+      // a cent less is handed to a kept line (a row of minus that cent), which then holds it until it is refunded itself.
+      for (const l of byId.values()) {
+        if (delta === 0) break;
+        if (!eligible(l) || rateKey(l.taxes) !== key || out.some((r) => r.line_id === l.line_id && r.quantity > 0)) continue;
+        const rem = remainingOf(l);
+        if (rem.quantity === 0) continue;
+        const already = out.find((r) => r.line_id === l.line_id);
+        const d = delta > 0 ? Math.min(delta, Math.max(0, rem.taxes[k]! - (already?.taxes[k]!.amount ?? 0))) : delta;
+        if (d === 0) continue;
+        const row = already ?? { line_id: l.line_id, quantity: 0, base: 0, discount: 0, fee: 0, tax: 0, taxes: l.taxes.map((t) => ({ name: t.name, bps: t.bps, amount: 0 })), total: 0, adjustments: {} };
+        if (!already) out.push(row);
+        move(row, d);
+      }
+    });
+  }
 }
 
 export { percentOfCents };

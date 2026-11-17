@@ -134,7 +134,7 @@ export function StationsView({
           defaultSort={{ column: "name", direction: "ascending" }}
           onRowAction={(s) => setSheet({ mode: "edit", station: s })}
           rowClassName={(s) => (s.archived ? "text-ink-2" : undefined)}
-          emptyState={<EmptyState variant="centred" title="No stations at this outlet" hint="Tap Add station, then pair an iPad to it." />}
+          emptyState={<EmptyState variant="centred" title="No stations at this outlet" hint="Select Add station, then pair an iPad to it." />}
         />
       )}
       <InlineError error={stations.error} className="mt-4" />

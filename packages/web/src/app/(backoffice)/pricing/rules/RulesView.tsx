@@ -180,10 +180,11 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
         </p>
         <div className="flex items-center gap-2">
           {canCreate.ok ? (
-            <Button size="sm" onPress={() => setSheet({ mode: "create", kind: "discount" })}>Add discount</Button>
+            // The black button is for the kind the merchant keeps most of (a fee first on an empty list).
+            <Button size="sm" variant={rows.length - fees > fees ? "primary" : "secondary"} onPress={() => setSheet({ mode: "create", kind: "discount" })}>Add discount</Button>
           ) : null}
           {canCreate.ok ? (
-            <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create", kind: "fee" })}>
+            <Button size="sm" variant={rows.length - fees > fees ? "secondary" : "primary"} onPress={() => setSheet({ mode: "create", kind: "fee" })}>
             Add fee
           </Button>
           ) : null}
@@ -200,7 +201,7 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
         rowKey={(r) => r.rule_key}
         onRowAction={(r) => setSheet({ mode: "edit", row: r })}
         rowClassName={(r) => (r.current.status === "archived" ? "text-ink-2" : undefined)}
-        emptyState={<EmptyState variant="centred" title="No pricing rules" hint="Tap Add fee or Add discount. A service charge or a deposit usually comes first." />}
+        emptyState={<EmptyState variant="centred" title="No pricing rules" hint="Select Add fee or Add discount. A service charge or a deposit usually comes first." />}
       />
       <InlineError error={versions.error} className="mt-4" />
 

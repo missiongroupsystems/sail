@@ -1,4 +1,4 @@
-import { bigint, boolean, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import type { TaxAmount } from "@sail/shared";
 import { orderLines, orders } from "./orders.js";
 import { checks, payments } from "./payments.js";
@@ -90,4 +90,34 @@ export const refundTenders = pgTable(
     reference: text("reference"),
   },
   (t) => [primaryKey({ columns: [t.refundId, t.paymentId] }), index("refund_tenders_payment_idx").on(t.paymentId)],
+);
+
+/**
+ * A tax invoice cancelled because its bill's payment was reversed (a reopen or a void): the invoice as it was issued and
+ * the credit note for its full amount, numbered from the credit-note sequence. The bill gets a new invoice, with a new
+ * number, once it is paid again. Money reports never read this table: a cancellation moves no money.
+ */
+export const invoiceCancellations = pgTable(
+  "invoice_cancellations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    merchantId: uuid("merchant_id").notNull(),
+    outletId: uuid("outlet_id").notNull(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id),
+    checkId: uuid("check_id")
+      .notNull()
+      .references(() => checks.id),
+    invoiceNo: text("invoice_no").notNull(),
+    invoiceIssuedAt: timestamp("invoice_issued_at", { withTimezone: true }),
+    invoiceDocument: jsonb("invoice_document").$type<unknown>().notNull(),
+    creditNoteNo: text("credit_note_no").notNull(),
+    creditNoteDocument: jsonb("credit_note_document").$type<unknown>().notNull(),
+    reason: text("reason").notNull(),
+    cancelledBy: uuid("cancelled_by"),
+    cancelledByName: text("cancelled_by_name"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("invoice_cancellations_check_idx").on(t.checkId), uniqueIndex("invoice_cancellations_invoice_uq").on(t.merchantId, t.invoiceNo)],
 );

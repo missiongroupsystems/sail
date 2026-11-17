@@ -31,7 +31,7 @@ const AUDIT_ACTION: Record<string, string> = {
   "stock.mark_sold_out": "Marked sold out", "stock.restore": "Restored stock", "tables.rotate_qr_token": "Rotated a table code",
   "orders.open": "Opened order", "orders.cancel": "Cancelled order", "orders.reopen": "Reopened order", "orders.send": "Sent to the kitchen",
   "adjustments.apply_manual": "Applied a discount", "adjustments.remove": "Removed a discount", "payments.record": "Took a payment",
-  "payments.cancel": "Voided a payment", "refunds.create": "Refunded", "overrides.grant": "Approved an override", "shifts.open": "Opened shift",
+  "payments.cancel": "Cancelled a terminal payment", "refunds.create": "Refunded", "overrides.grant": "Approved an override", "shifts.open": "Opened shift",
   "shifts.close": "Closed shift", "business_days.close": "Closed the business day", "imports.apply": "Imported a menu",
   "stock.set_daily_cap": "Set a daily cap",
   "categories.create": "Created a category", "categories.update": "Changed a category", "stations.unpair": "Unpaired a station",
@@ -77,7 +77,7 @@ const EVENT_LABEL: Record<string, string> = {
   "order.opened": "Order opened", "order.repriced": "Prices worked out again", "order.fired": "Sent to the kitchen", "order.completed": "Order completed", "order.cancelled": "Order cancelled",
   "order.reopened": "Order reopened", "order.moved": "Moved table", "line.added": "Item added", "line.updated": "Item changed", "line.voided": "Item voided", "payment.recorded": "Payment taken",
   "payment.voided": "Payment voided", "refund.created": "Refunded", "kitchen_ticket.created": "Shown on the kitchen display", "kitchen_ticket.bumped": "Bumped on the kitchen display", "round.submitted": "QR order sent",
-  "round.accepted": "QR order accepted", "round.rejected": "QR order rejected", "adjustment.applied": "Discount applied", "adjustment.removed": "Discount removed", "print_job.created": "Print job created",
+  "round.accepted": "QR order accepted", "checks.split": "Bills split", "checks.allocated": "Items moved between bills", "check.split": "Bills split", "check.allocated": "Items moved between bills", "round.rejected": "QR order rejected", "adjustment.applied": "Discount applied", "adjustment.removed": "Discount removed", "print_job.created": "Print job created",
 };
 export function eventLabel(type: string, payload?: unknown): string {
   // A line taken off before it was sent is removed, not voided: only a sent line is a void (L2).
