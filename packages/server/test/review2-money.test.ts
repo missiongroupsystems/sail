@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { TaxBreakdown } from "@sail/shared";
 import "../src/modules.js";
+import { presetSeedRules, REGION_PRESETS } from "@sail/shared";
 import { buildApp, type App } from "../src/app.js";
+import { withTransaction } from "../src/db/client.js";
+import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
 import { resetGuestRateLimitsForTests } from "../src/services/guest.js";
 import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
 
@@ -27,6 +30,8 @@ type World = { m: SeededMerchant; pin: string; station: string; cash: string; ca
 async function world(name: string, preset: "us" | "eu-vat", products: { key: string; price: number; taxClass: string }[]): Promise<World> {
   const m = await seedMerchant(db.sql, name, preset === "us" ? { preset, timeZone: "America/New_York", locale: "en-US" } : { preset, timeZone: "Europe/Berlin", currency: "EUR", locale: "de-DE" });
   const t = m.admin.token;
+  // The preset's manual discounts (no automatic rule in the US preset), for the items report's discounted row.
+  if (preset === "us") await withTransaction(() => seedRulesForMerchant(m.merchantId, presetSeedRules(REGION_PRESETS.us, m.taxClassIds)));
   const must = async (path: string, body: unknown) => {
     const r = await call<{ data: { url?: string } }>("POST", path, { token: t, body });
     expect(r.status, `${path} ${JSON.stringify(r.body)}`).toBeLessThan(300);
@@ -306,17 +311,27 @@ describe("N6: every row of the items report adds up after a refund", () => {
     const r = await call("POST", `/v1/checks/${after.checks[0]!.id}/refunds`, { token: w.m.manager.token, body: { refund_id: randomUUID(), request: { kind: "lines", lines: [{ line_id: lineId, quantity: 1 }] }, reason: "Spilled", print: false } });
     expect(r.status, JSON.stringify(r.body).slice(0, 300)).toBe(201);
   };
-  it("US: a refunded tea has its own Refunds figure and gross − discounts − refunds = net", async () => {
+  it("US: a refunded tea has its own Refunds figure, a discounted burger's row adds up, and nothing is tax in prices", async () => {
     await refundOne(US, ["tea", "tea"], "tea");
+    const o = await open(US, { order_type: "takeaway" });
+    await add(US, o.body.data.id, ["burger"]);
+    const d = await call("POST", `/v1/orders/${o.body.data.id}/adjustments`, { token: US.m.manager.token, body: { application_id: randomUUID(), rule_key: "seed:percent-off-bill", entered_value: 2500, reason: "regular" } });
+    expect(d.status, JSON.stringify(d.body).slice(0, 300)).toBe(200);
+    await settle(US, o.body.data.id);
+    expect((await call("POST", `/v1/orders/${o.body.data.id}/fire`, { token: US.pin, body: {} })).status).toBe(200);
+    const burger = (await mix(US)).find((r) => r.name === "burger")!;
+    expect(burger.discounts).toBeLessThan(0);
+    expect(burger.tax).toBe(0);
+    expect(burger.gross + burger.discounts - burger.refunds).toBe(burger.net);
     const tea = (await mix(US)).find((r) => r.name === "tea")!;
     expect(tea.refunds).toBe(299);
     expect(tea.tax).toBe(0);
-    expect(tea.gross - tea.discounts - tea.tax - tea.refunds).toBe(tea.net);
+    expect(tea.gross + tea.discounts - tea.tax - tea.refunds).toBe(tea.net);
   });
   it("EU: VAT inside the price is its own column, so the row adds up there too", async () => {
     await refundOne(EU, ["wine", "wine"], "wine");
     const rows = await mix(EU);
-    for (const r of rows) expect(r.gross - r.discounts - r.tax - r.refunds, r.name).toBe(r.net);
+    for (const r of rows) expect(r.gross + r.discounts - r.tax - r.refunds, r.name).toBe(r.net);
     const wine = rows.find((r) => r.name === "wine")!;
     expect(wine.refunds).toBe(621); // €7.45 less its VAT 20% (€1.24)
     expect(wine.tax).toBeGreaterThan(0);

@@ -11,7 +11,7 @@ import type { Outlet } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
 import { rangeScope, ReportRange, useReportRange } from "../ReportRange";
 
-/** One row of the register's product mix (reports.product_mix): gross − discounts − tax − refunds = net. */
+/** One row of the register's product mix (reports.product_mix): gross + discounts (negative) − tax − refunds = net. */
 type MixRow = { key: string | null; name: string; quantity: number; gross: number; discounts: number; tax: number; refunds: number; net: number; share_bps: number };
 type GroupBy = "item" | "category" | "staff";
 
@@ -32,7 +32,7 @@ const columnsFor = (rows: MixRow[]): DataTableColumn<MixRow>[] => [
   { key: "name", header: "Name", isRowHeader: true, sortable: true, render: (r) => <span className="text-ink">{r.name}</span> },
   { key: "quantity", header: "Sold", numeric: true, sortable: true, render: (r) => r.quantity },
   { key: "gross", header: "Gross", numeric: true, sortable: true, render: (r) => <Money cents={r.gross} /> },
-  { key: "discounts", header: "Discounts", numeric: true, sortable: true, render: (r) => <Money cents={-r.discounts} /> },
+  { key: "discounts", header: "Discounts", numeric: true, sortable: true, render: (r) => <Money cents={r.discounts} /> },
   ...(rows.some((r) => r.tax !== 0) ? [{ key: "tax", header: "Tax in prices", numeric: true, sortable: true, render: (r: MixRow) => <Money cents={-r.tax} /> }] : []),
   { key: "refunds", header: "Refunds", numeric: true, sortable: true, render: (r) => <Money cents={-r.refunds} /> },
   { key: "net", header: "Net", numeric: true, sortable: true, render: (r) => <Money cents={r.net} /> },
