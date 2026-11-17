@@ -85,6 +85,11 @@ const noAnswer = (): ApiError => {
   for (const l of unknownOutcomeListeners) l();
   return ApiError.noAnswer();
 };
+/**
+ * Mutations the register keeps no answer for (they run outside its idempotency store: sign-in, set-up, pairing with a
+ * one-time code). Asking again would do them a second time, so a lost answer there is reported as it is.
+ */
+const NO_STORED_ANSWER = [/\/v1\/auth\//, /\/v1\/setup$/, /\/v1\/stations\/pair$/, /\/v1\/relays\/pair$/, /\/v1\/guest\/sessions$/, /\/v1\/agent-sessions$/];
 /** How long the second ask of a lost mutation waits: the register only has to replay the stored answer, or do it now. */
 const REPLAY_TIMEOUT_MS = 8_000;
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -221,7 +226,7 @@ export function createApi({ baseUrl, token, headers, timeoutMs = DEFAULT_TIMEOUT
    * and then it re-reads what it shows rather than guess. Requests are never sent twice under two keys.
    */
   const send = async (request: Request): Promise<Response> => {
-    if (!MUTATING.has(request.method) || !request.headers.has("idempotency-key")) return attempt(request, timeoutMs);
+    if (!MUTATING.has(request.method) || !request.headers.has("idempotency-key") || NO_STORED_ANSWER.some((r) => r.test(new URL(request.url).pathname))) return attempt(request, timeoutMs);
     const again = request.clone();
     try {
       return await attempt(request, timeoutMs);
