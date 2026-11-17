@@ -288,7 +288,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
                   rows={[{ key: "subtotal", label: "Subtotal", cents: check.totals.subtotal }, ...billRows(check, snap.totals.tax_mode)]}
                   tenders={check.payments
                     .filter((p) => p.status === "recorded")
-                    .flatMap((p) => [{ id: p.id, label: `${p.tender}${p.reference ? ` · ${p.reference}` : ""}`, cents: p.amount }, ...(p.tip_cents ? [{ id: `${p.id}:tip`, label: `Tip on ${p.tender}`, cents: p.tip_cents }] : [])])}
+                    .flatMap((p) => [{ id: p.id, label: p.tender, cents: p.amount }, ...(p.tip_cents ? [{ id: `${p.id}:tip`, label: `Tip on ${p.tender}`, cents: p.tip_cents }] : [])])}
                   isTarget={Boolean(selectedLine) && !check.locked}
                   onPress={selectedLine && !check.locked ? () => void moveTo(check) : undefined}
                   actions={

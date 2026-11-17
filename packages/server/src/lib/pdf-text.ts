@@ -1,19 +1,36 @@
-import { PDFDict, PDFName, PDFNumber, type PDFDocument, type PDFFont } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
+import type { PDFDocument, PDFFont } from "pdf-lib";
 import { formatMoney, type MoneyFormat } from "@sail/shared";
+import { INSTRUMENT_SANS_REGULAR, INSTRUMENT_SANS_SEMIBOLD } from "./pdf-fonts.generated.js";
 
 /**
- * Text for PDFs drawn with the standard fonts, which encode WinAnsi only: Latin-1 plus the euro sign and a few
- * punctuation marks. A character with a WinAnsi look-alike becomes it (the minus sign, narrow spaces, the fullwidth yen
- * sign); bidirectional marks drop out; anything else is a "?". Scripts outside WinAnsi (Arabic, CJK) need an embedded
- * font, which these documents do not have yet.
+ * PDFs embed the product's own typeface, Instrument Sans (SIL OFL 1.1, assets/fonts), subset to the glyphs each
+ * document uses, so every viewer draws the same glyphs at the advances the columns were measured with: no viewer's
+ * stand-in font can push the euro sign into the first digit (review 3, R3). Scripts the font does not cover (Arabic,
+ * CJK) print as "?" for now; amounts fall back to the currency's ISO code instead.
  */
-export function winAnsi(s: string): string {
-  return s
-    .replace(/[‎‏؜‪-‮⁦-⁩]/g, "")
-    .replace(/−/g, "-")
-    .replace(/[  ]/g, " ")
-    .replace(/￥/g, "¥")
-    .replace(/[^ -~ -ÿ€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ]/g, "?");
+const REGULAR = Buffer.from(INSTRUMENT_SANS_REGULAR, "base64");
+const SEMIBOLD = Buffer.from(INSTRUMENT_SANS_SEMIBOLD, "base64");
+const coverage = fontkit.create(REGULAR) as unknown as { hasGlyphForCodePoint(cp: number): boolean };
+
+/** Text the embedded font can draw: look-alikes for the few characters it lacks, bidi marks dropped, else "?". */
+export function pdfText(s: string): string {
+  let out = "";
+  for (const ch of s.replace(/[\u200e\u200f\u061c\u202a-\u202e\u2066-\u2069]/g, "").replace(/[\u2009\u202f]/g, "\u00a0").replace(/\uffe5/g, "\u00a5")) {
+    const cp = ch.codePointAt(0)!;
+    out += cp === 0x0a || coverage.hasGlyphForCodePoint(cp) ? ch : "?";
+  }
+  return out;
+}
+
+export type PdfFonts = { font: PDFFont; bold: PDFFont };
+
+/** Embed the regular and semibold faces, subset; fixed names keep a document's bytes the same on every render. */
+export async function embedPdfFonts(pdf: PDFDocument): Promise<PdfFonts> {
+  pdf.registerFontkit(fontkit);
+  const font = await pdf.embedFont(REGULAR, { subset: true, customName: "SAILAA+InstrumentSans-Regular" });
+  const bold = await pdf.embedFont(SEMIBOLD, { subset: true, customName: "SAILAB+InstrumentSans-SemiBold" });
+  return { font, bold };
 }
 
 /** The locale with Latin digits, so amounts and dates on a PDF are readable whatever the locale's own digits are. */
@@ -21,60 +38,25 @@ export function latinDigits(locale: string): string {
   return new Intl.Locale(locale, { numberingSystem: "latn" }).toString();
 }
 
-/** Amounts as a PDF can draw them: Latin digits, and the currency's ISO code where its symbol is not in WinAnsi ("KWD 2.125"). */
+/** Amounts as a PDF can draw them: Latin digits, and the currency's ISO code where the font has no symbol for it ("KWD 2.125"). */
 export function pdfMoney(money: MoneyFormat): (amount: number) => string {
   const fmt = { currency: money.currency, locale: latinDigits(money.locale) };
   return (amount) => {
-    const s = winAnsi(formatMoney(amount, fmt));
-    return s.includes("?") ? winAnsi(formatMoney(amount, fmt, { currencyDisplay: "code" })) : s;
+    const s = pdfText(formatMoney(amount, fmt));
+    return s.includes("?") ? pdfText(formatMoney(amount, fmt, { currencyDisplay: "code" })) : s;
   };
 }
 
 /** A date and time as a PDF can draw it: the locale's own style with Latin digits, else "2026-01-01 00:00" in the zone. */
 export function pdfDateTime(iso: string, locale: string, timeZone: string): string {
   const d = new Date(iso);
-  const s = winAnsi(d.toLocaleString(latinDigits(locale), { timeZone, dateStyle: "medium", timeStyle: "short" }));
+  const s = pdfText(d.toLocaleString(latinDigits(locale), { timeZone, dateStyle: "medium", timeStyle: "short" }));
   if (!s.includes("?")) return s;
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(d).map((x) => [x.type, x.value]));
   return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
 }
 
-/**
- * WinAnsi (Windows-1252) codes 0x80–0x9F as Unicode; the rest of 32–255 is Latin-1. Written out, not decoded with
- * `TextDecoder("windows-1252")`: some Node versions decode that range as control characters, which gave the euro sign
- * a width of 0. A 0 is a code WinAnsi leaves unassigned.
- */
-const WIN_ANSI_80_9F = [0x20ac, 0, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160, 0x2039, 0x0152, 0, 0x017d, 0, 0, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0, 0x017e, 0x0178];
-const winAnsiChar = (code: number): string | null => {
-  if (code < 0x80 || code > 0x9f) return String.fromCharCode(code);
-  const cp = WIN_ANSI_80_9F[code - 0x80]!;
-  return cp ? String.fromCharCode(cp) : null;
-};
-
-/**
- * Save a PDF drawn with the standard fonts, with each font's glyph widths written into it. The standard fonts are not
- * embedded and pdf-lib leaves out their `/Widths`, so a viewer takes the advances from whatever font it substitutes:
- * Preview and Safari gave the euro sign none, and it sat on the first digit of every amount (review 2, N7). With the
- * widths in the file every viewer places each glyph where the right-aligned columns were measured.
- */
-export async function savePdf(pdf: PDFDocument, fonts: PDFFont[]): Promise<Uint8Array> {
-  for (const font of fonts) {
-    await font.embed();
-    const dict = pdf.context.lookup(font.ref, PDFDict);
-    const widths: number[] = [];
-    for (let code = 32; code <= 255; code++) {
-      const ch = winAnsiChar(code);
-      let w = 0;
-      try {
-        if (ch) w = Math.round(font.widthOfTextAtSize(ch, 1000));
-      } catch {
-        w = 0; // a glyph the font does not have
-      }
-      widths.push(w);
-    }
-    dict.set(PDFName.of("FirstChar"), PDFNumber.of(32));
-    dict.set(PDFName.of("LastChar"), PDFNumber.of(255));
-    dict.set(PDFName.of("Widths"), pdf.context.obj(widths));
-  }
+/** Save a PDF: the embedded fonts are subset and written with their own widths. */
+export async function savePdf(pdf: PDFDocument): Promise<Uint8Array> {
   return pdf.save({ useObjectStreams: false });
 }

@@ -1,7 +1,7 @@
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, rgb } from "pdf-lib";
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import type { BillDocument } from "@sail/shared";
-import { pdfDateTime, pdfMoney, savePdf, winAnsi } from "../lib/pdf-text.js";
+import { embedPdfFonts, pdfDateTime, pdfMoney, pdfText, savePdf } from "../lib/pdf-text.js";
 import { db, tx } from "../db/client.js";
 import { checks, digitalReceipts, invoiceCancellations, merchants, outlets } from "../db/schema/index.js";
 import type { Principal } from "../auth/principal.js";
@@ -108,13 +108,12 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
   pdf.setCreationDate(new Date(doc.invoice.issued_at));
   pdf.setModificationDate(new Date(doc.invoice.issued_at));
   const page = pdf.addPage([595.28, 841.89]);
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const { font, bold } = await embedPdfFonts(pdf);
   const ink = rgb(0.11, 0.11, 0.12);
   const grey = rgb(0.37, 0.35, 0.33);
   let y = 790;
-  // The standard fonts encode WinAnsi only (see `winAnsi`).
-  const safe = winAnsi;
+  // What the embedded font can draw (see `pdfText`).
+  const safe = pdfText;
   const text = (raw: string, x: number, size = 10, f = font, color = ink) => page.drawText(safe(raw), { x, y, size, font: f, color });
   const right = (raw: string, xRight: number, size = 10, f = font) => {
     const s = safe(raw);
@@ -161,13 +160,14 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
   rule();
   y -= 14;
   // Every row multiplies by eye: Qty × Unit = Amount. The unit price includes the item's options, which are listed under
-  // it by name with their own price, never as a second amount. A bill's share of a line shows the share and the line.
+  // it by name with their own price, never as a second amount. A bill's share of a line shows the share and names the
+  // line's whole price in the item column, with no unit price (review 3: the unit read as the price of one).
   for (const l of doc.lines) {
     const unit = l.unit_price + l.modifiers.reduce((n, m) => n + (m.unit_price ?? (l.quantity ? Math.round(m.price / l.quantity) : 0)), 0);
     if (l.share) {
+      // "1/2 · Share of 2 × Toasted sandwich (€19.00) · €9.50": the share of the whole line's price, which the row names.
       text(l.share, 48, 10);
-      text(`${l.quantity === 1 ? "" : `${l.quantity} × `}${l.name} (share of the item)`, 90, 10);
-      right(money(unit * l.quantity), 460, 10);
+      text(`Share of ${l.quantity === 1 ? "" : `${l.quantity} × `}${l.name} (${money(unit * l.quantity)})`, 90, 10);
     } else {
       text(String(l.quantity), 48, 10);
       text(l.name, 90, 10);
@@ -207,7 +207,8 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
   if (doc.payments?.length) {
     y -= 6;
     for (const p of doc.payments) {
-      row(p.tender + (p.reference ? ` · ${p.reference}` : ""), p.amount);
+      // The tender only: a processor's reference ("sim_d6d3…") is the register's record, kept in the back office.
+      row(p.tender, p.amount);
       // The same rows, in the same order, as the thermal receipt and the digital one.
       if (p.rounding_cents) row("Cash rounding", p.rounding_cents);
       if (p.tip) row("Tip", p.tip);
@@ -225,7 +226,7 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
     text(line, 48, 9, font, grey);
     y -= 12;
   }
-  return savePdf(pdf, [font, bold]);
+  return savePdf(pdf);
 }
 
 /** Create a public digital receipt link for a check (or refund). */

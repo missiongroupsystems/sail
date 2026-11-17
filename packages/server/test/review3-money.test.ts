@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import "../src/modules.js";
 import { buildApp, type App } from "../src/app.js";
+import { readFileSync } from "node:fs";
+import { generatedFontModule } from "../scripts/pdf-fonts.js";
+import { renderInvoicePdf, type InvoiceDocument } from "../src/services/documents.js";
+import { pdfStrings } from "./pdf-strings.js";
 import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
 
 /** Third review round, money: a US diner (4% state + 4.5% local) and an EU café (VAT 10% and 20% inside the price). */
@@ -347,5 +351,52 @@ describe("R4: a refund by items gives back the order's tax before less its tax a
     expect(cn!.credit_note_document.totals.taxes[0]!.amount).toBe(-60);
     const z = await zTaxes(EU);
     expect(z.taxes.find((t) => t.bps === 1000)!.amount).toBe(60);
+  });
+});
+
+describe("R3: every PDF embeds the product's typeface", () => {
+  it("the generated font module matches the vendored TTFs", () => {
+    expect(readFileSync(new URL("../src/lib/pdf-fonts.generated.ts", import.meta.url), "utf8")).toBe(generatedFontModule());
+  });
+
+  const doc = (currency: string, locale: string, exponent = 2): InvoiceDocument => ({
+    header: { outlet_name: "Café Süd", brand_name: "B", order_no: "P-0001", order_type: "takeaway", printed_at: "2026-01-01T00:00:00Z", job_id: "j", time_zone: "Europe/Berlin", locale },
+    kind: "receipt",
+    currency,
+    currency_exponent: exponent,
+    check_label: "Bill 1",
+    lines: [
+      { quantity: 3, name: "Grüner Tee · Größe L", unit_price: 1_234_567, amount: 3_703_701, modifiers: [] },
+      { quantity: 2, name: "Toasted sandwich", unit_price: 950, amount: 950, modifiers: [], share: "1/2" },
+    ],
+    adjustments: [],
+    totals: { subtotal: 3_704_651, discount_total: 0, fee_total: 0, tax_total: 0, taxes: [{ name: "Consumption tax 8% (reduced)", bps: 800, amount: 274_418 }], total: 3_704_651, tax_mode: "inclusive" },
+    payments: [{ tender: "Card", amount: 3_704_651, reference: "sim_d6d3d0b3-fdc0-4a1e-9d1c-0b2f6b1a2c3d" }],
+    invoice_no: "INV-000001",
+    invoice: { number: "INV-000001", issued_at: "2026-01-01T00:00:00Z", merchant_name: "Mustermann GmbH", outlet_address: "Hauptstraße 1" },
+  });
+
+  for (const [currency, locale, shows, exponent] of [["EUR", "de-DE", "37.046,51\u00a0€", 2], ["EUR", "en-IE", "€37,046.51", 2], ["GBP", "en-GB", "£37,046.51", 2], ["JPY", "ja-JP", "¥3,704,651", 0], ["SGD", "en-SG", "$37,046.51", 2]] as const) {
+    it(`${currency} in ${locale}: long amounts, German and Japanese-preset labels print with no "?"`, async () => {
+      const bytes = await renderInvoicePdf(doc(currency, locale, exponent));
+      const strings = await pdfStrings(bytes);
+      expect(strings.some((x) => x.includes(shows)), JSON.stringify(strings)).toBe(true);
+      expect(strings).toContain("Grüner Tee · Größe L");
+      expect(strings.some((x) => x.startsWith("Consumption tax 8% (reduced)"))).toBe(true);
+      expect(strings.filter((x) => x.includes("?") || x.includes("\ufffd"))).toEqual([]);
+      // The processor's reference is the register's, not the guest's: it never prints on the invoice (review 3, R6).
+      expect(strings.some((x) => x.includes("sim_"))).toBe(false);
+      // The share row names the line's whole price; it has no unit price that reads as the price of one.
+      expect(strings.some((x) => x.startsWith("Share of 2 × Toasted sandwich ("))).toBe(true);
+      expect(Buffer.from(bytes).toString("latin1")).not.toMatch(/\/BaseFont \/Helvetica/);
+    });
+  }
+
+  it("the QR sheet and the daily summary embed it too", async () => {
+    const qr = await app.request(`/v1/outlets/${US.m.outletId}/reports/daily?format=pdf`, { headers: { authorization: `Bearer ${US.m.manager.token}` } });
+    expect(qr.status).toBe(200);
+    const daily = Buffer.from(await qr.arrayBuffer()).toString("latin1");
+    expect(daily).toMatch(/\/BaseFont \/SAILAA\+InstrumentSans-Regular/);
+    expect(daily).not.toMatch(/\/BaseFont \/Helvetica/);
   });
 });
