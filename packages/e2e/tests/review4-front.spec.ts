@@ -1,5 +1,5 @@
 import type { Page, Route } from "@playwright/test";
-import { API, devLocal, expect, pairAndSignIn, register, shot, test } from "./fixtures";
+import { API, devLocal, expect, GUEST, keyIn, pairAndSignIn, register, shot, test, WEB } from "./fixtures";
 
 /**
  * Fourth review round, front (`fix/review4-front`): a POS action whose answer is lost never spins without end (the
@@ -272,5 +272,67 @@ test.describe("U2: the paid screen stays for every tender", () => {
         if (shift) await register("POST", `/v1/shifts/${shift.data.id}/close`, { counted_cash_cents: 10_000, variance_reason: "End of an end-to-end test" }).catch(() => undefined);
       }
     });
+  }
+});
+
+test("U3: a quick note and the typed note stay apart: the chip stays on, the note reads with a separator on the order, the kitchen ticket, the kitchen display and the guest view", async ({ browser, page, watch }) => {
+  test.setTimeout(300_000);
+  const { outletId } = devLocal();
+  const { order, table, token } = await seatedTable();
+  const note = "Allergy: see note · Peanut allergy";
+  const kdsCtx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  try {
+    await pairAndSignIn(page, MANAGER_PIN);
+    await page.getByRole("button", { name: new RegExp(`^Table ${table.name},`) }).click();
+    await page.getByRole("button", { name: /^Mee Goreng,/ }).click();
+    const orderPanel = page.getByRole("region", { name: "Order" });
+    await orderPanel.getByRole("button", { name: /Mee Goreng/ }).first().click();
+    const sheet = page.getByRole("dialog", { name: "Mee Goreng" });
+    const chip = sheet.getByRole("button", { name: "Allergy: see note", exact: true });
+    await chip.click();
+    await expect(chip).toHaveAttribute("aria-pressed", "true");
+    const field = sheet.getByRole("textbox", { name: "Note" });
+    await field.click();
+    await page.keyboard.type("Peanut allergy");
+    // Typing goes into the note's own part: nothing runs into the chip, which stays on.
+    await expect(field).toHaveValue("Peanut allergy");
+    await expect(chip).toHaveAttribute("aria-pressed", "true");
+    await bothThemes(page, "U3-line-sheet");
+    await sheet.getByRole("button", { name: "Save changes" }).click();
+    await expect(sheet).toHaveCount(0);
+    await expect(orderPanel.getByText(note)).toBeVisible();
+    // Edited again: the chip shows chosen and the field holds only the typed part.
+    await orderPanel.getByRole("button", { name: /Mee Goreng/ }).first().click();
+    await expect(chip).toHaveAttribute("aria-pressed", "true");
+    await expect(field).toHaveValue("Peanut allergy");
+    await page.keyboard.press("Escape");
+    const snap = await register<{ data: { lines: { notes: string | null; status: string }[] } }>("GET", `/v1/orders/${order.id}`);
+    expect(snap.data.lines.filter((l) => l.status !== "voided").map((l) => l.notes)).toEqual([note]);
+    await page.getByRole("button", { name: "Send 1 to kitchen" }).click();
+    await expect(orderPanel.getByText(/^Sent /)).toBeVisible();
+    await shot(page, out("U3-order-line-day.png"));
+    // The kitchen ticket as the register keeps it, and the kitchen display.
+    const tickets = await register<{ data: { order_id: string; lines: { notes: string | null }[] }[] }>("GET", `/v1/outlets/${outletId}/kitchen-tickets`);
+    expect(tickets.data.filter((t) => t.order_id === order.id).flatMap((t) => t.lines.map((l) => l.notes))).toEqual([note]);
+    const stations = await register<{ data: { id: string; kind: string }[] }>("GET", `/v1/outlets/${outletId}/stations`);
+    const display = stations.data.find((s) => s.kind === "display")!;
+    const code = await register<{ data: { code: string } }>("POST", `/v1/stations/${display.id}/pairing-code`, {});
+    const kds = await kdsCtx.newPage();
+    watch.attach(kds);
+    await kds.goto(`${WEB}/kds`);
+    await expect(kds.getByRole("heading", { name: "Pair this screen to a station" })).toBeVisible({ timeout: 180_000 });
+    await keyIn(kds, "PIN keys", code.data.code);
+    await kds.getByRole("button", { name: "Pair this screen" }).click();
+    await expect(kds.getByText(note).first()).toBeVisible({ timeout: 30_000 });
+    // The guest's view of the table.
+    const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    watch.attach(phone);
+    await phone.goto(`${GUEST}/t/${token}#table`);
+    await expect(phone.getByText(`Note: ${note}`)).toBeVisible({ timeout: 120_000 });
+    await shot(phone, out("U3-guest-table.png"));
+    await phone.close();
+  } finally {
+    await kdsCtx.close();
+    await settle(order.id);
   }
 });

@@ -149,5 +149,3 @@ export function ModifierPicker({ menu, product, selection, onChange, isDisabled 
     </div>
   );
 }
-
-export const QUICK_NOTES = ["No ice", "Less sugar", "Less spicy", "Extra spicy", "No chilli", "No onion", "Takeaway pack", "Allergy: see note"];
