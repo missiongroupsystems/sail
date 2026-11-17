@@ -122,7 +122,7 @@ export function ModifierGroupsView({ initialGroups }: { initialGroups: ModifierG
         defaultSort={{ column: "name", direction: "ascending" }}
         onRowAction={(g) => setSheet({ mode: "edit", group: g })}
         rowClassName={(g) => (g.archived ? "text-ink-2" : undefined)}
-        emptyState={<EmptyState variant="centred" title="No modifier groups yet" hint="Tap Add modifier group. Options are products of kind Component." />}
+        emptyState={<EmptyState variant="centred" title="No modifier groups yet" hint="Select Add modifier group. Options are products of kind Component." />}
       />
       <GroupSheet state={sheet} groups={groups.data} onClose={() => setSheet(null)} />
     </>

@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { inflateSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildBillDocument, documentToText, renderBill, type BillDocument } from "@sail/shared";
 import { withTransaction } from "../src/db/client.js";
 import { billDocumentFor } from "../src/services/checks.js";
 import { renderInvoicePdf, type InvoiceDocument } from "../src/services/documents.js";
+import { pdfStrings } from "./pdf-strings.js";
 import { MAX_AMOUNT, presetSeedRules, REGION_PRESETS, type RegionPresetKey } from "@sail/shared";
 import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
 import type { MerchantSettingsInput } from "../src/bootstrap.js";
@@ -182,18 +182,6 @@ describe("documents of a paid bill", () => {
 type ZReport = { sales: { total: number; net: number; tax: number }; tenders: { amount: number }[]; cash: { expected: number; counted: number | null; variance: number | null; cash_payments: number; float: number; rounding: number; tips: number; refunds: number; open_shifts?: { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number } } };
 
 describe("currencies on PDF documents", () => {
-  /** The strings a PDF draws, decoded from its content streams as WinAnsi bytes. */
-  const pdfStrings = (pdf: Uint8Array) => {
-    const raw = Buffer.from(pdf).toString("latin1");
-    const streams = [...raw.matchAll(/stream\r?\n([\s\S]*?)endstream/g)].map((m) => {
-      try {
-        return inflateSync(Buffer.from(m[1]!, "latin1")).toString("latin1");
-      } catch {
-        return m[1]!;
-      }
-    });
-    return (streams.join("\n").match(/<([0-9A-Fa-f]+)> Tj/g) ?? []).map((x) => Buffer.from(x.slice(1, x.indexOf(">")), "hex").toString("latin1"));
-  };
   const invoice = (currency: string, exponent: number, locale: string): InvoiceDocument => ({
     header: { outlet_name: "O", brand_name: "B", order_no: "P-0001", order_type: "takeaway", printed_at: "2026-01-01T00:00:00Z", job_id: "j", time_zone: "UTC", locale },
     kind: "receipt",
@@ -207,9 +195,9 @@ describe("currencies on PDF documents", () => {
     invoice_no: "INV-000001",
     invoice: { number: "INV-000001", issued_at: "2026-01-01T00:00:00Z", merchant_name: "M", outlet_address: null },
   });
-  for (const [currency, exponent, locale, shows] of [["EUR", 2, "de-DE", "21,25\u00a0\u0080"], ["EUR", 2, "fr-FR", "21,25\u00a0\u0080"], ["JPY", 0, "ja-JP", "\u00a52,125"], ["KWD", 3, "ar-KW", "2.125"], ["SGD", 2, "en-SG", "$21.25"]] as const) {
+  for (const [currency, exponent, locale, shows] of [["EUR", 2, "de-DE", "21,25\u00a0€"], ["EUR", 2, "fr-FR", "21,25\u00a0€"], ["JPY", 0, "ja-JP", "\u00a52,125"], ["KWD", 3, "ar-KW", "2.125"], ["SGD", 2, "en-SG", "$21.25"]] as const) {
     it(`${currency} in ${locale} prints its amounts and symbol, never a "?"`, async () => {
-      const strings = pdfStrings(await renderInvoicePdf(invoice(currency, exponent, locale)));
+      const strings = await pdfStrings(await renderInvoicePdf(invoice(currency, exponent, locale)));
       const amounts = strings.filter((x) => /\d/.test(x) && x.includes("2"));
       expect(amounts.some((x) => x.includes(shows)), JSON.stringify(strings)).toBe(true);
       expect(strings.filter((x) => x.includes("?"))).toEqual([]);
@@ -217,7 +205,7 @@ describe("currencies on PDF documents", () => {
   }
   it("a cash payment's rounding, tip and change are rows on the PDF, as on the thermal and the digital receipt", async () => {
     const doc = { ...invoice("CHF", 2, "de-CH"), payments: [{ tender: "Cash", amount: 2125, rounding_cents: 0, tip: 300, change: 575 }] };
-    const pdf = pdfStrings(await renderInvoicePdf(doc));
+    const pdf = await pdfStrings(await renderInvoicePdf(doc));
     const thermal = documentToText(buildBillDocument(doc, 48), 48);
     for (const label of ["Tip", "Change"]) {
       expect(pdf, label).toContain(label);

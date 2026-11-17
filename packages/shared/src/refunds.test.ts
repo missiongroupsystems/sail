@@ -223,3 +223,19 @@ describe("money review: refunds that leak or strand money", () => {
     }
   });
 });
+
+describe("refund with no drawer to pay cash out of (avoidCash)", () => {
+  it("gives everything back to the non-cash payments, cash tips included in nothing", () => {
+    const q = quoteRefund([laksa, kopi], [card, { ...cash, tip: 100 }], { kind: "lines", lines: [{ line_id: "kopi", quantity: 1 }] }, { avoidCash: true });
+    expect(q.tenders).toEqual([{ payment_id: "card", tender: "Card", is_cash: false, amount: kopi.total, rounding_cents: 0, tip_cents: 0 }]);
+    expect(q.cash_out).toBe(0);
+  });
+  it("refuses more than the non-cash payments can return, and says so", () => {
+    expect(() => quoteRefund([laksa, kopi], [card, cash], { kind: "full" }, { avoidCash: true })).toThrow(RefundError);
+    try {
+      quoteRefund([laksa, kopi], [card, cash], { kind: "full" }, { avoidCash: true });
+    } catch (e) {
+      expect((e as RefundError).details).toMatchObject({ refundable: 2000, avoid_cash: true });
+    }
+  });
+});

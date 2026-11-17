@@ -6165,6 +6165,15 @@
               },
               "print": {
                 "type": "boolean"
+              },
+              "shift_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The open shift whose drawer pays cash back, for a caller with no station (the back office). Optional when the outlet has one open shift."
+              },
+              "avoid_cash": {
+                "type": "boolean",
+                "description": "Give nothing back to cash payments: the refund goes to the other payments only."
               }
             },
             "required": [
@@ -6382,6 +6391,10 @@
                     "amount"
                   ]
                 }
+              },
+              "avoid_cash": {
+                "type": "boolean",
+                "description": "Give nothing back to cash payments (no drawer to pay cash out of): the refund goes to the other payments only."
               }
             },
             "required": [

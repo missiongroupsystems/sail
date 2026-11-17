@@ -290,6 +290,30 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
     else go({ kind: "order", orderId, from });
   }, [go, openBill, order.data, orderId, screen]);
 
+  // The paid screen shows the register's state: once its payment is voided (here, on the terminal, or from another
+  // station) or the bill owes more than it did (a reopen), it goes back to the bill with its balance (review 3, S1).
+  useEffect(() => {
+    if (!done || !snap) return;
+    const live = snap.checks.find((c) => c.id === done.check.id);
+    if (!live) return;
+    const payment = done.figures.id ? live.payments.find((p) => p.id === done.figures.id) : undefined;
+    // A refund from another station leaves the payment recorded but the bill refunded: that is not "paid" any more either.
+    if ((payment && payment.status !== "recorded") || live.balance > done.check.balance || live.refunded_total > done.check.refunded_total) {
+      setDone(null);
+      setVoiding(null);
+      setDigits(null);
+      setTendered(null);
+      setTip({ kind: "none" });
+      setPad({ target: "amount", fresh: true });
+    }
+  }, [done, snap]);
+  // Nothing to pay on this bill and no payment on the way (back here after switching user from the paid screen, or a
+  // bill paid at another station): the pay screen never opens for it; the order's own next screen does (S2).
+  useEffect(() => {
+    if (done || busy || watching || !snap || !check || snap.status === "cancelled") return;
+    if (check.balance <= 0) leave();
+  }, [done, busy, watching, snap, check, leave]);
+
   if (!snap || !check || !tender) {
     return (
       <Frame sub={{ back: { label: "Bill", onPress: back }, title: "Pay" }}>
@@ -357,7 +381,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   const left = fresh?.left ?? null;
   // What the guest hands over: the amount, cash rounding and tip, as the register's dry run returned it.
   const due = figures?.due_cents ?? amount;
-  const verb = tender.is_cash ? `Take ${money(tendered ?? due)} cash` : onTerminal ? `Send ${money(due)} to the terminal` : tender.is_terminal ? (part || tipping ? `Take ${money(due)} by ${tender.name}` : `Paid by ${tender.name}`) : `Take ${money(due)} by ${tender.name}`;
+  const verb = tender.is_cash ? `Take ${money(tendered ?? due)} cash` : onTerminal ? `Send ${money(due)} to the terminal` : `Take ${money(due)} by ${tender.name}`;
   // A tip still being checked has no confirmed total yet: the button never shows the amount without it (D notes, B WebKit).
   const label = tipping && !figures && !localStop ? "Checking the tip…" : `${verb}${part && left != null ? ` · ${money(left)} left` : ""}`;
   // Too little cash for the rounded amount comes back from the dry run as a validation error, which blocks the button with its remedy.
@@ -576,7 +600,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
                   ) : tender.is_terminal ? (
                     <p className="rounded-tile bg-surface-2 px-4 py-3 text-[15px] text-ink">
                       Take <span className="font-semibold tabular">{money(due)}</span> by {tender.name}
-                      {tipText ? `, including a ${tipText} tip` : ""}, then tap {part || tipping ? "Take" : "Paid"}.
+                      {tipText ? `, including a ${tipText} tip` : ""}, then tap Take.
                     </p>
                   ) : (
                     <p className="rounded-tile bg-surface-2 px-4 py-3 text-[15px] text-ink">Record {money(amount)} to {tender.name}.</p>

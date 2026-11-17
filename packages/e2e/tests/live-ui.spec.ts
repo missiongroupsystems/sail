@@ -96,7 +96,7 @@ test("A-2: a closed order's receipt can still be shown as a QR code or sent", as
   await page.getByRole("button", { name: "Send 1 to kitchen" }).click();
   await page.getByRole("button", { name: /^Pay \$/ }).click();
   await page.getByRole("group", { name: "Payment method" }).getByRole("button", { name: "Card", exact: true }).click();
-  await page.getByRole("button", { name: /^Paid by Card/ }).click();
+  await page.getByRole("button", { name: /^Take .+ by Card$/ }).click();
   await page.getByRole("button", { name: "No receipt" }).click();
   await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Orders", exact: true }).click();
   await page.getByRole("button", { name: "Today's closed" }).click();

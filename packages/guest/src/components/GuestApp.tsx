@@ -409,7 +409,8 @@ function GuestAppInner({ token }: { token: string }) {
     // Ended because the table's bill was paid: a thank-you, not a timeout.
     return (
       <Notice place={placeRef.current} icon={CheckCheck} title="Your bill is paid." body="Thank you for coming. To order again, scan the QR code on the table.">
-        <BrandButton variant="quiet" onPress={startAgain}>
+        {/* The same action as Start again on the other ended screens, at the same weight (review 3, S8). */}
+        <BrandButton variant="accent" onPress={startAgain}>
           Order again
         </BrandButton>
       </Notice>

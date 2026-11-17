@@ -1,5 +1,5 @@
 import { createHmac, randomUUID } from "node:crypto";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, rgb } from "pdf-lib";
 import QRCode from "qrcode";
 import { and, asc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db, tx, withOwnTransaction } from "../db/client.js";
@@ -9,7 +9,7 @@ import { sha256, signSailToken } from "../auth/tokens.js";
 import { orderTaxSettings } from "./tax.js";
 import { config } from "../config.js";
 import type { Principal } from "../auth/principal.js";
-import { savePdf } from "../lib/pdf-text.js";
+import { embedPdfFonts, pdfText, savePdf } from "../lib/pdf-text.js";
 
 /**
  * Scan to Order services. Guests never pay. Sessions are bound
@@ -133,8 +133,7 @@ export async function qrSheetPdf(outletId: string, merchantId: string): Promise<
   const entries = await currentTableTokens(outletId, merchantId);
   const pdf = await PDFDocument.create();
   pdf.setTitle(`Scan to order · ${outlet?.name ?? ""}`);
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const { font, bold } = await embedPdfFonts(pdf);
   const perPage = 6; // 2 × 3 cards on A4
   for (let i = 0; i < entries.length; i += perPage) {
     const page = pdf.addPage([595.28, 841.89]);
@@ -149,13 +148,13 @@ export async function qrSheetPdf(outletId: string, merchantId: string): Promise<
       const png = await QRCode.toBuffer(guestUrl(token), { type: "png", margin: 1, width: 400, errorCorrectionLevel: "M" });
       const img = await pdf.embedPng(png);
       page.drawImage(img, { x: x + 55, y: y + 70, width: 140, height: 140 });
-      page.drawText(brandName ?? outlet?.name ?? "", { x: x + 16, y: y + 220, size: 12, font: bold, color: rgb(0.11, 0.11, 0.12) });
-      page.drawText(`Table ${table.name}`, { x: x + 16, y: y + 48, size: 18, font: bold, color: rgb(0.11, 0.11, 0.12) });
+      page.drawText(pdfText(brandName ?? outlet?.name ?? ""), { x: x + 16, y: y + 220, size: 12, font: bold, color: rgb(0.11, 0.11, 0.12) });
+      page.drawText(pdfText(`Table ${table.name}`), { x: x + 16, y: y + 48, size: 18, font: bold, color: rgb(0.11, 0.11, 0.12) });
       page.drawText("Scan to order from your phone", { x: x + 16, y: y + 30, size: 9, font, color: rgb(0.37, 0.35, 0.33) });
       page.drawText("Pay at the counter or ask your server for the bill", { x: x + 16, y: y + 16, size: 8, font, color: rgb(0.37, 0.35, 0.33) });
     }
   }
-  return savePdf(pdf, [font, bold]);
+  return savePdf(pdf);
 }
 
 /* ---- Sessions ---- */

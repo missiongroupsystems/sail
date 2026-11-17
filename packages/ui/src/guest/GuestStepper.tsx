@@ -22,15 +22,17 @@ const key =
 
 /** A quantity stepper with 48px keys (the guest minimum) and the value in tabular figures. */
 export function GuestStepper({ value, onChange, min = 1, max = 50, label = "Quantity", className }: GuestStepperProps) {
+  // "Decrease quantity of Kopi", not "Fewer quantity" (review 3, S8); the item's name keeps its capital.
+  const what = `${label.charAt(0).toLowerCase()}${label.slice(1)}`;
   return (
     <div className={cx("inline-flex items-center gap-2", className)} role="group" aria-label={label}>
-      <AriaButton onPress={() => onChange(Math.max(min, value - 1))} isDisabled={value <= min} aria-label={`Fewer ${label.toLowerCase()}`} className={key}>
+      <AriaButton onPress={() => onChange(Math.max(min, value - 1))} isDisabled={value <= min} aria-label={`Decrease ${what}`} className={key}>
         <Icon icon={Minus} size={20} />
       </AriaButton>
       <output className="min-w-10 text-center font-heading text-[20px] font-semibold tabular text-ink" aria-live="polite" aria-label={label}>
         {value}
       </output>
-      <AriaButton onPress={() => onChange(Math.min(max, value + 1))} isDisabled={value >= max} aria-label={`More ${label.toLowerCase()}`} className={key}>
+      <AriaButton onPress={() => onChange(Math.min(max, value + 1))} isDisabled={value >= max} aria-label={`Increase ${what}`} className={key}>
         <Icon icon={Plus} size={20} />
       </AriaButton>
     </div>

@@ -158,6 +158,7 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
     if (id === p.id && body.role && body.role !== "admin") throw AppError.invariant("admin_self_demotion", "You cannot lower your own role", "Ask another Admin to change your role.");
     await assertEmailFree(p.merchantId, body.email, id);
     await assertPinFree(p, body.pin, id);
+    const [before] = await db().select().from(staff).where(and(eq(staff.id, id), eq(staff.merchantId, p.merchantId))).limit(1);
     const [row] = await db()
       .update(staff)
       .set({
@@ -181,7 +182,10 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
       await db().update(backofficeSessions).set({ endedAt: new Date() }).where(and(eq(backofficeSessions.staffId, id), isNull(backofficeSessions.endedAt)));
       await db().update(backofficeLinks).set({ revokedAt: new Date() }).where(and(eq(backofficeLinks.staffId, id), isNull(backofficeLinks.usedAt), isNull(backofficeLinks.revokedAt)));
     }
-    const { pin: _pin, ...auditable } = withoutContact(body);
+    // Only what changed: a form that sends every field back reports the field the owner changed, not all of them (review 3).
+    const was: Record<string, unknown> = before ? { name: before.name, initials: before.initials, email: before.email, role: before.role, outlet_ids: before.outletIds, brand_ids: before.brandIds, legacy_id: before.legacyId, risk_ceiling: before.riskCeiling, active: before.active } : {};
+    const changed = Object.fromEntries(Object.entries(body).filter(([k, v]) => !(k in was) || JSON.stringify(v ?? null) !== JSON.stringify(was[k] ?? null))) as typeof body;
+    const { pin: _pin, ...auditable } = withoutContact(changed);
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "staff.updated", aggregate: { kind: "staff", id }, operationId: "staff.update", payload: { ...auditable, pin_changed: body.pin !== undefined }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
     await recordAudit(p, { action: "staff.update", targetKind: "staff", targetId: id, details: { ...auditable, pin_changed: body.pin !== undefined } });
     return c.json({ data: toStaff(row), events: [ev], warnings: [] }, 200);

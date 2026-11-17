@@ -107,7 +107,7 @@ export function MenusView({ initialMenus, brands, scope }: { initialMenus: MenuS
       ) : current ? (
         <MenuEditor key={current.id} summary={current} />
       ) : (
-        <EmptyState title="No menus for this brand" hint={`${canCreate.ok ? "Tap Add menu. " : ""}A menu has sections (and one level of sub-sections) with products in order.`} />
+        <EmptyState title="No menus for this brand" hint={`${canCreate.ok ? "Select Add menu. " : ""}A menu has sections (and one level of sub-sections) with products in order.`} />
       )}
 
       <Dialog
@@ -126,7 +126,7 @@ export function MenusView({ initialMenus, brands, scope }: { initialMenus: MenuS
         }
       >
         <div className="flex flex-col gap-3 pt-2">
-          <TextField label="Name" value={newName} onChange={setNewName} placeholder="All day" autoFocus />
+          <TextField label="Name" value={newName} onChange={setNewName} placeholder="All day" autoFocus onKeyDown={(e) => e.key === "Enter" && newName.trim() && !create.isPending && create.mutate(newName.trim())} />
           <InlineError error={create.error} />
         </div>
       </Dialog>
@@ -348,7 +348,7 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
 
       <ReadOnly.Provider value={!mayEdit.ok}>
       {tops.length === 0 ? (
-        <EmptyState variant="quiet" title="No sections yet" hint="Tap Add section, then search products to add them. The POS and the guest app show only products in a section. Drag the handle to reorder, then Save menu order." />
+        <EmptyState variant="quiet" title="No sections yet" hint="Select Add section, then search products to add them. The POS and the guest app show only products in a section. Drag the handle to reorder, then Save menu order." />
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={tops.map((s) => `sec:${s.id}`)} strategy={verticalListSortingStrategy}>

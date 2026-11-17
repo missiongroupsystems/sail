@@ -181,7 +181,8 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
                   <Button size="md" variant="quiet" isDisabled={offline} onPress={() => onRejectRound(r)} className="text-ink-2">
                     Reject
                   </Button>
-                  <Button size="md" variant="primary" isDisabled={offline} onPress={() => onAcceptRound(r)}>
+                  {/* The order's one primary is the dock's (Pay, or Review QR order, which opens Accept first): Accept here is secondary (review 3, S7). */}
+                  <Button size="md" variant="secondary" isDisabled={offline} onPress={() => onAcceptRound(r)}>
                     Accept
                   </Button>
                 </span>
@@ -250,7 +251,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
                   { id: "send", label: "Send", ariaLabel: "Send to kitchen", onPress: () => undefined, isDisabled: true, trailingIcon: ArrowRight }
                 : order.balance <= 0 && pendingRounds.length > 0
                   ? // Nothing to pay but a QR order waits: the primary opens the waiting sheet (Accept or Reject), not "Pay $0.00".
-                    { id: "pay", label: "Review QR order", ariaLabel: "Review the waiting QR order", onPress: onPay }
+                    { id: "pay", label: "Review QR order", onPress: onPay }
                 : { id: "pay", label: `Pay ${money(order.balance)}`, ariaLabel: `Pay ${money(order.balance)}`, onPress: onPay, isDisabled: live.length === 0 || (order.balance <= 0 && pendingRounds.length === 0), needsApproval: !["cashier", "manager", "finance", "admin"].includes(staff.role), approvalLabel: "Cashier approval" }
           }
           secondaries={[

@@ -152,19 +152,24 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
   const board = useBoardPages(tickets.data);
   const open = tickets.data?.data ?? [];
   const last = tickets.data?.last_bumped ?? null;
-  const lateCount = open.filter((t) => t.status !== "cancelled" && (now - new Date(t.fired_at).getTime()) / 1000 >= late * 60).length;
+  const lateCount = open.filter((t) => !toClear(t) && (now - new Date(t.fired_at).getTime()) / 1000 >= late * 60).length;
 
   return (
     <main className="flex h-dvh w-full min-w-0 flex-col bg-bg">
       {/* The kitchen bar: what this screen is, how many tickets, Recall, the theme, the time and the connection. */}
-      <header className="flex h-14 shrink-0 items-center gap-x-4 border-b border-rule bg-surface px-5 max-[960px]:gap-x-3 max-[960px]:px-4">
-        <h1 className="flex shrink-0 items-center gap-2 font-heading text-[18px] font-semibold text-ink">
+      {/* Everything but the station's name keeps its size: the name truncates first, so the clock and the online state always fit (review 3, S6). */}
+      <header className="flex h-14 shrink-0 items-center gap-x-4 border-b border-rule bg-surface px-5 max-[1180px]:gap-x-3 max-[960px]:gap-x-2 max-[960px]:px-4">
+        {/* The left group gives way (its name truncates first, then the group clips); the right group never leaves the screen. */}
+        <div className="flex min-w-0 flex-1 items-center gap-x-4 overflow-hidden max-[1180px]:gap-x-3 max-[960px]:gap-x-2">
+        <h1 className="flex shrink-0 items-center gap-2 max-[1180px]:sr-only font-heading text-[18px] font-semibold text-ink">
           <Icon icon={ChefHat} size={20} />
-          {/* In portrait the icon stands for "Kitchen", so the station's own name has the room (C-11). */}
-          <span className="max-[960px]:sr-only">Kitchen</span>
+          {/* Below a wide screen the heading is for screen readers only: the station's own name beside it has the room (C-11). */}
+          <span className="max-[1180px]:sr-only">Kitchen</span>
         </h1>
-        {/* The station's name keeps room for itself; the paging controls give way first (final2 B-6). */}
-        <p className="min-w-[9rem] text-[14px] leading-tight text-ink-2 line-clamp-2">{station.name}</p>
+        {/* The station's name takes the room left over, on up to two lines, and truncates past that (whole on hover). */}
+        <p className="min-w-[4.5rem] flex-1 text-[14px] leading-tight text-ink-2 line-clamp-2" title={station.name}>
+          {station.name}
+        </p>
         <p className="flex shrink-0 items-center gap-2 text-[14.5px] text-ink">
           <span className="tabular">{open.length === 1 ? "1 ticket" : `${open.length} tickets`}{earlierView ? " from earlier days" : ""}</span>
           {lateCount > 0 ? <Pill tone="alert">{lateCount} late</Pill> : null}
@@ -180,17 +185,18 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
         {/* Tickets past the screen's edge: how many, and a page across to them (final review B-P10). */}
         {board.before > 0 ? <PageButton icon={ChevronLeft} count={board.before} word="before" onPress={() => board.page(-1)} /> : null}
         {board.after > 0 ? <PageButton icon={ChevronRight} count={board.after} word="more" onPress={() => board.page(1)} trailing /> : null}
-        <span className="flex-1" />
+        </div>
         <AriaButton
           isDisabled={!last || act.isPending}
           onPress={() => last && act.mutate({ id: last.id, action: "recall", key: idempotencyKey() })}
           aria-label={last ? `Recall ${ticketTitle(last)}` : "Recall"}
-          className="press flex min-h-12 shrink-0 items-center gap-2 rounded-full bg-surface-2 px-5 text-[15px] max-[960px]:px-4 font-medium text-ink outline-none transition-colors duration-[120ms] data-[hovered]:bg-surface-3 data-[pressed]:bg-surface-3 data-[disabled]:text-ink-disabled data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus"
+          className="press flex min-h-12 shrink-0 items-center gap-2 rounded-full bg-surface-2 px-5 text-[15px] max-[960px]:min-w-12 max-[960px]:justify-center max-[960px]:px-3 font-medium text-ink outline-none transition-colors duration-[120ms] data-[hovered]:bg-surface-3 data-[pressed]:bg-surface-3 data-[disabled]:text-ink-disabled data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus"
         >
           <Icon icon={RotateCcw} size={18} />
-          {/* In portrait the button says Recall alone (its name still names the ticket), so the station's name keeps its room. */}
-          <span className="max-w-[220px] truncate max-[960px]:hidden">{last ? `Recall ${ticketTitle(last)}` : "Recall"}</span>
-          <span className="hidden max-[960px]:inline">Recall</span>
+          {/* Below a wide screen the button says Recall alone, and in portrait shows its icon alone (its name still names the
+              ticket), so the bar keeps its room. */}
+          <span className="max-w-[220px] truncate max-[1180px]:hidden">{last ? `Recall ${ticketTitle(last)}` : "Recall"}</span>
+          <span className="hidden max-[1180px]:inline max-[960px]:hidden">Recall</span>
         </AriaButton>
         <SegmentedControl aria-label="Theme" options={THEMES} selectedId={mode} onSelect={(id) => setMode(id as ThemeMode)} className="shrink-0 p-0.5" />
         <span className="shrink-0 text-[15px] whitespace-nowrap text-ink tabular">{clock(new Date(now))}</span>
@@ -213,7 +219,7 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
             {/* As many columns as fit: three or four on an iPad in landscape, more on a wall screen, two in portrait. */}
             <div className="h-full columns-[260px] gap-4 [column-fill:auto] min-[1600px]:columns-[320px]">
               {open.map((t) => (
-                <TicketCard key={t.id} ticket={t} now={now} warn={warn} late={late} pending={pendingId === t.id} onBump={() => act.mutate({ id: t.id, action: "bump", key: idempotencyKey(), done: `${ticketTitle(t)} ${t.status === "cancelled" ? "cleared" : "bumped"}` })} />
+                <TicketCard key={t.id} ticket={t} now={now} warn={warn} late={late} pending={pendingId === t.id} onBump={() => act.mutate({ id: t.id, action: "bump", key: idempotencyKey(), done: `${ticketTitle(t)} ${toClear(t) ? "cleared" : "bumped"}` })} />
               ))}
             </div>
             {/* Extends the board to whole pages, so the last page holds only its own columns. */}
@@ -296,18 +302,23 @@ function QuietButton({ onPress, children }: { onPress: () => void; children: Rea
   );
 }
 
-/** "3 more" with its chevron; on a narrow screen the number and chevron alone (the word stays for screen readers). */
+/** "3 more" with its chevron; in portrait the number and chevron alone (the word stays for screen readers). */
 function PageButton({ icon, count, word, onPress, trailing }: { icon: typeof ChevronLeft; count: number; word: string; onPress: () => void; trailing?: boolean }) {
   return (
     <QuietButton onPress={onPress}>
       {trailing ? null : <Icon icon={icon} size={18} />}
       <span>
         {count}
-        <span className="max-[1180px]:sr-only"> {word}</span>
+        <span className="max-[960px]:sr-only"> {word}</span>
       </span>
       {trailing ? <Icon icon={icon} size={18} /> : null}
     </QuietButton>
   );
+}
+
+/** A ticket with nothing left to make (cancelled, or every line voided) is cleared rather than bumped. */
+function toClear(t: KitchenTicket): boolean {
+  return t.status === "cancelled" || (t.lines.length > 0 && t.lines.every((l) => l.quantity - l.voided_quantity <= 0));
 }
 
 function ticketTitle(t: KitchenTicket): string {
@@ -325,19 +336,22 @@ const AGE_CHIP = { neutral: "bg-surface-2 text-ink", warn: "bg-status-sent-tint 
 function TicketCard({ ticket: t, now, warn, late, pending, onBump }: { ticket: KitchenTicket; now: number; warn: number; late: number; pending: boolean; onBump: () => void }) {
   const seconds = Math.max(0, (now - new Date(t.fired_at).getTime()) / 1000);
   const cancelled = t.status === "cancelled";
-  const tone = cancelled ? "neutral" : seconds >= late * 60 ? "late" : seconds >= warn * 60 ? "warn" : "neutral";
+  // Nothing left to make (every line voided): cleared like a cancelled ticket, not bumped as New (review 3, S8).
+  const voided = !cancelled && toClear(t);
+  const clear = cancelled || voided;
+  const tone = clear ? "neutral" : seconds >= late * 60 ? "late" : seconds >= warn * 60 ? "warn" : "neutral";
   const items = t.lines.reduce((n, l) => n + l.quantity - l.voided_quantity, 0);
   const title = ticketTitle(t);
   // A round the guest ordered by QR code says so; the name with it is whoever accepted it, not who took the order (final review C Low).
   const fromQr = t.lines.length > 0 && t.lines.every((l) => l.source === "guest");
   const meta = [t.order_type === "dine_in" ? t.order_no : ORDER_TYPE_LABEL[t.order_type as keyof typeof ORDER_TYPE_LABEL], t.pax ? `${t.pax} ${t.pax === 1 ? "guest" : "guests"}` : null, fromQr ? (t.server_name ? `QR order, accepted by ${t.server_name}` : "QR order") : t.server_name, t.round_no > 1 ? `round ${t.round_no}` : null].filter(Boolean).join(" · ");
-  const state = cancelled ? { label: "Cancelled", tone: "alert" as const, icon: Ban } : t.status === "recalled" ? { label: "Recalled", tone: "seated" as const, icon: RotateCcw } : t.status === "in_progress" ? { label: "In progress", tone: "sent" as const, icon: Flame } : { label: "New", tone: "seated" as const, icon: Circle };
+  const state = cancelled ? { label: "Cancelled", tone: "alert" as const, icon: Ban } : voided ? { label: "Voided", tone: "alert" as const, icon: Ban } : t.status === "recalled" ? { label: "Recalled", tone: "seated" as const, icon: RotateCcw } : t.status === "in_progress" ? { label: "In progress", tone: "sent" as const, icon: Flame } : { label: "New", tone: "seated" as const, icon: Circle };
   return (
     <AriaButton
       data-ticket
       onPress={onBump}
       isDisabled={pending}
-      aria-label={`${cancelled ? "Clear" : "Bump"} ${title}, ${items} ${items === 1 ? "item" : "items"}${tone === "late" ? ", late" : ""}${t.changed ? ", changed" : ""}${cancelled ? ", cancelled" : ""}`}
+      aria-label={`${clear ? "Clear" : "Bump"} ${title}, ${items} ${items === 1 ? "item" : "items"}${tone === "late" ? ", late" : ""}${t.changed ? ", changed" : ""}${cancelled ? ", cancelled" : voided ? ", voided" : ""}`}
       className={cx(
         "press pos-touch relative mb-4 flex w-full min-w-0 snap-start break-inside-avoid flex-col overflow-hidden rounded-panel border border-rule bg-surface text-left shadow-e1 outline-none",
         "transition-colors duration-[120ms] data-[pressed]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated data-[disabled]:opacity-45",
@@ -361,10 +375,10 @@ function TicketCard({ ticket: t, now, warn, late, pending, onBump }: { ticket: K
         </span>
         <span className={cx("shrink-0 rounded-full px-2.5 py-1 font-heading text-[15px] leading-none font-semibold tabular min-[1600px]:text-[18px]", AGE_CHIP[tone])}>{formatElapsed(seconds)}</span>
       </span>
-      {tone === "late" || t.changed ? (
+      {tone === "late" || (t.changed && !clear) ? (
         <span className="flex flex-wrap items-center gap-2 px-4 pb-2.5">
           {tone === "late" ? <Pill tone="alert" icon={AlertTriangle}>Late</Pill> : null}
-          {t.changed && !cancelled ? <Pill tone="alert" icon={Pencil}>Changed</Pill> : null}
+          {t.changed && !clear ? <Pill tone="alert" icon={Pencil}>Changed</Pill> : null}
         </span>
       ) : null}
       <span className="flex flex-1 flex-col gap-2 border-t border-rule px-4 py-3">
@@ -377,7 +391,7 @@ function TicketCard({ ticket: t, now, warn, late, pending, onBump }: { ticket: K
           {state.label}
         </Pill>
         <span aria-hidden className="flex h-11 min-w-[104px] items-center justify-center rounded-full bg-primary px-5 text-[15px] font-semibold text-on-primary">
-          {cancelled ? "Clear" : "Bump"}
+          {clear ? "Clear" : "Bump"}
         </span>
       </span>
     </AriaButton>

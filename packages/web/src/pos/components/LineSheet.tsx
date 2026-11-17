@@ -32,33 +32,48 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
   const [removing, setRemoving] = useState(false);
   const [busy, setBusy] = useState(false);
   const api = useApi();
-  /** The register's figures for the quantity on the stepper (a dry run), so the box follows it both ways (A-N2). */
-  const [priced, setPriced] = useState<SnapshotLine | null>(null);
+  /**
+   * The register's figures for the choices on screen (a dry run of the quantity and options), so the box follows the
+   * stepper both ways (A-N2) and a changed size or option (review 3, S5). `key` names the choices it priced: a figure for
+   * anything else is never shown.
+   */
+  const [priced, setPriced] = useState<{ key: string; line: SnapshotLine } | null>(null);
   const [pricedFailed, setPricedFailed] = useState(false);
   const lineId = line?.id ?? null;
   const unsent = line ? line.status !== "fired" : false;
-  const savedQty = line?.quantity ?? 0;
+  const product = line ? menu?.products[line.product_id] : undefined;
+  const editsModifiers = Boolean(unsent && menu && product && product.modifier_groups.length > 0);
+  const chosen = editsModifiers && menu && product ? toModifiers(menu, product, selection).map((m) => ({ group_id: m.group_id, product_id: m.product_id, quantity: 1 })) : null;
+  // The line and the order's version are in the key: a figure for another line, or for the order before it changed, never shows.
+  const savedKey = line ? priceKey(line.id, order.version, line.quantity, editsModifiers ? line.modifiers.map((m) => m.product_id) : null) : "";
+  const currentKey = priceKey(lineId ?? "", order.version, quantity, chosen ? chosen.map((m) => m.product_id) : null);
+  const chosenJson = chosen ? JSON.stringify(chosen) : null;
+  const unmetNow = editsModifiers && menu && product ? unmetRequirement(menu, product, selection) : null;
   useEffect(() => {
-    setPriced(null);
     setPricedFailed(false);
-    if (!lineId || !unsent || quantity === savedQty || offline) return;
+    if (!lineId || !unsent || currentKey === savedKey || offline || unmetNow) return;
     let gone = false;
     const t = setTimeout(async () => {
       try {
-        const res = await updateLine(api, order.id, lineId, { quantity, dry_run: true });
-        if (!gone) setPriced(res.data.lines.find((l) => l.id === lineId) ?? null);
+        const res = await updateLine(api, order.id, lineId, { quantity, ...(chosenJson ? { modifiers: JSON.parse(chosenJson) as NonNullable<typeof chosen> } : {}), dry_run: true });
+        const after = res.data.lines.find((l) => l.id === lineId);
+        if (!gone && after) setPriced({ key: currentKey, line: after });
       } catch {
         // No figure is better than a wrong one: the box says the total shows once saved.
-        if (!gone) setPricedFailed(true);
+        if (!gone) {
+          setPriced(null);
+          setPricedFailed(true);
+        }
       }
     }, 200);
     return () => {
       gone = true;
       clearTimeout(t);
     };
-  }, [api, order.id, lineId, unsent, quantity, savedQty, offline]);
+  }, [api, order.id, lineId, unsent, quantity, chosenJson, currentKey, savedKey, offline, unmetNow]);
 
   useEffect(() => {
+    setPriced(null);
     if (!line) return;
     setQuantity(line.quantity);
     setNotes(line.notes ?? "");
@@ -70,7 +85,6 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
   if (!line) return <Sheet labelledClose isOpen={false} onOpenChange={() => undefined} title="" children={null} />;
 
   const sent = line.status === "fired";
-  const product = menu?.products[line.product_id];
   const canEditModifiers = !sent && menu && product && product.modifier_groups.length > 0;
   const unmet = canEditModifiers ? unmetRequirement(menu, product, selection) : null;
   const seats = Math.max(order.pax ?? 0, ...order.lines.map((l) => l.seat_no ?? 0), seat ?? 0, 1);
@@ -169,8 +183,10 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
             <QuantityStepper value={quantity} onChange={setQuantity} min={1} max={sent ? line.quantity : 999} />
           </section>
           {sent ? <p className="text-body text-ink-2">A sent line cannot be changed. Lower the quantity to void part of it.</p> : null}
-          {quantity === line.quantity || priced?.quantity === quantity ? (
-            <LineTotal line={quantity === line.quantity ? line : priced!} taxMode={order.totals.tax_mode} />
+          {currentKey === savedKey ? (
+            <LineTotal line={line} taxMode={order.totals.tax_mode} />
+          ) : !sent && priced?.key === currentKey ? (
+            <LineTotal line={priced.line} taxMode={order.totals.tax_mode} />
           ) : sent ? (
             <>
               <LineTotal line={line} taxMode={order.totals.tax_mode} />
@@ -178,7 +194,7 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
             </>
           ) : (
             <p className="rounded-tile border border-rule px-4 py-3 text-body text-ink-2" role="status">
-              {quantity} × {line.name} · {pricedFailed ? "the register gives the total once saved." : "checking the price with the register…"}
+              {quantity} × {line.name} · {pricedFailed || unmet ? "the register gives the total once saved." : "checking the price with the register…"}
             </p>
           )}
           {station.seats_enabled && order.order_type === "dine_in" && !sent ? (
@@ -257,4 +273,9 @@ function LineTotal({ line, taxMode }: { line: SnapshotLine; taxMode: string }) {
       </div>
     </dl>
   );
+}
+
+/** What a dry run priced: the quantity and, where the options can change, the options chosen. */
+function priceKey(lineId: string, version: number, quantity: number, modifierIds: string[] | null): string {
+  return JSON.stringify([lineId, version, quantity, modifierIds]);
 }

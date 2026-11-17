@@ -250,12 +250,12 @@ test("S other: a sold-out line on the guest review cannot be increased", async (
     await phone.getByRole("button", { name: /^Kopi,/ }).click();
     await phone.getByRole("dialog", { name: "Kopi" }).getByRole("button", { name: /^Add to order/ }).click();
     await phone.getByRole("button", { name: /^View your order/ }).click();
-    await expect(phone.getByRole("button", { name: "More quantity of kopi" })).toBeEnabled();
+    await expect(phone.getByRole("button", { name: "Increase quantity of Kopi" })).toBeEnabled();
     await register("POST", "/v1/stock/sold-out", { outlet_id: outletId, product_id: kopi.id, until: "indefinite" });
     await phone.reload();
     if (await phone.getByRole("button", { name: /^View your order/ }).isVisible().catch(() => false)) await phone.getByRole("button", { name: /^View your order/ }).click();
     await expect(phone.getByText("Sold out. Remove it to send the rest.")).toBeVisible();
-    await expect(phone.getByRole("button", { name: "More quantity of kopi" })).toBeDisabled();
+    await expect(phone.getByRole("button", { name: "Increase quantity of Kopi" })).toBeDisabled();
   } finally {
     await register("POST", "/v1/stock/restore", { outlet_id: outletId, product_id: kopi.id }).catch(() => undefined);
     await phone.close();

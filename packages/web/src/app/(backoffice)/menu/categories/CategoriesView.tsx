@@ -109,7 +109,7 @@ export function CategoriesView({ initialCategories }: { initialCategories: Categ
       </div>
 
       {parents.length === 0 ? (
-        <EmptyState title="No categories yet" hint="Tap Add category to create the first one. Products are grouped by category in reports and pricing scopes." />
+        <EmptyState title="No categories yet" hint="Select Add category to create the first one. Products are grouped by category in reports and pricing scopes." />
       ) : (
         <ul className="flex max-w-[760px] flex-col gap-3">
           {parents.map((p) => (

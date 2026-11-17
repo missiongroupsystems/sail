@@ -147,14 +147,15 @@ export function TeamView({ initialStaff, outlets, brands, scope }: { initialStaf
         defaultSort={{ column: "name", direction: "ascending" }}
         onRowAction={(s) => setSheet({ mode: "edit", staff: s })}
         rowClassName={(s) => (s.active ? undefined : "text-ink-2")}
-        emptyState={<EmptyState variant="centred" title="Nobody here yet" hint="Tap Add staff member to invite the first person." />}
+        emptyState={<EmptyState variant="centred" title="Nobody here yet" hint="Select Add staff member to invite the first person." />}
       />
-      <StaffSheet state={sheet} outlets={outlets} brands={brands} onClose={() => setSheet(null)} />
+      <StaffSheet state={sheet} live={sheet?.mode === "edit" ? staff.data.find((s) => s.id === sheet.staff.id) : undefined} outlets={outlets} brands={brands} onClose={() => setSheet(null)} />
     </>
   );
 }
 
-function StaffSheet({ state, outlets, brands, onClose }: { state: SheetState; outlets: Outlet[]; brands: Brand[]; onClose: () => void }) {
+/** `live` is the person as the list now has them, so the header follows a revoke or an invite made in the sheet. */
+function StaffSheet({ state, live, outlets, brands, onClose }: { state: SheetState; live?: Staff; outlets: Outlet[]; brands: Brand[]; onClose: () => void }) {
   const qc = useQueryClient();
   const { me } = useSession();
   const staff = state?.mode === "edit" ? state.staff : null;
@@ -205,7 +206,7 @@ function StaffSheet({ state, outlets, brands, onClose }: { state: SheetState; ou
       onOpenChange={(open) => !open && onClose()}
       isDismissable={!save.isPending}
       title={staff ? staff.name : "New staff member"}
-      description={staff ? `${ROLE_LABEL[staff.role]}${staff.has_login ? " · has a back-office login" : ""}` : "Give them a role, the outlets they work at and, for the POS, a PIN."}
+      description={staff ? `${ROLE_LABEL[staff.role]}${(live ?? staff).has_login ? " · has a back-office login" : ""}` : "Give them a role, the outlets they work at and, for the POS, a PIN."}
       footer={
         <>
           <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={save.isPending}>

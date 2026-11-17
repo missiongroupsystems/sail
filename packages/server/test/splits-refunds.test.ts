@@ -343,9 +343,12 @@ describe("a re-split keeps numbered documents", () => {
     const reopened = await call<Body>("POST", `/v1/orders/${o.body.data.id}/reopen`, { token: managerPin, body: { reason: "Wrong items" } });
     expect(reopened.status, JSON.stringify(reopened.body)).toBe(200);
     const split = await call<Body>("POST", `/v1/orders/${o.body.data.id}/checks/split-even`, { token: managerPin, body: { n: 2 } });
+    // The reopen cancelled the invoice with a credit note (review 3, R2); the bill it records is kept as it was.
+    const [cancelled] = await db.sql<{ invoice_no: string; credit_note_no: string; check_id: string }[]>`select invoice_no, credit_note_no, check_id from invoice_cancellations where check_id = ${check.id}`;
+    expect(cancelled).toMatchObject({ invoice_no: inv.body.data.invoice_no, check_id: check.id });
     expect(split.status).toBe(409);
-    expect(split.body.message).toBe(`Bill 1 has tax invoice ${inv.body.data.invoice_no}`);
-    const [kept] = await db.sql<{ invoice_no: string }[]>`select invoice_no from checks where id = ${check.id}`;
-    expect(kept!.invoice_no).toBe(inv.body.data.invoice_no);
+    expect(split.body.message).toBe(`Bill 1 had tax invoice ${inv.body.data.invoice_no}, cancelled by ${cancelled!.credit_note_no}`);
+    const [kept] = await db.sql<{ id: string }[]>`select id from checks where id = ${check.id}`;
+    expect(kept!.id).toBe(check.id);
   });
 });

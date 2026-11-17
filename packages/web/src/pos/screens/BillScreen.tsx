@@ -97,6 +97,8 @@ export function BillScreen({ orderId }: { orderId: string }) {
   const lockReason = paidChecks.length ? `${paidChecks[0]!.label} is paid. Refund it to change the split.` : null;
   const lockedLineIds = useMemo(() => new Set(paidChecks.flatMap((c) => c.allocations.map((a) => a.line_id))), [paidChecks]);
   const canPay = roleAtLeast(staff.role, "cashier");
+  /** The bill whose Pay is the screen's one primary: the first one still owing. */
+  const nextToPay = snap?.checks.find((c) => c.status === "open" && c.balance > 0)?.id ?? null;
 
   if (!snap || mode === null) {
     return (
@@ -126,7 +128,8 @@ export function BillScreen({ orderId }: { orderId: string }) {
       setEvenN(n);
       ok = await actions.splitEven(n);
     } else if (next === "seat") ok = await actions.splitBySeat(shared);
-    else ok = snap.checks.length >= 2 ? snap : await actions.splitEven(2);
+    // By item from one bill: a second, empty bill beside it, every line still whole on Bill 1, not an even ½/½ (review 3, S8).
+    else ok = snap.checks.length >= 2 ? snap : await actions.allocate([], 1);
     if (!ok) setMode(prev);
   };
 
@@ -288,7 +291,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
                   rows={[{ key: "subtotal", label: "Subtotal", cents: check.totals.subtotal }, ...billRows(check, snap.totals.tax_mode)]}
                   tenders={check.payments
                     .filter((p) => p.status === "recorded")
-                    .flatMap((p) => [{ id: p.id, label: `${p.tender}${p.reference ? ` · ${p.reference}` : ""}`, cents: p.amount }, ...(p.tip_cents ? [{ id: `${p.id}:tip`, label: `Tip on ${p.tender}`, cents: p.tip_cents }] : [])])}
+                    .flatMap((p) => [{ id: p.id, label: p.tender, cents: p.amount }, ...(p.tip_cents ? [{ id: `${p.id}:tip`, label: `Tip on ${p.tender}`, cents: p.tip_cents }] : [])])}
                   isTarget={Boolean(selectedLine) && !check.locked}
                   onPress={selectedLine && !check.locked ? () => void moveTo(check) : undefined}
                   actions={
@@ -315,8 +318,10 @@ export function BillScreen({ orderId }: { orderId: string }) {
                         <Button size="lg" variant="quiet" isDisabled={offline} onPress={() => void actions.prebill(check.id)} className={GREY_PILL}>
                           Pre-bill
                         </Button>
-                        <Button size="lg" variant="primary" isDisabled={offline || check.balance <= 0 || live.length === 0} onPress={() => payFor(check)} className="flex-1">
-                          Pay {money(check.balance)}{!canPay ? <Badge tone="bill">Cashier approval</Badge> : null}
+                        {/* One primary on the screen: the next bill to pay; the other bills' Pay is secondary (review 3, S7). */}
+                        <Button size="lg" variant={check.id === nextToPay ? "primary" : "secondary"} isDisabled={offline || check.balance <= 0 || live.length === 0} onPress={() => payFor(check)} className="flex-1">
+                          Pay {money(check.balance)}
+                          {!canPay ? check.id === nextToPay ? <span className="ml-1 rounded-chip bg-on-primary/15 px-2 text-caption text-on-primary">Cashier approval</span> : <Badge tone="bill">Cashier approval</Badge> : null}
                         </Button>
                       </>
                     )

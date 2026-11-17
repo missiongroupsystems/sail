@@ -72,7 +72,7 @@ export function BulkPriceSheet({ isOpen, products, onClose, onSaved }: { isOpen:
       isDismissable={!save.isPending}
       width="lg"
       title={`Set prices for ${products.length} ${products.length === 1 ? "product" : "products"}`}
-      description="One change for every selected product. Nothing is saved until you tap the button below."
+      description="One change for every selected product. Nothing is saved until you select the button below."
       footer={
         <>
           <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={save.isPending}>
