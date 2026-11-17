@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
-import { allocateLine, currencyExponent, rebalanceBillTax, sumTaxes, type TaxRow, type BillDocument, type Share, type TaxAmount } from "@sail/shared";
+import { allocateLine, balanceBillTotals, currencyExponent, rebalanceBillTax, sumTaxes, type BaseRow, type TaxRow, type BillDocument, type Share, type TaxAmount } from "@sail/shared";
 import { assertNotSettled, db } from "../db/client.js";
 import { brands, checkAllocations, checks, invoiceCancellations, merchantSettings, orderAdjustmentLines, orderAdjustments, orderLines, orders, outlets, payments, refundLines, refunds, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -106,12 +106,37 @@ export async function syncAllocations(orderId: string, opts: { sharesByLine?: Ma
         .filter(({ s }) => s.num > 0)
         .map(({ c, p, s }) => ({ merchantId: order.merchantId, checkId: c.id, orderLineId: line.id, shareNum: s.num, shareDen: s.den, base: p.base, discount: p.discount, fee: p.fee, tax: p.tax, taxes: p.taxes, total: p.total, adjustments: p.adjustments }));
     });
-    // Under per-rate rounding each split bill's tax is made its own rate times its own subtotal, to within the cent the
-    // order's one rounding leaves (that cent is spread by largest remainder; the order's tax always wins).
-    if (order.taxRounding === "per_rate" && new Set(values.map((v) => v.checkId)).size > 1) {
-      const rows: TaxRow[] = values.map((v) => ({ check: chks.findIndex((c) => c.id === v.checkId), lineId: v.orderLineId, shareNum: v.shareNum, shareDen: v.shareDen, taxes: v.taxes, tax: v.tax, total: v.total }));
-      const moved = rebalanceBillTax(rows, Object.fromEntries(rebuilt.map((l) => [l.id, l.taxables])), { taxAddsToTotal: taxAdds, movable: new Set(rebuilt.filter((l) => l.fee === 0).map((l) => l.id)) });
-      rows.forEach((r, i) => Object.assign(values[i]!, { taxes: r.taxes, tax: r.tax, total: r.total }));
+    if (new Set(values.map((v) => v.checkId)).size > 1) {
+      const rows: (BaseRow & { discount: number })[] = values.map((v) => ({ check: chks.findIndex((c) => c.id === v.checkId), lineId: v.orderLineId, shareNum: v.shareNum, shareDen: v.shareDen, taxes: v.taxes, tax: v.tax, total: v.total, base: v.base, discount: v.discount }));
+      const byId = new Map(rebuilt.map((l) => [l.id, l]));
+      // A bill's own taxable amount for a rate: its share of the line's, plus the cents its base and discount are over
+      // that share (a split hands out odd cents, and the even-out below moves some), so "its own rate times its own
+      // subtotal" is what the bill prints. With tax in prices the cents are tax-inclusive: taken at the line's rate.
+      const weight = (r: TaxRow, k: string) => {
+        const l = byId.get(r.lineId)!;
+        const row = r as (typeof rows)[number];
+        const drift = row.base + row.discount - ((l.base + l.discount) * r.shareNum) / r.shareDen;
+        const combined = l.taxes.reduce((n, t) => n + t.bps, 0);
+        return ((l.taxables[k] ?? 0) * r.shareNum) / r.shareDen + (taxAdds ? drift : (drift * 10_000) / (10_000 + combined));
+      };
+      const moved = new Map<string, Map<string, number>>();
+      for (let pass = 0; pass < 6; pass++) {
+        const before = JSON.stringify(rows.map((r) => [r.base, r.taxes]));
+        // Under per-rate rounding each split bill's tax is made its own rate times its own subtotal, to within the cent the
+        // order's one rounding leaves (that cent is spread by largest remainder; the order's tax always wins).
+        if (order.taxRounding === "per_rate") {
+          const delta = rebalanceBillTax(rows, Object.fromEntries(rebuilt.map((l) => [l.id, l.taxables])), { taxAddsToTotal: taxAdds, movable: new Set(rebuilt.filter((l) => l.fee === 0).map((l) => l.id)), weight });
+          for (const [lineId, byKey] of delta) {
+            const m = moved.get(lineId) ?? new Map<string, number>();
+            for (const [k, d] of byKey) m.set(k, (m.get(k) ?? 0) + d);
+            moved.set(lineId, m);
+          }
+        }
+        // An even split is even: no two bills' totals more than a cent apart (review 4, T4).
+        balanceBillTotals(rows);
+        if (JSON.stringify(rows.map((r) => [r.base, r.taxes])) === before) break;
+      }
+      rows.forEach((r, i) => Object.assign(values[i]!, { base: r.base, taxes: r.taxes, tax: r.tax, total: r.total }));
       for (const [lineId, byKey] of moved) await moveLineTax(lineId, byKey, taxAdds);
     }
     if (values.length) await db().insert(checkAllocations).values(values);
@@ -228,7 +253,7 @@ export async function checkSnapshots(orderId: string): Promise<CheckSnapshot[]> 
   const recorded = (checkId: string) => pays.filter((p) => p.checkId === checkId && p.status === "recorded");
   // The same note the printed bill and the invoice carry, so the POS Bill screen says it too (review 2, N2).
   const [order] = chks.length > 1 ? await db().select({ taxRounding: orders.taxRounding, taxMode: orders.taxMode }).from(orders).where(eq(orders.id, orderId)).limit(1) : [];
-  const noteLines = order?.taxRounding === "per_rate" ? await db().select({ id: orderLines.id, taxes: orderLines.taxes, netAmount: orderLines.netAmount }).from(orderLines).where(eq(orderLines.orderId, orderId)) : [];
+  const noteLines = order?.taxRounding === "per_rate" ? await db().select({ id: orderLines.id, taxes: orderLines.taxes, netAmount: orderLines.netAmount, baseAmount: orderLines.baseAmount, discountAmount: orderLines.discountAmount }).from(orderLines).where(eq(orderLines.orderId, orderId)) : [];
   const taxNote = (c: (typeof chks)[number]) => (order?.taxRounding === "per_rate" ? (splitTaxNote(c.taxes, allocs.filter((a) => a.checkId === c.id), noteLines, order.taxMode) ?? null) : null);
   return chks.map((c) => ({
     id: c.id,
@@ -311,9 +336,11 @@ export async function billDocumentFor(checkId: string, kind: "prebill" | "receip
 
 /**
  * When a split bill's tax for a rate is not its own rate times its own taxable amount (the cent the order's single rounding
- * leaves goes to one bill, by largest remainder), the bill says so in one line; otherwise nothing is printed.
+ * leaves goes to one bill, by largest remainder), the bill says so in one line; otherwise nothing is printed. The bill's
+ * own taxable amount is its cents: its share of each line's, plus what its base and discount are over that share, as in
+ * `syncAllocations`, so the note is on a bill exactly when a rate differs from that bill's own rounding (review 4, T5).
  */
-function splitTaxNote(taxes: TaxAmount[], allocs: (typeof checkAllocations.$inferSelect)[], lines: Pick<typeof orderLines.$inferSelect, "id" | "taxes" | "netAmount">[], taxMode: string): string | undefined {
+function splitTaxNote(taxes: TaxAmount[], allocs: (typeof checkAllocations.$inferSelect)[], lines: Pick<typeof orderLines.$inferSelect, "id" | "taxes" | "netAmount" | "baseAmount" | "discountAmount">[], taxMode: string): string | undefined {
   for (const t of taxes) {
     // Exclusive: the rate on the bill's taxable amount. Inclusive: the component's part of the bill's tax-inclusive
     // amount at the line's combined rate, as the engine takes it.
@@ -324,7 +351,8 @@ function splitTaxNote(taxes: TaxAmount[], allocs: (typeof checkAllocations.$infe
       const b = l?.taxes.find((x) => x.name === t.name && x.bps === t.bps);
       if (!l || !b) continue;
       if (taxMode === "inclusive") combined = l.taxes.reduce((n, x) => n + x.bps, 0);
-      base += ((taxMode === "inclusive" ? l.netAmount : b.taxable) * a.shareNum) / a.shareDen;
+      const drift = a.base + a.discount - ((l.baseAmount + l.discountAmount) * a.shareNum) / a.shareDen;
+      base += ((taxMode === "inclusive" ? l.netAmount : b.taxable) * a.shareNum) / a.shareDen + drift;
     }
     const own = taxMode === "inclusive" ? Math.floor((Math.round(base) * t.bps) / (10_000 + combined) + 0.5) : Math.floor((Math.round(base) * t.bps) / 10_000 + 0.5);
     if (own !== t.amount) return "Tax includes rounding so the bills add up to the order's tax.";

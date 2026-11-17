@@ -72,6 +72,11 @@ beforeAll(async () => {
     { key: "fries", price: 449, taxClass: "prepared_food" },
     { key: "tea", price: 299, taxClass: "prepared_food" },
     { key: "coffee", price: 279, taxClass: "prepared_food" },
+    { key: "soda", price: 249, taxClass: "prepared_food" },
+    { key: "cheeseburger", price: 1749, taxClass: "prepared_food" },
+    { key: "largesoda", price: 399, taxClass: "prepared_food" },
+    { key: "veggie", price: 1249, taxClass: "prepared_food" },
+    { key: "rings", price: 549, taxClass: "prepared_food" },
   ]);
   EU = await world("Café", "eu-vat", [
     { key: "juice", price: 205, taxClass: "reduced" },
@@ -229,5 +234,74 @@ describe("T3: the Z-report and Sales give what the rows need to add up as writte
     expect(z.tenders.find((t) => t.tender === "Card")!.terminal).toBe(true);
     expect(z.tenders.find((t) => t.tender === "Cash")!.terminal).toBe(false);
     await db.sql`update tender_types set provider = null, terminal_id = null where id = ${US.card}`;
+  });
+});
+
+const splitEven = async (w: World, orderId: string, n: number) => {
+  const r = await call<Mut>("POST", `/v1/orders/${orderId}/checks/split-even`, { token: w.m.manager.token, body: { n } });
+  expect(r.status, JSON.stringify(r.body)).toBe(200);
+  return r.body.data;
+};
+async function openWith(w: World, keys: string[], i = 1) {
+  const o = await open(w, i);
+  const s = await add(w, o.body.data.id, keys, i);
+  expect(s.status, JSON.stringify(s.body)).toBe(200);
+  return s.body.data;
+}
+
+type Alloc = { check_id: string; order_line_id: string; base: number; discount: number; fee: number; tax: number; total: number; taxes: Tax[] };
+type LineRow = { id: string; base_amount: number; discount_amount: number; fee_amount: number; tax_amount: number; total: number; taxes: Tax[] };
+const key = (t: { name: string; bps: number }) => `${t.bps}|${t.name}`;
+const byRate = (lists: Tax[][]) => {
+  const m = new Map<string, number>();
+  for (const l of lists) for (const t of l) m.set(key(t), (m.get(key(t)) ?? 0) + t.amount);
+  for (const [k, v] of m) if (v === 0) m.delete(k);
+  return Object.fromEntries([...m].sort());
+};
+
+/** What an even split must hold: bills a cent apart at most, the order's tax per rate, and every line's shares adding up. */
+async function expectEven(orderId: string, n: number, label: string) {
+  const [o] = await db.sql<{ total: number; taxes: Tax[] }[]>`select total, taxes from orders where id = ${orderId}`;
+  const checks = await db.sql<{ id: string; total: number; taxes: Tax[] }[]>`select id, total, taxes from checks where order_id = ${orderId} order by index`;
+  expect(checks.length, label).toBe(n);
+  const totals = checks.map((c) => c.total);
+  expect(Math.max(...totals) - Math.min(...totals), `${label}: ${totals.join(" / ")}`).toBeLessThanOrEqual(1);
+  expect(totals.reduce((a, b) => a + b, 0), label).toBe(o!.total);
+  expect(byRate(checks.map((c) => c.taxes)), label).toEqual(byRate([o!.taxes]));
+  const allocs = await db.sql<Alloc[]>`select a.check_id, a.order_line_id, a.base, a.discount, a.fee, a.tax, a.total, a.taxes from check_allocations a join checks c on c.id = a.check_id where c.order_id = ${orderId}`;
+  const lines = await db.sql<LineRow[]>`select id, base_amount, discount_amount, fee_amount, tax_amount, total, taxes from order_lines where order_id = ${orderId} and status <> 'voided'`;
+  for (const l of lines) {
+    const mine = allocs.filter((a) => a.order_line_id === l.id);
+    const add = (f: (a: Alloc) => number) => mine.reduce((s, a) => s + f(a), 0);
+    expect([add((a) => a.base), add((a) => a.discount), add((a) => a.fee), add((a) => a.tax), add((a) => a.total)], `${label}: line ${l.id}`).toEqual([l.base_amount, l.discount_amount, l.fee_amount, l.tax_amount, l.total]);
+    expect(byRate(mine.map((a) => a.taxes)), label).toEqual(byRate([l.taxes]));
+  }
+  return checks;
+}
+
+describe("T4: an even split is even", () => {
+  it("B's baskets: $21.67 two ways is $10.84 / $10.83; $40.80 five ways is $8.16 each; the header has at most two figures", async () => {
+    for (const [keys, n] of [[["burger", "soda", "fries"], 2], [["cheeseburger", "burger", "largesoda", "largesoda", "veggie", "tea", "rings", "rings", "fries"], 5], [["burger", "soda"], 4], [["burger", "soda", "fries"], 4]] as const) {
+      const o = await openWith(US, [...keys]);
+      await splitEven(US, o.id, n);
+      const checks = await expectEven(o.id, n, `${keys.join("+")} / ${n}`);
+      expect(new Set(checks.map((c) => c.total)).size).toBeLessThanOrEqual(2);
+      if (n === 2 && keys.length === 3) expect(checks.map((c) => c.total)).toEqual([1084, 1083]);
+      expect((await call("POST", `/v1/orders/${o.id}/cancel`, { token: US.m.manager.token, body: { reason: "test" } })).status).toBeLessThan(300);
+    }
+  });
+
+  it("with 15% off the bill: $40.80 five ways is $8.16 each", async () => {
+    // Table 2 in B's report: $44.25 of items, 15% off ($6.64), tax $1.50 + $1.69 = $40.80.
+    const rule = await call("POST", "/v1/pricing-rules", { token: US.m.admin.token, body: { rule_key: "fifteen-off", body: { kind: "discount", name: "15% off", calc: "percent", level: "order", value: { type: "fixed", amount: 1500 }, scope: { type: "all" }, priority: 70, application: "manual", min_role: "manager", report_class: "promo" } } });
+    expect(rule.status, JSON.stringify(rule.body)).toBe(201);
+    const o = await openWith(US, ["cheeseburger", "burger", "largesoda", "veggie"]);
+    const applied = await call<Mut>("POST", `/v1/orders/${o.id}/adjustments`, { token: US.m.manager.token, body: { application_id: randomUUID(), rule_key: "fifteen-off", reason: "Regular" } });
+    expect(applied.status, JSON.stringify(applied.body)).toBeLessThan(300);
+    for (const n of [2, 3, 4, 5, 6]) {
+      await splitEven(US, o.id, n);
+      await expectEven(o.id, n, `15% off / ${n}`);
+    }
+    expect((await call("POST", `/v1/orders/${o.id}/cancel`, { token: US.m.manager.token, body: { reason: "test" } })).status).toBeLessThan(300);
   });
 });
