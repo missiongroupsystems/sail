@@ -305,3 +305,56 @@ describe("T4: an even split is even", () => {
     expect((await call("POST", `/v1/orders/${o.id}/cancel`, { token: US.m.manager.token, body: { reason: "test" } })).status).toBeLessThan(300);
   });
 });
+
+describe("T5: the rounding note is on a bill exactly when one of its rates differs from that bill's own rounding", () => {
+  type Bill = { label: string; tax_note: string | null; totals: { subtotal: number; discount_total: number; taxes: Tax[]; total: number } };
+  for (const [name, keys, n] of [
+    ["P-0004 five ways", ["cheeseburger", "burger", "largesoda", "largesoda", "veggie", "tea", "rings", "rings", "fries"], 5],
+    ["burger + soda four ways", ["burger", "soda"], 4],
+    ["burger + soda + fries four ways", ["burger", "soda", "fries"], 4],
+  ] as const) {
+    it(name, async () => {
+      const o = await openWith(US, [...keys]);
+      const split = await splitEven(US, o.id, n);
+      const bills = (split as unknown as { checks: Bill[] }).checks;
+      for (const b of bills) {
+        // US tax is added on top: each rate's own rounding is the rate times the bill's subtotal after discounts, half up.
+        const taxable = b.totals.subtotal + b.totals.discount_total;
+        const off = b.totals.taxes.filter((t) => t.amount !== Math.floor((taxable * t.bps + 5000) / 10000));
+        expect(b.tax_note !== null, `${name}, ${b.label}: ${taxable} → ${JSON.stringify(b.totals.taxes)}; note ${b.tax_note}`).toBe(off.length > 0);
+      }
+      expect((await call("POST", `/v1/orders/${o.id}/cancel`, { token: US.m.manager.token, body: { reason: "test" } })).status).toBeLessThan(300);
+    });
+  }
+});
+
+describe("T6: invoice and credit note figures", () => {
+  it("a bill paid partly in cash says what was paid in all; a credit note signs quantities with the same minus as amounts", async () => {
+    await openShift(US, 1, 10_000); // already open when the T1 tests ran first
+    const o = await openWith(US, ["burger", "fries"]);
+    expect((await call("POST", `/v1/orders/${o.id}/fire`, { token: pos(US, 1), body: {} })).status).toBe(200);
+    const check = o.checks[0]!;
+    expect((await pay(US, check.id, 1000, "cash", 1)).status).toBe(200);
+    const rest = await call<Mut>("POST", `/v1/checks/${check.id}/payments`, { token: pos(US, 1), body: { payment_id: randomUUID(), tender_type_id: US.card, amount: check.balance - 1000, tip_cents: 200 } });
+    expect(rest.status, JSON.stringify(rest.body)).toBe(200);
+    expect((await call("POST", `/v1/checks/${check.id}/invoice`, { token: US.m.manager.token, body: {} })).status).toBeLessThan(300);
+    const pdf = await app.request(`/v1/checks/${check.id}/invoice.pdf`, { headers: { authorization: `Bearer ${US.m.manager.token}` } });
+    expect(pdf.status).toBe(200);
+    const words = await pdfStrings(new Uint8Array(await pdf.arrayBuffer()));
+    const fmt = (c: number) => `$${(c / 100).toFixed(2)}`;
+    expect(words).toContain("Card charged");
+    expect(words).not.toContain("Charged");
+    const paidAt = words.indexOf("Paid");
+    expect(paidAt, words.join(" | ")).toBeGreaterThan(-1);
+    expect(words[paidAt + 1]).toBe(fmt(check.balance + 200));
+
+    const line = o.lines.find((l) => l.name === "fries")!;
+    const refund = await boRefund(US, check.id, { kind: "lines", lines: [{ line_id: line.id, quantity: 1 }] }, { avoid_cash: true });
+    expect(refund.status, JSON.stringify(refund.body)).toBe(201);
+    const cn = await app.request(`/v1/refunds/${refund.body.refund.id}/credit-note.pdf`, { headers: { authorization: `Bearer ${US.m.manager.token}` } });
+    expect(cn.status).toBe(200);
+    const cnWords = await pdfStrings(new Uint8Array(await cn.arrayBuffer()));
+    expect(cnWords).toContain("−1");
+    expect(cnWords).not.toContain("-1");
+  });
+});

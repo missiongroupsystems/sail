@@ -324,6 +324,7 @@ export async function billDocumentFor(checkId: string, kind: "prebill" | "receip
     adjustments: adjs.filter((a) => (adjustmentTotals.get(a.id) ?? 0) !== 0).map((a) => ({ name: a.name, amount: adjustmentTotals.get(a.id)!, kind: a.kind as "fee" | "discount" })),
     totals: { subtotal: c.subtotal, discount_total: c.discountTotal, fee_total: c.feeTotal, tax_total: c.taxTotal, taxes: c.taxes, total: c.total, tax_mode: o.taxMode as "inclusive" | "exclusive" },
     payments: kind === "receipt" ? pays.map((p) => ({ tender: p.tenderName, amount: p.amount, rounding_cents: p.roundingCents || undefined, reference: p.reference ?? undefined, tip: p.tipCents || undefined, change: p.changeCents || undefined, tendered: p.changeCents && p.tendered ? p.tendered : undefined, charged: p.tipCents || p.roundingCents ? p.amount + p.roundingCents + p.tipCents : undefined })) : undefined,
+    paid_total: kind === "receipt" && pays.length > 1 ? pays.reduce((n, p) => n + p.amount + p.roundingCents + p.tipCents, 0) : undefined,
     balance: c.total - c.paidTotal > 0 ? c.total - c.paidTotal : undefined,
     tax_note: o.taxRounding === "per_rate" && allChecks.length > 1 ? splitTaxNote(c.taxes, allocs, lines, o.taxMode) : undefined,
     invoice_no: c.invoiceNo ?? undefined,

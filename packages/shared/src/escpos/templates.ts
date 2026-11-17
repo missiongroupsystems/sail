@@ -196,10 +196,12 @@ export function buildBillDocument(data: BillDocument, cols: number): DocLine[] {
       if (p.rounding_cents !== undefined && p.rounding_cents !== 0) for (const t of moneyRow("Cash rounding", p.rounding_cents, cols, fmt)) doc.push(text(t));
       if (p.tip !== undefined && p.tip !== 0) for (const t of moneyRow("Tip", p.tip, cols, fmt)) doc.push(text(t));
       // What the guest paid with this tender, as the register recorded it (the phone receipt shows the same row).
-      if (p.charged !== undefined && p.charged !== 0) for (const t of moneyRow("Charged", p.charged, cols, fmt)) doc.push(text(t));
+      // With two payments it names the tender, so a part paid in cash does not read as the whole (review 4, T6).
+      if (p.charged !== undefined && p.charged !== 0) for (const t of moneyRow(data.payments.length > 1 ? `${p.tender} charged` : "Charged", p.charged, cols, fmt)) doc.push(text(t));
       if (p.change !== undefined && p.change !== 0 && p.tendered !== undefined) for (const t of moneyRow("Tendered", p.tendered, cols, fmt)) doc.push(text(t));
       if (p.change !== undefined && p.change !== 0) for (const t of moneyRow("Change", p.change, cols, fmt)) doc.push(text(t));
     }
+    if (data.paid_total !== undefined) for (const t of moneyRow("Paid", data.paid_total, cols, fmt)) doc.push(text(t));
   }
   if (data.balance !== undefined) {
     if (!data.payments || data.payments.length === 0) doc.push(text(rule(cols)));

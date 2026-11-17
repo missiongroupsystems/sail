@@ -183,7 +183,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
       description={
         o ? (
           <>
-            {[label(ORDER_TYPE_LABEL, o.order_type), `${o.order_type === "dine_in" ? "Table " : ""}${whoFor(o, tableName)}${o.pax ? ` · ${o.pax} ${o.pax === 1 ? "guest" : "guests"}` : ""}`, label(CHANNEL_LABEL, o.channel), `opened ${dayClock(o.opened_at)}`, o.opened_by.name].filter(Boolean).join(" · ")}
+            {[label(ORDER_TYPE_LABEL, o.order_type), whoFor(o, tableName) === "—" ? (o.pax ? `${o.pax} ${o.pax === 1 ? "guest" : "guests"}` : "") : `${o.order_type === "dine_in" ? "Table " : ""}${whoFor(o, tableName)}${o.pax ? ` · ${o.pax} ${o.pax === 1 ? "guest" : "guests"}` : ""}`, label(CHANNEL_LABEL, o.channel), `opened ${dayClock(o.opened_at)}`, o.opened_by.name].filter(Boolean).join(" · ")}
             <span className="block text-caption text-ink-3">
               Business day <BusinessDay value={o.business_date} /> · {o.pricing_status === "frozen" ? "prices frozen at first payment" : "live pricing"} · {kitchenSends(o.round_count)}
             </span>
@@ -318,7 +318,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                     className="px-4 py-3"
                     rows={[
                       { label: "Paid", value: <Money cents={c.paid_total} /> },
-                      ...(c.refunded_total ? [{ label: "Refunded", value: <Money cents={c.refunded_total} /> }] : []),
+                      ...(c.refunded_total ? [{ label: "Refunded", value: <Money cents={-c.refunded_total} /> }] : []),
                       ...(c.balance ? [{ label: "Balance", value: <Money cents={c.balance} /> }] : []),
                       { label: <span className="font-heading text-[15px] font-semibold">Total</span>, value: <Money cents={c.totals.total} size="heading" />, strong: true },
                     ]}
