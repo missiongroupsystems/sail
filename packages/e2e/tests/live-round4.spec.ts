@@ -64,7 +64,7 @@ test("L1: Manager and Server open a table's details on Floor & QR, read only, an
   // An Admin still gets the editing intro and live fields.
   await officeSignIn(page);
   await page.goto(`${WEB}/floor`);
-  await expect(page.getByText(/Drag a table to move it; tap it to edit/)).toBeVisible();
+  await expect(page.getByText(/Drag a table to move it; select it to edit/)).toBeVisible();
   await page.getByRole("application", { name: /Floor plan/ }).getByRole("button").first().click();
   await expect(page.getByRole("button", { name: "Save table" })).toBeVisible();
   await expect(page.locator("aside").getByRole("textbox", { name: "Name" })).toBeEnabled();

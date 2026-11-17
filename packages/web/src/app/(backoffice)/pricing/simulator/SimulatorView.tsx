@@ -196,7 +196,7 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
 
       <div className="flex min-w-0 flex-col gap-6">
         {!result ? (
-          <EmptyState title="No result yet" hint={lines.length ? "Select Price this basket for the register's figures for it as it is now." : "Build a basket and tap Price this basket."} />
+          <EmptyState title="No result yet" hint={lines.length ? "Select Price this basket for the register's figures for it as it is now." : "Build a basket and select Price this basket."} />
         ) : (
           <>
             <Panel title="Totals" aside={<Badge tone={result.pricing_status === "frozen" ? "sent" : "paid"}>{result.pricing_status}</Badge>}>

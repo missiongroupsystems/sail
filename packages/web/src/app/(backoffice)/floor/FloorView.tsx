@@ -38,7 +38,7 @@ function clampTable(t: { x: number; y: number; w: number; h: number }) {
 export function FloorIntro() {
   const canEdit = useCan("tables.update").ok;
   const description = canEdit
-    ? "Areas and tables per outlet. Drag a table to move it; tap it to edit. Download the QR sheet for the tables, or rotate one table's code."
+    ? "Areas and tables per outlet. Drag a table to move it; select it to edit. Download the QR sheet for the tables, or rotate one table's code."
     : "Areas and tables per outlet. Select a table to see its name, seats and shape. The QR codes and their sheet need an Admin.";
   return <PageHeader title="Floor & QR" description={description} />;
 }
