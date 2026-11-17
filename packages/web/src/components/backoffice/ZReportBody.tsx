@@ -141,7 +141,7 @@ export function ZReportBody({ report, stationName }: { report: ZReport; stationN
               ]}
             />
             {r.cash.open_shifts?.count ? (
-              <p className="mt-2 text-caption text-ink-2">
+              <p data-export="note" className="mt-2 text-caption text-ink-2">
                 These figures cover closed shifts only. {r.cash.open_shifts.count === 1 ? "1 shift is" : `${r.cash.open_shifts.count} shifts are`} still open: float <Money cents={r.cash.open_shifts.float} />, expected so far <Money cents={r.cash.open_shifts.expected} />.
               </p>
             ) : null}
