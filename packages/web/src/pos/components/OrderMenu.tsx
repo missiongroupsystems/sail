@@ -33,7 +33,8 @@ export function OrderMenu({ order, actions, onOpen, waitingRounds = 0 }: { order
   const onAction = (k: React.Key) => {
     if (k === "refund" || k === "reopen" || k === "reprint") return onOpen(k);
     if (k === "invoice") {
-      if (paidChecks.length === 1) return void actions.issueInvoice(paidChecks[0]!.id);
+      // The same path as every other invoice control: issue if needed, then open the PDF in the tap (review 3, S3).
+      if (paidChecks.length === 1) return void actions.getInvoice(paidChecks[0]!.id, paidChecks[0]!.invoice_no);
       return setOpen("invoice");
     }
     setOpen(k as Open);

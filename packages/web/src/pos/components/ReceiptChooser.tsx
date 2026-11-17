@@ -3,7 +3,7 @@
 import { Button, Icon, Money, TextField, useLocale } from "@sail/ui";
 import { Check, Mail, Printer, QrCode } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { CheckSnapshot, Invoice, OrderSnapshot, ReceiptSend } from "../api/types";
+import type { CheckSnapshot, OrderSnapshot, ReceiptSend } from "../api/types";
 import type { OrderActions } from "../hooks/useOrderActions";
 import { usePos } from "./PosContext";
 import { QrCodeImage } from "./QrCodeImage";
@@ -48,7 +48,7 @@ export function ReceiptChooser({ order, check, actions, caption, amount, extra, 
   const [choice, setChoice] = useState<Choice>(null);
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<ReceiptSend | null>(null);
-  const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [invoiceNo, setInvoiceNo] = useState<string | null>(null);
   const [channel, setChannel] = useState<"email" | "sms">("email");
   const [copied, setCopied] = useState(false);
   const [destination, setDestination] = useState("");
@@ -94,20 +94,15 @@ export function ReceiptChooser({ order, check, actions, caption, amount, extra, 
     setBusy(false);
     if (res) setSent(res);
   };
+  // One path with the Bill screen and closed orders: issue the invoice if the bill has none, then open its PDF in the
+  // same tap (review 3, S3).
+  const [opening, setOpening] = useState(false);
   const getInvoice = async () => {
     stop();
-    setBusy(true);
-    const inv = await actions.issueInvoice(check.id);
-    setBusy(false);
-    if (inv) setInvoice(inv);
-  };
-
-  const [opening, setOpening] = useState(false);
-  const openInvoice = async () => {
-    stop();
     setOpening(true);
-    await actions.openInvoicePdf(check.id, invoice?.invoice_no ?? check.invoice_no ?? "invoice");
+    const no = await actions.getInvoice(check.id, invoiceNo ?? check.invoice_no);
     setOpening(false);
+    if (no) setInvoiceNo(no);
   };
 
   // White receipt cards with an icon over the label, as on the paid screen's reference.
@@ -226,16 +221,12 @@ export function ReceiptChooser({ order, check, actions, caption, amount, extra, 
 
       <div className="flex flex-wrap items-center justify-center gap-3">
         {extra}
-        {(check.invoice_no || invoice) && actions.mayReadInvoice ? (
-          // The invoice just issued, or one issued before: its PDF opens here (M5).
-          <Button size="lg" variant="quiet" isDisabled={offline || busy} isPending={opening} onPress={openInvoice} className="tabular">
-            Invoice {invoice?.invoice_no ?? check.invoice_no} · PDF
-          </Button>
-        ) : check.invoice_no || invoice ? (
-          <span className="rounded-chip bg-surface-2 px-3 py-2 text-body text-ink tabular">Invoice {invoice?.invoice_no ?? check.invoice_no}</span>
+        {(check.invoice_no || invoiceNo) && !actions.mayReadInvoice ? (
+          <span className="rounded-chip bg-surface-2 px-3 py-2 text-body text-ink tabular">Invoice {invoiceNo ?? check.invoice_no}</span>
         ) : (
-          <Button size="lg" variant="quiet" isDisabled={offline || busy} onPress={getInvoice}>
-            Get invoice
+          // Issued before (here or on another screen): its PDF opens again from here.
+          <Button size="lg" variant="quiet" isDisabled={offline || busy} isPending={opening} onPress={getInvoice} className="tabular">
+            {check.invoice_no || invoiceNo ? `Invoice ${invoiceNo ?? check.invoice_no} · PDF` : "Get invoice"}
           </Button>
         )}
         <Button size="lg" variant="primary" onPress={onDone} className="relative min-w-[220px] overflow-hidden">

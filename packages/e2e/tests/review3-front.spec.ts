@@ -102,4 +102,22 @@ test.describe("POS paid screen", () => {
       await settle(orderId);
     }
   });
+
+  test("S3: Get invoice on the paid screen opens the PDF on the first tap", async ({ page }) => {
+    test.setTimeout(300_000);
+    await pairAndSignIn(page, MANAGER_PIN);
+    const orderId = await sentToPay(page);
+    try {
+      await payOnTerminal(page);
+      const download = page.waitForEvent("download", { timeout: 20_000 });
+      await page.getByRole("button", { name: "Get invoice", exact: true }).click();
+      const pdf = await download;
+      expect(pdf.suggestedFilename()).toMatch(/^INV-\d+\.pdf$/);
+      // Issued: the control now names the invoice and opens it again.
+      await expect(page.getByRole("button", { name: /^Invoice INV-\d+ · PDF$/ })).toBeVisible();
+      await bothThemes(page, "S3-paid-screen-invoice");
+    } finally {
+      await settle(orderId);
+    }
+  });
 });
