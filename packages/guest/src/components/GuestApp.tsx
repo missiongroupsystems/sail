@@ -13,7 +13,7 @@ import { offendingKey, type SendError } from "@/lib/send-errors";
 import { showsPayPrompt } from "@/lib/status";
 import { clearSession, deviceId, loadSession, saveSession } from "@/lib/storage";
 import { GuestStream, type GuestStreamStatus } from "@/lib/stream";
-import type { GuestSession, OrderView, RoundResult } from "@/lib/types";
+import type { CompiledMenu, GuestSession, OrderView, RoundResult } from "@/lib/types";
 import { CallStaffSheet } from "./CallStaffSheet";
 import { ItemSheet } from "./ItemSheet";
 import { MenuView } from "./MenuView";
@@ -98,7 +98,14 @@ function GuestAppInner({ token }: { token: string }) {
   const api = useMemo(() => createGuestApi({ getToken: () => sessionRef.current?.guest_token ?? null, onUnauthenticated: (e) => onUnauthenticatedRef.current(e.details) }), []);
 
   // The register's price for the basket, for the cart bar and the review (final review C-6).
-  const basketQuote = useQuote(api, session?.session_id ?? "", basketLines, Boolean(session));
+  // Not while the menu already says something in the basket is gone: the review flags it and Send waits, and the register
+  // would only refuse the quote.
+  const menuNow = queryClient.getQueryData<CompiledMenu>(keys.menu(session?.channel_link_id ?? ""));
+  const basketGone = basket.items.some((i) => {
+    const p = menuNow?.products[i.product_id];
+    return !p || p.sold_out || !p.available_now;
+  });
+  const basketQuote = useQuote(api, session?.session_id ?? "", basketLines, Boolean(session && menuNow) && !basketGone);
 
   const applySession = useCallback(
     (s: GuestSession) => {
