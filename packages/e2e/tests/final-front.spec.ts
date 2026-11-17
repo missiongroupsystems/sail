@@ -56,3 +56,48 @@ test("guest: the register's totals before sending, and the tax note from the fir
     await expect(round).toContainText("$1.80");
   });
 });
+
+test("guest: browser Back closes an open sheet and nothing else (C-10)", async ({ browser, watch }) => {
+  test.setTimeout(180_000);
+  const { token } = await seatedTableToken();
+  const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  watch.attach(phone);
+  await phone.goto(`${GUEST}/t/${token}`);
+  const menuUrl = phone.url();
+
+  await test.step("on the menu: the item sheet closes, the menu stays", async () => {
+    await phone.getByRole("button", { name: /^Kopi,/ }).click();
+    const sheet = phone.getByRole("dialog", { name: "Kopi" });
+    await expect(sheet).toBeVisible();
+    await phone.goBack();
+    await expect(sheet).toBeHidden();
+    await expect(phone.getByRole("button", { name: /^Kopi,/ })).toBeVisible();
+    expect(phone.url()).toBe(menuUrl);
+  });
+
+  await test.step("a sheet closed by its own button leaves Back where it was", async () => {
+    await phone.getByRole("button", { name: /^Kopi,/ }).click();
+    await phone.getByRole("dialog", { name: "Kopi" }).getByRole("button", { name: /^Add to order/ }).click();
+    await expect(phone.getByRole("dialog", { name: "Kopi" })).toBeHidden();
+    await phone.getByRole("button", { name: /^View your order/ }).click();
+    await expect(phone.getByRole("heading", { name: "Your order" })).toBeVisible();
+    // On the review, changing an item opens its sheet; Back closes it and stays on the review.
+    await phone.getByRole("button", { name: "Edit Kopi" }).click();
+    await expect(phone.getByRole("dialog", { name: "Kopi" })).toBeVisible();
+    await phone.goBack();
+    await expect(phone.getByRole("dialog", { name: "Kopi" })).toBeHidden();
+    await expect(phone.getByRole("heading", { name: "Your order" })).toBeVisible();
+    // Back again leaves the review for the menu, as before.
+    await phone.goBack();
+    await expect(phone.getByRole("button", { name: /^Kopi,/ })).toBeVisible();
+  });
+
+  await test.step("the Call staff sheet closes on Back too", async () => {
+    await phone.getByRole("button", { name: /^Call staff/ }).first().click();
+    const sheet = phone.getByRole("dialog", { name: "Call staff" });
+    await expect(sheet).toBeVisible();
+    await phone.goBack();
+    await expect(sheet).toBeHidden();
+    await expect(phone.getByRole("button", { name: /^Kopi,/ })).toBeVisible();
+  });
+});
