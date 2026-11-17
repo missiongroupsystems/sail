@@ -1,10 +1,10 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { and, asc, eq, ilike, inArray, isNull, or, type SQL } from "drizzle-orm";
-import { operation, PERMISSIONS, registerOperations, roleAtLeast } from "@sail/shared";
+import { and, asc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { operation, PERMISSIONS, phoneSearchDigits, registerOperations, roleAtLeast, toE164 } from "@sail/shared";
 import { aboveCeiling } from "../services/agents.js";
 import { principalRole } from "../auth/principal.js";
 import { db } from "../db/client.js";
-import { customerGroupMembers, customerGroups, customers } from "../db/schema/index.js";
+import { customerGroupMembers, customerGroups, customers, merchantSettings } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
@@ -13,7 +13,7 @@ import { recordAudit } from "../lib/audit.js";
 import { compact, defineCrud } from "../lib/crud.js";
 
 registerOperations({
-  "customers.find": { op: "customers.find", summary: "Find customers", description: "By mobile (exact or prefix) or name prefix. Not available to agents: they cannot read customer contact details.", tier: "T0", minRole: "server", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: [], mcp: { expose: false, toolsets: [] } },
+  "customers.find": { op: "customers.find", summary: "Find customers", description: "By any 3 or more digits of the mobile (with or without \"+\", spaces or the country code) or by name prefix. Not available to agents: they cannot read customer contact details.", tier: "T0", minRole: "server", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: [], mcp: { expose: false, toolsets: [] } },
   "customers.get": { op: "customers.get", summary: "Get a customer with their groups", description: "Not available to agents: they cannot read customer contact details.", tier: "T0", minRole: "server", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: [], mcp: { expose: false, toolsets: [] } },
   "customers.upsert": { op: "customers.upsert", summary: "Create or update a customer", description: "Mobile is unique per merchant. Consent changes are evented. Not available to agents.", tier: "T1", minRole: "cashier", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: ["customer.upserted"], mcp: { expose: false, toolsets: [] } },
   "customer_groups.set_members": { op: "customer_groups.set_members", summary: "Add or remove customers from a group", description: "Changes pricing eligibility, so it is a configuration change and is evented.", tier: "T3", minRole: "manager", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff", "agent"], emits: ["customer_group.members_changed"], mcp: { expose: false, toolsets: [] } },
@@ -28,13 +28,28 @@ async function toCustomer(rows: (typeof customers.$inferSelect)[]) {
   return rows.map((r) => ({ id: r.id, name: r.name, mobile: r.mobile, email: r.email, marketing_consent: r.marketingConsent, notes: r.notes, group_ids: members.filter((m) => m.customerId === r.id).map((m) => m.groupId), legacy_id: r.legacyId, archived: r.archivedAt != null }));
 }
 
+/** The merchant's locale, whose region is the default country of a mobile typed without one. */
+export async function merchantLocale(merchantId: string): Promise<string | null> {
+  const [m] = await db().select({ locale: merchantSettings.locale }).from(merchantSettings).where(eq(merchantSettings.merchantId, merchantId)).limit(1);
+  return m?.locale ?? null;
+}
+
 export function customerRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "customers.find", method: "get", path: "/v1/customers", tags: ["customers"], request: { query: z.object({ mobile: z.string().optional(), q: z.string().optional(), group_id: z.uuid().optional(), limit: z.coerce.number().int().min(1).max(200).default(50) }) }, responses: { 200: jsonResponse(listResponse(CustomerSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const q = c.req.valid("query");
     const conds: SQL[] = [eq(customers.merchantId, p.merchantId), isNull(customers.archivedAt)];
-    if (q.mobile) conds.push(ilike(customers.mobile, `${q.mobile.replace(/\s+/g, "")}%`));
-    if (q.q) conds.push(or(ilike(customers.name, `${q.q}%`), ilike(customers.mobile, `${q.q}%`))!);
+    // A mobile matches on any 3 or more of its digits, typed with or without "+", spaces or the country code.
+    const locale = q.mobile || q.q ? await merchantLocale(p.merchantId) : null;
+    const byDigits = (typed: string) => {
+      const variants = phoneSearchDigits(typed, locale);
+      return variants.length ? or(...variants.map((d) => sql`regexp_replace(coalesce(${customers.mobile}, ''), '[^0-9]', '', 'g') like ${`%${d}%`}`)) : undefined;
+    };
+    if (q.mobile) conds.push(byDigits(q.mobile) ?? sql`false`);
+    if (q.q) {
+      const digits = byDigits(q.q);
+      conds.push((digits ? or(ilike(customers.name, `${q.q}%`), digits) : ilike(customers.name, `${q.q}%`))!);
+    }
     if (q.group_id) {
       const ids = (await db().select({ id: customerGroupMembers.customerId }).from(customerGroupMembers).where(eq(customerGroupMembers.groupId, q.group_id))).map((x) => x.id);
       if (ids.length === 0) return c.json({ data: [], next_cursor: null }, 200);
@@ -65,7 +80,7 @@ export function customerRoutes(app: OpenAPIHono<AppEnv>) {
     if (b.group_ids && !(role && roleAtLeast(role, groupRole))) throw AppError.permission(groupRole, false, "customer_groups.set_members");
     // ... and the same risk tier: a person whose ceiling stops set_members cannot reach it through upsert.
     if (b.group_ids && aboveCeiling(p, operation("customer_groups.set_members"))) throw new AppError("permission_denied", "Changing a customer's groups is above your risk ceiling", { remedy: "Use customer_groups.set_members, which becomes a proposal for a Manager to approve." });
-    const mobile = b.mobile ? b.mobile.replace(/\s+/g, "") : (b.mobile ?? null);
+    const mobile = b.mobile ? toE164(b.mobile, await merchantLocale(p.merchantId)) : (b.mobile ?? null);
     let row: typeof customers.$inferSelect | undefined;
     if (b.id) {
       [row] = await db()

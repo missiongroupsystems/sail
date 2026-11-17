@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
-import { AmountSchema, ORDER_STATUSES, OrderTypeSchema, PERMISSIONS, PricingRuleSchema, isFreezable, localParts, operation, price, registerOperations, roleAtLeast, validateManualApplication, type OrderType, type OperationSpec, type Role } from "@sail/shared";
+import { AmountSchema, toE164, ORDER_STATUSES, OrderTypeSchema, PERMISSIONS, PricingRuleSchema, isFreezable, localParts, operation, price, registerOperations, roleAtLeast, validateManualApplication, type OrderType, type OperationSpec, type Role } from "@sail/shared";
 import { db, markDryRun, settleInvariants, tx } from "../db/client.js";
 import { areas, channelLinks, customerGroupMembers, customers, kitchenTickets, orderLines, orderManualApplications, orders, stations, tables, voidReasons } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -16,6 +16,7 @@ import { orderTaxRates, orderTaxSettings, usedTaxClasses } from "../services/tax
 import { assertAdjustmentUnlocked, assertLineUnlocked } from "../services/checks.js";
 import { requireRoleOrOverride } from "../services/overrides.js";
 import { maybeComplete } from "../services/payments.js";
+import { merchantLocale } from "./customers.js";
 import { createProposal, toProposal } from "../services/agents.js";
 import { activeRules, ruleOrLastVersion } from "../services/pricing-rules.js";
 import { releaseDailyCap } from "./catalogue.js";
@@ -180,7 +181,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     let customerId = b.customer_id ?? null;
     if (!customerId && customerRef?.mobile) {
       // Pickup and delivery orders create or match a customer from their reference.
-      const mobile = customerRef.mobile.replace(/\s+/g, "");
+      const mobile = toE164(customerRef.mobile, await merchantLocale(p.merchantId));
       const [cust] = await db()
         .insert(customers)
         .values({ merchantId: p.merchantId, name: customerRef.name ?? mobile, mobile })

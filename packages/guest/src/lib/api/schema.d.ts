@@ -1217,7 +1217,7 @@ export interface paths {
         };
         /**
          * Find customers
-         * @description By mobile (exact or prefix) or name prefix. Not available to agents: they cannot read customer contact details.
+         * @description By any 3 or more digits of the mobile (with or without "+", spaces or the country code) or by name prefix. Not available to agents: they cannot read customer contact details.
          */
         get: operations["customers.find"];
         /**

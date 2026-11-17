@@ -397,3 +397,21 @@ describe("M5: an issued invoice shows on the bill wherever the bill is read", ()
     expect(list.body.data.find((c) => c.id === checkId)!.invoice_no).toBe(inv.body.data.invoice_no);
   });
 });
+
+describe("M12: customer mobiles in E.164, found by any 3 or more digits", () => {
+  it("stores a US number typed without a country code as +1…, and finds it with or without '+', spaces or the code", async () => {
+    const put = await call<{ data: { id: string; mobile: string } }>("PUT", "/v1/customers", { token: US.admin.token, body: { name: "Pat Diner", mobile: "(555) 555-0123" } });
+    expect(put.status, JSON.stringify(put.body)).toBeLessThan(300);
+    expect(put.body.data.mobile).toBe("+15555550123");
+    for (const q of ["555", "+1 555 555", "15555550123", "555-0123", "Pat"]) {
+      const r = await call<{ data: { id: string }[] }>("GET", `/v1/customers?q=${encodeURIComponent(q)}`, { token: pin });
+      expect(r.body.data.map((x) => x.id), q).toContain(put.body.data.id);
+    }
+    const m = await call<{ data: { id: string }[] }>("GET", `/v1/customers?mobile=${encodeURIComponent("+15555550123")}`, { token: pin });
+    expect(m.body.data.map((x) => x.id)).toContain(put.body.data.id);
+    // A row saved before numbers were normalised is still found by its digits.
+    await db.sql`insert into customers (merchant_id, name, mobile) values (${US.merchantId}, 'Old Row', '5554440000')`;
+    const old = await call<{ data: { name: string }[] }>("GET", `/v1/customers?q=${encodeURIComponent("+1 555 444")}`, { token: pin });
+    expect(old.body.data.map((x) => x.name)).toContain("Old Row");
+  });
+});
