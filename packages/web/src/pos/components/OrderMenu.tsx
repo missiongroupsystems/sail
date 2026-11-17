@@ -92,7 +92,7 @@ export function OrderMenu({ order, actions, onOpen }: { order: OrderSnapshot; ac
               isDisabled={offline}
               onPress={() => {
                 setOpen(null);
-                void actions.issueInvoice(c.id);
+                void actions.getInvoice(c.id, c.invoice_no);
               }}
               className="justify-between"
             >

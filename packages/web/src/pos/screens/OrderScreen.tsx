@@ -133,8 +133,8 @@ export function OrderScreen({ orderId }: { orderId: string }) {
                     <Button size="md" variant="quiet" isDisabled={offline} onPress={() => setSheet({ kind: "receipt", checkId: c.id })}>
                       Receipt
                     </Button>
-                    <Button size="md" variant="quiet" isDisabled={offline} onPress={() => void actions.issueInvoice(c.id)}>
-                      {c.invoice_no ? "Invoice issued" : "Get invoice"}
+                    <Button size="md" variant="quiet" isDisabled={offline} onPress={() => void actions.getInvoice(c.id, c.invoice_no)}>
+                      {c.invoice_no && actions.mayReadInvoice ? `Invoice ${c.invoice_no} · PDF` : c.invoice_no ? `Invoice ${c.invoice_no}` : "Get invoice"}
                     </Button>
                     <Button size="md" variant="secondary" isDisabled={offline || c.status === "refunded" || c.paid_total === 0} onPress={() => setSheet({ kind: "refund", checkId: c.id })}>
                       Refund
