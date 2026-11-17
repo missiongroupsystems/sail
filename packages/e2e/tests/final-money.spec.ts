@@ -39,6 +39,26 @@ async function tableWithWaitingRound() {
   return { order: order.data, table, token, guest };
 }
 
+/**
+ * Leave nothing behind for the other specs: the order sent, paid and completed (its table free), and its kitchen
+ * tickets bumped off the display.
+ */
+async function settle(orderId: string) {
+  const rounds = await register<{ data: { id: string; order_id: string }[] }>("GET", `/v1/outlets/${devLocal().outletId}/rounds?status=pending`);
+  for (const r of rounds.data.filter((x) => x.order_id === orderId)) await register("POST", `/v1/rounds/${r.id}/reject`, { reason: "Test over" }).catch(() => undefined);
+  const o = await register<{ data: { status: string; checks: { id: string; balance: number }[] } }>("GET", `/v1/orders/${orderId}`);
+  if (o.data.status !== "completed" && o.data.status !== "cancelled") {
+    await register("POST", `/v1/orders/${orderId}/fire`, {}).catch(() => undefined);
+    const tenders = await register<{ data: { id: string; is_cash: boolean; provider?: string | null }[] }>("GET", "/v1/tender-types");
+    const byHand = tenders.data.find((t) => !t.is_cash && !t.provider)!;
+    const now = await register<{ data: { checks: { id: string; balance: number }[] } }>("GET", `/v1/orders/${orderId}`);
+    for (const c of now.data.checks.filter((x) => x.balance > 0)) await register("POST", `/v1/checks/${c.id}/payments`, { payment_id: crypto.randomUUID(), tender_type_id: byHand.id, amount: c.balance });
+    await register("POST", `/v1/orders/${orderId}/complete`, {}).catch(() => undefined);
+  }
+  const tickets = await register<{ data: { id: string; order_id: string }[] }>("GET", `/v1/outlets/${devLocal().outletId}/kitchen-tickets`);
+  for (const t of tickets.data.filter((x) => x.order_id === orderId)) await register("POST", `/v1/kitchen-tickets/${t.id}/bump`, {}).catch(() => undefined);
+}
+
 async function openTable(page: Page, tableName: string) {
   await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Floor", exact: true }).click();
   await page.getByRole("button", { name: new RegExp(`^Table ${tableName},`) }).first().click();
@@ -62,12 +82,13 @@ test("M1: a waiting QR order is on no bill; Pay asks about it first, and Accept 
   await expect(sheet).toHaveCount(0);
   await expect(panel.getByText("QR order · waiting for acceptance")).toHaveCount(0);
   await expect.poll(async () => (await register<{ data: { balance: number } }>("GET", `/v1/orders/${order.id}`)).data.balance).toBeGreaterThan(before.data.balance);
-  await register("POST", `/v1/orders/${order.id}/fire`, {}).catch(() => undefined);
+  await settle(order.id);
 });
 
 test("M8: rejecting a QR order as Sold out offers to mark its items sold out", async ({ page }) => {
   test.setTimeout(300_000);
-  const { table } = await tableWithWaitingRound();
+  const { table, order } = await tableWithWaitingRound();
+  test.info().annotations.push({ type: "order", description: order.id });
   await pairAndSignIn(page, MANAGER_PIN);
   await openTable(page, table.name);
   await page.getByRole("region", { name: "Order" }).getByRole("button", { name: "Reject", exact: true }).click();
@@ -78,6 +99,7 @@ test("M8: rejecting a QR order as Sold out offers to mark its items sold out", a
   await sheet.getByText(/mark these items sold out/).click();
   await sheet.getByRole("button", { name: "Kitchen is closing" }).click();
   await expect(sheet).toHaveCount(0);
+  await settle(order.id);
 });
 
 test("M2, M16, M20: the POS Z-report gives each tender's net and how the payments come to the sales", async ({ page }) => {
@@ -114,6 +136,7 @@ test("M2, M3, M11: the back office Z-report, Today and the order drawer", async 
   const tenders = await register<{ data: { id: string; is_cash: boolean; provider?: string | null }[] }>("GET", "/v1/tender-types");
   await register("POST", `/v1/checks/${withLine.data.checks[0]!.id}/payments`, { payment_id: crypto.randomUUID(), tender_type_id: tenders.data.find((t) => !t.is_cash && !t.provider)!.id, amount: withLine.data.balance });
   await register("POST", `/v1/orders/${o.data.id}/fire`, {});
+  await settle(o.data.id);
   await page.goto(`${WEB}/orders`);
   await page.getByRole("grid").getByRole("row").filter({ hasText: o.data.order_no }).first().click();
   const drawer = page.getByRole("dialog");
@@ -148,4 +171,5 @@ test("M10: a paid table thanks the guest; the menu banner follows the round's re
   await expect(phone.getByText("Your bill is paid.")).toBeVisible({ timeout: 30_000 });
   await shot(phone, out("M10-guest-paid.png"));
   await phone.close();
+  await settle(order.id);
 });
