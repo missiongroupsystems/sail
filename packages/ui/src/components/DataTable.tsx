@@ -73,6 +73,11 @@ export type DataTableProps<RowT> = {
    * bordered panel edge to edge (outer cells inset 20px, no bleed).
    */
   flush?: boolean | "inset";
+  /**
+   * Columns keep their widths whatever the rows hold (a fixed table layout): pixel and percentage widths are kept, and
+   * the columns without one share the rest. For a list whose rows change under filters (Products, A P20).
+   */
+  steadyColumns?: boolean;
 };
 
 /** Text sorts in the merchant's locale, not the runtime's default, so the server render and the browser agree. */
@@ -106,6 +111,7 @@ export function DataTable<RowT>({
   className,
   stickyHeader,
   flush = true,
+  steadyColumns,
   ...rest
 }: DataTableProps<RowT>) {
   const [internalSort, setInternalSort] = useState<DataTableSort | undefined>(defaultSort);
@@ -156,6 +162,7 @@ export function DataTable<RowT>({
         className={cx(
           // On a phone only: each column keeps 8rem and the table scrolls; wider screens lay out as before.
           "w-full border-collapse text-[14px] leading-5 max-sm:min-w-(--table-min)",
+          steadyColumns && "table-fixed",
           flush === true && "[&_tr>*:first-child]:pl-4 [&_tr>*:last-child]:pr-4 sm:[&_tr>*:first-child]:pl-5 sm:[&_tr>*:last-child]:pr-5",
           flush === "inset" && "[&_tr>*:first-child]:pl-5 [&_tr>*:last-child]:pr-5",
         )}
@@ -168,6 +175,7 @@ export function DataTable<RowT>({
               isRowHeader={col.isRowHeader ?? (!hasRowHeader && i === 0)}
               allowsSorting={col.sortable}
               width={col.width}
+              style={steadyColumns && (typeof col.width === "number" || (typeof col.width === "string" && col.width.endsWith("%"))) ? { width: col.width } : undefined}
               className={cx(
                 "h-10 max-sm:h-11 border-b border-rule px-3 py-2 text-[14px] leading-5 font-bold text-ink-2 whitespace-nowrap outline-none select-none",
                 col.align === "end" || col.numeric ? "text-right" : "text-left",

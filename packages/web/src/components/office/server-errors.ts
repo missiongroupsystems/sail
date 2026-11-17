@@ -41,8 +41,16 @@ export function applyServerErrors<T extends FieldValues>(
   for (const e of serverFieldErrors(error)) {
     const name = rename[e.field] ?? e.field;
     if (!fields.includes(name)) continue;
-    setError(name as Path<T>, { type: "server", message: e.message });
+    // The first marked field takes the focus, which scrolls it into view: a refusal is never only below the fold (A P17).
+    setError(name as Path<T>, { type: "server", message: e.message }, { shouldFocus: marked === 0 });
     marked++;
   }
+  // The refusal is shown where it was marked, which can be below the fold of a long sheet: bring the first into view.
+  if (marked && typeof window !== "undefined") requestAnimationFrame(() => document.querySelector('[slot="errorMessage"]')?.scrollIntoView({ block: "center", behavior: "smooth" }));
   return marked;
+}
+
+/** Whether a refusal is already shown under one of `fields`, so the form's foot need not say it a second time. */
+export function onAField(error: { message: string; details?: Record<string, unknown> } | null | undefined, fields: readonly string[], rename: Record<string, string> = {}): boolean {
+  return serverFieldErrors(error).some((e) => fields.includes(rename[e.field] ?? e.field));
 }

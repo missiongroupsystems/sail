@@ -44,9 +44,17 @@ export function TendersView({ initialTenders }: { initialTenders: TenderType[] }
   });
   const rows = tenders.data.filter((t) => showArchived || !t.archived);
 
+  // The order is shown as the POS lists the methods, 1, 2, 3, not the stored sort keys with their gaps (0, 1, 5) (A P19).
+  const position = new Map(
+    [...rows]
+      .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name))
+      .map((t, i) => [t.id, i + 1] as const),
+  );
+  const how = (t: TenderType) => ((t as { provider?: string | null }).provider ? "Sent to the card terminal" : t.is_terminal ? "Card terminal, keyed in" : t.is_cash ? "Cash" : "Recorded by hand");
   const columns: DataTableColumn<TenderType>[] = [
-    { key: "sort", header: "Order", numeric: true, sortable: true, width: 80, render: (t) => t.sort },
-    { key: "name", header: "Payment method", isRowHeader: true, sortable: true, width: "2fr", render: (t) => <TwoLine primary={t.name} meta={[t.is_cash ? "Cash" : null, t.is_terminal ? "Card terminal" : null].filter(Boolean).join(" · ") || undefined} /> },
+    { key: "sort", header: "Order", numeric: true, sortable: true, width: 80, render: (t) => position.get(t.id) ?? "—" },
+    // Each method says how it is taken, so "Card" and "Card (terminal)" read as two different things (A P19).
+    { key: "name", header: "Payment method", isRowHeader: true, sortable: true, width: "2fr", render: (t) => <TwoLine primary={t.name} meta={how(t)} /> },
     { key: "is_cash", header: "Cash", render: (t) => (t.is_cash ? "Yes · rounding applies" : "—") },
     { key: "opens_drawer", header: "Opens drawer", render: (t) => (t.opens_drawer ? "Yes" : "—") },
     // A provider-linked method names its provider and terminal (live-test E-L10); a by-hand terminal is keyed in.

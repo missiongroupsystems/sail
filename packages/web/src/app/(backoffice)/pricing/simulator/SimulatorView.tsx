@@ -204,7 +204,8 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
                 rows={[
                   { label: "Subtotal", value: <Money cents={result.totals.subtotal} /> },
                   { label: "Discounts", value: <Money cents={result.totals.discount_total} /> },
-                  { label: "Net subtotal", value: <Money cents={result.totals.net_subtotal} /> },
+                  // With tax-inclusive prices this figure still holds the tax, so it is not called net (A P19).
+                  { label: result.totals.tax_mode === "inclusive" ? "After discounts, tax included" : "Net subtotal", value: <Money cents={result.totals.net_subtotal} /> },
                   { label: "Fees", value: <Money cents={result.totals.fee_total} /> },
                   ...taxRows(result.totals.taxes, result.totals.tax_mode).before.map((t) => ({ key: t.key, label: t.label, value: <Money cents={t.amount} /> })),
                   { label: <span className="font-heading text-[15px] font-semibold">Total</span>, value: <Money cents={result.totals.total} size="heading" />, strong: true },

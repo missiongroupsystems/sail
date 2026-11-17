@@ -160,7 +160,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                             {t.requests_waiting ? <Badge tone="alert">{plural(t.requests_waiting, "request")}</Badge> : null}
                           </span>
                           <span className="tabular text-ink-2">
-                            {t.order ? <><span className="text-caption tabular">{t.order.order_no}</span> · {formatElapsed(t.order.elapsed_seconds)} · </> : null}
+                            {t.order ? <><span className="text-caption tabular">{t.order.order_no}</span> · open {formatElapsed(t.order.elapsed_seconds)} · </> : null}
                             {t.order ? <Money cents={t.order.total} /> : null}
                           </span>
                         </li>

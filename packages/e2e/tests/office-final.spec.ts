@@ -304,3 +304,83 @@ test("O10 (round 8 check 8): Sign out pressed before the page has hydrated still
   await page.goto(`${WEB}/today`);
   await expect(page).toHaveURL(/\/login/);
 });
+
+test.describe("O9 (A P17–P20): small back-office fixes", () => {
+  test("Team: a Manager is told who adds staff; a PIN someone else uses is said once, at the PIN field", async ({ page, watch }) => {
+    test.setTimeout(300_000);
+    watch.allow({ status: 409, url: /\/v1\/staff$/, why: "the PIN is taken on purpose" });
+    await signIn(page);
+    await page.goto(`${WEB}/team`);
+    await page.getByRole("button", { name: "Add staff member" }).click();
+    const sheet = page.getByRole("dialog");
+    await sheet.getByLabel("Name").fill(`Pin Clash ${Date.now()}`);
+    // The seeded Admin's PIN.
+    await sheet.getByLabel("PIN (optional)").fill("123456");
+    await sheet.getByRole("button", { name: "Add staff member" }).click();
+    const said = sheet.getByText("Someone at this business already uses that PIN");
+    await expect(said).toHaveCount(1);
+    await expect(said).toBeInViewport();
+    await page.keyboard.press("Escape");
+
+    await page.context().clearCookies();
+    const { email, password } = await loginFor("manager");
+    await signIn(page, email, password);
+    await page.goto(`${WEB}/team`);
+    await expect(page.getByText("Adding staff needs an Admin.")).toBeVisible();
+  });
+
+  test("Tenders show their order as 1, 2, 3 and how each is taken; Products sort by column with steady widths; the cutoff help reads the right way", async ({ page }) => {
+    test.setTimeout(300_000);
+    await signIn(page);
+    await page.goto(`${WEB}/settings/tenders`);
+    const orders = await page.getByRole("grid").getByRole("row").locator("td, th").first().allInnerTexts();
+    expect(orders).toBeTruthy();
+    const firstCells = await page.getByRole("grid").getByRole("row").evaluateAll((rows) => rows.slice(1).map((r) => r.querySelector("td,th")?.textContent?.trim()));
+    expect(firstCells.slice(0, 3)).toEqual(["1", "2", "3"]);
+    await expect(page.getByRole("grid")).toContainText("Recorded by hand");
+
+    await page.goto(`${WEB}/menu/products`);
+    const grid = page.getByRole("grid", { name: "Products" });
+    await expect(grid.getByRole("row").nth(1)).toBeVisible();
+    const priceHeader = grid.getByRole("columnheader", { name: /Price/ });
+    await priceHeader.click();
+    await expect(priceHeader).toHaveAttribute("aria-sort", "ascending");
+    const before = (await priceHeader.boundingBox())!.width;
+    // Fewer rows under a filter keep the same column widths.
+    await page.getByRole("searchbox", { name: "Search products" }).fill("Kopi");
+    await expect(grid.getByRole("row")).not.toHaveCount(1);
+    expect(Math.abs((await priceHeader.boundingBox())!.width - before)).toBeLessThan(2);
+    await page.getByRole("searchbox", { name: "Search products" }).fill("zzzz-nothing");
+    await expect(page.getByText("No products match")).toBeVisible();
+    await expect(page.getByText(/0 of 0/)).toHaveCount(0);
+    await page.getByRole("searchbox", { name: "Search products" }).fill("");
+    await expect(grid.getByRole("row").nth(1)).toBeVisible();
+    expect(Math.abs((await priceHeader.boundingBox())!.width - before)).toBeLessThan(2);
+
+    await page.goto(`${WEB}/settings/merchant`);
+    await expect(page.getByText(/Sales before this time count towards the day before/)).toBeVisible();
+  });
+});
+
+test("O9 (A P19): an amount typed with the other decimal mark is read (3,40 is 3.40 in en-SG); the simulator does not call tax-inclusive amounts net", async ({ page }) => {
+  test.setTimeout(300_000);
+  await signIn(page);
+  await page.goto(`${WEB}/menu/products`);
+  await page.getByRole("grid", { name: "Products" }).getByRole("row").nth(1).click();
+  const sheet = page.getByRole("dialog");
+  const price = sheet.getByRole("textbox", { name: "Base price" });
+  await price.fill("3,40");
+  await price.press("Tab");
+  await expect(price).toHaveValue("3.40");
+  await expect(sheet.getByRole("button", { name: "Save changes" })).toBeEnabled();
+  await page.keyboard.press("Escape");
+
+  await page.context().clearCookies();
+  await signIn(page, "admin.eu@sail.local");
+  await page.goto(`${WEB}/pricing/simulator`);
+  await page.getByRole("searchbox", { name: "Add to basket" }).fill("Kaffee");
+  await page.getByRole("list", { name: "Results" }).getByRole("button", { name: /^Kaffee/ }).first().click();
+  await page.getByRole("button", { name: "Price this basket" }).click();
+  await expect(page.getByText("After discounts, tax included")).toBeVisible();
+  await expect(page.getByText("Net subtotal")).toHaveCount(0);
+});

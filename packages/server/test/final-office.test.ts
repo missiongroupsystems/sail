@@ -122,3 +122,11 @@ describe("forgotten password, without email (A P11)", () => {
     s.adminPassword = password;
   });
 });
+
+describe("QR sheet order (A P18)", () => {
+  it("compares tables 1, 2, 10, as people count them", async () => {
+    const { TABLE_ORDER } = await import("../src/services/guest.js");
+    expect(["Table 10", "Table 2", "Table 1", "Bar 3", "table 11"].sort((a, b) => TABLE_ORDER.compare(a, b))).toEqual(["Bar 3", "Table 1", "Table 2", "Table 10", "table 11"]);
+    expect(["10", "2", "1"].sort((a, b) => TABLE_ORDER.compare(a, b))).toEqual(["1", "2", "10"]);
+  });
+});

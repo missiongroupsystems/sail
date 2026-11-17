@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { greyPill, greyPillAlert, SheetSection, TwoLine } from "@/components/office/parts";
-import { applyServerErrors } from "@/components/office/server-errors";
+import { applyServerErrors, onAField } from "@/components/office/server-errors";
 import { RhfCheckboxGroup, RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
@@ -133,7 +133,10 @@ export function TeamView({ initialStaff, outlets, brands, scope }: { initialStaf
             <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
             Add staff member
           </Button>
-          ) : null}
+          ) : (
+            // A role that cannot add people is told who can, where the button would be (A P17).
+            <p className="text-[13px] text-ink-2">Adding staff needs {canCreate.who}.</p>
+          )}
         </div>
       </div>
       <DataTable
@@ -260,7 +263,8 @@ function StaffSheet({ state, outlets, brands, onClose }: { state: SheetState; ou
 
         {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
 
-        <InlineError error={save.error} />
+        {/* A refusal shown under its field (a PIN someone else uses) is not repeated here (A P17). */}
+        <InlineError error={onAField(save.error, Object.keys(form.getValues())) ? null : save.error} />
       </form>
     </Sheet>
     </FieldsLocked>

@@ -158,7 +158,7 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
             label="Business day ends at"
             type="time"
             numeric
-            description="Leave empty to use the merchant's cutoff. Sales after this time count towards the same day."
+            description="Sales before this time count towards the day before. Leave empty to use the merchant's."
             className="sm:max-w-[240px]"
           />
         </SheetSection>
