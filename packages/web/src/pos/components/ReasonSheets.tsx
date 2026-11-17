@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Checkbox, CheckboxGroup, ReasonPicker, Sheet, Skeleton } from "@sail/ui";
+import { ALLERGY_NOTE_CLASS, Button, Checkbox, CheckboxGroup, cx, mentionsAllergy, ReasonPicker, Sheet, Skeleton } from "@sail/ui";
 import { useEffect, useState } from "react";
 
 export const REOPEN_REASONS = ["Guest came back", "Closed by mistake", "More items to add", "Payment recorded wrongly"];
@@ -56,7 +56,22 @@ export function ReopenSheet({ isOpen, onClose, onReopen, payments = [], checkRef
   );
 }
 
-type RejectLine = { id: string; product_id?: string; name: string; quantity: number; modifiers: string[] };
+type RejectLine = { id: string; product_id?: string; name: string; quantity: number; modifiers: string[]; notes?: string | null };
+
+/** A QR order's lines as staff decide on them: quantity, name, choices and the guest's note (final review C Low, review 4 U5). */
+function RoundLines({ lines }: { lines: RejectLine[] }) {
+  return (
+    <ul aria-label="Items in this order" className="mb-4 flex flex-col gap-1 rounded-tile bg-surface-2 px-4 py-3 text-body text-ink">
+      {lines.map((l) => (
+        <li key={l.id} className="break-words">
+          <span className="tabular font-medium">{l.quantity}</span> {l.name}
+          {l.modifiers.length ? <span className="text-ink-2"> · {l.modifiers.join(", ")}</span> : null}
+          {l.notes ? <span className={cx("block", mentionsAllergy(l.notes) ? ALLERGY_NOTE_CLASS : "text-ink-2 italic")}>{l.notes}</span> : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 /**
  * Reject a QR order with one tap on a reason. The guest sees the reason. "Sold out" asks which items are sold out (the
@@ -102,16 +117,7 @@ export function RejectRoundSheet({ roundLabel, lines, isOpen, onClose, onReject,
       ) : (
         <>
           {/* What is being turned down, so nobody rejects the wrong round (final review C Low). */}
-          {lines?.length ? (
-            <ul aria-label="Items in this order" className="mb-4 flex flex-col gap-1 rounded-tile bg-surface-2 px-4 py-3 text-body text-ink">
-              {lines.map((l) => (
-                <li key={l.id} className="break-words">
-                  <span className="tabular font-medium">{l.quantity}</span> {l.name}
-                  {l.modifiers.length ? <span className="text-ink-2"> · {l.modifiers.join(", ")}</span> : null}
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          {lines?.length ? <RoundLines lines={lines} /> : null}
           <ReasonPicker
             reasons={REJECT_ROUND_REASONS.map((r) => ({ id: r, name: r }))}
             isDisabled={busy}
@@ -154,7 +160,7 @@ export function VoidPaymentSheet({ label, onTerminal = false, isOpen, onClose, o
  * Pay was pressed while a guest's QR order waits: its items are on no bill until accepted, so the choice comes first.
  * Accept puts them on the bill; Reject opens the reasons; paying the rest leaves the round waiting.
  */
-export function WaitingRoundSheet({ isOpen, roundLabel, canPayRest, onClose, onAccept, onReject, onPayRest }: { isOpen: boolean; roundLabel: string | null; canPayRest: boolean; onClose: () => void; onAccept: () => Promise<unknown>; onReject: () => void; onPayRest: () => void }) {
+export function WaitingRoundSheet({ isOpen, roundLabel, lines, canPayRest, onClose, onAccept, onReject, onPayRest }: { isOpen: boolean; roundLabel: string | null; lines?: RejectLine[]; canPayRest: boolean; onClose: () => void; onAccept: () => Promise<unknown>; onReject: () => void; onPayRest: () => void }) {
   const [busy, setBusy] = useState(false);
   return (
     <Sheet
@@ -190,6 +196,7 @@ export function WaitingRoundSheet({ isOpen, roundLabel, canPayRest, onClose, onA
         </>
       }
     >
+      {lines?.length ? <RoundLines lines={lines} /> : null}
       {canPayRest ? <p className="text-body text-ink-2">Paying without it takes only what is on the bill now; the QR order keeps waiting.</p> : null}
     </Sheet>
   );

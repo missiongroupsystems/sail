@@ -96,6 +96,8 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
   // Lines tapped in that the register has not answered for yet: the total and the Send count would be behind, so both
   // show as updating until they land (round 8, 4).
   const unpriced = live.some((l) => l.optimistic);
+  // Nothing to send or pay and a QR order waits: the dock's primary accepts it (review 4 U5).
+  const acceptIsPrimary = order.balance === 0 && !unpriced && sendable === 0 && live.length > 0 && pendingRounds.length > 0;
   const seats = Math.max(order.pax ?? 0, ...live.map((l) => l.seat_no ?? 0), 1);
 
   const tax = taxRows(order.totals.taxes, order.totals.tax_mode);
@@ -168,23 +170,28 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
             <p className="max-w-[30ch] text-body text-ink-2">No items yet. Tap an item on the left to start this order.</p>
           </div>
         ) : null}
-        {pendingRounds.map((r) => {
+        {pendingRounds.map((r, i) => {
           const lines = live.filter((l) => r.line_ids.includes(l.id));
+          // The dock's primary is this round's Accept when nothing is to pay: one Accept for it, not two.
+          const dockAccepts = i === 0 && acceptIsPrimary;
           return (
             <div key={r.id} className="mx-2 mt-2 rounded-tile bg-[color-mix(in_srgb,var(--status-seated)_8%,transparent)] pb-2">
               <div className="flex min-h-9 items-center justify-between gap-2 px-3 pt-2 pb-1">
-                <span className="text-caption text-status-seated uppercase tracking-[0.04em]">
-                  QR order · waiting for acceptance
+                {/* One line next to the buttons (review 4 U7): what it is and when; the full name is in its title. */}
+                <span className="min-w-0 truncate text-caption text-status-seated uppercase tracking-[0.04em]" title={`QR order waiting · ${clock(r.submitted_at)}${r.guest_name ? ` · ${r.guest_name}` : ""}`}>
+                  QR order waiting
                   <span className="normal-case tracking-normal text-ink-2"> · {clock(r.submitted_at)}{r.guest_name ? ` · ${r.guest_name}` : ""}</span>
                 </span>
-                <span className="flex gap-1">
+                <span className="flex shrink-0 gap-1">
                   <Button size="md" variant="quiet" isDisabled={offline} onPress={() => onRejectRound(r)} className="text-ink-2">
                     Reject
                   </Button>
-                  {/* The order's one primary is the dock's (Pay, or Review QR order, which opens Accept first): Accept here is secondary (review 3, S7). */}
-                  <Button size="md" variant="secondary" isDisabled={offline} onPress={() => onAcceptRound(r)}>
-                    Accept
-                  </Button>
+                  {/* The order's one primary is the dock's (Pay, or Accept QR order): Accept here is secondary (review 3, S7). */}
+                  {dockAccepts ? null : (
+                    <Button size="md" variant="secondary" isDisabled={offline} onPress={() => onAcceptRound(r)}>
+                      Accept
+                    </Button>
+                  )}
                 </span>
               </div>
               {lines.map((l) => row(l, "new", null, true))}
@@ -250,8 +257,9 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
                 ? // Nothing on the order yet: a disabled Send, not "Pay $0.00".
                   { id: "send", label: "Send", ariaLabel: "Send to kitchen", onPress: () => undefined, isDisabled: true, trailingIcon: ArrowRight }
                 : order.balance <= 0 && pendingRounds.length > 0
-                  ? // Nothing to pay but a QR order waits: the primary opens the waiting sheet (Accept or Reject), not "Pay $0.00".
-                    { id: "pay", label: "Review QR order", onPress: onPay }
+                  ? // Nothing to pay but a QR order waits: the primary accepts it (its lines are in the block above, with Reject),
+                    // sends it to the kitchen and stays on the order; payment comes later, from Pay (review 4 U5).
+                    { id: "accept", label: "Accept QR order", ariaLabel: "Accept the QR order and send it to the kitchen", onPress: () => onAcceptRound(pendingRounds[0]!) }
                 : { id: "pay", label: `Pay ${money(order.balance)}`, ariaLabel: `Pay ${money(order.balance)}`, onPress: onPay, isDisabled: live.length === 0 || (order.balance <= 0 && pendingRounds.length === 0), needsApproval: !["cashier", "manager", "finance", "admin"].includes(staff.role), approvalLabel: "Cashier approval" }
           }
           secondaries={[

@@ -377,7 +377,7 @@ test("S7: one primary on the order screen while a QR order waits; the approval h
 
     await pairAndSignIn(page, CASHIER_PIN);
     await page.getByRole("button", { name: new RegExp(`^Table ${table.name},`) }).click();
-    const waiting = page.getByText("QR order · waiting for acceptance");
+    const waiting = page.getByText("QR order waiting");
     await expect(waiting).toBeVisible();
     // The dock's Pay is the one primary; the waiting block's Accept is secondary.
     await expect(primaries(page)).toHaveCount(1);

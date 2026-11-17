@@ -81,7 +81,8 @@ export function OrderScreen({ orderId }: { orderId: string }) {
     if (s.checks.length === 1 && open[0]) openPay(orderId, open[0].id, "order");
     else openBill(orderId);
   };
-  // A QR order waiting for acceptance is on no bill: Pay asks about it first.
+  // A QR order waiting for acceptance is on no bill: Pay asks about it first, and only this sheet goes on to the payment.
+  // With nothing to pay, the order's primary accepts the waiting round itself and stays on the order (review 4 U5).
   const pay = () => {
     if (pendingRounds[0]) setSheet({ kind: "waiting", round: pendingRounds[0] });
     else payNow();
@@ -185,7 +186,8 @@ export function OrderScreen({ orderId }: { orderId: string }) {
       <ReopenSheet isOpen={sheet?.kind === "reopen"} onClose={() => setSheet(null)} onReopen={(reason) => actions.reopen(reason)} checkRefusal={actions.reopenRefusal} payments={(order.data?.checks ?? []).flatMap((c) => c.payments.filter((p) => p.status === "recorded").map((p) => `${p.tender} ${money(p.amount)}`))} />
       <WaitingRoundSheet
         isOpen={sheet?.kind === "waiting"}
-        roundLabel={sheet?.kind === "waiting" ? `${sheet.round.lines.map((l) => `${l.quantity} ${l.name}`).join(", ")}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null}
+        roundLabel={sheet?.kind === "waiting" ? `${countItems(sheet.round.lines)}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null}
+        lines={sheet?.kind === "waiting" ? sheet.round.lines : undefined}
         canPayRest={Boolean(snap && snap.balance > 0)}
         onClose={() => setSheet(null)}
         onAccept={async () => {

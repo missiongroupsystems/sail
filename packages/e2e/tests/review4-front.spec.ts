@@ -419,3 +419,39 @@ test("U4: two phones follow the table: Send shows the round at once, both get th
     await settle(order.id);
   }
 });
+
+test("U5: with only a waiting QR order, the order's primary accepts it, sends it to the kitchen and stays on the order; Pay's sheet lists the round's lines", async ({ page }) => {
+  test.setTimeout(300_000);
+  const ids = await products();
+  const { order, table, token } = await seatedTable();
+  try {
+    await guestRound(token, "review4-u5-a", [{ product_id: ids["Otah"]!, quantity: 2 }]);
+    await pairAndSignIn(page, MANAGER_PIN);
+    await page.getByRole("button", { name: new RegExp(`^Table ${table.name},`) }).click();
+    const panel = page.getByRole("region", { name: "Order" });
+    await expect(panel.getByText("QR order waiting")).toBeVisible();
+    // One line next to Reject, not three.
+    const header = panel.getByText("QR order waiting");
+    const box = await header.boundingBox();
+    expect(box!.height).toBeLessThan(24);
+    const accept = page.getByRole("button", { name: "Accept the QR order and send it to the kitchen" });
+    await expect(accept).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Accept", exact: true })).toHaveCount(0);
+    await bothThemes(page, "U5-order-only-waiting");
+    await accept.click();
+    await expect(panel.getByText("QR order waiting")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Take payment" })).toHaveCount(0);
+    await expect(panel.getByText(/^Sent /)).toBeVisible();
+    // A second round while there is something to pay: Pay asks about it, and its sheet lists what is accepted.
+    await guestRound(token, "review4-u5-b", [{ product_id: ids["Popiah"]!, quantity: 1 }]);
+    await expect(panel.getByText("QR order waiting")).toBeVisible({ timeout: 15_000 });
+    await page.getByRole("button", { name: /^Pay / }).first().click();
+    const sheet = page.getByRole("dialog", { name: "A QR order is waiting" });
+    await expect(sheet.getByRole("list", { name: "Items in this order" })).toContainText("Popiah");
+    await bothThemes(page, "U5-pay-waiting-sheet");
+    await sheet.getByRole("button", { name: "Accept", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Take payment" })).toBeVisible();
+  } finally {
+    await settle(order.id);
+  }
+});
