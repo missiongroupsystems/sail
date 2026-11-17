@@ -30,8 +30,8 @@ export function SectionRail({ items, selectedId, onSelect, folder, footer, class
       {/* Inside a folder, the folder is what the grid shows: its row is the raised one, its whole name wraps, and the
           chevron takes it back (round 8, 2). */}
       {folder ? (
-        <AriaButton onPress={folder.onBack} aria-current="page" className={cx(item, "items-start gap-1 bg-surface py-3 font-medium text-ink shadow-segment")} aria-label={`Back from ${folder.label}`}>
-          <Icon icon={ChevronLeft} size={18} className="mt-px shrink-0" />
+        <AriaButton onPress={folder.onBack} aria-current="page" className={cx(item, "gap-1 bg-surface py-3 font-medium text-ink shadow-segment")} aria-label={`Back from ${folder.label}`}>
+          <Icon icon={ChevronLeft} size={18} className="shrink-0" />
           <span className="min-w-0 leading-tight break-words">{folder.label}</span>
         </AriaButton>
       ) : null}
