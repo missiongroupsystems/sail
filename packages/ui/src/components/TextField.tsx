@@ -12,6 +12,7 @@ import {
   type ValidationResult,
 } from "react-aria-components";
 import { cx } from "../lib/cx";
+import { selectOnFocus } from "../lib/select-on-focus";
 import { useLockedDisabled } from "./FieldsLocked";
 import { fieldControl, fieldControlSm, fieldDescription, fieldError, fieldLabel, fieldWrap, type FieldSize } from "./field";
 
@@ -60,7 +61,7 @@ export function TextField({
         {multiline ? (
           <TextArea placeholder={placeholder} rows={rows} className={cx(control, "py-2.5 leading-[22px] resize-y")} />
         ) : (
-          <Input placeholder={placeholder} className={control} />
+          <Input placeholder={placeholder} onFocus={numeric || rest.inputMode === "numeric" || rest.inputMode === "decimal" ? selectOnFocus : undefined} className={control} />
         )}
         {suffix ? (
           <span aria-hidden className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-caption text-ink-3">

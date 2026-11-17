@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { FieldError, Input, Label, Text, TextField as AriaTextField } from "react-aria-components";
 import { cx } from "../lib/cx";
+import { selectOnFocus } from "../lib/select-on-focus";
 import { fieldControl, fieldDescription, fieldError, fieldLabel, fieldWrap } from "../components/field";
 import { useLocale } from "../lib/locale";
 import { useLockedDisabled } from "../components/FieldsLocked";
@@ -91,7 +92,7 @@ export function MoneyField({
         <span aria-hidden className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-body text-ink-3">
           {symbol}
         </span>
-        <Input placeholder={placeholder ?? moneyText(0)} className={cx(fieldControl, "tabular", symbol.length > 1 ? "pl-12" : "pl-7", inputClassName)} />
+        <Input placeholder={placeholder ?? moneyText(0)} onFocus={selectOnFocus} className={cx(fieldControl, "tabular", symbol.length > 1 ? "pl-12" : "pl-7", inputClassName)} />
       </div>
       {description ? (
         <Text slot="description" className={fieldDescription}>

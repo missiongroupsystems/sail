@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { MAX_PIECES } from "@sail/shared";
 import { Button as AriaButton, Input, Label, TextField as AriaTextField } from "react-aria-components";
 import { cx } from "../lib/cx";
+import { selectOnFocus } from "../lib/select-on-focus";
 import { Money } from "../components/Money";
 import { useLocale } from "../lib/locale";
 import type { LocaleFormat } from "../lib/locale-format";
@@ -86,6 +87,7 @@ function TotalField({ label, digits, onChange, isDisabled }: { label: string; di
         inputMode="decimal"
         autoComplete="off"
         placeholder={money(0)}
+        onFocus={selectOnFocus}
         className="h-14 w-full rounded-field border border-rule bg-surface-2 px-4 text-right text-line text-ink tabular placeholder:text-ink-3 outline-none transition-colors duration-[120ms] data-[hovered]:bg-surface-3 data-[focused]:border-ink data-[disabled]:text-ink-disabled"
       />
     </AriaTextField>
@@ -136,11 +138,12 @@ export function CashCounter({ mode, onModeChange, totalDigits, onTotalDigitsChan
                   type="text"
                   inputMode="numeric"
                   aria-label={`${d.label} count`}
-                  value={String(n)}
+                  value={n === 0 ? "" : String(n)}
+                  placeholder="0"
                   disabled={isDisabled}
                   onChange={(e) => setCount(d.key, Number(e.target.value.replace(/\D/g, "") || "0"))}
-                  onFocus={(e) => e.currentTarget.select()}
-                  className="h-11 w-16 rounded-field bg-surface-2 text-center text-line text-ink tabular outline-none transition-colors duration-[120ms] hover:bg-surface-3 focus:bg-surface-3 focus-visible:outline-2 focus-visible:outline-focus"
+                  onFocus={selectOnFocus}
+                  className="h-11 w-16 rounded-field bg-surface-2 text-center text-line text-ink tabular placeholder:text-ink-3 outline-none transition-colors duration-[120ms] hover:bg-surface-3 focus:bg-surface-3 focus-visible:outline-2 focus-visible:outline-focus"
                 />
                 <AriaButton onPress={() => setCount(d.key, n + 1)} isDisabled={isDisabled} aria-label={`More ${d.label}`} className={key}>
                   <Plus size={18} strokeWidth={1.75} aria-hidden />
