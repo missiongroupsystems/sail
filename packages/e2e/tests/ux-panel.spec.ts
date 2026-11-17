@@ -148,10 +148,11 @@ test.describe("iPad landscape 1180×820", () => {
       const pay = page.getByRole("region", { name: "Payment" });
       const balance = cents(await pay.getByText(/^\$[\d,.]+$/).first().innerText());
       // Tax is added on top of these prices, so a percentage tip is on the bill before tax (final review M21).
-      const open = await register<{ data: { id: string; opened_at: string }[] }>("GET", `/v1/outlets/${outletId}/orders?status=open&limit=50`);
+      const open = await register<{ data: { id: string; opened_at: string }[] }>("GET", `/v1/outlets/${outletId}/orders?open_only=true&limit=100`);
       const latest = [...open.data].sort((a, b) => b.opened_at.localeCompare(a.opened_at));
-      const snaps = await Promise.all(latest.map((o) => register<{ data: { checks: { totals: { total: number; tax_total: number } }[] } }>("GET", `/v1/orders/${o.id}`)));
-      const bill = snaps.map((x) => x.data.checks[0]?.totals).find((t) => t?.total === balance)!;
+      const snaps = await Promise.all(latest.map((o) => register<{ data: { lines: { name: string }[]; checks: { balance: number; totals: { total: number; tax_total: number } }[] } }>("GET", `/v1/orders/${o.id}`)));
+      // The order this test just seated: Mee Goreng only, its bill's balance the one on the pay screen.
+      const bill = snaps.map((x) => x.data).find((d) => d.lines.length === 1 && d.lines[0]!.name === "Mee Goreng" && d.checks[0]?.balance === balance)!.checks[0]!.totals;
       const preTax = bill.total - bill.tax_total;
 
       await test.step("cash with 15%: the tip is a whole number of 5-cent steps", async () => {
