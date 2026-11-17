@@ -1,5 +1,5 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { formatMoney, quoteRefund, RefundError, sumTaxes, type BillDocument, type MoneyFormat, type RefundQuote, type RefundRequest, type RefundableLine, type RefundablePayment } from "@sail/shared";
+import { formatMoney, quoteRefund, type OrderTaxKept, RefundError, sumTaxes, type BillDocument, type MoneyFormat, type RefundQuote, type RefundRequest, type RefundableLine, type RefundablePayment } from "@sail/shared";
 import { db } from "../db/client.js";
 import { checkAllocations, checks, merchantSettings, orderAdjustments, orderLines, orders, payments, refundLines, refundTenders, refunds, shifts, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -16,7 +16,7 @@ import { registerRefundTotals } from "./shifts.js";
  * the credit note. Refunds count on the business day they happen and never
  * restore daily caps. A whole-bill refund also gives back each payment's tip.
  */
-export async function refundableFor(checkId: string): Promise<{ check: typeof checks.$inferSelect; order: typeof orders.$inferSelect; lines: RefundableLine[]; lineNames: Map<string, string>; paymentsList: RefundablePayment[]; increment: number | null; money: MoneyFormat }> {
+export async function refundableFor(checkId: string): Promise<{ check: typeof checks.$inferSelect; order: typeof orders.$inferSelect; lines: RefundableLine[]; lineNames: Map<string, string>; paymentsList: RefundablePayment[]; increment: number | null; money: MoneyFormat; orderTax?: OrderTaxKept }> {
   const [check] = await db().select().from(checks).where(eq(checks.id, checkId)).limit(1);
   if (!check) throw AppError.notFound("bill", checkId);
   const [order] = await db().select().from(orders).where(eq(orders.id, check.orderId)).limit(1);
@@ -40,13 +40,37 @@ export async function refundableFor(checkId: string): Promise<{ check: typeof ch
   });
   const [settings] = await db().select().from(merchantSettings).where(eq(merchantSettings.merchantId, check.merchantId)).limit(1);
   if (!settings) throw AppError.notFound("merchant settings", check.merchantId);
-  return { check, order, lines, lineNames: new Map(lineRows.map((l) => [l.id, l.name])), paymentsList, increment: settings.cashRoundingIncrement ?? null, money: { currency: settings.currency, locale: settings.locale } };
+  return { check, order, lines, lineNames: new Map(lineRows.map((l) => [l.id, l.name])), paymentsList, increment: settings.cashRoundingIncrement ?? null, money: { currency: settings.currency, locale: settings.locale }, orderTax: order.taxRounding === "per_rate" ? await orderTaxKept(order) : undefined };
+}
+
+/**
+ * The order's tax still kept per rate, over every bill and net of earlier refunds, for a refund by items to give back
+ * the difference (spec: order tax per rate = rate × the order's taxable amount). A rate is the line's list of components.
+ */
+async function orderTaxKept(order: typeof orders.$inferSelect): Promise<OrderTaxKept> {
+  const allocs = await db().select({ checkId: checkAllocations.checkId, lineId: checkAllocations.orderLineId, total: checkAllocations.total, tax: checkAllocations.tax, taxes: checkAllocations.taxes }).from(checkAllocations).innerJoin(checks, eq(checks.id, checkAllocations.checkId)).where(eq(checks.orderId, order.id));
+  const back = await db().select({ checkId: refunds.checkId, lineId: refundLines.orderLineId, total: refundLines.total, tax: refundLines.tax, taxes: refundLines.taxes }).from(refundLines).innerJoin(refunds, eq(refunds.id, refundLines.refundId)).where(eq(refunds.orderId, order.id));
+  const inclusive = order.taxMode === "inclusive";
+  const rates = new Map<string, OrderTaxKept["rates"][number]>();
+  const addRow = (r: { total: number; tax: number; taxes: { name: string; bps: number; amount: number }[] }, sign: 1 | -1, components?: { name: string; bps: number }[]) => {
+    const cs = components ?? r.taxes.map((t) => ({ name: t.name, bps: t.bps }));
+    if (!cs.length) return;
+    const key = cs.map((c) => `${c.bps}|${c.name}`).join("+");
+    const rate = rates.get(key) ?? { components: cs, amount: 0, taxes: cs.map(() => 0) };
+    rate.amount += sign * (inclusive ? r.total : r.total - r.tax);
+    cs.forEach((c, k) => (rate.taxes[k]! += sign * (r.taxes.find((t) => t.name === c.name && t.bps === c.bps)?.amount ?? 0)));
+    rates.set(key, rate);
+  };
+  for (const a of allocs) addRow(a, 1);
+  // A refund line counts against the rate of the allocation it came from.
+  for (const b of back) addRow(b, -1, allocs.find((a) => a.checkId === b.checkId && a.lineId === b.lineId)?.taxes.map((t) => ({ name: t.name, bps: t.bps })));
+  return { tax_mode: inclusive ? "inclusive" : "exclusive", rates: [...rates.values()] };
 }
 
 export function quote(ref: Awaited<ReturnType<typeof refundableFor>>, request: RefundRequest, tenderSplit?: { payment_id: string; amount: number }[], opts: { avoidCash?: boolean } = {}): RefundQuote {
   const money = (amount: number) => formatMoney(amount, ref.money);
   try {
-    return quoteRefund(ref.lines, ref.paymentsList, request, { tenderSplit, cashRoundingIncrement: ref.increment, formatMoney: money, avoidCash: opts.avoidCash });
+    return quoteRefund(ref.lines, ref.paymentsList, request, { tenderSplit, cashRoundingIncrement: ref.increment, formatMoney: money, avoidCash: opts.avoidCash, orderTax: ref.orderTax });
   } catch (e) {
     if (e instanceof RefundError) {
       const code = e.code === "exceeds_line" || e.code === "exceeds_payment" || e.code === "nothing_to_refund" ? "invariant_violation" : "validation";
@@ -98,7 +122,8 @@ export async function createRefund(input: { refundId: string; checkId: string; r
     kind: "refund_receipt",
     header: { ...original.header, printed_at: now.toISOString(), job_id: "pending" },
     check_label: `Refund ${receiptNo} · ${original.check_label}`,
-    lines: q.lines.map((l) => {
+    // A row with no quantity and no price only moves a rounding cent of tax (R4): it prints in the tax rows, not as an item.
+    lines: q.lines.filter((l) => l.quantity !== 0 || l.base !== 0).map((l) => {
       const row = lineRows.find((x) => x.id === l.line_id)!;
       // A refund by amount gives back part of a line's price, not a unit of it: one row of that amount, so it reads on its own.
       return l.quantity ? { quantity: -l.quantity, name: row.name, unit_price: row.unitPrice, amount: -l.base, modifiers: [], seat_no: row.seatNo ?? undefined } : { quantity: -1, name: `Part of ${row.name}`, unit_price: l.base, amount: -l.base, modifiers: [], seat_no: row.seatNo ?? undefined };

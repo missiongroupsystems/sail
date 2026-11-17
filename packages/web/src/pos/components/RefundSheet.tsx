@@ -400,7 +400,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
             {step === "review" && quote && check ? (
               <div className="flex flex-col gap-3">
                 <ul className="flex flex-col">
-                  {quote.lines.map((l) => (
+                  {quote.lines.filter((l) => l.quantity !== 0 || l.base !== 0).map((l) => (
                     <li key={l.line_id} className="flex items-center justify-between gap-3 py-1.5">
                       <span className="text-line text-ink">
                         {l.quantity} {linesById.get(l.line_id)?.name ?? "Item"}

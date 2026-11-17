@@ -75,6 +75,7 @@ beforeAll(async () => {
     { key: "juice", price: 205, taxClass: "reduced" },
     { key: "wine", price: 745, taxClass: "standard" },
     { key: "soup", price: 650, taxClass: "reduced" },
+    { key: "cake", price: 390, taxClass: "reduced" },
   ]);
 });
 afterAll(async () => {
@@ -299,4 +300,52 @@ describe("R2: a reopen or a void that reverses an invoiced bill's payment cancel
   });
 });
 
-export { EU, tax };
+describe("R4: a refund by items gives back the order's tax before less its tax after, per rate", () => {
+  const zTaxes = async (w: World) => (await call<{ data: { refunds: { amount: number; tax: number; taxes: Tax[] } } }>("GET", `/v1/outlets/${w.m.outletId}/z-report`, { token: w.m.manager.token })).body.data.refunds;
+
+  it("US two-part tax: burger $12.99 + fries $4.49; refunding the fries leaves $0.52 state and $0.58 local on the $12.99 kept", async () => {
+    const order = await paidOrder(US, ["burger", "fries"], "cash", 0);
+    expect([tax(order.totals.taxes, "State sales tax"), tax(order.totals.taxes, "Local sales tax")]).toEqual([70, 79]); // 4% and 4.5% of $17.48
+    const fries = order.lines.find((l) => l.name === "fries")!;
+    const before = await zTaxes(US);
+    const r = await boRefund(order.checks[0]!.id, { kind: "lines", lines: [{ line_id: fries.id, quantity: 1 }] });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    // $0.70 − 4% of $12.99 ($0.52) = $0.18; $0.79 − 4.5% of $12.99 ($0.58) = $0.21.
+    expect([tax(r.body.refund.totals.taxes, "State sales tax"), tax(r.body.refund.totals.taxes, "Local sales tax")]).toEqual([18, 21]);
+    expect(r.body.refund.totals.total).toBe(449 + 18 + 21);
+    // What is kept obeys the rule: its rate times the $12.99 kept.
+    const keptLocal = tax(order.totals.taxes, "Local sales tax") - tax(r.body.refund.totals.taxes, "Local sales tax");
+    expect(keptLocal).toBe(Math.floor((1299 * 450 + 5000) / 10000));
+    // The refund's credit note (none: not invoiced) and the Z-report give back the same tax.
+    const after = await zTaxes(US);
+    expect(after.tax - before.tax).toBe(39);
+    expect(tax(after.taxes, "Local sales tax") - tax(before.taxes, "Local sales tax")).toBe(21);
+    expect(after.amount - before.amount).toBe(488);
+    // Refunding the burger as well gives back exactly what is left: nothing more, nothing less.
+    const burger = order.lines.find((l) => l.name === "burger")!;
+    const rest = await boRefund(order.checks[0]!.id, { kind: "lines", lines: [{ line_id: burger.id, quantity: 1 }] });
+    expect(rest.status, JSON.stringify(rest.body)).toBe(201);
+    expect([tax(rest.body.refund.totals.taxes, "State sales tax"), tax(rest.body.refund.totals.taxes, "Local sales tax")]).toEqual([52, 58]);
+    expect(r.body.refund.totals.total + rest.body.refund.totals.total).toBe(order.totals.total);
+  });
+
+  it("EU VAT inside the price: cake €3.90 + soup €6.50 at 10%; refunding the soup leaves €0.35 VAT in the €3.90 kept, and the credit note says so", async () => {
+    // Paid on the café's station, with a shift open there; invoiced, so the refund has a credit note.
+    expect((await openShift(EU, 0, 0)).status).toBe(201);
+    const order = await paidOrder(EU, ["cake", "soup"], "cash", 0);
+    const vat = order.totals.taxes[0]!;
+    expect(vat.amount).toBe(95); // €10.40 × 10/110 = €0.945…
+    expect((await call("POST", `/v1/checks/${order.checks[0]!.id}/invoice`, { token: pos(EU), body: {} })).status).toBe(200);
+    const soup = order.lines.find((l) => l.name === "soup")!;
+    const r = await call<RefundRes>("POST", `/v1/checks/${order.checks[0]!.id}/refunds`, { token: EU.m.manager.token, body: { refund_id: randomUUID(), request: { kind: "lines", lines: [{ line_id: soup.id, quantity: 1 }] }, reason: "Cold", print: false } });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    // The guest gets the soup's price back; the VAT inside it is €0.95 − €0.35 (10/110 of €3.90 kept).
+    expect(r.body.refund.totals.total).toBe(650);
+    expect(r.body.refund.totals.taxes[0]!.amount).toBe(60);
+    const [cn] = await db.sql<{ credit_note_document: { totals: { total: number; taxes: Tax[] } } }[]>`select credit_note_document from refunds where id = ${r.body.refund.id}`;
+    expect(cn!.credit_note_document.totals.total).toBe(-650);
+    expect(cn!.credit_note_document.totals.taxes[0]!.amount).toBe(-60);
+    const z = await zTaxes(EU);
+    expect(z.taxes.find((t) => t.bps === 1000)!.amount).toBe(60);
+  });
+});

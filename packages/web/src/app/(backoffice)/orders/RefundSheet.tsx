@@ -365,7 +365,8 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
                   <section>
                     <h3 className="pb-1 text-line text-ink hairline-b">Reversal</h3>
                     <ul className="flex flex-col">
-                      {quote.data.lines.map((l) => (
+                      {/* A row with no quantity and no price only moves a rounding cent of tax; the tax rows below show it. */}
+                      {quote.data.lines.filter((l) => l.quantity !== 0 || l.base !== 0).map((l) => (
                         <li key={l.line_id} className="flex items-baseline justify-between gap-4 py-1.5 hairline-b">
                           <span className="text-ink">
                             {l.quantity ? <span className="tabular text-ink-2">{l.quantity}× </span> : <span className="text-caption text-ink-2">part of </span>}
