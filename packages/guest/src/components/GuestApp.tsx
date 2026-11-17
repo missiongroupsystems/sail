@@ -86,6 +86,13 @@ function GuestAppInner({ token }: { token: string }) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<SendError | null>(null);
   const clearSendError = useCallback(() => setSendError(null), []);
+  // "Could not reach the restaurant" is about the connection: once the phone is back online it goes, and Send is there to
+  // try again (final2 C Low: it stayed after the connection returned).
+  useEffect(() => {
+    const back = () => setSendError((e) => (e?.error.code === "unavailable" ? null : e));
+    window.addEventListener("online", back);
+    return () => window.removeEventListener("online", back);
+  }, []);
   const openItem = useCallback((productId: string, editKey: string | null) => setItemSheet((cur) => ({ productId, editKey, open: true, nonce: (cur?.nonce ?? 0) + 1 })), []);
   const closeItem = useCallback(() => setItemSheet((cur) => (cur ? { ...cur, open: false } : null)), []);
 

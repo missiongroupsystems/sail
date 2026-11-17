@@ -136,8 +136,9 @@ export function StatusView({ session, orderView, loading, error, lastRoundId, st
           <BrandButton variant="secondary" className="min-h-14 flex-1 text-[16px]" onPress={onCallStaff}>
             Call staff
           </BrandButton>
+          {/* "Order more" once this phone has sent something; before that it simply orders (final2 C Low). */}
           <BrandButton variant="accent" className="min-h-14 flex-[1.4] text-[16.5px]" onPress={onOrderMore}>
-            Order more
+            {highlighted ? "Order more" : "Order"}
           </BrandButton>
         </div>
       </Dock>

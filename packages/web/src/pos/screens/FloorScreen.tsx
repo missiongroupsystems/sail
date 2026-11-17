@@ -73,9 +73,6 @@ export function FloorScreen() {
   const tables = useMemo(() => (snapshot?.tables ?? []).filter((t) => t.area_id === area?.id), [snapshot, area]);
 
   const [seating, setSeating] = useState<FloorTable | null>(null);
-  /** The count on the "More than 8" stepper: the footer and Open order use it, so they say what will be seated (A-N4). */
-  const [paxChoice, setPaxChoice] = useState<number | null>(null);
-  useEffect(() => setPaxChoice(null), [seating]);
   const [opening, setOpening] = useState(false);
   const [rejecting, setRejecting] = useState<GuestRound | null>(null);
   // One order id per pax sheet: a second tap after a timeout replays the same open instead of a duplicate.
@@ -268,20 +265,9 @@ export function FloorScreen() {
         title={seating ? `Seat table ${seating.name}` : ""}
         description="How many guests?"
         isDismissable={!opening}
-        footer={
-          seating ? (
-            <>
-              <span className="mr-auto text-body text-ink-2 tabular">
-                {paxChoice ?? seating.seats} {(paxChoice ?? seating.seats) === 1 ? "guest" : "guests"}
-              </span>
-              <Button variant="primary" size="lg" isPending={opening} onPress={() => void seat(seating, paxChoice ?? seating.seats)} className="min-w-[160px]">
-                Open order
-              </Button>
-            </>
-          ) : null
-        }
       >
-        {seating ? <PaxPicker suggested={seating.seats} isPending={opening} onPick={(pax) => void seat(seating, pax)} onChoose={setPaxChoice} /> : null}
+        {/* One tap on a count seats the table; no footer repeats a count the tap does not use (final2 B-3). */}
+        {seating ? <PaxPicker suggested={seating.seats} isPending={opening} onPick={(pax) => void seat(seating, pax)} /> : null}
       </Sheet>
       <RejectRoundSheet isOpen={Boolean(rejecting)} roundLabel={rejecting ? `Table ${rejecting.table_name ?? ""} · ${countItems(rejecting.lines)}` : null} lines={rejecting?.lines} onClose={() => setRejecting(null)} onReject={(reason) => (rejecting ? nowActions.rejectRound(rejecting.id, reason) : Promise.resolve(null))} onMarkSoldOut={roleAtLeast(staff.role, OP_MIN_ROLE["stock.mark_sold_out"] ?? "cashier") ? nowActions.markSoldOut : undefined} />
     </Frame>
@@ -289,13 +275,10 @@ export function FloorScreen() {
 }
 
 /** 1–8 as big buttons, "More…" for 9+. */
-function PaxPicker({ suggested, isPending, onPick, onChoose }: { suggested: number; isPending: boolean; onPick: (pax: number) => void; onChoose: (pax: number) => void }) {
+function PaxPicker({ suggested, isPending, onPick }: { suggested: number; isPending: boolean; onPick: (pax: number) => void }) {
   const [more, setMore] = useState(false);
   const [n, setN] = useState(Math.max(9, suggested));
-  const choose = (v: number) => {
-    setN(v);
-    onChoose(v);
-  };
+  const choose = setN;
   if (more) {
     return (
       <div className="flex flex-col items-center gap-6 pt-4">
@@ -308,7 +291,7 @@ function PaxPicker({ suggested, isPending, onPick, onChoose }: { suggested: numb
   }
   return (
     <div className="flex flex-col gap-3">
-      {/* One tap seats the table with that many guests; Open order in the footer takes the table's own seat count. */}
+      {/* One tap seats the table with that many guests; the table's own seat count is the highlighted one. */}
       <div className="grid grid-cols-4 gap-3">
         {Array.from({ length: 8 }, (_, i) => i + 1).map((p) => (
           <Button
@@ -324,7 +307,7 @@ function PaxPicker({ suggested, isPending, onPick, onChoose }: { suggested: numb
           </Button>
         ))}
       </div>
-      <Button size="lg" variant="quiet" isDisabled={isPending} onPress={() => { setMore(true); onChoose(n); }} className="self-start text-ink-2!">
+      <Button size="lg" variant="quiet" isDisabled={isPending} onPress={() => setMore(true)} className="self-start text-ink-2!">
         More than 8…
       </Button>
     </div>
