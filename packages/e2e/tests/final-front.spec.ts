@@ -259,3 +259,73 @@ test("guest: a fresh table orders, a long kitchen note shows whole, and the phon
   await expect(phone.getByText("No connection.")).toHaveCount(0);
   await ctx.close();
 });
+
+test("POS: the approval sheet says once what it approves, with the register's figures; the user menu is a full touch target (B-P15)", async ({ page }) => {
+  test.setTimeout(240_000);
+  await pairAndSignIn(page, "333333"); // a Cashier: % off bill needs a Manager
+  const menu = page.getByRole("button", { name: /Open user menu$/ });
+  expect((await menu.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Floor", exact: true }).click();
+  await page.getByRole("button", { name: "Takeaway order", exact: true }).click();
+  await page.getByRole("button", { name: /^Mee Goreng,/ }).click();
+  await expect(page.getByRole("button", { name: "Send 1 to kitchen" })).toBeVisible();
+  await page.getByRole("button", { name: "Discount", exact: true }).click();
+  await page.getByRole("dialog").last().getByRole("button", { name: /% off bill/ }).click();
+  const pad = page.getByRole("group", { name: "Amount keys" }).last();
+  await pad.getByRole("button", { name: "1", exact: true }).click();
+  await pad.getByRole("button", { name: "0", exact: true }).click();
+  await page.getByRole("dialog").last().getByRole("button", { name: /^Apply / }).click();
+  const approval = page.getByRole("dialog", { name: "Manager approval" });
+  await expect(approval).toBeVisible();
+  // 10% off: the register's dry run says what it takes off and what the order then comes to.
+  await expect(approval.getByText(/^Apply % off bill · 10%$/)).toHaveCount(1);
+  await expect(approval.getByText(/^Discount −\$\d+\.\d\d$/)).toBeVisible();
+  await expect(approval.getByText(/^New total \$/)).toBeVisible();
+  await page.keyboard.press("Escape");
+});
+
+test("POS: a pairing ended elsewhere goes straight to pairing and says why, once (B-P15)", async ({ page, browser, watch }) => {
+  test.setTimeout(240_000);
+  watch.allow({ status: 401, url: /\/v1\//, why: "the station was paired on another device, so this iPad's tokens stop working" });
+  await pairAndSignIn(page, "333333");
+  // Another iPad pairs to the same station: this one's pairing ends.
+  const { stationId } = devLocal();
+  const { data } = await register<{ data: { code: string } }>("POST", `/v1/stations/${stationId}/pairing-code`, {});
+  const other = await browser.newPage();
+  await other.goto(`${WEB}/pos`);
+  await expect(other.getByRole("heading", { name: "Pair this iPad to a station" })).toBeVisible({ timeout: 180_000 });
+  await keyIn(other, "PIN keys", data.code);
+  await other.getByRole("button", { name: "Pair this iPad" }).click();
+  await expect(other.getByRole("button", { name: "Pair this iPad again" })).toBeVisible();
+  await other.close();
+  // The next request this iPad makes (the live stream's, or a tap) learns the pairing ended.
+  const orders = page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Orders", exact: true });
+  if (await orders.isVisible().catch(() => false)) await orders.click({ timeout: 2_000 }).catch(() => undefined);
+  await expect(page.getByRole("heading", { name: "Pair this iPad to a station" })).toBeVisible();
+  await expect(page.getByText("This iPad is no longer paired to its station. Enter a new code from the back office.")).toBeVisible();
+  await expect(page.getByText("Your session ended")).toHaveCount(0);
+});
+
+test("POS: a PIN sign-in the register does not answer is bounded and the pad is ready again (B-P15)", async ({ page, watch }) => {
+  test.setTimeout(240_000);
+  watch.allowConsole(/did not reply|aborted|signal/i);
+  const { stationId } = devLocal();
+  const { data } = await register<{ data: { code: string } }>("POST", `/v1/stations/${stationId}/pairing-code`, {});
+  await page.goto(`${WEB}/pos`);
+  await expect(page.getByRole("heading", { name: "Pair this iPad to a station" })).toBeVisible({ timeout: 180_000 });
+  await keyIn(page, "PIN keys", data.code);
+  await page.getByRole("button", { name: "Pair this iPad" }).click();
+  await expect(page.getByRole("button", { name: "Pair this iPad again" })).toBeVisible();
+  // The sign-in is held back for longer than its bound.
+  await page.route(/\/v1\/stations\/sessions$/, async (route) => {
+    await new Promise((r) => setTimeout(r, 12_000));
+    await route.continue().catch(() => undefined);
+  });
+  const started = Date.now();
+  await keyIn(page, "PIN keys", "333333");
+  await expect(page.getByText(/did not reply within 8 seconds/)).toBeVisible({ timeout: 11_000 });
+  expect(Date.now() - started).toBeLessThan(11_000);
+  await page.unroute(/\/v1\/stations\/sessions$/);
+  await keyIn(page, "PIN keys", "333333");
+  await expect(page.getByRole("navigation", { name: "Destinations" })).toBeVisible();
+});
