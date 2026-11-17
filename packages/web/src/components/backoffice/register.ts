@@ -162,7 +162,7 @@ export type ZReport = {
   /** The tax due by component (`sales.taxes` less `refunds.taxes`), as the register computed it; absent on older stored reports. */
   tax_due?: TaxAmount[];
   /** How the payments come to the completed sales; the split by open orders arrives with the per-tender figures. */
-  reconciliation?: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number; held_on_open_orders?: number; paid_for_other_orders?: number };
+  reconciliation?: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number; held_on_open_orders?: number; paid_for_other_orders?: number; beyond_order_totals?: number };
   /** Payments taken here and then reversed (a void, or a reopen): counted in no tender. */
   reversals?: { count: number; amount: number; cash_amount: number; items: { payment_id: string; order_no: string; tender: string; is_cash: boolean; amount: number; reversed_at: string | null; reversed_by: string | null; reason: string | null }[] };
   /** Set when this is a closed day's report as snapshotted at the close. */

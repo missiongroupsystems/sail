@@ -108,7 +108,7 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
   // Every row multiplies by eye: Qty × Unit = Amount. The unit price includes the item's options, which are listed under
   // it by name with their own price, never as a second amount. A bill's share of a line shows the share and the line.
   for (const l of doc.lines) {
-    const unit = l.unit_price + l.modifiers.reduce((n, m) => n + (m.unit_price ?? (l.quantity ? m.price / l.quantity : 0)), 0);
+    const unit = l.unit_price + l.modifiers.reduce((n, m) => n + (m.unit_price ?? (l.quantity ? Math.round(m.price / l.quantity) : 0)), 0);
     if (l.share) {
       text(l.share, 48, 10);
       text(`${l.quantity === 1 ? "" : `${l.quantity} × `}${l.name} (share of the item)`, 90, 10);
@@ -121,7 +121,7 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
     right(money(l.amount), 547, 10);
     y -= 14;
     for (const m of l.modifiers) {
-      const each = m.unit_price ?? (l.quantity ? m.price / l.quantity : 0);
+      const each = m.unit_price ?? (l.quantity ? Math.round(m.price / l.quantity) : 0);
       text(each ? `+ ${m.name} ${money(each)}` : `+ ${m.name}`, 100, 9, font, grey);
       y -= 12;
     }

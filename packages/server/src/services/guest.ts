@@ -236,7 +236,7 @@ export async function guestOrderView(p: Extract<Principal, { type: "guest" }>) {
   const rounds = await db().select().from(guestRounds).where(eq(guestRounds.guestSessionId, p.sessionId)).orderBy(guestRounds.submittedAt);
   const requests = await db().select().from(serviceRequests).where(eq(serviceRequests.guestSessionId, p.sessionId)).orderBy(serviceRequests.createdAt);
   const canOrder = !!link?.enabled && (orderId != null || !!link.openOnFirstScan);
-  const toLine = (l: typeof orderLines.$inferSelect) => ({ id: l.id, name: l.name, quantity: l.quantity, modifiers: l.modifiers.map((m) => m.name), notes: l.notes, seat_no: l.seatNo, status: l.status, source: l.source, round_id: l.roundId, mine: rounds.some((r) => r.lineIds.includes(l.id)), amount: l.baseAmount });
+  const toLine = (l: typeof orderLines.$inferSelect) => ({ id: l.id, name: l.name, quantity: l.quantity, modifiers: l.modifiers.map((m) => m.name), notes: l.notes, seat_no: l.seatNo, status: l.status, source: l.source, round_id: l.roundId, mine: rounds.some((r) => r.lineIds.includes(l.id)), amount: l.status === "held" && l.roundId && l.baseAmount === 0 ? waitingAmount(l) : l.baseAmount });
   if (!orderId) {
     // A rejection that closed the order (M2) leaves this phone unbound: it still shows what its turned-down rounds held, struck through.
     const rejectedIds = rounds.filter((r) => r.status === "rejected").flatMap((r) => r.lineIds);
@@ -295,6 +295,11 @@ async function guestTotals(order: typeof orders.$inferSelect) {
     taxes: order.taxes.map((t) => ({ name: t.name, bps: t.bps, amount: t.amount })),
     total: order.total,
   };
+}
+
+/** A waiting round's line is on no bill yet, so it has no stored amount: the phone shows its menu price and choices, as the register adds them. */
+function waitingAmount(l: typeof orderLines.$inferSelect): number {
+  return (l.unitPrice + l.modifiers.reduce((n, m) => n + m.price * m.quantity, 0)) * l.quantity;
 }
 
 export const toRound = (r: typeof guestRounds.$inferSelect) => ({ id: r.id, order_id: r.orderId, table_id: r.tableId, status: r.status, line_ids: r.lineIds, guest_name: r.guestName, notes: r.notes, submitted_at: r.submittedAt.toISOString(), decided_at: r.decidedAt?.toISOString() ?? null, decided_by: r.decidedByName, reject_reason: r.rejectReason });

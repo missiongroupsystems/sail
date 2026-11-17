@@ -93,10 +93,10 @@ test("M8: rejecting a QR order as Sold out offers to mark its items sold out", a
   await openTable(page, table.name);
   await page.getByRole("region", { name: "Order" }).getByRole("button", { name: "Reject", exact: true }).click();
   const sheet = page.getByRole("dialog", { name: "Reject QR order" });
-  await expect(sheet.getByRole("checkbox", { name: /mark these items sold out/ })).toBeChecked();
+  await expect(sheet.getByRole("checkbox", { name: /also mark these items sold out/ })).toBeChecked();
   await bothThemes(page, "M8-reject-sheet");
   // Turned off here, so the demo's Kopi stays on sale for the other specs.
-  await sheet.getByText(/mark these items sold out/).click();
+  await sheet.getByText(/also mark these items sold out/).click();
   await sheet.getByRole("button", { name: "Kitchen is closing" }).click();
   await expect(sheet).toHaveCount(0);
   await settle(order.id);

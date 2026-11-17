@@ -58,9 +58,9 @@ export type ZReport = {
    * day, station or shift. `paid_on_other_orders` splits into `held_on_open_orders` (money taken on orders still open:
    * part-paid tables, a QR table waiting) and `paid_for_other_orders` (completed or cancelled orders of another day or
    * station), so the report reads on its face: tenders = completed sales + held on open orders + paid for other orders −
-   * paid elsewhere.
+   * paid elsewhere + `beyond_order_totals` (money taken on completed orders beyond their totals: owed to the guest).
    */
-  reconciliation: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number; held_on_open_orders: number; paid_for_other_orders: number };
+  reconciliation: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number; held_on_open_orders: number; paid_for_other_orders: number; beyond_order_totals: number };
   generated_at: string;
 };
 
@@ -185,7 +185,7 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
       cash_amount: reversed.filter((p) => p.is_cash).reduce((s, p) => s + p.amount, 0),
       items: reversed.map((p) => ({ ...p, reversed_at: p.reversed_at?.toISOString() ?? null })),
     },
-    reconciliation: { tenders: tenders.reduce((s, t) => s + t.amount, 0), sales_total: o?.total ?? 0, paid_on_other_orders: otherOrders?.amount ?? 0, paid_elsewhere: elsewhere?.amount ?? 0, held_on_open_orders: Number(heldOpen?.amount ?? 0), paid_for_other_orders: Number(otherOrders?.amount ?? 0) - Number(heldOpen?.amount ?? 0) },
+    reconciliation: { tenders: tenders.reduce((s, t) => s + t.amount, 0), sales_total: o?.total ?? 0, paid_on_other_orders: otherOrders?.amount ?? 0, paid_elsewhere: elsewhere?.amount ?? 0, held_on_open_orders: Number(heldOpen?.amount ?? 0), paid_for_other_orders: Number(otherOrders?.amount ?? 0) - Number(heldOpen?.amount ?? 0), beyond_order_totals: tenders.reduce((s, t) => s + t.amount, 0) - (o?.total ?? 0) - Number(otherOrders?.amount ?? 0) + Number(elsewhere?.amount ?? 0) },
     generated_at: new Date().toISOString(),
   };
 }

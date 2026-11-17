@@ -34,6 +34,21 @@ export async function merchantLocale(merchantId: string): Promise<string | null>
   return m?.locale ?? null;
 }
 
+/**
+ * Before a write keyed on a normalised mobile, give an older row with the same number (stored as typed, without its
+ * country code) the normalised form, so the write updates that customer instead of adding a second one.
+ */
+export async function adoptLegacyMobile(merchantId: string, e164: string, locale: string | null) {
+  if (!e164.startsWith("+")) return;
+  const [exact] = await db().select({ id: customers.id }).from(customers).where(and(eq(customers.merchantId, merchantId), eq(customers.mobile, e164))).limit(1);
+  if (exact) return;
+  const digits = e164.slice(1);
+  const national = phoneSearchDigits(e164, locale).filter((d) => d !== digits);
+  const candidates = [digits, ...national, ...national.map((d) => `0${d}`)];
+  const [legacy] = await db().select({ id: customers.id }).from(customers).where(and(eq(customers.merchantId, merchantId), sql`regexp_replace(coalesce(${customers.mobile}, ''), '[^0-9]', '', 'g') in (${sql.join(candidates.map((d) => sql`${d}`), sql`, `)})`)).limit(1);
+  if (legacy) await db().update(customers).set({ mobile: e164, updatedAt: new Date() }).where(eq(customers.id, legacy.id));
+}
+
 export function customerRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "customers.find", method: "get", path: "/v1/customers", tags: ["customers"], request: { query: z.object({ mobile: z.string().optional(), q: z.string().optional(), group_id: z.uuid().optional(), limit: z.coerce.number().int().min(1).max(200).default(50) }) }, responses: { 200: jsonResponse(listResponse(CustomerSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
@@ -92,6 +107,8 @@ export function customerRoutes(app: OpenAPIHono<AppEnv>) {
         [row] = await db().insert(customers).values({ id: b.id, merchantId: p.merchantId, name: b.name, mobile, email: b.email ?? null, marketingConsent: b.marketing_consent ?? false, notes: b.notes ?? null, legacyId: b.legacy_id ?? null }).returning();
       }
     } else if (mobile) {
+      // A row saved before mobiles were normalised ("5555550123") is the same customer: it takes the normalised number.
+      await adoptLegacyMobile(p.merchantId, mobile, await merchantLocale(p.merchantId));
       [row] = await db()
         .insert(customers)
         .values({ merchantId: p.merchantId, name: b.name, mobile, email: b.email ?? null, marketingConsent: b.marketing_consent ?? false, notes: b.notes ?? null, legacyId: b.legacy_id ?? null })

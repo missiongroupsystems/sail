@@ -60,7 +60,7 @@ export function RejectRoundSheet({ roundLabel, isOpen, onClose, onReject, onMark
     <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Reject QR order" description={roundLabel ? `${roundLabel} · the guest is told why` : "The guest is told why"} isDismissable={!busy}>
       {onMarkSoldOut ? (
         <Checkbox isSelected={markSoldOut} onChange={setMarkSoldOut} isDisabled={busy} className="mb-3">
-          <span className="text-line">With Sold out, mark these items sold out for today</span>
+          <span className="text-line">If sold out, also mark these items sold out for today</span>
         </Checkbox>
       ) : null}
       <ReasonPicker

@@ -242,7 +242,7 @@ type Z = {
   scope: { business_date: string };
   sales: { total: number };
   tenders: { tender_type_id: string; count: number; amount: number; rounding: number; tips: number; refunds: number; reversed: number; net: number }[];
-  reconciliation: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number; held_on_open_orders: number; paid_for_other_orders: number };
+  reconciliation: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number; held_on_open_orders: number; paid_for_other_orders: number; beyond_order_totals: number };
   reversals: { count: number; amount: number; items: { order_no: string; amount: number }[] };
   closed: { closed_at: string } | null;
   previous_closed_date: string | null;
@@ -286,7 +286,8 @@ describe("M2, M20, M16: the Z-report reconciles on its face, per tender, and sta
     const rec = z.reconciliation;
     expect(rec.held_on_open_orders).toBeGreaterThanOrEqual(1000);
     expect(rec.held_on_open_orders + rec.paid_for_other_orders).toBe(rec.paid_on_other_orders);
-    expect(rec.tenders).toBe(rec.sales_total + rec.held_on_open_orders + rec.paid_for_other_orders - rec.paid_elsewhere);
+    expect(rec.tenders).toBe(rec.sales_total + rec.held_on_open_orders + rec.paid_for_other_orders - rec.paid_elsewhere + rec.beyond_order_totals);
+    expect(rec.beyond_order_totals).toBe(0);
     expect(rec.sales_total).toBe(z.sales.total);
     expect(rec.tenders).toBe(z.tenders.reduce((n, t) => n + t.amount, 0));
     for (const t of z.tenders) expect(t.net).toBe(t.amount + t.rounding + t.tips - t.refunds);
@@ -429,5 +430,66 @@ describe("M21: a percentage tip in the US preset is on the bill before tax", () 
     expect(half.body.payment.tip_cents).toBe(360);
     // The line's price "each" includes its options.
     expect((a.body.data.lines[0] as unknown as { unit_amount: number }).unit_amount).toBe(3596);
+  });
+});
+
+describe("review fixes", () => {
+  it("a bill paid beyond its live items and another unpaid: the balance nets them, signed", async () => {
+    const o = await open({ order_type: "takeaway" });
+    const a = await add(o.body.data.id, ids.burger);
+    const checkId = a.body.data.checks[0]!.id;
+    await call("POST", `/v1/checks/${checkId}/payments`, { token: US.admin.token, body: { payment_id: randomUUID(), tender_type_id: ids.card, amount: a.body.data.balance } });
+    // As a QR round rejected before the fix left it: a paid bill's line voided under it.
+    const lineId = a.body.data.lines[0]!.id;
+    await db.sql.begin(async (t) => {
+      await t`set local session_replication_role = replica`;
+      await t`update order_lines set status = 'voided', base_amount = 0, discount_amount = 0, net_amount = 0, fee_amount = 0, tax_amount = 0, taxes = '[]', total = 0 where id = ${lineId}`;
+      await t`update orders set subtotal = 0, tax_total = 0, taxes = '[]', total = 0 where id = ${o.body.data.id}`;
+    });
+    const owed = await snap(o.body.data.id);
+    expect(owed.balance).toBe(-3902);
+    // A second item lands on a new bill: the guest owes 46.87 there and is owed 39.02 on the first: net 7.85 owed by the guest.
+    await add(o.body.data.id, ids.soda);
+    const both = await snap(o.body.data.id);
+    expect(both.balance).toBe(4687 - 3902);
+  });
+
+  it("a ready order sent another round is back to fired; a paid delivery is not completed by its send", async () => {
+    const o = await open({ order_type: "takeaway" });
+    await add(o.body.data.id, ids.burger);
+    await call("POST", `/v1/orders/${o.body.data.id}/fire`, { token: pin, body: {} });
+    for (const t of (await call<{ data: { id: string; order_id: string }[] }>("GET", `/v1/outlets/${US.outletId}/kitchen-tickets`, { token: US.admin.token })).body.data.filter((x) => x.order_id === o.body.data.id)) await call("POST", `/v1/kitchen-tickets/${t.id}/bump`, { token: US.admin.token, body: {} });
+    expect((await snap(o.body.data.id)).status).toBe("ready");
+    await add(o.body.data.id, ids.soda);
+    const again = await call<Mut>("POST", `/v1/orders/${o.body.data.id}/fire`, { token: pin, body: {} });
+    expect(again.body.data.status).toBe("fired");
+    const d = await open({ order_type: "delivery", customer_ref: { name: "Dee", mobile: "555 777 1212" }, delivery_address: "1 Main St" });
+    expect(d.status, JSON.stringify(d.body)).toBe(201);
+    const dl = await add(d.body.data.id, ids.burger);
+    await call("POST", `/v1/checks/${dl.body.data.checks[0]!.id}/payments`, { token: US.admin.token, body: { payment_id: randomUUID(), tender_type_id: ids.card, amount: dl.body.data.balance } });
+    const sent = await call<Mut>("POST", `/v1/orders/${d.body.data.id}/fire`, { token: pin, body: {} });
+    expect(sent.body.data.status).toBe("fired");
+  });
+
+  it("a waiting round shows the guest its menu price; an older customer row is updated, not duplicated", async () => {
+    const g = await phone("t2", "device-rv-0001");
+    await guestRound(g, ids.soda, 2);
+    const v = await call<{ data: { lines: { status: string; amount: number }[] } }>("GET", "/v1/guest/order", { token: g });
+    expect(v.body.data.lines.filter((l) => l.status === "held").map((l) => l.amount)).toContain(8640);
+    await db.sql`insert into customers (merchant_id, name, mobile) values (${US.merchantId}, 'Legacy Lou', '5553330000')`;
+    const put = await call<{ data: { id: string; mobile: string; name: string } }>("PUT", "/v1/customers", { token: US.admin.token, body: { name: "Lou", mobile: "+1 555 333 0000" } });
+    expect(put.body.data.mobile).toBe("+15553330000");
+    const [n] = await db.sql<{ n: number }[]>`select count(*)::int as n from customers where merchant_id = ${US.merchantId} and regexp_replace(coalesce(mobile,''), '[^0-9]', '', 'g') like '%5553330000'`;
+    expect(n!.n).toBe(1);
+  });
+
+  it("the drawer's audit names a payment void and a refund on the order", async () => {
+    const o = await open({ order_type: "takeaway" });
+    const a = await add(o.body.data.id, ids.burger);
+    const pid = randomUUID();
+    await call("POST", `/v1/checks/${a.body.data.checks[0]!.id}/payments`, { token: US.admin.token, body: { payment_id: pid, tender_type_id: ids.card, amount: a.body.data.balance } });
+    await call("POST", `/v1/payments/${pid}/void`, { token: US.admin.token, body: { reason: "Wrong card" } });
+    const audit = await call<{ data: { action: string }[] }>("GET", `/v1/audit?order_id=${o.body.data.id}`, { token: US.admin.token });
+    expect(audit.body.data.map((x) => x.action)).toEqual(expect.arrayContaining(["payments.void"]));
   });
 });

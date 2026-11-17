@@ -251,12 +251,14 @@ export async function actOnTicket(action: TicketAction, ticketId: string, p: Pri
   // rounds show Done); a recall takes it back to sent. Written before any event, as every register write is.
   let progress: { from: string; to: string } | null = null;
   if (action !== "start") {
-    const [o] = await db().select({ status: orders.status }).from(orders).where(eq(orders.id, row.orderId)).limit(1);
+    // The order row is locked first, so two displays bumping its last two tickets, or a payment completing it, are taken
+    // one after the other and each sees the other's write.
+    const [o] = await tx()<{ status: string }[]>`select status from orders where id = ${row.orderId} for update`;
     const [left] = await db().select({ n: sql<number>`count(*)::int` }).from(kitchenTickets).where(and(eq(kitchenTickets.orderId, row.orderId), isNull(kitchenTickets.bumpedAt), ne(kitchenTickets.status, "cancelled")));
     const [unsent] = await db().select({ n: sql<number>`count(*)::int` }).from(orderLines).where(and(eq(orderLines.orderId, row.orderId), inArray(orderLines.status, ["pending", "held"])));
     if (action === "bump" && o?.status === "fired" && (left?.n ?? 0) === 0 && (unsent?.n ?? 0) === 0) progress = { from: "fired", to: "ready" };
     if (action === "recall" && o?.status === "ready") progress = { from: "ready", to: "fired" };
-    if (progress) await db().update(orders).set({ status: progress.to as "ready" | "fired", readyAt: progress.to === "ready" ? now : null, updatedAt: now }).where(eq(orders.id, row.orderId));
+    if (progress) await db().update(orders).set({ status: progress.to as "ready" | "fired", readyAt: progress.to === "ready" ? now : null, version: sql`${orders.version} + 1`, updatedAt: now }).where(and(eq(orders.id, row.orderId), eq(orders.status, progress.from as "ready" | "fired")));
   }
   const bd = await ticketBusinessDay(row.outletId);
   const ctxFor = { principal: p, correlationId: ctx.correlationId, idempotencyKey: ctx.idempotencyKey, operationId: `kitchen_tickets.${action}`, bd };

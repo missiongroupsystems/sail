@@ -234,7 +234,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     const events: AppendedEvent[] = [];
     if (!reused) {
       events.push(await appendEvent({ merchantId: check.merchantId, outletId: check.outletId, type: "invoice.issued", aggregate: { kind: "order", id: check.orderId }, operationId: "documents.issue_invoice", payload: { check_id: id, invoice_no: document.invoice.number }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(check.merchantId, check.outletId) }, p));
-      await recordAudit(p, { action: "documents.issue_invoice", targetKind: "check", targetId: id, outletId: check.outletId, details: { invoice_no: document.invoice.number } });
+      await recordAudit(p, { action: "documents.issue_invoice", targetKind: "check", targetId: id, outletId: check.outletId, details: { order_id: check.orderId, invoice_no: document.invoice.number } });
     }
     return c.json({ data: { invoice_no: document.invoice.number, issued_at: document.invoice.issued_at, reused, pdf_url: `/v1/checks/${id}/invoice.pdf` }, events, warnings: [] }, 200);
   });

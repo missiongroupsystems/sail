@@ -180,7 +180,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
       <ReopenSheet isOpen={sheet?.kind === "reopen"} onClose={() => setSheet(null)} onReopen={(reason) => actions.reopen(reason)} checkRefusal={actions.reopenRefusal} payments={(order.data?.checks ?? []).flatMap((c) => c.payments.filter((p) => p.status === "recorded").map((p) => `${p.tender} ${money(p.amount)}`))} />
       <WaitingRoundSheet
         isOpen={sheet?.kind === "waiting"}
-        roundLabel={sheet?.kind === "waiting" ? `${sheet.round.lines.length} ${sheet.round.lines.length === 1 ? "item" : "items"}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null}
+        roundLabel={sheet?.kind === "waiting" ? `${sheet.round.lines.map((l) => `${l.quantity} ${l.name}`).join(", ")}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null}
         canPayRest={Boolean(snap && snap.balance > 0)}
         onClose={() => setSheet(null)}
         onAccept={() => (sheet?.kind === "waiting" ? actions.acceptRound(sheet.round.id) : Promise.resolve(null))}

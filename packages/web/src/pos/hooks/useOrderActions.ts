@@ -636,7 +636,8 @@ export function useOrderActions(orderId: string) {
           const recorded = taken?.checks.flatMap((c) => c.payments).find((p) => p.id === input.payment_id && p.status === "recorded");
           if (taken && recorded) {
             applySnapshot(qc, taken);
-            return { data: taken, payment: { ...recorded, change_due: recorded.change_cents, due_cents: recorded.amount + recorded.rounding_cents + recorded.tip_cents }, events: [], warnings: [] };
+            // The payment row as the register recorded it; nothing is added up here.
+            return { data: taken, payment: { ...recorded, change_due: recorded.change_cents }, events: [], warnings: [] };
           }
         }
         refreshIfBalanceChanged(e);

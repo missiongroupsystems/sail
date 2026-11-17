@@ -146,7 +146,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
       entering={entering.has(l.id)}
       printStatus={printStatus}
       ready={status === "sent" && (readyLineIds?.has(l.id) ?? false)}
-      chip={l.source === "guest" ? "QR" : null}
+      chip={l.source === "guest" && !noAmount ? "QR" : null}
       onPress={status === "voided" || status === "removed" || closed ? undefined : () => onLine(l)}
     />
   );
@@ -183,7 +183,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
                   </Button>
                 </span>
               </div>
-              {lines.map((l) => row(l, "held", null, true))}
+              {lines.map((l) => row(l, "new", null, true))}
               {r.notes ? <p className="px-4 text-caption text-ink-2 italic">{r.notes}</p> : null}
             </div>
           );
