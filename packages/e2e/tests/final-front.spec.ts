@@ -204,7 +204,7 @@ test("kitchen display: with 12 tickets and a 10-line one, every ticket and its B
         board.evaluate((el) => {
           const box = el.getBoundingClientRect();
           const vh = window.innerHeight;
-          return [...el.querySelectorAll<HTMLElement>("[data-ticket]")].filter((c) => {
+          return Array.from(el.querySelectorAll<HTMLElement>("[data-ticket]")).filter((c) => {
             const r = c.getBoundingClientRect();
             return r.left >= box.left - 1 && r.right <= box.right + 1 && r.top >= 0 && r.bottom <= vh + 1;
           }).map((c) => c.getAttribute("aria-label")!);
@@ -222,7 +222,7 @@ test("kitchen display: with 12 tickets and a 10-line one, every ticket and its B
       expect(seen.size).toBe(total);
       await expect(kds.getByRole("button", { name: /^\d+ earlier$/ })).toBeVisible();
       // Every Bump target is a 44px touch target.
-      const smallest = await board.evaluate((el) => Math.min(...[...el.querySelectorAll<HTMLElement>("[data-ticket] span.bg-primary")].map((b) => b.getBoundingClientRect().height)));
+      const smallest = await board.evaluate((el) => Math.min(...Array.from(el.querySelectorAll<HTMLElement>("[data-ticket] span.bg-primary")).map((b) => b.getBoundingClientRect().height)));
       expect(smallest).toBeGreaterThanOrEqual(44);
       await ctx.close();
     });
