@@ -23,6 +23,8 @@ export type GuestStreamOptions = {
 const STALE_MS = 65_000;
 const BACKOFF_MS = [1000, 2000, 4000, 8000, 15000, 30000];
 const COALESCE_MS = 150;
+/** How long a paid phone keeps listening for a void or a reopen (the register's window is 30 minutes). */
+const HELD_MS = 30 * 60_000;
 
 /**
  * Live updates for the guest: `/v1/guest/stream` over
@@ -60,6 +62,11 @@ export class GuestStream {
     this.clearTimers();
     this.abort?.abort();
     this.abort = null;
+  }
+
+  /** Connected and hearing the register (a paid phone that still listens needs no other check). */
+  get listening(): boolean {
+    return !this.stopped && this.abort !== null;
   }
 
   /** Try the stream again now (after the first round opened the order, say). */
@@ -200,6 +207,9 @@ export class GuestStream {
       this.held = true;
       if (this.changeTimer) clearTimeout(this.changeTimer);
       this.changeTimer = null;
+      // The register brings a paid table's phones back only within half an hour: past that, stop listening.
+      if (this.timer) clearTimeout(this.timer);
+      this.timer = setTimeout(() => this.stop(), HELD_MS);
       this.opts.onUnauthenticated?.({ reason: "order_paid" });
     } else if (event === "ended") {
       // The table session has ended (the order was paid, say): nothing more goes out with its token, not even the

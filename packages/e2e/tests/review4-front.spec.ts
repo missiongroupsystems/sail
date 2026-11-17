@@ -415,6 +415,12 @@ test("U4: two phones follow the table: Send shows the round at once, both get th
     await expect(phoneB.getByRole("button", { name: "Order again" })).toBeVisible();
     await expect(phoneB.getByRole("button", { name: "Try again" })).toHaveCount(0);
     await shot(phoneB, out("U4-phone-paid-after-reload.png"));
+    // Reloaded on the paid screen it has no stream: voided now, it learns it when the phone is shown again.
+    const o2 = await register<{ data: { checks: { payments: { id: string; status: string }[] }[] } }>("GET", `/v1/orders/${order.id}`);
+    const second = o2.data.checks.flatMap((c) => c.payments).find((p) => p.status === "recorded")!.id;
+    await register("POST", `/v1/payments/${second}/void`, { reason: "Wrong payment method" });
+    await phoneB.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(paidScreen(phoneB)).toHaveCount(0, { timeout: 20_000 });
   } finally {
     await ctx.close();
     await ctxB.close();
@@ -454,6 +460,8 @@ test("U5: with only a waiting QR order, the order's primary accepts it, sends it
     await sheet.getByRole("button", { name: "Accept", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Take payment" })).toBeVisible();
   } finally {
+    // Off the pay screen first: its dry run must not race the payment that settles the order.
+    await page.goto("about:blank");
     await settle(order.id);
   }
 });

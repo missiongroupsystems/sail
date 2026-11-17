@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Ban, CheckCheck, Clock, QrCode } from "lucide-react";
 import { useStore } from "zustand";
-import { API_URL, ApiError, createGuestApi, createSession, getMenu, getOrder, submitRound, toApiError } from "@/lib/api";
+import { API_URL, ApiError, createGuestApi, createSession, getMenu, getOrder, sessionLive, submitRound, toApiError } from "@/lib/api";
 import { createBasketStore, type BasketItem } from "@/lib/basket";
 import { brandStyle } from "@/lib/brand";
 import { QueryProvider, keys } from "@/lib/query";
@@ -176,6 +176,24 @@ function GuestAppInner({ token }: { token: string }) {
     setPhase(rotated ? { kind: "rotated" } : { kind: "ended", paid: details?.reason === "order_paid", cancelled: details?.reason === "order_cancelled" });
   }, [token, startSession]);
   onUnauthenticatedRef.current = onUnauthenticated;
+
+  /*
+   * Paid, without a live stream to hear a void or a reopen on (the page was reloaded on the paid screen, or the phone
+   * locked and the stream dropped): when the phone is shown again it asks the register once (review 4 U4).
+   */
+  const paidSession = phase.kind === "ended" && phase.paid ? session : null;
+  useEffect(() => {
+    if (!paidSession) return;
+    const onVisible = async () => {
+      if (document.visibilityState !== "visible" || streamRef.current?.listening) return;
+      if ((await sessionLive(paidSession.guest_token)) !== "live") return;
+      endedSession.current = null;
+      setPhase({ kind: "ready" });
+      void queryClient.invalidateQueries({ queryKey: keys.order(paidSession.session_id) });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [paidSession, queryClient]);
 
 
   const started = useRef(false);
