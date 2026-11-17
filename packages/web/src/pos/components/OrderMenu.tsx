@@ -1,17 +1,19 @@
 "use client";
 
-import { Button, Icon, Menu, MenuItem, MenuSeparator, MenuTrigger, ReasonPicker, Sheet, TableShape, TextField, useLocale } from "@sail/ui";
+import { Button, Icon, InlineError, Menu, MenuItem, MenuSeparator, MenuTrigger, ReasonPicker, Sheet, TableShape, TextField, useLocale } from "@sail/ui";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
-import { req } from "@/lib/api";
-import { findCustomers } from "../api/register";
+import { req, toApiError, type ApiError } from "@/lib/api";
+import { OP_MIN_ROLE } from "@/lib/op-roles";
+import { addCustomer, findCustomers } from "../api/register";
 import type { Customer, OrderSnapshot, OrderType } from "../api/types";
 import { useFloor } from "../hooks/queries";
 import { useApi } from "../hooks/useApi";
-import type { useOrderActions } from "../hooks/useOrderActions";
+import { roleAtLeast, type useOrderActions } from "../hooks/useOrderActions";
 import { ORDER_TYPE_LABEL, todayAt } from "../lib/format";
 import { useNavStore } from "../state/nav";
+import { useSessionStore } from "../state/session";
 import { usePos } from "./PosContext";
 
 type Open = "type" | "move" | "customer" | "cancel" | "invoice" | null;
@@ -47,9 +49,12 @@ export function OrderMenu({ order, actions, onOpen }: { order: OrderSnapshot; ac
           <MenuItem id="type" isDisabled={closed || frozen} detail={frozen && !closed ? "Paid" : undefined}>
             Change type
           </MenuItem>
-          <MenuItem id="move" isDisabled={order.order_type !== "dine_in" || closed}>
-            Move table
-          </MenuItem>
+          {/* Only a dine-in order sits at a table (final review B-P15). */}
+          {order.order_type === "dine_in" ? (
+            <MenuItem id="move" isDisabled={closed}>
+              Move table
+            </MenuItem>
+          ) : null}
           <MenuItem id="customer" isDisabled={closed}>
             Customer
           </MenuItem>
@@ -196,7 +201,7 @@ function ChangeTypeSheet({ isOpen, onClose, order, actions }: SheetProps) {
           </section>
         ) : null}
         {type !== "dine_in" ? <TextField label={type === "takeaway" ? "Name (optional)" : "Customer name"} value={name} onChange={setName} inputClassName="min-h-14 text-line" maxLength={80} /> : null}
-        {needsCustomer ? <TextField label="Mobile" value={mobile} onChange={setMobile} type="tel" inputClassName="min-h-14 text-line tabular" maxLength={30} /> : null}
+        {needsCustomer ? <TextField label="Mobile" value={mobile} onChange={setMobile} type="tel" inputClassName="min-h-14 text-line" maxLength={30} /> : null}
         {needsCustomer ? <TextField label="Ready by (HH:MM, optional)" value={readyBy} onChange={setReadyBy} placeholder="19:30" inputClassName="min-h-14 text-line tabular" isInvalid={Boolean(readyBy && !ready)} errorMessage={readyBy && !ready ? "Use HH:MM, for example 19:30" : undefined} /> : null}
         {type === "delivery" ? <TextField label="Delivery address" value={address} onChange={setAddress} multiline rows={2} inputClassName="text-line" maxLength={400} /> : null}
       </div>
@@ -254,11 +259,15 @@ function MoveTableSheet({ isOpen, onClose, order, actions }: SheetProps) {
   );
 }
 
-/** Customer: type a mobile number, tap the match; Remove detaches. */
+/** Customer: type a mobile number, tap the match, or add them there (name and mobile); Remove detaches. */
 function CustomerSheet({ isOpen, onClose, order, actions }: SheetProps) {
   const api = useApi();
   const [mobile, setMobile] = useState("");
+  const [name, setName] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<ApiError | null>(null);
   const [busy, setBusy] = useState(false);
+  const mayAdd = roleAtLeast(useSessionStore((s) => s.staff?.role ?? null), OP_MIN_ROLE["customers.upsert"] ?? "cashier");
   const digits = mobile.replace(/\s+/g, "");
   const search = useQuery({ queryKey: ["pos", "customers", digits], queryFn: () => findCustomers(api, digits), enabled: isOpen && digits.length >= 3, staleTime: 30_000 });
   const current = useQuery({
@@ -268,8 +277,28 @@ function CustomerSheet({ isOpen, onClose, order, actions }: SheetProps) {
     staleTime: 60_000,
   });
   useEffect(() => {
-    if (!isOpen) setMobile("");
+    if (!isOpen) {
+      setMobile("");
+      setName("");
+      setAdding(false);
+      setAddError(null);
+    }
   }, [isOpen]);
+
+  // "No customer with that number": add them with the existing customer operation and attach them (final review B-P9).
+  const add = async () => {
+    setBusy(true);
+    setAddError(null);
+    try {
+      const c = await addCustomer(api, { name: name.trim(), mobile: digits });
+      const snap = await actions.attachCustomer(c.id);
+      if (snap) onClose();
+    } catch (e) {
+      setAddError(toApiError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const attach = async (id: string) => {
     setBusy(true);
@@ -298,7 +327,7 @@ function CustomerSheet({ isOpen, onClose, order, actions }: SheetProps) {
             </Button>
           </div>
         ) : null}
-        <TextField label="Mobile number" value={mobile} onChange={setMobile} type="tel" placeholder="+ country code and number" autoFocus inputClassName="min-h-14 text-line tabular" />
+        <TextField label="Mobile number" value={mobile} onChange={(v) => { setMobile(v); setAdding(false); setAddError(null); }} type="tel" placeholder="+ country code and number" autoFocus inputClassName="min-h-14 text-line" />
         {digits.length >= 3 ? (
           search.data?.length ? (
             <ul className="flex flex-col gap-2">
@@ -315,7 +344,30 @@ function CustomerSheet({ isOpen, onClose, order, actions }: SheetProps) {
               ))}
             </ul>
           ) : search.isFetched ? (
-            <p className="text-body text-ink-2">No customer with that number. Customers are added in the back office or on a pickup order.</p>
+            adding ? (
+              <form
+                className="flex flex-col gap-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (name.trim() && !busy) void add();
+                }}
+              >
+                <TextField label="Name" value={name} onChange={setName} autoFocus autoComplete="off" inputClassName="min-h-14 text-line" />
+                {addError ? <InlineError error={addError} /> : null}
+                <Button type="submit" size="lg" variant="primary" isDisabled={!name.trim() || busy} isPending={busy} className="w-full">
+                  Add customer
+                </Button>
+              </form>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <p className="text-body text-ink-2">No customer with that number.</p>
+                {mayAdd ? (
+                  <Button size="lg" variant="secondary" isDisabled={busy} onPress={() => setAdding(true)} className="w-full">
+                    Add customer
+                  </Button>
+                ) : null}
+              </div>
+            )
           ) : null
         ) : (
           <p className="text-body text-ink-2">Type at least 3 digits.</p>

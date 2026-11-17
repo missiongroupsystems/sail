@@ -120,6 +120,21 @@ type PendingEvent = () => Promise<AppendedEvent | null>;
  * writer at the outlet waits on it, so the critical section is kept to the
  * appends themselves rather than the whole re-price and snapshot.
  */
+/**
+ * Pickup and delivery orders create or match a customer from their reference (name and mobile): on opening, and when an
+ * order becomes one or is given a mobile later (final review B-P9). An existing customer with that mobile keeps its name.
+ */
+async function customerFromRef(merchantId: string, ref: { name?: string; mobile?: string }): Promise<string | null> {
+  const mobile = ref.mobile?.replace(/\s+/g, "");
+  if (!mobile) return null;
+  const [cust] = await db()
+    .insert(customers)
+    .values({ merchantId, name: ref.name ?? mobile, mobile })
+    .onConflictDoUpdate({ target: [customers.merchantId, customers.mobile], set: { updatedAt: new Date() } })
+    .returning({ id: customers.id, archivedAt: customers.archivedAt });
+  return cust && !cust.archivedAt ? cust.id : null;
+}
+
 async function finish(c: Ctx, p: Principal, orderId: string, pending: PendingEvent[], warnings: string[] = []): Promise<Response> {
   const result = await repriceOrder(orderId);
   const version = await bumpVersion(orderId);
@@ -177,16 +192,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       if (existing) throw AppError.state("This table already has an open order", ["open the existing order"], "Tap the table to open its order, or move that order first.");
     }
     let customerId = b.customer_id ?? null;
-    if (!customerId && customerRef?.mobile) {
-      // Pickup and delivery orders create or match a customer from their reference.
-      const mobile = customerRef.mobile.replace(/\s+/g, "");
-      const [cust] = await db()
-        .insert(customers)
-        .values({ merchantId: p.merchantId, name: customerRef.name ?? mobile, mobile })
-        .onConflictDoUpdate({ target: [customers.merchantId, customers.mobile], set: { updatedAt: new Date() } })
-        .returning({ id: customers.id });
-      customerId = cust?.id ?? null;
-    }
+    if (!customerId && customerRef?.mobile) customerId = await customerFromRef(p.merchantId, customerRef);
     const tax = await orderTaxSettings(p.merchantId, ctx.outletId);
     const now = new Date();
     const orderNo = await nextOrderNo(ctx.outletId, p.merchantId, "pos");
@@ -309,7 +315,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     validateTypeFields(o.orderType as OrderType, next);
     await db()
       .update(orders)
-      .set({ pax: next.pax, customerRef: next.customerRef, deliveryAddress: next.deliveryAddress, deliveryNotes: b.delivery_notes === undefined ? o.deliveryNotes : b.delivery_notes, readyBy: next.readyBy, notes: b.notes === undefined ? o.notes : b.notes })
+      .set({ pax: next.pax, customerRef: next.customerRef, deliveryAddress: next.deliveryAddress, deliveryNotes: b.delivery_notes === undefined ? o.deliveryNotes : b.delivery_notes, readyBy: next.readyBy, notes: b.notes === undefined ? o.notes : b.notes, customerId: o.customerId ?? (o.orderType === "pickup" || o.orderType === "delivery" ? await customerFromRef(p.merchantId, next.customerRef ?? {}) : null) })
       .where(eq(orders.id, id));
     return finish(c, p, id, [() => emit(c, p, o, "order.details_updated", b)]);
   });
@@ -328,7 +334,8 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       if (!(await tableExists(next.tableId, o.outletId))) throw AppError.notFound("table", next.tableId);
       if (await openOrderForTable(next.tableId)) throw AppError.state("That table already has an open order", ["choose a free table"]);
     }
-    await db().update(orders).set({ orderType: b.order_type, tableId: next.tableId, pax: next.pax, customerRef: next.customerRef, deliveryAddress: next.deliveryAddress, readyBy: next.readyBy }).where(eq(orders.id, id));
+    const customerId = o.customerId ?? (b.order_type === "pickup" || b.order_type === "delivery" ? await customerFromRef(p.merchantId, next.customerRef ?? {}) : null);
+    await db().update(orders).set({ orderType: b.order_type, tableId: next.tableId, pax: next.pax, customerRef: next.customerRef, deliveryAddress: next.deliveryAddress, readyBy: next.readyBy, customerId }).where(eq(orders.id, id));
     // Unit prices follow the order type (open prices stay).
     const lines = await db().select().from(orderLines).where(and(eq(orderLines.orderId, id), sql`${orderLines.status} <> 'voided'`));
     for (const l of lines) await db().update(orderLines).set({ unitPrice: resolveUnitPrice(l, b.order_type) }).where(eq(orderLines.id, l.id));

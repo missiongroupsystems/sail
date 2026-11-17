@@ -1,4 +1,4 @@
-import { devLocal, expect, GUEST, register, test } from "./fixtures";
+import { devLocal, expect, GUEST, pairAndSignIn, register, test } from "./fixtures";
 
 /** Final review, front of house: the guest's phone, the POS floor and order screens, the kitchen display. */
 
@@ -124,4 +124,46 @@ test("guest: sticky bars are opaque on the page background, so scrolled text nev
   await opaque("div.fixed.bottom-0 > div");
   await phone.getByRole("button", { name: /^View your order/ }).click();
   await opaque("header.sticky");
+});
+
+test("POS: a customer is added from the order's Customer sheet and attached (B-P9); a pickup order offers no Move table (B-P15)", async ({ page, watch }) => {
+  test.setTimeout(240_000);
+  await pairAndSignIn(page, "333333"); // Cal Cashier may add customers
+  const mobile = `+6591${String(Date.now()).slice(-6)}`;
+  await page.getByRole("button", { name: "Floor", exact: true }).click();
+  await page.getByRole("button", { name: /^Table \d+, Free/ }).first().click();
+  await page.getByRole("button", { name: "2 guests", exact: true }).click();
+  await expect(page.getByRole("navigation", { name: "Menu sections" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Order", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Customer" }).click();
+  const sheet = page.getByRole("dialog", { name: "Customer" });
+  await sheet.getByLabel("Mobile number").fill(mobile);
+  await expect(sheet.getByText("No customer with that number.")).toBeVisible();
+  await expect(sheet.getByText(/back office/)).toHaveCount(0);
+  await sheet.getByRole("button", { name: "Add customer" }).click();
+  await sheet.getByLabel("Name").fill("Final Front Guest");
+  await sheet.getByRole("button", { name: "Add customer" }).click();
+  await expect(sheet).toBeHidden();
+  const found = await register<{ data: { id: string; name: string }[] }>("GET", `/v1/customers?mobile=${encodeURIComponent(mobile)}`);
+  expect(found.data.map((c) => c.name)).toEqual(["Final Front Guest"]);
+
+  await page.getByRole("button", { name: "Order", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Customer" }).click();
+  await expect(page.getByRole("dialog", { name: "Customer" }).getByText("Final Front Guest")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await test.step("as a pickup the order menu has no Move table", async () => {
+    await page.getByRole("button", { name: "Order", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Change type" }).click();
+    const type = page.getByRole("dialog", { name: "Change type" });
+    await type.getByRole("button", { name: "Pickup" }).click();
+    await type.getByLabel("Customer name").fill("Final Front Guest");
+    await type.getByRole("button", { name: "Change to Pickup" }).click();
+    await expect(type).toBeHidden();
+    await page.getByRole("button", { name: "Order", exact: true }).click();
+    await expect(page.getByRole("menuitem", { name: "Customer" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Move table" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+  });
 });

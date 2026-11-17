@@ -182,6 +182,11 @@ export async function findCustomers(api: PosApi, mobile: string): Promise<Custom
   return (await req(api.GET("/v1/customers", { params: { query: { mobile, limit: 10 } } }))).data as unknown as Customer[];
 }
 
+/** A new customer from the POS (customers.upsert; Cashier and up): their name and mobile, then attach them to the order. */
+export async function addCustomer(api: PosApi, body: { name: string; mobile: string }): Promise<Customer> {
+  return (await req(api.PUT("/v1/customers", { body, headers: headers() }))).data as unknown as Customer;
+}
+
 export async function listEvents(api: PosApi, outletId: string, after: number, limit = 500): Promise<EventsPage> {
   return (await req(api.GET("/v1/outlets/{id}/events", { params: { path: { id: outletId }, query: { after, limit } } }))) as unknown as EventsPage;
 }
