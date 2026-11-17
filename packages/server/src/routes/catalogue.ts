@@ -411,7 +411,7 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
     if (b.options) await writeOptions(p.merchantId, id, b.options);
     const data = await loadGroup(row);
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "modifier_group.updated", aggregate: { kind: "modifier_group", id }, operationId: "modifier_groups.update", payload: b, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
-    await recordAudit(p, { action: "modifier_groups.update", targetKind: "modifier_group", targetId: id, details: { name: row.name } });
+    await recordAudit(p, { action: "modifier_groups.update", targetKind: "modifier_group", targetId: id, details: { name: row.name, ...(b.archived === undefined ? {} : { archived: b.archived }) } });
     return c.json({ data, events: [ev], warnings: [] }, 200);
   });
 
@@ -461,7 +461,8 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
     if (b.sections) await writeMenuSections(p.merchantId, id, b.sections);
     const data = await loadMenu(row);
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "menu.updated", aggregate: { kind: "menu", id }, operationId: "menus.update", payload: { name: b.name, archived: b.archived, sections_replaced: !!b.sections }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
-    await recordAudit(p, { action: "menus.update", targetKind: "menu", targetId: id, details: { name: row.name, sections_replaced: !!b.sections } });
+    // Archiving or restoring is said in the log (live-test final2 A P-A3: it read only "sections replaced: false").
+    await recordAudit(p, { action: "menus.update", targetKind: "menu", targetId: id, details: { name: row.name, sections_replaced: !!b.sections, ...(b.archived === undefined ? {} : { archived: b.archived }) } });
     return c.json({ data, events: [ev], warnings: [] }, 200);
   });
 

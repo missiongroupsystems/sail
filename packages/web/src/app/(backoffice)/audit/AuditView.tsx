@@ -7,7 +7,8 @@ import { createContext, useContext, useMemo, useState } from "react";
 import { req } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { AuditEntry, AuditPage, Staff } from "@/lib/api/types";
-import { auditActionLabel, auditTargetLabel, shortId } from "@/lib/format";
+import { auditActionLabel, auditTargetLabel } from "@/lib/format";
+import { useUrlState } from "@/lib/url-state";
 import { keys } from "@/lib/query";
 
 const ANY = "__any__";
@@ -22,8 +23,11 @@ const ACTIONS = [
   "stock.mark_sold_out", "stock.restore", "tables.rotate_qr_token", "orders.open", "orders.cancel", "orders.reopen", "adjustments.apply_manual", "adjustments.remove",
   "payments.record", "payments.cancel", "refunds.create", "overrides.grant", "shifts.open", "shifts.close", "business_days.close", "imports.apply",
   "auth.sign_in", "auth.sign_out", "stock.set_daily_cap", "categories.create", "categories.update", "stations.unpair",
+  "lines.void_fired", "lines.add_open_price", "orders.move_table", "orders.change_type", "payments.void", "documents.issue_invoice", "rounds.accept", "rounds.reject",
+  "tables.qr_sheet", "tables.rotate_all_qr_tokens", "availability.create", "availability.update", "availability.delete", "imports.create", "customers.upsert",
+  "tax_classes.create", "tax_classes.update", "tax_rates.delete", "printers.create", "printers.update", "print_jobs.reprint", "print_jobs.reroute", "print_jobs.test",
 ];
-const TARGET_KINDS = ["merchant", "brand", "outlet", "station", "staff", "order", "check", "payment", "product", "report_category", "modifier_group", "menu", "pricing_rule", "table", "tax_class", "shift", "business_day", "printer", "relay"];
+const TARGET_KINDS = ["merchant", "brand", "outlet", "station", "staff", "order", "check", "payment", "order_line", "product", "report_category", "modifier_group", "menu", "pricing_rule", "availability_rule", "table", "tax_class", "customer", "import_job", "shift", "business_day", "printer", "relay"];
 
 /** Keys the register writes in minor units: shown as money, never as raw cents. Not `entered_value`: a percentage is in basis points. */
 // Also the drawer's figures (expected, counted, variance) and the bill's (balance, net, tax), which the register writes in cents (E-L13).
@@ -31,15 +35,52 @@ const MONEY_KEY = /(^|_)(amount|total|price|tip|tips|float|change|rounding|cents
 
 type Filters = { action?: string; actor_id?: string; target_kind?: string; from?: string; to?: string };
 
-function compact(details: Record<string, unknown>, money: (cents: number) => string): string {
-  const parts = Object.entries(details)
-    .filter(([, v]) => v !== null && v !== undefined && typeof v !== "object")
-    .map(([k, v]) => `${k.replace(/_cents$/, "").replace(/_/g, " ")}: ${typeof v === "number" && Number.isInteger(v) && MONEY_KEY.test(k) ? money(v) : String(v)}`);
-  const nested = Object.entries(details).filter(([, v]) => v && typeof v === "object").length;
+/** Keys an owner has no use for: ids and internal keys (the target column already names what changed). */
+const HIDDEN_KEY = /(^|_)(id|ids|key|ref)$|^(order_no|sections_replaced|archived|seeded|pin_changed)$/;
+/** Words for the keys whose own name reads poorly. */
+const KEY_WORDS: Record<string, string> = { rule_name: "Discount", entered_value: "Value", order_type: "Type", invoice_no: "Invoice", refund_receipt_no: "Receipt", reversed_payments: "Payments reversed", tip_cents: "Tip", rounding_cents: "Rounding" };
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * An entry's details in an owner's words (live-test final2 A P-A3): amounts as money, an entered percentage as "15%",
+ * no ids or internal keys, true flags as words and false ones left out, the target's own name not repeated.
+ */
+export function compact(entry: Pick<AuditEntry, "details" | "target_label" | "value_kind">, money: (cents: number) => string): string {
+  const parts: string[] = [];
+  let nested = 0;
+  for (const [k, v] of Object.entries(entry.details)) {
+    if (v === null || v === undefined || v === false || HIDDEN_KEY.test(k)) continue;
+    if (typeof v === "object") {
+      nested++;
+      continue;
+    }
+    if (typeof v === "string" && (UUID.test(v) || v === entry.target_label)) continue;
+    const words = KEY_WORDS[k] ?? `${k.replace(/_cents$/, "").replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())}`;
+    if (v === true) {
+      parts.push(words);
+      continue;
+    }
+    let shown: string;
+    if (k === "entered_value" && typeof v === "number") shown = entry.value_kind === "percent" ? `${v / 100}%` : entry.value_kind === "amount" ? money(v) : String(v);
+    else if (typeof v === "number" && Number.isInteger(v) && MONEY_KEY.test(k)) shown = money(v);
+    else if (typeof v === "string" && /^[a-z]+(_[a-z]+)+$/.test(v)) shown = v.replace(/_/g, " ");
+    else shown = String(v);
+    parts.push(k === "rule_name" ? shown : `${words}: ${shown}`);
+  }
   if (nested) parts.push(`+${nested} more`);
   const text = parts.join(" · ");
   return text.length > 96 ? `${text.slice(0, 95)}…` : text || "—";
 }
+
+/** The action in words; archiving or restoring through an update says so ("Archived menu"). */
+export function actionLabel(a: Pick<AuditEntry, "action" | "target_kind" | "details">): string {
+  const archived = a.details.archived;
+  if (typeof archived === "boolean") return `${archived ? "Archived" : "Restored"} ${auditTargetLabel(a.target_kind).toLowerCase()}`;
+  return auditActionLabel(a.action);
+}
+
+/** Targets whose label already says what they are ("P-0007 · Bill 1", "Table 7"). */
+const SELF_NAMED = new Set(["order", "check", "payment", "order_line", "table"]);
 
 /** The initials set on each staff record, so the audit's chips match Team and the side rail (E-N13). */
 const StaffInitials = createContext<Map<string, string>>(new Map());
@@ -59,9 +100,9 @@ function who(a: AuditEntry, set?: string) {
 function Details({ entry: a }: { entry: AuditEntry }) {
   const { money } = useLocale();
   return (
-    <span className="text-ink-2 break-words" title={JSON.stringify(a.details, null, 2)}>
+    <span className="text-ink-2 break-words">
       {a.reason ? `${a.reason} · ` : ""}
-      {compact(a.details, (c) => money(c))}
+      {compact(a, (c) => money(c))}
     </span>
   );
 }
@@ -94,14 +135,21 @@ const columns: DataTableColumn<AuditEntry>[] = [
       </span>
     ),
   },
-  { key: "action", header: "Action", render: (a) => <span className="text-ink" title={a.action}>{auditActionLabel(a.action)}</span> },
+  { key: "action", header: "Action", render: (a) => <span className="text-ink">{actionLabel(a)}</span> },
   {
     key: "target",
     header: "Target",
+    // The register's words for the target: "P-0007 · Bill 1", "Product Kopi"; a target that no longer exists by its kind alone.
     render: (a) => (
-      <span className="block min-w-0 whitespace-nowrap">
-        <span className="text-ink">{auditTargetLabel(a.target_kind)}</span>
-        {a.target_id ? <span className="text-ink-3 tabular" title={a.target_id}> {shortId(a.target_id)}</span> : null}
+      <span className="block min-w-0 break-words">
+        {a.target_label && SELF_NAMED.has(a.target_kind) ? (
+          <span className="text-ink tabular">{a.target_label}</span>
+        ) : (
+          <>
+            <span className={a.target_label ? "text-ink-2" : "text-ink"}>{auditTargetLabel(a.target_kind)}</span>
+            {a.target_label ? <span className="text-ink"> {a.target_label}</span> : null}
+          </>
+        )}
       </span>
     ),
   },
@@ -115,10 +163,17 @@ function toQuery(f: Filters) {
   return q;
 }
 
-export function AuditView({ initialPage, staff }: { initialPage: AuditPage; staff: Staff[] }) {
-  const [filters, setFilters] = useState<Filters>({});
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+const dayStart = (d: string) => (d ? new Date(`${d}T00:00:00`).toISOString() : undefined);
+const dayEnd = (d: string) => (d ? new Date(`${d}T23:59:59.999`).toISOString() : undefined);
+
+export type AuditInitial = { action: string | null; actor: string | null; target: string | null; from: string | null; to: string | null };
+
+export function AuditView({ initialPage, staff, initial }: { initialPage: AuditPage; staff: Staff[]; initial?: AuditInitial }) {
+  // The filters live in the address, as on the other pages, so a refresh or a shared link keeps them.
+  const [filters, setFilters] = useState<Filters>(() => ({ action: initial?.action ?? undefined, actor_id: initial?.actor ?? undefined, target_kind: initial?.target ?? undefined, from: dayStart(initial?.from ?? ""), to: dayEnd(initial?.to ?? "") }));
+  const [fromDate, setFromDate] = useState(initial?.from ?? "");
+  const [toDate, setToDate] = useState(initial?.to ?? "");
+  useUrlState({ action: filters.action, actor: filters.actor_id, target: filters.target_kind, from: fromDate, to: toDate });
   const query = useMemo(() => toQuery(filters), [filters]);
   const unfiltered = Object.keys(query).length === 0;
 
@@ -138,8 +193,8 @@ export function AuditView({ initialPage, staff }: { initialPage: AuditPage; staf
     setToDate(to);
     setFilters((f) => ({
       ...f,
-      from: from ? new Date(`${from}T00:00:00`).toISOString() : undefined,
-      to: to ? new Date(`${to}T23:59:59.999`).toISOString() : undefined,
+      from: dayStart(from),
+      to: dayEnd(to),
     }));
   };
 
