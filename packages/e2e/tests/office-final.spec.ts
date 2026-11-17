@@ -1,0 +1,120 @@
+import { readFileSync } from "node:fs";
+import type { Page } from "@playwright/test";
+import { devLocal, expect, register, SG_ADMIN, test, WEB } from "./fixtures";
+
+/** The final office round's checks (back office: reports, import and export, pickers, archive, sign-in). */
+
+async function signIn(page: Page, email = SG_ADMIN, password = devLocal().admin_password) {
+  await page.goto(`${WEB}/login`);
+  await expect(async () => {
+    await page.getByLabel("Email").fill(email);
+    await page.getByLabel("Password").fill(password);
+    await page.getByRole("button", { name: "Sign in" }).click({ timeout: 10_000 });
+    await page.waitForURL(`${WEB}/today`, { timeout: 30_000 });
+  }).toPass({ timeout: 300_000 });
+  await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
+}
+
+/** A paid takeaway Kopi on the Singapore demo outlet, by a tender that is neither cash nor a terminal. */
+async function paidOrder() {
+  const { outletId, brandId } = devLocal();
+  const products = await register<{ data: { id: string; name: string }[] }>("GET", "/v1/products?limit=50");
+  const kopi = products.data.find((p) => p.name === "Kopi")!;
+  const tenders = await register<{ data: { id: string; name: string; is_cash: boolean; provider?: string | null }[] }>("GET", "/v1/tender-types");
+  const byHand = tenders.data.find((t) => !t.is_cash && !t.provider)!;
+  const order = await register<{ data: { id: string; order_no: string } }>("POST", "/v1/orders", { order_id: crypto.randomUUID(), order_type: "takeaway", takeaway_ref: "Export", outlet_id: outletId, brand_id: brandId });
+  const added = await register<{ data: { balance: number; checks: { id: string }[] } }>("POST", `/v1/orders/${order.data.id}/lines`, { lines: [{ line_id: crypto.randomUUID(), product_id: kopi.id, quantity: 2 }] });
+  await register("POST", `/v1/orders/${order.data.id}/fire`, {});
+  await register("POST", `/v1/checks/${added.data.checks[0]!.id}/payments`, { payment_id: crypto.randomUUID(), tender_type_id: byHand.id, amount: added.data.balance });
+  await register("POST", `/v1/orders/${order.data.id}/complete`, {}).catch(() => undefined);
+  return { order: order.data, tender: byHand.name };
+}
+
+async function downloadCsv(page: Page): Promise<{ name: string; rows: string[][] }> {
+  await page.getByRole("button", { name: "Export" }).click();
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("menuitem", { name: "Download CSV" }).click()]);
+  const text = readFileSync((await download.path())!, "utf8").replace(/^﻿/, "");
+  // The cells in these tests hold no commas or quotes, so a plain split reads them.
+  return { name: download.suggestedFilename(), rows: text.split("\r\n").map((l) => (l ? l.split(",") : [])) };
+}
+
+/** A shown amount ("$3.50", "-$0.20", "S$ 1.234,50") as the plain decimal the CSV holds. */
+function plain(shown: string): string {
+  const negative = /[-−]/.test(shown);
+  const digits = shown.replace(/[^\d]/g, "");
+  const n = digits.padStart(3, "0");
+  return `${negative && Number(digits) !== 0 ? "-" : ""}${String(Number(n.slice(0, -2)))}.${n.slice(-2)}`;
+}
+
+test.describe("O1 (A P3): every report downloads as CSV with the screen's figures, and prints without the app around it", () => {
+  test("Sales: the CSV has the page's rows and totals, ISO dates, plain decimals and the currency; the range is in the address", async ({ page }) => {
+    test.setTimeout(300_000);
+    const { tender } = await paidOrder();
+    await signIn(page);
+    await page.goto(`${WEB}/reports/sales`);
+    await expect(page.getByRole("grid", { name: "Sales by tender" }).getByRole("rowheader", { name: tender })).toBeVisible();
+    await expect(page).toHaveURL(/from=\d{4}-\d{2}-\d{2}&to=\d{4}-\d{2}-\d{2}/);
+    const from = new URL(page.url()).searchParams.get("from")!;
+
+    const collected = await page.locator("dl > div", { has: page.locator("dt", { hasText: /^Collected$/ }) }).first().locator("dd").innerText();
+    const tenderAmount = await page.getByRole("grid", { name: "Sales by tender" }).getByRole("row", { name: new RegExp(tender) }).getByRole("gridcell").nth(1).innerText();
+    const { name, rows } = await downloadCsv(page);
+    expect(name).toBe(`sales-${from}-${from}.csv`);
+    expect(rows[0]).toEqual(["Sales"]);
+    expect(rows).toContainEqual(["From", from]);
+    expect(rows).toContainEqual(["Currency", "SGD"]);
+    expect(rows).toContainEqual(["Collected", plain(collected)]);
+    const header = rows.findIndex((r) => r[0] === "Tender");
+    expect(rows[header]).toEqual(expect.arrayContaining(["Tender", "Payments", "Amount"]));
+    const tenderRow = rows.slice(header + 1).find((r) => r[0] === tender)!;
+    expect(tenderRow[rows[header]!.indexOf("Amount")]).toBe(plain(tenderAmount));
+    const byDay = rows.findIndex((r) => r[0] === "Business date");
+    expect(rows[byDay + 1]![0]).toBe(from);
+
+    // A refresh keeps a range the owner chose (A P14).
+    await page.goto(`${WEB}/reports/sales?from=2026-01-01&to=${from}`);
+    await page.reload();
+    await expect(page).toHaveURL(new RegExp(`from=2026-01-01&to=${from}`));
+    await expect(page.getByRole("grid", { name: "Sales by day" })).toBeVisible();
+    expect((await downloadCsv(page)).rows).toContainEqual(["From", "2026-01-01"]);
+
+    // The print view: no rail, no filters, the report's own title and range on top.
+    await page.emulateMedia({ media: "print" });
+    await expect(page.getByRole("navigation").first()).toBeHidden();
+    await expect(page.getByRole("button", { name: "Export" })).toBeHidden();
+    await expect(page.getByRole("heading", { name: "Sales", exact: true })).toBeVisible();
+    await page.emulateMedia({ media: "screen" });
+  });
+
+  test("Z-report, Items, Shifts and Print health each export their figures", async ({ page }) => {
+    test.setTimeout(300_000);
+    await signIn(page);
+    await page.goto(`${WEB}/reports/z-report`);
+    await expect(page.getByRole("heading", { name: "Cash drawer" })).toBeVisible();
+    const expected = await page.locator("dl > div", { has: page.locator("dt", { hasText: /^Expected in the drawer$/ }) }).locator("dd").innerText();
+    let csv = await downloadCsv(page);
+    expect(csv.rows[0]).toEqual(["Z-report"]);
+    expect(csv.rows).toContainEqual(["Cash drawer"]);
+    expect(csv.rows).toContainEqual(["Expected in the drawer", plain(expected)]);
+    await expect(page).toHaveURL(/date=\d{4}-\d{2}-\d{2}/);
+
+    await page.goto(`${WEB}/reports/items`);
+    await expect(page.getByRole("grid", { name: "Items sold" }).getByRole("rowheader", { name: "Kopi" })).toBeVisible();
+    const kopiNet = await page.getByRole("grid", { name: "Items sold" }).getByRole("row", { name: /Kopi/ }).getByRole("gridcell").nth(3).innerText();
+    csv = await downloadCsv(page);
+    const head = csv.rows.findIndex((r) => r[0] === "Name");
+    expect(csv.rows[head]).toEqual(["Name", "Sold", "Gross", "Discounts", "Net", "Share of net"]);
+    expect(csv.rows.find((r) => r[0] === "Kopi")![4]).toBe(plain(kopiNet));
+
+    await page.goto(`${WEB}/reports/shifts`);
+    await expect(page.getByRole("grid", { name: "Shifts" })).toBeVisible();
+    csv = await downloadCsv(page);
+    expect(csv.rows).toContainEqual(["Opened", "Business date", "Shift", "Opened by", "Status", "Float", "Expected", "Counted", "Variance", "Closed"]);
+
+    await page.goto(`${WEB}/reports/print-health`);
+    await expect(page.getByRole("grid", { name: "Print health by printer" })).toBeVisible();
+    csv = await downloadCsv(page);
+    expect(csv.rows[0]).toEqual(["Print health"]);
+    expect(csv.rows.some((r) => r[0] === "Printer")).toBe(true);
+  });
+});

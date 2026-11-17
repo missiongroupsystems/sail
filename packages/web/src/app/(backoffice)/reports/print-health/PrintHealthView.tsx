@@ -2,11 +2,14 @@
 
 import { DataTable, EmptyState, InlineError, Skeleton, type DataTableColumn, useLocale } from "@sail/ui";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useRef } from "react";
+import { ReportExport } from "@/components/backoffice/ReportExport";
+import { ReportPrintHead } from "@/components/backoffice/ReportPrintHead";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Outlet } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
-import { ReportRange, useReportRange } from "../ReportRange";
+import { rangeScope, ReportRange, useReportRange } from "../ReportRange";
 
 /** One printer's row from the register (reports.print_health). */
 type PrintHealthRow = { printer_id: string | null; printer_name: string | null; relay_id: string | null; jobs: number; printed: number; failed: number; rerouted: number; reprints: number; late: number; p50_seconds: number | null; p95_seconds: number | null };
@@ -29,8 +32,9 @@ const columns: DataTableColumn<PrintHealthRow>[] = [
   { key: "p95_seconds", header: "95th percentile", numeric: true, sortable: true, render: (r) => <Seconds value={r.p95_seconds} /> },
 ];
 
-export function PrintHealthView({ outlets, scope, initialOutletId, today }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; today: string | null }) {
-  const range = useReportRange(outlets, scope, initialOutletId, today);
+export function PrintHealthView({ outlets, scope, initialOutletId, today, initialRange }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; today: string | null; initialRange?: { from: string | null; to: string | null } }) {
+  const range = useReportRange(outlets, scope, initialOutletId, today, initialRange);
+  const figures = useRef<HTMLDivElement>(null);
   const { outlet_id, from, to } = range.query;
   const report = useQuery<PrintHealthRow[], ApiError>({
     queryKey: ["reports", "print-health", range.query],
@@ -42,11 +46,14 @@ export function PrintHealthView({ outlets, scope, initialOutletId, today }: { ou
 
   return (
     <>
-      <ReportRange outlets={outlets} scope={scope} range={range} />
+      <ReportRange outlets={outlets} scope={scope} range={range} actions={<ReportExport title="Print health" scope={rangeScope(outlets, range)} fileName={`print-health-${range.from}-${range.to}`} target={figures} isDisabled={!report.data || report.isPlaceholderData} />} />
       {report.isPending && range.outletId && range.valid ? <Skeleton lines={4} /> : null}
       <InlineError error={report.error} />
       {report.data ? (
+        <div ref={figures}>
+        <ReportPrintHead title="Print health" scope={rangeScope(outlets, range)} />
         <DataTable aria-label="Print health by printer" columns={columns} rows={report.data} rowKey={(r) => r.printer_id ?? "none"} emptyState={<EmptyState title="No print jobs in this range" />} className={report.isPlaceholderData ? "opacity-60" : undefined} />
+        </div>
       ) : null}
     </>
   );

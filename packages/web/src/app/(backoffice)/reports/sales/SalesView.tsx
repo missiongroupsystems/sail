@@ -3,12 +3,15 @@
 import { BusinessDay, DataTable, EmptyState, InlineError, Money, Panel, refundBlocks, Skeleton, taxRows, ValueRows, type DataTableColumn } from "@sail/ui";
 import { blockRows } from "@/components/backoffice/ZReportBody";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useRef } from "react";
+import { ReportExport } from "@/components/backoffice/ReportExport";
+import { ReportPrintHead } from "@/components/backoffice/ReportPrintHead";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Outlet, TaxBreakdown } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
 import { useSession } from "@/lib/session-context";
-import { ReportRange, useReportRange } from "../ReportRange";
+import { rangeScope, ReportRange, useReportRange } from "../ReportRange";
 
 /**
  * The register's sales summary (reports.sales_summary). Figures are shown as the register reports them.
@@ -50,8 +53,9 @@ const categoryColumns: DataTableColumn<SalesSummary["by_category"][number]>[] = 
   { key: "net", header: "Net sales", numeric: true, render: (c) => <Money cents={c.net} /> },
 ];
 
-export function SalesView({ outlets, scope, initialOutletId, today }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; today: string | null }) {
-  const range = useReportRange(outlets, scope, initialOutletId, today);
+export function SalesView({ outlets, scope, initialOutletId, today, initialRange }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; today: string | null; initialRange?: { from: string | null; to: string | null } }) {
+  const range = useReportRange(outlets, scope, initialOutletId, today, initialRange);
+  const figures = useRef<HTMLDivElement>(null);
   const report = useQuery<SalesSummary, ApiError>({
     queryKey: ["reports", "sales", range.query],
     queryFn: () => req(api.GET("/v1/reports/sales-summary", { params: { query: range.query } })).then((r) => (r as { data: SalesSummary }).data),
@@ -67,11 +71,12 @@ export function SalesView({ outlets, scope, initialOutletId, today }: { outlets:
 
   return (
     <>
-      <ReportRange outlets={outlets} scope={scope} range={range} />
+      <ReportRange outlets={outlets} scope={scope} range={range} actions={<ReportExport title="Sales" scope={rangeScope(outlets, range)} fileName={`sales-${range.from}-${range.to}`} target={figures} isDisabled={!report.data || report.isPlaceholderData} />} />
       {report.isPending && range.outletId && range.valid ? <Skeleton lines={6} /> : null}
       <InlineError error={report.error} />
       {report.data && t ? (
-        <div className={report.isPlaceholderData ? "grid items-start gap-6 opacity-60 lg:grid-cols-2" : "grid items-start gap-6 lg:grid-cols-2"}>
+        <div ref={figures} className={report.isPlaceholderData ? "grid items-start gap-6 opacity-60 lg:grid-cols-2" : "grid items-start gap-6 lg:grid-cols-2"}>
+          <ReportPrintHead title="Sales" scope={rangeScope(outlets, range)} />
           {blocks && t ? (
             <div className="flex min-w-0 flex-col gap-6">
               <Panel title="Before refunds">

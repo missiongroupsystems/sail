@@ -52,7 +52,7 @@ export function Shell({ me, merchant, brands, outlets, scope, theme, children }:
   return (
     <div data-scale="compact" className="flex min-h-dvh bg-surface text-body">
       <OfficeSurface />
-      <aside className="sticky top-0 h-dvh shrink-0">
+      <aside className="sticky top-0 h-dvh shrink-0 print:hidden">
         <SideNav
           items={SECTIONS.filter((s) => !s.minRole || (me.role !== null && roleAtLeast(me.role, s.minRole)))}
           currentPath={pathname}

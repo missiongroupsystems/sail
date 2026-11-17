@@ -2,7 +2,10 @@
 
 import { BusinessDay, Badge, DataTable, DescriptionList, EmptyState, FilterTabs, Group, InlineError, Money, Sheet, type DataTableColumn, useLocale, DateField } from "@sail/ui";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { ReportExport } from "@/components/backoffice/ReportExport";
+import { ReportPrintHead } from "@/components/backoffice/ReportPrintHead";
+import { useUrlState } from "@/lib/url-state";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
 import { boKeys, type Shift } from "@/components/backoffice/register";
 import { ZReportBody } from "@/components/backoffice/ZReportBody";
@@ -13,11 +16,12 @@ import type { Scope } from "@/lib/cookies";
 
 const ANY = "__any__";
 
-export function ShiftsView({ outlets, scope, initialOutletId }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null }) {
+export function ShiftsView({ outlets, scope, initialOutletId, initialStatus, initialDate }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; initialStatus?: "open" | "closed" | null; initialDate?: string | null }) {
   const { clock, dayClock } = useLocale();
-  const { outletId, setOutletId } = useOutletChoice(outlets, scope, initialOutletId);
-  const [status, setStatus] = useState<"open" | "closed" | null>(null);
-  const [date, setDate] = useState("");
+  const { outletId, setOutletId, scoped } = useOutletChoice(outlets, scope, initialOutletId);
+  const [status, setStatus] = useState<"open" | "closed" | null>(initialStatus ?? null);
+  const [date, setDate] = useState(initialDate ?? "");
+  const figures = useRef<HTMLDivElement>(null);
   const [openId, setOpenId] = useState<string | null>(null);
 
   const filters = useMemo(() => ({ status: status ?? undefined, business_date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : undefined }), [status, date]);
@@ -37,6 +41,14 @@ export function ShiftsView({ outlets, scope, initialOutletId }: { outlets: Outle
   });
   const stationName = (id: string | null) => (id ? (stations.data ?? []).find((s) => s.id === id)?.name ?? "Station" : "Outlet");
   const open = (shifts.data ?? []).find((s) => s.id === openId) ?? null;
+  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date);
+  // The filters live in the address, so a refresh or a shared link keeps them (A P14).
+  useUrlState({ outlet: scoped ? null : outletId, status, date: validDate ? date : null });
+  const exportScope: [string, string][] = [
+    ["Outlet", outlets.find((o) => o.id === outletId)?.name ?? ""],
+    ["Status", status === "open" ? "Open" : status === "closed" ? "Closed" : "Open and closed"],
+    ["Business date", validDate ? date : "Any"],
+  ];
 
   const variance = (s: Shift) => {
     if (s.variance_cents === null) return <span className="text-ink-2">—</span>;
@@ -44,7 +56,7 @@ export function ShiftsView({ outlets, scope, initialOutletId }: { outlets: Outle
   };
 
   const columns: DataTableColumn<Shift>[] = [
-    { key: "opened_at", header: "Opened", sortable: true, isRowHeader: true, render: (s) => <span className="tabular whitespace-nowrap text-ink">{dayClock(s.opened_at)}</span> },
+    { key: "opened_at", header: "Opened", sortable: true, isRowHeader: true, render: (s) => <time dateTime={s.opened_at} className="tabular whitespace-nowrap text-ink">{dayClock(s.opened_at)}</time> },
     { key: "business_date", header: "Business date", sortable: true, render: (s) => <span className="whitespace-nowrap text-ink-2"><BusinessDay value={s.business_date} /></span> },
     { key: "name", header: "Shift", sortValue: (s) => s.name ?? stationName(s.station_id), render: (s) => <span className="text-ink">{s.name ?? stationName(s.station_id)}{s.name && s.station_id ? <span className="text-caption text-ink-2"> · {stationName(s.station_id)}</span> : null}</span> },
     { key: "opened_by", header: "Opened by", sortable: true, render: (s) => <span className="text-ink-2">{s.opened_by ?? "—"}</span> },
@@ -53,12 +65,12 @@ export function ShiftsView({ outlets, scope, initialOutletId }: { outlets: Outle
     { key: "expected_cash_cents", header: "Expected", numeric: true, sortable: true, render: (s) => (s.expected_cash_cents === null ? <span className="text-ink-2">—</span> : <Money cents={s.expected_cash_cents} />) },
     { key: "counted_cash_cents", header: "Counted", numeric: true, sortable: true, render: (s) => (s.counted_cash_cents === null ? <span className="text-ink-2">—</span> : <Money cents={s.counted_cash_cents} />) },
     { key: "variance_cents", header: "Variance", numeric: true, sortable: true, render: variance },
-    { key: "closed_at", header: "Closed", sortable: true, render: (s) => (s.closed_at ? <span className="flex flex-col leading-5"><span className="tabular whitespace-nowrap text-ink-2" title={dayClock(s.closed_at)}>{clock(s.closed_at)}</span>{s.closed_by ? <span className="text-[12.5px] leading-4 text-ink-3">{s.closed_by}</span> : null}</span> : <span className="text-ink-2">—</span>) },
+    { key: "closed_at", header: "Closed", sortable: true, render: (s) => (s.closed_at ? <span className="flex flex-col leading-5"><time dateTime={s.closed_at} className="tabular whitespace-nowrap text-ink-2" title={dayClock(s.closed_at)}>{clock(s.closed_at)}</time>{s.closed_by ? <span className="text-[12.5px] leading-4 text-ink-3">{s.closed_by}</span> : null}</span> : <span className="text-ink-2">—</span>) },
   ];
 
   return (
     <>
-      <div className="mb-3 flex flex-wrap items-center gap-3">
+      <div className="mb-3 flex flex-wrap items-center gap-3 print:hidden">
         <OutletChoice outlets={outlets} scope={scope} outletId={outletId} onChange={setOutletId} />
         <FilterTabs
           aria-label="Status"
@@ -72,11 +84,16 @@ export function ShiftsView({ outlets, scope, initialOutletId }: { outlets: Outle
           ]}
         />
         <DateField aria-label="Business date" value={date} onChange={setDate} placeholder="Any date" className="w-[200px]" />
+        <div className="ml-auto">
+          <ReportExport title="Shifts" scope={exportScope} fileName={`shifts${validDate ? `-${date}` : ""}${status ? `-${status}` : ""}`} target={figures} isDisabled={!shifts.data || shifts.isPlaceholderData} />
+        </div>
       </div>
 
       {outlets.length === 0 ? (
         <EmptyState title="No outlets yet" hint="Shifts belong to an outlet." />
       ) : (
+        <div ref={figures}>
+        <ReportPrintHead title="Shifts" scope={exportScope} />
         <DataTable
           aria-label="Shifts"
           columns={columns}
@@ -88,9 +105,10 @@ export function ShiftsView({ outlets, scope, initialOutletId }: { outlets: Outle
           onRowAction={(s) => setOpenId(s.id)}
           emptyState={<EmptyState variant="centred" title="No shifts" hint="Stations open a shift with a counted float; closed shifts keep their Z figures here." />}
         />
+        </div>
       )}
       <InlineError error={shifts.error} className="mt-4" />
-      <p className="mt-3 text-caption text-ink-2">Up to 200 shifts, newest first. Variance is counted minus expected, from the register.</p>
+      <p className="mt-3 text-caption text-ink-2 print:hidden">Up to 200 shifts, newest first. Variance is counted minus expected, from the register.</p>
 
       <Sheet isOpen={open !== null} onOpenChange={(o) => !o && setOpenId(null)} width="lg" title={open ? open.name ?? stationName(open.station_id) : "Shift"} description={open ? `${open.status === "open" ? "Open" : "Closed"} · business day ${open.business_date} · opened ${dayClock(open.opened_at)}${open.opened_by ? ` by ${open.opened_by}` : ""}` : undefined}>
         {open ? (

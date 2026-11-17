@@ -2,7 +2,10 @@
 
 import { BusinessDay, Button, Dialog, EmptyState, InlineError, Pill, Select, Skeleton, useLocale, DateField } from "@sail/ui";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { fileSlug, ReportExport } from "@/components/backoffice/ReportExport";
+import { ReportPrintHead } from "@/components/backoffice/ReportPrintHead";
+import { useUrlState } from "@/lib/url-state";
 import { useBusinessDate } from "@/lib/business-date";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
 import { boKeys, can, rolesFor, type BusinessDayClose, type ZReport } from "@/components/backoffice/register";
@@ -15,16 +18,17 @@ import { useSession } from "@/lib/session-context";
 
 const ALL = "__all__";
 
-export function ZReportView({ outlets, scope, initialOutletId, today }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; today: string | null }) {
+export function ZReportView({ outlets, scope, initialOutletId, today, initialDate, initialStationId }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; today: string | null; initialDate?: string | null; initialStationId?: string | null }) {
   const { dayClock, money, businessDay } = useLocale();
   const { me } = useSession();
   const qc = useQueryClient();
   const canClose = can(me, "business_days.close");
-  const { outletId, setOutletId } = useOutletChoice(outlets, scope, initialOutletId);
+  const { outletId, setOutletId, scoped } = useOutletChoice(outlets, scope, initialOutletId);
   // The register's business day, read by the page: not the clock, so the server render and the browser agree.
-  const [date, setDate] = useState(today ?? "");
+  const [date, setDate] = useState(initialDate ?? today ?? "");
   const current = useBusinessDate(outletId);
-  const [stationId, setStationId] = useState<string | null>(null);
+  const [stationId, setStationId] = useState<string | null>(initialStationId ?? null);
+  const figures = useRef<HTMLDivElement>(null);
   const [closed, setClosed] = useState<BusinessDayClose | null>(null);
   const [confirming, setConfirming] = useState(false);
 
@@ -61,20 +65,30 @@ export function ZReportView({ outlets, scope, initialOutletId, today }: { outlet
   // A business day after today's has not started: there is nothing to close (live-test E-L17). Dates compare as YYYY-MM-DD.
   const notStarted = Boolean(today && date && date > today);
   const stationName = (id: string | null) => (id ? (stations.data ?? []).find((s) => s.id === id)?.name ?? "Station" : "All stations");
+  // The day and station live in the address, so a refresh or a shared link keeps them (A P14).
+  useUrlState({ outlet: scoped ? null : outletId, date: validDate ? date : null, station: stationId });
+  const exportScope: [string, string][] = [
+    ["Outlet", outlets.find((o) => o.id === outletId)?.name ?? ""],
+    ["Business date", date],
+    ["Station", stationName(stationId)],
+  ];
 
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3 print:hidden">
         <div className="flex flex-wrap items-end gap-3">
           <OutletChoice outlets={outlets} scope={scope} outletId={outletId} onChange={setOutletId} />
           <DateField aria-label="Business date" value={date} onChange={setDate} placeholder="Choose a day" className="w-[200px]" />
           <Select aria-label="Station" variant="toolbar" size="sm" selectedKey={stationId ?? ALL} onSelectionChange={(k) => setStationId(k === ALL ? null : k)} items={[{ id: ALL, label: "All stations" }, ...(stations.data ?? []).filter((s) => !s.archived || s.id === stationId).map((s) => ({ id: s.id, label: s.name }))]} />
         </div>
-        <div className="flex max-w-full flex-col items-end gap-1 max-sm:w-full max-sm:items-stretch">
+        <div className="flex max-w-full items-start gap-2 max-sm:w-full">
+        <ReportExport title="Z-report" scope={exportScope} fileName={`z-report-${date}${stationId ? `-${fileSlug(stationName(stationId))}` : ""}`} target={figures} isDisabled={!report.data || report.isPlaceholderData} />
+        <div className="flex max-w-full flex-col items-end gap-1 max-sm:flex-1 max-sm:items-stretch">
           <Button size="sm" variant="primary" onPress={() => setConfirming(true)} isDisabled={!canClose || !outletId || !validDate || stationId !== null || closedToday || notStarted} className="max-w-full whitespace-normal">
             {closedToday ? `Business day ${businessDay(date)} closed` : `Close business day ${businessDay(date)}…`}
           </Button>
           <p className="text-caption text-ink-2">{!canClose ? rolesFor("business_days.close") : notStarted ? "That business day has not started yet" : stationId ? "Choose All stations to close the day" : "Snapshots this Z-report once every shift is closed"}</p>
+        </div>
         </div>
       </div>
 
@@ -135,7 +149,8 @@ export function ZReportView({ outlets, scope, initialOutletId, today }: { outlet
       {report.isPending && outletId ? <Skeleton lines={6} /> : null}
       <InlineError error={report.error} />
       {report.data ? (
-        <div className={report.isPlaceholderData ? "opacity-60" : undefined}>
+        <div ref={figures} className={report.isPlaceholderData ? "opacity-60" : undefined}>
+          <ReportPrintHead title="Z-report" scope={exportScope} />
           <ZReportBody report={report.data} stationName={stationName} />
         </div>
       ) : null}
