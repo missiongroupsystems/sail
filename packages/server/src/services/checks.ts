@@ -225,7 +225,7 @@ export async function checkSnapshots(orderId: string): Promise<CheckSnapshot[]> 
   const recorded = (checkId: string) => pays.filter((p) => p.checkId === checkId && p.status === "recorded");
   // The same note the printed bill and the invoice carry, so the POS Bill screen says it too (review 2, N2).
   const [order] = chks.length > 1 ? await db().select({ taxRounding: orders.taxRounding, taxMode: orders.taxMode }).from(orders).where(eq(orders.id, orderId)).limit(1) : [];
-  const noteLines = order?.taxRounding === "per_rate" ? await db().select().from(orderLines).where(eq(orderLines.orderId, orderId)) : [];
+  const noteLines = order?.taxRounding === "per_rate" ? await db().select({ id: orderLines.id, taxes: orderLines.taxes, netAmount: orderLines.netAmount }).from(orderLines).where(eq(orderLines.orderId, orderId)) : [];
   const taxNote = (c: (typeof chks)[number]) => (order?.taxRounding === "per_rate" ? (splitTaxNote(c.taxes, allocs.filter((a) => a.checkId === c.id), noteLines, order.taxMode) ?? null) : null);
   return chks.map((c) => ({
     id: c.id,
@@ -309,15 +309,20 @@ export async function billDocumentFor(checkId: string, kind: "prebill" | "receip
  * When a split bill's tax for a rate is not its own rate times its own taxable amount (the cent the order's single rounding
  * leaves goes to one bill, by largest remainder), the bill says so in one line; otherwise nothing is printed.
  */
-function splitTaxNote(taxes: TaxAmount[], allocs: (typeof checkAllocations.$inferSelect)[], lines: (typeof orderLines.$inferSelect)[], taxMode: string): string | undefined {
+function splitTaxNote(taxes: TaxAmount[], allocs: (typeof checkAllocations.$inferSelect)[], lines: Pick<typeof orderLines.$inferSelect, "id" | "taxes" | "netAmount">[], taxMode: string): string | undefined {
   for (const t of taxes) {
-    // Exclusive: the rate on the bill's taxable amount. Inclusive: the rate's part of the bill's tax-inclusive amount.
-    const base = allocs.reduce((n, a) => {
+    // Exclusive: the rate on the bill's taxable amount. Inclusive: the component's part of the bill's tax-inclusive
+    // amount at the line's combined rate, as the engine takes it.
+    let base = 0;
+    let combined = t.bps;
+    for (const a of allocs) {
       const l = lines.find((x) => x.id === a.orderLineId);
       const b = l?.taxes.find((x) => x.name === t.name && x.bps === t.bps);
-      return n + (b ? ((taxMode === "inclusive" ? b.taxable + b.amount : b.taxable) * a.shareNum) / a.shareDen : 0);
-    }, 0);
-    const own = taxMode === "inclusive" ? Math.floor((Math.round(base) * t.bps) / (10_000 + t.bps) + 0.5) : Math.floor((Math.round(base) * t.bps) / 10_000 + 0.5);
+      if (!l || !b) continue;
+      if (taxMode === "inclusive") combined = l.taxes.reduce((n, x) => n + x.bps, 0);
+      base += ((taxMode === "inclusive" ? l.netAmount : b.taxable) * a.shareNum) / a.shareDen;
+    }
+    const own = taxMode === "inclusive" ? Math.floor((Math.round(base) * t.bps) / (10_000 + combined) + 0.5) : Math.floor((Math.round(base) * t.bps) / 10_000 + 0.5);
     if (own !== t.amount) return "Tax includes rounding so the bills add up to the order's tax.";
   }
   return undefined;

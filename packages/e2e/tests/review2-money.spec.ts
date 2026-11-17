@@ -53,7 +53,7 @@ test("N3: Orders → Today's closed → a terminal-paid order → Reopen says wh
   await pairAndSignIn(page, CASHIER_PIN);
   await openClosedOrder(page, order.order_no);
   await page.getByRole("region", { name: "Order" }).getByRole("button", { name: /^Reopen/ }).first().click();
-  const sheet = page.getByRole("dialog", { name: "This order cannot be reopened" });
+  const sheet = page.getByRole("dialog", { name: "Reopen order" });
   await expect(sheet).toBeVisible();
   await expect(sheet.getByText("This order was paid on a card terminal, so it cannot be reopened")).toBeVisible();
   await expect(sheet.getByText(/Void the terminal payment/)).toBeVisible();

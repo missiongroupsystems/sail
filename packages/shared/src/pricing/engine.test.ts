@@ -600,3 +600,21 @@ describe("properties", () => {
     expect(s.map((r) => r.id)).toEqual(["z", "a", "b"]);
   });
 });
+
+describe("carried tax (review 2, N1): a paid bill keeps its tax and the lines priced now take the rest", () => {
+  const rates: TaxRateInput[] = [{ tax_class_id: "standard", components: [{ name: "Tax 10%", bps: 1000 }] }];
+  it("the order is exact even when the paid amount already carries a rounding cent and a half", () => {
+    // 10% of 105 + 104 = 20.9 → 21. The paid 105 kept 9 (not its own 11), so the lines priced now take 12, two cents
+    // from their own rounding of 10.4.
+    const r = price(order([line("a", 104)]), [], { ...ctx("exclusive", "per_rate", rates), carried_tax: [{ components: [{ name: "Tax 10%", bps: 1000 }], amount: 105, taxes: [9] }] });
+    expect(r.totals.tax_total).toBe(12);
+  });
+  it("never gives a line negative tax: the lines' own rounding is kept instead", () => {
+    const r = price(order([line("a", 1)]), [], { ...ctx("exclusive", "per_rate", rates), carried_tax: [{ components: [{ name: "Tax 10%", bps: 1000 }], amount: 104, taxes: [12] }] });
+    expect(r.totals.tax_total).toBe(0);
+  });
+  it("is ignored when tax is rounded per line", () => {
+    const r = price(order([line("a", 104)]), [], { ...ctx("exclusive", "per_line", rates), carried_tax: [{ components: [{ name: "Tax 10%", bps: 1000 }], amount: 105, taxes: [9] }] });
+    expect(r.totals.tax_total).toBe(10);
+  });
+});

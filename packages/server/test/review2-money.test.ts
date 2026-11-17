@@ -232,7 +232,7 @@ describe("N10: the attached customer's name is the order's name", () => {
     expect(robin.status, JSON.stringify(robin.body)).toBeLessThan(300);
     const at = await call<{ data: Snap & { customer_id: string; customer_ref: { name: string; mobile?: string } } }>("POST", `/v1/orders/${id}/customer`, { token: US.pin, body: { customer_id: robin.body.data.id } });
     expect(at.status, JSON.stringify(at.body)).toBe(200);
-    expect(at.body.data.customer_ref).toEqual({ name: "Robin", mobile: "+15550107788" });
+    expect(at.body.data.customer_ref).toEqual({ name: "Robin" }); // the mobile stays on the customer row
     const tickets = (await call<{ data: { order_id: string; customer_name: string | null }[] }>("GET", `/v1/outlets/${US.m.outletId}/kitchen-tickets`, { token: US.m.admin.token })).body.data.filter((t) => t.order_id === id);
     expect(tickets.length).toBeGreaterThan(0);
     expect(tickets.every((t) => t.customer_name === "Robin")).toBe(true);

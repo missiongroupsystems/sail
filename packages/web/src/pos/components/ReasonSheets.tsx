@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Checkbox, ReasonPicker, Sheet } from "@sail/ui";
+import { Button, Checkbox, ReasonPicker, Sheet, Skeleton } from "@sail/ui";
 import { useEffect, useState } from "react";
 
 export const REOPEN_REASONS = ["Guest came back", "Closed by mistake", "More items to add", "Payment recorded wrongly"];
@@ -23,7 +23,7 @@ export function ReopenSheet({ isOpen, onClose, onReopen, payments = [], checkRef
   }, [isOpen, checkRefusal]);
   if (refusal) {
     return (
-      <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="This order cannot be reopened" description={refusal.message}>
+      <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Reopen order" description={refusal.message}>
         {refusal.remedy ? <p className="text-body text-ink">{refusal.remedy}</p> : null}
       </Sheet>
     );
@@ -39,6 +39,7 @@ export function ReopenSheet({ isOpen, onClose, onReopen, payments = [], checkRef
           <p className="text-ink-2">{payments.join(" · ")}. The bill is then open for its full balance and is paid again.</p>
         </div>
       ) : null}
+      {refusal === undefined ? <Skeleton lines={3} /> : null}
       {refusal === null ? (
       <ReasonPicker
         reasons={REOPEN_REASONS.map((r) => ({ id: r, name: r }))}

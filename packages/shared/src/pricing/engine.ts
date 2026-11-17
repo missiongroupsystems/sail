@@ -460,8 +460,9 @@ function computeTax(order: PricingOrder, states: readonly LineState[], adjustmen
       const carriedBase = sumCents(carried.map((c) => c.amount));
       const whole = carried.length && base > 0 && carriedBase > 0 ? rateTax(base + carriedBase, group[0]!.components, context) : null;
       const shares = whole ? whole.map((t, k) => t - sumCents(carried.map((c) => c.taxes[k]!))) : own;
-      // Never a negative tax, nor one more than a cent away from these lines' own (a paid amount can carry an odd cent).
-      const perComponent = shares.map((t, k) => (t >= 0 && Math.abs(t - own[k]!) <= 1 ? t : own[k]!)).map((t) => allocateLargestRemainder(t, weights));
+      // The order stays exact even when a paid bill already carries a rounding cent of its own (the open bill can then be
+      // two cents from its own rounding); only a negative tax falls back to these lines' own.
+      const perComponent = shares.map((t, k) => (t >= 0 ? t : own[k]!)).map((t) => allocateLargestRemainder(t, weights));
       group.forEach((item, k) => (item.taxes = perComponent.map((parts) => parts[k]!)));
     }
   }

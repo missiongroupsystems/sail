@@ -512,7 +512,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
       <Dialog
         isOpen={reopen}
         onOpenChange={(open) => !open && setReopen(false)}
-        title={reopenRefusal ? "This order cannot be reopened" : o ? `Reopen ${o.order_no}` : "Reopen order"}
+        title={o ? `Reopen ${o.order_no}` : "Reopen order"}
         footer={
           reopenRefusal ? (
             <Button variant="primary" onPress={() => setReopen(false)}>

@@ -359,10 +359,9 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     const [cust] = await db().select({ id: customers.id, name: customers.name }).from(customers).where(and(eq(customers.id, b.customer_id), isNull(customers.archivedAt))).limit(1);
     if (!cust) throw AppError.notFound("customer", b.customer_id);
     // One rule for the order's name: the attached customer's (the typed name only while no customer is attached), on the
-    // header, the closed list, receipts and the kitchen tickets still on a display (review 2, N10). The mobile follows for
-    // staff; an agent cannot read customers' mobiles, so its attach carries the name alone (never the last customer's number).
-    const [contact] = p.type === "agent" ? [] : await db().select({ mobile: customers.mobile }).from(customers).where(eq(customers.id, cust.id)).limit(1);
-    const customerRef = { name: cust.name, ...(contact?.mobile ? { mobile: contact.mobile } : {}) };
+    // header, the closed list, receipts and the kitchen tickets still on a display (review 2, N10). Only the name is copied:
+    // the mobile stays on the customer row, which agents cannot read, and the last customer's number never stays behind.
+    const customerRef = { name: cust.name };
     await db().update(orders).set({ customerId: cust.id, customerRef }).where(eq(orders.id, id));
     // The register's own follow-up (an agent's role cannot write tickets): only this order's tickets, in its merchant.
     await asSystem(() => db().update(kitchenTickets).set({ customerName: cust.name }).where(and(eq(kitchenTickets.orderId, id), eq(kitchenTickets.merchantId, o.merchantId))));
