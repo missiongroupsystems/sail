@@ -35,7 +35,7 @@ test("guest: the register's totals before sending, and the tax note from the fir
     await phone.getByRole("button", { name: /^Laksa,/ }).click();
     const sheet = phone.getByRole("dialog", { name: "Laksa" });
     await expect(sheet.getByRole("button", { name: "Add to order · $18.00" })).toBeVisible();
-    await sheet.getByRole("button", { name: "More quantity" }).click();
+    await sheet.getByRole("button", { name: "Increase quantity" }).click();
     await expect(sheet.getByRole("button", { name: "Add 2 to order · $36.00" })).toBeVisible();
     await sheet.getByRole("button", { name: /^Add 2 to order/ }).click();
     await expect(sheet).toBeHidden();

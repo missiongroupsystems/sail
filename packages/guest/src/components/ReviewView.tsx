@@ -109,7 +109,7 @@ export function ReviewView({ session, menu, items, guestName, onGuestName, canOr
                       onPress={() => onEdit(item.key)}
                       isDisabled={sending}
                       aria-label={`Change ${item.name}`}
-                      className="min-w-0 flex-1 rounded-chip text-left outline-none data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus"
+                      className="min-h-12 min-w-0 flex-1 rounded-chip text-left outline-none data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus"
                     >
                       <p className="font-display text-[16px] leading-snug font-medium text-ink wrap-anywhere">{item.name}</p>
                       {item.modifiers.length ? (
