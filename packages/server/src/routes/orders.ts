@@ -12,6 +12,7 @@ import { outletVisible, principalRole, type Principal } from "../auth/principal.
 import { compileMenu } from "../services/menu.js";
 import { buildLines, resolveModifiers, type LineInput } from "../services/lines.js";
 import { bumpVersion, getOrderRow, loadSnapshot, lockOrder, nextOrderNo, OPEN_STATUSES, openOrderForTable, orderClosed, paidTotal, pricingContextOf, pricingLineOf, repriceOrder, resolveUnitPrice, tableExists, type OrderSnapshot } from "../services/orders.js";
+import { asSystem } from "../services/guest.js";
 import { orderTaxRates, orderTaxSettings, usedTaxClasses } from "../services/tax.js";
 import { assertAdjustmentUnlocked, assertLineUnlocked } from "../services/checks.js";
 import { requireRoleOrOverride } from "../services/overrides.js";
@@ -321,7 +322,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       .update(orders)
       .set({ pax: next.pax, customerRef: next.customerRef, deliveryAddress: next.deliveryAddress, deliveryNotes: b.delivery_notes === undefined ? o.deliveryNotes : b.delivery_notes, readyBy: next.readyBy, notes: b.notes === undefined ? o.notes : b.notes, customerId: o.customerId ?? (o.orderType === "pickup" || o.orderType === "delivery" ? await customerFromRef(p.merchantId, next.customerRef ?? {}) : null) })
       .where(eq(orders.id, id));
-    if (b.customer_ref !== undefined) await db().update(kitchenTickets).set({ customerName: next.customerRef?.name ?? null }).where(and(eq(kitchenTickets.orderId, id), eq(kitchenTickets.merchantId, o.merchantId)));
+    if (b.customer_ref !== undefined) await asSystem(() => db().update(kitchenTickets).set({ customerName: next.customerRef?.name ?? null }).where(and(eq(kitchenTickets.orderId, id), eq(kitchenTickets.merchantId, o.merchantId))));
     return finish(c, p, id, [() => emit(c, p, o, "order.details_updated", b)]);
   });
 
@@ -355,14 +356,16 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     dryRunFrom(c, b);
     const o = await lockOrder(id, b.expected_version);
     assertOpen(o);
-    const [cust] = await db().select({ id: customers.id, name: customers.name, mobile: customers.mobile }).from(customers).where(and(eq(customers.id, b.customer_id), isNull(customers.archivedAt))).limit(1);
+    const [cust] = await db().select({ id: customers.id, name: customers.name }).from(customers).where(and(eq(customers.id, b.customer_id), isNull(customers.archivedAt))).limit(1);
     if (!cust) throw AppError.notFound("customer", b.customer_id);
     // One rule for the order's name: the attached customer's (the typed name only while no customer is attached), on the
-    // header, the closed list, receipts and the kitchen tickets still on a display (review 2, N10).
-    const mobile = cust.mobile ?? o.customerRef?.mobile;
-    const customerRef = { name: cust.name, ...(mobile ? { mobile } : {}) };
+    // header, the closed list, receipts and the kitchen tickets still on a display (review 2, N10). The mobile follows for
+    // staff; an agent cannot read customers' mobiles, so its attach carries the name alone (never the last customer's number).
+    const [contact] = p.type === "agent" ? [] : await db().select({ mobile: customers.mobile }).from(customers).where(eq(customers.id, cust.id)).limit(1);
+    const customerRef = { name: cust.name, ...(contact?.mobile ? { mobile: contact.mobile } : {}) };
     await db().update(orders).set({ customerId: cust.id, customerRef }).where(eq(orders.id, id));
-    await db().update(kitchenTickets).set({ customerName: cust.name }).where(and(eq(kitchenTickets.orderId, id), eq(kitchenTickets.merchantId, o.merchantId)));
+    // The register's own follow-up (an agent's role cannot write tickets): only this order's tickets, in its merchant.
+    await asSystem(() => db().update(kitchenTickets).set({ customerName: cust.name }).where(and(eq(kitchenTickets.orderId, id), eq(kitchenTickets.merchantId, o.merchantId))));
     return finish(c, p, id, [() => emit(c, p, o, "order.customer_attached", { customer_id: cust.id })]);
   });
 
