@@ -181,7 +181,8 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
                   <Button size="md" variant="quiet" isDisabled={offline} onPress={() => onRejectRound(r)} className="text-ink-2">
                     Reject
                   </Button>
-                  <Button size="md" variant="primary" isDisabled={offline} onPress={() => onAcceptRound(r)}>
+                  {/* The order's one primary is the dock's (Pay, or Review QR order, which opens Accept first): Accept here is secondary (review 3, S7). */}
+                  <Button size="md" variant="secondary" isDisabled={offline} onPress={() => onAcceptRound(r)}>
                     Accept
                   </Button>
                 </span>

@@ -196,7 +196,7 @@ function OpenPriceSheet({ product, onClose, onAdd }: { product: CompiledProduct;
       footer={
         <Button variant="primary" size="lg" isDisabled={cents <= 0} onPress={() => void onAdd(cents)} className="min-w-[260px]">
           Add {product.name} at {money(cents)}
-          {needsApproval ? <span className="ml-2 rounded-chip bg-[color-mix(in_srgb,var(--status-bill)_14%,transparent)] px-2 text-caption text-status-bill">Manager approval</span> : null}
+          {needsApproval ? <span className="ml-2 rounded-chip bg-on-primary/15 px-2 text-caption text-on-primary">Manager approval</span> : null}
         </Button>
       }
     >

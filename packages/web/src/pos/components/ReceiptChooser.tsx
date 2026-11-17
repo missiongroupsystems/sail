@@ -125,7 +125,7 @@ export function ReceiptChooser({ order, check, actions, caption, amount, extra, 
 
       {choice === null || choice === "print" || choice === "none" ? (
         <div className="flex w-full max-w-[880px] flex-wrap justify-center gap-2.5" role="group" aria-label="Receipt">
-          <Button size="lg" variant={printed ? "primary" : "secondary"} isDisabled={offline || busy} isPending={busy && choice === "print"} onPress={print} className={big}>
+          <Button size="lg" variant="secondary" isDisabled={offline || busy} isPending={busy && choice === "print"} onPress={print} className={big}>
             <Icon icon={Printer} size={18} className="opacity-70" />
             {printed ? "Printed ✓ · Print again" : "Print"}
           </Button>

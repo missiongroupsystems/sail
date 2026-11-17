@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { devLocal, expect, keyIn, leaveChecklistOpen, pairAndSignIn, register, shot, test, WEB } from "./fixtures";
+import { API, devLocal, expect, GUEST, keyIn, leaveChecklistOpen, pairAndSignIn, register, shot, test, WEB } from "./fixtures";
 
 /**
  * Third review round, front (`fix/review3-front`): the POS paid screen follows the register (a void, a switch of
@@ -8,6 +8,7 @@ import { devLocal, expect, keyIn, leaveChecklistOpen, pairAndSignIn, register, s
  * small POS and guest items. Shots go to REVIEW3_SHOTS when set (the report's folder), else the test's output.
  */
 const MANAGER_PIN = "222222";
+const CASHIER_PIN = "333333";
 const out = (name: string) => (process.env.REVIEW3_SHOTS ? `${process.env.REVIEW3_SHOTS}/${name}` : test.info().outputPath(name));
 
 async function bothThemes(page: Page, name: string) {
@@ -35,6 +36,75 @@ async function settle(orderId: string) {
   }
   await bumpAll(orderId);
 }
+
+async function productIds(): Promise<Record<string, string>> {
+  const p = await register<{ data: { id: string; name: string }[] }>("GET", "/v1/products?limit=60");
+  return Object.fromEntries(p.data.map((x) => [x.name, x.id]));
+}
+
+/** A dine-in order on a free table with one line from staff, its QR code, and a phone session on it. */
+async function seatedTable(productId: string) {
+  const { outletId, brandId } = devLocal();
+  const floor = await register<{ data: { tables: { id: string; name: string; area_id: string; order: unknown }[] } }>("GET", `/v1/outlets/${outletId}/floor`);
+  const area = floor.data.tables[0]!.area_id;
+  const table = floor.data.tables.find((t) => !t.order && t.area_id === area) ?? floor.data.tables.find((t) => !t.order)!;
+  const order = await register<{ data: { id: string; order_no: string } }>("POST", "/v1/orders", { order_id: crypto.randomUUID(), order_type: "dine_in", table_id: table.id, pax: 2, outlet_id: outletId, brand_id: brandId });
+  await register("POST", `/v1/orders/${order.data.id}/lines`, { lines: [{ line_id: crypto.randomUUID(), product_id: productId, quantity: 1 }] });
+  const qr = await register<{ data: { url: string } }>("POST", `/v1/tables/${table.id}/qr/rotate`, {});
+  return { order: order.data, table, token: qr.data.url.split("/t/")[1]! };
+}
+
+/** The phone's guest token, read from the page's own session (so API rounds come from the same phone). */
+async function phoneToken(phone: Page): Promise<string> {
+  return phone.evaluate(() => {
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const v = sessionStorage.getItem(sessionStorage.key(i)!) ?? "";
+      if (v.includes("guest_token")) return (JSON.parse(v) as { guest_token: string }).guest_token;
+    }
+    throw new Error("no guest session on the page");
+  });
+}
+
+async function sendRound(guest: string, lines: { product_id: string; quantity: number }[]): Promise<string> {
+  const roundId = crypto.randomUUID();
+  const r = await fetch(`${API}/v1/guest/rounds`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${guest}`, "idempotency-key": crypto.randomUUID() }, body: JSON.stringify({ round_id: roundId, lines: lines.map((l) => ({ line_id: crypto.randomUUID(), ...l })) }) });
+  expect(r.status, await r.clone().text()).toBe(201);
+  return roundId;
+}
+
+async function rejectWaiting(orderId: string) {
+  const rounds = await register<{ data: { id: string; order_id: string }[] }>("GET", `/v1/outlets/${devLocal().outletId}/rounds?status=pending`);
+  for (const r of rounds.data.filter((x) => x.order_id === orderId)) await register("POST", `/v1/rounds/${r.id}/reject`, { reason: "Test over" }).catch(() => undefined);
+}
+
+/**
+ * WCAG contrast of a chip's text against what is behind it: the chip's own (translucent) fill painted over its button's.
+ * Colours are read through a canvas, so oklab and color-mix values count as the screen shows them.
+ */
+async function chipContrast(page: Page, selector: string): Promise<number> {
+  return page.evaluate((sel) => {
+    const chip = document.querySelector<HTMLElement>(sel)!;
+    const button = chip.closest("button")!;
+    const ctx = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
+    const paint = (...fills: string[]) => {
+      ctx.clearRect(0, 0, 1, 1);
+      for (const f of fills) {
+        ctx.fillStyle = f;
+        ctx.fillRect(0, 0, 1, 1);
+      }
+      const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+      return [r!, g!, b!];
+    };
+    const lum = ([r, g, b]: number[]) => [r!, g!, b!].map((v) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4)).reduce((a, c, i) => a + c * [0.2126, 0.7152, 0.0722][i]!, 0);
+    const back = paint(getComputedStyle(button).backgroundColor, getComputedStyle(chip).backgroundColor);
+    const text = paint(getComputedStyle(button).backgroundColor, getComputedStyle(chip).color);
+    const [hi, lo] = [lum(text), lum(back)].sort((a, b) => b - a);
+    return (hi! + 0.05) / (lo! + 0.05);
+  }, selector);
+}
+
+/** Visible primary (black) action buttons on the page; a chosen option in a set of choices (a seat, a tip) is not an action. */
+const primaries = (page: Page) => page.locator("button.bg-primary:visible:not([aria-pressed]):not([role=radio]):not([role=group] button)");
 
 /** Seat a free table for two, add a Mee Goreng, send it and open the pay screen. */
 async function sentToPay(page: Page): Promise<string> {
@@ -265,5 +335,46 @@ test("S6: the kitchen display's clock and online state fit at 1024 with both pag
     }
   } finally {
     for (const id of made) await settle(id);
+  }
+});
+
+test("S7: one primary on the order screen while a QR order waits; the approval hint on a black button is readable in both themes", async ({ browser, page, watch }) => {
+  test.setTimeout(300_000);
+  const ids = await productIds();
+  const { order, table, token } = await seatedTable(ids["Mee Goreng"]!);
+  const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  watch.attach(phone);
+  try {
+    await phone.goto(`${GUEST}/t/${token}`);
+    await expect(phone.getByRole("button", { name: /^Otah,/ })).toBeVisible({ timeout: 120_000 });
+    await sendRound(await phoneToken(phone), [{ product_id: ids["Otah"]!, quantity: 1 }]);
+    await phone.close();
+
+    await pairAndSignIn(page, CASHIER_PIN);
+    await page.getByRole("button", { name: new RegExp(`^Table ${table.name},`) }).click();
+    const waiting = page.getByText("QR order · waiting for acceptance");
+    await expect(waiting).toBeVisible();
+    // The dock's Pay is the one primary; the waiting block's Accept is secondary.
+    await expect(primaries(page)).toHaveCount(1);
+    await expect(primaries(page)).toHaveText(/^(Send|Pay) /);
+    await bothThemes(page, "S7-order-qr-waiting");
+
+    await page.getByRole("button", { name: /^Discount/ }).click();
+    await page.getByRole("dialog", { name: "Discount" }).getByRole("button", { name: /^% off bill/ }).click();
+    await keyIn(page, "Amount keys", "10");
+    const apply = page.getByRole("button", { name: /^Apply % off bill/ });
+    await expect(apply).toContainText("Manager approval");
+    for (const theme of ["day", "service"] as const) {
+      await page.evaluate((t) => (t === "service" ? (document.documentElement.dataset.theme = "service") : delete document.documentElement.dataset.theme), theme);
+      await page.waitForTimeout(150);
+      const ratio = await chipContrast(page, "[role=dialog] button.bg-primary span.rounded-chip");
+      expect(ratio, `approval hint contrast (${theme})`).toBeGreaterThanOrEqual(4.5);
+      await shot(page, out(`S7-discount-approval-${theme}.png`));
+    }
+    await page.evaluate(() => delete document.documentElement.dataset.theme);
+    await page.keyboard.press("Escape");
+  } finally {
+    await rejectWaiting(order.id);
+    await settle(order.id);
   }
 });
