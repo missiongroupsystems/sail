@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import "../src/modules.js";
 import { buildApp, type App } from "../src/app.js";
 import { readFileSync } from "node:fs";
+import { pdfStrings } from "./pdf-strings.js";
 import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
 
 /** Fourth review round, money: a US diner (4% state + 4.5% local) and an EU café (VAT 10% and 20% inside the price). */
@@ -192,5 +193,41 @@ describe("T2: reopen is asked once per click; the register refuses a second reop
     expect(again.body.message).toMatch(/^Only completed orders can be reopened/);
     const reversed = await db.sql<{ n: number }[]>`select count(*)::int as n from payments where order_id = ${order.id} and status = 'reversed'`;
     expect(reversed[0]!.n).toBe(1);
+  });
+});
+
+describe("T3: the Z-report and Sales give what the rows need to add up as written", () => {
+  it("with tax in prices and a taxed fee: gross + discounts + fees as charged = collected = net before refunds + fees before tax + tax", async () => {
+    // A 50 cent bag fee on takeaways, with 20% VAT inside it.
+    const rule = await call("POST", "/v1/pricing-rules", { token: EU.m.admin.token, body: { rule_key: "bag-fee", body: { kind: "fee", name: "Bag", calc: "fixed_per_order", value: { type: "fixed", amount: 50 }, scope: { type: "all" }, conditions: { order_types: ["takeaway"] }, priority: 950, application: "auto", tax_class_id: EU.m.taxClassIds.standard, report_class: "packaging_fee" } } });
+    expect(rule.status, JSON.stringify(rule.body)).toBe(201);
+    const order = await paidOrder(EU, ["soup", "wine"], "card", 1);
+    expect(order.checks[0]!.totals.total).toBe(650 + 745 + 50);
+    type Sales = { gross: number; discounts: number; fees: number; fees_charged: number; tax: number; total: number; net_before_refunds: number };
+    const z = (await call<{ data: { sales: Sales; tenders: { tender: string; terminal: boolean }[] } }>("GET", `/v1/outlets/${EU.m.outletId}/z-report`, { token: EU.m.manager.token })).body.data;
+    const summary = (await call<{ data: { totals: Sales } }>("GET", `/v1/reports/sales-summary?outlet_id=${EU.m.outletId}`, { token: EU.m.manager.token })).body.data.totals;
+    for (const s of [z.sales, summary]) {
+      expect(s.fees_charged - s.fees, "the fees' VAT: 50 cents at 20% inside").toBeGreaterThan(0);
+      expect(s.gross + s.discounts + s.fees_charged).toBe(s.total);
+      expect(s.net_before_refunds + s.fees + s.tax).toBe(s.total);
+    }
+    // A keyed card and cash have no terminal of their own.
+    // The daily summary PDF lists the same rows in the same order.
+    const pdf = await app.request(`/v1/outlets/${EU.m.outletId}/reports/daily?format=pdf`, { headers: { authorization: `Bearer ${EU.m.manager.token}` } });
+    expect(pdf.status).toBe(200);
+    const words = (await pdfStrings(new Uint8Array(await pdf.arrayBuffer()))).join("\n");
+    const at = ["Gross (items)", "Discounts", "Fees", "Collected", "Of which net before refunds", "Of which fees before tax", "Of which VAT", "Refunded (", "Net sales", "Collected after refunds"].map((w) => words.indexOf(w));
+    expect(at.every((i) => i >= 0), words).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    expect(z.tenders.length).toBeGreaterThan(0);
+    for (const t of z.tenders) expect(t.terminal, t.tender).toBe(false);
+  });
+
+  it("only a tender sent to a card terminal (one with a provider) is marked as the terminal", async () => {
+    await db.sql`update tender_types set provider = 'simulator', terminal_id = 'sim-1' where id = ${US.card}`;
+    const z = (await call<{ data: { tenders: { tender: string; terminal: boolean }[] } }>("GET", `/v1/outlets/${US.m.outletId}/z-report`, { token: US.m.manager.token })).body.data;
+    expect(z.tenders.find((t) => t.tender === "Card")!.terminal).toBe(true);
+    expect(z.tenders.find((t) => t.tender === "Cash")!.terminal).toBe(false);
+    await db.sql`update tender_types set provider = null, terminal_id = null where id = ${US.card}`;
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { cx, reconciliationRows, refundBlocks, showsCardNet, Skeleton, taxRows, tenderRows, useLocale, type ReportRow } from "@sail/ui";
+import { cx, reconciliationRows, refundBlocks, reversedRows, showsCardNet, Skeleton, taxRows, tenderRows, useLocale, type ReportRow } from "@sail/ui";
 import { toApiError } from "@/lib/api";
 import { useMerchant } from "../../hooks/queries";
 import { ORDER_TYPE_LABEL } from "../../lib/format";
@@ -106,6 +106,8 @@ export function ZFigures({ report, title }: { report: { data?: ZReport | ZReport
               {r.tenders.length === 0 ? <p className="py-2 text-body text-ink-2">No payments yet.</p> : null}
             </dl>
             {reconciliation ? <dl className="mt-2 border-t border-rule pt-2">{rows(reconciliation)}</dl> : null}
+            {/* Taken and given back: in no figure above, so apart from the tenders' nets (review 4, T3). */}
+            {reversedRows(r.tenders).length ? <dl className="mt-2 border-t border-rule pt-2">{rows(reversedRows(r.tenders))}</dl> : null}
             {showsCardNet(r.tenders) ? <p className="pt-2 text-caption text-ink-2">Compare each card net with the terminal&rsquo;s end-of-day total.</p> : null}
           </section>
 
