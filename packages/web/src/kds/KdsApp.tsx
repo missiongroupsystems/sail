@@ -157,14 +157,17 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
   return (
     <main className="flex h-dvh w-full min-w-0 flex-col bg-bg">
       {/* The kitchen bar: what this screen is, how many tickets, Recall, the theme, the time and the connection. */}
-      <header className="flex h-14 shrink-0 items-center gap-x-4 border-b border-rule bg-surface px-5 max-[960px]:gap-x-3 max-[960px]:px-4">
+      {/* Everything but the station's name keeps its size: the name truncates first, so the clock and the online state always fit (review 3, S6). */}
+      <header className="flex h-14 shrink-0 items-center gap-x-4 border-b border-rule bg-surface px-5 max-[1180px]:gap-x-3 max-[960px]:gap-x-2 max-[960px]:px-4">
         <h1 className="flex shrink-0 items-center gap-2 font-heading text-[18px] font-semibold text-ink">
           <Icon icon={ChefHat} size={20} />
-          {/* In portrait the icon stands for "Kitchen", so the station's own name has the room (C-11). */}
-          <span className="max-[960px]:sr-only">Kitchen</span>
+          {/* Below a wide screen the icon stands for "Kitchen", so the station's own name has the room (C-11). */}
+          <span className="max-[1180px]:sr-only">Kitchen</span>
         </h1>
-        {/* The station's name keeps room for itself; the paging controls give way first (final2 B-6). */}
-        <p className="min-w-[9rem] text-[14px] leading-tight text-ink-2 line-clamp-2">{station.name}</p>
+        {/* The station's name takes the room left over, on up to two lines, and truncates past that (whole on hover). */}
+        <p className="min-w-[7rem] flex-1 text-[14px] leading-tight text-ink-2 line-clamp-2" title={station.name}>
+          {station.name}
+        </p>
         <p className="flex shrink-0 items-center gap-2 text-[14.5px] text-ink">
           <span className="tabular">{open.length === 1 ? "1 ticket" : `${open.length} tickets`}{earlierView ? " from earlier days" : ""}</span>
           {lateCount > 0 ? <Pill tone="alert">{lateCount} late</Pill> : null}
@@ -180,17 +183,17 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
         {/* Tickets past the screen's edge: how many, and a page across to them (final review B-P10). */}
         {board.before > 0 ? <PageButton icon={ChevronLeft} count={board.before} word="before" onPress={() => board.page(-1)} /> : null}
         {board.after > 0 ? <PageButton icon={ChevronRight} count={board.after} word="more" onPress={() => board.page(1)} trailing /> : null}
-        <span className="flex-1" />
         <AriaButton
           isDisabled={!last || act.isPending}
           onPress={() => last && act.mutate({ id: last.id, action: "recall", key: idempotencyKey() })}
           aria-label={last ? `Recall ${ticketTitle(last)}` : "Recall"}
-          className="press flex min-h-12 shrink-0 items-center gap-2 rounded-full bg-surface-2 px-5 text-[15px] max-[960px]:px-4 font-medium text-ink outline-none transition-colors duration-[120ms] data-[hovered]:bg-surface-3 data-[pressed]:bg-surface-3 data-[disabled]:text-ink-disabled data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus"
+          className="press flex min-h-12 shrink-0 items-center gap-2 rounded-full bg-surface-2 px-5 text-[15px] max-[960px]:min-w-12 max-[960px]:justify-center max-[960px]:px-3 font-medium text-ink outline-none transition-colors duration-[120ms] data-[hovered]:bg-surface-3 data-[pressed]:bg-surface-3 data-[disabled]:text-ink-disabled data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus"
         >
           <Icon icon={RotateCcw} size={18} />
-          {/* In portrait the button says Recall alone (its name still names the ticket), so the station's name keeps its room. */}
-          <span className="max-w-[220px] truncate max-[960px]:hidden">{last ? `Recall ${ticketTitle(last)}` : "Recall"}</span>
-          <span className="hidden max-[960px]:inline">Recall</span>
+          {/* Below a wide screen the button says Recall alone, and in portrait shows its icon alone (its name still names the
+              ticket), so the bar keeps its room. */}
+          <span className="max-w-[220px] truncate max-[1180px]:hidden">{last ? `Recall ${ticketTitle(last)}` : "Recall"}</span>
+          <span className="hidden max-[1180px]:inline max-[960px]:hidden">Recall</span>
         </AriaButton>
         <SegmentedControl aria-label="Theme" options={THEMES} selectedId={mode} onSelect={(id) => setMode(id as ThemeMode)} className="shrink-0 p-0.5" />
         <span className="shrink-0 text-[15px] whitespace-nowrap text-ink tabular">{clock(new Date(now))}</span>
@@ -296,14 +299,14 @@ function QuietButton({ onPress, children }: { onPress: () => void; children: Rea
   );
 }
 
-/** "3 more" with its chevron; on a narrow screen the number and chevron alone (the word stays for screen readers). */
+/** "3 more" with its chevron; in portrait the number and chevron alone (the word stays for screen readers). */
 function PageButton({ icon, count, word, onPress, trailing }: { icon: typeof ChevronLeft; count: number; word: string; onPress: () => void; trailing?: boolean }) {
   return (
     <QuietButton onPress={onPress}>
       {trailing ? null : <Icon icon={icon} size={18} />}
       <span>
         {count}
-        <span className="max-[1180px]:sr-only"> {word}</span>
+        <span className="max-[960px]:sr-only"> {word}</span>
       </span>
       {trailing ? <Icon icon={icon} size={18} /> : null}
     </QuietButton>

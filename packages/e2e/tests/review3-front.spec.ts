@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { devLocal, expect, keyIn, leaveChecklistOpen, pairAndSignIn, register, shot, test } from "./fixtures";
+import { devLocal, expect, keyIn, leaveChecklistOpen, pairAndSignIn, register, shot, test, WEB } from "./fixtures";
 
 /**
  * Third review round, front (`fix/review3-front`): the POS paid screen follows the register (a void, a switch of
@@ -203,4 +203,67 @@ test("S5: the line sheet's preview is the register's figure for the size and qua
   await page.getByRole("button", { name: "Order", exact: true }).click();
   await page.getByRole("menuitem", { name: "Cancel order" }).click();
   await page.getByRole("dialog", { name: /Cancel/ }).getByRole("button").filter({ hasText: /changed mind|mistake/i }).first().click();
+});
+
+test("S6: the kitchen display's clock and online state fit at 1024 with both paging buttons; the paging buttons say what they do", async ({ browser, watch }) => {
+  test.setTimeout(400_000);
+  const { outletId, brandId } = devLocal();
+  const stations = await register<{ data: { id: string; name: string; kind: string }[] }>("GET", `/v1/outlets/${outletId}/stations`);
+  const display = stations.data.find((s) => s.kind === "display")!;
+  const products = await register<{ data: { id: string; name: string }[] }>("GET", "/v1/products?limit=60");
+  const ids = Object.fromEntries(products.data.map((x) => [x.name, x.id]));
+  const made: string[] = [];
+  for (let i = 1; i <= 26; i++) {
+    const o = await register<{ data: { id: string } }>("POST", "/v1/orders", { order_id: crypto.randomUUID(), order_type: "takeaway", takeaway_ref: `R3 ${i}`, outlet_id: outletId, brand_id: brandId });
+    made.push(o.data.id);
+    await register("POST", `/v1/orders/${o.data.id}/lines`, { lines: [{ line_id: crypto.randomUUID(), product_id: ids["Char Kway Teow"]!, quantity: 1 }, { line_id: crypto.randomUUID(), product_id: ids["Otah"]!, quantity: 1 }] });
+    await register("POST", `/v1/orders/${o.data.id}/fire`, {});
+  }
+  // The last ticket recalled, so Recall names a ticket (its longest label).
+  try {
+    for (const viewport of [{ width: 1024, height: 768 }, { width: 1280, height: 800 }, { width: 820, height: 1180 }]) {
+      await test.step(`at ${viewport.width}x${viewport.height}`, async () => {
+        const ctx = await browser.newContext({ viewport });
+        const kds = await ctx.newPage();
+        watch.attach(kds);
+        const { data } = await register<{ data: { code: string } }>("POST", `/v1/stations/${display.id}/pairing-code`, {});
+        await kds.goto(`${WEB}/kds`);
+        await expect(kds.getByRole("heading", { name: "Pair this screen to a station" })).toBeVisible({ timeout: 180_000 });
+        await keyIn(kds, "PIN keys", data.code);
+        await kds.getByRole("button", { name: "Pair this screen" }).click();
+        const board = kds.getByRole("region", { name: "Tickets" });
+        await expect(board.getByRole("button", { name: /R3 26/ })).toBeAttached();
+        // One bump and its Recall, so the bar holds its longest content.
+        await board.getByRole("button", { name: /R3 1\b/ }).first().click().catch(() => undefined);
+        await kds.getByRole("button", { name: /^\d+ more$/ }).click();
+        await kds.waitForTimeout(700);
+        const before = kds.getByRole("button", { name: /^\d+ before$/ });
+        const more = kds.getByRole("button", { name: /^\d+ more$/ });
+        await expect(before).toBeVisible();
+        await expect(more).toBeVisible();
+        // The words show, not a bare count and chevron ("‹ 4", "3 ›").
+        const wordShown = (b: typeof before, word: string) => b.evaluate((el, w) => Array.from(el.querySelectorAll("span")).some((s) => s.textContent?.trim() === w && s.getBoundingClientRect().width > 10), word);
+        const words = [await wordShown(before, "before"), await wordShown(more, "more")];
+        const header = kds.locator("main > header");
+        const overflow = await header.evaluate((el) => {
+          const w = window.innerWidth;
+          return Array.from(el.querySelectorAll<HTMLElement>("*"))
+            .filter((c) => c.getBoundingClientRect().width > 0 && c.getBoundingClientRect().right > w + 0.5)
+            .map((c) => `${c.tagName} ${c.textContent?.slice(0, 20)} ${Math.round(c.getBoundingClientRect().right)}`);
+        });
+        for (const theme of ["day", "service"] as const) {
+          await kds.evaluate((t) => (t === "service" ? (document.documentElement.dataset.theme = "service") : delete document.documentElement.dataset.theme), theme);
+          await kds.waitForTimeout(150);
+          await shot(kds, out(`S6-kds-${viewport.width}-${theme}.png`));
+        }
+        expect(overflow).toEqual([]);
+        // In portrait (an iPad on its side) the count and chevron stand alone; the word stays for screen readers.
+        expect(words).toEqual(viewport.width > 960 ? [true, true] : [false, false]);
+        await expect(header.getByText(/online/i)).toBeInViewport();
+        await ctx.close();
+      });
+    }
+  } finally {
+    for (const id of made) await settle(id);
+  }
 });
