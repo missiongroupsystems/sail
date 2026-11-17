@@ -122,18 +122,23 @@ export async function salesSummary(f: ReportFilters): Promise<SalesSummary> {
   };
 }
 
-export type ProductMixRow = { key: string | null; name: string; quantity: number; gross: number; discounts: number; net: number; share_bps: number };
+/**
+ * One row of the items report. Each row adds up: `gross − discounts − tax − refunds = net`. `refunds` is the net of the
+ * refunds against it (a refund row of report_net_sales has quantity 0); `tax` is the tax inside VAT-inclusive prices
+ * (0 when tax is added on top). Review 2, N6.
+ */
+export type ProductMixRow = { key: string | null; name: string; quantity: number; gross: number; discounts: number; tax: number; refunds: number; net: number; share_bps: number };
 
 export async function productMix(f: ReportFilters, groupBy: "item" | "category" | "staff"): Promise<ProductMixRow[]> {
   const sql = tx();
   const w = orderWhere(f);
   const catFilter = f.categoryId ? sql`and (r.category_id = ${f.categoryId} or r.parent_category_id = ${f.categoryId})` : sql``;
-  let rows: Omit<ProductMixRow, "share_bps">[];
-  if (groupBy === "item") rows = await sql<Omit<ProductMixRow, "share_bps">[]>`select r.product_id::text as key, r.product_name as name, sum(r.quantity)::bigint as quantity, sum(r.gross)::bigint as gross, sum(r.discounts)::bigint as discounts, sum(r.net)::bigint as net from report_net_sales r where ${w} ${catFilter} group by r.product_id, r.product_name order by net desc`;
-  else if (groupBy === "category") rows = await sql<Omit<ProductMixRow, "share_bps">[]>`select r.category_id::text as key, coalesce(c.name, 'Uncategorised') as name, sum(r.quantity)::bigint as quantity, sum(r.gross)::bigint as gross, sum(r.discounts)::bigint as discounts, sum(r.net)::bigint as net from report_net_sales r left join report_categories c on c.id = r.category_id where ${w} ${catFilter} group by r.category_id, c.name order by net desc`;
-  else rows = await sql<Omit<ProductMixRow, "share_bps">[]>`select r.added_by::text as key, coalesce(r.added_by_name, 'Guest') as name, sum(r.quantity)::bigint as quantity, sum(r.gross)::bigint as gross, sum(r.discounts)::bigint as discounts, sum(r.net)::bigint as net from report_net_sales r where ${w} ${catFilter} group by r.added_by, r.added_by_name order by net desc`;
+  let rows: Omit<ProductMixRow, "share_bps" | "tax">[];
+  if (groupBy === "item") rows = await sql<Omit<ProductMixRow, "share_bps" | "tax">[]>`select r.product_id::text as key, r.product_name as name, sum(r.quantity)::bigint as quantity, sum(r.gross)::bigint as gross, sum(r.discounts)::bigint as discounts, sum(case when r.quantity = 0 then -r.net else 0 end)::bigint as refunds, sum(r.net)::bigint as net from report_net_sales r where ${w} ${catFilter} group by r.product_id, r.product_name order by net desc`;
+  else if (groupBy === "category") rows = await sql<Omit<ProductMixRow, "share_bps" | "tax">[]>`select r.category_id::text as key, coalesce(c.name, 'Uncategorised') as name, sum(r.quantity)::bigint as quantity, sum(r.gross)::bigint as gross, sum(r.discounts)::bigint as discounts, sum(case when r.quantity = 0 then -r.net else 0 end)::bigint as refunds, sum(r.net)::bigint as net from report_net_sales r left join report_categories c on c.id = r.category_id where ${w} ${catFilter} group by r.category_id, c.name order by net desc`;
+  else rows = await sql<Omit<ProductMixRow, "share_bps" | "tax">[]>`select r.added_by::text as key, coalesce(r.added_by_name, 'Guest') as name, sum(r.quantity)::bigint as quantity, sum(r.gross)::bigint as gross, sum(r.discounts)::bigint as discounts, sum(case when r.quantity = 0 then -r.net else 0 end)::bigint as refunds, sum(r.net)::bigint as net from report_net_sales r where ${w} ${catFilter} group by r.added_by, r.added_by_name order by net desc`;
   const total = rows.reduce((s, r) => s + r.net, 0);
-  return rows.map((r) => ({ ...r, share_bps: total ? Math.round((r.net * 10_000) / total) : 0 }));
+  return rows.map((r) => ({ ...r, tax: r.gross - r.discounts - r.refunds - r.net, share_bps: total ? Math.round((r.net * 10_000) / total) : 0 }));
 }
 
 export type ExceptionsReport = {

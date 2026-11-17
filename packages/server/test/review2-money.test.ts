@@ -16,7 +16,7 @@ type Snap = {
   version: number;
   status: string;
   totals: { subtotal: number; tax_total: number; taxes: TaxBreakdown[]; total: number };
-  lines: { id: string; status: string; amounts: { total: number; tax: number } }[];
+  lines: { id: string; product_id: string; status: string; amounts: { total: number; tax: number } }[];
   checks: { id: string; label: string; locked: boolean; totals: { total: number; subtotal: number; tax_total: number; taxes: { name: string; amount: number }[] }; balance: number }[];
   balance: number;
 };
@@ -288,5 +288,37 @@ describe("N5: a void of a sent item counts on the Z-report whatever became of it
     expect(cancel.status, JSON.stringify(cancel.body).slice(0, 300)).toBe(200);
     expect(await z()).toEqual({ count: before.outlet.count + 1, quantity: before.outlet.quantity + 1, value: before.outlet.value + 650 });
     expect(await z(EU.station)).toEqual({ count: before.station.count + 1, quantity: before.station.quantity + 1, value: before.station.value + 650 });
+  });
+});
+
+describe("N6: every row of the items report adds up after a refund", () => {
+  type Row = { name: string; quantity: number; gross: number; discounts: number; tax: number; refunds: number; net: number };
+  const mix = async (w: World) => (await call<{ data: Row[] }>("GET", `/v1/reports/product-mix?outlet_id=${w.m.outletId}&group_by=item`, { token: w.m.admin.token })).body.data;
+  const refundOne = async (w: World, keys: string[], refundKey: string) => {
+    const o = await open(w, { order_type: "takeaway" });
+    const id = o.body.data.id;
+    await add(w, id, keys);
+    const s = await snap(w, id);
+    expect((await pay(w, s.checks[0]!.id, s.balance)).status).toBe(200);
+    expect((await call("POST", `/v1/orders/${id}/fire`, { token: w.pin, body: {} })).status).toBe(200);
+    const after = await snap(w, id);
+    const lineId = after.lines.find((l) => l.product_id === w.products[refundKey])!.id;
+    const r = await call("POST", `/v1/checks/${after.checks[0]!.id}/refunds`, { token: w.m.manager.token, body: { refund_id: randomUUID(), request: { kind: "lines", lines: [{ line_id: lineId, quantity: 1 }] }, reason: "Spilled", print: false } });
+    expect(r.status, JSON.stringify(r.body).slice(0, 300)).toBe(201);
+  };
+  it("US: a refunded tea has its own Refunds figure and gross − discounts − refunds = net", async () => {
+    await refundOne(US, ["tea", "tea"], "tea");
+    const tea = (await mix(US)).find((r) => r.name === "tea")!;
+    expect(tea.refunds).toBe(299);
+    expect(tea.tax).toBe(0);
+    expect(tea.gross - tea.discounts - tea.tax - tea.refunds).toBe(tea.net);
+  });
+  it("EU: VAT inside the price is its own column, so the row adds up there too", async () => {
+    await refundOne(EU, ["wine", "wine"], "wine");
+    const rows = await mix(EU);
+    for (const r of rows) expect(r.gross - r.discounts - r.tax - r.refunds, r.name).toBe(r.net);
+    const wine = rows.find((r) => r.name === "wine")!;
+    expect(wine.refunds).toBe(621); // €7.45 less its VAT 20% (€1.24)
+    expect(wine.tax).toBeGreaterThan(0);
   });
 });

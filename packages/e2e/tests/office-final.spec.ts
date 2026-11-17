@@ -114,11 +114,11 @@ test.describe("O1 (A P3): every report downloads as CSV with the screen's figure
 
     await page.goto(`${WEB}/reports/items`);
     await expect(page.getByRole("grid", { name: "Items sold" }).getByRole("rowheader", { name: "Kopi" })).toBeVisible();
-    const kopiNet = await page.getByRole("grid", { name: "Items sold" }).getByRole("row", { name: /Kopi/ }).getByRole("gridcell").nth(3).innerText();
+    const kopiNet = await page.getByRole("grid", { name: "Items sold" }).getByRole("row", { name: /Kopi/ }).getByRole("gridcell").nth(4).innerText();
     csv = await downloadCsv(page);
     const head = csv.rows.findIndex((r) => r[0] === "Name");
-    expect(csv.rows[head]).toEqual(["Name", "Sold", "Gross", "Discounts", "Net", "Share of net"]);
-    expect(csv.rows.find((r) => r[0] === "Kopi")![4]).toBe(plain(kopiNet));
+    expect(csv.rows[head]).toEqual(["Name", "Sold", "Gross", "Discounts", "Refunds", "Net", "Share of net"]);
+    expect(csv.rows.find((r) => r[0] === "Kopi")![5]).toBe(plain(kopiNet));
 
     await page.goto(`${WEB}/reports/shifts`);
     await expect(page.getByRole("grid", { name: "Shifts" })).toBeVisible();
