@@ -18,13 +18,10 @@ describe("Tile states (final review B-P11, round 8)", () => {
     expect(html).not.toContain("$9.50");
     expect(html).not.toContain("inset-0");
   });
-  it("shows the count badge and the items left together, the left count in the alert colour when the order holds more", () => {
-    const over = tile({ onOrder: 12, capRemaining: 5 });
-    expect(over).toContain(">12</span>");
-    expect(over).toMatch(/text-status-alert">· 5 left/);
-    const under = tile({ onOrder: 2, capRemaining: 5 });
-    expect(under).toContain(">2</span>");
-    expect(under).toMatch(/text-status-sent">· 5 left/);
+  it("shows the count badge and the items left together", () => {
+    const html = tile({ onOrder: 12, capRemaining: 5 });
+    expect(html).toContain(">12</span>");
+    expect(html).toMatch(/text-status-sent tabular">· 5 left/);
   });
   it("a folder of one says 1 item", () => {
     const html = renderToStaticMarkup(<FolderTile label="Hot" colour="teal" count={1} onPress={() => undefined} />);

@@ -42,7 +42,7 @@ test("guest: the register's totals before sending, and the tax note from the fir
     const items = phone.getByRole("list", { name: "Your items" });
     await expect(items.getByRole("listitem").filter({ hasText: "Laksa" }).first()).toContainText("$36.00");
     await expect(items.getByRole("listitem").filter({ hasText: "Kopi" }).first()).toContainText("$1.80");
-    await expect(phone.getByText("Total", { exact: true })).toBeVisible();
+    await expect(phone.getByText("Subtotal", { exact: true })).toBeVisible();
     await expect(phone.locator("main")).toContainText("$37.80");
     await expect(phone.getByText("GST is added to your bill, with any service charge.")).toBeVisible();
   });
@@ -220,7 +220,7 @@ test("kitchen display: with 12 tickets and a 10-line one, every ticket and its B
         for (const l of await inView()) seen.add(l);
       }
       expect(seen.size).toBe(total);
-      await expect(kds.getByRole("button", { name: /^\d+ earlier$/ })).toBeVisible();
+      await expect(kds.getByRole("button", { name: /^\d+ before$/ })).toBeVisible();
       // Every Bump target is a 44px touch target.
       const smallest = await board.evaluate((el) => Math.min(...Array.from(el.querySelectorAll<HTMLElement>("[data-ticket] span.bg-primary")).map((b) => b.getBoundingClientRect().height)));
       expect(smallest).toBeGreaterThanOrEqual(44);
@@ -328,4 +328,36 @@ test("POS: a PIN sign-in the register does not answer is bounded and the pad is 
   await page.unroute(/\/v1\/stations\/sessions$/);
   await keyIn(page, "PIN keys", "333333");
   await expect(page.getByRole("navigation", { name: "Destinations" })).toBeVisible();
+});
+
+test("POS: a burst refused for one line keeps every line the register can take (review of round 8, 4)", async ({ page, watch }) => {
+  test.setTimeout(240_000);
+  watch.allow({ status: 422, url: /\/v1\/orders\/[^/]+\/lines$/, why: "the day's cap runs out inside the burst, so the register refuses the batch and then the lines past the cap" });
+  const { outletId } = devLocal();
+  const products = await register<{ data: { id: string; name: string }[] }>("GET", "/v1/products?limit=100");
+  const nasi = products.data.find((p) => p.name === "Nasi Lemak")!;
+  await register("POST", "/v1/stock/daily-cap", { outlet_id: outletId, product_id: nasi.id, quantity: 5 });
+  try {
+    await pairAndSignIn(page, "333333");
+    await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Floor", exact: true }).click();
+    await page.getByRole("button", { name: "Takeaway order", exact: true }).click();
+    // Adds answer late, as on a busy network, so the taps after the first wait and go together.
+    await page.route(/\/v1\/orders\/[^/]+\/lines$/, async (route) => {
+      if (route.request().method() === "POST") await new Promise((r) => setTimeout(r, 300));
+      await route.continue();
+    });
+    let orderId = "";
+    page.on("request", (r) => {
+      const m = /\/v1\/orders\/([^/]+)\/lines$/.exec(r.url());
+      if (m && r.method() === "POST") orderId = m[1]!;
+    });
+    const tile = page.getByRole("button", { name: /^Nasi Lemak,/ });
+    for (let i = 0; i < 7; i++) await tile.click();
+    await expect(page.getByRole("button", { name: "Send 5 to kitchen" })).toBeVisible({ timeout: 30_000 });
+    const order = await register<{ data: { lines: { product_id: string; status: string; quantity: number }[] } }>("GET", `/v1/orders/${orderId}`);
+    expect(order.data.lines.filter((l) => l.product_id === nasi.id && l.status !== "voided").reduce((n, l) => n + l.quantity, 0)).toBe(5);
+    await register("POST", `/v1/orders/${orderId}/cancel`, { reason: "End-to-end test" });
+  } finally {
+    await register("POST", "/v1/stock/daily-cap", { outlet_id: outletId, product_id: nasi.id, quantity: null }).catch(() => undefined);
+  }
 });

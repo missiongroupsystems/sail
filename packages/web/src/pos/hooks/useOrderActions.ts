@@ -40,7 +40,8 @@ const RANK: Record<Role, number> = { server: 10, cashier: 20, manager: 30, finan
 const MIN_ROLE: Record<OverrideAction, Role> = { "lines.void_fired": "manager", "lines.add_open_price": "manager", "adjustments.apply_manual": "server", "adjustments.remove": "server", "payments.record": "cashier", "refunds.create": "manager", "orders.reopen": "manager", "payments.void": "manager" };
 
 /** Adds to an order that wait for the add before them and then go to the register in one request. */
-type AddBatch = { bodies: reg.LineInput[]; names: string[]; key: string; open: boolean; maybeLanded: boolean; reported: boolean; done: Promise<OrderSnapshot | null> };
+type AddBatchResult = { snap: OrderSnapshot | null; refused: Map<string, unknown> };
+type AddBatch = { bodies: reg.LineInput[]; names: string[]; key: string; open: boolean; maybeLanded: boolean; reported: Set<string>; done: Promise<AddBatchResult> };
 /** The batch of each order still taking taps: it closes when its request goes. */
 const addBatches = new Map<string, AddBatch>();
 
@@ -252,12 +253,28 @@ export function useOrderActions(orderId: string) {
             );
           // An add that never reached the register keeps its lines on screen and is sent again, with the same line ids
           // and key (so it lands once), as soon as the station is back online.
-          return (async (): Promise<OrderSnapshot | null> => {
+          // The register takes a request's lines all or none: when it refuses a batch (one line sold out, over its day's
+          // cap), each line goes again on its own, so only the line it refuses is lost. A batch whose reply may have been
+          // lost is never split: it may have landed.
+          const split = async (e: unknown): Promise<AddBatchResult> => {
+            if (b.bodies.length < 2 || b.maybeLanded || !(e instanceof ApiError) || e.status < 400 || e.status >= 500 || e.code === "version_conflict") throw e;
+            const refused = new Map<string, unknown>();
+            let snap: OrderSnapshot | null = null;
+            for (const one of b.bodies) {
+              try {
+                snap = (await run((expected) => reg.addLines(api, orderId, [one], { expectedVersion: expected, overrideId }), { onConflict: "retry-unversioned" })) ?? snap;
+              } catch (err) {
+                refused.set(one.line_id, err);
+              }
+            }
+            return { snap, refused };
+          };
+          return (async (): Promise<AddBatchResult> => {
             for (;;) {
               try {
-                return await exec();
+                return { snap: await exec(), refused: new Map() };
               } catch (e) {
-                if (!unreachable(e)) throw e;
+                if (!unreachable(e)) return split(e);
                 b.maybeLanded = true;
                 reportUnreachable();
                 notify({ text: b.bodies.length === 1 ? `Offline · ${b.names[0]} is kept` : `Offline · ${b.bodies.length} new lines are kept`, remedy: "It goes to the register as soon as the connection is back.", tone: "info", orderId }, 8000);
@@ -270,19 +287,24 @@ export function useOrderActions(orderId: string) {
           // An open price goes on its own (it may need an approval the other lines do not).
           const batchable = overrideId == null && body.open_price == null;
           const open = batchable ? addBatches.get(orderId) : undefined;
+          // Each tap learns its own line's fate.
+          const mine = (r: AddBatchResult) => {
+            if (r.refused.has(lineId)) throw r.refused.get(lineId);
+            return r.snap;
+          };
           if (open?.open) {
             open.bodies.push(body);
             open.names.push(input.product.name);
             batch = open;
-            return open.done;
+            return open.done.then(mine);
           }
-          const b: AddBatch = { bodies: [body], names: [input.product.name], key: idem, open: batchable, maybeLanded: false, reported: false, done: Promise.resolve(null) };
+          const b: AddBatch = { bodies: [body], names: [input.product.name], key: idem, open: batchable, maybeLanded: false, reported: new Set(), done: Promise.resolve({ snap: null, refused: new Map() }) };
           batch = b;
           if (b.open) addBatches.set(orderId, b);
           b.done = send(b, overrideId).finally(() => {
             if (addBatches.get(orderId) === b) addBatches.delete(orderId);
           });
-          return b.done;
+          return b.done.then(mine);
         };
         const snap = input.openPrice != null ? await withApproval({ action: "lines.add_open_price", target_kind: "order", target_id: orderId, args: { lines: [{ line_id: lineId, product_id: input.product.id, quantity: input.quantity, open_price: input.openPrice }] } }, `Add ${input.product.name} at ${money(input.openPrice)}`, "Open price · needs a manager", queued) : await queued(null);
         if (!snap) {
@@ -301,10 +323,11 @@ export function useOrderActions(orderId: string) {
       } catch (e) {
         releasePendingLine(orderId, lineId);
         qc.setQueryData<OrderSnapshot>(key, (s) => (s ? { ...s, lines: s.lines.filter((l) => l.id !== lineId) } : s));
-        // A refused batch is said once, not once per tap in it.
+        // A refusal is said once per batch, not once per tap it turned down.
         const b = batch as AddBatch | null;
-        if (!b?.reported) fail(e);
-        if (b) b.reported = true;
+        const said = toApiError(e).message;
+        if (!b?.reported.has(said)) fail(e);
+        b?.reported.add(said);
         return null;
       } finally {
         releasePendingLine(orderId, lineId);

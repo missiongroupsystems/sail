@@ -171,6 +171,8 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "rounds.quote", method: "post", path: "/v1/guest/rounds/quote", tags: ["guest"], request: { body: jsonBody(z.object({ lines: z.array(LineInputSchema).min(1).max(30) })) }, responses: { 200: jsonResponse(dataResponse(z.object({ lines: z.array(z.object({ line_id: z.string(), quantity: z.number().int(), amount: z.number().int() })), total: z.number().int() }))), ...errorResponses } }, async (c) => {
     const p = guestOnly(c.get("principal"));
     const b = c.req.valid("json");
+    // A phone prices its basket as it changes, two a second at most; the hit is kept although the quote rolls back.
+    await enforceLimit(p.merchantId, `quote:sess:${p.sessionId}`, RATE.quotesPerSession, "price checks from this phone");
     const [link] = await db().select().from(channelLinks).where(eq(channelLinks.id, p.channelLinkId)).limit(1);
     if (!link?.enabled) throw new AppError("unavailable", "Ordering from your phone is switched off", { remedy: "Please order with a member of staff." });
     const menu = await compileMenu(link.id, new Date());

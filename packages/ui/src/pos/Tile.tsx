@@ -18,7 +18,7 @@ export type TileProps = {
   soldOut?: boolean;
   /** Reason shown instead of "Sold out" when the item is unavailable for another reason. */
   unavailableReason?: string | null;
-  /** Shown as "3 left" beside the price when 5 or fewer remain; in the alert colour when the order holds more than that. */
+  /** Shown as "3 left" beside the price when 5 or fewer remain (what is left after the lines already added, this order's included). */
   capRemaining?: number | null;
   /** The access level the tile needs that the signed-in role lacks: "Cashier", "Manager", "Admin". */
   restrictedTo?: string | null;
@@ -86,7 +86,8 @@ export function Tile({ label, priceCents, colour, onPress, soldOut, unavailableR
           </span>
         </span>
         {/* One state at a time in the foot: "Sold out" in place of the price, never drawn over it (final review B-P11);
-            "5 left" beside the price, so the count badge stays in view (round 8, 3). */}
+            "5 left" beside the price, so the count badge stays in view (round 8, 3). The register takes a line's cap when
+            it is added, so the badge and "left" together say what the order holds and what more it can take. */}
         <span className="flex items-end justify-between gap-2">
           {unavailable ? (
             <span className="text-caption font-medium text-status-alert">{soldOut ? "Sold out" : "Unavailable"}</span>
@@ -94,7 +95,7 @@ export function Tile({ label, priceCents, colour, onPress, soldOut, unavailableR
             <span className="flex min-w-0 items-center gap-1.5">
               <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: tileBand(colour) }} />
               {priceCents != null ? <span className="tabular text-[14px] text-ink-2">{money(priceCents)}</span> : null}
-              {lowStock ? <span className={cx("truncate text-caption font-medium tabular", onOrder && onOrder > capRemaining! ? "text-status-alert" : "text-status-sent")}>· {capRemaining} left</span> : null}
+              {lowStock ? <span className="truncate text-caption font-medium text-status-sent tabular">· {capRemaining} left</span> : null}
             </span>
           )}
           {restrictedTo ? <span className="truncate rounded-chip bg-status-bill-tint px-2 text-caption font-medium text-status-bill">{restrictedTo} approval</span> : null}

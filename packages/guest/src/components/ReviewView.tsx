@@ -173,7 +173,8 @@ export function ReviewView({ session, menu, items, guestName, onGuestName, canOr
 
         {items.length > 0 && quote?.quote ? (
           <div className="-mt-3 flex items-baseline justify-between gap-4 border-t border-rule pt-4">
-            <p className="font-display text-[18px] font-semibold text-ink">Total</p>
+            {/* The items as the register prices them; service charge, discounts and any tax added come on the table's bill. */}
+            <p className="font-display text-[18px] font-semibold text-ink">Subtotal</p>
             <Money cents={quote.quote.total} size="heading" pending={quote.updating} className="font-display text-[18px] font-semibold text-ink" />
           </div>
         ) : null}

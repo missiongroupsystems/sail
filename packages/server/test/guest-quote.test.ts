@@ -100,6 +100,29 @@ describe("rounds.quote", () => {
   });
 });
 
+describe("rounds.quote reserves nothing and is rate-limited", () => {
+  it("leaves the day's cap as it was", async () => {
+    await call("POST", "/v1/stock/daily-cap", { token: A.admin.token, body: { outlet_id: A.outletId, product_id: ids.kopi, quantity: 5 } });
+    const g = await phone("sg", "device-quote-cap1");
+    const capLeft = async () => (await call<{ data: { products: Record<string, { cap_remaining: number | null }> } }>("GET", `/v1/channel-links/${ids.qrLink}/menu`, { token: g })).body.data.products[ids.kopi]!.cap_remaining;
+    const before = await capLeft();
+    const q = await call<Quote>("POST", "/v1/guest/rounds/quote", { token: g, body: { lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 3 }] } });
+    expect(q.status, JSON.stringify(q.body)).toBe(200);
+    expect(await capLeft()).toBe(before);
+    // Asking for more than is left is refused, as a send would be, and still reserves nothing.
+    expect((await call("POST", "/v1/guest/rounds/quote", { token: g, body: { lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 6 }] } })).status).toBe(422);
+    expect(await capLeft()).toBe(before);
+    await call("POST", "/v1/stock/daily-cap", { token: A.admin.token, body: { outlet_id: A.outletId, product_id: ids.kopi, quantity: null } });
+  });
+
+  it("answers 429 past 120 quotes a minute from one phone", async () => {
+    const g = await phone("sg", "device-quote-rate1");
+    const line = () => ({ lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] });
+    for (let i = 0; i < 120; i++) expect((await call("POST", "/v1/guest/rounds/quote", { token: g, body: line() })).status).toBe(200);
+    expect((await call("POST", "/v1/guest/rounds/quote", { token: g, body: line() })).status).toBe(429);
+  });
+});
+
 describe("the price note from the first scan", () => {
   it("names the merchant's tax and whether prices include it, before the table has an order", async () => {
     const sg = await call<View>("GET", "/v1/guest/order", { token: await phone("eu", "device-note-0001") });

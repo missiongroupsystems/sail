@@ -48,7 +48,7 @@ function limitedError(what: string, retry: number): AppError {
 export async function resetGuestRateLimitsForTests() {
   await withOwnTransaction((sql) => sql`delete from guest_rate_hits`);
 }
-export const RATE = { sessionsPerDevice: [10, 3_600_000], sessionsPerTable: [30, 3_600_000], roundsPerSession: [1, 10_000], roundsPerTable: [40, 3_600_000], requestsPerTableType: [1, 60_000] } as const;
+export const RATE = { sessionsPerDevice: [10, 3_600_000], sessionsPerTable: [30, 3_600_000], roundsPerSession: [1, 10_000], roundsPerTable: [40, 3_600_000], requestsPerTableType: [1, 60_000], quotesPerSession: [120, 60_000] } as const;
 
 export async function enforceLimit(merchantId: string, key: string, limit: readonly [number, number], what: string) {
   const retry = await hitWindow(merchantId, key, limit, true);

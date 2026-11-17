@@ -177,7 +177,7 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
           <QuietButton onPress={() => setEarlierView(true)}>{earlierCount} from earlier days</QuietButton>
         ) : null}
         {/* Tickets past the screen's edge: how many, and a page across to them (final review B-P10). */}
-        {board.before > 0 ? <PageButton icon={ChevronLeft} label={`${board.before} earlier`} onPress={() => board.page(-1)} /> : null}
+        {board.before > 0 ? <PageButton icon={ChevronLeft} label={`${board.before} before`} onPress={() => board.page(-1)} /> : null}
         {board.after > 0 ? <PageButton icon={ChevronRight} label={`${board.after} more`} onPress={() => board.page(1)} trailing /> : null}
         <span className="flex-1" />
         <AriaButton
@@ -198,7 +198,7 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
       <div className="flex min-h-0 flex-1">
         {/* Tickets run down each column to the foot of the screen and on into the next, oldest first; columns past the edge
             are a swipe or a page away, so every ticket and its Bump is reachable without hunting (final review B-P10). */}
-        <section ref={board.ref} aria-label="Tickets" className="min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-hidden p-4">
+        <section ref={board.ref} aria-label="Tickets" className="min-h-0 min-w-0 flex-1 snap-x snap-mandatory scroll-px-4 overflow-x-auto overflow-y-hidden p-4">
           <InlineError error={tickets.error ?? act.error} className="mb-4" />
           {tickets.data && open.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
@@ -320,7 +320,7 @@ function TicketCard({ ticket: t, now, warn, late, pending, onBump }: { ticket: K
       isDisabled={pending}
       aria-label={`${cancelled ? "Clear" : "Bump"} ${title}, ${items} ${items === 1 ? "item" : "items"}${tone === "late" ? ", late" : ""}${t.changed ? ", changed" : ""}${cancelled ? ", cancelled" : ""}`}
       className={cx(
-        "press pos-touch relative mb-4 flex w-full min-w-0 break-inside-avoid flex-col overflow-hidden rounded-panel border border-rule bg-surface text-left shadow-e1 outline-none",
+        "press pos-touch relative mb-4 flex w-full min-w-0 snap-start break-inside-avoid flex-col overflow-hidden rounded-panel border border-rule bg-surface text-left shadow-e1 outline-none",
         "transition-colors duration-[120ms] data-[pressed]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated data-[disabled]:opacity-45",
         t.status === "recalled" && "shadow-e2",
       )}
