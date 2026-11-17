@@ -48,7 +48,8 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
   const [refund, setRefund] = useState<{ checkId: string | null } | null>(null);
   const [reopen, setReopen] = useState(false);
   const [reopenReason, setReopenReason] = useState("");
-  const [note, setNote] = useState<{ text: string; warnings: string[] } | null>(null);
+  // What the last action did, until the order changes again (review 2, N8: an old "already has invoice" stayed up).
+  const [note, setNote] = useState<{ text: string; warnings: string[]; version: number | null } | null>(null);
   useEffect(() => setNote(null), [orderId]);
 
   const order = useQuery({
@@ -98,11 +99,35 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
   const today = useBusinessDate(outletId);
   const sameDay = o ? o.business_date === today : false;
 
+  useEffect(() => {
+    if (note?.version != null && o && o.version !== note.version) setNote(null);
+  }, [o, note]);
+
   const settle = async (text: string, warnings: string[] = []) => {
-    setNote({ text, warnings });
+    setNote({ text, warnings, version: null });
     await Promise.all([qc.invalidateQueries({ queryKey: keys.order(orderId ?? "") }), qc.invalidateQueries({ queryKey: ["orders"] }), qc.invalidateQueries({ queryKey: ["print-jobs"] }), qc.invalidateQueries({ queryKey: ["audit"] }), qc.invalidateQueries({ queryKey: keys.outletEvents(outletId ?? "") })]);
+    const version = qc.getQueryData<OrderSnapshot>(keys.order(orderId ?? ""))?.version ?? null;
+    setNote((n) => (n && n.text === text ? { ...n, version } : n));
   };
 
+  // The register is asked first (a dry run), so a reopen it would refuse (a terminal payment, a refund, a closed day)
+  // says why as the dialog opens, with no reason to type (review 2, N3).
+  const reopenCheck = useQuery({
+    queryKey: [...keys.order(orderId ?? ""), "reopen-check"],
+    queryFn: async (): Promise<{ message: string; remedy: string | null } | null> => {
+      try {
+        await req(api.POST("/v1/orders/{id}/reopen", { params: { path: { id: orderId! } }, body: { reason: "dry run", dry_run: true } }));
+        return null;
+      } catch (e) {
+        const err = e as ApiError;
+        return err.code === "invariant_violation" || err.code === "state_conflict" ? { message: err.message, remedy: err.remedy ?? null } : null;
+      }
+    },
+    enabled: reopen && orderId !== null,
+    staleTime: 0,
+    gcTime: 0,
+  });
+  const reopenRefusal = reopenCheck.data ?? null;
   const doReopen = useMutation<{ warnings: string[] }, ApiError, string>({
     mutationFn: (reason) => req(api.POST("/v1/orders/{id}/reopen", { params: { path: { id: orderId! } }, body: { reason } })),
     onSuccess: async (r) => {
@@ -114,9 +139,14 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
     mutationFn: (c) => req(api.POST("/v1/checks/{id}/receipt/print", { params: { path: { id: c.id } }, body: {} })),
     onSuccess: (r, c) => settle(`Receipt for ${c.label} queued on the receipt printer.`, r.warnings),
   });
+  // Get invoice issues it and opens its PDF, as the POS does (review 2, N8).
   const issueInvoice = useMutation<{ data: InvoiceIssued; warnings: string[] }, ApiError, CheckSnapshot>({
-    mutationFn: (c) => req(api.POST("/v1/checks/{id}/invoice", { params: { path: { id: c.id } }, body: {} })),
-    onSuccess: (r, c) => settle(r.data.reused ? `${c.label} already has invoice ${r.data.invoice_no}.` : `Invoice ${r.data.invoice_no} issued for ${c.label}.`, r.warnings),
+    mutationFn: async (c) => {
+      const r = await req(api.POST("/v1/checks/{id}/invoice", { params: { path: { id: c.id } }, body: {} }));
+      await openPdf(`/v1/checks/${c.id}/invoice.pdf`, `${r.data.invoice_no}.pdf`);
+      return r as { data: InvoiceIssued; warnings: string[] };
+    },
+    onSuccess: (r, c) => settle(r.data.reused ? `Invoice ${r.data.invoice_no} for ${c.label}.` : `Invoice ${r.data.invoice_no} issued for ${c.label}.`, r.warnings),
   });
   const invoicePdf = useMutation<void, ApiError, CheckSnapshot>({ mutationFn: (c) => openPdf(`/v1/checks/${c.id}/invoice.pdf`, `${c.invoice_no ?? "invoice"}.pdf`) });
   const creditNotePdf = useMutation<void, ApiError, Refund>({ mutationFn: (r) => openPdf(`/v1/refunds/${r.id}/credit-note.pdf`, `${r.credit_note_no ?? "credit-note"}.pdf`) });
@@ -482,23 +512,38 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
       <Dialog
         isOpen={reopen}
         onOpenChange={(open) => !open && setReopen(false)}
-        title={o ? `Reopen ${o.order_no}` : "Reopen order"}
+        title={reopenRefusal ? "This order cannot be reopened" : o ? `Reopen ${o.order_no}` : "Reopen order"}
         footer={
-          <>
-            <Button variant="quiet" onPress={() => setReopen(false)} isDisabled={doReopen.isPending}>
-              Cancel
+          reopenRefusal ? (
+            <Button variant="primary" onPress={() => setReopen(false)}>
+              Close
             </Button>
-            <Button variant="primary" isDisabled={!reopenReason.trim()} isPending={doReopen.isPending} onPress={() => doReopen.mutate(reopenReason.trim())}>
-              Reopen order
-            </Button>
-          </>
+          ) : (
+            <>
+              <Button variant="quiet" onPress={() => setReopen(false)} isDisabled={doReopen.isPending}>
+                Cancel
+              </Button>
+              <Button variant="primary" isDisabled={!reopenReason.trim() || reopenCheck.isPending} isPending={doReopen.isPending} onPress={() => doReopen.mutate(reopenReason.trim())}>
+                Reopen order
+              </Button>
+            </>
+          )
         }
       >
-        <div className="flex flex-col gap-3 pt-2">
-          <p>Reverses every payment on this order as events and unlocks its bills; the order is then recharged. Same business day only.</p>
-          <TextField label="Reason" value={reopenReason} onChange={setReopenReason} placeholder="Wrong items were paid for" autoFocus />
-          <InlineError error={doReopen.error} />
-        </div>
+        {reopenRefusal ? (
+          <div className="flex flex-col gap-3 pt-2">
+            <p>{reopenRefusal.message}</p>
+            {reopenRefusal.remedy ? <p className="text-ink-2">{reopenRefusal.remedy}</p> : null}
+          </div>
+        ) : reopenCheck.isPending ? (
+          <Skeleton lines={3} />
+        ) : (
+          <div className="flex flex-col gap-3 pt-2">
+            <p>Reverses every payment on this order as events and unlocks its bills; the order is then recharged. Same business day only.</p>
+            <TextField label="Reason" value={reopenReason} onChange={setReopenReason} placeholder="Wrong items were paid for" autoFocus />
+            <InlineError error={doReopen.error} />
+          </div>
+        )}
       </Dialog>
     </Sheet>
   );
