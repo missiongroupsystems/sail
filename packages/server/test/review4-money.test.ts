@@ -88,20 +88,12 @@ const open = (w: World, i = 0) => call<Mut>("POST", "/v1/orders", { token: pos(w
 const add = (w: World, orderId: string, keys: string[], i = 0) => call<Mut>("POST", `/v1/orders/${orderId}/lines`, { token: pos(w, i), body: { lines: keys.map((k) => ({ line_id: randomUUID(), product_id: w.products[k], quantity: 1 })) } });
 const snap = async (w: World, id: string) => (await call<{ data: Snap }>("GET", `/v1/orders/${id}`, { token: w.m.manager.token })).body.data;
 const pay = (w: World, checkId: string, amount: number, tender: "cash" | "card", i = 0) => call<Mut>("POST", `/v1/checks/${checkId}/payments`, { token: pos(w, i), body: { payment_id: randomUUID(), tender_type_id: tender === "cash" ? w.cash : w.card, amount } });
-const tax = (taxes: Tax[], name: string) => taxes.find((x) => x.name === name)?.amount ?? 0;
 /** A refund from the back office: the manager's own session, which has no station. */
 const boRefund = (w: World, checkId: string, request: unknown, extra: Record<string, unknown> = {}) => call<RefundRes>("POST", `/v1/checks/${checkId}/refunds`, { token: w.m.manager.token, body: { refund_id: randomUUID(), request, reason: "Wrong item keyed", print: false, ...extra } });
 const openShift = (w: World, i: number, float: number) => call<{ data: { id: string } } & Err>("POST", "/v1/shifts", { token: pos(w, i), body: { float_cents: float } });
-const openShifts = async (w: World) => (await call<{ data: { id: string; station_id: string | null; station_name: string | null; opened_by: string | null }[] }>("GET", `/v1/outlets/${w.m.outletId}/shifts?status=open`, { token: w.m.manager.token })).body.data;
 type Z = { sales: { net: number; net_before_refunds: number; total: number; total_after_refunds: number; refunds: number }; tenders: { tender: string; refunds: number; net: number }[]; refunds: { count: number; amount: number; tax: number; taxes: Tax[] }; tax_due: Tax[]; cash: Cash & { open_shifts?: Cash } };
 type Cash = { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number };
 const zFor = async (w: World, stationId?: string) => (await call<{ data: Z }>("GET", `/v1/outlets/${w.m.outletId}/z-report${stationId ? `?station_id=${stationId}` : ""}`, { token: w.m.manager.token })).body.data;
-/** The shift's own report, as its close would give it (a manager's dry run). */
-const shiftReport = async (w: World, shiftId: string) => {
-  const r = await call<{ data: { report: { cash: Cash; refunds: { count: number; amount: number } } } } & Err>("POST", `/v1/shifts/${shiftId}/close`, { token: w.m.manager.token, body: { counted_cash_cents: 0, variance_reason: "Dry run", dry_run: true } });
-  expect(r.status, JSON.stringify(r.body)).toBe(200);
-  return r.body.data.report;
-};
 
 /** A takeaway order at station `i`, sent and paid in full in one tender. */
 async function paidOrder(w: World, keys: string[], tender: "cash" | "card", i = 0) {
@@ -180,4 +172,25 @@ describe("T1: a back-office card refund counts on the station of the payment it 
       await expectStationsAddUp(w);
     });
   }
+});
+
+describe("T2: reopen is asked once per click; the register refuses a second reopen and replays a retried one", () => {
+  it("a dry run changes nothing; the reopen goes through once; a retry with the same key replays it; a new reopen is refused", async () => {
+    const order = await paidOrder(US, ["coffee"], "card", 1);
+    const path = `/v1/orders/${order.id}/reopen`;
+    const dry = await call<Mut>("POST", path, { token: US.m.manager.token, body: { reason: "dry run", dry_run: true } });
+    expect(dry.status, JSON.stringify(dry.body)).toBe(200);
+    expect((await snap(US, order.id)).status).toBe("completed");
+    const key = randomUUID();
+    const first = await call<Mut>("POST", path, { token: US.m.manager.token, body: { reason: "Wrong items" }, idempotencyKey: key });
+    expect(first.status, JSON.stringify(first.body)).toBe(200);
+    const replay = await call<Mut>("POST", path, { token: US.m.manager.token, body: { reason: "Wrong items" }, idempotencyKey: key });
+    expect(replay.status).toBe(200);
+    expect(replay.headers.get("idempotent-replayed")).toBe("true");
+    const again = await call<Mut>("POST", path, { token: US.m.manager.token, body: { reason: "Wrong items" } });
+    expect(again.status).toBe(409);
+    expect(again.body.message).toMatch(/^Only completed orders can be reopened/);
+    const reversed = await db.sql<{ n: number }[]>`select count(*)::int as n from payments where order_id = ${order.id} and status = 'reversed'`;
+    expect(reversed[0]!.n).toBe(1);
+  });
 });

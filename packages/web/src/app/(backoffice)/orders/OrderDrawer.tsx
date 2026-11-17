@@ -111,9 +111,11 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
   };
 
   // The register is asked first (a dry run), so a reopen it would refuse (a terminal payment, a refund, a closed day)
-  // says why as the dialog opens, with no reason to type (review 2, N3).
+  // says why as the dialog opens, with no reason to type (review 2, N3). It is asked once per opening: its key is not
+  // under the order's, so reloading the order after the reopen does not send it again (that answered 409, review 4 T2),
+  // and neither does the window regaining focus.
   const reopenCheck = useQuery({
-    queryKey: [...keys.order(orderId ?? ""), "reopen-check"],
+    queryKey: ["reopen-check", orderId ?? ""],
     queryFn: async (): Promise<{ message: string; remedy: string | null } | null> => {
       try {
         await req(api.POST("/v1/orders/{id}/reopen", { params: { path: { id: orderId! } }, body: { reason: "dry run", dry_run: true } }));
@@ -126,6 +128,9 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
     enabled: reopen && orderId !== null,
     staleTime: 0,
     gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
   const reopenRefusal = reopenCheck.data ?? null;
   const doReopen = useMutation<{ warnings: string[] }, ApiError, string>({
