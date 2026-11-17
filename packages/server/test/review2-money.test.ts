@@ -322,3 +322,25 @@ describe("N6: every row of the items report adds up after a refund", () => {
     expect(wine.tax).toBeGreaterThan(0);
   });
 });
+
+describe("N7: the invoice PDF places the euro sign by its own width", () => {
+  it("each standard font carries its glyph widths (the euro is 556/1000 em wide), so no viewer draws it over the first digit", async () => {
+    const o = await open(EU, { order_type: "takeaway" });
+    await add(EU, o.body.data.id, ["wine", "juice"]);
+    const s = await snap(EU, o.body.data.id);
+    expect((await pay(EU, s.checks[0]!.id, s.balance)).status).toBe(200);
+    expect((await call("POST", `/v1/checks/${s.checks[0]!.id}/invoice`, { token: EU.pin, body: {} })).status).toBe(200);
+    const res = await app.request(`/v1/checks/${s.checks[0]!.id}/invoice.pdf`, { headers: { authorization: `Bearer ${EU.m.admin.token}` } });
+    expect(res.status).toBe(200);
+    const body = Buffer.from(await res.arrayBuffer()).toString("latin1");
+    const fonts = [...body.matchAll(/\/BaseFont \/(Helvetica(?:-Bold)?)\s+\/Encoding \/WinAnsiEncoding\s+\/FirstChar 32\s+\/LastChar 255\s+\/Widths \[([^\]]+)\]/g)];
+    expect(fonts.map((f) => f[1]).sort()).toEqual(["Helvetica", "Helvetica-Bold"]);
+    for (const f of fonts) {
+      const widths = f[2]!.trim().split(/\s+/).map(Number);
+      expect(widths).toHaveLength(224);
+      expect(widths[0x80 - 32]).toBe(556); // the euro sign
+      expect(widths["1".charCodeAt(0) - 32]).toBe(556);
+    }
+    await call("POST", `/v1/orders/${o.body.data.id}/fire`, { token: EU.pin, body: {} });
+  });
+});

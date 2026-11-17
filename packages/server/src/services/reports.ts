@@ -4,7 +4,7 @@ import { tx } from "../db/client.js";
 import { toCsv } from "./csv.js";
 import { businessDayInputs } from "./business-day.js";
 import { shiftDate } from "../lib/time.js";
-import { pdfMoney, winAnsi } from "../lib/pdf-text.js";
+import { pdfMoney, savePdf, winAnsi } from "../lib/pdf-text.js";
 import type { ZReport } from "./shifts.js";
 import { taxDue } from "./tax-due.js";
 
@@ -80,7 +80,7 @@ export async function salesSummary(f: ReportFilters): Promise<SalesSummary> {
     from report_orders r where ${w}`;
   const taxes = await sql<TaxBreakdown[]>`
     select t->>'name' as name, (t->>'bps')::int as bps, coalesce(sum((t->>'taxable')::bigint),0)::bigint as taxable, coalesce(sum((t->>'amount')::bigint),0)::bigint as amount
-    from report_orders r, jsonb_array_elements(r.taxes) t where ${w} group by 1, 2 order by 2 desc, 1`;
+    from report_orders r, jsonb_array_elements(r.taxes) t where ${w} group by 1, 2 order by 2, 1`;
   const [items] = await sql<{ n: number }[]>`select coalesce(sum(quantity),0)::bigint as n from report_sales_lines r where ${w} ${catFilter}`;
   // Orders and covers come from the orders of the period; net from report_net_sales, so a refund lands on its own day.
   const byDay = await sql<SalesSummary["by_day"]>`select business_date, coalesce(o.orders,0)::bigint as orders, coalesce(o.covers,0)::bigint as covers, coalesce(o.gross,0)::bigint as gross, coalesce(n.net,0)::bigint as net
@@ -100,7 +100,7 @@ export async function salesSummary(f: ReportFilters): Promise<SalesSummary> {
   const byClass = await sql<SalesSummary["adjustments_by_class"]>`select report_class, kind, count(*)::int as count, coalesce(sum(total),0)::bigint as total from report_adjustments r where ${w} group by report_class, kind order by kind, total`;
   const [voids] = await sql<{ count: number; quantity: number; value: number }[]>`select count(*)::int as count, coalesce(sum(quantity),0)::bigint as quantity, coalesce(sum(value),0)::bigint as value from report_voids r where ${w} and r.after_firing`;
   const [refunds] = await sql<{ count: number; amount: number; net: number; tax: number; tips: number }[]>`select count(*)::int as count, coalesce(sum(total),0)::bigint as amount, coalesce(sum(net),0)::bigint as net, coalesce(sum(tax),0)::bigint as tax, coalesce(sum(tip),0)::bigint as tips from report_refunds r where ${w}`;
-  const refundTaxes = await sql<SalesSummary["refunds"]["taxes"]>`select t->>'name' as name, (t->>'bps')::int as bps, coalesce(sum((t->>'amount')::bigint),0)::bigint as amount from report_refunds r cross join lateral jsonb_array_elements(r.taxes) t where ${w} group by 1, 2 order by 2 desc, 1`;
+  const refundTaxes = await sql<SalesSummary["refunds"]["taxes"]>`select t->>'name' as name, (t->>'bps')::int as bps, coalesce(sum((t->>'amount')::bigint),0)::bigint as amount from report_refunds r cross join lateral jsonb_array_elements(r.taxes) t where ${w} group by 1, 2 order by 2, 1`;
   const refundKinds = await sql<{ kind: string; count: number; amount: number }[]>`select kind, count(*)::int as count, coalesce(sum(total),0)::bigint as amount from report_refunds r where ${w} group by kind order by kind`;
   const rounding = byTender.reduce((s, x) => s + x.rounding, 0);
   const tips = byTender.reduce((s, x) => s + x.tips, 0);
@@ -266,5 +266,5 @@ export async function dailySummaryPdf(input: { outletName: string; businessDate:
   row(`${input.z.voids.count} void${input.z.voids.count === 1 ? "" : "s"}, ${input.z.voids.quantity} item(s)`, formatCents(input.z.voids.value));
   section("By order type");
   for (const t of input.summary.by_order_type) row(`${t.order_type} (${t.orders})`, formatCents(t.net));
-  return pdf.save({ useObjectStreams: false });
+  return savePdf(pdf, [font, bold]);
 }

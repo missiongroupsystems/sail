@@ -88,7 +88,7 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
     select t->>'name' as name, (t->>'bps')::int as bps, coalesce(sum((t->>'taxable')::bigint),0)::bigint as taxable, coalesce(sum((t->>'amount')::bigint),0)::bigint as amount
     from orders o, jsonb_array_elements(o.taxes) t
     where o.outlet_id = ${scope.outletId} and o.business_date = ${scope.businessDate} and o.status = 'completed' ${scope.stationId ? tx()`and coalesce((select p.station_id from payments p where p.order_id = o.id and p.status = 'recorded' order by p.created_at desc, p.id desc limit 1), o.station_id) = ${scope.stationId}` : tx()``}
-    group by 1, 2 order by 2 desc, 1`;
+    group by 1, 2 order by 2, 1`;
   const [open] = await db().select({ n: sql<number>`count(*)::int` }).from(orders).where(and(orderWhere, sql`${orders.status} in ('open','fired','ready','out_for_delivery')`));
   const adj = await db()
     .select({ rule_key: orderAdjustments.ruleKey, name: orderAdjustments.name, kind: orderAdjustments.kind, report_class: orderAdjustments.reportClass, total: sql<number>`coalesce(sum(${orderAdjustments.total}),0)::bigint`, count: sql<number>`count(*)::int` })
