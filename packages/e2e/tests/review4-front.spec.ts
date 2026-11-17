@@ -455,3 +455,34 @@ test("U5: with only a waiting QR order, the order's primary accepts it, sends it
     await settle(order.id);
   }
 });
+
+test("U6: after Open shift the card shows the opened shift from the register's reply, even when the next reads are refused", async ({ page, watch }) => {
+  test.setTimeout(300_000);
+  const { outletId, stationId } = devLocal();
+  watch.allow({ status: 503, url: /\/v1\/outlets\/[^/]+\/shifts/, why: "a busy register refuses the reads after the open, on purpose" });
+  await pairAndSignIn(page, MANAGER_PIN);
+  await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Shift", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Open shift" })).toBeVisible();
+  let refuse = false;
+  await page.route(/\/v1\/outlets\/[^/]+\/shifts/, async (route) => {
+    if (refuse && route.request().method() === "GET") return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ code: "overloaded", message: "The server is busy", remedy: "Retry in a moment." }) });
+    await route.continue();
+  });
+  try {
+    await page.getByRole("button", { name: "Count notes and coins" }).click();
+    await page.getByRole("textbox", { name: "$100 count" }).fill("1");
+    refuse = true;
+    await page.getByRole("button", { name: "Open shift with $100.00" }).click();
+    await expect(page.getByRole("heading", { name: "Shift open" })).toBeVisible({ timeout: 5_000 });
+    await page.waitForTimeout(7_000);
+    await expect(page.getByRole("heading", { name: "Shift open" })).toBeVisible();
+    await expect(page.getByText("No shift is open on this station")).toHaveCount(0);
+    await bothThemes(page, "U6-shift-open");
+    refuse = false;
+  } finally {
+    refuse = false;
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    const open = await register<{ data: { id: string; station_id: string | null }[] }>("GET", `/v1/outlets/${outletId}/shifts?status=open`);
+    for (const s of open.data.filter((x) => x.station_id === stationId)) await register("POST", `/v1/shifts/${s.id}/close`, { counted_cash_cents: 10_000, variance_reason: "End of an end-to-end test" }).catch(() => undefined);
+  }
+});

@@ -28,7 +28,7 @@ import {
   listVoidReasons,
   quoteRefund,
 } from "../api/register";
-import type { CheckSnapshot, FloorSnapshot, OrderSnapshot, SnapshotLine } from "../api/types";
+import type { CheckSnapshot, FloorSnapshot, OrderSnapshot, Shift, SnapshotLine } from "../api/types";
 import { useApi } from "./useApi";
 
 /** Query keys, by resource. The event store invalidates by these. */
@@ -217,7 +217,21 @@ export function useOrderRefunds(orderId: string | null, enabled = true) {
 
 export function useShifts(outletId: string | null, status: "open" | "closed") {
   const api = useApi();
-  return useQuery({ queryKey: posKeys.shifts(outletId ?? "", status), queryFn: () => listShifts(api, outletId!, { status }), enabled: Boolean(outletId), staleTime: 10_000 });
+  // Read again when the iPad comes back to the screen: a shift opened or closed at another station shows then (review 4 U6).
+  return useQuery({ queryKey: posKeys.shifts(outletId ?? "", status), queryFn: () => listShifts(api, outletId!, { status }), enabled: Boolean(outletId), staleTime: 10_000, refetchOnWindowFocus: true });
+}
+
+/**
+ * A shift the register just opened or closed, from its reply, in the lists the shift screen reads (review 4 U6). Reads on
+ * the wire from before are cancelled first, so an older list cannot land on top; a read that fails afterwards (a busy
+ * register) leaves this answer showing rather than the list from before the open. The lists are read again after.
+ */
+export async function putShift(qc: QueryClient, outletId: string, shift: Shift) {
+  await qc.cancelQueries({ queryKey: ["pos", "shifts", outletId] });
+  const without = (list: Shift[] | undefined) => (list ?? []).filter((s) => s.id !== shift.id);
+  qc.setQueryData<Shift[]>(posKeys.shifts(outletId, "open"), (list) => (shift.status === "open" ? [...without(list), shift] : without(list)));
+  qc.setQueryData<Shift[]>(posKeys.shifts(outletId, "closed"), (list) => (shift.status === "open" ? without(list) : [...without(list), shift]));
+  void qc.invalidateQueries({ queryKey: ["pos", "shifts", outletId] });
 }
 
 export function useZReport(outletId: string | null, stationId: string | null, businessDate: string | null, enabled = true) {
