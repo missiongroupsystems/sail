@@ -172,3 +172,35 @@ test("S4: the next shift's prefilled open form replaces a count on a tap and a d
     await context.close();
   }
 });
+
+test("S5: the line sheet's preview is the register's figure for the size and quantity on screen, never the saved one", async ({ page }) => {
+  test.setTimeout(300_000);
+  await pairAndSignIn(page, MANAGER_PIN);
+  await page.getByRole("button", { name: "Takeaway order", exact: true }).click();
+  await expect(page.getByRole("navigation", { name: "Menu sections" })).toBeVisible();
+  // Laksa $16.00 with Chicken (no charge) or Prawn (+$2.00).
+  await page.getByRole("button", { name: /^Laksa,/ }).click();
+  const add = page.getByRole("dialog");
+  await add.getByRole("button", { name: /^Add (1 × )?Laksa/ }).click();
+  const orderPanel = page.getByRole("region", { name: "Order" });
+  await orderPanel.getByRole("button", { name: /Laksa/ }).first().click();
+  const sheet = page.getByRole("dialog", { name: "Laksa" });
+  await sheet.getByRole("region", { name: "Protein" }).getByRole("button", { name: /^Prawn/ }).click();
+  await sheet.getByRole("group", { name: /Quantity/ }).getByRole("button", { name: /^(More|Increase)/ }).click();
+  // 2 × ($16.00 + $2.00): the register's dry run for Prawn and 2, not 2 × the Chicken price.
+  await expect(sheet.getByLabel("Line total")).toContainText("36.00");
+  await shot(page, out("S5-line-sheet-size-and-quantity.png"));
+  await sheet.getByRole("button", { name: "Save changes" }).click();
+  await expect(sheet).toHaveCount(0);
+  await orderPanel.getByRole("button", { name: /Laksa/ }).first().click();
+  await expect(sheet.getByLabel("Line total")).toContainText("36.00");
+  await sheet.getByRole("region", { name: "Protein" }).getByRole("button", { name: /^Chicken/ }).click();
+  // Back to Chicken: the saved Prawn figure is not shown while the register prices it.
+  await expect(sheet.getByLabel("Line total")).toContainText("32.00");
+  await expect(sheet.getByLabel("Line total")).not.toContainText("36.00");
+  await page.keyboard.press("Escape");
+  // Leave nothing open: the takeaway was never sent, so it is cancelled.
+  await page.getByRole("button", { name: "Order", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Cancel order" }).click();
+  await page.getByRole("dialog", { name: /Cancel/ }).getByRole("button").filter({ hasText: /changed mind|mistake/i }).first().click();
+});
