@@ -1,9 +1,9 @@
 "use client";
 
 import { ALLERGY_NOTE_CLASS, Button, ConnectionIndicator, cx, deviceLocale, deviceTimeZone, Icon, InlineError, LocaleProvider, mentionsAllergy, Pill, SegmentedControl, useLocale, type ConnectionStatus, type LocaleSettings } from "@sail/ui";
-import { AlertTriangle, Ban, Check, ChefHat, Circle, Flame, Pencil, RotateCcw } from "lucide-react";
+import { AlertTriangle, Ban, Check, ChefHat, ChevronLeft, ChevronRight, Circle, Flame, Pencil, RotateCcw } from "lucide-react";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import { ApiError, idempotencyKey } from "@/lib/api";
 import { merchantLocale } from "@/lib/locale";
@@ -143,6 +143,7 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
     onSettled: settle,
   });
   const pendingId = act.isPending ? act.variables?.id : null;
+  const board = useBoardPages(tickets.data);
   const open = tickets.data?.data ?? [];
   const last = tickets.data?.last_bumped ?? null;
   const lateCount = open.filter((t) => t.status !== "cancelled" && (now - new Date(t.fired_at).getTime()) / 1000 >= late * 60).length;
@@ -161,6 +162,9 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
           <span className="tabular">{open.length === 1 ? "1 ticket" : `${open.length} tickets`}</span>
           {lateCount > 0 ? <Pill tone="alert">{lateCount} late</Pill> : null}
         </p>
+        {/* Tickets past the screen's edge: how many, and a page across to them (final review B-P10). */}
+        {board.before > 0 ? <PageButton icon={ChevronLeft} label={`${board.before} earlier`} onPress={() => board.page(-1)} /> : null}
+        {board.after > 0 ? <PageButton icon={ChevronRight} label={`${board.after} more`} onPress={() => board.page(1)} trailing /> : null}
         <span className="flex-1" />
         <AriaButton
           isDisabled={!last || act.isPending}
@@ -178,7 +182,9 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
         <ConnectionIndicator status={status} />
       </header>
       <div className="flex min-h-0 flex-1">
-        <section aria-label="Tickets" className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4">
+        {/* Tickets run down each column to the foot of the screen and on into the next, oldest first; columns past the edge
+            are a swipe or a page away, so every ticket and its Bump is reachable without hunting (final review B-P10). */}
+        <section ref={board.ref} aria-label="Tickets" className="min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-hidden p-4">
           <InlineError error={tickets.error ?? act.error} className="mb-4" />
           {tickets.data && open.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
@@ -186,8 +192,8 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
               <p className="max-w-[40ch] text-[15px] text-ink-2">No tickets. Items appear here as soon as they are sent to the kitchen.</p>
             </div>
           ) : null}
-          {/* As many columns as fit: three on an iPad in landscape, four on a wall screen, two in portrait. */}
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] items-start gap-4 min-[1600px]:grid-cols-[repeat(auto-fill,minmax(320px,1fr))]">
+          {/* As many columns as fit: three or four on an iPad in landscape, more on a wall screen, two in portrait. */}
+          <div className={cx("h-full columns-[260px] gap-4 [column-fill:auto] min-[1600px]:columns-[320px]", tickets.error || act.error ? "h-[calc(100%-4rem)]" : "")}>
             {open.map((t) => (
               <TicketCard key={t.id} ticket={t} now={now} warn={warn} late={late} pending={pendingId === t.id} onBump={() => act.mutate({ id: t.id, action: "bump", key: idempotencyKey(), done: `${ticketTitle(t)} ${t.status === "cancelled" ? "cleared" : "bumped"}` })} />
             ))}
@@ -202,6 +208,63 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
         </p>
       ) : null}
     </main>
+  );
+}
+
+/**
+ * How many tickets lie past each edge of the board, and a page across: the count follows scrolling, resizing and
+ * every change to the tickets.
+ */
+function useBoardPages(data: unknown) {
+  const ref = useRef<HTMLElement>(null);
+  const [hidden, setHidden] = useState({ before: 0, after: 0 });
+  const measure = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const box = el.getBoundingClientRect();
+    let before = 0;
+    let after = 0;
+    for (const card of el.querySelectorAll<HTMLElement>("[data-ticket]")) {
+      const r = card.getBoundingClientRect();
+      if (r.right > box.right + 1) after++;
+      else if (r.left < box.left - 1) before++;
+    }
+    setHidden((h) => (h.before === before && h.after === after ? h : { before, after }));
+  }, []);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    measure();
+    el.addEventListener("scroll", measure, { passive: true });
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", measure);
+      ro.disconnect();
+    };
+  }, [measure, data]);
+  const page = (dir: 1 | -1) => {
+    const el = ref.current;
+    const card = el?.querySelector<HTMLElement>("[data-ticket]");
+    if (!el || !card) return;
+    // A page is as many whole columns as the screen shows, so a column is never left half in view.
+    const step = card.getBoundingClientRect().width + 16;
+    const columns = Math.max(1, Math.floor((el.clientWidth - 32 + 16) / step));
+    el.scrollBy({ left: dir * columns * step, behavior: "smooth" });
+  };
+  return { ref, before: hidden.before, after: hidden.after, page };
+}
+
+function PageButton({ icon, label, onPress, trailing }: { icon: typeof ChevronLeft; label: string; onPress: () => void; trailing?: boolean }) {
+  return (
+    <AriaButton
+      onPress={onPress}
+      className="press flex min-h-12 shrink-0 items-center gap-1.5 rounded-full bg-surface-2 px-4 text-[15px] font-medium text-ink tabular outline-none transition-colors duration-[120ms] data-[hovered]:bg-surface-3 data-[pressed]:bg-surface-3 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus"
+    >
+      {trailing ? null : <Icon icon={icon} size={18} />}
+      {label}
+      {trailing ? <Icon icon={icon} size={18} /> : null}
+    </AriaButton>
   );
 }
 
@@ -227,11 +290,12 @@ function TicketCard({ ticket: t, now, warn, late, pending, onBump }: { ticket: K
   const state = cancelled ? { label: "Cancelled", tone: "alert" as const, icon: Ban } : t.status === "recalled" ? { label: "Recalled", tone: "seated" as const, icon: RotateCcw } : t.status === "in_progress" ? { label: "In progress", tone: "sent" as const, icon: Flame } : { label: "New", tone: "seated" as const, icon: Circle };
   return (
     <AriaButton
+      data-ticket
       onPress={onBump}
       isDisabled={pending}
       aria-label={`${cancelled ? "Clear" : "Bump"} ${title}, ${items} ${items === 1 ? "item" : "items"}${tone === "late" ? ", late" : ""}${t.changed ? ", changed" : ""}${cancelled ? ", cancelled" : ""}`}
       className={cx(
-        "press pos-touch relative flex min-w-0 flex-col overflow-hidden rounded-panel border border-rule bg-surface text-left shadow-e1 outline-none",
+        "press pos-touch relative mb-4 flex w-full min-w-0 break-inside-avoid flex-col overflow-hidden rounded-panel border border-rule bg-surface text-left shadow-e1 outline-none",
         "transition-colors duration-[120ms] data-[pressed]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-status-seated data-[disabled]:opacity-45",
         t.status === "recalled" && "shadow-e2",
       )}

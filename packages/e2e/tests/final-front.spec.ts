@@ -1,4 +1,4 @@
-import { devLocal, expect, GUEST, pairAndSignIn, register, test } from "./fixtures";
+import { devLocal, expect, GUEST, keyIn, pairAndSignIn, register, test, WEB } from "./fixtures";
 
 /** Final review, front of house: the guest's phone, the POS floor and order screens, the kitchen display. */
 
@@ -166,4 +166,68 @@ test("POS: a customer is added from the order's Customer sheet and attached (B-P
     await expect(page.getByRole("menuitem", { name: "Move table" })).toHaveCount(0);
     await page.keyboard.press("Escape");
   });
+});
+
+test("kitchen display: with 12 tickets and a 10-line one, every ticket and its Bump is reachable at 1280x800 and 1024x768 (B-P10)", async ({ browser, watch }) => {
+  test.setTimeout(300_000);
+  const { outletId, brandId } = devLocal();
+  const stations = await register<{ data: { id: string; kind: string }[] }>("GET", `/v1/outlets/${outletId}/stations`);
+  const display = stations.data.find((s) => s.kind === "display")!;
+  const products = await register<{ data: { id: string; name: string }[] }>("GET", "/v1/products?limit=100");
+  const pid = (name: string) => products.data.find((p) => p.name === name)!.id;
+  const dishes = ["Mee Goreng", "Char Kway Teow"].map(pid);
+  const ticket = async (ref: string, lines: { product_id: string; notes?: string }[]) => {
+    const o = await register<{ data: { id: string } }>("POST", "/v1/orders", { order_id: crypto.randomUUID(), order_type: "takeaway", takeaway_ref: ref, outlet_id: outletId, brand_id: brandId });
+    await register("POST", `/v1/orders/${o.data.id}/lines`, { lines: lines.map((l) => ({ line_id: crypto.randomUUID(), quantity: 1, ...l })) });
+    await register("POST", `/v1/orders/${o.data.id}/fire`, {});
+  };
+  for (let i = 1; i <= 11; i++) await ticket(`KDS ${i}`, [{ product_id: dishes[i % 2]! }, { product_id: dishes[(i + 1) % 2]! }]);
+  await ticket("KDS long", Array.from({ length: 10 }, (_, i) => ({ product_id: dishes[i % 2]!, notes: `Line ${i + 1} note` })));
+
+  for (const viewport of [{ width: 1280, height: 800 }, { width: 1024, height: 768 }]) {
+    await test.step(`at ${viewport.width}x${viewport.height}`, async () => {
+      const ctx = await browser.newContext({ viewport });
+      const kds = await ctx.newPage();
+      watch.attach(kds);
+      const { data } = await register<{ data: { code: string } }>("POST", `/v1/stations/${display.id}/pairing-code`, {});
+      await kds.goto(`${WEB}/kds`);
+      await expect(kds.getByRole("heading", { name: "Pair this screen to a station" })).toBeVisible({ timeout: 180_000 });
+      await keyIn(kds, "PIN keys", data.code);
+      await kds.getByRole("button", { name: "Pair this screen" }).click();
+      const board = kds.getByRole("region", { name: "Tickets" });
+      await expect(board.getByRole("button", { name: /KDS long/ })).toBeAttached();
+      const cards = board.locator("[data-ticket]");
+      const total = await cards.count();
+      expect(total).toBeGreaterThanOrEqual(12);
+      // Which cards are wholly on screen, with their Bump pill.
+      const inView = async () =>
+        board.evaluate((el) => {
+          const box = el.getBoundingClientRect();
+          const vh = window.innerHeight;
+          return [...el.querySelectorAll<HTMLElement>("[data-ticket]")].filter((c) => {
+            const r = c.getBoundingClientRect();
+            return r.left >= box.left - 1 && r.right <= box.right + 1 && r.top >= 0 && r.bottom <= vh + 1;
+          }).map((c) => c.getAttribute("aria-label")!);
+        });
+      const seen = new Set(await inView());
+      // Nothing runs off the foot of the screen.
+      expect(await board.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+      const more = kds.getByRole("button", { name: /^\d+ more$/ });
+      await expect(more).toHaveText(`${total - seen.size} more`);
+      for (let i = 0; i < 10 && (await more.count()) > 0; i++) {
+        await more.click();
+        await kds.waitForTimeout(600);
+        for (const l of await inView()) seen.add(l);
+      }
+      expect(seen.size).toBe(total);
+      await expect(kds.getByRole("button", { name: /^\d+ earlier$/ })).toBeVisible();
+      // Every Bump target is a 44px touch target.
+      const smallest = await board.evaluate((el) => Math.min(...[...el.querySelectorAll<HTMLElement>("[data-ticket] span.bg-primary")].map((b) => b.getBoundingClientRect().height)));
+      expect(smallest).toBeGreaterThanOrEqual(44);
+      await ctx.close();
+    });
+  }
+  // Leave the board clean for the specs after this one.
+  const left = await register<{ data: { id: string; order_no: string; customer_name: string | null }[] }>("GET", `/v1/outlets/${outletId}/kitchen-tickets`).catch(() => ({ data: [] }));
+  for (const t of left.data.filter((x) => (x.customer_name ?? "").startsWith("KDS "))) await register("POST", `/v1/kitchen-tickets/${t.id}/bump`, {}).catch(() => undefined);
 });
