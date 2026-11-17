@@ -168,6 +168,9 @@ describe("Scan to Order", () => {
     expect(round.status, JSON.stringify(round.body)).toBe(201);
     expect(round.body.data.status).toBe("pending");
     expect(round.body.data.lines.map((l) => [l.status, l.source, l.mine])).toEqual([["held", "guest", true], ["held", "guest", true]]);
+    // The waiting round is on no bill yet: it carries its own total as the register adds its lines (final2 C-3).
+    const waiting = (round.body.data.rounds as unknown as { id: string; waiting_total: number | null }[]).find((r) => r.id === roundId)!;
+    expect(waiting.waiting_total).toBe(1800 + 360);
     const got = await pending;
     expect(Date.now() - t0).toBeLessThan(2000); // the QR round reaches the POS within 2 s
     expect(got.map((e) => (e.data as { type?: string }).type ?? e.event)).toEqual(["hello", "round.submitted", "order.repriced"]);
@@ -188,6 +191,7 @@ describe("Scan to Order", () => {
     type Totals = { tax_mode: string; subtotal: number; adjustments: { name: string; total: number }[]; taxes: { name: string; amount: number }[]; total: number };
     const view = await guestCall<{ data: { rounds: { status: string }[]; order: { status: string }; lines: { name: string; amount: number }[]; totals: Totals } }>("GET", "/v1/guest/order", g);
     expect(view.body.data.rounds[0]!.status).toBe("fired");
+    expect((view.body.data.rounds[0] as unknown as { waiting_total: number | null }).waiting_total).toBeNull();
     expect(view.body.data.order.status).toBe("fired");
     // The table's totals as the register priced the order, figure for figure; each line carries its amount.
     const staffView = (await call<{ data: { totals: { subtotal: number; tax_mode: string; taxes: { name: string; bps: number; amount: number }[]; total: number }; adjustments: { name: string; total: number }[]; lines: { name: string; amounts: { base: number } }[] } }>("GET", `/v1/orders/${seated.body.data.id}`, { token: serverPin })).body.data;

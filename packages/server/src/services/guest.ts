@@ -275,6 +275,10 @@ export async function guestOrderView(p: Extract<Principal, { type: "guest" }>) {
     const mine = lines.filter((l) => r.lineIds.includes(l.id) && l.status === "fired");
     return mine.length > 0 && mine.every(lineDone);
   };
+  // A waiting round is on no bill yet: the phone shows its own total, as the register adds its lines, apart from the
+  // table's figures (live-test final2 C-3).
+  const viewLines = lines.map((l) => ({ ...toLine(l), kitchen_done: lineDone(l) }));
+  const waitingTotal = (r: typeof guestRounds.$inferSelect) => (r.status === "pending" ? viewLines.filter((l) => r.lineIds.includes(l.id) && l.status === "held").reduce((n, l) => n + l.amount, 0) : null);
   return {
     table_id: p.tableId,
     order_open: !!order,
@@ -284,9 +288,9 @@ export async function guestOrderView(p: Extract<Principal, { type: "guest" }>) {
     order: order ? { id: order.id, order_no: order.orderNo, status: order.status, opened_at: order.openedAt.toISOString(), bill_requested: order.billRequestedAt != null } : null,
     // Each line's amount (menu price and choices, before discounts) and the table's totals as the register priced them,
     // so the phone shows them without adding anything up. Payments and balances stay at the POS.
-    lines: lines.map((l) => ({ ...toLine(l), kitchen_done: lineDone(l) })),
+    lines: viewLines,
     totals: order ? await guestTotals(order) : null,
-    rounds: allRounds.map((r) => ({ ...toRound(r), mine: r.guestSessionId === p.sessionId, kitchen_done: roundDone(r) })),
+    rounds: allRounds.map((r) => ({ ...toRound(r), mine: r.guestSessionId === p.sessionId, kitchen_done: roundDone(r), waiting_total: waitingTotal(r) })),
     requests: requests.map(toRequest),
   };
 }
