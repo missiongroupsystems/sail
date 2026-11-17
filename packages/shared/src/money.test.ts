@@ -178,8 +178,14 @@ describe("parseMoney", () => {
     expect(() => parseMoney("16.5", { currency: "JPY", locale: "ja-JP" })).toThrow(RangeError);
     expect(() => parseMoney("1.2345", { currency: "KWD", locale: "en-KW" })).toThrow(RangeError);
     expect(() => parseMoney("abc", { currency: "EUR", locale: "de-DE" })).toThrow(RangeError);
-    // "." groups thousands in de-DE: 16.50 typed out of habit must not become 1650 euros.
-    expect(() => parseMoney("16.50", { currency: "EUR", locale: "de-DE" })).toThrow(RangeError);
+    // The other decimal mark reads one way where it cannot be a digit group (A P19); a group-sized tail stays a group.
+    expect(parseMoney("16.50", { currency: "EUR", locale: "de-DE" })).toBe(1650);
+    expect(parseMoney("3,40", { currency: "EUR", locale: "en-IE" })).toBe(340);
+    expect(parseMoney("3,4", { currency: "EUR", locale: "en-IE" })).toBe(340);
+    expect(parseMoney("1,500", { currency: "EUR", locale: "en-IE" })).toBe(150_000);
+    expect(parseMoney("1.500", { currency: "EUR", locale: "de-DE" })).toBe(150_000);
+    expect(() => parseMoney("1,50", { currency: "JPY", locale: "ja-JP" })).toThrow(RangeError);
+    expect(() => parseMoney("1,234,5", { currency: "EUR", locale: "en-IE" })).toThrow(RangeError);
     expect(() => parseMoney("1,2345.00", { currency: "USD", locale: "en-US" })).toThrow(RangeError);
     expect(parseMoney("12,34,567.00", { currency: "INR", locale: "en-IN" })).toBe(123_456_700);
     // Only a sign, spaces, the currency's symbol or its code may surround the number.

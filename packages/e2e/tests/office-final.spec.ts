@@ -287,3 +287,20 @@ test("O7 (A P14): an open order is in the address, so a refresh keeps it and the
   await expect(page.getByRole("dialog")).toBeHidden();
   await expect(page).not.toHaveURL(/order=/);
 });
+
+test("O10 (round 8 check 8): Sign out pressed before the page has hydrated still signs out; the rail's menus say they are not ready", async ({ page, watch }) => {
+  test.setTimeout(300_000);
+  await signIn(page);
+  // The page's scripts never arrive: what is pressed is the server-rendered markup alone.
+  watch.allowConsole(/./);
+  await page.route(/\/_next\/static\/.*\.js/, (route) => route.abort());
+  await page.goto(`${WEB}/pricing/rules`);
+  await expect(page.getByRole("button", { name: /Open user menu/ })).toHaveAttribute("aria-disabled", "true");
+  await expect(page.getByRole("button", { name: /^Scope:/ }).first()).toHaveAttribute("aria-disabled", "true");
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await page.waitForURL(/\/login/);
+  await page.unroute(/\/_next\/static\/.*\.js/);
+  // The session is over: the back office sends the browser to sign in again.
+  await page.goto(`${WEB}/today`);
+  await expect(page).toHaveURL(/\/login/);
+});

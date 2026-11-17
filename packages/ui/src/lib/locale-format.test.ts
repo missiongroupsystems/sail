@@ -14,10 +14,12 @@ describe("money fields read back what they show", () => {
     expect(f.parseMoney("2٫1255")).toBeUndefined();
   });
 
-  it("en-US does not take Indian grouping; de-DE does not take a dot as the decimal", () => {
+  it("en-US does not take Indian grouping; the other decimal mark is read only where it cannot be a group (A P19)", () => {
     expect(fmt("USD", "en-US", 2).parseMoney("1,00,000")).toBeUndefined();
-    expect(fmt("EUR", "de-DE", 2).parseMoney("16.50")).toBeUndefined();
+    expect(fmt("EUR", "de-DE", 2).parseMoney("16.50")).toBe(1650);
     expect(fmt("EUR", "de-DE", 2).parseMoney("16,50")).toBe(1650);
+    expect(fmt("EUR", "en-IE", 2).parseMoney("3,40")).toBe(340);
+    expect(fmt("EUR", "en-IE", 2).parseMoney("1,500")).toBe(150_000);
   });
 
   it("every amount the field and the register display parses back to itself", () => {

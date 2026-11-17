@@ -285,6 +285,13 @@ export function parseAmount(text: string, opts: { locale: string; exponent: numb
   t = t.slice(0, t.length - trail.length);
   const negative = /[-−(]/.test(lead) || /[-−)]/.test(trail);
   const readings = [...new Map(sets.map((sep) => readDigits(t, sep)).filter((r) => r != null).map((r) => [`${r.whole}.${r.fraction}`, r])).values()];
+  // The other decimal mark ("3,40" in en-IE, "3.40" in de-DE) where it cannot be a digit group: one mark, then fewer
+  // digits than a group holds and no more than the currency's decimals. It reads one way only, so it is not refused
+  // (A P19); "1,500" in en-IE stays 1500 and "1.500" in de-DE stays 1500.
+  if (readings.length === 0) {
+    const other = /^(\d+)([.,])(\d{1,2})$/.exec(t);
+    if (other && other[3]!.length <= opts.exponent && sets.every((sep) => sep.decimal !== other[2] && (sep.group == null || sep.group === other[2] || SPACE.test(sep.group) || /^['’]$/.test(sep.group)))) readings.push({ whole: other[1]!, fraction: other[3]! });
+  }
   if (readings.length === 0) throw new RangeError(`not an amount in ${opts.locale}: ${text}`);
   if (readings.length > 1) throw new RangeError(`ambiguous amount in ${opts.locale}: ${text}`);
   const { whole, fraction } = readings[0]!;
