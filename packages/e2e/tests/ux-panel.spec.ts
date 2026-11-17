@@ -148,8 +148,10 @@ test.describe("iPad landscape 1180×820", () => {
       const pay = page.getByRole("region", { name: "Payment" });
       const balance = cents(await pay.getByText(/^\$[\d,.]+$/).first().innerText());
       // Tax is added on top of these prices, so a percentage tip is on the bill before tax (final review M21).
-      const open = await register<{ data: { opened_at: string; checks: { totals: { total: number; tax_total: number } }[] }[] }>("GET", `/v1/outlets/${outletId}/orders?status=open&limit=50`);
-      const bill = open.data.filter((o) => o.checks[0]?.totals.total === balance).sort((a, b) => b.opened_at.localeCompare(a.opened_at))[0]!.checks[0]!.totals;
+      const open = await register<{ data: { id: string; opened_at: string }[] }>("GET", `/v1/outlets/${outletId}/orders?status=open&limit=50`);
+      const latest = [...open.data].sort((a, b) => b.opened_at.localeCompare(a.opened_at));
+      const snaps = await Promise.all(latest.map((o) => register<{ data: { checks: { totals: { total: number; tax_total: number } }[] } }>("GET", `/v1/orders/${o.id}`)));
+      const bill = snaps.map((x) => x.data.checks[0]?.totals).find((t) => t?.total === balance)!;
       const preTax = bill.total - bill.tax_total;
 
       await test.step("cash with 15%: the tip is a whole number of 5-cent steps", async () => {

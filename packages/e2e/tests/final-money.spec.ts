@@ -23,8 +23,10 @@ async function tableWithWaitingRound() {
   const { outletId, brandId } = devLocal();
   const products = await register<{ data: { id: string; name: string }[] }>("GET", "/v1/products?limit=50");
   const kopi = products.data.find((p) => p.name === "Kopi")!;
-  const floor = await register<{ data: { tables: { id: string; name: string; order: unknown }[] } }>("GET", `/v1/outlets/${outletId}/floor`);
-  const table = floor.data.tables.find((t) => !t.order)!;
+  const floor = await register<{ data: { tables: { id: string; name: string; area_id: string; order: unknown }[] } }>("GET", `/v1/outlets/${outletId}/floor`);
+  // A free table in the area the POS floor opens on, so its button is on screen.
+  const area = floor.data.tables[0]!.area_id;
+  const table = floor.data.tables.find((t) => !t.order && t.area_id === area) ?? floor.data.tables.find((t) => !t.order)!;
   const order = await register<{ data: { id: string; order_no: string } }>("POST", "/v1/orders", { order_id: crypto.randomUUID(), order_type: "dine_in", table_id: table.id, pax: 2, outlet_id: outletId, brand_id: brandId });
   await register("POST", `/v1/orders/${order.data.id}/lines`, { lines: [{ line_id: crypto.randomUUID(), product_id: kopi.id, quantity: 1 }] });
   await register("POST", `/v1/orders/${order.data.id}/fire`, {});
@@ -105,8 +107,15 @@ test("M2, M3, M11: the back office Z-report, Today and the order drawer", async 
   await expect(page.getByRole("heading", { name: "Payments", exact: true })).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(500);
   await page.screenshot({ path: out("M2-office-z-report.png"), fullPage: true });
+  const { outletId, brandId } = devLocal();
+  const kopi = (await register<{ data: { id: string; name: string }[] }>("GET", "/v1/products?limit=50")).data.find((p) => p.name === "Kopi")!;
+  const o = await register<{ data: { id: string; order_no: string; checks: { id: string }[]; balance: number } }>("POST", "/v1/orders", { order_id: crypto.randomUUID(), order_type: "takeaway", takeaway_ref: "Final money", outlet_id: outletId, brand_id: brandId });
+  const withLine = await register<{ data: { checks: { id: string }[]; balance: number } }>("POST", `/v1/orders/${o.data.id}/lines`, { lines: [{ line_id: crypto.randomUUID(), product_id: kopi.id, quantity: 2 }] });
+  const tenders = await register<{ data: { id: string; is_cash: boolean; provider?: string | null }[] }>("GET", "/v1/tender-types");
+  await register("POST", `/v1/checks/${withLine.data.checks[0]!.id}/payments`, { payment_id: crypto.randomUUID(), tender_type_id: tenders.data.find((t) => !t.is_cash && !t.provider)!.id, amount: withLine.data.balance });
+  await register("POST", `/v1/orders/${o.data.id}/fire`, {});
   await page.goto(`${WEB}/orders`);
-  await page.getByRole("grid").getByRole("row").nth(1).click();
+  await page.getByRole("grid").getByRole("row").filter({ hasText: o.data.order_no }).first().click();
   const drawer = page.getByRole("dialog");
   await expect(drawer.getByText("Totals")).toBeVisible();
   await page.waitForTimeout(500);

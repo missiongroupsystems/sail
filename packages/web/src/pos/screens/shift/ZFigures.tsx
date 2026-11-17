@@ -107,14 +107,7 @@ export function ZFigures({ report, title }: { report: { data?: ZReport | ZReport
               {r.tenders.length === 0 ? <p className="py-2 text-body text-ink-2">No payments yet.</p> : null}
             </dl>
             {reconciliation ? <dl className="mt-2 border-t border-rule pt-2">{rows(reconciliation)}</dl> : null}
-            {r.reversals?.count ? (
-              <dl className="mt-2 border-t border-rule pt-2">
-                {r.reversals.items.map((x) => (
-                  <Row key={x.payment_id} label={`Reversed · ${x.order_no} · ${x.tender}`} cents={x.amount} indent />
-                ))}
-              </dl>
-            ) : null}
-            {nonCash.length ? <p className="pt-2 text-caption text-ink-2">Compare each card net with the terminal&rsquo;s end-of-day total. Reversed payments are counted in no figure.</p> : null}
+            {nonCash.length ? <p className="pt-2 text-caption text-ink-2">Compare each card net with the terminal&rsquo;s end-of-day total.</p> : null}
           </section>
 
           <section className={group}>
