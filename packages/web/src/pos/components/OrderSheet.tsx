@@ -93,6 +93,9 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
   });
 
   const sendable = live.filter((l) => l.status === "pending" && !l.optimistic && !pendingLineIds.has(l.id)).length;
+  // Lines tapped in that the register has not answered for yet: the total and the Send count would be behind, so both
+  // show as updating until they land (round 8, 4).
+  const unpriced = live.some((l) => l.optimistic);
   const seats = Math.max(order.pax ?? 0, ...live.map((l) => l.seat_no ?? 0), 1);
 
   const tax = taxRows(order.totals.taxes, order.totals.tax_mode);
@@ -219,7 +222,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
       {/* An empty order has nothing to total: the figures appear with the first line. */}
       {empty ? null : (
         <div className="shrink-0 border-t border-rule px-1 pt-1">
-          <TotalsBlock rows={rows} pricing={pricing} />
+          <TotalsBlock rows={rows} pricing={pricing || unpriced} />
         </div>
       )}
       {closed ? (
@@ -234,7 +237,9 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
         <ActionDock
           offline={offline}
           primary={
-            sendable > 0
+            unpriced
+              ? { id: "send", label: "Send", ariaLabel: "Send to kitchen, updating", onPress: () => undefined, isPending: true, trailingIcon: ArrowRight }
+              : sendable > 0
               ? { id: "send", label: `Send ${sendable}`, ariaLabel: `Send ${sendable} to kitchen`, onPress: () => void actions.send(), trailingIcon: ArrowRight }
               : live.length === 0
                 ? // Nothing on the order yet: a disabled Send, not "Pay $0.00".
@@ -243,7 +248,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
           }
           secondaries={[
             // Hold goes with Send: once nothing new is waiting, Pay takes the space so the dock fits the order column.
-            ...(sendable > 0 ? [{ id: "hold", label: "Hold", icon: Pause, onPress: () => void actions.holdAllNew() }] : []),
+            ...(sendable > 0 || unpriced ? [{ id: "hold", label: "Hold", isDisabled: unpriced, icon: Pause, onPress: () => void actions.holdAllNew() }] : []),
             { id: "discount", label: "Discount", icon: Percent, onPress: onDiscount, isDisabled: live.length === 0 || order.pricing_status === "frozen", needsApproval: rules ? rules.every((r) => !roleOk(staff.role, r.min_role)) : false, approvalLabel: rules?.length ? `${lowestRole(rules.map((r) => r.min_role))} approval` : undefined },
             { id: "bill", label: "Bill", icon: ReceiptText, onPress: onBill, mutates: false, isDisabled: live.length === 0 },
           ]}

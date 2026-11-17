@@ -39,6 +39,11 @@ function inTurn<T>(orderId: string, write: () => Promise<T>): Promise<T> {
 const RANK: Record<Role, number> = { server: 10, cashier: 20, manager: 30, finance: 40, admin: 50 };
 const MIN_ROLE: Record<OverrideAction, Role> = { "lines.void_fired": "manager", "lines.add_open_price": "manager", "adjustments.apply_manual": "server", "adjustments.remove": "server", "payments.record": "cashier", "refunds.create": "manager", "orders.reopen": "manager", "payments.void": "manager" };
 
+/** Adds to an order that wait for the add before them and then go to the register in one request. */
+type AddBatch = { bodies: reg.LineInput[]; names: string[]; key: string; open: boolean; maybeLanded: boolean; reported: boolean; done: Promise<OrderSnapshot | null> };
+/** The batch of each order still taking taps: it closes when its request goes. */
+const addBatches = new Map<string, AddBatch>();
+
 export function roleAtLeast(role: Role | null | undefined, min: Role): boolean {
   return role ? RANK[role] >= RANK[min] : false;
 }
@@ -215,44 +220,69 @@ export function useOrderActions(orderId: string) {
         open_price: input.openPrice ?? null,
       };
       const label = `Added ${input.product.name}${input.quantity > 1 ? ` ×${input.quantity}` : ""}`;
-      // Two quick taps make two adds, sent one after the other (`run`): a conflict is another station's (C-6).
+      // Taps that come while an add is on its way wait for it and then go to the register together, in one request
+      // (round 8, 4: thirty taps took thirty round trips one after another). The batch still takes its turn after the
+      // request before it, with the version that one returned, so a burst never conflicts with itself (C-6); a conflict
+      // is another station's.
+      let batch: AddBatch | null = null;
       try {
         // A request that may have reached the register (its reply never came) is sent again exactly as it was, with the
-        // same key: the register then replays its answer instead of refusing the key for a different request. Its
-        // version is kept here, because the order's version on screen moves on when the station hears the add landed.
-        let sent: number | null = null;
-        let maybeLanded = false;
-        // A version conflict means another station changed the order meanwhile; adding is safe to replay.
-        const exec = (overrideId: string | null) =>
-          run(
-            (expected) => {
-              // A version conflict proves the request did not land, so its unversioned retry (expected null) goes as it is.
-              sent = maybeLanded && expected !== null ? sent : expected;
-              return reg.addLines(api, orderId, [body], { key: idem, expectedVersion: sent, overrideId });
-            },
-            {
-              onConflict: "retry-unversioned",
-              // An add replayed after a lost reply keeps the version it was first sent with, so its 409 may be this
-              // station's own earlier add landing on reconnect: no news to anyone then.
-              onRetried: () => {
-                if (!maybeLanded) notify({ text: "The order changed on another station. Your 1 new line was kept", tone: "info", orderId }, 4000);
+        // same lines and key: the register then replays its answer instead of refusing the key for a different request.
+        // Its version is kept here, because the order's version on screen moves on when the station hears the add landed.
+        const send = (b: AddBatch, overrideId: string | null) => {
+          let sent: number | null = null;
+          // A version conflict means another station changed the order meanwhile; adding is safe to replay.
+          const exec = () =>
+            run(
+              (expected) => {
+                // Its turn has come: the lines that waited for it are the batch, and later taps start the next one.
+                b.open = false;
+                // A version conflict proves the request did not land, so its unversioned retry (expected null) goes as it is.
+                sent = b.maybeLanded && expected !== null ? sent : expected;
+                return reg.addLines(api, orderId, b.bodies, { key: b.key, expectedVersion: sent, overrideId });
               },
-            },
-          );
-        // An add that never reached the register keeps its line on screen and is sent again, with the same line id and
-        // key (so it lands once), as soon as the station is back online.
-        const queued = async (overrideId: string | null): Promise<OrderSnapshot | null> => {
-          for (;;) {
-            try {
-              return await exec(overrideId);
-            } catch (e) {
-              if (!unreachable(e)) throw e;
-              maybeLanded = true;
-              reportUnreachable();
-              notify({ text: `Offline · ${input.product.name} is kept`, remedy: "It goes to the register as soon as the connection is back.", tone: "info", orderId }, 8000);
-              await whenOnline();
+              {
+                onConflict: "retry-unversioned",
+                // An add replayed after a lost reply keeps the version it was first sent with, so its 409 may be this
+                // station's own earlier add landing on reconnect: no news to anyone then.
+                onRetried: () => {
+                  if (!b.maybeLanded) notify({ text: `The order changed on another station. Your ${b.bodies.length === 1 ? "1 new line was" : `${b.bodies.length} new lines were`} kept`, tone: "info", orderId }, 4000);
+                },
+              },
+            );
+          // An add that never reached the register keeps its lines on screen and is sent again, with the same line ids
+          // and key (so it lands once), as soon as the station is back online.
+          return (async (): Promise<OrderSnapshot | null> => {
+            for (;;) {
+              try {
+                return await exec();
+              } catch (e) {
+                if (!unreachable(e)) throw e;
+                b.maybeLanded = true;
+                reportUnreachable();
+                notify({ text: b.bodies.length === 1 ? `Offline · ${b.names[0]} is kept` : `Offline · ${b.bodies.length} new lines are kept`, remedy: "It goes to the register as soon as the connection is back.", tone: "info", orderId }, 8000);
+                await whenOnline();
+              }
             }
+          })();
+        };
+        const queued = (overrideId: string | null): Promise<OrderSnapshot | null> => {
+          // An open price goes on its own (it may need an approval the other lines do not).
+          const batchable = overrideId == null && body.open_price == null;
+          const open = batchable ? addBatches.get(orderId) : undefined;
+          if (open?.open) {
+            open.bodies.push(body);
+            open.names.push(input.product.name);
+            batch = open;
+            return open.done;
           }
+          const b: AddBatch = { bodies: [body], names: [input.product.name], key: idem, open: batchable, maybeLanded: false, reported: false, done: Promise.resolve(null) };
+          batch = b;
+          if (b.open) addBatches.set(orderId, b);
+          b.done = send(b, overrideId).finally(() => {
+            if (addBatches.get(orderId) === b) addBatches.delete(orderId);
+          });
+          return b.done;
         };
         const snap = input.openPrice != null ? await withApproval({ action: "lines.add_open_price", target_kind: "order", target_id: orderId, args: { lines: [{ line_id: lineId, product_id: input.product.id, quantity: input.quantity, open_price: input.openPrice }] } }, `Add ${input.product.name} at ${money(input.openPrice)}`, "Open price · needs a manager", queued) : await queued(null);
         if (!snap) {
@@ -271,7 +301,10 @@ export function useOrderActions(orderId: string) {
       } catch (e) {
         releasePendingLine(orderId, lineId);
         qc.setQueryData<OrderSnapshot>(key, (s) => (s ? { ...s, lines: s.lines.filter((l) => l.id !== lineId) } : s));
-        fail(e);
+        // A refused batch is said once, not once per tap in it.
+        const b = batch as AddBatch | null;
+        if (!b?.reported) fail(e);
+        if (b) b.reported = true;
         return null;
       } finally {
         releasePendingLine(orderId, lineId);
