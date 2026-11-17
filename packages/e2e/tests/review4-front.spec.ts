@@ -208,3 +208,69 @@ test.describe("U1: a lost answer", () => {
     }
   });
 });
+
+/** Seat a free table for two, add a Mee Goreng, send it and open the pay screen. */
+async function sentToPay(page: Page): Promise<string> {
+  await page.getByRole("button", { name: "Floor", exact: true }).click();
+  const free = page.getByRole("button", { name: /^Table \d+, Free/ }).first();
+  const name = /^Table (\d+),/.exec((await free.getAttribute("aria-label")) ?? (await free.innerText()))?.[1];
+  await free.click();
+  await page.getByRole("button", { name: "2 guests", exact: true }).click();
+  await page.getByRole("button", { name: /^Mee Goreng,/ }).click();
+  await page.getByRole("button", { name: "Send 1 to kitchen" }).click();
+  await expect(page.getByRole("region", { name: "Order" }).getByText(/^Sent /)).toBeVisible();
+  await page.getByRole("button", { name: /^Pay \$/ }).click();
+  await expect(page.getByRole("heading", { name: "Take payment" })).toBeVisible();
+  const floor = await register<{ data: { tables: { name: string; order: { id: string } | null }[] } }>("GET", `/v1/outlets/${devLocal().outletId}/floor`);
+  return floor.data.tables.find((t) => t.name === name)!.order!.id;
+}
+
+test.describe("U2: the paid screen stays for every tender", () => {
+  const tenders = [
+    {
+      name: "cash",
+      pay: async (page: Page) => {
+        await page.getByRole("group", { name: "Payment method" }).getByRole("button", { name: "Cash", exact: true }).click();
+        await page.getByRole("button", { name: /^Take \$[\d.]+ cash$/ }).click();
+      },
+    },
+    {
+      name: "card",
+      pay: async (page: Page) => {
+        await page.getByRole("group", { name: "Payment method" }).getByRole("button", { name: "Card", exact: true }).click();
+        await page.getByRole("button", { name: /^Take \$[\d.]+ by Card$/ }).click();
+      },
+    },
+    {
+      name: "terminal",
+      pay: async (page: Page) => {
+        const methods = page.getByRole("group", { name: "Payment method" });
+        await methods.getByRole("button", { name: /^More payment methods/ }).click();
+        await methods.getByRole("button", { name: "Card (terminal)", exact: true }).click();
+        await page.getByRole("button", { name: /^Send \$[\d.]+ to the terminal/ }).click();
+      },
+    },
+  ];
+  for (const t of tenders) {
+    test(`${t.name}: the last bill's paid screen waits 10 s for the cashier, with its receipt, void and invoice`, async ({ page }) => {
+      test.setTimeout(300_000);
+      const { outletId, stationId } = devLocal();
+      const shift = t.name === "cash" ? await register<{ data: { id: string } }>("POST", "/v1/shifts", { outlet_id: outletId, station_id: stationId, float_cents: 10_000 }) : null;
+      await pairAndSignIn(page, MANAGER_PIN);
+      const orderId = await sentToPay(page);
+      try {
+        await t.pay(page);
+        await expect(page.getByText(/^Paid · Bill 1 · /)).toBeVisible({ timeout: 30_000 });
+        await page.waitForTimeout(10_000);
+        await expect(page.getByText(/^Paid · Bill 1 · /)).toBeVisible();
+        await expect(page.getByText("Every bill is paid. The order is done.")).toBeVisible();
+        for (const name of ["Void payment", "Get invoice"]) await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+        await expect(page.getByRole("button", { name: /No receipt|Done/ }).first()).toBeVisible();
+        if (t.name === "terminal") await bothThemes(page, "U2-paid-terminal");
+      } finally {
+        await settle(orderId);
+        if (shift) await register("POST", `/v1/shifts/${shift.data.id}/close`, { counted_cash_cents: 10_000, variance_reason: "End of an end-to-end test" }).catch(() => undefined);
+      }
+    });
+  }
+});

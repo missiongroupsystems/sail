@@ -2,7 +2,7 @@
 
 import { Button, Icon, Money, TextField, useLocale } from "@sail/ui";
 import { Check, Mail, Printer, QrCode } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { CheckSnapshot, OrderSnapshot, ReceiptSend } from "../api/types";
 import type { OrderActions } from "../hooks/useOrderActions";
 import { usePos } from "./PosContext";
@@ -20,8 +20,6 @@ export type ReceiptChooserProps = {
   extra?: React.ReactNode;
   /** "Change $6.85", from the register. */
   sub?: { main: string | null; minor: string | null } | null;
-  /** Leave the screen with no choice after this long (4 s). 0 turns it off. */
-  autoReturnMs?: number;
   onDone: () => void;
   doneLabel: string;
 };
@@ -36,7 +34,7 @@ type Choice = "print" | "qr" | "send" | "none" | null;
 /** Whether an email or SMS provider delivers receipts. None is configured in Sail, so the guest scans or is sent the link. */
 const DELIVERY_CONFIGURED = false;
 
-export function ReceiptChooser({ order, check, actions, caption, amount, extra, sub, autoReturnMs = 4000, onDone, doneLabel }: ReceiptChooserProps) {
+export function ReceiptChooser({ order, check, actions, caption, amount, extra, sub, onDone, doneLabel }: ReceiptChooserProps) {
   const { offline } = usePos();
   const { money } = useLocale();
   // A part payment leaves this bill open: say what is left on it (the register's balance), and count only the other bills.
@@ -53,27 +51,7 @@ export function ReceiptChooser({ order, check, actions, caption, amount, extra, 
   const [copied, setCopied] = useState(false);
   const [destination, setDestination] = useState("");
   const [printed, setPrinted] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [counting, setCounting] = useState(autoReturnMs > 0);
-  // The 4 s countdown must not restart when the parent re-renders with a new `onDone` (for example after a stream refetch).
-  const done = useRef(onDone);
-  done.current = onDone;
-
-  useEffect(() => {
-    if (!counting || autoReturnMs <= 0) return;
-    timer.current = setTimeout(() => done.current(), autoReturnMs);
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, [counting, autoReturnMs]);
-
-  const stop = () => {
-    if (timer.current) clearTimeout(timer.current);
-    setCounting(false);
-  };
-
   const print = async () => {
-    stop();
     setChoice("print");
     setBusy(true);
     const jobs = await actions.printReceipt(check.id);
@@ -81,7 +59,6 @@ export function ReceiptChooser({ order, check, actions, caption, amount, extra, 
     if (jobs) setPrinted(true);
   };
   const qr = async () => {
-    stop();
     setChoice("qr");
     setBusy(true);
     const res = await actions.sendReceipt(check.id, "qr");
@@ -98,7 +75,6 @@ export function ReceiptChooser({ order, check, actions, caption, amount, extra, 
   // same tap (review 3, S3).
   const [opening, setOpening] = useState(false);
   const getInvoice = async () => {
-    stop();
     setOpening(true);
     const no = await actions.getInvoice(check.id, invoiceNo ?? check.invoice_no);
     setOpening(false);
@@ -109,7 +85,7 @@ export function ReceiptChooser({ order, check, actions, caption, amount, extra, 
   const big = "min-h-24 w-[176px] flex-col gap-1.5 rounded-panel! border! border-rule! bg-surface! gap-1.5! text-[15px]! font-medium data-[hovered]:bg-surface-2! data-[pressed]:bg-surface-2!";
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-8 px-8 py-6" onPointerDownCapture={stop}>
+    <div className="flex h-full flex-col items-center justify-center gap-8 px-8 py-6">
       {/* The block's name is the whole sentence ("Paid · Bill 2 · $43.16"), so a screen reader hears it at once. */}
       <section aria-label={`${caption.split(" · ").slice(0, 2).join(" · ")} · ${money(amount)}`} className="flex flex-col items-center gap-1.5 text-center">
         <span aria-hidden className="mb-3 flex size-14 items-center justify-center rounded-full bg-status-paid-tint text-status-paid">
@@ -140,7 +116,6 @@ export function ReceiptChooser({ order, check, actions, caption, amount, extra, 
             variant="secondary"
             isDisabled={offline || busy}
             onPress={() => {
-              stop();
               setChoice("send");
             }}
             className={big}
@@ -153,7 +128,6 @@ export function ReceiptChooser({ order, check, actions, caption, amount, extra, 
             size="lg"
             variant="secondary"
             onPress={() => {
-              stop();
               setChoice("none");
               onDone();
             }}
@@ -229,9 +203,8 @@ export function ReceiptChooser({ order, check, actions, caption, amount, extra, 
             {check.invoice_no || invoiceNo ? `Invoice ${invoiceNo ?? check.invoice_no} · PDF` : "Get invoice"}
           </Button>
         )}
-        <Button size="lg" variant="primary" onPress={onDone} className="relative min-w-[220px] overflow-hidden">
+        <Button size="lg" variant="primary" onPress={onDone} className="min-w-[220px]">
           {doneLabel}
-          {counting ? <span aria-hidden className="pos-countdown keep-motion absolute inset-x-0 bottom-0 h-1 bg-on-primary/40" style={{ "--pos-countdown-ms": `${autoReturnMs}ms` } as React.CSSProperties} /> : null}
         </Button>
       </div>
     </div>
