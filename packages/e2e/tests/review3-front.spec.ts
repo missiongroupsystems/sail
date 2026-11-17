@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { devLocal, expect, keyIn, pairAndSignIn, register, shot, test } from "./fixtures";
+import { devLocal, expect, keyIn, leaveChecklistOpen, pairAndSignIn, register, shot, test } from "./fixtures";
 
 /**
  * Third review round, front (`fix/review3-front`): the POS paid screen follows the register (a void, a switch of
@@ -120,4 +120,55 @@ test.describe("POS paid screen", () => {
       await settle(orderId);
     }
   });
+});
+
+test("S4: the next shift's prefilled open form replaces a count on a tap and a digit (touch)", async ({ browser, watch }) => {
+  test.setTimeout(300_000);
+  const context = await browser.newContext({ hasTouch: true, viewport: { width: 1180, height: 820 } });
+  const page = await context.newPage();
+  watch.attach(page);
+  try {
+    await pairAndSignIn(page, MANAGER_PIN);
+    await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Shift", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Open shift" })).toBeVisible();
+    await page.getByRole("button", { name: "Count notes and coins" }).tap();
+    await page.getByRole("textbox", { name: "$100 count" }).fill("1");
+    await page.getByRole("textbox", { name: "$1 count" }).fill("5");
+    await page.getByRole("button", { name: "Open shift with $105.00" }).tap();
+    await expect(page.getByRole("heading", { name: "Shift open" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Close shift", exact: true }).tap();
+    await leaveChecklistOpen(page);
+    await page.getByRole("button", { name: /^Next: count the cash/ }).tap();
+    await page.getByRole("textbox", { name: "Cash counted in the drawer" }).fill("105.00");
+    await page.getByRole("button", { name: /^Close shift · counted \$105\.00/ }).tap();
+    await expect(page.getByRole("heading", { name: "Shift closed" })).toBeVisible();
+    await page.getByRole("button", { name: "Done", exact: true }).tap();
+
+    // The next open starts from the last float, counted by notes and coins: 1 × $100 and 5 × $1.
+    await expect(page.getByRole("heading", { name: "Open shift" })).toBeVisible();
+    const hundreds = page.getByRole("textbox", { name: "$100 count" });
+    await expect(hundreds).toHaveValue("1");
+    await hundreds.tap();
+    await page.keyboard.type("2");
+    await expect(hundreds).toHaveValue("2");
+    const ones = page.getByRole("textbox", { name: "$1 count" });
+    await ones.tap();
+    await page.keyboard.type("3");
+    await expect(ones).toHaveValue("3");
+    await expect(page.getByRole("button", { name: "Open shift with $203.00" })).toBeVisible();
+    await bothThemes(page, "S4-next-open-form");
+
+    // The single total, prefilled the same way, replaces too.
+    await page.getByRole("button", { name: "One total" }).tap();
+    const total = page.getByRole("textbox", { name: "Opening float" });
+    await total.fill("150.00");
+    await total.blur();
+    await total.tap();
+    await page.keyboard.type("80");
+    await expect(total).toHaveValue("80");
+    // No shift is left open for the specs after this one.
+  } finally {
+    await context.close();
+  }
 });
