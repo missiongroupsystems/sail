@@ -86,7 +86,8 @@ export function RejectRoundSheet({ roundLabel, lines, isOpen, onClose, onReject,
               </Checkbox>
             ))}
           </CheckboxGroup>
-          <Button size="lg" variant="primary" isDisabled={busy} isPending={busy} onPress={() => void reject(REJECT_ROUND_REASONS[0]!, ticked)}>
+          {/* Sold out names what is sold out: nothing ticked, nothing to reject as sold out (another reason is a tap away). */}
+          <Button size="lg" variant="primary" isDisabled={busy || ticked.length === 0} isPending={busy} onPress={() => void reject(REJECT_ROUND_REASONS[0]!, ticked)}>
             Reject as sold out
           </Button>
           <Button size="lg" variant="quiet" isDisabled={busy} onPress={() => setChoosing(false)}>

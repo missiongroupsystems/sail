@@ -72,8 +72,8 @@ async function settle(orderId: string) {
   if (o.data.status !== "completed" && o.data.status !== "cancelled") {
     const tenders = await register<{ data: { id: string; is_cash: boolean; provider?: string | null }[] }>("GET", "/v1/tender-types");
     const byHand = tenders.data.find((t) => !t.is_cash && !t.provider)!;
-    const now = await register<{ data: { checks: { id: string; balance: number }[]; lines: unknown[] } }>("GET", `/v1/orders/${orderId}`);
-    if (now.data.lines.length === 0) await register("POST", `/v1/orders/${orderId}/cancel`, { reason: "Test over" }).catch(() => undefined);
+    const now = await register<{ data: { checks: { id: string; balance: number }[]; lines: { status: string }[] } }>("GET", `/v1/orders/${orderId}`);
+    if (now.data.lines.every((l) => l.status === "voided")) await register("POST", `/v1/orders/${orderId}/cancel`, { reason: "Test over" }).catch(() => undefined);
     else {
       for (const c of now.data.checks.filter((x) => x.balance > 0)) await register("POST", `/v1/checks/${c.id}/payments`, { payment_id: crypto.randomUUID(), tender_type_id: byHand.id, amount: c.balance });
       await register("POST", `/v1/orders/${orderId}/complete`, {}).catch(() => undefined);
@@ -318,8 +318,11 @@ test("G8: Changes reads in an owner's words, and its filters live in the address
   // A menu archived and restored, so the log has both.
   const menus = await register<{ data: { id: string; name: string }[] }>("GET", "/v1/menus");
   const m = menus.data[0]!;
-  await register("PATCH", `/v1/menus/${m.id}`, { archived: true });
-  await register("PATCH", `/v1/menus/${m.id}`, { archived: false });
+  try {
+    await register("PATCH", `/v1/menus/${m.id}`, { archived: true });
+  } finally {
+    await register("PATCH", `/v1/menus/${m.id}`, { archived: false });
+  }
   await page.goto(`${WEB}/login`);
   await expect(async () => {
     await page.getByLabel("Email").fill(SG_ADMIN);

@@ -36,16 +36,18 @@ const MONEY_KEY = /(^|_)(amount|total|price|tip|tips|float|change|rounding|cents
 type Filters = { action?: string; actor_id?: string; target_kind?: string; from?: string; to?: string };
 
 /** Keys an owner has no use for: ids and internal keys (the target column already names what changed). */
-const HIDDEN_KEY = /(^|_)(id|ids|key|ref)$|^(order_no|sections_replaced|archived|seeded|pin_changed)$/;
+const HIDDEN_KEY = /(^|_)(id|ids|key)$|^(order_no|sections_replaced|archived|seeded)$/;
 /** Words for the keys whose own name reads poorly. */
-const KEY_WORDS: Record<string, string> = { rule_name: "Discount", entered_value: "Value", order_type: "Type", invoice_no: "Invoice", refund_receipt_no: "Receipt", reversed_payments: "Payments reversed", tip_cents: "Tip", rounding_cents: "Rounding" };
+const KEY_WORDS: Record<string, string> = { rule_name: "Discount", entered_value: "Value", order_type: "Type", invoice_no: "Invoice", refund_receipt_no: "Receipt", reversed_payments: "Payments reversed", tip_cents: "Tip", rounding_cents: "Rounding", pin_changed: "PIN changed", provider_ref: "Provider reference", takeaway_ref: "Takeaway reference" };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * An entry's details in an owner's words (live-test final2 A P-A3): amounts as money, an entered percentage as "15%",
  * no ids or internal keys, true flags as words and false ones left out, the target's own name not repeated.
  */
-export function compact(entry: Pick<AuditEntry, "details" | "target_label" | "value_kind">, money: (cents: number) => string): string {
+export function compact(entry: Pick<AuditEntry, "details" | "target_label" | "value_kind">, money: (cents: number) => string, locale?: string): string {
+  // Basis points as the viewer's locale writes a percentage ("12.5%", "12,5 %").
+  const percent = (bps: number) => new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 2 }).format(bps / 10_000);
   const parts: string[] = [];
   let nested = 0;
   for (const [k, v] of Object.entries(entry.details)) {
@@ -63,7 +65,7 @@ export function compact(entry: Pick<AuditEntry, "details" | "target_label" | "va
       continue;
     }
     let shown: string;
-    if (k === "entered_value" && typeof v === "number") shown = entry.value_kind === "percent" ? `${v / 100}%` : entry.value_kind === "amount" ? money(v) : String(v);
+    if (k === "entered_value" && typeof v === "number") shown = entry.value_kind === "percent" ? percent(v) : entry.value_kind === "amount" ? money(v) : String(v);
     else if (typeof v === "number" && Number.isInteger(v) && MONEY_KEY.test(k)) shown = money(v);
     else if (typeof v === "string" && /^[a-z]+(_[a-z]+)+$/.test(v)) shown = v.replace(/_/g, " ");
     else shown = String(v);
@@ -77,7 +79,9 @@ export function compact(entry: Pick<AuditEntry, "details" | "target_label" | "va
 /** The action in words; archiving or restoring through an update says so ("Archived menu"). */
 export function actionLabel(a: Pick<AuditEntry, "action" | "target_kind" | "details">): string {
   const archived = a.details.archived;
-  if (typeof archived === "boolean") return `${archived ? "Archived" : "Restored"} ${auditTargetLabel(a.target_kind).toLowerCase()}`;
+  // Only an update that does nothing but archive or restore reads as one; a wider update keeps its own words.
+  const onlyArchive = Object.keys(a.details).every((k) => ["archived", "name", "sections_replaced"].includes(k)) && a.details.sections_replaced !== true;
+  if (typeof archived === "boolean" && onlyArchive) return `${archived ? "Archived" : "Restored"} ${auditTargetLabel(a.target_kind).toLowerCase()}`;
   return auditActionLabel(a.action);
 }
 
@@ -100,11 +104,11 @@ function who(a: AuditEntry, set?: string) {
 }
 
 function Details({ entry: a }: { entry: AuditEntry }) {
-  const { money } = useLocale();
+  const { money, locale } = useLocale();
   return (
     <span className="text-ink-2 break-words">
       {a.reason ? `${a.reason} · ` : ""}
-      {compact(a, (c) => money(c))}
+      {compact(a, (c) => money(c), locale)}
     </span>
   );
 }

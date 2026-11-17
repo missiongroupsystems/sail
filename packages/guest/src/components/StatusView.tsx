@@ -224,9 +224,11 @@ export function WaitingTotal({ round }: { round: GuestRound }) {
   );
 }
 
-/** Whether any line is on the bill (sent or accepted, not waiting for staff and not removed): only then are the table's figures worth showing. */
+/** Whether any line is on the bill (not in a round waiting for staff, and not removed): only then are the table's figures worth showing. */
 export function hasBilledLines(view: OrderView | null | undefined): boolean {
-  return (view?.lines ?? []).some((l) => l.status !== "voided" && l.status !== "held");
+  // Held by staff at the POS is on the bill; only a line of a round still waiting for staff is not.
+  const waiting = new Set((view?.rounds ?? []).filter((r) => r.status === "pending").flatMap((r) => r.line_ids));
+  return (view?.lines ?? []).some((l) => l.status !== "voided" && !(l.status === "held" && waiting.has(l.id)));
 }
 
 /** Whether a round is waiting for staff: the table's figures are then only what is on the bill so far. */
