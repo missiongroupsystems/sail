@@ -235,10 +235,21 @@ export async function bindSessionToTableOrder(p: Extract<Principal, { type: "gue
   return orderId;
 }
 
+/** The sessions this phone (its device) has had on the order, this one included. */
+async function samePhoneSessions(p: Extract<Principal, { type: "guest" }>, orderId: string): Promise<string[]> {
+  const rows = await asSystem(() => tx()<{ id: string }[]>`
+    select s.id from guest_sessions s join guest_sessions me on me.id = ${p.sessionId} and me.device_hash = s.device_hash
+    where s.merchant_id = ${p.merchantId} and s.order_id = ${orderId}`);
+  return [...new Set([p.sessionId, ...rows.map((r) => r.id)])];
+}
+
 export async function guestOrderView(p: Extract<Principal, { type: "guest" }>) {
   const orderId = await bindSessionToTableOrder(p);
   const [link] = await db().select({ openOnFirstScan: channelLinks.openOnFirstScan, holdOrders: channelLinks.holdOrders, enabled: channelLinks.enabled }).from(channelLinks).where(eq(channelLinks.id, p.channelLinkId)).limit(1);
-  const rounds = await db().select().from(guestRounds).where(eq(guestRounds.guestSessionId, p.sessionId)).orderBy(guestRounds.submittedAt);
+  // This phone's rounds: those of its sessions on this order, so a fresh scan from the same phone (a reload after the bill
+  // was paid and then reopened, say) still lists what it sent as its own (review 4 U4).
+  const phoneSessions = orderId ? await samePhoneSessions(p, orderId) : [p.sessionId];
+  const rounds = await db().select().from(guestRounds).where(inArray(guestRounds.guestSessionId, phoneSessions)).orderBy(guestRounds.submittedAt);
   const requests = await db().select().from(serviceRequests).where(eq(serviceRequests.guestSessionId, p.sessionId)).orderBy(serviceRequests.createdAt);
   const canOrder = !!link?.enabled && (orderId != null || !!link.openOnFirstScan);
   const tax = await guestTax(p.merchantId, p.outletId);
@@ -290,7 +301,7 @@ export async function guestOrderView(p: Extract<Principal, { type: "guest" }>) {
     // so the phone shows them without adding anything up. Payments and balances stay at the POS.
     lines: viewLines,
     totals: order ? await guestTotals(order) : null,
-    rounds: allRounds.map((r) => ({ ...toRound(r), mine: r.guestSessionId === p.sessionId, kitchen_done: roundDone(r), waiting_total: waitingTotal(r) })),
+    rounds: allRounds.map((r) => ({ ...toRound(r), mine: phoneSessions.includes(r.guestSessionId), kitchen_done: roundDone(r), waiting_total: waitingTotal(r) })),
     requests: requests.map(toRequest),
   };
 }

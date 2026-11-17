@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Ban, CheckCheck, Clock, QrCode } from "lucide-react";
 import { useStore } from "zustand";
-import { API_URL, ApiError, createGuestApi, createSession, getMenu, getOrder, submitRound, toApiError } from "@/lib/api";
+import { API_URL, ApiError, createGuestApi, createSession, getMenu, getOrder, sessionLive, submitRound, toApiError } from "@/lib/api";
 import { createBasketStore, type BasketItem } from "@/lib/basket";
 import { brandStyle } from "@/lib/brand";
 import { QueryProvider, keys } from "@/lib/query";
@@ -23,7 +23,8 @@ import { ReviewView } from "./ReviewView";
 import { roundLines, useQuote } from "./useQuote";
 import { StatusView } from "./StatusView";
 
-type Phase = { kind: "loading" } | { kind: "invalid" } | { kind: "ended"; paid?: boolean; cancelled?: boolean } | { kind: "rotated" } | { kind: "unavailable"; error: ApiError } | { kind: "ready" };
+/** `held`: on the paid screen, the session that ended with the payment, kept in case the order is open again (review 4 U4). */
+type Phase = { kind: "loading" } | { kind: "invalid" } | { kind: "ended"; paid?: boolean; cancelled?: boolean; held?: GuestSession } | { kind: "rotated" } | { kind: "unavailable"; error: ApiError } | { kind: "ready" };
 
 /** The screens inside the one page. The URL hash carries them so the phone's back button works. */
 export type View = "menu" | "review" | "status" | "table";
@@ -48,6 +49,9 @@ function viewFromHash(hash: string): View {
  */
 const RECHECK_MS = 15_000;
 const RECHECK_MAX_MS = 60_000;
+/** On the paid screen: how soon, and at most how far apart, the phone asks whether the order is open again. */
+const PAID_RECHECK_MS = 4_000;
+const PAID_RECHECK_MAX_MS = 30_000;
 
 export function GuestApp({ token }: { token: string }) {
   return (
@@ -159,6 +163,15 @@ function GuestAppInner({ token }: { token: string }) {
     const current = sessionRef.current?.session_id ?? "";
     if (endedSession.current === current) return;
     endedSession.current = current;
+    // Paid: one screen, live or after a reload, and the session is kept: when staff void the payment or reopen the order,
+    // the phone is back on it with its own rounds.
+    if (details?.reason === "order_paid" && sessionRef.current) {
+      const held = sessionRef.current;
+      restored.current = false;
+      setSession(null);
+      setPhase({ kind: "ended", paid: true, held });
+      return;
+    }
     clearSession(token);
     if (restored.current && !rotated) {
       restored.current = false;
@@ -169,6 +182,52 @@ function GuestAppInner({ token }: { token: string }) {
     setPhase(rotated ? { kind: "rotated" } : { kind: "ended", paid: details?.reason === "order_paid", cancelled: details?.reason === "order_cancelled" });
   }, [token, startSession]);
   onUnauthenticatedRef.current = onUnauthenticated;
+
+  /* ---- Paid: the register is asked now and then whether the order is open again (a voided payment, a reopen). ---- */
+  const held = phase.kind === "ended" ? (phase.held ?? null) : null;
+  useEffect(() => {
+    if (!held) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let delay = PAID_RECHECK_MS;
+    const check = async () => {
+      if (stopped || new Date(held.expires_at).getTime() < Date.now()) return;
+      if (document.visibilityState === "hidden") return schedule();
+      const answer = await sessionLive(held.guest_token);
+      if (stopped) return;
+      if (answer === "live") {
+        // Back on the open order, the same session and so the same rounds.
+        endedSession.current = null;
+        void queryClient.invalidateQueries({ queryKey: keys.order(held.session_id) });
+        applySession(held);
+        return;
+      }
+      if (answer && answer.reason !== "order_paid") {
+        clearSession(token);
+        setPhase(answer.reason === "code_rotated" ? { kind: "rotated" } : { kind: "ended", cancelled: answer.reason === "order_cancelled" });
+        return;
+      }
+      delay = Math.min(delay * 2, PAID_RECHECK_MAX_MS);
+      schedule();
+    };
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => void check(), delay);
+    };
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      delay = PAID_RECHECK_MS;
+      if (timer) clearTimeout(timer);
+      void check();
+    };
+    schedule();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [held, token, applySession, queryClient]);
 
   const started = useRef(false);
   useEffect(() => {
@@ -201,6 +260,7 @@ function GuestAppInner({ token }: { token: string }) {
    * return to the ended session's status page.
    */
   const startAgain = useCallback(() => {
+    clearSession(token);
     setItemSheet(null);
     setStaffSheet(false);
     setSendError(null);
@@ -210,7 +270,7 @@ function GuestAppInner({ token }: { token: string }) {
     setView("menu");
     window.scrollTo({ top: 0 });
     void startSession(true);
-  }, [basketStore, startSession]);
+  }, [basketStore, startSession, token]);
   // The screens swap inside one page, so move focus to the new screen's heading for VoiceOver.
   const firstView = useRef(true);
   useEffect(() => {
@@ -377,6 +437,9 @@ function GuestAppInner({ token }: { token: string }) {
       );
       basketStore.getState().finishSend(round_id);
       const { round_id: _r, status: _s, order_opened: _o, ...viewData } = result;
+      // A read already on the wire left before the round existed: it must not replace this answer with a view that has
+      // no round from this phone ("No orders have been sent from this phone yet" for a few seconds, review 4 U4).
+      await queryClient.cancelQueries({ queryKey: keys.order(session.session_id) });
       queryClient.setQueryData<OrderView>(keys.order(session.session_id), viewData as OrderView);
       restored.current = false; // the register has accepted this session
       if (!session.order_open) applySession({ ...session, order_open: true, can_order: true });
@@ -443,7 +506,7 @@ function GuestAppInner({ token }: { token: string }) {
     );
   }
   if (phase.kind === "loading" || !session) return <LoadingMenu />;
-  if (menuQuery.isError && !menu) {
+  if (menuQuery.isError && !menu && toApiError(menuQuery.error).status !== 401) {
     const err = toApiError(menuQuery.error);
     return (
       <Notice place={placeRef.current} icon={AlertTriangle} title={err.message} body={err.remedy ?? "Try again in a moment."}>

@@ -55,6 +55,12 @@ async function orderClosedReason(t: RequestTx, orderId: string | null): Promise<
   return o?.status === "completed" ? "order_paid" : o?.status === "cancelled" ? "order_cancelled" : null;
 }
 
+/** The order a paid-for session was on is open again: a voided payment or a reopen put it back in service. */
+async function orderOpenAgain(t: RequestTx, orderId: string): Promise<boolean> {
+  const [o] = await t.db.select({ status: orders.status }).from(orders).where(eq(orders.id, orderId)).limit(1);
+  return !!o && ["open", "fired", "ready", "out_for_delivery"].includes(o.status);
+}
+
 /* ---- Guest principal ---- */
 registerGuestResolver(async (token: string, t: RequestTx) => {
   const claims = await verifySailToken(token, "guest");
@@ -68,6 +74,13 @@ registerGuestResolver(async (token: string, t: RequestTx) => {
     const closed = await orderClosedReason(t, s.orderId);
     if (closed === "order_paid") throw new AppError("unauthenticated", "The bill is paid", { remedy: "Thank you. Scan the table's QR code to order again.", details: { reason: "order_paid" } });
     if (closed === "order_cancelled") throw new AppError("unauthenticated", "The restaurant cancelled this order", { remedy: "Ask a member of staff, or scan the table's QR code to order again.", details: { reason: "order_cancelled" } });
+    // Ended because the order was paid, and the order is open again (a payment voided, the order reopened): the phone is
+    // back on its order, with its own rounds, as every phone at the table is (review 4 U4). Only the close ends a session
+    // whose order is still open; a rotation and an expiry were answered above and below.
+    if (s.orderId && s.expiresAt.getTime() >= Date.now() && (await orderOpenAgain(t, s.orderId))) {
+      await t.db.update(guestSessions).set({ revokedAt: null }).where(eq(guestSessions.id, s.id));
+      s.revokedAt = null;
+    }
   }
   if (!s || s.revokedAt || s.expiresAt.getTime() < Date.now()) throw new AppError("unauthenticated", "This table session has ended", { remedy: "Scan the table's QR code again." });
   await t.db.update(guestSessions).set({ lastSeenAt: new Date() }).where(eq(guestSessions.id, s.id));

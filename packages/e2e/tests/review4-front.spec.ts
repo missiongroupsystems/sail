@@ -336,3 +336,86 @@ test("U3: a quick note and the typed note stay apart: the chip stays on, the not
     await settle(order.id);
   }
 });
+
+/** The phone's guest token, read from the page's own session. */
+async function phoneToken(phone: Page): Promise<string> {
+  return phone.evaluate(() => {
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const v = sessionStorage.getItem(sessionStorage.key(i)!) ?? "";
+      if (v.includes("guest_token")) return (JSON.parse(v) as { guest_token: string }).guest_token;
+    }
+    throw new Error("no guest session on the page");
+  });
+}
+
+test("U4: two phones follow the table: Send shows the round at once, both get the paid screen, both leave it when the payment is voided with their rounds kept, and a reload when paid is the same paid screen", async ({ browser }) => {
+  test.setTimeout(400_000);
+  const { order, token } = await seatedTable();
+  const ids = await products();
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const phoneA = await ctx.newPage();
+  const ctxB = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const phoneB = await ctxB.newPage();
+  const noOrders = (p: Page) => p.getByText("No orders have been sent from this phone yet.");
+  const paidScreen = (p: Page) => p.getByText("Your bill is paid.");
+  try {
+    for (const p of [phoneA, phoneB]) {
+      await p.goto(`${GUEST}/t/${token}`);
+      await expect(p.getByRole("button", { name: /^Kopi,/ })).toBeVisible({ timeout: 120_000 });
+    }
+    // Phone A sends from the screen: its round is there at once, never "No orders" first.
+    await phoneA.getByRole("button", { name: /^Kopi,/ }).click();
+    await phoneA.getByRole("dialog", { name: "Kopi" }).getByRole("button", { name: /^Add to order/ }).click();
+    await phoneA.getByRole("button", { name: /^View your order, 1 item/ }).click();
+    await phoneA.getByRole("button", { name: /^Send/ }).first().click();
+    await expect(phoneA.getByRole("heading", { name: "Order sent" })).toBeVisible();
+    for (let i = 0; i < 8; i++) {
+      await expect(noOrders(phoneA)).toHaveCount(0);
+      await phoneA.waitForTimeout(500);
+    }
+    await shot(phoneA, out("U4-phone-after-send.png"));
+    const rounds = await register<{ data: { id: string; order_id: string }[] }>("GET", `/v1/outlets/${devLocal().outletId}/rounds?status=pending`);
+    const roundId = rounds.data.find((r) => r.order_id === order.id)!.id;
+    await register("POST", `/v1/rounds/${roundId}/accept`, {});
+    // On the phone the round is not done while its kitchen ticket is new.
+    const view = await fetch(`${API}/v1/guest/order`, { headers: { authorization: `Bearer ${await phoneToken(phoneA)}` } }).then((r) => r.json() as Promise<{ data: { rounds: { id: string; kitchen_done: boolean }[] } }>);
+    expect(view.data.rounds.find((r) => r.id === roundId)!.kitchen_done).toBe(false);
+    // Phone B looks at the table.
+    await phoneB.goto(`${GUEST}/t/${token}#table`);
+    await expect(phoneB.getByText("Kopi").first()).toBeVisible({ timeout: 60_000 });
+
+    // Paid in full at the POS: both phones show the paid screen.
+    const tenders = await register<{ data: { id: string; is_cash: boolean; provider?: string | null }[] }>("GET", "/v1/tender-types");
+    const byHand = tenders.data.find((t) => !t.is_cash && !t.provider)!;
+    const pay = async () => {
+      const o = await register<{ data: { checks: { id: string; balance: number }[] } }>("GET", `/v1/orders/${order.id}`);
+      const c = o.data.checks.find((x) => x.balance > 0)!;
+      const res = await register<{ data: { checks: { id: string; payments: { id: string; status: string }[] }[] } }>("POST", `/v1/checks/${c.id}/payments`, { payment_id: crypto.randomUUID(), tender_type_id: byHand.id, amount: c.balance });
+      return res.data.checks.find((x) => x.id === c.id)!.payments.find((p) => p.status === "recorded")!.id;
+    };
+    const paymentId = await pay();
+    for (const p of [phoneA, phoneB]) await expect(paidScreen(p)).toBeVisible({ timeout: 20_000 });
+    await shot(phoneB, out("U4-phone-paid.png"));
+
+    // Staff void the payment: both phones are back on the open order, phone A with its own round.
+    await register("POST", `/v1/payments/${paymentId}/void`, { reason: "Wrong payment method" });
+    for (const p of [phoneA, phoneB]) await expect(paidScreen(p)).toHaveCount(0, { timeout: 30_000 });
+    await phoneA.goto(`${GUEST}/t/${token}#status`);
+    await expect(phoneA.getByRole("heading", { name: "Order sent" }).or(phoneA.getByText(/Order sent|Preparing|accepted/i).first())).toBeVisible({ timeout: 60_000 });
+    await expect(noOrders(phoneA)).toHaveCount(0);
+    await shot(phoneA, out("U4-phone-after-void-reload.png"));
+
+    // Paid again; a reload on the paid screen is the same paid screen, never the error page.
+    await pay();
+    for (const p of [phoneA, phoneB]) await expect(paidScreen(p)).toBeVisible({ timeout: 20_000 });
+    await phoneB.reload();
+    await expect(paidScreen(phoneB)).toBeVisible({ timeout: 60_000 });
+    await expect(phoneB.getByRole("button", { name: "Order again" })).toBeVisible();
+    await expect(phoneB.getByRole("button", { name: "Try again" })).toHaveCount(0);
+    await shot(phoneB, out("U4-phone-paid-after-reload.png"));
+  } finally {
+    await ctx.close();
+    await ctxB.close();
+    await settle(order.id);
+  }
+});
