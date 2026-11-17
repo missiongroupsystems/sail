@@ -321,6 +321,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       .update(orders)
       .set({ pax: next.pax, customerRef: next.customerRef, deliveryAddress: next.deliveryAddress, deliveryNotes: b.delivery_notes === undefined ? o.deliveryNotes : b.delivery_notes, readyBy: next.readyBy, notes: b.notes === undefined ? o.notes : b.notes, customerId: o.customerId ?? (o.orderType === "pickup" || o.orderType === "delivery" ? await customerFromRef(p.merchantId, next.customerRef ?? {}) : null) })
       .where(eq(orders.id, id));
+    if (b.customer_ref !== undefined) await db().update(kitchenTickets).set({ customerName: next.customerRef?.name ?? null }).where(and(eq(kitchenTickets.orderId, id), eq(kitchenTickets.merchantId, o.merchantId)));
     return finish(c, p, id, [() => emit(c, p, o, "order.details_updated", b)]);
   });
 
@@ -354,9 +355,14 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     dryRunFrom(c, b);
     const o = await lockOrder(id, b.expected_version);
     assertOpen(o);
-    const [cust] = await db().select({ id: customers.id, name: customers.name }).from(customers).where(and(eq(customers.id, b.customer_id), isNull(customers.archivedAt))).limit(1);
+    const [cust] = await db().select({ id: customers.id, name: customers.name, mobile: customers.mobile }).from(customers).where(and(eq(customers.id, b.customer_id), isNull(customers.archivedAt))).limit(1);
     if (!cust) throw AppError.notFound("customer", b.customer_id);
-    await db().update(orders).set({ customerId: cust.id }).where(eq(orders.id, id));
+    // One rule for the order's name: the attached customer's (the typed name only while no customer is attached), on the
+    // header, the closed list, receipts and the kitchen tickets still on a display (review 2, N10).
+    const mobile = cust.mobile ?? o.customerRef?.mobile;
+    const customerRef = { name: cust.name, ...(mobile ? { mobile } : {}) };
+    await db().update(orders).set({ customerId: cust.id, customerRef }).where(eq(orders.id, id));
+    await db().update(kitchenTickets).set({ customerName: cust.name }).where(and(eq(kitchenTickets.orderId, id), eq(kitchenTickets.merchantId, o.merchantId)));
     return finish(c, p, id, [() => emit(c, p, o, "order.customer_attached", { customer_id: cust.id })]);
   });
 

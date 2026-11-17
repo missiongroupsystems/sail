@@ -188,9 +188,12 @@ async function invariants(c: Ctx): Promise<string[]> {
     }
     if (o.status === "completed" && cs.some((x) => x.total > x.paid_total)) v.push(`order ${o.id}: completed but not paid`);
 
-    // The independent oracle. Per rate, only on orders with no paid line (a paid bill keeps its own rounding, §2 step 5).
+    // The independent oracle. Per rate it holds with paid bills too: a paid bill keeps its tax and the unpaid lines take the
+    // rest of the rate's tax on the whole order (review 2, N1), so "pay a bill, then add lines" is checked on every step.
+    // Left out: an order whose paid line carries a taxed fee (its stored tax mixes two amounts).
     const lockedLines = new Set(allocs.filter((a) => cs.some((x) => x.id === a.check_id && x.locked)).map((a) => a.order_line_id));
-    if (o.tax_rounding === "per_line" || !ls.some((l) => lockedLines.has(l.id))) {
+    const taxedFeeOnPaid = adjLines.some((a) => a.order_id === o.id && a.kind === "fee" && a.tax_class_id != null && lockedLines.has(a.order_line_id));
+    if (o.tax_rounding === "per_line" || !taxedFeeOnPaid) {
       const rate = (cls: string) => resolveTaxRate(o.tax_rates, cls, o.outlet_id, o.order_type).components;
       const fees = adjLines.filter((a) => a.order_id === o.id && a.kind === "fee" && a.tax_class_id);
       const items: TaxedItem[] = [

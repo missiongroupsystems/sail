@@ -449,10 +449,18 @@ function computeTax(order: PricingOrder, states: readonly LineState[], adjustmen
       g.push(item);
       groups.set(key, g);
     }
-    for (const group of groups.values()) {
+    for (const [key, group] of groups) {
       const base = sumCents(group.map((i) => i.amount));
       const weights = group.map((i) => i.amount);
-      const perComponent = rateTax(base, group[0]!.components, context).map((t) => allocateLargestRemainder(t, weights));
+      const own = rateTax(base, group[0]!.components, context);
+      // Amounts on a paid bill at the same rate: the rate is rounded once on the whole taxable amount, the paid part keeps
+      // its tax and these lines take the rest, so the order's tax stays its rate times its taxable amount.
+      const carried = context.carried_tax.filter((c) => c.components.map(componentKey).join("+") === key && c.taxes.length === c.components.length);
+      const carriedBase = sumCents(carried.map((c) => c.amount));
+      const whole = carried.length && base > 0 && carriedBase > 0 ? rateTax(base + carriedBase, group[0]!.components, context) : null;
+      const shares = whole ? whole.map((t, k) => t - sumCents(carried.map((c) => c.taxes[k]!))) : own;
+      // Never a negative tax, nor one more than a cent away from these lines' own (a paid amount can carry an odd cent).
+      const perComponent = shares.map((t, k) => (t >= 0 && Math.abs(t - own[k]!) <= 1 ? t : own[k]!)).map((t) => allocateLargestRemainder(t, weights));
       group.forEach((item, k) => (item.taxes = perComponent.map((parts) => parts[k]!)));
     }
   }
