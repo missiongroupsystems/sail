@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, ConnectionIndicator, cx, deviceLocale, deviceTimeZone, Icon, InlineError, LocaleProvider, Pill, SegmentedControl, useLocale, type ConnectionStatus, type LocaleSettings } from "@sail/ui";
+import { ALLERGY_NOTE_CLASS, Button, ConnectionIndicator, cx, deviceLocale, deviceTimeZone, Icon, InlineError, LocaleProvider, mentionsAllergy, Pill, SegmentedControl, useLocale, type ConnectionStatus, type LocaleSettings } from "@sail/ui";
 import { AlertTriangle, Ban, Check, ChefHat, Circle, Flame, Pencil, RotateCcw } from "lucide-react";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -292,7 +292,7 @@ function TicketLine({ line: l }: { line: KitchenTicketLine }) {
             {m}
           </span>
         ))}
-        {l.notes ? <span className={cx("block text-[14.5px] leading-[1.3] font-medium italic break-words min-[1600px]:text-[17px]", struck ? "text-ink-2 line-through" : "text-status-sent")}>{l.notes}</span> : null}
+        {l.notes ? <span className={cx("block text-[14.5px] leading-[1.3] break-words min-[1600px]:text-[17px]", struck ? "font-medium italic text-ink-2 line-through" : mentionsAllergy(l.notes) ? ALLERGY_NOTE_CLASS : "font-medium italic text-status-sent")}>{l.notes}</span> : null}
         {struck ? <span className="block text-[13px] font-medium text-status-alert">Voided</span> : l.voided_quantity > 0 ? <span className="block text-[13px] font-medium text-status-alert line-through">{l.voided_quantity} voided</span> : null}
       </span>
     </span>

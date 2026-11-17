@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowRight, Pause, Percent, ReceiptText, Utensils } from "lucide-react";
-import { ActionDock, Button, GroupHeader, Icon, LineRow, SeatStrip, taxRows, TotalsBlock, type TaxRow, type TotalsRow, useLocale } from "@sail/ui";
+import { ActionDock, ALLERGY_NOTE_CLASS, Button, cx, GroupHeader, Icon, LineRow, mentionsAllergy, SeatStrip, taxRows, TotalsBlock, type TaxRow, type TotalsRow, useLocale } from "@sail/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GuestRound, ManualRule, OrderSnapshot, PrintJob, SnapshotLine } from "../api/types";
 import type { OrderActions } from "../hooks/useOrderActions";
@@ -182,7 +182,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
                 </span>
               </div>
               {lines.map((l) => row(l, "held"))}
-              {r.notes ? <p className="px-4 text-caption text-ink-2 italic">{r.notes}</p> : null}
+              {r.notes ? <p className={cx("px-4 text-caption break-words", mentionsAllergy(r.notes) ? ALLERGY_NOTE_CLASS : "text-ink-2 italic")}>{r.notes}</p> : null}
             </div>
           );
         })}
