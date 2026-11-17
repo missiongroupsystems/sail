@@ -1911,7 +1911,7 @@ export interface paths {
         put?: never;
         /**
          * Send lines to the kitchen
-         * @description Fires the given lines (default: every pending, unheld line). Creates one print job per target printer in the same transaction. On a pay-before-firing station, blocked until the balance is 0.
+         * @description Fires the given lines (default: every pending, unheld line). Creates one print job per target printer in the same transaction. On a pay-before-firing station, blocked until the balance is 0. An order already paid in full completes when its last item is sent, by the same rule as a payment that settles a sent order.
          */
         post: operations["orders.fire"];
         delete?: never;
@@ -3027,7 +3027,7 @@ export interface paths {
         put?: never;
         /**
          * Reject a held QR round
-         * @description Removes the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled ("QR order rejected") and the table freed; the guest's phone keeps its session.
+         * @description Removes the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled ("QR order rejected") and the table freed; the guest's phone keeps its session. An order paid while the round waited completes.
          */
         post: operations["rounds.reject"];
         delete?: never;

@@ -1,7 +1,6 @@
 "use client";
 
-import { Badge, Button, Checkbox, Icon, Money, SegmentedControl, Sheet, Skeleton, taxRows, type BillCardLine, type BillCardRow, type LocaleFormat, useLocale } from "@sail/ui";
-import { Check } from "lucide-react";
+import { Badge, Button, Checkbox, Money, SegmentedControl, Sheet, Skeleton, taxRows, type BillCardLine, type BillCardRow, type LocaleFormat, useLocale } from "@sail/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import type { CheckSnapshot, OrderSnapshot, SnapshotLine } from "../api/types";
@@ -330,9 +329,8 @@ export function BillScreen({ orderId }: { orderId: string }) {
               <span className="inline-flex items-baseline gap-2.5 whitespace-nowrap text-ink" role="status" aria-live="polite">
                 <span className="text-line text-ink-2">Order total</span>
                 <Money cents={snap.totals.total} size="title" className="font-heading text-[24px] font-semibold text-ink" />
-                <span className="inline-flex items-center gap-1.5 text-body text-ink-2">
+                <span className="text-body text-ink-2">
                   across {snap.checks.length} {snap.checks.length === 1 ? "bill" : "bills"}
-                  <Icon icon={Check} size={16} className="text-status-paid" />
                 </span>
               </span>
             )}

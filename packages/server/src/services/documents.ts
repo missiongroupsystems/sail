@@ -105,15 +105,24 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
   y -= 6;
   rule();
   y -= 14;
+  // Every row multiplies by eye: Qty × Unit = Amount. The unit price includes the item's options, which are listed under
+  // it by name with their own price, never as a second amount. A bill's share of a line shows the share and the line.
   for (const l of doc.lines) {
-    text(String(l.quantity), 48, 10);
-    text(l.share ? `${l.name} (${l.share})` : l.name, 90, 10);
-    right(money(l.unit_price), 460, 10);
+    const unit = l.unit_price + l.modifiers.reduce((n, m) => n + (m.unit_price ?? (l.quantity ? m.price / l.quantity : 0)), 0);
+    if (l.share) {
+      text(l.share, 48, 10);
+      text(`${l.quantity === 1 ? "" : `${l.quantity} × `}${l.name} (share of the item)`, 90, 10);
+      right(money(unit * l.quantity), 460, 10);
+    } else {
+      text(String(l.quantity), 48, 10);
+      text(l.name, 90, 10);
+      right(money(unit), 460, 10);
+    }
     right(money(l.amount), 547, 10);
     y -= 14;
     for (const m of l.modifiers) {
-      text(`+ ${m.name}`, 100, 9, font, grey);
-      if (m.price) right(money(m.price), 547, 9);
+      const each = m.unit_price ?? (l.quantity ? m.price / l.quantity : 0);
+      text(each ? `+ ${m.name} ${money(each)}` : `+ ${m.name}`, 100, 9, font, grey);
       y -= 12;
     }
   }
@@ -131,6 +140,10 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
   if (doc.totals.tax_mode === "exclusive") for (const t of doc.totals.taxes) row(t.name, t.amount);
   row(kind === "CREDIT NOTE" ? "Credit total" : "Total", doc.totals.total, bold);
   if (doc.totals.tax_mode === "inclusive") for (const t of doc.totals.taxes) row(`${t.name} (included)`, t.amount);
+  if (doc.tax_note) {
+    text(doc.tax_note, 340, 8, font, grey);
+    y -= 12;
+  }
   if (doc.payments?.length) {
     y -= 6;
     for (const p of doc.payments) {
@@ -139,6 +152,7 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
       if (p.rounding_cents) row("Cash rounding", p.rounding_cents);
       if (p.tip) row("Tip", p.tip);
       if (p.charged) row("Charged", p.charged);
+      if (p.change && p.tendered) row("Tendered", p.tendered);
       if (p.change) row("Change", p.change);
     }
   }

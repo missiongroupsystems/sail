@@ -147,11 +147,8 @@ export function useOrderActions(orderId: string) {
         const grant = await requestOverride({ subject, title, quote, minRole: needed });
         return grant;
       };
-      if (!roleAtLeast(role, minRole)) {
-        const grant = await ask();
-        if (!grant) return null;
-        return exec(grant.override_id);
-      }
+      // The register is asked first even below the role it needs: anything it would refuse anyway (a terminal payment, a
+      // closed day, a paid bill) is said before anyone is asked for a PIN. Only its permission refusal opens the prompt.
       try {
         return await exec(null);
       } catch (e) {
@@ -707,6 +704,9 @@ export function useOrderActions(orderId: string) {
     }
   }, [api, fail, orderId, run]);
 
+  /** What would stop a reopen (a terminal payment, another business day, a refund), asked before any reason or PIN. */
+  const reopenRefusal = useCallback(() => reg.reopenRefusal(api, orderId), [api, orderId]);
+
   /** Reopen a completed order (Manager+, same business day): the approval sheet for anyone below Manager. */
   const reopen = useCallback(
     async (reason: string) => {
@@ -914,6 +914,7 @@ export function useOrderActions(orderId: string) {
       voidPayment,
       complete,
       reopen,
+      reopenRefusal,
       printReceipt,
       sendReceipt,
       issueInvoice,
@@ -927,7 +928,7 @@ export function useOrderActions(orderId: string) {
       reprint,
       role,
     }),
-    [addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, splitEven, splitBySeat, allocate, unsplit, prebill, previewPayment, pay, startTerminal, cancelTerminal, voidPayment, complete, reopen, printReceipt, sendReceipt, issueInvoice, openInvoicePdf, mayReadInvoice, quoteRefund, refund, printRefundReceipt, acceptRound, rejectRound, reprint, role],
+    [addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, splitEven, splitBySeat, allocate, unsplit, prebill, previewPayment, pay, startTerminal, cancelTerminal, voidPayment, complete, reopen, reopenRefusal, printReceipt, sendReceipt, issueInvoice, openInvoicePdf, mayReadInvoice, quoteRefund, refund, printRefundReceipt, acceptRound, rejectRound, reprint, role],
   );
 }
 

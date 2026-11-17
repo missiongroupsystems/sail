@@ -1,4 +1,4 @@
-import { idempotencyKey, req } from "@/lib/api";
+import { ApiError, idempotencyKey, req } from "@/lib/api";
 import type { PosApi } from "./client";
 import type {
   ChannelLink,
@@ -383,6 +383,20 @@ export async function completeOrder(api: PosApi, orderId: string, opts?: Mutatio
 
 export async function reopenOrder(api: PosApi, orderId: string, reason: string, opts?: MutationOpts): Promise<MutationResult> {
   return asResult(await req(api.POST("/v1/orders/{id}/reopen", { params: { path: { id: orderId } }, body: { ...mutation(opts), reason }, headers: headers(opts) })));
+}
+
+/**
+ * Would the register refuse to reopen this order? Asked with a dry run before the reopen sheet asks for a reason or a
+ * Manager's PIN. Returns the register's reason and remedy, or null when only an approval stands in the way.
+ */
+export async function reopenRefusal(api: PosApi, orderId: string): Promise<{ message: string; remedy: string | null } | null> {
+  try {
+    await req(api.POST("/v1/orders/{id}/reopen", { params: { path: { id: orderId } }, body: { reason: "dry run", dry_run: true }, headers: headers() }));
+    return null;
+  } catch (e) {
+    if (e instanceof ApiError && (e.code === "invariant_violation" || e.code === "state_conflict")) return { message: e.message, remedy: e.remedy ?? null };
+    return null;
+  }
 }
 
 /* ---- Receipts and documents ---------------------------------------------------- */

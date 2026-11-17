@@ -116,8 +116,9 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
     { key: "total", label: "Total", cents: order.totals.total, kind: "total" },
     ...tax.after.map(taxRow),
     ...(order.paid_total > 0 ? [{ key: "paid", label: "Paid", cents: order.paid_total, kind: "adjustment" as const, note: order.pricing_status === "frozen" ? "prices frozen" : null }] : []),
-    // The balance is always under the total, the register's figure, equal to the total until money is taken.
-    { key: "balance", label: "Balance", cents: order.balance, kind: "total" as const },
+    // The balance is always under the total, the register's figure, equal to the total until money is taken. A negative
+    // balance is money taken beyond the order's total: said as owed to the guest, never carried onto later items.
+    order.balance < 0 ? { key: "owed", label: "Owed to the guest", cents: -order.balance, kind: "total" as const } : { key: "balance", label: "Balance", cents: order.balance, kind: "total" as const },
   ];
 
   /** ✓ printed, ◷ waiting or ⚠ not printed for a round, from the register's jobs. */
@@ -129,7 +130,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
     return "waiting";
   };
 
-  const row = (l: SnapshotLine, status: "new" | "held" | "sent" | "voided" | "removed", printStatus: "printed" | "waiting" | "late" | null = null) => (
+  const row = (l: SnapshotLine, status: "new" | "held" | "sent" | "voided" | "removed", printStatus: "printed" | "waiting" | "late" | null = null, noAmount = false) => (
     <LineRow
       key={l.id}
       quantity={l.quantity}
@@ -138,6 +139,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
       notes={l.notes}
       seat={station.seats_enabled ? l.seat_no : null}
       amountCents={l.optimistic ? null : l.amounts.base}
+      noAmount={noAmount}
       status={l.optimistic ? "pending" : status}
       voidReason={l.void_reason}
       flash={flashes.has(l.id)}
@@ -181,7 +183,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
                   </Button>
                 </span>
               </div>
-              {lines.map((l) => row(l, "held"))}
+              {lines.map((l) => row(l, "held", null, true))}
               {r.notes ? <p className="px-4 text-caption text-ink-2 italic">{r.notes}</p> : null}
             </div>
           );
@@ -225,21 +227,23 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
       {closed ? (
         <ActionDock
           offline={offline}
-          primary={{ id: "reopen", label: "Reopen", ariaLabel: "Reopen this order", onPress: onReopen, needsApproval: !managerPlus }}
+          primary={order.balance < 0 ? { id: "refund", label: `Refund ${money(-order.balance)}`, ariaLabel: `Refund ${money(-order.balance)} owed to the guest`, onPress: onRefund, isDisabled: !canRefund, needsApproval: !managerPlus } : { id: "reopen", label: "Reopen", ariaLabel: "Reopen this order", onPress: onReopen, needsApproval: !managerPlus }}
           secondaries={[
-            { id: "refund", label: "Refund", onPress: onRefund, isDisabled: !canRefund, needsApproval: !managerPlus },
+            order.balance < 0 ? { id: "reopen", label: "Reopen", onPress: onReopen, needsApproval: !managerPlus } : { id: "refund", label: "Refund", onPress: onRefund, isDisabled: !canRefund, needsApproval: !managerPlus },
           ]}
         />
       ) : (
         <ActionDock
           offline={offline}
           primary={
-            sendable > 0
+            order.balance < 0
+              ? { id: "refund", label: `Refund ${money(-order.balance)}`, ariaLabel: `Refund ${money(-order.balance)} owed to the guest`, onPress: onRefund, isDisabled: !canRefund, needsApproval: !managerPlus }
+              : sendable > 0
               ? { id: "send", label: `Send ${sendable}`, ariaLabel: `Send ${sendable} to kitchen`, onPress: () => void actions.send(), trailingIcon: ArrowRight }
               : live.length === 0
                 ? // Nothing on the order yet: a disabled Send, not "Pay $0.00".
                   { id: "send", label: "Send", ariaLabel: "Send to kitchen", onPress: () => undefined, isDisabled: true, trailingIcon: ArrowRight }
-                : { id: "pay", label: `Pay ${money(order.balance)}`, ariaLabel: `Pay ${money(order.balance)}`, onPress: onPay, isDisabled: live.length === 0 || order.balance <= 0, needsApproval: !["cashier", "manager", "finance", "admin"].includes(staff.role), approvalLabel: "Cashier approval" }
+                : { id: "pay", label: `Pay ${money(order.balance)}`, ariaLabel: `Pay ${money(order.balance)}`, onPress: onPay, isDisabled: live.length === 0 || (order.balance <= 0 && pendingRounds.length === 0), needsApproval: !["cashier", "manager", "finance", "admin"].includes(staff.role), approvalLabel: "Cashier approval" }
           }
           secondaries={[
             // Hold goes with Send: once nothing new is waiting, Pay takes the space so the dock fits the order column.

@@ -3290,7 +3290,8 @@
       ],
       "emits": [
         "order.fired",
-        "print_job.created"
+        "print_job.created",
+        "order.completed"
       ],
       "untrusted": [
         "added_by",
@@ -3313,7 +3314,7 @@
         "variance_reason",
         "void_reason"
       ],
-      "description": "Send lines to the kitchen\n\nFires the given lines (default: every pending, unheld line). Creates one print job per target printer in the same transaction. On a pay-before-firing station, blocked until the balance is 0.\n\nRisk tier T2. Needs role server or above. Emits order.fired, print_job.created.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "description": "Send lines to the kitchen\n\nFires the given lines (default: every pending, unheld line). Creates one print job per target printer in the same transaction. On a pay-before-firing station, blocked until the balance is 0. An order already paid in full completes when its last item is sent, by the same rule as a payment that settles a sent order.\n\nRisk tier T2. Needs role server or above. Emits order.fired, print_job.created, order.completed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -7133,7 +7134,8 @@
       "emits": [
         "round.rejected",
         "line.voided",
-        "order.cancelled"
+        "order.cancelled",
+        "order.completed"
       ],
       "untrusted": [
         "added_by",
@@ -7156,7 +7158,7 @@
         "variance_reason",
         "void_reason"
       ],
-      "description": "Reject a held QR round\n\nRemoves the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled (\"QR order rejected\") and the table freed; the guest's phone keeps its session.\n\nRisk tier T2. Needs role server or above. A reason is required. Emits round.rejected, line.voided, order.cancelled.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
+      "description": "Reject a held QR round\n\nRemoves the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled (\"QR order rejected\") and the table freed; the guest's phone keeps its session. An order paid while the round waited completes.\n\nRisk tier T2. Needs role server or above. A reason is required. Emits round.rejected, line.voided, order.cancelled, order.completed.\nAbove your identity's ceiling this creates a proposal for a human (response code requires_confirmation); poll proposals_get for the outcome.",
       "inputSchema": {
         "type": "object",
         "properties": {

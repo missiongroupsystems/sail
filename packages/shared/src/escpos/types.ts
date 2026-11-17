@@ -150,6 +150,8 @@ export const BillPaymentSchema = z.object({
   reference: z.string().optional(),
   /** Tip taken with this tender, on top of the amount; printed when non-zero. */
   tip: CentsSchema.optional(),
+  /** Cash handed over, when change was given; printed above the change. */
+  tendered: CentsSchema.optional(),
   /** Change handed back; printed when non-zero. */
   change: CentsSchema.optional(),
   /** What the guest was charged with this tender: amount, cash rounding and tip, as the register recorded it. */
@@ -174,6 +176,8 @@ export const BillDocumentSchema = z.object({
   adjustments: z.array(BillAdjustmentSchema),
   totals: BillTotalsSchema,
   payments: z.array(BillPaymentSchema).optional(),
+  /** One plain line under the tax rows when a split bill carries a cent of the order's tax rounding. */
+  tax_note: z.string().optional(),
   /** Remaining balance; printed as "Balance due" when present. */
   balance: CentsSchema.optional(),
   invoice_no: z.string().optional(),

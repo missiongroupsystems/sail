@@ -1,5 +1,5 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { registerOperations, type OperationSpec } from "@sail/shared";
 import { db, settleInvariants, tx, withTransaction, type RequestTx } from "../db/client.js";
 import { channelLinks, guestRounds, guestSessions, orderLines, orders, outlets, printers, serviceRequests, tableQrTokens, tables } from "../db/schema/index.js";
@@ -15,6 +15,7 @@ import { applyRls } from "../middleware/pipeline.js";
 import { serveStream } from "../sse/stream.js";
 import { compileMenu } from "../services/menu.js";
 import { buildLines, type LineInput } from "../services/lines.js";
+import { maybeComplete } from "../services/payments.js";
 import { bumpVersion, loadSnapshot, lockOrder, nextOrderNo, orderClosed, paidTotal, registerOrderClosedHook, repriceOrder } from "../services/orders.js";
 import { orderTaxSettings } from "../services/tax.js";
 import { createKitchenJobs, insertJob } from "../services/printing.js";
@@ -35,7 +36,7 @@ registerOperations({
   "guest.stream": op({ op: "guest.stream", summary: "Guest live-update stream (SSE)", description: "Signals changes to the table's order (round accepted, order ready). Poll guest.order when there is no order yet.", tier: "T0", mcp: { expose: false, toolsets: [] } }),
   "rounds.list": op({ op: "rounds.list", summary: "QR rounds of an outlet", description: "Pending rounds waiting for acceptance, and recent decided ones.", tier: "T0", minRole: "server", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read"] } }),
   "rounds.accept": op({ op: "rounds.accept", summary: "Accept a held QR round", description: "Fires the round's lines and prints kitchen tickets.", tier: "T2", minRole: "server", dryRun: true, principals: ["staff", "agent"], emits: ["round.accepted", "order.fired", "print_job.created"], mcp: { expose: true, toolsets: ["pos.order"] } }),
-  "rounds.reject": op({ op: "rounds.reject", summary: "Reject a held QR round", description: "Removes the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled (\"QR order rejected\") and the table freed; the guest's phone keeps its session.", tier: "T2", minRole: "server", reasonRequired: true, dryRun: true, principals: ["staff", "agent"], emits: ["round.rejected", "line.voided", "order.cancelled"], mcp: { expose: true, toolsets: ["pos.order"] } }),
+  "rounds.reject": op({ op: "rounds.reject", summary: "Reject a held QR round", description: "Removes the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled (\"QR order rejected\") and the table freed; the guest's phone keeps its session. An order paid while the round waited completes.", tier: "T2", minRole: "server", reasonRequired: true, dryRun: true, principals: ["staff", "agent"], emits: ["round.rejected", "line.voided", "order.cancelled", "order.completed"], mcp: { expose: true, toolsets: ["pos.order"] } }),
   "service_requests.list": op({ op: "service_requests.list", summary: "Table requests of an outlet", description: "Open and recently acknowledged requests.", tier: "T0", minRole: "server", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read"] } }),
   "service_requests.acknowledge": op({ op: "service_requests.acknowledge", summary: "Acknowledge a table request", description: "Marks the request done. An agent may acknowledge at most 60 an hour.", agentPerHour: 60, minRole: "server", principals: ["staff", "agent"], emits: ["service_request.acknowledged"], mcp: { expose: true, toolsets: ["pos.order"] } }),
   "tables.rotate_qr_token": op({ op: "tables.rotate_qr_token", summary: "Rotate a table's QR token", description: "Old QR codes for the table stop working. Admin.", tier: "T3", minRole: "admin", principals: ["staff"], emits: ["table.qr_rotated"], mcp: { expose: false, toolsets: [] } }),
@@ -65,8 +66,15 @@ registerFloorExtra(async (outletId) => {
 });
 
 // Whoever closed the order (a guest, an agent), the register ends its guest sessions.
+// The table's open requests ("Bill, please", a waiter call) close with its order, in the same register operation, so the
+// Now rail and the floor's bell never outlive a table that is paid, cancelled or free.
 registerOrderClosedHook(async (orderId) => {
-  await asSystem(() => revokeSessionsForOrder(orderId));
+  await asSystem(async () => {
+    await revokeSessionsForOrder(orderId);
+    const [o] = await db().select({ tableId: orders.tableId }).from(orders).where(eq(orders.id, orderId)).limit(1);
+    const forThisOrder = o?.tableId ? or(eq(serviceRequests.orderId, orderId), and(eq(serviceRequests.tableId, o.tableId), isNull(serviceRequests.orderId))) : eq(serviceRequests.orderId, orderId);
+    await db().update(serviceRequests).set({ status: "acknowledged", acknowledgedAt: new Date(), acknowledgedByName: "Closed with the order" }).where(and(eq(serviceRequests.status, "open"), forThisOrder!));
+  });
 });
 
 const LineInputSchema = z.object({ line_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1).max(50), modifiers: z.array(z.object({ group_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1).max(20).optional() })).max(40).optional(), notes: untrusted(z.string().max(200).nullable().optional()), seat_no: z.number().int().min(1).max(99).nullable().optional() });
@@ -259,8 +267,11 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     if (cancelled) await recordAudit(p, { action: "orders.cancel", targetKind: "order", targetId: order.id, outletId: order.outletId, reason: REJECTED_CANCEL_REASON, details: { round_id: roundId } });
     // Price and check first; events (and the kitchen tickets of an accepted round) last, so the outlet's sequence lock is held briefly.
     await repriceOrder(order.id);
+    // A table paid while the round waited is settled once the round is rejected.
+    const completed = action === "reject" && !cancelled && (await paidTotal(order.id)) > 0 && (await maybeComplete(order.id, now));
     const version = await bumpVersion(order.id);
     await settleInvariants();
+    if (completed) events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "order.completed", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "rounds.reject", payload: { order_no: order.orderNo }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
     if (action === "accept") {
       events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "round.accepted", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "rounds.accept", payload: { round_id: roundId }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
       warnings = await fireRound(c.get("correlationId"), p, order, roundId, bd, "rounds.accept"); // statuses only, no amounts

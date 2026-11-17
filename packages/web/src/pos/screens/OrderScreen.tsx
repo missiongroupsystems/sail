@@ -15,7 +15,7 @@ import { PANEL, PANEL_LABEL } from "../components/styles";
 import { TipLeftNote } from "../components/TipLeft";
 import { ReceiptChooser } from "../components/ReceiptChooser";
 import { RefundSheet } from "../components/RefundSheet";
-import { RejectRoundSheet, ReopenSheet } from "../components/ReasonSheets";
+import { RejectRoundSheet, ReopenSheet, WaitingRoundSheet } from "../components/ReasonSheets";
 import { ReprintSheet } from "../components/ReprintSheet";
 import { useLateJobs, useManualRules, useOrder, useOrderPrintJobs, usePendingRounds, useReadyLineIds } from "../hooks/queries";
 import { useOrderActions } from "../hooks/useOrderActions";
@@ -24,7 +24,7 @@ import { formatElapsed, ORDER_TYPE_LABEL } from "../lib/format";
 import { useNavStore } from "../state/nav";
 import { useUiStore } from "../state/ui";
 
-type SheetState = { kind: "line"; lineId: string } | { kind: "discount" } | { kind: "refund"; checkId?: string | null } | { kind: "reprint"; round: { number: number; firedAt: string | null } | null } | { kind: "reopen" } | { kind: "reject"; round: GuestRound } | { kind: "receipt"; checkId: string } | null;
+type SheetState = { kind: "line"; lineId: string } | { kind: "discount" } | { kind: "refund"; checkId?: string | null } | { kind: "reprint"; round: { number: number; firedAt: string | null } | null } | { kind: "reopen" } | { kind: "reject"; round: GuestRound } | { kind: "waiting"; round: GuestRound } | { kind: "receipt"; checkId: string } | null;
 
 /** Order entry: rail + catalogue, the order sheet, and the sheets that hang off them. Closed orders stay readable for Reopen, Refund and receipts. */
 export function OrderScreen({ orderId }: { orderId: string }) {
@@ -73,11 +73,16 @@ export function OrderScreen({ orderId }: { orderId: string }) {
   const receiptCheck = sheet?.kind === "receipt" ? (snap?.checks.find((c) => c.id === sheet.checkId) ?? null) : null;
   const line: SnapshotLine | null = sheet?.kind === "line" ? (snap?.lines.find((l) => l.id === sheet.lineId) ?? null) : null;
 
-  const pay = () => {
+  const payNow = () => {
     if (!snap) return;
     const open = snap.checks.filter((c) => c.status === "open");
     if (snap.checks.length === 1 && open[0]) openPay(orderId, open[0].id, "order");
     else openBill(orderId);
+  };
+  // A QR order waiting for acceptance is on no bill: Pay asks about it first.
+  const pay = () => {
+    if (pendingRounds[0]) setSheet({ kind: "waiting", round: pendingRounds[0] });
+    else payNow();
   };
 
   return (
@@ -172,7 +177,19 @@ export function OrderScreen({ orderId }: { orderId: string }) {
       <Sheet labelledClose isOpen={sheet?.kind === "receipt"} onOpenChange={(o) => (!o ? setSheet(null) : undefined)} title={receiptCheck ? `Receipt · ${receiptCheck.label}` : "Receipt"} width="lg">
         {snap && receiptCheck ? <ReceiptChooser order={snap} check={receiptCheck} actions={actions} caption={`Paid · ${receiptCheck.label}`} amount={receiptCheck.paid_total} sub={receiptCheck.charged_total !== receiptCheck.paid_total ? { main: null, minor: [receiptCheck.tip_total ? `Tip ${money(receiptCheck.tip_total)}` : null, receiptCheck.rounding_total ? `Cash rounding ${money(receiptCheck.rounding_total)}` : null, `Charged ${money(receiptCheck.charged_total)}`].filter(Boolean).join(" · ") } : null} autoReturnMs={0} onDone={() => setSheet(null)} doneLabel="Done" /> : null}
       </Sheet>
-      <ReopenSheet isOpen={sheet?.kind === "reopen"} onClose={() => setSheet(null)} onReopen={(reason) => actions.reopen(reason)} payments={(order.data?.checks ?? []).flatMap((c) => c.payments.filter((p) => p.status === "recorded").map((p) => `${p.tender} ${money(p.amount)}`))} />
+      <ReopenSheet isOpen={sheet?.kind === "reopen"} onClose={() => setSheet(null)} onReopen={(reason) => actions.reopen(reason)} checkRefusal={actions.reopenRefusal} payments={(order.data?.checks ?? []).flatMap((c) => c.payments.filter((p) => p.status === "recorded").map((p) => `${p.tender} ${money(p.amount)}`))} />
+      <WaitingRoundSheet
+        isOpen={sheet?.kind === "waiting"}
+        roundLabel={sheet?.kind === "waiting" ? `${sheet.round.lines.length} ${sheet.round.lines.length === 1 ? "item" : "items"}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null}
+        canPayRest={Boolean(snap && snap.balance > 0)}
+        onClose={() => setSheet(null)}
+        onAccept={() => (sheet?.kind === "waiting" ? actions.acceptRound(sheet.round.id) : Promise.resolve(null))}
+        onReject={() => (sheet?.kind === "waiting" ? setSheet({ kind: "reject", round: sheet.round }) : undefined)}
+        onPayRest={() => {
+          setSheet(null);
+          payNow();
+        }}
+      />
       <RejectRoundSheet isOpen={sheet?.kind === "reject"} roundLabel={sheet?.kind === "reject" ? `${sheet.round.lines.length} ${sheet.round.lines.length === 1 ? "item" : "items"}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null} onClose={() => setSheet(null)} onReject={(reason) => (sheet?.kind === "reject" ? actions.rejectRound(sheet.round.id, reason) : Promise.resolve(null))} />
     </Frame>
   );

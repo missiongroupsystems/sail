@@ -1,10 +1,10 @@
 import { and, eq, sql } from "drizzle-orm";
 import { formatMoney, freezeFrom, percentOfCents, PERMISSIONS, roleAtLeast, roundCash, type Role } from "@sail/shared";
 import { db, tx } from "../db/client.js";
-import { businessDayCloses, checks, merchantSettings, orderLines, orders, payments, refunds, shifts, tenderTypes } from "../db/schema/index.js";
+import { businessDayCloses, checks, merchantSettings, orderLines, orders, paymentIntents, payments, refunds, shifts, tenderTypes } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { Principal } from "../auth/principal.js";
-import { orderClosed, repriceOrder } from "./orders.js";
+import { orderClosed, repriceOrder, waitingLineIds } from "./orders.js";
 import { activeRules } from "./pricing-rules.js";
 import { syncAllocations } from "./checks.js";
 import { assertBusinessDayOpen, currentBusinessDate } from "./business-day.js";
@@ -71,6 +71,7 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
   }
 
   const balance = check.total - check.paidTotal;
+  if (balance <= 0 && (await waitingLineIds(order.id)).size) throw new AppError("state_conflict", "A QR order is waiting for acceptance", { remedy: "Accept or reject the QR order first; its items are not on the bill until they are accepted.", details: { allowed_transitions: ["rounds.accept", "rounds.reject"], waiting_round: true } });
   if (balance <= 0) throw AppError.state(`${check.label} is already paid`, [], "Nothing is owed on this bill.");
 
   let applied = input.amount;
@@ -244,8 +245,11 @@ export async function reversePayment(order: typeof orders.$inferSelect, payment:
   if (status !== order.status) await db().update(orders).set({ status, completedAt: null, updatedAt: now }).where(eq(orders.id, order.id));
 }
 
-/** Reopen a completed order on the same business day: payments reversed, checks unlocked, pricing unfrozen, order back to fired/open. */
-export async function reopenOrder(order: typeof orders.$inferSelect, principal: Principal, reason: string, now = new Date()) {
+/**
+ * Everything that would refuse a reopen, checked before anyone is asked for a reason or a Manager's PIN (the route runs it
+ * ahead of the approval, and the POS asks with a dry run before it shows the sheet).
+ */
+export async function assertReopenable(order: typeof orders.$inferSelect, now = new Date()) {
   if (order.status !== "completed") throw AppError.state(`Only completed orders can be reopened; this one is ${order.status}`, ["completed → open"]);
   const today = await currentBusinessDate(order.merchantId, order.outletId, now);
   if (order.businessDate !== today) throw AppError.invariant("reopen_same_business_day", `The order belongs to business day ${order.businessDate}`, "Orders can only be reopened on the same business day. Use a refund instead.");
@@ -255,6 +259,14 @@ export async function reopenOrder(order: typeof orders.$inferSelect, principal: 
   // Every payment it reverses must be one a void could reverse: its shift still open, its day not closed.
   await assertBusinessDayOpen(order.outletId, order.businessDate);
   for (const payment of await db().select().from(payments).where(and(eq(payments.orderId, order.id), eq(payments.status, "recorded")))) await assertReversible(payment);
+  // Reopening reverses payments in the register only. A terminal payment would stay charged while the order is paid again.
+  const [onTerminal] = await db().select({ id: payments.id }).from(payments).innerJoin(paymentIntents, eq(paymentIntents.paymentId, payments.id)).where(and(eq(payments.orderId, order.id), eq(payments.status, "recorded"))).limit(1);
+  if (onTerminal) throw AppError.invariant("terminal_payment", "This order was paid on a card terminal, so it cannot be reopened", "Void the terminal payment (it is given back at the provider), or refund it in the register and give it back on the terminal by hand.");
+}
+
+/** Reopen a completed order on the same business day: payments reversed, checks unlocked, pricing unfrozen, order back to fired/open. */
+export async function reopenOrder(order: typeof orders.$inferSelect, principal: Principal, reason: string, now = new Date()) {
+  await assertReopenable(order, now);
   const reversed = await db()
     .update(payments)
     .set({ status: "reversed", reversedAt: now, reversedBy: principal.type === "staff" ? principal.id : null, reversedReason: `reopened: ${reason}` })

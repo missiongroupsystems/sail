@@ -16,5 +16,10 @@ registerSnapshotExtras(async (o) => {
   const paid = checks.reduce((s, c) => s + c.paid_total, 0);
   const total = checks.reduce((s, c) => s + c.totals.total, 0);
   const refunded = checks.reduce((s, c) => s + c.refunded_total, 0);
-  return { checks, paid_total: paid, refunded_total: refunded, balance: total - paid };
+  // Signed: what the guest still owes on the bills, less what was taken beyond the order's total and not yet given back
+  // (a negative balance is money owed to the guest; it is never applied to later items on its own).
+  const unpaid = checks.reduce((s, c) => s + Math.max(0, c.totals.total - c.paid_total), 0);
+  const owedToGuest = Math.max(0, paid - refunded - o.total);
+  void total;
+  return { checks, paid_total: paid, refunded_total: refunded, balance: unpaid - owedToGuest };
 });
