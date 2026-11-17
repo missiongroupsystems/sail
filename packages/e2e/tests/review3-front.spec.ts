@@ -416,3 +416,24 @@ test("S8: a kitchen ticket whose only line was voided offers Clear, as a cancell
     await settle(o.data.id);
   }
 });
+
+test("S8: By item from one bill starts with every line whole on Bill 1 and an empty Bill 2", async ({ page }) => {
+  test.setTimeout(300_000);
+  await pairAndSignIn(page, MANAGER_PIN);
+  await page.getByRole("button", { name: "Takeaway order", exact: true }).click();
+  await expect(page.getByRole("navigation", { name: "Menu sections" })).toBeVisible();
+  await page.getByRole("button", { name: /^Mee Goreng,/ }).click();
+  await page.getByRole("button", { name: /^Mee Goreng,/ }).click();
+  await page.getByRole("button", { name: /^Bill/ }).click();
+  await page.getByRole("radio", { name: "By item" }).or(page.getByRole("button", { name: "By item", exact: true })).first().click();
+  await expect(page.getByRole("region", { name: "Bill 2" })).toBeVisible();
+  await expect(page.getByText("½")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Bill 1" })).toContainText("Mee Goreng");
+  await expect(page.getByRole("region", { name: "Bill 2" })).not.toContainText("Mee Goreng");
+  await shot(page, out("S8-by-item-start.png"));
+  // Back to one bill, and the never-sent takeaway is cancelled.
+  await page.getByRole("radio", { name: "One bill" }).or(page.getByRole("button", { name: "One bill", exact: true })).first().click();
+  await expect(page.getByRole("region", { name: "Bill 2" })).toHaveCount(0);
+  const floor = await register<{ data: { other_orders: { id: string; status: string }[] } }>("GET", `/v1/outlets/${devLocal().outletId}/floor`);
+  for (const o of floor.data.other_orders) await register("POST", `/v1/orders/${o.id}/cancel`, { reason: "Test over" }).catch(() => undefined);
+});

@@ -128,7 +128,8 @@ export function BillScreen({ orderId }: { orderId: string }) {
       setEvenN(n);
       ok = await actions.splitEven(n);
     } else if (next === "seat") ok = await actions.splitBySeat(shared);
-    else ok = snap.checks.length >= 2 ? snap : await actions.splitEven(2);
+    // By item from one bill: a second, empty bill beside it, every line still whole on Bill 1, not an even ½/½ (review 3, S8).
+    else ok = snap.checks.length >= 2 ? snap : await actions.allocate([], 1);
     if (!ok) setMode(prev);
   };
 
