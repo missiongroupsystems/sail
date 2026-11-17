@@ -1,12 +1,15 @@
 "use client";
 
-import { Icon, MenuItemRow, ScrollTabs, type MenuItemState, useLocale } from "@sail/ui";
+import { Icon, MenuItemRow, ScrollTabs, type MenuItemState } from "@sail/ui";
 import { ChevronRight, ConciergeBell, ReceiptText, Search, X } from "lucide-react";
 import { Button as AriaButton, Input, SearchField } from "react-aria-components";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BasketItem } from "@/lib/basket";
 import type { CompiledMenu, CompiledProduct, CompiledSection, GuestSession, OrderView } from "@/lib/types";
-import { billNote, showsPayPrompt } from "@/lib/status";
+import { roundStage, showsPayPrompt } from "@/lib/status";
+import { stagePill } from "./StatusView";
+import { priceNote } from "./priceNote";
+import type { Quote } from "./useQuote";
 import { BasketBar } from "./BasketBar";
 import { StaffBanner } from "./StaffBanner";
 
@@ -17,6 +20,8 @@ export type MenuViewProps = {
   /** The table is not open yet: check with the register now. */
   onCheckAgain?: () => void;
   basketItems: BasketItem[];
+  /** The register's price for the basket. */
+  basketQuote?: Quote;
   orderView: OrderView | null;
   onOpenItem: (productId: string) => void;
   onReview: () => void;
@@ -41,8 +46,7 @@ function guestOrderable(p: CompiledProduct | undefined): p is CompiledProduct {
 }
 
 /** The landing screen: outlet and brand with the table pill, one sticky bar (Call staff and the section chips), then the menu. */
-export function MenuView({ session, menu, canOrder, basketItems, orderView, onOpenItem, onReview, onCallStaff, onStatus, onOurTable, onCheckAgain }: MenuViewProps) {
-  const { clock } = useLocale();
+export function MenuView({ session, menu, canOrder, basketItems, basketQuote, orderView, onOpenItem, onReview, onCallStaff, onStatus, onOurTable, onCheckAgain }: MenuViewProps) {
   const groups = useMemo<Group[]>(() => {
     const sections = [...menu.menu.sections].sort((a, b) => a.sort - b.sort);
     const hasItems = (s: CompiledSection) => s.items.some((i) => guestOrderable(menu.products[i.product_id]));
@@ -74,13 +78,21 @@ export function MenuView({ session, menu, canOrder, basketItems, orderView, onOp
     let raf = 0;
     const update = () => {
       raf = 0;
-      const bottom = headerRef.current?.getBoundingClientRect().bottom ?? 0;
+      // The section that fills most of the screen under the bar is the current one, so a short last section ("Drinks")
+      // that can never scroll up to the bar is still selected once it is what the guest sees (final review C Low).
+      const top = headerRef.current?.getBoundingClientRect().bottom ?? 0;
+      const bottom = window.innerHeight;
       let current = groups[0]?.section.id ?? null;
+      let most = 0;
       for (const g of groups) {
         const el = document.getElementById(`section-${g.section.id}`);
         if (!el) continue;
-        if (el.getBoundingClientRect().top - bottom <= 12) current = g.section.id;
-        else break;
+        const r = el.getBoundingClientRect();
+        const shown = Math.min(r.bottom, bottom) - Math.max(r.top, top);
+        if (shown > most + 1) {
+          most = shown;
+          current = g.section.id;
+        }
       }
       setSelected(current);
     };
@@ -162,13 +174,13 @@ export function MenuView({ session, menu, canOrder, basketItems, orderView, onOp
       {!canOrder ? <StaffBanner className="mx-4 mb-3" onCheck={onCheckAgain} /> : null}
       {latest || tableHasLines ? (
         <button type="button" onClick={onStatus} className="press mx-4 mb-3 flex min-h-12 w-[calc(100%-32px)] items-center justify-between gap-3 rounded-sheet bg-surface-2 px-4 text-left text-[15px] font-medium text-ink transition-colors duration-[120ms] active:bg-surface-3">
-          <span className="min-w-0 truncate">{latest ? `Your order · Sent ${clock(latest.submitted_at)}` : "See what the table has ordered"}</span>
+          <span className="min-w-0 truncate">{latest ? `Your order · ${stagePill(roundStage(latest, orderView?.order), session.hold_orders).label}` : "See what the table has ordered"}</span>
           <ChevronRight size={20} className="shrink-0 text-ink-2" aria-hidden />
         </button>
       ) : null}
 
       {/* The one sticky bar: search, Call staff where the thumb finds it, then the section chips; searching, the field. */}
-      <div ref={headerRef} className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-rule-subtle bg-surface/95 pl-4 backdrop-blur-md">
+      <div ref={headerRef} className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-rule-subtle bg-surface pl-4">
         {searching ? (
           <SearchField aria-label="Search the menu" value={query} onChange={setQuery} onClear={() => setQuery("")} autoFocus className="flex min-w-0 flex-1 items-center gap-2 pr-2">
             <span className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-full bg-surface-2 px-4">
@@ -244,12 +256,12 @@ export function MenuView({ session, menu, canOrder, basketItems, orderView, onOp
           </section>
         ))}
         <div className="mx-4 mt-8 flex flex-col gap-1 rounded-sheet bg-surface-2 px-4 py-3.5 text-[13.5px] leading-relaxed text-ink-2">
-          <p>{billNote(orderView?.totals?.tax_mode)}</p>
+          <p>{priceNote(orderView?.tax)}</p>
           {showsPayPrompt(orderView) ? <p>Pay at the counter or ask your server for the bill.</p> : null}
         </div>
       </main>
 
-      {canOrder && basketCount > 0 ? <BasketBar count={basketCount} onPress={onReview} /> : null}
+      {canOrder && basketCount > 0 ? <BasketBar count={basketCount} quote={basketQuote} onPress={onReview} /> : null}
     </>
   );
 }

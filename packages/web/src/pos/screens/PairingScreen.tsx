@@ -4,7 +4,7 @@ import { Button, cx, PinPad, SailLogo, TextField } from "@sail/ui";
 import { useState } from "react";
 import { toApiError, type ApiError } from "@/lib/api";
 import { pairStation } from "../api/register";
-import { useApi } from "../hooks/useApi";
+import { NOT_PAIRED, useApi } from "../hooks/useApi";
 import type { Station } from "../api/types";
 import { useStationStore } from "../state/station";
 import { useSessionStore } from "../state/session";
@@ -27,6 +27,8 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
   const [label, setLabel] = useState(kind === "display" ? "Kitchen display" : device);
   const [error, setError] = useState<ApiError | null>(null);
   const [pending, setPending] = useState(false);
+  // Why this iPad is here again, when the register ended its pairing.
+  const notPaired = useSessionStore((s) => (kind !== "display" && s.lockNote === NOT_PAIRED ? s.lockNote : null));
 
   const pair = async () => {
     if (code.length !== 6 || !label.trim()) return;
@@ -53,6 +55,7 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
           <div>
             <SailLogo size="card" />
             <h1 className="mt-5 font-heading text-[26px] leading-tight font-semibold tracking-[-0.02em] text-ink">Pair this {device} to a station</h1>
+            {notPaired ? <p className="mt-2 text-[14.5px] text-ink">{notPaired}</p> : null}
             <p className="mt-2 text-[14.5px] text-ink-2">{hint}</p>
           </div>
           <TextField label={`Name for this ${device}`} value={label} onChange={setLabel} placeholder="Bar iPad" inputClassName="min-h-14 text-line" maxLength={80} />

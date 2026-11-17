@@ -1,7 +1,7 @@
 "use client";
 
 import { BottomSheet, cx, Icon } from "@sail/ui";
-import { Check, ConciergeBell, Flame, GlassWater, Hand, Loader2, ReceiptText, UtensilsCrossed, type LucideIcon } from "lucide-react";
+import { Check, ConciergeBell, Flame, GlassWater, Loader2, ReceiptText, Utensils, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import { createRequest, toApiError, type GuestApi } from "@/lib/api";
@@ -87,8 +87,8 @@ function requestIcon(type: string): LucideIcon {
   if (type === "call_for_bill") return ReceiptText;
   const t = type.toLowerCase();
   if (/water|drink/.test(t)) return GlassWater;
-  if (/cutlery|fork|spoon|chopstick/.test(t)) return UtensilsCrossed;
+  // A fork and knife side by side (crossed ones read as "closed"); napkins have no clear glyph, so they keep the bell.
+  if (/cutlery|fork|spoon|chopstick/.test(t)) return Utensils;
   if (/chilli|chili|sauce|spice/.test(t)) return Flame;
-  if (/serviette|napkin|tissue/.test(t)) return Hand;
   return ConciergeBell;
 }

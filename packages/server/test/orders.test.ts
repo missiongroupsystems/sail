@@ -153,7 +153,7 @@ describe("orders of every type with server-authoritative pricing", () => {
     expect((await open(serverPin, { order_type: "delivery", customer_ref: { name: "Raj", mobile: "91112222" } })).status).toBe(400);
     const pickup = await open(serverPin, { order_type: "pickup", customer_ref: { name: "Raj", mobile: "9111 2222" }, ready_by: new Date(Date.now() + 1800_000).toISOString() });
     expect(pickup.status).toBe(201);
-    const [cust] = await db.sql`select name from customers where mobile = '91112222'`;
+    const [cust] = await db.sql`select name from customers where mobile = '+6591112222'`; // stored in E.164 with the merchant's country (final review M12)
     expect(cust!.name).toBe("Raj"); // pickup orders create or match a customer
     const take = await open(cashierPin, { order_type: "takeaway", takeaway_ref: "Tan" });
     expect(take.status).toBe(201);
@@ -383,5 +383,30 @@ describe("concurrency, caps, dry runs and live updates", () => {
       if (c.expect.tax_total != null) expect(r.body.data.totals.tax_total, `${c.id} tax`).toBe(c.expect.tax_total);
       await call("POST", `/v1/orders/${o.body.data.id}/cancel`, { token: serverPin, body: { reason: "replay" } });
     }
+  });
+});
+
+describe("the figure an approver is shown (final review B-P15)", () => {
+  it("a dry run prices a manual rule above the caller's role without applying it, at exactly what applying it then gives", async () => {
+    const o = await open(cashierPin, { order_type: "takeaway" });
+    const added = await call<Mut["body"]>("POST", `/v1/orders/${o.body.data.id}/lines`, { token: cashierPin, body: { lines: [{ line_id: randomUUID(), product_id: cat.kopi, quantity: 10 }] } });
+    const before = added.body.data.totals;
+    const applicationId = randomUUID();
+    const body = { application_id: applicationId, rule_key: SEED_RULE_IDS.percentOffBill, entered_value: 1000 };
+    const dry = await call<Mut["body"]>("POST", `/v1/orders/${o.body.data.id}/adjustments`, { token: cashierPin, body: { ...body, dry_run: true } });
+    expect(dry.status, JSON.stringify(dry.body)).toBe(200);
+    const quoted = dry.body.data.adjustments.find((a) => a.manual_application_id === applicationId)!;
+    expect(quoted.total).toBeLessThan(0);
+    // Nothing was applied: the order is as it was, and the cashier still cannot apply it.
+    const after = await call<{ data: Snap }>("GET", `/v1/orders/${o.body.data.id}`, { token: cashierPin });
+    expect(after.body.data.totals).toEqual(before);
+    expect(after.body.data.adjustments.some((a) => a.manual_application_id === applicationId)).toBe(false);
+    expect((await call("POST", `/v1/orders/${o.body.data.id}/adjustments`, { token: cashierPin, body })).status).toBe(403);
+    // A manager applying it gets the quoted figures to the cent.
+    const real = await call<Mut["body"]>("POST", `/v1/orders/${o.body.data.id}/adjustments`, { token: managerPin, body });
+    expect(real.status, JSON.stringify(real.body)).toBe(200);
+    expect(real.body.data.adjustments.find((a) => a.manual_application_id === applicationId)!.total).toBe(quoted.total);
+    expect(real.body.data.totals).toEqual(dry.body.data.totals);
+    await call("POST", `/v1/orders/${o.body.data.id}/cancel`, { token: managerPin, body: { reason: "test" } });
   });
 });

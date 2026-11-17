@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { drawerCap, formatMoney, type TaxAmount, type TaxBreakdown } from "@sail/shared";
 import { db, tx } from "../db/client.js";
-import { businessDayCloses, merchantSettings, orderAdjustments, orderLines, orders, payments, shifts, staff } from "../db/schema/index.js";
+import { businessDayCloses, merchantSettings, orderAdjustments, orderLines, orders, payments, refundTenders, refunds as refundRows, shifts, staff } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { businessToday } from "./business-day.js";
 import { brandScopeFor, type Principal } from "../auth/principal.js";
@@ -26,7 +26,12 @@ export type ZReport = {
    */
   sales: { gross: number; discounts: number; fees: number; tax: number; taxes: TaxBreakdown[]; refunds: number; net: number; total: number; net_before_refunds: number; total_after_refunds: number };
   adjustments: { rule_key: string; name: string; kind: string; report_class: string; total: number; count: number }[];
-  tenders: { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number }[];
+  /**
+   * Per tender: `amount` applied, `rounding` and `tips` on top, `refunds` given back on it (amount, rounding and tips),
+   * `reversed` taken and then reversed (counted nowhere else), and `net = amount + rounding + tips − refunds`: what the
+   * card terminal's end-of-day total should show for that tender.
+   */
+  tenders: { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number; refunds: number; reversed: number; net: number }[];
   /** Register-computed totals across tenders, so clients never add rows up: `non_cash` is the figure to compare with the terminal's end-of-day total. */
   tenders_summary: { cash: number; non_cash: number; tips: number; count: number };
   /**
@@ -50,9 +55,12 @@ export type ZReport = {
    * How the tenders reconcile to the sales (pricing-semantics §10): `tenders = sales_total + paid_on_other_orders −
    * paid_elsewhere`. `paid_on_other_orders` is what this scope took for orders that are not its completed sales (still
    * open, part-paid, or of another day or station); `paid_elsewhere` is what its completed sales were paid in another
-   * day, station or shift.
+   * day, station or shift. `paid_on_other_orders` splits into `held_on_open_orders` (money taken on orders still open:
+   * part-paid tables, a QR table waiting) and `paid_for_other_orders` (completed or cancelled orders of another day or
+   * station), so the report reads on its face: tenders = completed sales + held on open orders + paid for other orders −
+   * paid elsewhere + `beyond_order_totals` (money taken on completed orders beyond their totals: owed to the guest).
    */
-  reconciliation: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number };
+  reconciliation: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number; held_on_open_orders: number; paid_for_other_orders: number; beyond_order_totals: number };
   generated_at: string;
 };
 
@@ -90,11 +98,35 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
     .groupBy(orderAdjustments.ruleKey, orderAdjustments.name, orderAdjustments.kind, orderAdjustments.reportClass);
   const payScope = and(eq(payments.outletId, scope.outletId), scope.shiftId ? eq(payments.shiftId, scope.shiftId) : eq(payments.businessDate, scope.businessDate), scope.stationId && !scope.shiftId ? eq(payments.stationId, scope.stationId) : sql`true`);
   const payWhere = and(payScope, eq(payments.status, "recorded"));
-  const tenders = await db()
+  const taken = await db()
     .select({ tender_type_id: payments.tenderTypeId, tender: payments.tenderName, is_cash: payments.isCash, count: sql<number>`count(*)::int`, amount: sql<number>`coalesce(sum(amount),0)::bigint`, rounding: sql<number>`coalesce(sum(rounding_cents),0)::bigint`, tips: sql<number>`coalesce(sum(tip_cents),0)::bigint` })
     .from(payments)
     .where(payWhere)
     .groupBy(payments.tenderTypeId, payments.tenderName, payments.isCash);
+  // Refunds count where they were given (their day, station or shift), on the tender of the payment they give back.
+  const refundWhere = and(eq(refundRows.outletId, scope.outletId), scope.shiftId ? eq(refundRows.shiftId, scope.shiftId) : eq(refundRows.businessDate, scope.businessDate), scope.stationId && !scope.shiftId ? eq(refundRows.stationId, scope.stationId) : sql`true`);
+  const backByTender = await db()
+    .select({ tender_type_id: payments.tenderTypeId, tender: payments.tenderName, is_cash: payments.isCash, amount: sql<number>`coalesce(sum(${refundTenders.amount} + ${refundTenders.roundingCents} + ${refundTenders.tipCents}),0)::bigint` })
+    .from(refundTenders)
+    .innerJoin(refundRows, eq(refundRows.id, refundTenders.refundId))
+    .innerJoin(payments, eq(payments.id, refundTenders.paymentId))
+    .where(refundWhere)
+    .groupBy(payments.tenderTypeId, payments.tenderName, payments.isCash);
+  const reversedByTender = await db()
+    .select({ tender_type_id: payments.tenderTypeId, tender: payments.tenderName, is_cash: payments.isCash, amount: sql<number>`coalesce(sum(amount),0)::bigint` })
+    .from(payments)
+    .where(and(payScope, eq(payments.status, "reversed")))
+    .groupBy(payments.tenderTypeId, payments.tenderName, payments.isCash);
+  const tenderKeys = [...taken, ...backByTender, ...reversedByTender].filter((t, i, all) => all.findIndex((x) => x.tender_type_id === t.tender_type_id) === i);
+  const tenders = tenderKeys.map((k) => {
+    const t = taken.find((x) => x.tender_type_id === k.tender_type_id);
+    const back = Number(backByTender.find((x) => x.tender_type_id === k.tender_type_id)?.amount ?? 0);
+    const reversed = Number(reversedByTender.find((x) => x.tender_type_id === k.tender_type_id)?.amount ?? 0);
+    const amount = Number(t?.amount ?? 0);
+    const rounding = Number(t?.rounding ?? 0);
+    const tips = Number(t?.tips ?? 0);
+    return { tender_type_id: k.tender_type_id, tender: t?.tender ?? k.tender, is_cash: k.is_cash, count: t?.count ?? 0, amount, rounding, tips, refunds: back, reversed, net: amount + rounding + tips - back };
+  });
   const voidRows = await db()
     // A voided line is worth quantity × (unit price + modifiers per unit); the same formula as the report_voids view.
     // Only lines sent to the kitchen count: one removed before sending, or by cancelling an order with nothing sent, is no void (L2).
@@ -117,6 +149,11 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
     .select({ amount: sql<number>`coalesce(sum(${payments.amount}),0)::bigint` })
     .from(payments)
     .where(and(payWhere, sql`not exists (select 1 from ${orders} where ${orders.id} = ${payments.orderId} and ${completed})`));
+  const [heldOpen] = await db()
+    .select({ amount: sql<number>`coalesce(sum(${payments.amount}),0)::bigint` })
+    .from(payments)
+    .innerJoin(orders, eq(orders.id, payments.orderId))
+    .where(and(payWhere, sql`${orders.status} in ('open','fired','ready','out_for_delivery')`));
   const [elsewhere] = await db()
     .select({ amount: sql<number>`coalesce(sum(${payments.amount}),0)::bigint` })
     .from(payments)
@@ -148,7 +185,7 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
       cash_amount: reversed.filter((p) => p.is_cash).reduce((s, p) => s + p.amount, 0),
       items: reversed.map((p) => ({ ...p, reversed_at: p.reversed_at?.toISOString() ?? null })),
     },
-    reconciliation: { tenders: tenders.reduce((s, t) => s + t.amount, 0), sales_total: o?.total ?? 0, paid_on_other_orders: otherOrders?.amount ?? 0, paid_elsewhere: elsewhere?.amount ?? 0 },
+    reconciliation: { tenders: tenders.reduce((s, t) => s + t.amount, 0), sales_total: o?.total ?? 0, paid_on_other_orders: otherOrders?.amount ?? 0, paid_elsewhere: elsewhere?.amount ?? 0, held_on_open_orders: Number(heldOpen?.amount ?? 0), paid_for_other_orders: Number(otherOrders?.amount ?? 0) - Number(heldOpen?.amount ?? 0), beyond_order_totals: tenders.reduce((s, t) => s + t.amount, 0) - (o?.total ?? 0) - Number(otherOrders?.amount ?? 0) + Number(elsewhere?.amount ?? 0) },
     generated_at: new Date().toISOString(),
   };
 }

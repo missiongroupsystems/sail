@@ -1,4 +1,4 @@
-import { currencyExponent, MAX_AMOUNT } from "@sail/shared";
+import { currencyExponent, MAX_AMOUNT, toE164 } from "@sail/shared";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { ROLES } from "@sail/shared";
@@ -78,7 +78,7 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
   let sql = t.sql;
   const legacy: Record<string, Map<string, string>> = {}; // entity → legacy_id → our id
   const skuToProduct = new Map<string, string>();
-  const [settings] = await sql<{ currency: string }[]>`select currency from merchant_settings where merchant_id = ${merchantId}`;
+  const [settings] = await sql<{ currency: string; locale: string }[]>`select currency, locale from merchant_settings where merchant_id = ${merchantId}`;
   if (!settings) throw new Error("merchant settings not found");
   const exponent = currencyExponent(settings.currency);
   /** A non-empty amount cell, in minor units; a row whose cell is not an amount is refused, never read as "no amount". */
@@ -417,7 +417,8 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               break;
             }
             case "customers": {
-              const mobile = get(row, "mobile").replace(/\s+/g, "") || null;
+              // Stored in E.164, with the merchant's country for a national number, as every other customer write.
+              const mobile = get(row, "mobile").trim() ? toE164(get(row, "mobile"), settings?.locale) : null;
               const lid = get(row, "legacy_id") || mobile || "";
               const name = get(row, "name");
               if (!name) throw new Error("name is required");

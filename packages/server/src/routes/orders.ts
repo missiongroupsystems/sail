@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
-import { AmountSchema, ORDER_STATUSES, OrderTypeSchema, PERMISSIONS, PricingRuleSchema, isFreezable, localParts, operation, price, registerOperations, roleAtLeast, validateManualApplication, type OrderType, type OperationSpec, type Role } from "@sail/shared";
+import { AmountSchema, toE164, ORDER_STATUSES, OrderTypeSchema, PERMISSIONS, PricingRuleSchema, isFreezable, localParts, operation, price, registerOperations, roleAtLeast, validateManualApplication, type OrderType, type OperationSpec, type Role } from "@sail/shared";
 import { db, markDryRun, settleInvariants, tx } from "../db/client.js";
 import { areas, channelLinks, customerGroupMembers, customers, kitchenTickets, orderLines, orderManualApplications, orders, stations, tables, voidReasons } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -15,6 +15,8 @@ import { bumpVersion, getOrderRow, loadSnapshot, lockOrder, nextOrderNo, OPEN_ST
 import { orderTaxRates, orderTaxSettings, usedTaxClasses } from "../services/tax.js";
 import { assertAdjustmentUnlocked, assertLineUnlocked } from "../services/checks.js";
 import { requireRoleOrOverride } from "../services/overrides.js";
+import { maybeComplete } from "../services/payments.js";
+import { adoptLegacyMobile, merchantLocale } from "./customers.js";
 import { createProposal, toProposal } from "../services/agents.js";
 import { activeRules, ruleOrLastVersion } from "../services/pricing-rules.js";
 import { releaseDailyCap } from "./catalogue.js";
@@ -34,7 +36,7 @@ registerOperations({
   "orders.attach_customer": op({ op: "orders.attach_customer", summary: "Attach a customer", description: "Customer-group conditions re-evaluate; frozen order-level results stay frozen.", emits: ["order.customer_attached", "order.repriced"] }),
   "orders.detach_customer": op({ op: "orders.detach_customer", summary: "Detach the customer", description: "Removes the customer; group discounts re-evaluate.", emits: ["order.customer_detached", "order.repriced"] }),
   "orders.move_table": op({ op: "orders.move_table", summary: "Move an order to another table", description: "The target table must have no open order. The order's kitchen tickets show the new table.", emits: ["order.moved"] }),
-  "orders.fire": op({ op: "orders.fire", summary: "Send lines to the kitchen", description: "Fires the given lines (default: every pending, unheld line). Creates one print job per target printer in the same transaction. On a pay-before-firing station, blocked until the balance is 0.", tier: "T2", emits: ["order.fired", "print_job.created"], mcp: { expose: true, toolsets: ["pos.order", "kitchen"] } }),
+  "orders.fire": op({ op: "orders.fire", summary: "Send lines to the kitchen", description: "Fires the given lines (default: every pending, unheld line). Creates one print job per target printer in the same transaction. On a pay-before-firing station, blocked until the balance is 0. A dine-in or takeaway order already paid in full completes when its last item is sent, by the same rule as a payment that settles a sent order; a ready order sent another round is back to fired.", tier: "T2", emits: ["order.fired", "print_job.created", "order.completed"], mcp: { expose: true, toolsets: ["pos.order", "kitchen"] } }),
   "orders.mark_ready": op({ op: "orders.mark_ready", summary: "Mark an order ready", description: "From fired to ready (pickup and delivery lists).", emits: ["order.status_changed"], mcp: { expose: true, toolsets: ["pos.order", "kitchen"] } }),
   "orders.mark_out_for_delivery": op({ op: "orders.mark_out_for_delivery", summary: "Mark a delivery order out for delivery", description: "Delivery orders only, from ready.", emits: ["order.status_changed"] }),
   "orders.cancel": op({ op: "orders.cancel", summary: "Cancel an order", description: "Only with no payments and no fired lines (void fired lines first, which needs Manager+). Releases daily caps.", tier: "T2", reasonRequired: true, emits: ["order.cancelled"] }),
@@ -120,6 +122,23 @@ type PendingEvent = () => Promise<AppendedEvent | null>;
  * writer at the outlet waits on it, so the critical section is kept to the
  * appends themselves rather than the whole re-price and snapshot.
  */
+/**
+ * Pickup and delivery orders create or match a customer from their reference (name and mobile): on opening, and when an
+ * order becomes one or is given a mobile later (final review B-P9). An existing customer with that mobile keeps its name.
+ */
+async function customerFromRef(merchantId: string, ref: { name?: string; mobile?: string }): Promise<string | null> {
+  if (!ref.mobile) return null;
+  const locale = await merchantLocale(merchantId);
+  const mobile = toE164(ref.mobile, locale);
+  await adoptLegacyMobile(merchantId, mobile, locale);
+  const [cust] = await db()
+    .insert(customers)
+    .values({ merchantId, name: ref.name ?? mobile, mobile })
+    .onConflictDoUpdate({ target: [customers.merchantId, customers.mobile], set: { updatedAt: new Date() } })
+    .returning({ id: customers.id, archivedAt: customers.archivedAt });
+  return cust && !cust.archivedAt ? cust.id : null;
+}
+
 async function finish(c: Ctx, p: Principal, orderId: string, pending: PendingEvent[], warnings: string[] = []): Promise<Response> {
   const result = await repriceOrder(orderId);
   const version = await bumpVersion(orderId);
@@ -177,16 +196,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       if (existing) throw AppError.state("This table already has an open order", ["open the existing order"], "Tap the table to open its order, or move that order first.");
     }
     let customerId = b.customer_id ?? null;
-    if (!customerId && customerRef?.mobile) {
-      // Pickup and delivery orders create or match a customer from their reference.
-      const mobile = customerRef.mobile.replace(/\s+/g, "");
-      const [cust] = await db()
-        .insert(customers)
-        .values({ merchantId: p.merchantId, name: customerRef.name ?? mobile, mobile })
-        .onConflictDoUpdate({ target: [customers.merchantId, customers.mobile], set: { updatedAt: new Date() } })
-        .returning({ id: customers.id });
-      customerId = cust?.id ?? null;
-    }
+    if (!customerId && customerRef?.mobile) customerId = await customerFromRef(p.merchantId, customerRef);
     const tax = await orderTaxSettings(p.merchantId, ctx.outletId);
     const now = new Date();
     const orderNo = await nextOrderNo(ctx.outletId, p.merchantId, "pos");
@@ -309,7 +319,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     validateTypeFields(o.orderType as OrderType, next);
     await db()
       .update(orders)
-      .set({ pax: next.pax, customerRef: next.customerRef, deliveryAddress: next.deliveryAddress, deliveryNotes: b.delivery_notes === undefined ? o.deliveryNotes : b.delivery_notes, readyBy: next.readyBy, notes: b.notes === undefined ? o.notes : b.notes })
+      .set({ pax: next.pax, customerRef: next.customerRef, deliveryAddress: next.deliveryAddress, deliveryNotes: b.delivery_notes === undefined ? o.deliveryNotes : b.delivery_notes, readyBy: next.readyBy, notes: b.notes === undefined ? o.notes : b.notes, customerId: o.customerId ?? (o.orderType === "pickup" || o.orderType === "delivery" ? await customerFromRef(p.merchantId, next.customerRef ?? {}) : null) })
       .where(eq(orders.id, id));
     return finish(c, p, id, [() => emit(c, p, o, "order.details_updated", b)]);
   });
@@ -328,7 +338,8 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       if (!(await tableExists(next.tableId, o.outletId))) throw AppError.notFound("table", next.tableId);
       if (await openOrderForTable(next.tableId)) throw AppError.state("That table already has an open order", ["choose a free table"]);
     }
-    await db().update(orders).set({ orderType: b.order_type, tableId: next.tableId, pax: next.pax, customerRef: next.customerRef, deliveryAddress: next.deliveryAddress, readyBy: next.readyBy }).where(eq(orders.id, id));
+    const customerId = o.customerId ?? (b.order_type === "pickup" || b.order_type === "delivery" ? await customerFromRef(p.merchantId, next.customerRef ?? {}) : null);
+    await db().update(orders).set({ orderType: b.order_type, tableId: next.tableId, pax: next.pax, customerRef: next.customerRef, deliveryAddress: next.deliveryAddress, readyBy: next.readyBy, customerId }).where(eq(orders.id, id));
     // Unit prices follow the order type (open prices stay).
     const lines = await db().select().from(orderLines).where(and(eq(orderLines.orderId, id), sql`${orderLines.status} <> 'voided'`));
     for (const l of lines) await db().update(orderLines).set({ unitPrice: resolveUnitPrice(l, b.order_type) }).where(eq(orderLines.id, l.id));
@@ -513,10 +524,16 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       .update(orderLines)
       .set({ status: "fired", firedAt: now, fireRound: round, firedBy: p.type === "staff" ? p.id : null, firedFromStationId: station?.id ?? null, updatedAt: now })
       .where(inArray(orderLines.id, toFire.map((l) => l.id)));
-    await db().update(orders).set({ roundCount: round, status: o.status === "open" ? "fired" : o.status, firstFiredAt: o.firstFiredAt ?? now }).where(eq(orders.id, id));
+    // A new round puts a ready order back in the kitchen's hands until its tickets are bumped too.
+    await db().update(orders).set({ roundCount: round, status: o.status === "open" || o.status === "ready" ? "fired" : o.status, firstFiredAt: o.firstFiredAt ?? now }).where(eq(orders.id, id));
+    // Paid before sending (a takeaway paid at the counter, a pay-before-sending station): sending the last item completes it,
+    // exactly as a payment that settles an order whose items are all sent does.
+    // Pickup and delivery keep their own steps (ready, collected or out for delivery), so only dine-in and takeaway complete here.
+    const completed = (o.orderType === "dine_in" || o.orderType === "takeaway") && (await paidTotal(id)) > 0 && (await maybeComplete(id, now));
     const warnings: string[] = [];
     const pending: PendingEvent[] = [
       () => emit(c, p, o, "order.fired", { round, line_ids: toFire.map((l) => l.id), station_id: station?.id ?? null }),
+      ...(completed ? [() => emit(c, p, o, "order.completed", { order_no: o.orderNo })] : []),
       // Kitchen tickets are created in the same transaction as the fire; each job appends its own event.
       async () => {
         for (const hook of fireHooks) warnings.push(...(await hook({ order: { ...o, roundCount: round }, lines: toFire, round, station, principal: p, correlationId: c.get("correlationId") })));
@@ -584,7 +601,9 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     if (!check.ok) throw new AppError("validation", check.message, { remedy: check.remedy });
     if (rule.reason_required && !b.reason) throw AppError.validation(`${rule.name} needs a reason`, { remedy: "Pick a reason." });
     if (o.pricingFrozenAt && isFreezable(rule)) throw AppError.invariant("pricing_frozen", `${rule.name} is an order-level rule and the order already has a payment`, "Order-level discounts are frozen once a bill is paid. Refund the payment first, or apply an item-level discount to the unpaid items.");
-    const approval = await requireRoleOrOverride(p, principalRole(p), (rule.min_role ?? "server") as Role, { action: "adjustments.apply_manual", targetId: id, args: { rule_key: rule.id, entered_value: b.entered_value ?? null, line_ids: b.line_ids ?? null }, overrideId: b.override_id, overrideAllowed: rule.override_allowed });
+    // A dry run applies nothing and is rolled back: it is the figure an approver is shown before approving (final review
+    // B-P15), so it is priced for anyone who may open the order, whatever the rule's minimum role.
+    const approval = b.dry_run ? null : await requireRoleOrOverride(p, principalRole(p), (rule.min_role ?? "server") as Role, { action: "adjustments.apply_manual", targetId: id, args: { rule_key: rule.id, entered_value: b.entered_value ?? null, line_ids: b.line_ids ?? null }, overrideId: b.override_id, overrideAllowed: rule.override_allowed });
     if (b.line_ids) {
       const found = await db().select({ id: orderLines.id }).from(orderLines).where(and(eq(orderLines.orderId, id), inArray(orderLines.id, b.line_ids), sql`${orderLines.status} <> 'voided'`));
       if (found.length !== b.line_ids.length) throw AppError.notFound("line on this order");

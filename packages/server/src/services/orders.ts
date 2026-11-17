@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { MAX_AMOUNT, price, PricingContextSchema, sumCents, sumTaxBreakdowns, type Adjustment, type ManualApplication, type OrderType, type PricedLine, type PricingContext, type PricingLineInput, type PricingResult, type PricingRule, type TaxBreakdown, type TaxRate, ORDER_NUMBER_PREFIX, type ChannelType } from "@sail/shared";
 import { assertNotSettled, db, maybeTx, tx } from "../db/client.js";
-import { checkAllocations, checks, customerGroupMembers, orderAdjustmentLines, orderAdjustments, orderLines, orderManualApplications, orders, tables } from "../db/schema/index.js";
+import { checkAllocations, checks, customerGroupMembers, guestRounds, orderAdjustmentLines, orderAdjustments, orderLines, orderManualApplications, orders, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { activeRules } from "./pricing-rules.js";
 import { orderTaxRates, usedTaxClasses } from "./tax.js";
@@ -63,6 +63,8 @@ export type SnapshotLine = {
   sku: string | null;
   quantity: number;
   unit_price: number;
+  /** One item with its options: `unit_price` plus each modifier's price per item, so "each" reads right beside a size or extra. */
+  unit_amount: number;
   open_price: number | null;
   modifiers: { modifier_id: string; product_id: string; name: string; quantity: number; price: number; group_id: string }[];
   notes: string | null;
@@ -167,6 +169,20 @@ export async function lockedLineIds(orderId: string): Promise<Set<string>> {
   return new Set(rows.map((r) => r.id));
 }
 
+/**
+ * Lines of a guest's QR round that staff have not accepted yet. They are not part of the order: not priced into its
+ * total, on no bill, not payable, and never on a receipt or invoice. Accepting the round prices them; rejecting it
+ * voids them.
+ */
+export async function waitingLineIds(orderId: string): Promise<Set<string>> {
+  const rows = await db()
+    .select({ id: orderLines.id })
+    .from(orderLines)
+    .innerJoin(guestRounds, eq(guestRounds.id, orderLines.roundId))
+    .where(and(eq(orderLines.orderId, orderId), eq(guestRounds.status, "pending"), sql`${orderLines.status} <> 'voided'`));
+  return new Set(rows.map((r) => r.id));
+}
+
 /** The one field of a stored rule snapshot the merge needs: rules evaluate in priority order. */
 const RulePriority = z.object({ priority: z.number() });
 
@@ -186,14 +202,19 @@ export async function repriceOrder(orderId: string, at = new Date()): Promise<Pr
   assertNotSettled("repriceOrder");
   const order = await getOrderRow(orderId);
   // Independent reads are issued together so postgres.js pipelines them on the transaction's connection.
-  const [lines, apps, groupRows, rules, locked, storedAdjs] = await Promise.all([
+  const [allLiveLines, apps, groupRows, rules, locked, storedAdjs, waiting] = await Promise.all([
     db().select().from(orderLines).where(and(eq(orderLines.orderId, orderId), sql`${orderLines.status} <> 'voided'`)).orderBy(asc(orderLines.sort), asc(orderLines.createdAt)),
     db().select().from(orderManualApplications).where(and(eq(orderManualApplications.orderId, orderId), isNull(orderManualApplications.removedAt))),
     order.customerId ? db().select({ g: customerGroupMembers.groupId }).from(customerGroupMembers).where(eq(customerGroupMembers.customerId, order.customerId)) : Promise.resolve([] as { g: string }[]),
     activeRules(order.merchantId, at),
     lockedLineIds(orderId),
     db().select().from(orderAdjustments).where(eq(orderAdjustments.orderId, orderId)).orderBy(asc(orderAdjustments.sort)),
+    waitingLineIds(orderId),
   ]);
+  // A waiting QR round's lines carry no amounts until staff accept them (a paid bill never holds one: see `waitingLineIds`).
+  const lines = waiting.size ? allLiveLines.filter((l) => !waiting.has(l.id) || locked.has(l.id)) : allLiveLines;
+  const waitingPriced = allLiveLines.filter((l) => waiting.has(l.id) && !locked.has(l.id) && (l.total !== 0 || l.baseAmount !== 0 || l.taxAmount !== 0));
+  if (waitingPriced.length) await db().update(orderLines).set({ baseAmount: 0, discountAmount: 0, netAmount: 0, feeAmount: 0, taxAmount: 0, taxes: [], total: 0, updatedAt: at }).where(inArray(orderLines.id, waitingPriced.map((l) => l.id)));
   const groupIds = groupRows.map((x) => x.g);
   const lockedLines = lines.filter((l) => locked.has(l.id));
   const liveLines = locked.size ? lines.filter((l) => !locked.has(l.id)) : lines;
@@ -445,6 +466,7 @@ export async function loadSnapshot(orderId: string): Promise<OrderSnapshot> {
       sku: l.sku,
       quantity: l.quantity,
       unit_price: l.unitPrice,
+      unit_amount: l.unitPrice + sumCents(l.modifiers.map((m) => m.price * m.quantity)),
       open_price: l.openPrice,
       modifiers: l.modifiers,
       notes: l.notes,

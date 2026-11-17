@@ -195,6 +195,8 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
           action: z.string().optional(),
           target_kind: z.string().optional(),
           target_id: z.string().optional(),
+          /** Everything about one order: entries on the order and on its lines, bills and payments (they name it in their details). */
+          order_id: z.uuid().optional(),
           from: z.iso.datetime().optional(),
           to: z.iso.datetime().optional(),
           limit: z.coerce.number().int().min(1).max(500).default(100),
@@ -211,6 +213,7 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
       if (q.action) conds.push(eq(auditLog.action, q.action));
       if (q.target_kind) conds.push(eq(auditLog.targetKind, q.target_kind));
       if (q.target_id) conds.push(eq(auditLog.targetId, q.target_id));
+      if (q.order_id) conds.push(sql`(${auditLog.targetId} = ${q.order_id} or ${auditLog.details}->>'order_id' = ${q.order_id})`);
       if (q.from) conds.push(gte(auditLog.occurredAt, new Date(q.from)));
       if (q.to) conds.push(lte(auditLog.occurredAt, new Date(q.to)));
       if (q.cursor) conds.push(sql`${auditLog.occurredAt} < ${new Date(q.cursor)}`);

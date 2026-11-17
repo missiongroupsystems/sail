@@ -2,7 +2,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { AmountSchema, PERMISSIONS, registerOperations, roleAtLeast, type OperationSpec } from "@sail/shared";
 import { db, markDryRun, settleInvariants, withTransaction } from "../db/client.js";
-import { checks, orders, paymentIntents, payments, printers, shifts, stations, tenderTypes } from "../db/schema/index.js";
+import { businessDayCloses, checks, orders, paymentIntents, payments, printers, shifts, stations, tenderTypes } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted, secret } from "../lib/openapi.js";
@@ -12,7 +12,7 @@ import { outletVisible, principalRole, type Principal } from "../auth/principal.
 import { bumpVersion, loadSnapshot, lockOrder, repriceOrder } from "../services/orders.js";
 import { requireRoleOrOverride } from "../services/overrides.js";
 import { billDocumentFor, syncAllocations } from "../services/checks.js";
-import { maybeComplete, paymentRole, recordPayment, reopenOrder } from "../services/payments.js";
+import { maybeComplete, paymentRole, recordPayment, reopenOrder, assertReopenable } from "../services/payments.js";
 import { createDigitalReceipt, issueInvoice, readDigitalReceipt, renderInvoicePdf, type InvoiceDocument } from "../services/documents.js";
 import { closeBusinessDay, closeShift, openShift, zReport } from "../services/shifts.js";
 import { insertJob } from "../services/printing.js";
@@ -23,7 +23,7 @@ import { LocaleSettingsSchema, localeSettingsFor } from "./org.js";
 const op = (o: Partial<OperationSpec> & { op: string; summary: string; description: string }): OperationSpec => ({ tier: "T2", minRole: "cashier", overrideAllowed: false, reasonRequired: false, dryRun: true, principals: ["staff", "agent"], emits: [], mcp: { expose: true, toolsets: ["pos.payment"] }, ...o });
 
 registerOperations({
-  "payments.record": op({ op: "payments.record", summary: "Record a payment on a bill", description: "Applies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. A tip is `tip_cents`, or, on a dry run only, `tip_bps` (a percentage of the amount applied, which the dry run turns into `tip_cents`; in cash it is rounded to the cash rounding step); the reply's `payment.due_cents` is what the guest hands over (amount, cash rounding and tip). The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.", ...PERMISSIONS["payments.record"], emits: ["payment.recorded", "check.paid", "order.completed"] }),
+  "payments.record": op({ op: "payments.record", summary: "Record a payment on a bill", description: "Applies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. A tip is `tip_cents`, or, on a dry run only, `tip_bps` (a percentage of the amount applied, before tax where tax is added on top of prices, which the dry run turns into `tip_cents`; in cash it is rounded to the cash rounding step); the reply's `payment.due_cents` is what the guest hands over (amount, cash rounding and tip). The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.", ...PERMISSIONS["payments.record"], emits: ["payment.recorded", "check.paid", "order.completed"] }),
   "orders.complete": op({ op: "orders.complete", summary: "Complete an order", description: "Every bill paid (balance 0) and every item sent or removed.", minRole: "server", tier: "T2", emits: ["order.completed"], mcp: { expose: true, toolsets: ["pos.order"] } }),
   "orders.reopen": op({ op: "orders.reopen", summary: "Reopen a completed order", description: "Same business day, Manager+ (or override). Reverses the order's payments as events and unlocks the bills; the order is then recharged.", tier: "T3", ...PERMISSIONS["orders.reopen"], reasonRequired: true, emits: ["order.reopened", "payment.reversed"], mcp: { expose: true, toolsets: ["pos.order"] } }),
   "checks.print_prebill": op({ op: "checks.print_prebill", summary: "Print a pre-bill", description: "Prints the bill (or every bill of the order) on the station's receipt printer and marks the table as bill requested.", tier: "T1", minRole: "server", emits: ["print_job.created", "order.bill_requested"], mcp: { expose: true, toolsets: ["pos.order"] } }),
@@ -147,9 +147,8 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     const b = c.req.valid("json");
     dryRunFrom(c, b);
     const order = await lockOrder(id, b.expected_version);
-    // Reopening reverses payments in the register only. A terminal payment would stay charged while the order is paid again.
-    const [onTerminal] = await db().select({ id: payments.id }).from(payments).innerJoin(paymentIntents, eq(paymentIntents.paymentId, payments.id)).where(and(eq(payments.orderId, id), eq(payments.status, "recorded"))).limit(1);
-    if (onTerminal) throw AppError.invariant("terminal_payment", "This order was paid on a card terminal", "Void the terminal payment (it is given back at the provider), or refund it in the register and give it back on the terminal by hand.");
+    // Every refusal comes before the approval: nobody is asked for a Manager's PIN for a reopen that cannot happen.
+    await assertReopenable(order);
     const approval = await requireRoleOrOverride(p, principalRole(p), PERMISSIONS["orders.reopen"].minRole, { action: "orders.reopen", targetId: id, args: {}, overrideId: b.override_id, overrideAllowed: PERMISSIONS["orders.reopen"].overrideAllowed });
     const reversed = await reopenOrder(order, p, b.reason);
     const version = await bumpVersion(id);
@@ -235,7 +234,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     const events: AppendedEvent[] = [];
     if (!reused) {
       events.push(await appendEvent({ merchantId: check.merchantId, outletId: check.outletId, type: "invoice.issued", aggregate: { kind: "order", id: check.orderId }, operationId: "documents.issue_invoice", payload: { check_id: id, invoice_no: document.invoice.number }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(check.merchantId, check.outletId) }, p));
-      await recordAudit(p, { action: "documents.issue_invoice", targetKind: "check", targetId: id, outletId: check.outletId, details: { invoice_no: document.invoice.number } });
+      await recordAudit(p, { action: "documents.issue_invoice", targetKind: "check", targetId: id, outletId: check.outletId, details: { order_id: check.orderId, invoice_no: document.invoice.number } });
     }
     return c.json({ data: { invoice_no: document.invoice.number, issued_at: document.invoice.issued_at, reused, pdf_url: `/v1/checks/${id}/invoice.pdf` }, events, warnings: [] }, 200);
   });
@@ -310,7 +309,12 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     const open = dayShifts.filter((x) => x.status !== "closed");
     const float = closed.reduce((s, x) => s + x.floatCents, 0);
     const counted = closed.reduce((s, x) => s + (x.countedCashCents ?? 0), 0);
-    const report = await zReport({ outletId: id, businessDate, stationId: q.station_id ?? null, cashShiftIds: closed.map((x) => x.id) }, { float, counted: closed.length ? counted : null, openShifts: { ids: open.map((x) => x.id), float: open.reduce((s, x) => s + x.floatCents, 0) } });
+    // A closed day's whole-outlet report is the snapshot taken at the close, as it was signed off; the POS offers the last
+    // closed day beside today's, so the figures stay reachable once the day has rolled over.
+    const [dayClose] = await db().select().from(businessDayCloses).where(and(eq(businessDayCloses.outletId, id), eq(businessDayCloses.businessDate, businessDate))).limit(1);
+    const [previous] = await db().select({ businessDate: businessDayCloses.businessDate }).from(businessDayCloses).where(and(eq(businessDayCloses.outletId, id), sql`${businessDayCloses.businessDate} < ${businessDate}`)).orderBy(desc(businessDayCloses.businessDate)).limit(1);
+    const fresh = dayClose && !q.station_id ? null : await zReport({ outletId: id, businessDate, stationId: q.station_id ?? null, cashShiftIds: closed.map((x) => x.id) }, { float, counted: closed.length ? counted : null, openShifts: { ids: open.map((x) => x.id), float: open.reduce((s, x) => s + x.floatCents, 0) } });
+    const report = { ...(fresh ?? (dayClose!.zReport as Awaited<ReturnType<typeof zReport>>)), closed: dayClose ? { closed_at: dayClose.closedAt.toISOString(), closed_by: dayClose.closedByName } : null, previous_closed_date: previous?.businessDate ?? null };
     // The close is a blind count (S-9): while a drawer at the outlet is open, a caller below Manager, who may be the one
     // to count it, gets no money figure the open drawer's expected cash could be read or worked out from (its sales,
     // tenders, cash and refunds all hold that drawer's takings). The floats, that shifts are open, and counts stay.
@@ -339,9 +343,11 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
 }
 
 /** A Z-report with the money figures left out while a drawer is still open (see business_days.z_report). */
-function withheldZReport(r: Awaited<ReturnType<typeof zReport>>, drawers: { count: number; float: number }) {
+function withheldZReport(r: Awaited<ReturnType<typeof zReport>> & { closed: unknown; previous_closed_date: string | null }, drawers: { count: number; float: number }) {
   return {
     withheld: "open_shift" as const,
+    closed: r.closed,
+    previous_closed_date: r.previous_closed_date,
     scope: r.scope,
     orders: r.orders,
     voids: { count: r.voids.count, quantity: r.voids.quantity },

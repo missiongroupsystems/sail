@@ -15,7 +15,9 @@ export default async function TodayPage() {
   const [merchant, outlets] = await orSignIn(Promise.all([req(api.GET("/v1/merchant")), req(api.GET("/v1/outlets"))]));
   const outletId = outlets.data.find((o) => o.id === scope.outletId)?.id ?? outlets.data[0]?.id ?? null;
   const s = merchant.data.settings;
-  const { money, longDate } = makeLocaleFormat(merchantLocale(s));
+  const { money, longDate, businessDay } = makeLocaleFormat(merchantLocale(s));
+  // The header names the outlet's business day (its cutoff, not the calendar), as every figure on the page does.
+  const businessDate = outletId ? await req(api.GET("/v1/outlets/{id}/floor", { params: { path: { id: outletId } } })).then((r) => (r.data as { business_date?: string }).business_date ?? null).catch(() => null) : null;
   const summary = [
     s.tax_mode === "inclusive" ? "tax included in prices" : "tax added at the bill",
     `cash rounding ${s.cash_rounding_increment ? formatRounding(s.cash_rounding_increment, money) : "off"}`,
@@ -30,7 +32,7 @@ export default async function TodayPage() {
         eyebrow={merchant.data.name}
         description={
           <>
-            {longDate()} · {summary}.{" "}
+            {businessDate ? `Business day ${businessDay(businessDate)}` : longDate()} · {summary}.{" "}
             <Link href="/settings/merchant" className="whitespace-nowrap text-ink underline underline-offset-4 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
               Merchant settings
             </Link>

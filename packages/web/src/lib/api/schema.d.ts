@@ -1217,7 +1217,7 @@ export interface paths {
         };
         /**
          * Find customers
-         * @description By mobile (exact or prefix) or name prefix. Not available to agents: they cannot read customer contact details.
+         * @description By any 3 or more digits of the mobile (with or without "+", spaces or the country code) or by name prefix. Not available to agents: they cannot read customer contact details.
          */
         get: operations["customers.find"];
         /**
@@ -1911,7 +1911,7 @@ export interface paths {
         put?: never;
         /**
          * Send lines to the kitchen
-         * @description Fires the given lines (default: every pending, unheld line). Creates one print job per target printer in the same transaction. On a pay-before-firing station, blocked until the balance is 0.
+         * @description Fires the given lines (default: every pending, unheld line). Creates one print job per target printer in the same transaction. On a pay-before-firing station, blocked until the balance is 0. A dine-in or takeaway order already paid in full completes when its last item is sent, by the same rule as a payment that settles a sent order; a ready order sent another round is back to fired.
          */
         post: operations["orders.fire"];
         delete?: never;
@@ -2407,7 +2407,7 @@ export interface paths {
         put?: never;
         /**
          * Record a payment on a bill
-         * @description Applies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. A tip is `tip_cents`, or, on a dry run only, `tip_bps` (a percentage of the amount applied, which the dry run turns into `tip_cents`; in cash it is rounded to the cash rounding step); the reply's `payment.due_cents` is what the guest hands over (amount, cash rounding and tip). The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.
+         * @description Applies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. A tip is `tip_cents`, or, on a dry run only, `tip_bps` (a percentage of the amount applied, before tax where tax is added on top of prices, which the dry run turns into `tip_cents`; in cash it is rounded to the cash rounding step); the reply's `payment.due_cents` is what the guest hands over (amount, cash rounding and tip). The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.
          */
         post: operations["payments.record"];
         delete?: never;
@@ -2936,6 +2936,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/guest/rounds/quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Price a round before it is sent
+         * @description Prices the given lines (the same shape as rounds.submit) against the channel menu as the register would: each line's amount (menu price and choices, before discounts) and the round's total of those amounts, which are the amounts the table's order then shows for them. Pure: writes nothing and reserves no daily cap.
+         */
+        post: operations["rounds.quote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/guest/requests": {
         parameters: {
             query?: never;
@@ -3027,7 +3047,7 @@ export interface paths {
         put?: never;
         /**
          * Reject a held QR round
-         * @description Removes the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled ("QR order rejected") and the table freed; the guest's phone keeps its session.
+         * @description Removes the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled ("QR order rejected") and the table freed; the guest's phone keeps its session. An order paid while the round waited completes.
          */
         post: operations["rounds.reject"];
         delete?: never;
@@ -3477,7 +3497,7 @@ export interface paths {
         };
         /**
          * Kitchen display tickets of an outlet
-         * @description Tickets still on the kitchen display (not bumped), oldest fire first, with their lines (voided quantities struck), order, table and the `changed` flag, plus the most recently bumped ticket for Recall. With `order_id`, every ticket of that order in any state (the POS shows a line as ready once its tickets are bumped). A display station sees only its assigned destinations. Never changes anything.
+         * @description Tickets still on the kitchen display (not bumped), oldest fire first, with their lines (voided quantities struck), order, table and the `changed` flag, plus the most recently bumped ticket for Recall. With `order_id`, every ticket of that order in any state (the POS shows a line as ready once its tickets are bumped). A display station sees only its assigned destinations. Tickets left from an earlier business day (the order finished or its day closed) are not on the board; `earlier` counts them, and `earlier=true` lists them instead. Never changes anything.
          */
         get: operations["kitchen_tickets.list"];
         put?: never;
@@ -3539,7 +3559,7 @@ export interface paths {
         put?: never;
         /**
          * Bump a kitchen ticket (ready)
-         * @description Marks the ticket ready and takes it off the display; a cancelled ticket stays cancelled and only leaves the display. A second bump, from this display or another showing the same destination, returns the ticket unchanged.
+         * @description Marks the ticket ready and takes it off the display; a cancelled ticket stays cancelled and only leaves the display. When it was the order's last ticket still on a display (and nothing waits to be sent), a sent order becomes ready. A second bump, from this display or another showing the same destination, returns the ticket unchanged.
          */
         post: operations["kitchen_tickets.bump"];
         delete?: never;
@@ -7687,6 +7707,7 @@ export interface operations {
                 action?: string;
                 target_kind?: string;
                 target_id?: string;
+                order_id?: string;
                 from?: string;
                 to?: string;
                 limit?: number;
@@ -30546,6 +30567,159 @@ export interface operations {
             };
         };
     };
+    "rounds.quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Request body */
+        requestBody: {
+            content: {
+                "application/json": {
+                    lines: {
+                        /** Format: uuid */
+                        line_id: string;
+                        /** Format: uuid */
+                        product_id: string;
+                        quantity: number;
+                        modifiers?: {
+                            /** Format: uuid */
+                            group_id: string;
+                            /** Format: uuid */
+                            product_id: string;
+                            quantity?: number;
+                        }[];
+                        notes?: string | null;
+                        seat_no?: number | null;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            lines: {
+                                line_id: string;
+                                quantity: number;
+                                amount: number;
+                            }[];
+                            total: number;
+                        };
+                    };
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Permission denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Conflict (state, version or idempotency) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Invariant violation or unavailable */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "validation" | "not_found" | "unauthenticated" | "version_conflict" | "idempotency_conflict" | "permission_denied" | "requires_confirmation" | "invariant_violation" | "state_conflict" | "unavailable" | "rate_limited" | "budget_exceeded" | "overloaded" | "internal";
+                        message: string;
+                        remedy?: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     "service_requests.create": {
         parameters: {
             query?: never;
@@ -34640,6 +34814,7 @@ export interface operations {
             query?: {
                 destination_id?: string;
                 order_id?: string;
+                earlier?: "true" | "false";
             };
             header?: never;
             path: {
@@ -34725,6 +34900,7 @@ export interface operations {
                                 source: string;
                             }[];
                         } | null;
+                        earlier: number;
                     };
                 };
             };

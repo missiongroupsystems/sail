@@ -39,6 +39,12 @@ function inTurn<T>(orderId: string, write: () => Promise<T>): Promise<T> {
 const RANK: Record<Role, number> = { server: 10, cashier: 20, manager: 30, finance: 40, admin: 50 };
 const MIN_ROLE: Record<OverrideAction, Role> = { "lines.void_fired": "manager", "lines.add_open_price": "manager", "adjustments.apply_manual": "server", "adjustments.remove": "server", "payments.record": "cashier", "refunds.create": "manager", "orders.reopen": "manager", "payments.void": "manager" };
 
+/** Adds to an order that wait for the add before them and then go to the register in one request. */
+type AddBatchResult = { snap: OrderSnapshot | null; refused: Map<string, unknown> };
+type AddBatch = { bodies: reg.LineInput[]; names: string[]; key: string; open: boolean; maybeLanded: boolean; reported: Set<string>; done: Promise<AddBatchResult> };
+/** The batch of each order still taking taps: it closes when its request goes. */
+const addBatches = new Map<string, AddBatch>();
+
 export function roleAtLeast(role: Role | null | undefined, min: Role): boolean {
   return role ? RANK[role] >= RANK[min] : false;
 }
@@ -215,44 +221,90 @@ export function useOrderActions(orderId: string) {
         open_price: input.openPrice ?? null,
       };
       const label = `Added ${input.product.name}${input.quantity > 1 ? ` ×${input.quantity}` : ""}`;
-      // Two quick taps make two adds, sent one after the other (`run`): a conflict is another station's (C-6).
+      // Taps that come while an add is on its way wait for it and then go to the register together, in one request
+      // (round 8, 4: thirty taps took thirty round trips one after another). The batch still takes its turn after the
+      // request before it, with the version that one returned, so a burst never conflicts with itself (C-6); a conflict
+      // is another station's.
+      let batch: AddBatch | null = null;
       try {
         // A request that may have reached the register (its reply never came) is sent again exactly as it was, with the
-        // same key: the register then replays its answer instead of refusing the key for a different request. Its
-        // version is kept here, because the order's version on screen moves on when the station hears the add landed.
-        let sent: number | null = null;
-        let maybeLanded = false;
-        // A version conflict means another station changed the order meanwhile; adding is safe to replay.
-        const exec = (overrideId: string | null) =>
-          run(
-            (expected) => {
-              // A version conflict proves the request did not land, so its unversioned retry (expected null) goes as it is.
-              sent = maybeLanded && expected !== null ? sent : expected;
-              return reg.addLines(api, orderId, [body], { key: idem, expectedVersion: sent, overrideId });
-            },
-            {
-              onConflict: "retry-unversioned",
-              // An add replayed after a lost reply keeps the version it was first sent with, so its 409 may be this
-              // station's own earlier add landing on reconnect: no news to anyone then.
-              onRetried: () => {
-                if (!maybeLanded) notify({ text: "The order changed on another station. Your 1 new line was kept", tone: "info", orderId }, 4000);
+        // same lines and key: the register then replays its answer instead of refusing the key for a different request.
+        // Its version is kept here, because the order's version on screen moves on when the station hears the add landed.
+        const send = (b: AddBatch, overrideId: string | null) => {
+          let sent: number | null = null;
+          // A version conflict means another station changed the order meanwhile; adding is safe to replay.
+          const exec = () =>
+            run(
+              (expected) => {
+                // Its turn has come: the lines that waited for it are the batch, and later taps start the next one.
+                b.open = false;
+                // A version conflict proves the request did not land, so its unversioned retry (expected null) goes as it is.
+                sent = b.maybeLanded && expected !== null ? sent : expected;
+                return reg.addLines(api, orderId, b.bodies, { key: b.key, expectedVersion: sent, overrideId });
               },
-            },
-          );
-        // An add that never reached the register keeps its line on screen and is sent again, with the same line id and
-        // key (so it lands once), as soon as the station is back online.
-        const queued = async (overrideId: string | null): Promise<OrderSnapshot | null> => {
-          for (;;) {
-            try {
-              return await exec(overrideId);
-            } catch (e) {
-              if (!unreachable(e)) throw e;
-              maybeLanded = true;
-              reportUnreachable();
-              notify({ text: `Offline · ${input.product.name} is kept`, remedy: "It goes to the register as soon as the connection is back.", tone: "info", orderId }, 8000);
-              await whenOnline();
+              {
+                onConflict: "retry-unversioned",
+                // An add replayed after a lost reply keeps the version it was first sent with, so its 409 may be this
+                // station's own earlier add landing on reconnect: no news to anyone then.
+                onRetried: () => {
+                  if (!b.maybeLanded) notify({ text: `The order changed on another station. Your ${b.bodies.length === 1 ? "1 new line was" : `${b.bodies.length} new lines were`} kept`, tone: "info", orderId }, 4000);
+                },
+              },
+            );
+          // An add that never reached the register keeps its lines on screen and is sent again, with the same line ids
+          // and key (so it lands once), as soon as the station is back online.
+          // The register takes a request's lines all or none: when it refuses a batch (one line sold out, over its day's
+          // cap), each line goes again on its own, so only the line it refuses is lost. A batch whose reply may have been
+          // lost is never split: it may have landed.
+          const split = async (e: unknown): Promise<AddBatchResult> => {
+            if (b.bodies.length < 2 || b.maybeLanded || !(e instanceof ApiError) || e.status < 400 || e.status >= 500 || e.code === "version_conflict") throw e;
+            const refused = new Map<string, unknown>();
+            let snap: OrderSnapshot | null = null;
+            for (const one of b.bodies) {
+              try {
+                snap = (await run((expected) => reg.addLines(api, orderId, [one], { expectedVersion: expected, overrideId }), { onConflict: "retry-unversioned" })) ?? snap;
+              } catch (err) {
+                refused.set(one.line_id, err);
+              }
             }
+            return { snap, refused };
+          };
+          return (async (): Promise<AddBatchResult> => {
+            for (;;) {
+              try {
+                return { snap: await exec(), refused: new Map() };
+              } catch (e) {
+                if (!unreachable(e)) return split(e);
+                b.maybeLanded = true;
+                reportUnreachable();
+                notify({ text: b.bodies.length === 1 ? `Offline · ${b.names[0]} is kept` : `Offline · ${b.bodies.length} new lines are kept`, remedy: "It goes to the register as soon as the connection is back.", tone: "info", orderId }, 8000);
+                await whenOnline();
+              }
+            }
+          })();
+        };
+        const queued = (overrideId: string | null): Promise<OrderSnapshot | null> => {
+          // An open price goes on its own (it may need an approval the other lines do not).
+          const batchable = overrideId == null && body.open_price == null;
+          const open = batchable ? addBatches.get(orderId) : undefined;
+          // Each tap learns its own line's fate.
+          const mine = (r: AddBatchResult) => {
+            if (r.refused.has(lineId)) throw r.refused.get(lineId);
+            return r.snap;
+          };
+          if (open?.open) {
+            open.bodies.push(body);
+            open.names.push(input.product.name);
+            batch = open;
+            return open.done.then(mine);
           }
+          const b: AddBatch = { bodies: [body], names: [input.product.name], key: idem, open: batchable, maybeLanded: false, reported: new Set(), done: Promise.resolve({ snap: null, refused: new Map() }) };
+          batch = b;
+          if (b.open) addBatches.set(orderId, b);
+          b.done = send(b, overrideId).finally(() => {
+            if (addBatches.get(orderId) === b) addBatches.delete(orderId);
+          });
+          return b.done.then(mine);
         };
         const snap = input.openPrice != null ? await withApproval({ action: "lines.add_open_price", target_kind: "order", target_id: orderId, args: { lines: [{ line_id: lineId, product_id: input.product.id, quantity: input.quantity, open_price: input.openPrice }] } }, `Add ${input.product.name} at ${money(input.openPrice)}`, "Open price · needs a manager", queued) : await queued(null);
         if (!snap) {
@@ -271,7 +323,11 @@ export function useOrderActions(orderId: string) {
       } catch (e) {
         releasePendingLine(orderId, lineId);
         qc.setQueryData<OrderSnapshot>(key, (s) => (s ? { ...s, lines: s.lines.filter((l) => l.id !== lineId) } : s));
-        fail(e);
+        // A refusal is said once per batch, not once per tap it turned down.
+        const b = batch as AddBatch | null;
+        const said = toApiError(e).message;
+        if (!b?.reported.has(said)) fail(e);
+        b?.reported.add(said);
         return null;
       } finally {
         releasePendingLine(orderId, lineId);
@@ -478,10 +534,22 @@ export function useOrderActions(orderId: string) {
       const input: reg.AdjustmentInput = { application_id: applicationId, rule_key: rule.rule_key, entered_value: enteredValue, reason, line_ids: lineIds };
       const valueText = rule.value.type === "open" && enteredValue != null ? (rule.calc === "percent" ? formatBpsText(enteredValue) : money(enteredValue)) : null;
       try {
+        // Above this role, the approver is shown what it does in money first: the register's dry run of it, never a
+        // figure worked out here (final review B-P15). Without one the sheet still names the action.
+        let effect: string | null = null;
+        if (!roleAtLeast(role, rule.min_role)) {
+          try {
+            const dry = await reg.applyAdjustment(api, orderId, input, { dryRun: true });
+            const adj = dry.data.adjustments.find((a) => a.manual_application_id === applicationId);
+            if (adj) effect = `${adj.total === 0 ? "No change" : `${rule.kind === "fee" ? "Fee" : "Discount"} ${money(adj.total, { signed: true })}`} · New total ${money(dry.data.totals.total)}`;
+          } catch {
+            effect = null;
+          }
+        }
         return await withApproval(
           { action: "adjustments.apply_manual", target_kind: "order", target_id: orderId, args: { rule_key: rule.rule_key, entered_value: enteredValue, line_ids: lineIds } },
           `Apply ${rule.name}${valueText ? ` · ${valueText}` : ""}`,
-          reason ? `Reason: ${reason}` : null,
+          [effect, reason ? `Reason: ${reason}` : null].filter(Boolean).join(" · ") || null,
           (overrideId) => run((expected) => reg.applyAdjustment(api, orderId, input, { expectedVersion: expected, overrideId })),
           rule.min_role,
         );
@@ -490,7 +558,7 @@ export function useOrderActions(orderId: string) {
         return null;
       }
     },
-    [api, fail, money, orderId, run, withApproval],
+    [api, fail, money, orderId, role, run, withApproval],
   );
 
   const removeDiscount = useCallback(
@@ -629,6 +697,17 @@ export function useOrderActions(orderId: string) {
           notify({ text: "The order changed on another station", remedy: "Check the bill and try again.", tone: "info", orderId }, 6000);
           return null;
         }
+        // The answer was lost (no reply, or the register failed while replying): read the order again before saying
+        // anything. A payment the register recorded under this payment id is shown as taken; a retry reuses the id.
+        if (e instanceof ApiError && (e.status === 0 || e.status >= 500)) {
+          const taken = await reg.getOrder(api, orderId).catch(() => null);
+          const recorded = taken?.checks.flatMap((c) => c.payments).find((p) => p.id === input.payment_id && p.status === "recorded");
+          if (taken && recorded) {
+            applySnapshot(qc, taken);
+            // The payment row as the register recorded it; nothing is added up here.
+            return { data: taken, payment: { ...recorded, change_due: recorded.change_cents }, events: [], warnings: [] };
+          }
+        }
         refreshIfBalanceChanged(e);
         // The register's refusal is shown as it is given; the screen may also point at the field it names.
         if (e instanceof ApiError) opts.onRefused?.(e);
@@ -706,6 +785,9 @@ export function useOrderActions(orderId: string) {
       return null;
     }
   }, [api, fail, orderId, run]);
+
+  /** What would stop a reopen (a terminal payment, another business day, a refund), asked before any reason or PIN. */
+  const reopenRefusal = useCallback(() => reg.reopenRefusal(api, orderId), [api, orderId]);
 
   /** Reopen a completed order (Manager+, same business day): the approval sheet for anyone below Manager. */
   const reopen = useCallback(
@@ -868,6 +950,24 @@ export function useOrderActions(orderId: string) {
     [api, fail, qc, run],
   );
 
+  /** Mark products sold out for today (after a QR order was rejected as sold out); the guest menu follows. */
+  const markSoldOut = useCallback(
+    async (productIds: string[]) => {
+      try {
+        const outletId = snapshot()?.outlet_id;
+        if (!outletId) return null;
+        for (const id of productIds) await reg.markSoldOut(api, outletId, id, "today");
+        void qc.invalidateQueries({ queryKey: ["pos", "menu"] });
+        void qc.invalidateQueries({ queryKey: ["pos", "stock", outletId] });
+        return true;
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, qc, snapshot],
+  );
+
   /* ---- Printing ---- */
 
   const reprint = useCallback(
@@ -914,6 +1014,7 @@ export function useOrderActions(orderId: string) {
       voidPayment,
       complete,
       reopen,
+      reopenRefusal,
       printReceipt,
       sendReceipt,
       issueInvoice,
@@ -924,10 +1025,11 @@ export function useOrderActions(orderId: string) {
       printRefundReceipt,
       acceptRound,
       rejectRound,
+      markSoldOut,
       reprint,
       role,
     }),
-    [addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, splitEven, splitBySeat, allocate, unsplit, prebill, previewPayment, pay, startTerminal, cancelTerminal, voidPayment, complete, reopen, printReceipt, sendReceipt, issueInvoice, openInvoicePdf, mayReadInvoice, quoteRefund, refund, printRefundReceipt, acceptRound, rejectRound, reprint, role],
+    [addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, splitEven, splitBySeat, allocate, unsplit, prebill, previewPayment, pay, startTerminal, cancelTerminal, voidPayment, complete, reopen, reopenRefusal, printReceipt, sendReceipt, issueInvoice, openInvoicePdf, mayReadInvoice, quoteRefund, refund, printRefundReceipt, acceptRound, rejectRound, markSoldOut, reprint, role],
   );
 }
 

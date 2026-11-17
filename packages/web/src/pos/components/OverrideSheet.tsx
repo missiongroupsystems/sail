@@ -49,10 +49,10 @@ export function OverrideSheet() {
   };
 
   return (
-    <Sheet labelledClose isOpen={Boolean(request)} onOpenChange={(open) => (!open ? settle(null) : undefined)} title={`${ROLE_LABEL[request?.minRole ?? "manager"] ?? "Manager"} approval`} description={request?.title} isDismissable={!pending}>
+    <Sheet labelledClose isOpen={Boolean(request)} onOpenChange={(open) => (!open ? settle(null) : undefined)} title={`${ROLE_LABEL[request?.minRole ?? "manager"] ?? "Manager"} approval`} isDismissable={!pending}>
       {request ? (
         <div className="flex flex-col items-center gap-6">
-          {/* What is being approved, as a bordered card with one row per part of the register's quote. */}
+          {/* What is being approved, said once, as a bordered card with one row per part of the register's quote. */}
           <div className="w-full rounded-panel border border-rule bg-surface px-4 py-3">
             <p className="text-line font-medium text-ink">{request.title}</p>
             {request.quote ? (

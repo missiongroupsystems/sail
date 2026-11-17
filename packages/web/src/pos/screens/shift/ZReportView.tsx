@@ -1,6 +1,6 @@
 "use client";
 
-import { SegmentedControl, useLocale } from "@sail/ui";
+import { Button, SegmentedControl, useLocale } from "@sail/ui";
 import { useState } from "react";
 import { usePos } from "../../components/PosContext";
 import { useZReport } from "../../hooks/queries";
@@ -12,21 +12,37 @@ export function ZReportView({ blind = false }: { blind?: boolean }) {
   const { clock, businessDay } = useLocale();
   const { station } = usePos();
   const [scope, setScope] = useState<"station" | "outlet">("station");
-  const report = useZReport(station.outlet_id, scope === "station" ? station.id : null, null);
+  // A closed day's report is the register's snapshot for the whole outlet, offered beside today's once the day rolls over.
+  const [day, setDay] = useState<string | null>(null);
+  const report = useZReport(station.outlet_id, day || scope === "outlet" ? null : station.id, day);
   const r = report.data;
+  const previous = !day ? (r?.previous_closed_date ?? null) : null;
 
   return (
     <div className="flex w-full flex-col gap-4 px-4 pt-1 pb-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-heading text-[22px] leading-tight font-semibold tracking-[-0.01em] text-ink">Z-report</h2>
-          <p className="text-body text-ink-2">{r ? `${businessDay(r.scope.business_date)} · ${scope === "station" ? station.name : "whole outlet"} · as of ${clock(r.generated_at)}` : "Today, from the register"}</p>
+          <p className="text-body text-ink-2">{r ? (r.closed ? `${businessDay(r.scope.business_date)} · whole outlet · closed at ${clock(r.closed.closed_at)}` : `${businessDay(r.scope.business_date)} · ${scope === "station" ? station.name : "whole outlet"} · as of ${clock(r.generated_at)}`) : "Today, from the register"}</p>
         </div>
-        <SegmentedControl aria-label="Report scope" options={[{ id: "station", label: "This station" }, { id: "outlet", label: "Whole outlet" }]} selectedId={scope} onSelect={(id) => setScope(id as "station" | "outlet")} />
+        <div className="flex flex-wrap items-center gap-2">
+          {previous ? (
+            <Button size="lg" variant="quiet" onPress={() => setDay(previous)}>
+              {businessDay(previous)}, closed
+            </Button>
+          ) : null}
+          {day ? (
+            <Button size="lg" variant="quiet" onPress={() => setDay(null)}>
+              Back to today
+            </Button>
+          ) : (
+            <SegmentedControl aria-label="Report scope" options={[{ id: "station", label: "This station" }, { id: "outlet", label: "Whole outlet" }]} selectedId={scope} onSelect={(id) => setScope(id as "station" | "outlet")} />
+          )}
+        </div>
       </div>
 
       {/* The day's close sits above the figures, as on the Close page, so it never falls below the fold. */}
-      <DayPanel layout="row" />
+      {day ? null : <DayPanel layout="row" />}
 
       {blind ? <BlindNote /> : <ZFigures report={report} />}
     </div>

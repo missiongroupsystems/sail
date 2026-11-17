@@ -11,13 +11,13 @@ import { actOnTicket, allDay, destinationScope, openTickets, orderTickets, type 
 const op = (o: Partial<OperationSpec> & { op: string; summary: string; description: string }): OperationSpec => ({ tier: "T0", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff", "station", "agent"], emits: [], mcp: { expose: true, toolsets: ["kitchen", "pos.read"] }, ...o });
 
 // Bumping is the kitchen's call: displays and staff only, never agents, and not on MCP.
-const act = (action: TicketAction, summary: string, description: string, emits: string): OperationSpec => op({ op: `kitchen_tickets.${action}`, summary, description, tier: "T1", principals: ["station", "staff"], emits: [emits], mcp: { expose: false, toolsets: [] } });
+const act = (action: TicketAction, summary: string, description: string, emits: string): OperationSpec => op({ op: `kitchen_tickets.${action}`, summary, description, tier: "T1", principals: ["station", "staff"], emits: [emits, "order.kitchen_progress"], mcp: { expose: false, toolsets: [] } });
 
 registerOperations({
-  "kitchen_tickets.list": op({ op: "kitchen_tickets.list", summary: "Kitchen display tickets of an outlet", description: "Tickets still on the kitchen display (not bumped), oldest fire first, with their lines (voided quantities struck), order, table and the `changed` flag, plus the most recently bumped ticket for Recall. With `order_id`, every ticket of that order in any state (the POS shows a line as ready once its tickets are bumped). A display station sees only its assigned destinations. Never changes anything.", principals: ["staff", "station", "agent"] }),
+  "kitchen_tickets.list": op({ op: "kitchen_tickets.list", summary: "Kitchen display tickets of an outlet", description: "Tickets still on the kitchen display (not bumped), oldest fire first, with their lines (voided quantities struck), order, table and the `changed` flag, plus the most recently bumped ticket for Recall. With `order_id`, every ticket of that order in any state (the POS shows a line as ready once its tickets are bumped). A display station sees only its assigned destinations. Tickets left from an earlier business day (the order finished or its day closed) are not on the board; `earlier` counts them, and `earlier=true` lists them instead. Never changes anything.", principals: ["staff", "station", "agent"] }),
   "kitchen_tickets.all_day": op({ op: "kitchen_tickets.all_day", summary: "All-day count of items on the kitchen display", description: "For each product, the quantity still to make across the open tickets (not bumped, not cancelled, voids subtracted), largest first." }),
   "kitchen_tickets.start": act("start", "Start a kitchen ticket", "Marks a new or recalled ticket in progress. Tapping it again changes nothing.", "kitchen_ticket.started"),
-  "kitchen_tickets.bump": act("bump", "Bump a kitchen ticket (ready)", "Marks the ticket ready and takes it off the display; a cancelled ticket stays cancelled and only leaves the display. A second bump, from this display or another showing the same destination, returns the ticket unchanged.", "kitchen_ticket.bumped"),
+  "kitchen_tickets.bump": act("bump", "Bump a kitchen ticket (ready)", "Marks the ticket ready and takes it off the display; a cancelled ticket stays cancelled and only leaves the display. When it was the order's last ticket still on a display (and nothing waits to be sent), a sent order becomes ready. A second bump, from this display or another showing the same destination, returns the ticket unchanged.", "kitchen_ticket.bumped"),
   "kitchen_tickets.recall": act("recall", "Recall a bumped kitchen ticket", "Puts a ready ticket back on the display. Recalling a ticket already on the display changes nothing.", "kitchen_ticket.recalled"),
 });
 
@@ -58,7 +58,7 @@ const TicketSchema = z.object({
   cancelled_at: z.string().nullable(),
   lines: z.array(TicketLineSchema),
 });
-const ListQuery = z.object({ destination_id: z.uuid().optional(), order_id: z.uuid().optional() });
+const ListQuery = z.object({ destination_id: z.uuid().optional(), order_id: z.uuid().optional(), earlier: z.enum(["true", "false"]).optional() });
 
 export function kitchenRoutes(app: OpenAPIHono<AppEnv>) {
   defineCrud(app, {
@@ -79,16 +79,16 @@ export function kitchenRoutes(app: OpenAPIHono<AppEnv>) {
 
   defineOp(
     app,
-    { op: "kitchen_tickets.list", method: "get", path: "/v1/outlets/{id}/kitchen-tickets", tags: ["kitchen"], request: { params: z.object({ id: z.uuid() }), query: ListQuery }, responses: { 200: jsonResponse(z.object({ data: z.array(TicketSchema), next_cursor: z.string().nullable(), last_bumped: TicketSchema.nullable() })), ...errorResponses } },
+    { op: "kitchen_tickets.list", method: "get", path: "/v1/outlets/{id}/kitchen-tickets", tags: ["kitchen"], request: { params: z.object({ id: z.uuid() }), query: ListQuery }, responses: { 200: jsonResponse(z.object({ data: z.array(TicketSchema), next_cursor: z.string().nullable(), last_bumped: TicketSchema.nullable(), earlier: z.number().int() })), ...errorResponses } },
     async (c) => {
       const p = c.get("principal");
       const { id } = c.req.valid("param");
       const q = c.req.valid("query");
       if (!(await outletVisible(p, id))) throw AppError.notFound("outlet", id);
       const scope = await destinationScope(p);
-      if (q.order_id) return c.json({ data: await orderTickets(id, q.order_id, scope), next_cursor: null, last_bumped: null }, 200);
-      const { open, lastBumped } = await openTickets(id, scope, q.destination_id);
-      return c.json({ data: open, next_cursor: null, last_bumped: lastBumped }, 200);
+      if (q.order_id) return c.json({ data: await orderTickets(id, q.order_id, scope), next_cursor: null, last_bumped: null, earlier: 0 }, 200);
+      const { open, lastBumped, earlier } = await openTickets(id, scope, q.destination_id, { earlier: q.earlier === "true" });
+      return c.json({ data: open, next_cursor: null, last_bumped: lastBumped, earlier }, 200);
     },
   );
 

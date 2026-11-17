@@ -29,6 +29,7 @@ export { BusinessDay } from "./components/BusinessDay";
 export { LocaleProvider, useLocale } from "./lib/locale";
 export { sortTaxes, taxRows, type TaxAmountLike, type TaxRow } from "./lib/tax";
 export { soldOutText } from "./lib/sold-out";
+export { mentionsAllergy, ALLERGY_NOTE_CLASS } from "./lib/allergy";
 export { makeLocaleFormat, localeFromAcceptLanguage, deviceLocale, deviceTimeZone, type LocaleFormat, type LocaleSettings, type MoneyFormatOptions } from "./lib/locale-format";
 export { StatusDot, type StatusDotProps, type Status } from "./components/StatusDot";
 export { Badge, KIND_TONE, kindTone, type BadgeProps, type BadgeTone } from "./components/Badge";
@@ -67,7 +68,7 @@ export { TopBar, TopTabs, BackButton, ConnectionIndicator, type TopBarProps, typ
 export { ReasonPicker, type ReasonPickerProps, type Reason, type PickedReason } from "./pos/ReasonPicker";
 export { AmountPad, formatBpsText, type AmountPadProps } from "./pos/AmountPad";
 export { likelyTendered } from "./pos/cash-given";
-export { NowRail, type NowRailProps, type NowItem } from "./pos/NowRail";
+export { NowRail, type NowRailProps, type NowItem, type NowLine } from "./pos/NowRail";
 export { PanelSheet, type PanelSheetProps } from "./pos/PanelSheet";
 
 // Back-office additions (v0.9): the refund stepper's progress row and plain-text ticket previews.
@@ -93,6 +94,6 @@ export { Checklist, checklistDone, checklistStatus, type ChecklistProps, type Ch
 export { Panel, ValueRows, SheetSection, Group, type PanelProps, type ValueRowsProps, type SheetSectionProps, type GroupProps } from "./backoffice/Panel";
 export { FilterTabs, type FilterTabsProps, type FilterTabOption } from "./backoffice/FilterTabs";
 export { minorToDecimal, toCsv, csvCell, reportRows, cellText, type CsvRow } from "./lib/report-csv";
-export { refundBlocks, refundableQuantity, type ReportBlocks, type ReportRow, type ReportSales, type ReportRefunds } from "./lib/report-blocks";
+export { reconciliationRows, refundBlocks, refundableQuantity, tenderRows, type ReportBlocks, type ReportReconciliation, type ReportRow, type ReportSales, type ReportRefunds, type ReportTender } from "./lib/report-blocks";
 
 export { useHydrated } from "./lib/use-hydrated";

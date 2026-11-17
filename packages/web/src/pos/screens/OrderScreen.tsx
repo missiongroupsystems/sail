@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, Money, Pill, Sheet, Skeleton, useLocale, type PillTone } from "@sail/ui";
-import { Check, ChefHat, Circle, CircleX, Flame, Truck, type LucideIcon } from "lucide-react";
+import { Check, ChefHat, Circle, CircleX, Flame, Receipt, Truck, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { GuestRound, SnapshotLine } from "../api/types";
 import { Catalogue } from "../components/Catalogue";
@@ -15,16 +15,16 @@ import { PANEL, PANEL_LABEL } from "../components/styles";
 import { TipLeftNote } from "../components/TipLeft";
 import { ReceiptChooser } from "../components/ReceiptChooser";
 import { RefundSheet } from "../components/RefundSheet";
-import { RejectRoundSheet, ReopenSheet } from "../components/ReasonSheets";
+import { RejectRoundSheet, ReopenSheet, WaitingRoundSheet } from "../components/ReasonSheets";
 import { ReprintSheet } from "../components/ReprintSheet";
 import { useLateJobs, useManualRules, useOrder, useOrderPrintJobs, usePendingRounds, useReadyLineIds } from "../hooks/queries";
 import { useOrderActions } from "../hooks/useOrderActions";
 import { useNow } from "../lib/device";
-import { formatElapsed, ORDER_TYPE_LABEL } from "../lib/format";
+import { countItems, formatElapsed, ORDER_TYPE_LABEL } from "../lib/format";
 import { useNavStore } from "../state/nav";
 import { useUiStore } from "../state/ui";
 
-type SheetState = { kind: "line"; lineId: string } | { kind: "discount" } | { kind: "refund"; checkId?: string | null } | { kind: "reprint"; round: { number: number; firedAt: string | null } | null } | { kind: "reopen" } | { kind: "reject"; round: GuestRound } | { kind: "receipt"; checkId: string } | null;
+type SheetState = { kind: "line"; lineId: string } | { kind: "discount" } | { kind: "refund"; checkId?: string | null } | { kind: "reprint"; round: { number: number; firedAt: string | null } | null } | { kind: "reopen" } | { kind: "reject"; round: GuestRound } | { kind: "waiting"; round: GuestRound } | { kind: "receipt"; checkId: string } | null;
 
 /** Order entry: rail + catalogue, the order sheet, and the sheets that hang off them. Closed orders stay readable for Reopen, Refund and receipts. */
 export function OrderScreen({ orderId }: { orderId: string }) {
@@ -73,11 +73,16 @@ export function OrderScreen({ orderId }: { orderId: string }) {
   const receiptCheck = sheet?.kind === "receipt" ? (snap?.checks.find((c) => c.id === sheet.checkId) ?? null) : null;
   const line: SnapshotLine | null = sheet?.kind === "line" ? (snap?.lines.find((l) => l.id === sheet.lineId) ?? null) : null;
 
-  const pay = () => {
+  const payNow = () => {
     if (!snap) return;
     const open = snap.checks.filter((c) => c.status === "open");
     if (snap.checks.length === 1 && open[0]) openPay(orderId, open[0].id, "order");
     else openBill(orderId);
+  };
+  // A QR order waiting for acceptance is on no bill: Pay asks about it first.
+  const pay = () => {
+    if (pendingRounds[0]) setSheet({ kind: "waiting", round: pendingRounds[0] });
+    else payNow();
   };
 
   return (
@@ -88,7 +93,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
         meta,
         actions: snap ? (
           <div className="flex items-center gap-2">
-            <OrderStatusPill status={snap.status} />
+            <OrderStatusPill status={snap.status} billAsked={snap.bill_requested_at != null} />
             <OrderMenu order={snap} actions={actions} onOpen={(k) => setSheet(k === "refund" ? { kind: "refund" } : k === "reopen" ? { kind: "reopen" } : { kind: "reprint", round: null })} />
           </div>
         ) : null,
@@ -108,7 +113,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
                 <p className={PANEL_LABEL}>Done</p>
                 <Money cents={snap.paid_total} size="display" className="text-ink" />
                 <p className="text-body text-ink-2">
-                  {snap.checks.length} {snap.checks.length === 1 ? "bill" : "bills"} · paid {snap.completed_at ? clock(snap.completed_at) : ""}
+                  {snap.checks.length} {snap.checks.length === 1 ? "bill" : "bills"} · paid {lastPaidAt(snap) ? clock(lastPaidAt(snap)!) : snap.completed_at ? clock(snap.completed_at) : ""}
                   {refundWord(snap.checks)}
                 </p>
               </div>
@@ -172,8 +177,20 @@ export function OrderScreen({ orderId }: { orderId: string }) {
       <Sheet labelledClose isOpen={sheet?.kind === "receipt"} onOpenChange={(o) => (!o ? setSheet(null) : undefined)} title={receiptCheck ? `Receipt · ${receiptCheck.label}` : "Receipt"} width="lg">
         {snap && receiptCheck ? <ReceiptChooser order={snap} check={receiptCheck} actions={actions} caption={`Paid · ${receiptCheck.label}`} amount={receiptCheck.paid_total} sub={receiptCheck.charged_total !== receiptCheck.paid_total ? { main: null, minor: [receiptCheck.tip_total ? `Tip ${money(receiptCheck.tip_total)}` : null, receiptCheck.rounding_total ? `Cash rounding ${money(receiptCheck.rounding_total)}` : null, `Charged ${money(receiptCheck.charged_total)}`].filter(Boolean).join(" · ") } : null} autoReturnMs={0} onDone={() => setSheet(null)} doneLabel="Done" /> : null}
       </Sheet>
-      <ReopenSheet isOpen={sheet?.kind === "reopen"} onClose={() => setSheet(null)} onReopen={(reason) => actions.reopen(reason)} payments={(order.data?.checks ?? []).flatMap((c) => c.payments.filter((p) => p.status === "recorded").map((p) => `${p.tender} ${money(p.amount)}`))} />
-      <RejectRoundSheet isOpen={sheet?.kind === "reject"} roundLabel={sheet?.kind === "reject" ? `${sheet.round.lines.length} ${sheet.round.lines.length === 1 ? "item" : "items"}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null} onClose={() => setSheet(null)} onReject={(reason) => (sheet?.kind === "reject" ? actions.rejectRound(sheet.round.id, reason) : Promise.resolve(null))} />
+      <ReopenSheet isOpen={sheet?.kind === "reopen"} onClose={() => setSheet(null)} onReopen={(reason) => actions.reopen(reason)} checkRefusal={actions.reopenRefusal} payments={(order.data?.checks ?? []).flatMap((c) => c.payments.filter((p) => p.status === "recorded").map((p) => `${p.tender} ${money(p.amount)}`))} />
+      <WaitingRoundSheet
+        isOpen={sheet?.kind === "waiting"}
+        roundLabel={sheet?.kind === "waiting" ? `${sheet.round.lines.map((l) => `${l.quantity} ${l.name}`).join(", ")}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null}
+        canPayRest={Boolean(snap && snap.balance > 0)}
+        onClose={() => setSheet(null)}
+        onAccept={() => (sheet?.kind === "waiting" ? actions.acceptRound(sheet.round.id) : Promise.resolve(null))}
+        onReject={() => (sheet?.kind === "waiting" ? setSheet({ kind: "reject", round: sheet.round }) : undefined)}
+        onPayRest={() => {
+          setSheet(null);
+          payNow();
+        }}
+      />
+      <RejectRoundSheet isOpen={sheet?.kind === "reject"} roundLabel={sheet?.kind === "reject" ? `${countItems(sheet.round.lines)}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null} lines={sheet?.kind === "reject" ? sheet.round.lines : undefined} onClose={() => setSheet(null)} onReject={(reason) => (sheet?.kind === "reject" ? actions.rejectRound(sheet.round.id, reason) : Promise.resolve(null))} onMarkSoldOut={sheet?.kind === "reject" ? () => actions.markSoldOut([...new Set(sheet.round.lines.flatMap((l) => (l.product_id ? [l.product_id] : [])))]) : undefined} />
     </Frame>
   );
 }
@@ -188,9 +205,12 @@ const STATUS_PILL: Record<string, { label: string; tone: PillTone; icon: LucideI
   cancelled: { label: "Cancelled", tone: "alert", icon: CircleX },
 };
 
-/** The order's status in the header: "Open", "Sent", "Completed". */
-function OrderStatusPill({ status }: { status: string }) {
-  const p = STATUS_PILL[status];
+/** The floor legend's own words and colour (final review C Low: the header said "Sent" beside a "Bill asked" tile). */
+const BILL_ASKED = { label: "Bill asked", tone: "bill" as PillTone, icon: Receipt };
+
+/** The order's status in the header: "Open", "Sent", "Completed"; "Bill asked" as on the floor's tile once the bill is asked for. */
+function OrderStatusPill({ status, billAsked }: { status: string; billAsked?: boolean }) {
+  const p = billAsked && ["open", "fired", "ready"].includes(status) ? BILL_ASKED : STATUS_PILL[status];
   return p ? (
     <Pill tone={p.tone} icon={p.icon}>
       {p.label}
@@ -207,4 +227,10 @@ function refundWord(checks: { status: string; paid_total: number; refunded_total
   const paid = checks.filter((c) => c.paid_total > 0);
   if (paid.length && paid.every((c) => c.status === "refunded" || c.refunded_total >= c.paid_total)) return " · refunded";
   return checks.some((c) => c.refunded_total > 0 || c.status === "partially_refunded") ? " · partly refunded" : "";
+}
+
+/** When the order was paid: its last recorded payment, not the moment it completed (a takeaway paid early completes on send). */
+function lastPaidAt(snap: { checks: { payments: { status: string; created_at: string }[] }[] }): string | null {
+  const at = snap.checks.flatMap((c) => c.payments.filter((p) => p.status === "recorded").map((p) => p.created_at)).sort();
+  return at.length ? at[at.length - 1]! : null;
 }

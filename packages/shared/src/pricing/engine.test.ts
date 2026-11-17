@@ -473,7 +473,7 @@ describe("properties", () => {
     );
   });
 
-  it("per-rate rounding: each rate's order tax is the whole rate rounded once on its taxed amounts, split across its components", () => {
+  it("per-rate rounding: each tax component of the order is its own rate rounded once on its taxed amounts", () => {
     fc.assert(
       fc.property(arbScenario, ({ order: o, rules, context }) => {
         const r = price(o, rules, { ...context, tax_rounding: "per_rate", tax_mode: "exclusive" });
@@ -483,7 +483,7 @@ describe("properties", () => {
           if (rows.length === 0) continue;
           expect(rows).toHaveLength(rate.components.length);
           expect(new Set(rows.map((t) => t.taxable)).size).toBe(1);
-          expect(sumCents(rows.map((t) => t.amount))).toBe(percentOfCents(rows[0]!.taxable, sumCents(rate.components.map((c) => c.bps))));
+          for (const row of rows) expect(row.amount).toBe(percentOfCents(row.taxable, row.bps));
         }
       }),
       { numRuns: 300 },

@@ -65,7 +65,7 @@ Manage them in the back office under Settings > Tax classes, or through the API 
 
 An order stores the tax mode, rounding and rates that apply at its outlet when it opens, so a rate change never re-prices an open order.
 
-**Rounding.** `per_line` rounds each line's tax and adds them up. `per_rate` groups the order's amounts by rate, rounds the rate's combined tax once on the group's total, splits it between the components by largest remainder, then spreads each component across the lines. Most VAT and consumption-tax invoices round per rate; `per_line` exists because some receipts have always been printed that way. The two can differ by a unit per rate on the same order.
+**Rounding.** `per_line` rounds each line's tax and adds them up. `per_rate` groups the order's amounts by rate, rounds each component's tax once on the group's total (so every printed row is its rate times its taxable amount), then spreads each component across the lines. Most VAT and consumption-tax invoices round per rate; `per_line` exists because some receipts have always been printed that way. The two can differ by a unit per rate on the same order.
 
 ### Example 1: US sales tax, exclusive, two components
 

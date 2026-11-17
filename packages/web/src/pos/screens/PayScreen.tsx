@@ -489,7 +489,7 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
                         setDigits(null);
                         padTo("amount");
                       }} className="-mr-3 text-ink-2!">
-                      Full balance{part ? " · this is a part payment" : ""}
+                      {part ? "Use the full balance" : "Full balance"}
                     </Button>
                   ) : null}
                 </div>
@@ -558,7 +558,8 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
                           Card terminal payments need a Cashier or above. Switch user, or take the card by hand with a Cashier&rsquo;s approval.
                         </p>
                       ) : null}
-                      {terminalNote ? (
+                      {/* The last attempt's outcome never sits beside the next one: it goes as soon as the terminal is waiting again. */}
+                      {terminalNote && watched?.state !== "pending" ? (
                         <p className={`text-body ${terminalNote.alert ? "text-status-alert" : "text-ink-2"}`} role={terminalNote.alert ? "alert" : "status"}>
                           {terminalNote.text}
                         </p>

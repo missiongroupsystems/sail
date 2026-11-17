@@ -1,7 +1,6 @@
 "use client";
 
-import { Badge, Button, Checkbox, Icon, Money, SegmentedControl, Sheet, Skeleton, taxRows, type BillCardLine, type BillCardRow, type LocaleFormat, useLocale } from "@sail/ui";
-import { Check } from "lucide-react";
+import { Badge, Button, Checkbox, Money, SegmentedControl, Sheet, Skeleton, taxRows, type BillCardLine, type BillCardRow, type LocaleFormat, useLocale } from "@sail/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import type { CheckSnapshot, OrderSnapshot, SnapshotLine } from "../api/types";
@@ -298,8 +297,17 @@ export function BillScreen({ orderId }: { orderId: string }) {
                         <Button size="md" variant="quiet" isDisabled={offline} onPress={() => void actions.printReceipt(check.id)}>
                           Receipt
                         </Button>
-                        <Button size="md" variant="quiet" isDisabled={offline} onPress={() => void actions.issueInvoice(check.id)}>
-                          {check.invoice_no ? `Invoice ${check.invoice_no}` : "Get invoice"}
+                        <Button
+                          size="md"
+                          variant="quiet"
+                          isDisabled={offline}
+                          onPress={async () => {
+                            // The invoice opens wherever it is shown: issued first when the bill has none yet (M19).
+                            const no = check.invoice_no ?? (await actions.issueInvoice(check.id))?.invoice_no ?? null;
+                            if (no && actions.mayReadInvoice) await actions.openInvoicePdf(check.id, no);
+                          }}
+                        >
+                          {check.invoice_no ? `Invoice ${check.invoice_no} · PDF` : "Get invoice"}
                         </Button>
                         <Button size="md" variant="secondary" isDisabled={offline || check.status === "refunded"} onPress={() => setRefundCheck(check)}>
                           Refund
@@ -330,9 +338,8 @@ export function BillScreen({ orderId }: { orderId: string }) {
               <span className="inline-flex items-baseline gap-2.5 whitespace-nowrap text-ink" role="status" aria-live="polite">
                 <span className="text-line text-ink-2">Order total</span>
                 <Money cents={snap.totals.total} size="title" className="font-heading text-[24px] font-semibold text-ink" />
-                <span className="inline-flex items-center gap-1.5 text-body text-ink-2">
+                <span className="text-body text-ink-2">
                   across {snap.checks.length} {snap.checks.length === 1 ? "bill" : "bills"}
-                  <Icon icon={Check} size={16} className="text-status-paid" />
                 </span>
               </span>
             )}

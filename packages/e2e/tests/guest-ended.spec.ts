@@ -50,7 +50,8 @@ test("paying the table ends the phone's session without a refused request", asyn
     const after = await register<{ data: { status: string } }>("GET", `/v1/orders/${orderId}`);
     expect(after.data.status).toBe("completed");
 
-    await expect(phone.getByText("This table session has ended.")).toBeVisible({ timeout: 30_000 });
+    // The session ended because the bill was paid: the phone thanks the guest instead of reading like a timeout (final review M10).
+    await expect(phone.getByText("Your bill is paid.")).toBeVisible({ timeout: 30_000 });
     await shot(phone, test.info().outputPath("phone-ended.png"));
     // Long enough for any poll or refetch that was still going to run with the ended session.
     await phone.waitForTimeout(5_000);

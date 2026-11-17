@@ -5,16 +5,20 @@ import { Check } from "lucide-react";
 import { cx } from "../lib/cx";
 import { Icon } from "../components/Icon";
 import { Button, type ButtonVariant } from "../components/Button";
+import { ALLERGY_NOTE_CLASS, mentionsAllergy } from "../lib/allergy";
 
 export type NowItem = {
   id: string;
   /** "T7 · QR order · 3", "P-031 · Ready · Lim". */
   title: string;
   detail?: string | null;
-  /** Lines of a QR order, shown under the detail. */
-  lines?: string[];
+  /** Lines of a QR order, shown under the detail, each with its kitchen note in full. */
+  lines?: (string | NowLine)[];
   actions?: { id: string; label: string; onPress: () => void; variant?: ButtonVariant; isDisabled?: boolean; isPending?: boolean }[];
 };
+
+/** "2 Laksa · Prawn", and the guest's note for it, shown whole (an allergy note with its emphasis). */
+export type NowLine = { text: string; note?: string | null };
 
 export type NowRailProps = {
   items: NowItem[];
@@ -46,11 +50,16 @@ export function NowRail({ items, footer, className }: NowRailProps) {
                 {it.detail ? <p className="text-[13px] text-ink-2">{it.detail}</p> : null}
                 {it.lines?.length ? (
                   <ul className="mt-1 text-caption text-ink-2">
-                    {it.lines.map((l, i) => (
-                      <li key={i} className="truncate">
-                        {l}
-                      </li>
-                    ))}
+                    {it.lines.map((l, i) => {
+                      const line = typeof l === "string" ? { text: l } : l;
+                      // Nothing here is cut off: whoever accepts a round reads every note in full (final review C-11).
+                      return (
+                        <li key={i} className="break-words">
+                          {line.text}
+                          {line.note ? <span className={cx("block", mentionsAllergy(line.note) ? ALLERGY_NOTE_CLASS : "italic")}>Note: {line.note}</span> : null}
+                        </li>
+                      );
+                    })}
                   </ul>
                 ) : null}
                 {it.actions?.length ? (

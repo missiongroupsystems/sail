@@ -6,6 +6,7 @@ import { AppError } from "../lib/errors.js";
 import { appendEvent, type AppendedEvent } from "../lib/events.js";
 import type { Principal } from "../auth/principal.js";
 import type { BusinessDayInputs } from "./business-day.js";
+import { businessDateFor } from "../lib/time.js";
 
 /**
  * Kitchen display tickets. Tickets are created by the fire that sends the
@@ -188,10 +189,32 @@ async function loadTickets(where: SQL[], order: "fired" | "bumped" = "fired", li
 }
 
 /** Open tickets (not bumped) of an outlet in fired order, and the most recent bumped one for Recall. */
-export async function openTickets(outletId: string, scope: string[] | null, destinationId?: string) {
+/**
+ * A ticket left from an earlier business day (round 8, 10: tickets from two days before stayed on the board): its
+ * order belongs to a business date before today's, and that order is finished or its day is closed. Such tickets leave
+ * the board and the all-day count; the display lists them on request, to clear. A ticket of an order still open from
+ * before the cutoff stays, since the kitchen may still be making it.
+ */
+function fromEarlierDay(today: string): SQL {
+  return sql`exists (select 1 from ${orders} o where o.id = ${kitchenTickets.orderId} and o.business_date < ${today} and (o.status not in ('open', 'fired', 'ready', 'out_for_delivery') or exists (select 1 from business_day_closes c where c.outlet_id = o.outlet_id and c.business_date = o.business_date)))`;
+}
+
+async function boardToday(outletId: string): Promise<string> {
+  const bd = await ticketBusinessDay(outletId);
+  return businessDateFor(new Date(), bd.cutoff, bd.timeZone);
+}
+
+/** The board's tickets: today's, or with `earlier` those left from earlier business days; and how many of those there are. */
+export async function openTickets(outletId: string, scope: string[] | null, destinationId?: string, opts: { earlier?: boolean } = {}) {
   const base = [eq(kitchenTickets.outletId, outletId), ...scopeConds(scope, destinationId)];
-  const [open, last] = await Promise.all([loadTickets([...base, isNull(kitchenTickets.bumpedAt)]), loadTickets([...base, eq(kitchenTickets.status, "ready")], "bumped", 1)]);
-  return { open, lastBumped: last[0] ?? null };
+  const old = fromEarlierDay(await boardToday(outletId));
+  const unbumped = [...base, isNull(kitchenTickets.bumpedAt)];
+  const [open, last, [earlier]] = await Promise.all([
+    loadTickets([...unbumped, opts.earlier ? old : sql`not ${old}`]),
+    loadTickets([...base, eq(kitchenTickets.status, "ready")], "bumped", 1),
+    db().select({ n: sql<number>`count(*)::int` }).from(kitchenTickets).where(and(...unbumped, old)),
+  ]);
+  return { open, lastBumped: last[0] ?? null, earlier: earlier?.n ?? 0 };
 }
 
 /** Every ticket of one order (any state), for the POS's ready marks. */
@@ -205,7 +228,7 @@ export async function allDay(outletId: string, scope: string[] | null, destinati
     .select({ productId: kitchenTicketLines.productId, name: kitchenTicketLines.name, quantity: sql<number>`sum(${kitchenTicketLines.quantity} - ${kitchenTicketLines.voidedQuantity})::int` })
     .from(kitchenTicketLines)
     .innerJoin(kitchenTickets, eq(kitchenTickets.id, kitchenTicketLines.ticketId))
-    .where(and(eq(kitchenTickets.outletId, outletId), isNull(kitchenTickets.bumpedAt), ne(kitchenTickets.status, "cancelled"), ...scopeConds(scope, destinationId)))
+    .where(and(eq(kitchenTickets.outletId, outletId), isNull(kitchenTickets.bumpedAt), ne(kitchenTickets.status, "cancelled"), sql`not ${fromEarlierDay(await boardToday(outletId))}`, ...scopeConds(scope, destinationId)))
     .groupBy(kitchenTicketLines.productId, kitchenTicketLines.name)
     .having(sql`sum(${kitchenTicketLines.quantity} - ${kitchenTicketLines.voidedQuantity}) > 0`)
     .orderBy(desc(sql`sum(${kitchenTicketLines.quantity} - ${kitchenTicketLines.voidedQuantity})`), asc(kitchenTicketLines.name));
@@ -247,7 +270,24 @@ export async function actOnTicket(action: TicketAction, ticketId: string, p: Pri
     throw AppError.state(`The ticket is ${current.status.replace("_", " ")}`, allowed);
   }
   const type = action === "start" ? "kitchen_ticket.started" : action === "bump" ? "kitchen_ticket.bumped" : "kitchen_ticket.recalled";
-  const ev = await event(row, type, { kind: "kitchen_ticket", id: row.id }, { ticket_id: row.id, destination_id: row.destinationId, order_id: row.orderId, status: row.status }, { principal: p, correlationId: ctx.correlationId, idempotencyKey: ctx.idempotencyKey, operationId: `kitchen_tickets.${action}`, bd: await ticketBusinessDay(row.outletId) });
+  // The order follows its kitchen: once every ticket it sent is bumped it is ready (the POS shows Ready, the guest's
+  // rounds show Done); a recall takes it back to sent. Written before any event, as every register write is.
+  let progress: { from: string; to: string } | null = null;
+  if (action !== "start") {
+    // The order row is locked first, so two displays bumping its last two tickets, or a payment completing it, are taken
+    // one after the other and each sees the other's write.
+    const [o] = await tx()<{ status: string }[]>`select status from orders where id = ${row.orderId} for update`;
+    const [left] = await db().select({ n: sql<number>`count(*)::int` }).from(kitchenTickets).where(and(eq(kitchenTickets.orderId, row.orderId), isNull(kitchenTickets.bumpedAt), ne(kitchenTickets.status, "cancelled")));
+    const [unsent] = await db().select({ n: sql<number>`count(*)::int` }).from(orderLines).where(and(eq(orderLines.orderId, row.orderId), inArray(orderLines.status, ["pending", "held"])));
+    if (action === "bump" && o?.status === "fired" && (left?.n ?? 0) === 0 && (unsent?.n ?? 0) === 0) progress = { from: "fired", to: "ready" };
+    if (action === "recall" && o?.status === "ready") progress = { from: "ready", to: "fired" };
+    if (progress) await db().update(orders).set({ status: progress.to as "ready" | "fired", readyAt: progress.to === "ready" ? now : null, version: sql`${orders.version} + 1`, updatedAt: now }).where(and(eq(orders.id, row.orderId), eq(orders.status, progress.from as "ready" | "fired")));
+  }
+  const bd = await ticketBusinessDay(row.outletId);
+  const ctxFor = { principal: p, correlationId: ctx.correlationId, idempotencyKey: ctx.idempotencyKey, operationId: `kitchen_tickets.${action}`, bd };
+  const ev = await event(row, type, { kind: "kitchen_ticket", id: row.id }, { ticket_id: row.id, destination_id: row.destinationId, order_id: row.orderId, status: row.status }, ctxFor);
+  // The order's own event, so the POS order screen and the guest's phone (which follow the order) hear the kitchen at once.
+  const orderEv = await event(row, "order.kitchen_progress", { kind: "order", id: row.orderId }, { order_id: row.orderId, ticket_id: row.id, round_no: row.roundNo, action, ...(progress ? { status_from: progress.from, status_to: progress.to } : {}) }, ctxFor);
   const [ticket] = await loadTickets([eq(kitchenTickets.id, row.id)]);
-  return { ticket: ticket!, changed: true, events: [ev] };
+  return { ticket: ticket!, changed: true, events: [ev, orderEv] };
 }

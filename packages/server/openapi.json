@@ -11648,6 +11648,15 @@
           {
             "schema": {
               "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "order_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "format": "date-time"
             },
             "required": false,
@@ -36099,7 +36108,7 @@
           "customers"
         ],
         "operationId": "customers.find",
-        "description": "By mobile (exact or prefix) or name prefix. Not available to agents: they cannot read customer contact details.",
+        "description": "By any 3 or more digits of the mobile (with or without \"+\", spaces or the country code) or by name prefix. Not available to agents: they cannot read customer contact details.",
         "summary": "Find customers",
         "x-sail": {
           "op": "customers.find",
@@ -54869,7 +54878,7 @@
           "orders"
         ],
         "operationId": "orders.fire",
-        "description": "Fires the given lines (default: every pending, unheld line). Creates one print job per target printer in the same transaction. On a pay-before-firing station, blocked until the balance is 0.",
+        "description": "Fires the given lines (default: every pending, unheld line). Creates one print job per target printer in the same transaction. On a pay-before-firing station, blocked until the balance is 0. A dine-in or takeaway order already paid in full completes when its last item is sent, by the same rule as a payment that settles a sent order; a ready order sent another round is back to fired.",
         "summary": "Send lines to the kitchen",
         "x-sail": {
           "op": "orders.fire",
@@ -54884,7 +54893,8 @@
           ],
           "emits": [
             "order.fired",
-            "print_job.created"
+            "print_job.created",
+            "order.completed"
           ],
           "mcp": {
             "expose": true,
@@ -66971,7 +66981,7 @@
           "payments"
         ],
         "operationId": "payments.record",
-        "description": "Applies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. A tip is `tip_cents`, or, on a dry run only, `tip_bps` (a percentage of the amount applied, which the dry run turns into `tip_cents`; in cash it is rounded to the cash rounding step); the reply's `payment.due_cents` is what the guest hands over (amount, cash rounding and tip). The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.",
+        "description": "Applies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. A tip is `tip_cents`, or, on a dry run only, `tip_bps` (a percentage of the amount applied, before tax where tax is added on top of prices, which the dry run turns into `tip_cents`; in cash it is rounded to the cash rounding step); the reply's `payment.due_cents` is what the guest hands over (amount, cash rounding and tip). The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.",
         "summary": "Record a payment on a bill",
         "x-sail": {
           "op": "payments.record",
@@ -77867,6 +77877,441 @@
         }
       }
     },
+    "/v1/guest/rounds/quote": {
+      "post": {
+        "tags": [
+          "guest"
+        ],
+        "operationId": "rounds.quote",
+        "description": "Prices the given lines (the same shape as rounds.submit) against the channel menu as the register would: each line's amount (menu price and choices, before discounts) and the round's total of those amounts, which are the amounts the table's order then shows for them. Pure: writes nothing and reserves no daily cap.",
+        "summary": "Price a round before it is sent",
+        "x-sail": {
+          "op": "rounds.quote",
+          "tier": "T0",
+          "min_role": null,
+          "override_allowed": false,
+          "reason_required": false,
+          "dry_run": false,
+          "principals": [
+            "guest"
+          ],
+          "emits": [],
+          "mcp": {
+            "expose": true,
+            "toolsets": [
+              "guest"
+            ]
+          }
+        },
+        "requestBody": {
+          "description": "Request body",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "line_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "product_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "quantity": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 50
+                        },
+                        "modifiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "group_id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "product_id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "quantity": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 20
+                              }
+                            },
+                            "required": [
+                              "group_id",
+                              "product_id"
+                            ]
+                          },
+                          "maxItems": 40
+                        },
+                        "notes": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 200,
+                          "x-sail-untrusted": true
+                        },
+                        "seat_no": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 1,
+                          "maximum": 99
+                        }
+                      },
+                      "required": [
+                        "line_id",
+                        "product_id",
+                        "quantity"
+                      ]
+                    },
+                    "minItems": 1,
+                    "maxItems": 30
+                  }
+                },
+                "required": [
+                  "lines"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "lines": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "line_id": {
+                                "type": "string"
+                              },
+                              "quantity": {
+                                "type": "integer"
+                              },
+                              "amount": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "line_id",
+                              "quantity",
+                              "amount"
+                            ]
+                          }
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "lines",
+                        "total"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict (state, version or idempotency)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invariant violation or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "validation",
+                        "not_found",
+                        "unauthenticated",
+                        "version_conflict",
+                        "idempotency_conflict",
+                        "permission_denied",
+                        "requires_confirmation",
+                        "invariant_violation",
+                        "state_conflict",
+                        "unavailable",
+                        "rate_limited",
+                        "budget_exceeded",
+                        "overloaded",
+                        "internal"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "remedy": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/guest/requests": {
       "post": {
         "tags": [
@@ -79275,7 +79720,7 @@
           "guest"
         ],
         "operationId": "rounds.reject",
-        "description": "Removes the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled (\"QR order rejected\") and the table freed; the guest's phone keeps its session.",
+        "description": "Removes the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled (\"QR order rejected\") and the table freed; the guest's phone keeps its session. An order paid while the round waited completes.",
         "summary": "Reject a held QR round",
         "x-sail": {
           "op": "rounds.reject",
@@ -79291,7 +79736,8 @@
           "emits": [
             "round.rejected",
             "line.voided",
-            "order.cancelled"
+            "order.cancelled",
+            "order.completed"
           ],
           "mcp": {
             "expose": true,
@@ -89402,7 +89848,7 @@
           "kitchen"
         ],
         "operationId": "kitchen_tickets.list",
-        "description": "Tickets still on the kitchen display (not bumped), oldest fire first, with their lines (voided quantities struck), order, table and the `changed` flag, plus the most recently bumped ticket for Recall. With `order_id`, every ticket of that order in any state (the POS shows a line as ready once its tickets are bumped). A display station sees only its assigned destinations. Never changes anything.",
+        "description": "Tickets still on the kitchen display (not bumped), oldest fire first, with their lines (voided quantities struck), order, table and the `changed` flag, plus the most recently bumped ticket for Recall. With `order_id`, every ticket of that order in any state (the POS shows a line as ready once its tickets are bumped). A display station sees only its assigned destinations. Tickets left from an earlier business day (the order finished or its day closed) are not on the board; `earlier` counts them, and `earlier=true` lists them instead. Never changes anything.",
         "summary": "Kitchen display tickets of an outlet",
         "x-sail": {
           "op": "kitchen_tickets.list",
@@ -89451,6 +89897,18 @@
             },
             "required": false,
             "name": "order_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "earlier",
             "in": "query"
           }
         ],
@@ -89825,12 +90283,16 @@
                         "cancelled_at",
                         "lines"
                       ]
+                    },
+                    "earlier": {
+                      "type": "integer"
                     }
                   },
                   "required": [
                     "data",
                     "next_cursor",
-                    "last_bumped"
+                    "last_bumped",
+                    "earlier"
                   ]
                 }
               }
@@ -90489,7 +90951,8 @@
             "staff"
           ],
           "emits": [
-            "kitchen_ticket.started"
+            "kitchen_ticket.started",
+            "order.kitchen_progress"
           ],
           "mcp": {
             "expose": false,
@@ -91029,7 +91492,7 @@
           "kitchen"
         ],
         "operationId": "kitchen_tickets.bump",
-        "description": "Marks the ticket ready and takes it off the display; a cancelled ticket stays cancelled and only leaves the display. A second bump, from this display or another showing the same destination, returns the ticket unchanged.",
+        "description": "Marks the ticket ready and takes it off the display; a cancelled ticket stays cancelled and only leaves the display. When it was the order's last ticket still on a display (and nothing waits to be sent), a sent order becomes ready. A second bump, from this display or another showing the same destination, returns the ticket unchanged.",
         "summary": "Bump a kitchen ticket (ready)",
         "x-sail": {
           "op": "kitchen_tickets.bump",
@@ -91043,7 +91506,8 @@
             "staff"
           ],
           "emits": [
-            "kitchen_ticket.bumped"
+            "kitchen_ticket.bumped",
+            "order.kitchen_progress"
           ],
           "mcp": {
             "expose": false,
@@ -91597,7 +92061,8 @@
             "staff"
           ],
           "emits": [
-            "kitchen_ticket.recalled"
+            "kitchen_ticket.recalled",
+            "order.kitchen_progress"
           ],
           "mcp": {
             "expose": false,

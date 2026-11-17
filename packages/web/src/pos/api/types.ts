@@ -150,6 +150,8 @@ export type SnapshotLine = {
   sku: string | null;
   quantity: number;
   unit_price: number;
+  /** One item with its options, as the register adds them. */
+  unit_amount?: number;
   open_price: number | null;
   modifiers: SnapshotModifier[];
   notes: string | null;
@@ -421,12 +423,20 @@ export type ZReport = {
   /** `net` is net sales: items after discounts, without tax and fees, less `refunds` (the refunds' net). `fees` excludes tax; `total` is what was collected before refunds. */
   sales: { gross: number; discounts: number; fees: number; tax: number; taxes: TaxBreakdown[]; refunds: number; net: number; total: number; net_before_refunds?: number; total_after_refunds?: number };
   adjustments: { rule_key: string; name: string; kind: string; report_class: string; total: number; count: number }[];
-  tenders: { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number }[];
+  tenders: { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number; refunds?: number; reversed?: number; net?: number }[];
   cash: { float: number; cash_payments: number; rounding: number; tips: number; refunds: number; expected: number; counted: number | null; variance: number | null; open_shifts?: { count: number; float: number; expected: number } };
   voids: { count: number; quantity: number; value: number };
   /** `net`, `fees`, `tax`, `tips` and `taxes` split the refunded amount; absent on older stored reports. */
   refunds: { count: number; amount: number; net?: number; fees?: number; tax?: number; tips?: number; taxes?: TaxAmount[] };
   tax_due?: TaxAmount[];
+  /** How the payments come to the completed sales; the split by open orders arrives with the per-tender figures. */
+  reconciliation?: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number; held_on_open_orders?: number; paid_for_other_orders?: number; beyond_order_totals?: number };
+  /** Payments taken here and then reversed (a void, or a reopen): counted in no tender. */
+  reversals?: { count: number; amount: number; cash_amount: number; items: { payment_id: string; order_no: string; tender: string; is_cash: boolean; amount: number; reversed_at: string | null; reversed_by: string | null; reason: string | null }[] };
+  /** Set when this is a closed day's report as snapshotted at the close. */
+  closed?: { closed_at: string; closed_by: string | null } | null;
+  /** The last closed business day before this one, so the POS can offer its report. */
+  previous_closed_date?: string | null;
   generated_at: string;
 };
 /** The Z-report a role below Manager gets while a drawer in it is still open (a blind count): no money figure but the floats. */
@@ -437,6 +447,8 @@ export type ZReportWithheld = {
   voids: { count: number; quantity: number };
   refunds: { count: number };
   cash: { float: number; open_shifts: { count: number; float: number } };
+  closed?: ZReport["closed"];
+  previous_closed_date?: string | null;
   generated_at: string;
 };
 export type ShiftCloseResult = { data: Shift & { report: ZReport }; events: MutationEvent[]; warnings: string[] };
@@ -484,7 +496,7 @@ export type GuestRound = {
   decided_by: string | null;
   reject_reason: string | null;
   table_name: string | null;
-  lines: { id: string; name: string; quantity: number; modifiers: string[]; notes: string | null; status: string }[];
+  lines: { id: string; product_id?: string; name: string; quantity: number; modifiers: string[]; notes: string | null; status: string }[];
 };
 export type ServiceRequest = {
   id: string;

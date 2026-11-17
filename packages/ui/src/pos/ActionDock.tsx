@@ -18,7 +18,7 @@ export type DockAction = {
   needsApproval?: boolean;
   /** The badge's words, naming the least role that may approve: "Cashier approval" (default "Manager approval"). */
   approvalLabel?: string;
-  /** This action changes the register; while offline it is disabled and labelled "Offline". */
+  /** This action changes the register; while offline it is disabled (its label stays). Default true. */
   mutates?: boolean;
   /** A small icon before the label (Hold, Bill). */
   icon?: LucideIcon;
@@ -29,7 +29,7 @@ export type DockAction = {
 export type ActionDockProps = {
   primary: DockAction;
   secondaries?: DockAction[];
-  /** Disconnected: mutating buttons read "Offline". */
+  /** Disconnected: buttons that change the register are disabled, with their labels. */
   offline?: boolean;
   className?: string;
 };
@@ -61,9 +61,11 @@ export function ActionDock({ primary, secondaries = [], offline, className }: Ac
         {/* The label keeps to one line ("Pay $40.47"); when the dock is too narrow the button moves to its own row instead.
             The approval badge sits under the label, inside the pill, rather than wrapping against its edge. */}
         <span className="flex items-center gap-2 whitespace-nowrap">
-          {a.icon && !blocked ? <Icon icon={a.icon} size={18} className="opacity-80" /> : null}
-          <span className={variant === "secondary" && a.icon && !blocked ? iconOnly : undefined}>{blocked ? "Offline" : a.label}</span>
-          {a.trailingIcon && !blocked ? <Icon icon={a.trailingIcon} size={18} /> : null}
+          {/* Offline, each control keeps its own name and is simply off; the one offline state is the frame's banner
+              (final review B-P14). */}
+          {a.icon ? <Icon icon={a.icon} size={18} className="opacity-80" /> : null}
+          <span className={variant === "secondary" && a.icon ? iconOnly : undefined}>{a.label}</span>
+          {a.trailingIcon ? <Icon icon={a.trailingIcon} size={18} /> : null}
         </span>
         {/* The approval on the same line as the label, as a small key and the role ("Manager"), so the pill never wraps;
             on the dark primary pill it is a light chip, legible in both themes. */}

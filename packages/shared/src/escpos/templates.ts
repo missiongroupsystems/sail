@@ -185,6 +185,7 @@ export function buildBillDocument(data: BillDocument, cols: number): DocLine[] {
   const totalLabel = data.kind === "refund_receipt" ? "Refund total" : "Total";
   for (const t of justify(totalLabel, money(totals.total, fmt), cols)) doc.push(large(t, { bold: true }));
   if (totals.tax_mode === "inclusive") for (const tax of taxes) for (const t of moneyRow(`${tax.name} (included)`, tax.amount, cols, fmt)) doc.push(text(t));
+  if (data.tax_note) for (const t of wrap(data.tax_note, cols)) doc.push(text(t));
 
   // Payments.
   if (data.payments && data.payments.length > 0) {
@@ -196,6 +197,7 @@ export function buildBillDocument(data: BillDocument, cols: number): DocLine[] {
       if (p.tip !== undefined && p.tip !== 0) for (const t of moneyRow("Tip", p.tip, cols, fmt)) doc.push(text(t));
       // What the guest paid with this tender, as the register recorded it (the phone receipt shows the same row).
       if (p.charged !== undefined && p.charged !== 0) for (const t of moneyRow("Charged", p.charged, cols, fmt)) doc.push(text(t));
+      if (p.change !== undefined && p.change !== 0 && p.tendered !== undefined) for (const t of moneyRow("Tendered", p.tendered, cols, fmt)) doc.push(text(t));
       if (p.change !== undefined && p.change !== 0) for (const t of moneyRow("Change", p.change, cols, fmt)) doc.push(text(t));
     }
   }

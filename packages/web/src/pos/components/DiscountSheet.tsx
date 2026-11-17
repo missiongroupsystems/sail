@@ -72,7 +72,7 @@ export function DiscountSheet({ isOpen, onClose, order, rules, actions }: Discou
               Back to the list
             </Button>
             <Button variant="primary" size="lg" isDisabled={!canApply} isPending={busy} onPress={apply}>
-              {offline ? "Offline" : !inRange ? `Enter ${describeRuleValue(rule, money)}` : needsReason ? "Pick a reason" : `Apply ${rule.name}`}
+              {!inRange ? `Enter ${describeRuleValue(rule, money)}` : needsReason ? "Pick a reason" : `Apply ${rule.name}`}
               {above(rule) && inRange && !needsReason && !offline ? <span className="ml-1 rounded-chip bg-[color-mix(in_srgb,var(--status-bill)_14%,transparent)] px-2 text-caption text-status-bill">{approvalOf(rule.min_role)}</span> : null}
             </Button>
           </>

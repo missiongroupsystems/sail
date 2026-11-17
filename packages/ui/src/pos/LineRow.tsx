@@ -5,6 +5,7 @@ import { Button as AriaButton } from "react-aria-components";
 import { cx } from "../lib/cx";
 import { Icon } from "../components/Icon";
 import { Money } from "../components/Money";
+import { ALLERGY_NOTE_CLASS, mentionsAllergy } from "../lib/allergy";
 
 /** "voided": taken off after it was sent to the kitchen; "removed": taken off before it was sent. */
 export type LineRowStatus = "new" | "held" | "sent" | "voided" | "removed" | "pending";
@@ -19,6 +20,8 @@ export type LineRowProps = {
   seat?: number | null;
   /** Register amount in cents; `null` while the line is optimistic and the register has not priced it. */
   amountCents: number | null;
+  /** A line not yet on the bill (a QR order waiting for acceptance): no amount is shown. */
+  noAmount?: boolean;
   status: LineRowStatus;
   /** Reason on removed or voided lines. */
   voidReason?: string | null;
@@ -44,7 +47,7 @@ const PRINT_STATUS = {
 const READY = { icon: Check, text: "ready", cls: "text-status-paid" } as const;
 
 /** An order line: quantity, name, modifiers, notes, seat chip, amount in tabular figures. */
-export function LineRow({ quantity, name, modifiers = [], notes, seat, amountCents, status, voidReason, flash, entering, printStatus, ready, chip, onPress, className }: LineRowProps) {
+export function LineRow({ quantity, name, modifiers = [], notes, seat, amountCents, noAmount = false, status, voidReason, flash, entering, printStatus, ready, chip, onPress, className }: LineRowProps) {
   const voided = status === "voided" || status === "removed";
   const print = status === "sent" && ready ? READY : status === "sent" && printStatus ? PRINT_STATUS[printStatus] : null;
   const body = (
@@ -66,11 +69,12 @@ export function LineRow({ quantity, name, modifiers = [], notes, seat, amountCen
             · {m}
           </span>
         ))}
-        {notes ? <span className="mt-0.5 block truncate text-[13.5px] leading-[1.35] text-ink-2 italic">{notes}</span> : null}
-        {voided && voidReason ? <span className="mt-0.5 block truncate text-caption text-ink-3">{status === "removed" ? "Removed" : "Voided"} · {voidReason}</span> : null}
+        {/* A note and a reason are never cut off where staff decide: they wrap (final review C-11). */}
+        {notes ? <span className={cx("mt-0.5 block text-[13.5px] leading-[1.35] break-words", mentionsAllergy(notes) ? ALLERGY_NOTE_CLASS : "text-ink-2 italic")}>{notes}</span> : null}
+        {voided && voidReason ? <span className="mt-0.5 block text-caption text-ink-3 break-words">{status === "removed" ? "Removed" : "Voided"} · {voidReason}</span> : null}
       </span>
       <span className="shrink-0 pt-px text-right">
-        {status === "pending" || amountCents == null ? (
+        {noAmount ? null : status === "pending" || amountCents == null ? (
           <span className="text-caption text-ink-3 italic" aria-live="polite">
             pricing
           </span>

@@ -98,7 +98,8 @@ export async function createRefund(input: { refundId: string; checkId: string; r
     check_label: `Refund ${receiptNo} · ${original.check_label}`,
     lines: q.lines.map((l) => {
       const row = lineRows.find((x) => x.id === l.line_id)!;
-      return { quantity: -(l.quantity || row.quantity), name: l.quantity ? row.name : `${row.name} (partial)`, unit_price: row.unitPrice, amount: -l.base, modifiers: [], seat_no: row.seatNo ?? undefined };
+      // A refund by amount gives back part of a line's price, not a unit of it: one row of that amount, so it reads on its own.
+      return l.quantity ? { quantity: -l.quantity, name: row.name, unit_price: row.unitPrice, amount: -l.base, modifiers: [], seat_no: row.seatNo ?? undefined } : { quantity: -1, name: `Part of ${row.name}`, unit_price: l.base, amount: -l.base, modifiers: [], seat_no: row.seatNo ?? undefined };
     }),
     adjustments: adjRows.filter((a) => (adjTotals.get(a.id) ?? 0) !== 0).map((a) => ({ name: a.name, amount: -(adjTotals.get(a.id) ?? 0), kind: a.kind as "fee" | "discount" })),
     totals: { ...original.totals, subtotal: -q.totals.base, discount_total: -q.totals.discount, fee_total: -q.totals.fee, tax_total: -q.totals.tax, taxes: q.totals.taxes.map((t) => ({ ...t, amount: -t.amount })), total: -q.totals.total },

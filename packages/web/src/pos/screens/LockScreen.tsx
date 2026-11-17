@@ -109,7 +109,7 @@ export function LockScreen() {
                   Unpair this iPad
                 </Button>
                 <Button variant="quiet" size="lg" isDisabled={unpairing} onPress={() => { setConfirmUnpair(false); setUnpairError(null); }} className={GREY_PILL}>
-                  Keep this iPad paired
+                  Cancel
                 </Button>
               </div>
             </div>

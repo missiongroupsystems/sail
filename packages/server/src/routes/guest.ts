@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { registerOperations, type OperationSpec } from "@sail/shared";
-import { db, settleInvariants, tx, withTransaction, type RequestTx } from "../db/client.js";
+import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { price, registerOperations, type OperationSpec, type OrderType } from "@sail/shared";
+import { db, markDryRun, settleInvariants, tx, withTransaction, type RequestTx } from "../db/client.js";
 import { channelLinks, guestRounds, guestSessions, orderLines, orders, outlets, printers, serviceRequests, tableQrTokens, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
@@ -15,7 +15,8 @@ import { applyRls } from "../middleware/pipeline.js";
 import { serveStream } from "../sse/stream.js";
 import { compileMenu } from "../services/menu.js";
 import { buildLines, type LineInput } from "../services/lines.js";
-import { bumpVersion, loadSnapshot, lockOrder, nextOrderNo, orderClosed, paidTotal, registerOrderClosedHook, repriceOrder } from "../services/orders.js";
+import { maybeComplete } from "../services/payments.js";
+import { bumpVersion, loadSnapshot, lockOrder, nextOrderNo, orderClosed, paidTotal, pricingLineOf, registerOrderClosedHook, repriceOrder } from "../services/orders.js";
 import { orderTaxSettings } from "../services/tax.js";
 import { createKitchenJobs, insertJob } from "../services/printing.js";
 import { releaseDailyCap } from "./catalogue.js";
@@ -31,17 +32,25 @@ registerOperations({
   "guest_sessions.create": op({ op: "guest_sessions.create", summary: "Start a guest session from a table QR code", description: "Exchanges the table token for a short-lived guest token scoped to the table and its open order. Rate-limited per device and per table. Ordering is possible only while the table has an open order, unless the channel allows opening on first scan.", tier: "T0", principals: [], mcp: { expose: false, toolsets: [] } }),
   "guest.order": op({ op: "guest.order", summary: "What the table has ordered", description: "The table's lines (menu prices only, no fees or totals), round statuses, the guest's requests, and whether ordering is possible (`can_order`). A session started before the table was seated is bound to the table's order here, so no new session is needed.", tier: "T0" }),
   "rounds.submit": op({ op: "rounds.submit", summary: "Send a round to the table's order", description: "Lines in the same shape as lines.add, validated against the channel menu, availability and caps. With hold orders on, the round waits for staff acceptance. With it off, it fires and prints straight away from the seating's first phone and from a phone staff have accepted a round from; another phone's round waits for staff acceptance first. Never takes payment.", emits: ["round.submitted", "line.added", "order.repriced", "order.fired"] }),
+  "rounds.quote": op({ op: "rounds.quote", summary: "Price a round before it is sent", description: "Prices the given lines (the same shape as rounds.submit) against the channel menu as the register would: each line's amount (menu price and choices, before discounts) and the round's total of those amounts, which are the amounts the table's order then shows for them. Pure: writes nothing and reserves no daily cap.", tier: "T0" }),
   "service_requests.create": op({ op: "service_requests.create", summary: "Call staff", description: "One of the channel's configured requests or `call_for_bill`, which also marks the table as bill requested. Rate-limited.", emits: ["service_request.created", "order.bill_requested"] }),
   "guest.stream": op({ op: "guest.stream", summary: "Guest live-update stream (SSE)", description: "Signals changes to the table's order (round accepted, order ready). Poll guest.order when there is no order yet.", tier: "T0", mcp: { expose: false, toolsets: [] } }),
   "rounds.list": op({ op: "rounds.list", summary: "QR rounds of an outlet", description: "Pending rounds waiting for acceptance, and recent decided ones.", tier: "T0", minRole: "server", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read"] } }),
   "rounds.accept": op({ op: "rounds.accept", summary: "Accept a held QR round", description: "Fires the round's lines and prints kitchen tickets.", tier: "T2", minRole: "server", dryRun: true, principals: ["staff", "agent"], emits: ["round.accepted", "order.fired", "print_job.created"], mcp: { expose: true, toolsets: ["pos.order"] } }),
-  "rounds.reject": op({ op: "rounds.reject", summary: "Reject a held QR round", description: "Removes the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled (\"QR order rejected\") and the table freed; the guest's phone keeps its session.", tier: "T2", minRole: "server", reasonRequired: true, dryRun: true, principals: ["staff", "agent"], emits: ["round.rejected", "line.voided", "order.cancelled"], mcp: { expose: true, toolsets: ["pos.order"] } }),
+  "rounds.reject": op({ op: "rounds.reject", summary: "Reject a held QR round", description: "Removes the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled (\"QR order rejected\") and the table freed; the guest's phone keeps its session. An order paid while the round waited completes.", tier: "T2", minRole: "server", reasonRequired: true, dryRun: true, principals: ["staff", "agent"], emits: ["round.rejected", "line.voided", "order.cancelled", "order.completed"], mcp: { expose: true, toolsets: ["pos.order"] } }),
   "service_requests.list": op({ op: "service_requests.list", summary: "Table requests of an outlet", description: "Open and recently acknowledged requests.", tier: "T0", minRole: "server", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read"] } }),
   "service_requests.acknowledge": op({ op: "service_requests.acknowledge", summary: "Acknowledge a table request", description: "Marks the request done. An agent may acknowledge at most 60 an hour.", agentPerHour: 60, minRole: "server", principals: ["staff", "agent"], emits: ["service_request.acknowledged"], mcp: { expose: true, toolsets: ["pos.order"] } }),
   "tables.rotate_qr_token": op({ op: "tables.rotate_qr_token", summary: "Rotate a table's QR token", description: "Old QR codes for the table stop working. Admin.", tier: "T3", minRole: "admin", principals: ["staff"], emits: ["table.qr_rotated"], mcp: { expose: false, toolsets: [] } }),
   "tables.qr_sheet": op({ op: "tables.qr_sheet", summary: "Printable QR sheet (PDF)", description: "A PDF of every table's current QR card at the outlet, for ordinary printers. It never rotates a code, so the cards already on the tables keep working; a table with no code gets its first one, and a code from before codes could be reprinted is replaced once. Admin.", tier: "T3", minRole: "admin", principals: ["staff"], emits: [], mcp: { expose: false, toolsets: [] } }),
   "tables.rotate_all_qr_tokens": op({ op: "tables.rotate_all_qr_tokens", summary: "Rotate every QR code at an outlet", description: "Every table's QR token at the outlet is replaced: the printed cards stop working at once (for example after cards were photographed). Print the sheet again afterwards. Admin.", tier: "T3", minRole: "admin", principals: ["staff"], emits: ["table.qr_rotated"], mcp: { expose: false, toolsets: [] } }),
 });
+
+/** The session's order completed (paid in full): why the session ended, for the phone's last screen. */
+async function orderPaid(t: RequestTx, orderId: string | null): Promise<boolean> {
+  if (!orderId) return false;
+  const [o] = await t.db.select({ status: orders.status }).from(orders).where(eq(orders.id, orderId)).limit(1);
+  return o?.status === "completed";
+}
 
 /* ---- Guest principal ---- */
 registerGuestResolver(async (token: string, t: RequestTx) => {
@@ -52,6 +61,8 @@ registerGuestResolver(async (token: string, t: RequestTx) => {
     // A rotation marks the old code with the same instant it ends the sessions with.
     const [rotated] = await t.db.select({ id: tableQrTokens.id }).from(tableQrTokens).where(and(eq(tableQrTokens.tableId, s.tableId), eq(tableQrTokens.rotatedAt, s.revokedAt))).limit(1);
     if (rotated) throw new AppError("unauthenticated", "This table has a new QR code", { remedy: "Scan the code on the table again to keep ordering.", details: { reason: "code_rotated" } });
+    // Ended because the table's bill was paid: the phone thanks the guest rather than reading like a timeout.
+    if (await orderPaid(t, s.orderId)) throw new AppError("unauthenticated", "The bill is paid", { remedy: "Thank you. Scan the table's QR code to order again.", details: { reason: "order_paid" } });
   }
   if (!s || s.revokedAt || s.expiresAt.getTime() < Date.now()) throw new AppError("unauthenticated", "This table session has ended", { remedy: "Scan the table's QR code again." });
   await t.db.update(guestSessions).set({ lastSeenAt: new Date() }).where(eq(guestSessions.id, s.id));
@@ -65,8 +76,15 @@ registerFloorExtra(async (outletId) => {
 });
 
 // Whoever closed the order (a guest, an agent), the register ends its guest sessions.
+// The table's open requests ("Bill, please", a waiter call) close with its order, in the same register operation, so the
+// Now rail and the floor's bell never outlive a table that is paid, cancelled or free.
 registerOrderClosedHook(async (orderId) => {
-  await asSystem(() => revokeSessionsForOrder(orderId));
+  await asSystem(async () => {
+    await revokeSessionsForOrder(orderId);
+    const [o] = await db().select({ tableId: orders.tableId }).from(orders).where(eq(orders.id, orderId)).limit(1);
+    const forThisOrder = o?.tableId ? or(eq(serviceRequests.orderId, orderId), and(eq(serviceRequests.tableId, o.tableId), isNull(serviceRequests.orderId))) : eq(serviceRequests.orderId, orderId);
+    await db().update(serviceRequests).set({ status: "acknowledged", acknowledgedAt: new Date(), acknowledgedByName: "Closed with the order" }).where(and(eq(serviceRequests.status, "open"), forThisOrder!));
+  });
 });
 
 const LineInputSchema = z.object({ line_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1).max(50), modifiers: z.array(z.object({ group_id: z.uuid(), product_id: z.uuid(), quantity: z.number().int().min(1).max(20).optional() })).max(40).optional(), notes: untrusted(z.string().max(200).nullable().optional()), seat_no: z.number().int().min(1).max(99).nullable().optional() });
@@ -167,6 +185,37 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: { round_id: b.round_id, status: result.hold ? "pending" : "accepted", order_opened: result.openedNow, ...view } }, 201);
   });
 
+  defineOp(app, { op: "rounds.quote", method: "post", path: "/v1/guest/rounds/quote", tags: ["guest"], request: { body: jsonBody(z.object({ lines: z.array(LineInputSchema).min(1).max(30) })) }, responses: { 200: jsonResponse(dataResponse(z.object({ lines: z.array(z.object({ line_id: z.string(), quantity: z.number().int(), amount: z.number().int() })), total: z.number().int() }))), ...errorResponses } }, async (c) => {
+    const p = guestOnly(c.get("principal"));
+    const b = c.req.valid("json");
+    // A phone prices its basket as it changes, two a second at most; the hit is kept although the quote rolls back.
+    await enforceLimit(p.merchantId, `quote:sess:${p.sessionId}`, RATE.quotesPerSession, "price checks from this phone");
+    const [link] = await db().select().from(channelLinks).where(eq(channelLinks.id, p.channelLinkId)).limit(1);
+    if (!link?.enabled) throw new AppError("unavailable", "Ordering from your phone is switched off", { remedy: "Please order with a member of staff." });
+    const menu = await compileMenu(link.id, new Date());
+    const bd = await businessDayInputs(p.merchantId, p.outletId);
+    const today = businessDateFor(new Date(), bd.cutoff, bd.timeZone);
+    const priced = await asSystem(async () => {
+      // A table the POS opened prices at its own order type, as the send would.
+      const orderId = await openOrderIdForTable(p.tableId);
+      const [order] = orderId ? await db().select({ orderType: orders.orderType }).from(orders).where(eq(orders.id, orderId)).limit(1) : [];
+      const orderType = (order?.orderType ?? "dine_in") as OrderType;
+      const built = await buildLines(menu, b.lines as LineInput[], { orderType, outletId: p.outletId, today, source: "guest", addedBy: null, addedByName: null, allowOpenPrice: false, startSort: 0 });
+      const tax = await orderTaxSettings(p.merchantId, p.outletId);
+      // The line amounts are the base the register stores on each line (menu price and choices, before any rule), so
+      // no rule is applied here: what this returns is what "Our table" shows for the same lines once they are sent.
+      return price(
+        { order_type: orderType, channel: "scan_to_order", outlet_id: p.outletId, brand_id: link.brandId, customer_group_ids: [], manual_applications: [], lines: built.map((l) => pricingLineOf({ id: l.id!, productId: l.productId, categoryId: l.categoryId ?? null, parentCategoryId: l.parentCategoryId ?? null, tags: l.tags ?? [], hasDeposit: l.hasDeposit ?? false, taxClassId: l.taxClassId, quantity: l.quantity, basePrice: l.basePrice, pricesByOrderType: l.pricesByOrderType ?? {}, openPrice: l.openPrice ?? null, modifiers: l.modifiers ?? [], name: l.name })) },
+        [],
+        { tax_mode: tax.taxMode, tax_rounding: tax.taxRounding, tax_rates: tax.taxRates, now: new Date().toISOString(), frozen: null },
+      );
+    });
+    // Building the lines checked the day's caps the way a send would; nothing of that is kept.
+    markDryRun();
+    c.set("dryRun", true);
+    return c.json({ data: { lines: priced.lines.map((l) => ({ line_id: l.line_id, quantity: l.quantity, amount: l.base_amount })), total: priced.totals.subtotal } }, 200);
+  });
+
   defineOp(app, { op: "service_requests.create", method: "post", path: "/v1/guest/requests", tags: ["guest"], request: { body: jsonBody(z.object({ type: z.string().min(1).max(40), guest_name: untrusted(z.string().max(40).optional(), "guest_name", "added_by", "opened_by") })) }, responses: { 201: jsonResponse(dataResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {
     const p = guestOnly(c.get("principal"));
     const b = c.req.valid("json");
@@ -212,10 +261,12 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
         if (s?.revokedAt) {
           const [rotated] = await t.db.select({ id: tableQrTokens.id }).from(tableQrTokens).where(and(eq(tableQrTokens.tableId, s.tableId), eq(tableQrTokens.rotatedAt, s.revokedAt))).limit(1);
           if (rotated) return { reason: "code_rotated" };
+          if (await orderPaid(t, orderId)) return { reason: "order_paid" };
         }
         return {};
       });
-    return serveStream(c, [`order:${orderId}`], { order_id: orderId }, (n) => n.kind === "resync" || (n.kind === "event" && n.aggregate_id === orderId), ended);
+    // The table's events too: a rotated code ends the session on every open phone at once, not on its next request.
+    return serveStream(c, [`order:${orderId}`, `table:${p.tableId}`], { order_id: orderId }, (n) => n.kind === "resync" || (n.kind === "event" && (n.aggregate_id === orderId || n.aggregate_id === p.tableId)), ended);
   });
 
   /* ---- Staff side ---- */
@@ -229,7 +280,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     const lineIds = rows.flatMap((r) => r.lineIds);
     const lines = lineIds.length ? await db().select().from(orderLines).where(inArray(orderLines.id, lineIds)) : [];
     const tableRows = rows.length ? await db().select({ id: tables.id, name: tables.name }).from(tables).where(inArray(tables.id, rows.map((r) => r.tableId))) : [];
-    return c.json({ data: rows.map((r) => ({ ...toRound(r), table_name: tableRows.find((t) => t.id === r.tableId)?.name ?? null, lines: r.lineIds.flatMap((lid) => lines.filter((l) => l.id === lid)).map((l) => ({ id: l.id, name: l.name, quantity: l.quantity, modifiers: l.modifiers.map((m) => m.name), notes: l.notes, status: l.status })) })), next_cursor: null }, 200);
+    return c.json({ data: rows.map((r) => ({ ...toRound(r), table_name: tableRows.find((t) => t.id === r.tableId)?.name ?? null, lines: r.lineIds.flatMap((lid) => lines.filter((l) => l.id === lid)).map((l) => ({ id: l.id, product_id: l.productId, name: l.name, quantity: l.quantity, modifiers: l.modifiers.map((m) => m.name), notes: l.notes, status: l.status })) })), next_cursor: null }, 200);
   });
 
   const decide = async (c: Parameters<Parameters<typeof defineOp>[2]>[0], roundId: string, action: "accept" | "reject", reason?: string) => {
@@ -259,8 +310,11 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     if (cancelled) await recordAudit(p, { action: "orders.cancel", targetKind: "order", targetId: order.id, outletId: order.outletId, reason: REJECTED_CANCEL_REASON, details: { round_id: roundId } });
     // Price and check first; events (and the kitchen tickets of an accepted round) last, so the outlet's sequence lock is held briefly.
     await repriceOrder(order.id);
+    // A table paid while the round waited is settled once the round is rejected.
+    const completed = action === "reject" && !cancelled && (await paidTotal(order.id)) > 0 && (await maybeComplete(order.id, now));
     const version = await bumpVersion(order.id);
     await settleInvariants();
+    if (completed) events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "order.completed", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "rounds.reject", payload: { order_no: order.orderNo }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
     if (action === "accept") {
       events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "round.accepted", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "rounds.accept", payload: { round_id: roundId }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
       warnings = await fireRound(c.get("correlationId"), p, order, roundId, bd, "rounds.accept"); // statuses only, no amounts

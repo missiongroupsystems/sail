@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
-import { allocateLine, currencyExponent, sumTaxes, type BillDocument, type Share, type TaxAmount } from "@sail/shared";
+import { allocateLine, currencyExponent, rebalanceBillTax, sumTaxes, type TaxRow, type BillDocument, type Share, type TaxAmount } from "@sail/shared";
 import { assertNotSettled, db } from "../db/client.js";
 import { brands, checkAllocations, checks, merchantSettings, orderAdjustmentLines, orderAdjustments, orderLines, orders, outlets, payments, refundLines, refunds, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
+import { waitingLineIds } from "./orders.js";
 
 /**
  * Checks (bills) and allocations. In v0.6 every order has one
@@ -26,19 +27,23 @@ export async function ensureFirstCheck(order: { id: string; merchantId: string; 
   return [row!];
 }
 
-type LineComp = { id: string; base: number; discount: number; fee: number; taxes: TaxAmount[]; total: number; adjustments: Record<string, { amount: number; tax: number }> };
+type LineComp = { id: string; base: number; discount: number; fee: number; taxes: TaxAmount[]; taxables: Record<string, number>; total: number; adjustments: Record<string, { amount: number; tax: number }> };
 
 async function lineComponents(orderId: string): Promise<LineComp[]> {
-  const [lines, adjLines] = await Promise.all([
+  const [all, adjLines, waiting] = await Promise.all([
     db().select().from(orderLines).where(and(eq(orderLines.orderId, orderId), sql`${orderLines.status} <> 'voided'`)).orderBy(asc(orderLines.sort), asc(orderLines.createdAt), asc(orderLines.id)),
     db().select({ adjustmentId: orderAdjustmentLines.adjustmentId, orderLineId: orderAdjustmentLines.orderLineId, amount: orderAdjustmentLines.amount, taxAmount: orderAdjustmentLines.taxAmount }).from(orderAdjustmentLines).innerJoin(orderAdjustments, eq(orderAdjustments.id, orderAdjustmentLines.adjustmentId)).where(eq(orderAdjustments.orderId, orderId)),
+    waitingLineIds(orderId),
   ]);
+  // A QR round staff have not accepted is on no bill.
+  const lines = waiting.size ? all.filter((l) => !waiting.has(l.id)) : all;
   return lines.map((l) => ({
     id: l.id,
     base: l.baseAmount,
     discount: l.discountAmount,
     fee: l.feeAmount,
     taxes: l.taxes.map((t) => ({ name: t.name, bps: t.bps, amount: t.amount })),
+    taxables: Object.fromEntries(l.taxes.map((t) => [`${t.bps}|${t.name}`, t.taxable])),
     total: l.total,
     adjustments: Object.fromEntries(adjLines.filter((a) => a.orderLineId === l.id).map((a) => [a.adjustmentId, { amount: a.amount, tax: a.taxAmount }])),
   }));
@@ -101,6 +106,14 @@ export async function syncAllocations(orderId: string, opts: { sharesByLine?: Ma
         .filter(({ s }) => s.num > 0)
         .map(({ c, p, s }) => ({ merchantId: order.merchantId, checkId: c.id, orderLineId: line.id, shareNum: s.num, shareDen: s.den, base: p.base, discount: p.discount, fee: p.fee, tax: p.tax, taxes: p.taxes, total: p.total, adjustments: p.adjustments }));
     });
+    // Under per-rate rounding each split bill's tax is made its own rate times its own subtotal, to within the cent the
+    // order's one rounding leaves (that cent is spread by largest remainder; the order's tax always wins).
+    if (order.taxRounding === "per_rate" && new Set(values.map((v) => v.checkId)).size > 1) {
+      const rows: TaxRow[] = values.map((v) => ({ check: chks.findIndex((c) => c.id === v.checkId), lineId: v.orderLineId, shareNum: v.shareNum, shareDen: v.shareDen, taxes: v.taxes, tax: v.tax, total: v.total }));
+      const moved = rebalanceBillTax(rows, Object.fromEntries(rebuilt.map((l) => [l.id, l.taxables])), { taxAddsToTotal: taxAdds, movable: new Set(rebuilt.filter((l) => l.fee === 0).map((l) => l.id)) });
+      rows.forEach((r, i) => Object.assign(values[i]!, { taxes: r.taxes, tax: r.tax, total: r.total }));
+      for (const [lineId, byKey] of moved) await moveLineTax(lineId, byKey, taxAdds);
+    }
     if (values.length) await db().insert(checkAllocations).values(values);
   }
 
@@ -131,6 +144,16 @@ export async function syncAllocations(orderId: string, opts: { sharesByLine?: Ma
     refreshed.push(row!);
   }
   return refreshed;
+}
+
+/** Apply a split's moved tax cents to a line (its order and its other figures are unchanged; the order's tax still adds up). */
+async function moveLineTax(lineId: string, byKey: Map<string, number>, taxAdds: boolean) {
+  const [l] = await db().select().from(orderLines).where(eq(orderLines.id, lineId)).limit(1);
+  if (!l) return;
+  const d = [...byKey.values()].reduce((a, b) => a + b, 0);
+  if (d === 0 && [...byKey.values()].every((x) => x === 0)) return;
+  const taxes = l.taxes.map((t) => ({ ...t, amount: t.amount + (byKey.get(`${t.bps}|${t.name}`) ?? 0), taxable: taxAdds ? t.taxable : t.taxable - d }));
+  await db().update(orderLines).set({ taxes, taxAmount: l.taxAmount + d, total: taxAdds ? l.total + d : l.total }).where(eq(orderLines.id, lineId));
 }
 
 /** Manual adjustments with a stored amount on a paid bill's line cannot be removed: refund the bill instead. */
@@ -264,14 +287,32 @@ export async function billDocumentFor(checkId: string, kind: "prebill" | "receip
     }),
     adjustments: adjs.filter((a) => (adjustmentTotals.get(a.id) ?? 0) !== 0).map((a) => ({ name: a.name, amount: adjustmentTotals.get(a.id)!, kind: a.kind as "fee" | "discount" })),
     totals: { subtotal: c.subtotal, discount_total: c.discountTotal, fee_total: c.feeTotal, tax_total: c.taxTotal, taxes: c.taxes, total: c.total, tax_mode: o.taxMode as "inclusive" | "exclusive" },
-    payments: kind === "receipt" ? pays.map((p) => ({ tender: p.tenderName, amount: p.amount, rounding_cents: p.roundingCents || undefined, reference: p.reference ?? undefined, tip: p.tipCents || undefined, change: p.changeCents || undefined, charged: p.tipCents || p.roundingCents ? p.amount + p.roundingCents + p.tipCents : undefined })) : undefined,
+    payments: kind === "receipt" ? pays.map((p) => ({ tender: p.tenderName, amount: p.amount, rounding_cents: p.roundingCents || undefined, reference: p.reference ?? undefined, tip: p.tipCents || undefined, change: p.changeCents || undefined, tendered: p.changeCents && p.tendered ? p.tendered : undefined, charged: p.tipCents || p.roundingCents ? p.amount + p.roundingCents + p.tipCents : undefined })) : undefined,
     balance: c.total - c.paidTotal > 0 ? c.total - c.paidTotal : undefined,
+    tax_note: o.taxRounding === "per_rate" && allChecks.length > 1 ? splitTaxNote(c.taxes, allocs, lines) : undefined,
     invoice_no: c.invoiceNo ?? undefined,
     footer_lines: settings.receiptFooter ? settings.receiptFooter.split("\n") : undefined,
     outlet_phone: settings.receiptShowOutletPhone && outlet?.phone ? outlet.phone : undefined,
     ...registrations(settings, outlet),
     digital_receipt_url: extra.digitalReceiptUrl,
   };
+}
+
+/**
+ * When a split bill's tax for a rate is not its own rate times its own taxable amount (the cent the order's single rounding
+ * leaves goes to one bill, by largest remainder), the bill says so in one line; otherwise nothing is printed.
+ */
+function splitTaxNote(taxes: TaxAmount[], allocs: (typeof checkAllocations.$inferSelect)[], lines: (typeof orderLines.$inferSelect)[]): string | undefined {
+  for (const t of taxes) {
+    const taxable = allocs.reduce((n, a) => {
+      const l = lines.find((x) => x.id === a.orderLineId);
+      const b = l?.taxes.find((x) => x.name === t.name && x.bps === t.bps);
+      return n + (b ? (b.taxable * a.shareNum) / a.shareDen : 0);
+    }, 0);
+    const own = Math.floor((Math.round(taxable) * t.bps) / 10_000 + 0.5);
+    if (own !== t.amount) return "Tax includes a cent of rounding so the bills add up to the order's tax.";
+  }
+  return undefined;
 }
 
 /** The outlet's registration numbers as printed, each after the merchant's label for it. */
