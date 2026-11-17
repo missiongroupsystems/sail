@@ -6,8 +6,10 @@ import type { GuestTotals } from "@/lib/types";
 /**
  * The table's totals on a grey panel, as the register priced the order: subtotal, each fee and discount, tax and the
  * table total. With inclusive prices the tax rows follow the total, marked "included". Nothing here is added up.
+ * While a round waits for staff (`soFar`), the panel says these are the figures on the bill so far: the waiting items
+ * are not on it yet (live-test final2 C-3).
  */
-export function TotalsPanel({ totals }: { totals: GuestTotals }) {
+export function TotalsPanel({ totals, soFar = false }: { totals: GuestTotals; soFar?: boolean }) {
   const tax = taxRows(totals.taxes, totals.tax_mode);
   const row = (key: string, label: string, cents: number, signed = false) => (
     <div key={key} className="flex items-baseline justify-between gap-4 py-1 text-[15px]">
@@ -19,6 +21,7 @@ export function TotalsPanel({ totals }: { totals: GuestTotals }) {
   );
   return (
     <section aria-label="Table total" className="rounded-sheet bg-surface-2 px-4 pt-3 pb-4">
+      {soFar ? <p className="pb-1 text-[13.5px] text-ink-2">On the bill so far</p> : null}
       <dl className="flex flex-col">
         {row("subtotal", "Subtotal", totals.subtotal)}
         {totals.adjustments.map((a, i) => row(`adj:${i}`, a.name, a.total, a.total < 0))}

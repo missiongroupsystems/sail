@@ -11,8 +11,8 @@ import type { Outlet } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
 import { rangeScope, ReportRange, useReportRange } from "../ReportRange";
 
-/** One row of the register's product mix (reports.product_mix). */
-type MixRow = { key: string | null; name: string; quantity: number; gross: number; discounts: number; net: number; share_bps: number };
+/** One row of the register's product mix (reports.product_mix): gross + discounts (negative) − tax − refunds = net. */
+type MixRow = { key: string | null; name: string; quantity: number; gross: number; discounts: number; tax: number; refunds: number; net: number; share_bps: number };
 type GroupBy = "item" | "category" | "staff";
 
 const GROUPS: { id: GroupBy; label: string }[] = [
@@ -27,11 +27,14 @@ function Share({ bps }: { bps: number }) {
   return <>{number(bps / 100, 1)}%</>;
 }
 
-const columns: DataTableColumn<MixRow>[] = [
+// Refunds have a column so every row adds up (review 2, N6); the tax inside VAT-inclusive prices only where there is some.
+const columnsFor = (rows: MixRow[]): DataTableColumn<MixRow>[] => [
   { key: "name", header: "Name", isRowHeader: true, sortable: true, render: (r) => <span className="text-ink">{r.name}</span> },
   { key: "quantity", header: "Sold", numeric: true, sortable: true, render: (r) => r.quantity },
   { key: "gross", header: "Gross", numeric: true, sortable: true, render: (r) => <Money cents={r.gross} /> },
-  { key: "discounts", header: "Discounts", numeric: true, sortable: true, render: (r) => <Money cents={-r.discounts} /> },
+  { key: "discounts", header: "Discounts", numeric: true, sortable: true, render: (r) => <Money cents={r.discounts} /> },
+  ...(rows.some((r) => r.tax !== 0) ? [{ key: "tax", header: "Tax in prices", numeric: true, sortable: true, render: (r: MixRow) => <Money cents={-r.tax} /> }] : []),
+  { key: "refunds", header: "Refunds", numeric: true, sortable: true, render: (r) => <Money cents={-r.refunds} /> },
   { key: "net", header: "Net", numeric: true, sortable: true, render: (r) => <Money cents={r.net} /> },
   { key: "share_bps", header: "Share of net", numeric: true, sortable: true, render: (r) => <Share bps={r.share_bps} /> },
 ];
@@ -68,7 +71,7 @@ export function ItemsView({ outlets, scope, initialOutletId, today, initialRange
       {report.data ? (
         <div ref={figures}>
         <ReportPrintHead title="Items" scope={[...rangeScope(outlets, range), ["Group", GROUPS.find((g) => g.id === groupBy)!.label]]} />
-        <DataTable aria-label="Items sold" columns={columns} rows={report.data} rowKey={(r) => r.key ?? r.name} defaultSort={{ column: "net", direction: "descending" }} emptyState={<EmptyState title="Nothing sold in this range" />} className={report.isPlaceholderData ? "opacity-60" : undefined} />
+        <DataTable aria-label="Items sold" columns={columnsFor(report.data)} rows={report.data} rowKey={(r) => r.key ?? r.name} defaultSort={{ column: "net", direction: "descending" }} emptyState={<EmptyState title="Nothing sold in this range" />} className={report.isPlaceholderData ? "opacity-60" : undefined} />
         </div>
       ) : null}
     </>

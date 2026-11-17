@@ -8,9 +8,10 @@ describe("taxDue", () => {
       { name: "Service tax", bps: 600, amount: 120 },
     ];
     const refunded = [{ name: "GST", bps: 900, amount: 450 }];
+    // Lowest rate first, as the POS, the receipt, the invoice and the reports list them (review 2, N11).
     expect(taxDue(charged, refunded)).toEqual([
-      { name: "GST", bps: 900, amount: 1350 },
       { name: "Service tax", bps: 600, amount: 120 },
+      { name: "GST", bps: 900, amount: 1350 },
     ]);
   });
 
@@ -24,9 +25,9 @@ describe("taxDue", () => {
       { name: "Old levy", bps: 100, amount: 7 },
     ];
     expect(taxDue(charged, refunded)).toEqual([
-      { name: "VAT", bps: 2000, amount: 400 },
-      { name: "VAT", bps: 500, amount: 0 },
       { name: "Old levy", bps: 100, amount: -7 },
+      { name: "VAT", bps: 500, amount: 0 },
+      { name: "VAT", bps: 2000, amount: 400 },
     ]);
   });
 

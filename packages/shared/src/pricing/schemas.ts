@@ -260,6 +260,14 @@ export const PricingContextSchema = z.object({
   /** Evaluation time, passed in explicitly. The engine never reads the clock. */
   now: z.iso.datetime(),
   /**
+   * Amounts already taxed on a paid bill and not priced again (`per_rate` only). Each carries its rate's components
+   * and the tax it keeps. The order's tax per rate is still the rate times the whole order's taxable amount: the
+   * paid amounts keep their tax and the lines priced now take the rest.
+   */
+  carried_tax: z
+    .array(z.object({ components: z.array(TaxComponentSchema), amount: CentsSchema, taxes: z.array(CentsSchema) }))
+    .default([]),
+  /**
    * When set, the order has a payment: order-level and minimum-spend rules are
    * frozen to these results, and lines not covered by them are priced with
    * line-level rules only.

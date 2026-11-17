@@ -14,7 +14,8 @@ const HEARTBEAT_MS = 20_000;
  *   - `ended`   { reason? }     the stream's session has ended (`ended` below); the stream closes after it
  *   - heartbeat comment every 20 s keeps proxies from closing idle connections
  */
-export function serveStream(c: AppContext, keys: string[], hello: Record<string, unknown>, filter?: (n: Notification) => boolean, ended?: () => Promise<Record<string, unknown> | null>) {
+// `filter` is told which key the notification came on, so a stream can take only some events from a wide key (an outlet's).
+export function serveStream(c: AppContext, keys: string[], hello: Record<string, unknown>, filter?: (n: Notification, key: string) => boolean, ended?: () => Promise<Record<string, unknown> | null>) {
   return streamSSE(c, async (stream) => {
     let id = 0;
     const send = (event: string, data: unknown) => stream.writeSSE({ event, data: JSON.stringify(data), id: String(++id) });
@@ -39,7 +40,7 @@ export function serveStream(c: AppContext, keys: string[], hello: Record<string,
     };
     const unsubs = keys.map((k) =>
       subscribe(k, (n) => {
-        if (filter && !filter(n)) return;
+        if (filter && !filter(n, k)) return;
         queue = queue.then(() => relay(n)).catch(() => undefined);
       }),
     );

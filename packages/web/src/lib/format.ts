@@ -35,6 +35,19 @@ const AUDIT_ACTION: Record<string, string> = {
   "shifts.close": "Closed shift", "business_days.close": "Closed the business day", "imports.apply": "Imported a menu",
   "stock.set_daily_cap": "Set a daily cap",
   "categories.create": "Created a category", "categories.update": "Changed a category", "stations.unpair": "Unpaired a station",
+  // Every other action the register audits, so none reads as its raw key (live-test final2 A P-A3).
+  "tables.qr_sheet": "Printed the QR sheet", "tables.rotate_all_qr_tokens": "Rotated every table code", "availability.create": "Added an availability rule",
+  "availability.update": "Changed an availability rule", "availability.delete": "Deleted an availability rule", "imports.create": "Uploaded a menu import",
+  "customers.upsert": "Saved a customer", "customer_groups.set_members": "Changed a customer group", "customer_groups.create": "Added a customer group", "customer_groups.update": "Changed a customer group",
+  "tax_classes.create": "Added a tax class", "tax_classes.update": "Changed a tax class", "tax_rates.delete": "Deleted tax rates",
+  "layouts.create": "Added a POS layout", "layouts.update": "Changed a POS layout", "payment_providers.configure": "Set up card payments",
+  "print_jobs.test": "Printed a test page", "relays.pairing_code": "Made a relay pairing code", "staff.login_linked": "Linked a sign-in",
+  "agent_identities.create": "Added an assistant", "agent_identities.update": "Changed an assistant", "agent_identities.rotate_credential": "Renewed an assistant's key",
+  "proposals.approve": "Approved a proposal", "proposals.reject": "Turned down a proposal", "rounds.accept": "Accepted a QR order", "rounds.reject": "Rejected a QR order",
+  "printers.create": "Added a printer", "printers.update": "Changed a printer", "relays.create": "Added a print relay", "relays.update": "Changed a print relay",
+  "areas.create": "Added an area", "areas.update": "Changed an area", "tables.create": "Added a table", "tables.update": "Changed a table",
+  "tender_types.create": "Added a payment type", "tender_types.update": "Changed a payment type", "void_reasons.create": "Added a void reason", "void_reasons.update": "Changed a void reason",
+  "channel_links.create": "Added a channel", "channel_links.update": "Changed a channel", "display_destinations.create": "Added a display route", "display_destinations.update": "Changed a display route",
 };
 /** "categories" → "category", "classes" → "class", "rules" → "rule" (E-N8: not "categorie"). */
 function singular(word: string): string {
@@ -50,7 +63,7 @@ export function auditActionLabel(action: string): string {
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : action;
 }
 /** Target kinds whose words differ from their name: a "report_category" is the menu's category. */
-const AUDIT_TARGET: Record<string, string> = { report_category: "Category", order_line: "Order line", import_job: "Menu import", availability_rule: "Availability rule", agent_identity: "Assistant", print_job: "Print job", business_day: "Business day" };
+const AUDIT_TARGET: Record<string, string> = { check: "Bill", payment_provider: "Card payments", tender_type: "Payment type", channel_link: "Channel", display_destination: "Display route", customer_group: "Customer group", layout: "POS layout", catalogue: "Catalogue", report_category: "Category", order_line: "Order line", import_job: "Menu import", availability_rule: "Availability rule", agent_identity: "Assistant", print_job: "Print job", business_day: "Business day" };
 /** "pricing_rule" reads "Pricing rule". */
 export function auditTargetLabel(kind: string | null | undefined): string {
   if (!kind) return "—";

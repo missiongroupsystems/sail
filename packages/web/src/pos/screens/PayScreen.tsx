@@ -205,6 +205,11 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   // change (it read $0.00 for an instant, live-test A-10) while its own dry run is on the wire.
   const currentKey = tender ? previewKey(tender.id, amount, tender.is_cash ? tendered : null, tipKey ? (JSON.parse(tipKey) as { tip_bps?: number; tip_cents?: number }) : {}) : "";
   const fresh = preview && preview.key === currentKey ? preview : null;
+  const [lastTip, setLastTip] = useState<{ bps: number; amount: number; cash: boolean; cents: number } | null>(null);
+  const freshTip = fresh?.figures.tip_cents ?? null;
+  useEffect(() => {
+    if (tip.kind === "percent" && freshTip != null && tender) setLastTip({ bps: tip.bps, amount, cash: tender.is_cash, cents: freshTip });
+  }, [freshTip, tip, amount, tender]);
   useEffect(() => {
     if (!tender || !check || done || busy) return;
     if (localStop) {
@@ -361,11 +366,14 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
   // The terminal cannot take an approval, so a Server cannot send a card payment to it; every other method asks for one.
   const terminalNeedsCashier = onTerminal && !canPay;
   const blocked = offline || busy || amount <= 0 || Boolean(previewError) || Boolean(localStop) || waitingForRegister || watched?.state === "pending" || terminalNeedsCashier;
-  const tipText = tipping && figures ? money(figures.tip_cents ?? 0) : null;
+  // While a new dry run is on the wire (cash tapped after a % tip), the tip the register gave for the same rate and amount
+  // stays on the pad instead of "$0.00" (review 2, N11); it is the register's figure, and it is unchanged by the cash.
+  const knownTip = tip.kind === "percent" ? (figures?.tip_cents ?? (lastTip && lastTip.bps === tip.bps && lastTip.amount === amount && lastTip.cash === tender.is_cash ? lastTip.cents : null)) : null;
+  const tipText = tipping && figures ? money(figures.tip_cents ?? 0) : tipping && knownTip != null ? money(knownTip) : null;
 
   // The keypad: which figure it types into, what it shows, and what a key does to it.
   const padTarget: PadTarget = pad.target === "cash" && !tender.is_cash ? "amount" : pad.target === "tip" && !tipsOffered ? "amount" : pad.target;
-  const padDigitsShown = padTarget === "amount" ? (digits ?? String(balance)) : padTarget === "cash" ? (tendered != null ? String(tendered) : String(due)) : tip.kind === "amount" ? tip.digits : tip.kind === "percent" && figures?.tip_cents != null ? String(figures.tip_cents) : "";
+  const padDigitsShown = padTarget === "amount" ? (digits ?? String(balance)) : padTarget === "cash" ? (tendered != null ? String(tendered) : String(due)) : tip.kind === "amount" ? tip.digits : tip.kind === "percent" && knownTip != null ? String(knownTip) : "";
   const padFresh = pad.fresh;
   const onPad = (next: string) => {
     const d = typed(padDigitsShown, next, padFresh);

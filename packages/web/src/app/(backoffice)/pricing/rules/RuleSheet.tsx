@@ -132,7 +132,6 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
       description={
         row ? (
           <span className="inline-flex flex-wrap items-center gap-2">
-            <span className="text-caption">{row.rule_key}</span>
             <Badge tone={row.current.status === "active" ? "paid" : row.current.status === "scheduled" ? "sent" : row.current.status === "archived" ? "alert" : "neutral"}>
               {STATUS_LABEL[row.current.status]} · v{row.current.version}
             </Badge>
@@ -204,9 +203,10 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
           ) : null}
 
           <FormSection>
-            <div className="grid gap-4 sm:grid-cols-[1fr_220px]">
+            {/* The key is set once, when the rule is made; an existing rule shows its name alone (final2 A P-A8). */}
+            <div className={row ? "grid gap-4" : "grid gap-4 sm:grid-cols-[1fr_220px]"}>
               <RhfTextField control={form.control} name="name" label="Name" placeholder={kind === "fee" ? "Service charge" : "Staff meal"} description="Shown on bills and receipts." autoFocus={!row} />
-              <RhfTextField control={form.control} name="rule_key" label="Key" mono isDisabled={!!row} description={row ? "Fixed once created." : "Stable id across versions."} />
+              {row ? null : <RhfTextField control={form.control} name="rule_key" label="Key" mono description="Stable id across versions." />}
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <RhfSelect

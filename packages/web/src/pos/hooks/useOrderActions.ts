@@ -793,17 +793,15 @@ export function useOrderActions(orderId: string) {
   const reopen = useCallback(
     async (reason: string) => {
       try {
-        const reversed = (snapshot()?.checks ?? []).flatMap((c) => c.payments.filter((p) => p.status === "recorded"));
         const res = await withApproval({ action: "orders.reopen", target_kind: "order", target_id: orderId, args: {} }, "Reopen this order", `Reason: ${reason}`, (overrideId) => run((expected) => reg.reopenOrder(api, orderId, reason, { expectedVersion: expected, overrideId })));
-        // On the reopened order, the reversal is said once more where the bill now shows its balance again.
-        if (res && reversed.length) notify({ text: `Reopened. ${reversed.length === 1 ? "Its payment was" : `Its ${reversed.length} payments were`} reversed`, remedy: "Take payment again for the balance.", tone: "info", orderId }, 8000);
+        // The reversal is said once, by the order's own note above the bill (ReopenedNote), not again in a toast (final2 B Low).
         return res;
       } catch (e) {
         fail(e);
         return null;
       }
     },
-    [api, fail, notify, orderId, run, snapshot, withApproval],
+    [api, fail, orderId, run, withApproval],
   );
 
   /* ---- Receipts and documents ---- */
@@ -873,6 +871,19 @@ export function useOrderActions(orderId: string) {
       }
     },
     [api, fail],
+  );
+
+  /**
+   * The invoice control wherever an invoice is shown: issue it first when the bill has none, then open its PDF for a
+   * role that may read it (review 2, N8; the Bill screen did this already, M19).
+   */
+  const getInvoice = useCallback(
+    async (checkId: string, invoiceNo: string | null) => {
+      const no = invoiceNo ?? (await issueInvoice(checkId))?.invoice_no ?? null;
+      if (no && mayReadInvoice) await openInvoicePdf(checkId, no);
+      return no;
+    },
+    [issueInvoice, mayReadInvoice, openInvoicePdf],
   );
 
   /* ---- Refunds: the quote is the register's; Manager+ or an approval for the signed-in role. ---- */
@@ -1019,6 +1030,7 @@ export function useOrderActions(orderId: string) {
       sendReceipt,
       issueInvoice,
       openInvoicePdf,
+      getInvoice,
       mayReadInvoice,
       quoteRefund,
       refund,
@@ -1029,7 +1041,7 @@ export function useOrderActions(orderId: string) {
       reprint,
       role,
     }),
-    [addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, splitEven, splitBySeat, allocate, unsplit, prebill, previewPayment, pay, startTerminal, cancelTerminal, voidPayment, complete, reopen, reopenRefusal, printReceipt, sendReceipt, issueInvoice, openInvoicePdf, mayReadInvoice, quoteRefund, refund, printRefundReceipt, acceptRound, rejectRound, markSoldOut, reprint, role],
+    [addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, splitEven, splitBySeat, allocate, unsplit, prebill, previewPayment, pay, startTerminal, cancelTerminal, voidPayment, complete, reopen, reopenRefusal, printReceipt, sendReceipt, issueInvoice, openInvoicePdf, getInvoice, mayReadInvoice, quoteRefund, refund, printRefundReceipt, acceptRound, rejectRound, markSoldOut, reprint, role],
   );
 }
 

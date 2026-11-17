@@ -161,9 +161,11 @@ test("guest 3–5, D-1: steppers in the cart, the sent banner and the table's to
     await phone.getByRole("group", { name: "Quantity of Kopi" }).getByRole("button", { name: /^More/ }).click();
     await phone.getByRole("button", { name: "Send 2 items to the kitchen" }).click();
     await expect(phone.getByRole("heading", { name: "Order sent" })).toBeVisible();
-    const totals = phone.getByRole("region", { name: "Table total" });
-    await expect(totals).toContainText("Subtotal");
-    await expect(totals).toContainText("Table total");
+    // The waiting round is on no bill yet (final2 C-3): it shows its own total, and the table's figures wait for a line on the bill.
+    const round = phone.getByRole("region", { name: "Latest order" });
+    await expect(round).toContainText("Not on the bill until staff accept it");
+    await expect(round).toContainText("$3.60");
+    await expect(phone.getByRole("region", { name: "Table total" })).toHaveCount(0);
     expect(await phone.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   } finally {
     await phone.close();

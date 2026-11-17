@@ -45,11 +45,14 @@ registerOperations({
   "tables.rotate_all_qr_tokens": op({ op: "tables.rotate_all_qr_tokens", summary: "Rotate every QR code at an outlet", description: "Every table's QR token at the outlet is replaced: the printed cards stop working at once (for example after cards were photographed). Print the sheet again afterwards. Admin.", tier: "T3", minRole: "admin", principals: ["staff"], emits: ["table.qr_rotated"], mcp: { expose: false, toolsets: [] } }),
 });
 
-/** The session's order completed (paid in full): why the session ended, for the phone's last screen. */
-async function orderPaid(t: RequestTx, orderId: string | null): Promise<boolean> {
-  if (!orderId) return false;
+/**
+ * Why the session's order closed, for the phone's last screen: paid in full (`order_paid`), or cancelled by staff
+ * (`order_cancelled`, live-test final2 C-6), so neither reads like a timeout.
+ */
+async function orderClosedReason(t: RequestTx, orderId: string | null): Promise<"order_paid" | "order_cancelled" | null> {
+  if (!orderId) return null;
   const [o] = await t.db.select({ status: orders.status }).from(orders).where(eq(orders.id, orderId)).limit(1);
-  return o?.status === "completed";
+  return o?.status === "completed" ? "order_paid" : o?.status === "cancelled" ? "order_cancelled" : null;
 }
 
 /* ---- Guest principal ---- */
@@ -61,8 +64,10 @@ registerGuestResolver(async (token: string, t: RequestTx) => {
     // A rotation marks the old code with the same instant it ends the sessions with.
     const [rotated] = await t.db.select({ id: tableQrTokens.id }).from(tableQrTokens).where(and(eq(tableQrTokens.tableId, s.tableId), eq(tableQrTokens.rotatedAt, s.revokedAt))).limit(1);
     if (rotated) throw new AppError("unauthenticated", "This table has a new QR code", { remedy: "Scan the code on the table again to keep ordering.", details: { reason: "code_rotated" } });
-    // Ended because the table's bill was paid: the phone thanks the guest rather than reading like a timeout.
-    if (await orderPaid(t, s.orderId)) throw new AppError("unauthenticated", "The bill is paid", { remedy: "Thank you. Scan the table's QR code to order again.", details: { reason: "order_paid" } });
+    // Ended because the table's bill was paid, or staff cancelled the order: the phone says which rather than reading like a timeout.
+    const closed = await orderClosedReason(t, s.orderId);
+    if (closed === "order_paid") throw new AppError("unauthenticated", "The bill is paid", { remedy: "Thank you. Scan the table's QR code to order again.", details: { reason: "order_paid" } });
+    if (closed === "order_cancelled") throw new AppError("unauthenticated", "The restaurant cancelled this order", { remedy: "Ask a member of staff, or scan the table's QR code to order again.", details: { reason: "order_cancelled" } });
   }
   if (!s || s.revokedAt || s.expiresAt.getTime() < Date.now()) throw new AppError("unauthenticated", "This table session has ended", { remedy: "Scan the table's QR code again." });
   await t.db.update(guestSessions).set({ lastSeenAt: new Date() }).where(eq(guestSessions.id, s.id));
@@ -261,12 +266,22 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
         if (s?.revokedAt) {
           const [rotated] = await t.db.select({ id: tableQrTokens.id }).from(tableQrTokens).where(and(eq(tableQrTokens.tableId, s.tableId), eq(tableQrTokens.rotatedAt, s.revokedAt))).limit(1);
           if (rotated) return { reason: "code_rotated" };
-          if (await orderPaid(t, orderId)) return { reason: "order_paid" };
+          const closed = await orderClosedReason(t, orderId);
+          if (closed) return { reason: closed };
         }
         return {};
       });
     // The table's events too: a rotated code ends the session on every open phone at once, not on its next request.
-    return serveStream(c, [`order:${orderId}`, `table:${p.tableId}`], { order_id: orderId }, (n) => n.kind === "resync" || (n.kind === "event" && (n.aggregate_id === orderId || n.aggregate_id === p.tableId)), ended);
+    // From the outlet, only its stock changes: an item marked sold out (a QR order rejected as sold out, say) leaves the
+    // open menu within a moment, not on the next reload (live-test final2 C-2).
+    const outletKey = `outlet:${p.outletId}`;
+    return serveStream(
+      c,
+      [`order:${orderId}`, `table:${p.tableId}`, outletKey],
+      { order_id: orderId },
+      (n, key) => (key === outletKey ? n.kind === "event" && n.type.startsWith("stock.") : n.kind === "resync" || (n.kind === "event" && (n.aggregate_id === orderId || n.aggregate_id === p.tableId))),
+      ended,
+    );
   });
 
   /* ---- Staff side ---- */
@@ -384,14 +399,19 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
   });
 }
 
-/** Fire a round's lines and print kitchen tickets (used by immediate rounds and by acceptance). */
+/**
+ * Fire a round's lines and print kitchen tickets (used by immediate rounds and by acceptance). Like a staff send, it
+ * takes a `ready` order back to `fired`: the order is ready only when every ticket it sent is bumped.
+ */
 async function fireRound(correlationId: string, p: Principal, order: typeof orders.$inferSelect, roundId: string, bd: { cutoff: string; timeZone: string }, operationId: "rounds.submit" | "rounds.accept" = "rounds.submit"): Promise<string[]> {
   const lines = await db().select().from(orderLines).where(and(eq(orderLines.roundId, roundId), inArray(orderLines.status, ["pending", "held"])));
   if (lines.length === 0) return [];
   const now = new Date();
   const round = order.roundCount + 1;
-  await db().update(orderLines).set({ status: "fired", firedAt: now, fireRound: round, updatedAt: now }).where(inArray(orderLines.id, lines.map((l) => l.id)));
-  await db().update(orders).set({ roundCount: round, status: order.status === "open" ? "fired" : order.status, firstFiredAt: order.firstFiredAt ?? now }).where(eq(orders.id, order.id));
+  // Staff accepting at a station sent the round, as a staff send records (the station's Z-report counts a later void there).
+  const firedFromStationId = p.type === "staff" && p.stationId ? p.stationId : null;
+  await db().update(orderLines).set({ status: "fired", firedAt: now, fireRound: round, firedBy: p.type === "staff" ? p.id : null, firedFromStationId, updatedAt: now }).where(inArray(orderLines.id, lines.map((l) => l.id)));
+  await db().update(orders).set({ roundCount: round, status: order.status === "open" || order.status === "ready" ? "fired" : order.status, firstFiredAt: order.firstFiredAt ?? now }).where(eq(orders.id, order.id));
   await db().update(guestRounds).set({ status: "fired" }).where(eq(guestRounds.id, roundId));
   await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "order.fired", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "rounds.submit", payload: { round, line_ids: lines.map((l) => l.id), source: "guest", round_id: roundId }, correlationId, businessDay: bd }, p);
   const { warnings } = await createKitchenJobs({ order: { ...order, roundCount: round }, lines: lines.map((l) => ({ ...l, status: "fired" as const })), round, stationId: null, principal: p, correlationId, operationId });

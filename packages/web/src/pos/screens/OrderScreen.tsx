@@ -3,6 +3,7 @@
 import { Button, Money, Pill, Sheet, Skeleton, useLocale, type PillTone } from "@sail/ui";
 import { Check, ChefHat, Circle, CircleX, Flame, Receipt, Truck, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { OP_MIN_ROLE } from "@/lib/op-roles";
 import type { GuestRound, SnapshotLine } from "../api/types";
 import { Catalogue } from "../components/Catalogue";
 import { DiscountSheet } from "../components/DiscountSheet";
@@ -18,7 +19,7 @@ import { RefundSheet } from "../components/RefundSheet";
 import { RejectRoundSheet, ReopenSheet, WaitingRoundSheet } from "../components/ReasonSheets";
 import { ReprintSheet } from "../components/ReprintSheet";
 import { useLateJobs, useManualRules, useOrder, useOrderPrintJobs, usePendingRounds, useReadyLineIds } from "../hooks/queries";
-import { useOrderActions } from "../hooks/useOrderActions";
+import { roleAtLeast, useOrderActions } from "../hooks/useOrderActions";
 import { useNow } from "../lib/device";
 import { countItems, formatElapsed, ORDER_TYPE_LABEL } from "../lib/format";
 import { useNavStore } from "../state/nav";
@@ -29,7 +30,7 @@ type SheetState = { kind: "line"; lineId: string } | { kind: "discount" } | { ki
 /** Order entry: rail + catalogue, the order sheet, and the sheets that hang off them. Closed orders stay readable for Reopen, Refund and receipts. */
 export function OrderScreen({ orderId }: { orderId: string }) {
   const { money, clock } = useLocale();
-  const { tablesById, station, offline } = usePos();
+  const { tablesById, station, offline, staff } = usePos();
   const screen = useNavStore((s) => s.screen);
   const back = useNavStore((s) => s.back);
   const openBill = useNavStore((s) => s.openBill);
@@ -73,10 +74,10 @@ export function OrderScreen({ orderId }: { orderId: string }) {
   const receiptCheck = sheet?.kind === "receipt" ? (snap?.checks.find((c) => c.id === sheet.checkId) ?? null) : null;
   const line: SnapshotLine | null = sheet?.kind === "line" ? (snap?.lines.find((l) => l.id === sheet.lineId) ?? null) : null;
 
-  const payNow = () => {
-    if (!snap) return;
-    const open = snap.checks.filter((c) => c.status === "open");
-    if (snap.checks.length === 1 && open[0]) openPay(orderId, open[0].id, "order");
+  const payNow = (s = snap) => {
+    if (!s) return;
+    const open = s.checks.filter((c) => c.status === "open");
+    if (s.checks.length === 1 && open[0]) openPay(orderId, open[0].id, "order");
     else openBill(orderId);
   };
   // A QR order waiting for acceptance is on no bill: Pay asks about it first.
@@ -94,7 +95,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
         actions: snap ? (
           <div className="flex items-center gap-2">
             <OrderStatusPill status={snap.status} billAsked={snap.bill_requested_at != null} />
-            <OrderMenu order={snap} actions={actions} onOpen={(k) => setSheet(k === "refund" ? { kind: "refund" } : k === "reopen" ? { kind: "reopen" } : { kind: "reprint", round: null })} />
+            <OrderMenu order={snap} actions={actions} waitingRounds={pendingRounds.length} onOpen={(k) => setSheet(k === "refund" ? { kind: "refund" } : k === "reopen" ? { kind: "reopen" } : { kind: "reprint", round: null })} />
           </div>
         ) : null,
       }}
@@ -133,9 +134,12 @@ export function OrderScreen({ orderId }: { orderId: string }) {
                     <Button size="md" variant="quiet" isDisabled={offline} onPress={() => setSheet({ kind: "receipt", checkId: c.id })}>
                       Receipt
                     </Button>
-                    <Button size="md" variant="quiet" isDisabled={offline} onPress={() => void actions.issueInvoice(c.id)}>
-                      {c.invoice_no ? "Invoice issued" : "Get invoice"}
-                    </Button>
+                    {c.invoice_no && !actions.mayReadInvoice ? null : (
+                      // A role that may not read the PDF sees the number in the line above, not a control that does nothing.
+                      <Button size="md" variant="quiet" isDisabled={offline} onPress={() => void actions.getInvoice(c.id, c.invoice_no)}>
+                        {c.invoice_no ? `Invoice ${c.invoice_no} · PDF` : "Get invoice"}
+                      </Button>
+                    )}
                     <Button size="md" variant="secondary" isDisabled={offline || c.status === "refunded" || c.paid_total === 0} onPress={() => setSheet({ kind: "refund", checkId: c.id })}>
                       Refund
                     </Button>
@@ -183,14 +187,22 @@ export function OrderScreen({ orderId }: { orderId: string }) {
         roundLabel={sheet?.kind === "waiting" ? `${sheet.round.lines.map((l) => `${l.quantity} ${l.name}`).join(", ")}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null}
         canPayRest={Boolean(snap && snap.balance > 0)}
         onClose={() => setSheet(null)}
-        onAccept={() => (sheet?.kind === "waiting" ? actions.acceptRound(sheet.round.id) : Promise.resolve(null))}
+        onAccept={async () => {
+          if (sheet?.kind !== "waiting") return null;
+          const ok = await actions.acceptRound(sheet.round.id);
+          // Opened from Pay: once accepted, ask about the next waiting round, else carry on to the payment (review 2, N11).
+          const next = pendingRounds.find((r) => r.id !== sheet.round.id);
+          if (ok && next) setTimeout(() => setSheet({ kind: "waiting", round: next }), 0);
+          else if (ok && ok.balance > 0) payNow(ok);
+          return ok;
+        }}
         onReject={() => (sheet?.kind === "waiting" ? setSheet({ kind: "reject", round: sheet.round }) : undefined)}
         onPayRest={() => {
           setSheet(null);
           payNow();
         }}
       />
-      <RejectRoundSheet isOpen={sheet?.kind === "reject"} roundLabel={sheet?.kind === "reject" ? `${countItems(sheet.round.lines)}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null} lines={sheet?.kind === "reject" ? sheet.round.lines : undefined} onClose={() => setSheet(null)} onReject={(reason) => (sheet?.kind === "reject" ? actions.rejectRound(sheet.round.id, reason) : Promise.resolve(null))} onMarkSoldOut={sheet?.kind === "reject" ? () => actions.markSoldOut([...new Set(sheet.round.lines.flatMap((l) => (l.product_id ? [l.product_id] : [])))]) : undefined} />
+      <RejectRoundSheet isOpen={sheet?.kind === "reject"} roundLabel={sheet?.kind === "reject" ? `${countItems(sheet.round.lines)}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null} lines={sheet?.kind === "reject" ? sheet.round.lines : undefined} onClose={() => setSheet(null)} onReject={(reason) => (sheet?.kind === "reject" ? actions.rejectRound(sheet.round.id, reason) : Promise.resolve(null))} onMarkSoldOut={roleAtLeast(staff.role, OP_MIN_ROLE["stock.mark_sold_out"] ?? "cashier") ? actions.markSoldOut : undefined} />
     </Frame>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Checkbox, ReasonPicker, Sheet } from "@sail/ui";
+import { Button, Checkbox, CheckboxGroup, ReasonPicker, Sheet, Skeleton } from "@sail/ui";
 import { useEffect, useState } from "react";
 
 export const REOPEN_REASONS = ["Guest came back", "Closed by mistake", "More items to add", "Payment recorded wrongly"];
@@ -23,23 +23,27 @@ export function ReopenSheet({ isOpen, onClose, onReopen, payments = [], checkRef
   }, [isOpen, checkRefusal]);
   if (refusal) {
     return (
-      <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="This order cannot be reopened" description={refusal.message}>
+      <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Reopen order" description={refusal.message}>
         {refusal.remedy ? <p className="text-body text-ink">{refusal.remedy}</p> : null}
       </Sheet>
     );
   }
   return (
     <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Reopen order" description="Why is it being reopened? Needs a Manager, and only on the same business day." isDismissable={!busy}>
-      {/* Reopening gives back what was paid (live test B-N2): said before anyone confirms, with each payment. */}
-      {payments.length ? (
+      {/* Reopening gives back what was paid (live test B-N2): said before anyone confirms, with each payment. Nothing is
+          said or asked until the register has answered the dry run, so a refused reopen never shows a reason or a
+          reversal it would not make (review 2, N3). */}
+      {refusal === null && payments.length ? (
         <div role="note" className="mb-4 rounded-tile bg-status-bill-tint px-4 py-3 text-body text-ink">
           <p className="font-medium">Reopening reverses {payments.length === 1 ? "its payment" : `its ${payments.length} payments`}.</p>
           <p className="text-ink-2">{payments.join(" · ")}. The bill is then open for its full balance and is paid again.</p>
         </div>
       ) : null}
+      {refusal === undefined ? <Skeleton lines={3} /> : null}
+      {refusal === null ? (
       <ReasonPicker
         reasons={REOPEN_REASONS.map((r) => ({ id: r, name: r }))}
-        isDisabled={busy || refusal === undefined}
+        isDisabled={busy}
         onPick={async (r) => {
           setBusy(true);
           const ok = await onReopen(r.text);
@@ -47,44 +51,81 @@ export function ReopenSheet({ isOpen, onClose, onReopen, payments = [], checkRef
           if (ok) onClose();
         }}
       />
+      ) : null}
     </Sheet>
   );
 }
 
-/** Reject a QR order with one tap on a reason. The guest sees the reason. */
-export function RejectRoundSheet({ roundLabel, lines, isOpen, onClose, onReject, onMarkSoldOut }: { roundLabel: string | null; lines?: { id: string; name: string; quantity: number; modifiers: string[] }[]; isOpen: boolean; onClose: () => void; onReject: (reason: string) => Promise<unknown>; onMarkSoldOut?: () => Promise<unknown> }) {
+type RejectLine = { id: string; product_id?: string; name: string; quantity: number; modifiers: string[] };
+
+/**
+ * Reject a QR order with one tap on a reason. The guest sees the reason. "Sold out" asks which items are sold out (the
+ * sheet's list of items becomes the choice: the one item ticked when the round has one, none when it has more), rejects,
+ * then marks only those sold out for today with the register's sold-out operation, so the guest menu stops offering
+ * them. The same sheet serves the Now card and the order screen (live-test final2 C-2).
+ */
+export function RejectRoundSheet({ roundLabel, lines, isOpen, onClose, onReject, onMarkSoldOut }: { roundLabel: string | null; lines?: RejectLine[]; isOpen: boolean; onClose: () => void; onReject: (reason: string) => Promise<unknown>; onMarkSoldOut?: (productIds: string[]) => Promise<unknown> }) {
   const [busy, setBusy] = useState(false);
-  // "Sold out" also marks the items sold out (on by default), with the register's sold-out operation, so the guest menu stops offering them.
-  const [markSoldOut, setMarkSoldOut] = useState(true);
+  // Each product once, in the round's order: sold out is a product's state, not a line's.
+  const products = [...new Map((lines ?? []).flatMap((l) => (l.product_id ? [[l.product_id, l] as const] : []))).entries()];
+  const [choosing, setChoosing] = useState(false);
+  const [ticked, setTicked] = useState<string[]>([]);
+  useEffect(() => {
+    if (!isOpen) setChoosing(false);
+  }, [isOpen]);
+  const reject = async (reason: string, soldOut: string[]) => {
+    setBusy(true);
+    const ok = await onReject(reason);
+    if (ok && soldOut.length && onMarkSoldOut) await onMarkSoldOut(soldOut);
+    setBusy(false);
+    if (ok) onClose();
+  };
   return (
     <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Reject QR order" description={roundLabel ? `${roundLabel} · the guest is told why` : "The guest is told why"} isDismissable={!busy}>
-      {/* What is being turned down, so nobody rejects the wrong round (final review C Low). */}
-      {lines?.length ? (
-        <ul aria-label="Items in this order" className="mb-4 flex flex-col gap-1 rounded-tile bg-surface-2 px-4 py-3 text-body text-ink">
-          {lines.map((l) => (
-            <li key={l.id} className="break-words">
-              <span className="tabular font-medium">{l.quantity}</span> {l.name}
-              {l.modifiers.length ? <span className="text-ink-2"> · {l.modifiers.join(", ")}</span> : null}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      {onMarkSoldOut ? (
-        <Checkbox isSelected={markSoldOut} onChange={setMarkSoldOut} isDisabled={busy} className="mb-3">
-          <span className="text-line">If sold out, also mark these items sold out for today</span>
-        </Checkbox>
-      ) : null}
-      <ReasonPicker
-        reasons={REJECT_ROUND_REASONS.map((r) => ({ id: r, name: r }))}
-        isDisabled={busy}
-        onPick={async (r) => {
-          setBusy(true);
-          const ok = await onReject(r.text);
-          if (ok && r.text === REJECT_ROUND_REASONS[0] && markSoldOut && onMarkSoldOut) await onMarkSoldOut();
-          setBusy(false);
-          if (ok) onClose();
-        }}
-      />
+      {choosing ? (
+        <div className="flex flex-col gap-4">
+          <CheckboxGroup label="Which items are sold out?" description="They are marked sold out for today." value={ticked} onChange={setTicked} isDisabled={busy}>
+            {products.map(([id, l]) => (
+              <Checkbox key={id} value={id}>
+                <span className="break-words">{l.name}</span>
+              </Checkbox>
+            ))}
+          </CheckboxGroup>
+          {/* Sold out names what is sold out: nothing ticked, nothing to reject as sold out (another reason is a tap away). */}
+          <Button size="lg" variant="primary" isDisabled={busy || ticked.length === 0} isPending={busy} onPress={() => void reject(REJECT_ROUND_REASONS[0]!, ticked)}>
+            Reject as sold out
+          </Button>
+          <Button size="lg" variant="quiet" isDisabled={busy} onPress={() => setChoosing(false)}>
+            Choose another reason
+          </Button>
+        </div>
+      ) : (
+        <>
+          {/* What is being turned down, so nobody rejects the wrong round (final review C Low). */}
+          {lines?.length ? (
+            <ul aria-label="Items in this order" className="mb-4 flex flex-col gap-1 rounded-tile bg-surface-2 px-4 py-3 text-body text-ink">
+              {lines.map((l) => (
+                <li key={l.id} className="break-words">
+                  <span className="tabular font-medium">{l.quantity}</span> {l.name}
+                  {l.modifiers.length ? <span className="text-ink-2"> · {l.modifiers.join(", ")}</span> : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <ReasonPicker
+            reasons={REJECT_ROUND_REASONS.map((r) => ({ id: r, name: r }))}
+            isDisabled={busy}
+            onPick={(r) => {
+              if (r.text === REJECT_ROUND_REASONS[0] && onMarkSoldOut && products.length) {
+                setTicked(products.length === 1 ? [products[0]![0]] : []);
+                setChoosing(true);
+                return;
+              }
+              void reject(r.text, []);
+            }}
+          />
+        </>
+      )}
     </Sheet>
   );
 }

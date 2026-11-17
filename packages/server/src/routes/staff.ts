@@ -8,6 +8,7 @@ import type { AppEnv } from "../lib/context.js";
 import { defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted, secret } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
+import { auditLabels } from "../services/audit-labels.js";
 import { hashSecret, pinLookup } from "../auth/tokens.js";
 import { PIN_TAKEN_LIMITS, pinScope, returnPinAttempt, takePinAttempt } from "../services/pin-attempts.js";
 
@@ -82,6 +83,10 @@ export const AuditEntrySchema = z.object({
   override_id: z.string().nullable(),
   reason: untrusted(z.string().nullable()),
   details: z.record(z.string(), z.unknown()),
+  /** The target in an owner's words ("P-0007 · Bill 1", a product's name), or null when it no longer resolves. */
+  target_label: z.string().nullable(),
+  /** How `details.entered_value` reads: basis points of a percentage, or minor units of an amount. */
+  value_kind: z.enum(["percent", "amount"]).nullable(),
 });
 
 function initialsFor(name: string) {
@@ -225,6 +230,7 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
         .limit(q.limit + 1);
       const page = rows.slice(0, q.limit);
       const next = rows.length > q.limit ? page[page.length - 1]!.occurredAt.toISOString() : null;
+      const labels = await auditLabels(p.merchantId, page);
       return c.json(
         {
           data: page.map((a) => ({
@@ -244,6 +250,8 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
             override_id: a.overrideId,
             reason: a.reason,
             details: a.details,
+            target_label: labels.get(a.id)?.target_label ?? null,
+            value_kind: labels.get(a.id)?.value_kind ?? null,
           })),
           next_cursor: next,
         },

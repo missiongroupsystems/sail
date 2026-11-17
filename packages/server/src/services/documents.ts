@@ -1,7 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { and, eq } from "drizzle-orm";
 import type { BillDocument } from "@sail/shared";
-import { pdfDateTime, pdfMoney, winAnsi } from "../lib/pdf-text.js";
+import { pdfDateTime, pdfMoney, savePdf, winAnsi } from "../lib/pdf-text.js";
 import { db, tx } from "../db/client.js";
 import { checks, digitalReceipts, merchants, outlets } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -129,19 +129,24 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
   y -= 4;
   rule();
   y -= 16;
+  // A long label ("Consumption tax 8% (reduced) (included)") starts further left rather than running into its amount.
   const row = (label: string, amount: number, f = font) => {
-    text(label, 340, 10, f);
-    right(money(amount), 547, 10, f);
+    const shown = money(amount);
+    const room = 547 - f.widthOfTextAtSize(safe(shown), 10) - 12;
+    text(label, Math.max(48, Math.min(340, room - f.widthOfTextAtSize(safe(label), 10))), 10, f);
+    right(shown, 547, 10, f);
     y -= 14;
   };
+  // Lowest rate first, as the POS, the receipt and the reports list them (review 2, N11).
+  const taxes = [...doc.totals.taxes].sort((a, b) => a.bps - b.bps || a.name.localeCompare(b.name));
   row("Subtotal", doc.totals.subtotal);
   for (const a of doc.adjustments) row(a.name, a.amount);
   // One row per tax component, labelled with its own name.
-  if (doc.totals.tax_mode === "exclusive") for (const t of doc.totals.taxes) row(t.name, t.amount);
+  if (doc.totals.tax_mode === "exclusive") for (const t of taxes) row(t.name, t.amount);
   row(kind === "CREDIT NOTE" ? "Credit total" : "Total", doc.totals.total, bold);
-  if (doc.totals.tax_mode === "inclusive") for (const t of doc.totals.taxes) row(`${t.name} (included)`, t.amount);
+  if (doc.totals.tax_mode === "inclusive") for (const t of taxes) row(`${t.name} (included)`, t.amount);
   if (doc.tax_note) {
-    text(doc.tax_note, 340, 8, font, grey);
+    text(doc.tax_note, Math.max(48, Math.min(340, 547 - font.widthOfTextAtSize(safe(doc.tax_note), 8))), 8, font, grey);
     y -= 12;
   }
   if (doc.payments?.length) {
@@ -165,7 +170,7 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
     text(line, 48, 9, font, grey);
     y -= 12;
   }
-  return pdf.save({ useObjectStreams: false });
+  return savePdf(pdf, [font, bold]);
 }
 
 /** Create a public digital receipt link for a check (or refund). */

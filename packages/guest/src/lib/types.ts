@@ -74,6 +74,8 @@ export type GuestRound = {
   mine: boolean;
   /** Every kitchen ticket of the round is bumped, at every station. */
   kitchen_done?: boolean;
+  /** While the round waits for staff, its own total as the register adds its lines: it is on no bill yet. */
+  waiting_total?: number | null;
 };
 export type GuestLine = {
   id: string;

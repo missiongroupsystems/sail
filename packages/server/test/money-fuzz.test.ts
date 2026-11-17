@@ -5,6 +5,7 @@ import "../src/modules.js";
 import { buildApp } from "../src/app.js";
 import { withTransaction } from "../src/db/client.js";
 import { seedRulesForMerchant } from "../src/services/pricing-rules.js";
+import { resetGuestRateLimitsForTests } from "../src/services/guest.js";
 import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
 import { taxDisagreements, type TaxedItem } from "./tax-oracle.js";
 
@@ -52,7 +53,7 @@ const REGIMES: Regime[] = [
 
 type Call = ReturnType<typeof api>["call"];
 type Res = { status: number; body: unknown };
-type Ctx = { r: Regime; db: TestDb; call: Call; m: SeededMerchant; pin: string; admin: string; products: Record<string, string>; tables: string[]; cash: string; card: string; increment: number; shiftId: string; float: number };
+type Ctx = { r: Regime; db: TestDb; call: Call; m: SeededMerchant; pin: string; admin: string; products: Record<string, string>; tables: string[]; qr: Record<string, string>; cash: string; card: string; increment: number; shiftId: string; float: number };
 
 async function buildWorld(r: Regime, db: TestDb): Promise<Ctx> {
   const call = api(buildApp()).call;
@@ -88,11 +89,15 @@ async function buildWorld(r: Regime, db: TestDb): Promise<Ctx> {
   await must("POST", "/v1/tender-types", { id: ids.card, name: "Card", is_terminal: true });
   await must("POST", "/v1/stations", { id: ids.station, outlet_id: m.outletId, brand_id: m.brandId, name: "Floor", receipt_printer_id: ids.receipt });
   await must("POST", "/v1/areas", { id: ids.area, outlet_id: m.outletId, name: "Main" });
+  // QR ordering on every table: a guest round waits for staff, so "pay a bill, then accept a round" is walked too (review 2, N1).
+  await must("POST", "/v1/channel-links", { id: randomUUID(), channel: "scan_to_order", outlet_id: m.outletId, brand_id: m.brandId, menu_id: ids.menu, hold_orders: true, open_on_first_scan: false });
   const tables: string[] = [];
+  const qr: Record<string, string> = {};
   for (let i = 0; i < 6; i++) {
     const id = randomUUID();
     await must("POST", "/v1/tables", { id, outlet_id: m.outletId, area_id: ids.area, name: `T${i}` });
     tables.push(id);
+    qr[id] = (await must<{ data: { url: string } }>("POST", `/v1/tables/${id}/qr/rotate`, {})).data.url.split("/t/")[1]!;
   }
   const code = await must<{ data: { code: string } }>("POST", `/v1/stations/${ids.station}/pairing-code`, {});
   const pair = await call<{ data: { station_token: string } }>("POST", "/v1/stations/pair", { body: { code: code.data.code, device_label: "iPad" }, idempotencyKey: null });
@@ -100,7 +105,7 @@ async function buildWorld(r: Regime, db: TestDb): Promise<Ctx> {
   const [settings] = await db.sql<{ cash_rounding_increment: number | null }[]>`select cash_rounding_increment from merchant_settings where merchant_id = ${m.merchantId}`;
   const float = 10_007;
   const shift = await must<{ data: { id: string } }>("POST", "/v1/shifts", { outlet_id: m.outletId, station_id: null, float_cents: float });
-  return { r, db, call, m, pin: session.body.data.session_token, admin: t, products, tables, cash: ids.cash, card: ids.card, increment: settings?.cash_rounding_increment ?? 1, shiftId: shift.data.id, float };
+  return { r, db, call, m, pin: session.body.data.session_token, admin: t, products, tables, qr, cash: ids.cash, card: ids.card, increment: settings?.cash_rounding_increment ?? 1, shiftId: shift.data.id, float };
 }
 
 /* ---------------- invariants, from the database ---------------- */
@@ -188,9 +193,12 @@ async function invariants(c: Ctx): Promise<string[]> {
     }
     if (o.status === "completed" && cs.some((x) => x.total > x.paid_total)) v.push(`order ${o.id}: completed but not paid`);
 
-    // The independent oracle. Per rate, only on orders with no paid line (a paid bill keeps its own rounding, §2 step 5).
+    // The independent oracle. Per rate it holds with paid bills too: a paid bill keeps its tax and the unpaid lines take the
+    // rest of the rate's tax on the whole order (review 2, N1), so "pay a bill, then add lines" is checked on every step.
+    // Left out: an order whose paid line carries a taxed fee (its stored tax mixes two amounts).
     const lockedLines = new Set(allocs.filter((a) => cs.some((x) => x.id === a.check_id && x.locked)).map((a) => a.order_line_id));
-    if (o.tax_rounding === "per_line" || !ls.some((l) => lockedLines.has(l.id))) {
+    const taxedFeeOnPaid = adjLines.some((a) => a.order_id === o.id && a.kind === "fee" && a.tax_class_id != null && lockedLines.has(a.order_line_id));
+    if (o.tax_rounding === "per_line" || !taxedFeeOnPaid) {
       const rate = (cls: string) => resolveTaxRate(o.tax_rates, cls, o.outlet_id, o.order_type).components;
       const fees = adjLines.filter((a) => a.order_id === o.id && a.kind === "fee" && a.tax_class_id);
       const items: TaxedItem[] = [
@@ -289,6 +297,20 @@ const actions: { name: string; w: number; run: (c: Ctx, g: R) => Promise<Res | n
         : { line_id: randomUUID(), product_id: c.products[g.pick(c.r.products).code], quantity: g.int(1, 5), seat_no: g.chance(0.5) ? g.int(1, 3) : null },
     );
     return c.call("POST", `/v1/orders/${o}/lines`, { token: c.pin, body: { lines } });
+  } },
+  { name: "guest-round", w: 3, run: async (c, g) => {
+    const t = pickRow(g, await c.db.sql<{ table_id: string }[]>`select table_id from orders where merchant_id = ${c.m.merchantId} and status in ${c.db.sql(LIVE)} and table_id is not null order by table_id`);
+    if (!t) return null;
+    await resetGuestRateLimitsForTests();
+    const session = await c.call<{ data: { guest_token: string } }>("POST", "/v1/guest/sessions", { body: { token: c.qr[t.table_id], device_id: `fuzz-device-${g.int(1, 3)}` }, idempotencyKey: null });
+    if (session.status !== 201) return session;
+    const lines = Array.from({ length: g.int(1, 2) }, () => ({ line_id: randomUUID(), product_id: c.products[g.pick(c.r.products).code], quantity: g.int(1, 3) }));
+    return c.call("POST", "/v1/guest/rounds", { token: session.body.data.guest_token, body: { round_id: randomUUID(), lines } });
+  } },
+  { name: "decide-round", w: 4, run: async (c, g) => {
+    const round = pickRow(g, await c.db.sql<{ id: string }[]>`select r.id from guest_rounds r join orders o on o.id = r.order_id where o.merchant_id = ${c.m.merchantId} and r.status = 'pending' order by r.id`);
+    if (!round) return null;
+    return g.chance(0.8) ? c.call("POST", `/v1/rounds/${round.id}/accept`, { token: c.pin, body: {} }) : c.call("POST", `/v1/rounds/${round.id}/reject`, { token: c.pin, body: { reason: "Sold out" } });
   } },
   { name: "qty", w: 3, run: async (c, g) => {
     const l = pickRow(g, await c.db.sql<{ id: string; order_id: string }[]>`select l.id, l.order_id from order_lines l join orders o on o.id = l.order_id where o.merchant_id = ${c.m.merchantId} and l.status in ('pending','held') and o.status in ${c.db.sql(LIVE)} order by l.id`);

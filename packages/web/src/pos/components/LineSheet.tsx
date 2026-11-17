@@ -104,7 +104,9 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
     if (snap) onClose();
   };
 
-  const addNote = (chip: string) => setNotes((n) => (n.split(", ").includes(chip) ? n : n ? `${n}, ${chip}` : chip));
+  // A quick note is a toggle: on once it is in the note (and shown so, filled), off again on a second tap (final2 B-4).
+  const noteHas = (chip: string) => notes.split(", ").includes(chip);
+  const addNote = (chip: string) => setNotes((n) => (n.split(", ").includes(chip) ? n.split(", ").filter((x) => x !== chip).join(", ") : n ? `${n}, ${chip}` : chip));
 
   return (
     <Sheet labelledClose
@@ -214,7 +216,7 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
               <h3 className="mb-2 text-[16px] font-medium text-ink">Notes</h3>
               <div className="mb-2 flex flex-wrap gap-2">
                 {QUICK_NOTES.map((c) => (
-                  <Button key={c} size="md" variant="quiet" onPress={() => addNote(c)} className={GREY_PILL + " text-[14.5px] font-normal"}>
+                  <Button key={c} size="md" variant={noteHas(c) ? "primary" : "quiet"} aria-pressed={noteHas(c)} onPress={() => addNote(c)} className={(noteHas(c) ? "" : GREY_PILL + " ") + "text-[14.5px] font-normal"}>
                     {c}
                   </Button>
                 ))}

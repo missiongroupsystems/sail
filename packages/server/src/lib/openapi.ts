@@ -263,8 +263,10 @@ function enforce(c: { get(k: "principal"): AppEnv["Variables"]["principal"] | un
       // Manager override grants are checked by the handler (v0.4) when override_allowed; here the base role check fails.
       // An agent never holds a grant, so an override header means nothing for it.
       // A payment's dry run is a quote whose transaction is rolled back: a Server's Pay screen gets the change and rounding
-      // before it asks for approval (live-test B-F4). Recording the payment itself is still refused here.
-      const quoteOnly = spec.op === "payments.record" && principal.type === "staff" && isDryRun(c);
+      // before it asks for approval (live-test B-F4). A reopen's dry run tells a Cashier's POS whether the register would
+      // refuse it before anyone gives a reason or a Manager's PIN (review 2, N3); its handler still asks for the
+      // approval after every refusal. The real call is still refused here.
+      const quoteOnly = (spec.op === "payments.record" || spec.op === "orders.reopen") && principal.type === "staff" && isDryRun(c);
       if (!quoteOnly && (!spec.overrideAllowed || principal.type === "agent" || !hasOverrideHeader(c))) throw AppError.permission(spec.minRole, spec.overrideAllowed, spec.op);
     }
   }

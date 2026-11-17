@@ -66,6 +66,16 @@ export function ProductSearch({ onPick, label, placeholder = "Search products by
     setQ("");
     setActive(0);
   };
+  // Enter pressed while the results on screen are still the last search's (typed, then Enter at once): it waits for this
+  // search's results and picks then, so a quick Enter is never lost (live-test final2 A P-A4).
+  const [enterWaiting, setEnterWaiting] = useState(false);
+  const settled = query === q.trim() && !results.isPlaceholderData && !results.isFetching;
+  useEffect(() => {
+    if (!enterWaiting || !settled) return;
+    setEnterWaiting(false);
+    if (highlighted) pick(highlighted);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the waited-for results arrive
+  }, [enterWaiting, settled]);
 
   return (
     <div className={cx("flex flex-col gap-2", className)}>
@@ -74,7 +84,10 @@ export function ProductSearch({ onPick, label, placeholder = "Search products by
         label={label}
         type="search"
         value={q}
-        onChange={setQ}
+        onChange={(v) => {
+          setQ(v);
+          setEnterWaiting(false);
+        }}
         placeholder={placeholder}
         autoFocus={autoFocus}
         isInvalid={Boolean(errorMessage)}
@@ -88,8 +101,10 @@ export function ProductSearch({ onPick, label, placeholder = "Search products by
           } else if (e.key === "Enter") {
             // Enter in the search is a pick (or nothing yet), never a submit of the sheet's form.
             e.preventDefault();
-            // Not while the results on screen are still the last search's: Enter would pick from the old list.
-            if (highlighted && query === q.trim() && !results.isPlaceholderData && !results.isFetching) pick(highlighted);
+            // Not from the last search's list: Enter then waits for this search's results.
+            if (settled) {
+              if (highlighted) pick(highlighted);
+            } else if (q.trim()) setEnterWaiting(true);
           } else e.continuePropagation();
         }}
       />

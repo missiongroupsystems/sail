@@ -11781,6 +11781,23 @@
                           "details": {
                             "type": "object",
                             "additionalProperties": {}
+                          },
+                          "target_label": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "value_kind": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "enum": [
+                              "percent",
+                              "amount",
+                              null
+                            ]
                           }
                         },
                         "required": [
@@ -11799,7 +11816,9 @@
                           "approver_name",
                           "override_id",
                           "reason",
-                          "details"
+                          "details",
+                          "target_label",
+                          "value_kind"
                         ]
                       }
                     },

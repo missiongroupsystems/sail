@@ -107,7 +107,8 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
         <span className="flex flex-col leading-5">
           <span className="text-ink">{r.body.name}</span>
           <span className="text-[12.5px] leading-4 text-ink-2">
-            Priority {r.body.priority} · <span>{r.rule_key}</span>
+            {/* The rule's key is the register's id ("seed:manager-comp"), not a word an owner uses (final2 A P-A8). */}
+            Priority {r.body.priority}
           </span>
         </span>
       ),

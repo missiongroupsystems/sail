@@ -7,7 +7,7 @@ import { lineStatusLabel, lineStatusTone, roundStage, showsPayPrompt } from "@/l
 import type { GuestLine, GuestSession, OrderView } from "@/lib/types";
 import { Dock, PageHeader } from "./Shell";
 import { TotalsPanel } from "./TotalsPanel";
-import { LineText, RoundHead, stagePill } from "./StatusView";
+import { hasBilledLines, hasWaitingRound, LineText, RoundHead, stagePill, WaitingTotal } from "./StatusView";
 
 export type OurTableViewProps = {
   session: GuestSession;
@@ -80,7 +80,12 @@ export function OurTableView({ session, orderView, loading, error, onBack, onCal
                 extra={r.mine && r.guest_name ? yours : null}
               />
               {stage === "rejected" && r.reject_reason ? <p className="px-4 pb-2 text-[13.5px] text-status-alert wrap-anywhere">Not accepted: {r.reject_reason}</p> : null}
-              {rl.length ? <ul className="flex flex-col divide-y divide-rule-subtle border-t border-rule-subtle px-4">{rl.map((l) => renderLine(l, r.mine))}</ul> : null}
+              {rl.length ? (
+                <div className="border-t border-rule-subtle px-4">
+                  <ul className="flex flex-col divide-y divide-rule-subtle">{rl.map((l) => renderLine(l, r.mine))}</ul>
+                  <WaitingTotal round={r} />
+                </div>
+              ) : null}
             </section>
           );
         })}
@@ -93,7 +98,7 @@ export function OurTableView({ session, orderView, loading, error, onBack, onCal
           </section>
         ) : null}
 
-        {orderView?.totals && lines.length ? <TotalsPanel totals={orderView.totals} /> : null}
+        {orderView?.totals && hasBilledLines(orderView) ? <TotalsPanel totals={orderView.totals} soFar={hasWaitingRound(orderView)} /> : null}
         {showsPayPrompt(orderView) ? <p className="px-1 pt-1 text-[14px] leading-snug text-ink-2">Pay at the counter or ask your server for the bill.</p> : null}
       </main>
 

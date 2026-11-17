@@ -117,8 +117,10 @@ export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupE
   // The price is the register's total for the line as chosen (quantity and every option); the phone adds nothing.
   // Until the register has answered, the button carries the verb alone.
   const verb = editing ? "Update item" : quantity > 1 ? `Add ${quantity} to order` : "Add to order";
-  const priceLine = lineTotal != null ? money(lineTotal) : null;
-  const addLabel = priceLine && !quote.updating ? `${verb} · ${priceLine}` : verb;
+  // While the register prices a change, the old amount is not shown at all: a greyed €8.50 for a line that is now €19.00
+  // read as the price (final2 C Low). The verb stands alone for that moment.
+  const priceLine = lineTotal != null && !quote.updating ? money(lineTotal) : null;
+  const addLabel = priceLine ? `${verb} · ${priceLine}` : verb;
   const label = unmet ? unmet.message : addLabel;
 
   return (
@@ -147,7 +149,7 @@ export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupE
             ) : (
               <span className="flex max-w-full flex-wrap items-baseline justify-center gap-x-1.5 text-center">
                 <span className="whitespace-nowrap">{priceLine ? `${verb} ·` : verb}</span>
-                {priceLine ? <span className={cx("whitespace-nowrap tabular", quote.updating && "opacity-60")}>{priceLine}</span> : null}
+                {priceLine ? <span className="whitespace-nowrap tabular">{priceLine}</span> : null}
               </span>
             )}
           </BrandButton>

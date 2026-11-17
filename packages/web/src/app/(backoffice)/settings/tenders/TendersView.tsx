@@ -10,6 +10,7 @@ import { z } from "zod";
 import { greyPill, greyPillAlert, SheetSection, TwoLine } from "@/components/office/parts";
 import { applyServerErrors } from "@/components/office/server-errors";
 import { RhfSwitch, RhfTextField } from "@/components/forms/fields";
+import { useSession } from "@/lib/session-context";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { TenderType } from "@/lib/api/types";
@@ -34,6 +35,7 @@ const defaults = (t: TenderType | null): Values => ({ name: t?.name ?? "", is_ca
 
 /** Payment methods (the API says tender). */
 export function TendersView({ initialTenders }: { initialTenders: TenderType[] }) {
+  const cashRounding = Boolean(useSession().merchant.settings.cash_rounding_increment);
   const canCreate = useCan("tender_types.create");
   const [showArchived, setShowArchived] = useState(false);
   const [sheet, setSheet] = useState<SheetState>(null);
@@ -55,7 +57,8 @@ export function TendersView({ initialTenders }: { initialTenders: TenderType[] }
     { key: "sort", header: "Order", numeric: true, sortable: true, width: 80, render: (t) => position.get(t.id) ?? "—" },
     // Each method says how it is taken, so "Card" and "Card (terminal)" read as two different things (A P19).
     { key: "name", header: "Payment method", isRowHeader: true, sortable: true, width: "2fr", render: (t) => <TwoLine primary={t.name} meta={how(t)} /> },
-    { key: "is_cash", header: "Cash", render: (t) => (t.is_cash ? "Yes · rounding applies" : "—") },
+    // Rounding is named only while the merchant has it on (review 2, N11).
+    { key: "is_cash", header: "Cash", render: (t) => (t.is_cash ? (cashRounding ? "Yes · rounding applies" : "Yes") : "—") },
     { key: "opens_drawer", header: "Opens drawer", render: (t) => (t.opens_drawer ? "Yes" : "—") },
     // A provider-linked method names its provider and terminal (live-test E-L10); a by-hand terminal is keyed in.
     { key: "is_terminal", header: "Card terminal", render: (t) => ((t as { provider?: string | null }).provider ? <TwoLine primary={`Sent to ${(t as { provider?: string | null }).provider}`} meta={(t as { terminal_id?: string | null }).terminal_id ? `Terminal ${(t as { terminal_id?: string | null }).terminal_id}` : undefined} /> : t.is_terminal ? "Yes · amount shown to key in" : "—") },
@@ -93,6 +96,7 @@ export function TendersView({ initialTenders }: { initialTenders: TenderType[] }
 }
 
 function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort: number; onClose: () => void }) {
+  const cashRounding = Boolean(useSession().merchant.settings.cash_rounding_increment);
   const confirm = useConfirm();
   const qc = useQueryClient();
   const tender = state?.mode === "edit" ? state.tender : null;
@@ -163,7 +167,7 @@ function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
           </SheetSection>
         ) : null}
         <SheetSection title="Behaviour">
-          <RhfSwitch control={form.control} name="is_cash" description="Cash rounding applies and change is calculated.">
+          <RhfSwitch control={form.control} name="is_cash" description={cashRounding ? "Cash rounding applies and change is calculated." : "Change is calculated."}>
             Cash
           </RhfSwitch>
           <RhfSwitch control={form.control} name="opens_drawer" description="The receipt printer kicks the cash drawer on payment.">

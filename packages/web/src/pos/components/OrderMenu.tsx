@@ -23,7 +23,7 @@ export type OrderMenuAction = "refund" | "reopen" | "reprint";
 const CANCEL_REASONS = ["Customer changed mind", "Opened by mistake", "Duplicate order", "Walked out"];
 
 /** The order menu: Change type · Move table · Customer · Refund · Reopen · Get invoice · Reprint ticket · Cancel. */
-export function OrderMenu({ order, actions, onOpen }: { order: OrderSnapshot; actions: ReturnType<typeof useOrderActions>; onOpen: (action: OrderMenuAction) => void }) {
+export function OrderMenu({ order, actions, onOpen, waitingRounds = 0 }: { order: OrderSnapshot; actions: ReturnType<typeof useOrderActions>; onOpen: (action: OrderMenuAction) => void; waitingRounds?: number }) {
   const { offline } = usePos();
   const [open, setOpen] = useState<Open>(null);
   const closed = order.status === "completed";
@@ -81,7 +81,7 @@ export function OrderMenu({ order, actions, onOpen }: { order: OrderSnapshot; ac
       <ChangeTypeSheet isOpen={open === "type"} onClose={() => setOpen(null)} order={order} actions={actions} />
       <MoveTableSheet isOpen={open === "move"} onClose={() => setOpen(null)} order={order} actions={actions} />
       <CustomerSheet isOpen={open === "customer"} onClose={() => setOpen(null)} order={order} actions={actions} />
-      <CancelSheet isOpen={open === "cancel"} onClose={() => setOpen(null)} actions={actions} />
+      <CancelSheet isOpen={open === "cancel"} onClose={() => setOpen(null)} actions={actions} waitingRounds={waitingRounds} />
       <Sheet labelledClose isOpen={open === "invoice"} onOpenChange={(o) => (!o ? setOpen(null) : undefined)} title="Get invoice" description="Which bill is the invoice for?">
         <div className="flex flex-col gap-2">
           {paidChecks.map((c) => (
@@ -92,7 +92,7 @@ export function OrderMenu({ order, actions, onOpen }: { order: OrderSnapshot; ac
               isDisabled={offline}
               onPress={() => {
                 setOpen(null);
-                void actions.issueInvoice(c.id);
+                void actions.getInvoice(c.id, c.invoice_no);
               }}
               className="justify-between"
             >
@@ -378,7 +378,7 @@ function CustomerSheet({ isOpen, onClose, order, actions }: SheetProps) {
 }
 
 /** Cancel (T2, reason required): nothing sent and nothing paid; otherwise the register says what to do first. */
-function CancelSheet({ isOpen, onClose, actions }: { isOpen: boolean; onClose: () => void; actions: ReturnType<typeof useOrderActions> }) {
+function CancelSheet({ isOpen, onClose, actions, waitingRounds }: { isOpen: boolean; onClose: () => void; actions: ReturnType<typeof useOrderActions>; waitingRounds: number }) {
   const [busy, setBusy] = useState(false);
   const back = useNavStore((s) => s.back);
   const cancel = async (reason: string) => {
@@ -391,7 +391,7 @@ function CancelSheet({ isOpen, onClose, actions }: { isOpen: boolean; onClose: (
     }
   };
   return (
-    <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Cancel order" description="Why is the order being cancelled?" isDismissable={!busy}>
+    <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Cancel order" description={waitingRounds > 0 ? `Why is the order being cancelled? ${waitingRounds === 1 ? "The QR order waiting on it is" : `The ${waitingRounds} QR orders waiting on it are`} turned down, and the guest is told.` : "Why is the order being cancelled?"} isDismissable={!busy}>
       <ReasonPicker reasons={CANCEL_REASONS.map((r) => ({ id: r, name: r }))} onPick={(r) => void cancel(r.text)} isDisabled={busy} />
     </Sheet>
   );
