@@ -2,7 +2,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { currencyExponent, registerOperations } from "@sail/shared";
 import { db } from "../db/client.js";
-import { importJobs, merchantSettings, products, reportCategories, taxClasses, type ImportEntity } from "../db/schema/index.js";
+import { brands, importJobs, merchantSettings, productPrices, products, reportCategories, taxClasses, type ImportEntity } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
@@ -81,13 +81,39 @@ export function importRoutes(app: OpenAPIHono<AppEnv>) {
     const rows = await db().select().from(products).where(and(eq(products.merchantId, p.merchantId), isNull(products.archivedAt))).orderBy(products.name);
     const cats = await db().select().from(reportCategories).where(eq(reportCategories.merchantId, p.merchantId));
     const catLegacy = new Map(cats.map((x) => [x.id, x.legacyId ?? x.name]));
+    const brandRows = await db().select({ id: brands.id, name: brands.name, legacyId: brands.legacyId }).from(brands).where(eq(brands.merchantId, p.merchantId));
+    const brandLegacy = new Map(brandRows.map((x) => [x.id, x.legacyId ?? x.name]));
+    // Per-order-type prices, so the file carries every price the register charges (A P4).
+    const ORDER_TYPES = ["dine_in", "takeaway", "pickup", "delivery"] as const;
+    const overrides = new Map<string, number>();
+    for (const x of await db().select().from(productPrices).where(eq(productPrices.merchantId, p.merchantId))) overrides.set(`${x.productId}:${x.orderType}`, x.price);
     const [settings] = await db().select({ currency: merchantSettings.currency }).from(merchantSettings).where(eq(merchantSettings.merchantId, p.merchantId)).limit(1);
     if (!settings) throw AppError.notFound("merchant settings");
     const exponent = currencyExponent(settings.currency);
     const classNames = new Map((await db().select({ id: taxClasses.id, name: taxClasses.name }).from(taxClasses).where(eq(taxClasses.merchantId, p.merchantId))).map((x) => [x.id, x.name]));
     const csv = toCsv(
-      ["legacy_id", "sku", "name", "kind", "price", "category_legacy_id", "tags", "has_deposit", "tax_class", "open_price", "description", "kitchen_name"],
-      rows.map((r) => [r.legacyId, r.sku, r.name, r.kind, decimal(r.price, exponent), r.categoryId ? (catLegacy.get(r.categoryId) ?? "") : "", r.tags.join(";"), r.hasDeposit ? "true" : "false", r.taxClassId ? (classNames.get(r.taxClassId) ?? "") : "", r.openPrice ? "true" : "false", r.description, r.kitchenName]),
+      // `sail_id` is the product's own id: the key a product without a SKU or legacy id is matched on when the file comes back.
+      ["sail_id", "legacy_id", "sku", "name", "kind", "price", "category_legacy_id", "brand_legacy_id", "tags", "has_deposit", "tax_class", "open_price", "description", "kitchen_name", ...ORDER_TYPES.map((t) => `price_${t}`)],
+      rows.map((r) => [
+        r.id,
+        r.legacyId,
+        r.sku,
+        r.name,
+        r.kind,
+        decimal(r.price, exponent),
+        r.categoryId ? (catLegacy.get(r.categoryId) ?? "") : "",
+        r.brandId ? (brandLegacy.get(r.brandId) ?? "") : "",
+        r.tags.join(";"),
+        r.hasDeposit ? "true" : "false",
+        r.taxClassId ? (classNames.get(r.taxClassId) ?? "") : "",
+        r.openPrice ? "true" : "false",
+        r.description,
+        r.kitchenName,
+        ...ORDER_TYPES.map((t) => {
+          const v = overrides.get(`${r.id}:${t}`);
+          return v === undefined ? "" : decimal(v, exponent);
+        }),
+      ]),
     );
     return c.body(csv, 200, { "content-type": "text/csv; charset=utf-8", "content-disposition": 'attachment; filename="products.csv"' });
   });
