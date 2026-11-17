@@ -271,3 +271,19 @@ test("O5 (A P11): Forgotten your password? says how to get a reset link without 
   await page.getByRole("link", { name: "Back to sign in" }).click();
   await expect(page).toHaveURL(`${WEB}/login`);
 });
+
+test("O7 (A P14): an open order is in the address, so a refresh keeps it and the link opens it", async ({ page }) => {
+  test.setTimeout(300_000);
+  const { order } = await paidOrder();
+  await signIn(page);
+  await page.goto(`${WEB}/orders`);
+  await page.getByRole("grid").getByRole("row", { name: new RegExp(order.order_no) }).first().click();
+  const drawer = page.getByRole("dialog");
+  await expect(drawer).toContainText(order.order_no);
+  await expect(page).toHaveURL(new RegExp(`order=${order.id}`));
+  await page.reload();
+  await expect(page.getByRole("dialog")).toContainText(order.order_no);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await expect(page).not.toHaveURL(/order=/);
+});
