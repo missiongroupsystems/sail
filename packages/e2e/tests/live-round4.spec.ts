@@ -83,7 +83,9 @@ for (const role of ["manager", "finance", "cashier", "server"] as const) {
     await page.goto(`${WEB}/settings/merchant`);
     await expect(page.getByRole("button", { name: "Save changes" })).toBeDisabled();
     await expect(page.getByRole("textbox", { name: "Name" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: /^Remove / }).first()).toBeDisabled();
+    // Locked chips are their text alone, with no Remove to press (round 8 S-8).
+    await expect(page.locator("[data-tag]").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Remove / })).toHaveCount(0);
     await expect(enabledFields(page.locator("main form"))).toHaveCount(0);
     // The product sheet's "Attach a modifier group".
     await page.goto(`${WEB}/menu/products`);

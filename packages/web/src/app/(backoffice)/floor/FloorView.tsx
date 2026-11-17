@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/backoffice/Confirm";
 import { Button, Dialog, EmptyState, FieldsLocked, Icon, InlineError, PageHeader, Select, Switch, TextField, cx, useLocale, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
@@ -306,6 +307,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
 }
 
 function TablePanel({ table, areas, onSave, saving, canRotateQr, denied, error }: { table: Table; areas: Area[]; onSave: (body: TablePatch) => void; saving: boolean; canRotateQr: boolean; denied: string | null; error: ApiError | null }) {
+  const confirm = useConfirm();
   // A refusal that names a field (seats over the limit, a name) shows under that field as well as under the plan.
   const fieldError = (name: string) => serverFieldErrors(error).find((e) => e.field === name)?.message;
   const [name, setName] = useState(table.name);
@@ -352,9 +354,10 @@ function TablePanel({ table, areas, onSave, saving, canRotateQr, denied, error }
         <Button type="submit" variant="primary" isDisabled={!valid || denied !== null} isPending={saving}>
           Save table
         </Button>
-        <Button variant="secondary" className={table.archived ? greyPill : greyPillAlert} onPress={() => onSave({ archived: !table.archived })} isDisabled={saving || denied !== null}>
+        <Button variant="secondary" className={table.archived ? greyPill : greyPillAlert} onPress={() => (table.archived ? onSave({ archived: false }) : confirm.ask({ title: `Archive ${table.name}?`, body: "It leaves the floor plan on the POS. Past orders keep it. You can restore it later.", confirmLabel: "Archive table", cancelLabel: "Keep the table", onConfirm: () => onSave({ archived: true }) }))} isDisabled={saving || denied !== null}>
           {table.archived ? "Restore" : "Archive"}
         </Button>
+        {confirm.dialog}
       </div>
       {denied ? <p className="text-[12.5px] text-ink-3">{denied}</p> : null}
       <section className="flex flex-col gap-2.5 border-t border-rule-subtle pt-4">

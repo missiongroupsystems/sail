@@ -144,7 +144,7 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
             </ul>
           ) : null}
           <div className="px-5 py-4">
-            <ProductSearch label="Add to basket" brandId={brandId} keepQuery onPick={addLine} />
+            <ProductSearch label="Add to basket" brandId={brandId} onPick={addLine} />
           </div>
         </Panel>
 

@@ -26,11 +26,13 @@ const fields = () => (
 );
 
 describe("FieldsLocked (L3)", () => {
-  it("turns off every field and every chip's Remove inside it, so a read-only role sees nothing it could type into", () => {
+  it("turns off every field inside it and leaves chips without a Remove, so a read-only role sees nothing it could type into", () => {
     const html = renderToStaticMarkup(<FieldsLocked locked>{fields()}</FieldsLocked>);
     const controls = html.match(/<(input|textarea|button)\b[^>]*>/g) ?? [];
-    expect(controls.length).toBeGreaterThanOrEqual(9);
+    expect(controls.length).toBeGreaterThanOrEqual(8);
     for (const c of controls) expect(c, c).toMatch(/\sdisabled=""/);
+    // A locked chip has no Remove at all (round 8 S-8).
+    expect(html).not.toContain('aria-label="Remove $5.00"');
     expect(html).not.toContain('aria-label="Clear From"');
   });
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/backoffice/Confirm";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, DataTable, EmptyState, InlineError, Sheet, Switch, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -84,6 +85,7 @@ export function TendersView({ initialTenders }: { initialTenders: TenderType[] }
 }
 
 function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort: number; onClose: () => void }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const tender = state?.mode === "edit" ? state.tender : null;
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(tender) });
@@ -126,7 +128,7 @@ function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
       footer={
         <>
           {tender && mayEdit.ok ? (
-            <Button variant="secondary" onPress={() => archive.mutate(!tender.archived)} isPending={archive.isPending} className={`mr-auto ${tender.archived ? greyPill : greyPillAlert}`}>
+            <Button variant="secondary" onPress={() => (tender.archived ? archive.mutate(false) : confirm.ask({ title: `Archive ${tender.name}?`, body: "The POS no longer offers it for payment. Payments already taken with it stay on their orders and reports. You can restore it later.", confirmLabel: "Archive tender", cancelLabel: "Keep the tender", onConfirm: () => archive.mutate(true) }))} isPending={archive.isPending} className={`mr-auto ${tender.archived ? greyPill : greyPillAlert}`}>
               {tender.archived ? "Restore" : "Archive"}
             </Button>
           ) : null}
@@ -172,6 +174,7 @@ function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
         {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
         <InlineError error={save.error ?? archive.error} />
       </form>
+      {confirm.dialog}
     </Sheet>
     </FieldsLocked>
   );

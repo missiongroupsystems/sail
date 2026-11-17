@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/backoffice/Confirm";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, DataTable, EmptyState, InlineError, Sheet, Switch, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -70,6 +71,7 @@ export function VoidReasonsView({ initialReasons }: { initialReasons: VoidReason
 }
 
 function ReasonSheet({ state, nextSort, onClose }: { state: SheetState; nextSort: number; onClose: () => void }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const reason = state?.mode === "edit" ? state.reason : null;
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(reason) });
@@ -107,7 +109,7 @@ function ReasonSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
       footer={
         <>
           {reason && mayEdit.ok ? (
-            <Button variant="secondary" onPress={() => archive.mutate(!reason.archived)} isPending={archive.isPending} className={`mr-auto ${reason.archived ? greyPill : greyPillAlert}`}>
+            <Button variant="secondary" onPress={() => (reason.archived ? archive.mutate(false) : confirm.ask({ title: `Archive ${reason.name}?`, body: "The POS no longer offers it when voiding. Voids already recorded keep it. You can restore it later.", confirmLabel: "Archive reason", cancelLabel: "Keep the reason", onConfirm: () => archive.mutate(true) }))} isPending={archive.isPending} className={`mr-auto ${reason.archived ? greyPill : greyPillAlert}`}>
               {reason.archived ? "Restore" : "Archive"}
             </Button>
           ) : null}
@@ -133,6 +135,7 @@ function ReasonSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
         {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
         <InlineError error={save.error ?? archive.error} />
       </form>
+      {confirm.dialog}
     </Sheet>
     </FieldsLocked>
   );

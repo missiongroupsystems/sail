@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/backoffice/Confirm";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, InlineError, MoneyField, Select, Sheet, TagsField, useLocale, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -91,6 +92,7 @@ function toBody(v: Values): Omit<ProductCreate, "id"> {
 }
 
 export function ProductSheet({ state, onClose, categories, brands }: { state: ProductSheetState; onClose: () => void; categories: Category[]; brands: Brand[] }) {
+  const confirm = useConfirm();
   const { stamp } = useLocale();
   const qc = useQueryClient();
   const product = state?.mode === "edit" ? state.product : null;
@@ -154,7 +156,7 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
       footer={
         <>
           {product && mayEdit.ok ? (
-            <Button variant="secondary" onPress={() => archive.mutate(!product.archived)} isPending={archive.isPending} isDisabled={save.isPending} className={`mr-auto ${product.archived ? greyPill : greyPillAlert}`}>
+            <Button variant="secondary" onPress={() => (product.archived ? archive.mutate(false) : confirm.ask({ title: `Archive ${product.name}?`, body: "It stops showing on the POS and the guest menu at once. Past orders and reports keep it. You can restore it later.", confirmLabel: "Archive product", cancelLabel: "Keep the product", onConfirm: () => archive.mutate(true) }))} isPending={archive.isPending} isDisabled={save.isPending} className={`mr-auto ${product.archived ? greyPill : greyPillAlert}`}>
               {product.archived ? "Restore product" : "Archive product"}
             </Button>
           ) : null}
@@ -293,6 +295,7 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
         {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
         <InlineError error={save.error ?? archive.error} />
       </form>
+      {confirm.dialog}
     </Sheet>
     </FieldsLocked>
   );

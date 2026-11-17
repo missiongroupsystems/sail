@@ -64,17 +64,18 @@ export function TagsField({ label, description, errorMessage, value, onChange, p
       {/* data-disabled gives it the disabled field's fill and no border in the back office, as other locked fields. */}
       <div data-disabled={isDisabled || undefined} className={cx(fieldControl, "flex min-h-11 flex-wrap items-center gap-1.5 py-1.5 focus-within:bg-surface-3", isDisabled && "text-ink-disabled")}>
         {value.map((tag) => (
-          <span key={tag} className={cx("inline-flex h-7 max-sm:h-11 items-center gap-1 rounded-chip pr-1 pl-2.5 text-caption font-medium", isDisabled ? "bg-surface-2 text-ink-disabled" : "bg-surface text-ink shadow-segment")}>
+          // A locked chip is only its text: no × to suggest it could be removed (round 8 S-8).
+          <span key={tag} data-tag className={cx("inline-flex h-7 max-sm:h-11 items-center gap-1 rounded-chip text-caption font-medium", isDisabled ? "bg-surface-2 px-2.5 text-ink-disabled" : "bg-surface pr-1 pl-2.5 text-ink shadow-segment")}>
             {tag}
-            <AriaButton
-              aria-label={`Remove ${tag}`}
-              isDisabled={isDisabled}
-              onPress={() => onChange(value.filter((t) => t !== tag))}
-              // A locked chip's × looks off, as other disabled controls do (M6).
-              className={cx("inline-flex size-5 max-sm:size-11 items-center justify-center rounded-full outline-none data-[focus-visible]:outline-2 data-[focus-visible]:outline-focus", isDisabled ? "cursor-not-allowed text-ink-disabled" : "press text-ink-2 data-[hovered]:bg-surface-2 data-[hovered]:text-ink")}
-            >
-              <Icon icon={X} size={12} />
-            </AriaButton>
+            {isDisabled ? null : (
+              <AriaButton
+                aria-label={`Remove ${tag}`}
+                onPress={() => onChange(value.filter((t) => t !== tag))}
+                className="press inline-flex size-5 max-sm:size-11 items-center justify-center rounded-full text-ink-2 outline-none data-[focus-visible]:outline-2 data-[focus-visible]:outline-focus data-[hovered]:bg-surface-2 data-[hovered]:text-ink"
+              >
+                <Icon icon={X} size={12} />
+              </AriaButton>
+            )}
           </span>
         ))}
         {/* Locked, the field asks for nothing ("Add a tag and press Enter" is an instruction) and has one cursor throughout. */}

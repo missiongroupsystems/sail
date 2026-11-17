@@ -186,3 +186,76 @@ test("O6 (A P12): the rail has no destination that does nothing; Changes is the 
   await page.goto(`${WEB}/changes`);
   await expect(page).toHaveURL(`${WEB}/audit`);
 });
+
+test.describe("O4 (A P9, P16): pickers", () => {
+  test("Enter adds the highlighted option and keeps the sheet open; an added product says so; the search clears; an empty group says why it cannot save", async ({ page }) => {
+    test.setTimeout(300_000);
+    await signIn(page);
+    await page.goto(`${WEB}/menu/modifiers`);
+    await page.getByRole("button", { name: "Add modifier group" }).first().click();
+    const sheet = page.getByRole("dialog");
+    await sheet.getByLabel("Name").fill(`Picker ${Date.now()}`);
+    const search = sheet.getByRole("searchbox", { name: "Add an option" });
+    await search.fill("Kopi");
+    await expect(sheet.getByRole("list", { name: "Results" }).getByRole("button", { name: /Kopi/ }).first()).toBeVisible();
+    await search.press("Enter");
+    // The sheet stays, the option is in, and the search is empty for the next one.
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByRole("button", { name: "Remove Kopi" })).toBeVisible();
+    await expect(search).toHaveValue("");
+    // Searching it again says it is already added, not that nothing matches.
+    await search.fill("Kopi");
+    const again = sheet.getByRole("list", { name: "Results" }).getByRole("button", { name: /^Kopi/ }).first();
+    await expect(again).toContainText("Already added");
+    await expect(again).toBeDisabled();
+    await expect(sheet.getByText(/No products match/)).toHaveCount(0);
+    // An empty group cannot be saved, and says why.
+    await search.fill("");
+    await sheet.getByRole("button", { name: "Remove Kopi" }).click();
+    await sheet.getByRole("button", { name: "Add modifier group" }).click();
+    await expect(sheet.getByText("Add at least one option: a group without options gives nothing to choose.")).toBeVisible();
+    await expect(sheet).toBeVisible();
+  });
+});
+
+test.describe("O8 (A P15), O11 (round 8 S-6): archive and remove ask once", () => {
+  test("Archive menu is in the row's overflow and asks, naming the POS and the guest menu; a section with products asks before it goes", async ({ page }) => {
+    test.setTimeout(300_000);
+    await signIn(page);
+    await page.goto(`${WEB}/menu/menus`);
+    await expect(page.getByRole("button", { name: "Archive menu" })).toHaveCount(0);
+    await page.getByRole("button", { name: "More for this menu" }).click();
+    await page.getByRole("menuitem", { name: "Archive menu" }).click();
+    const ask = page.getByRole("alertdialog");
+    await expect(ask).toContainText("It stops showing on the POS and the guest menu");
+    await ask.getByRole("button", { name: "Keep the menu" }).click();
+    await expect(ask).toBeHidden();
+    await expect(page.getByRole("button", { name: "More for this menu" })).toBeVisible();
+
+    // A section that holds products asks once; keeping it changes nothing.
+    const remove = page.getByRole("button", { name: /^Remove (?!.* from )/ }).first();
+    await remove.click();
+    await expect(ask).toContainText("The products themselves stay.");
+    await ask.getByRole("button", { name: "Keep it" }).click();
+    await expect(page.getByRole("button", { name: "Saved" })).toBeVisible();
+
+    // A product already in another section shows where, in an open search list.
+    await page.getByRole("button", { name: "Products" }).nth(1).click();
+    const firstItem = (await page.locator("ol ol li").first().innerText()).split("\n")[0]!.trim();
+    await page.getByRole("searchbox").fill(firstItem.slice(0, 4));
+    await expect(page.getByRole("list", { name: "Results" })).toContainText(/In |Already added/);
+  });
+
+  test("Archive product asks once and says what disappears", async ({ page }) => {
+    test.setTimeout(300_000);
+    await signIn(page);
+    await page.goto(`${WEB}/menu/products`);
+    await page.getByRole("grid").getByRole("row").nth(1).click();
+    const sheet = page.getByRole("dialog");
+    await sheet.getByRole("button", { name: "Archive product" }).click();
+    const ask = page.getByRole("alertdialog");
+    await expect(ask).toContainText("It stops showing on the POS and the guest menu at once.");
+    await ask.getByRole("button", { name: "Keep the product" }).click();
+    await expect(sheet.getByRole("button", { name: "Archive product" })).toBeVisible();
+  });
+});
