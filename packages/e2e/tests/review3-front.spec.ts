@@ -82,4 +82,24 @@ test.describe("POS paid screen", () => {
       await settle(orderId);
     }
   });
+
+  test("S2: switching user from the paid screen comes back to the floor, never to Take payment for a paid bill", async ({ page }) => {
+    test.setTimeout(300_000);
+    await pairAndSignIn(page, MANAGER_PIN);
+    const orderId = await sentToPay(page);
+    try {
+      await payOnTerminal(page);
+      await page.getByRole("button", { name: /Open user menu$/ }).click();
+      await page.getByRole("menuitem", { name: "Switch user" }).click();
+      await expect(page.getByRole("button", { name: "Pair this iPad again" })).toBeVisible();
+      await keyIn(page, "PIN keys", MANAGER_PIN);
+      await expect(page.getByRole("navigation", { name: "Destinations" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Take payment" })).toHaveCount(0);
+      await expect(page.getByText("Checking with the register…")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /^Table \d+, Free/ }).first()).toBeVisible();
+      await shot(page, out("S2-after-switch-user.png"));
+    } finally {
+      await settle(orderId);
+    }
+  });
 });

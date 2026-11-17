@@ -306,6 +306,12 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
       setPad({ target: "amount", fresh: true });
     }
   }, [done, snap]);
+  // Nothing to pay on this bill and no payment on the way (back here after switching user from the paid screen, or a
+  // bill paid at another station): the pay screen never opens for it; the order's own next screen does (S2).
+  useEffect(() => {
+    if (done || busy || watching || !snap || !check || snap.status === "cancelled") return;
+    if (check.balance <= 0) leave();
+  }, [done, busy, watching, snap, check, leave]);
 
   if (!snap || !check || !tender) {
     return (
