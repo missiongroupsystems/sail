@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { formatMoney, quoteRefund, type OrderTaxKept, RefundError, sumTaxes, type BillDocument, type MoneyFormat, type RefundQuote, type RefundRequest, type RefundableLine, type RefundablePayment } from "@sail/shared";
-import { db } from "../db/client.js";
+import { db, tx } from "../db/client.js";
 import { checkAllocations, checks, merchantSettings, orderAdjustments, orderLines, orders, payments, refundLines, refundTenders, refunds, shifts, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { Principal } from "../auth/principal.js";
@@ -40,15 +40,17 @@ export async function refundableFor(checkId: string): Promise<{ check: typeof ch
   });
   const [settings] = await db().select().from(merchantSettings).where(eq(merchantSettings.merchantId, check.merchantId)).limit(1);
   if (!settings) throw AppError.notFound("merchant settings", check.merchantId);
-  return { check, order, lines, lineNames: new Map(lineRows.map((l) => [l.id, l.name])), paymentsList, increment: settings.cashRoundingIncrement ?? null, money: { currency: settings.currency, locale: settings.locale }, orderTax: order.taxRounding === "per_rate" ? await orderTaxKept(order) : undefined };
+  return { check, order, lines, lineNames: new Map(lineRows.map((l) => [l.id, l.name])), paymentsList, increment: settings.cashRoundingIncrement ?? null, money: { currency: settings.currency, locale: settings.locale }, orderTax: order.taxRounding === "per_rate" && (await db().select({ id: checks.id }).from(checks).where(eq(checks.orderId, order.id)).limit(2)).length === 1 ? await orderTaxKept(order) : undefined };
 }
 
 /**
- * The order's tax still kept per rate, over every bill and net of earlier refunds, for a refund by items to give back
- * the difference (spec: order tax per rate = rate × the order's taxable amount). A rate is the line's list of components.
+ * The order's tax still kept per rate, net of earlier refunds, for a refund by items to give back the difference (order
+ * tax per rate = rate × the order's taxable amount). A rate is the line's list of components. Only for an order of one
+ * bill: a split order's bills already carry the split's rounding cents, and a refund moves money on one bill only, so
+ * there each line gives back its own tax as before (a property test showed aligning to the order there drifts).
  */
 async function orderTaxKept(order: typeof orders.$inferSelect): Promise<OrderTaxKept> {
-  const allocs = await db().select({ checkId: checkAllocations.checkId, lineId: checkAllocations.orderLineId, total: checkAllocations.total, tax: checkAllocations.tax, taxes: checkAllocations.taxes }).from(checkAllocations).innerJoin(checks, eq(checks.id, checkAllocations.checkId)).where(eq(checks.orderId, order.id));
+  const allocs = await db().select({ checkId: checkAllocations.checkId, lineId: checkAllocations.orderLineId, total: checkAllocations.total, tax: checkAllocations.tax, taxes: checkAllocations.taxes, fee: checkAllocations.fee }).from(checkAllocations).innerJoin(checks, eq(checks.id, checkAllocations.checkId)).where(eq(checks.orderId, order.id));
   const back = await db().select({ checkId: refunds.checkId, lineId: refundLines.orderLineId, total: refundLines.total, tax: refundLines.tax, taxes: refundLines.taxes }).from(refundLines).innerJoin(refunds, eq(refunds.id, refundLines.refundId)).where(eq(refunds.orderId, order.id));
   const inclusive = order.taxMode === "inclusive";
   const rates = new Map<string, OrderTaxKept["rates"][number]>();
@@ -61,10 +63,13 @@ async function orderTaxKept(order: typeof orders.$inferSelect): Promise<OrderTax
     cs.forEach((c, k) => (rate.taxes[k]! += sign * (r.taxes.find((t) => t.name === c.name && t.bps === c.bps)?.amount ?? 0)));
     rates.set(key, rate);
   };
+  // A line with a fee may carry the fee's rate inside its own: its rate's figures would mix two rates, so that rate is
+  // left out and its refunds keep each line's own tax (the quote aligns only lines without a fee as well).
+  const mixed = new Set(allocs.filter((a) => a.fee !== 0).map((a) => a.taxes.map((t) => `${t.bps}|${t.name}`).join("+")));
   for (const a of allocs) addRow(a, 1);
   // A refund line counts against the rate of the allocation it came from.
   for (const b of back) addRow(b, -1, allocs.find((a) => a.checkId === b.checkId && a.lineId === b.lineId)?.taxes.map((t) => ({ name: t.name, bps: t.bps })));
-  return { tax_mode: inclusive ? "inclusive" : "exclusive", rates: [...rates.values()] };
+  return { tax_mode: inclusive ? "inclusive" : "exclusive", rates: [...rates.entries()].filter(([k]) => !mixed.has(k) && ![...mixed].some((m) => m.split("+").some((c) => k.split("+").includes(c)))).map(([, r]) => r) };
 }
 
 export function quote(ref: Awaited<ReturnType<typeof refundableFor>>, request: RefundRequest, tenderSplit?: { payment_id: string; amount: number }[], opts: { avoidCash?: boolean } = {}): RefundQuote {
@@ -189,17 +194,22 @@ export async function createRefund(input: { refundId: string; checkId: string; r
  */
 async function refundShift(outletId: string, stationId: string | null, shiftId: string | null, paysCash: boolean): Promise<{ id: string; businessDate: string; stationId: string | null } | null> {
   if (shiftId) {
-    const [s] = await db().select({ id: shifts.id, businessDate: shifts.businessDate, stationId: shifts.stationId, outletId: shifts.outletId, status: shifts.status }).from(shifts).where(eq(shifts.id, shiftId)).limit(1);
-    if (!s || s.outletId !== outletId) throw AppError.notFound("shift", shiftId);
+    // Locked, so a close of the same shift at the same moment runs after this refund and counts it (as voids do).
+    const [s] = await tx()<{ id: string; business_date: string; station_id: string | null; outlet_id: string; status: string }[]>`select id, business_date, station_id, outlet_id, status from shifts where id = ${shiftId} for update`;
+    if (!s || s.outlet_id !== outletId) throw AppError.notFound("shift", shiftId);
     if (s.status !== "open") throw AppError.invariant("shift_closed", "That shift has been closed", "Choose another open shift, or refund to the card only.");
-    return { id: s.id, businessDate: s.businessDate, stationId: s.stationId };
+    // A station pays cash out of its own drawer only: naming another station's shift would count it on two reports.
+    if (stationId && s.station_id && s.station_id !== stationId) throw AppError.invariant("shift_of_another_station", "That shift belongs to another station", "Refund on that station, or from the back office.");
+    return { id: s.id, businessDate: s.business_date, stationId: s.station_id };
   }
   const [own] = await openShiftFor(outletId, stationId);
   if (own) return { ...own, stationId: own.stationId ?? null };
   if (stationId || !paysCash) return null;
   const open = await db().select({ id: shifts.id, businessDate: shifts.businessDate, stationId: shifts.stationId }).from(shifts).where(and(eq(shifts.outletId, outletId), eq(shifts.status, "open"))).limit(2);
   if (open.length > 1) throw AppError.invariant("shift_required", "Choose which open shift the cash comes out of", "Name the shift (`shift_id`) whose drawer pays the cash back.");
-  return open[0] ?? null;
+  if (!open[0]) return null;
+  const [locked] = await tx()<{ status: string }[]>`select status from shifts where id = ${open[0].id} for update`;
+  return locked?.status === "open" ? open[0] : null;
 }
 
 /** Open shifts at an outlet a back-office refund can pay cash out of: station and who opened it. */

@@ -191,7 +191,7 @@ export async function printHealth(f: Pick<ReportFilters, "merchantId" | "outletI
 
 export function salesSummaryCsv(s: SalesSummary): string {
   const rows: (string | number | boolean | null)[][] = [];
-  rows.push(["totals", "orders", s.totals.orders, "covers", s.totals.covers, "gross", s.totals.gross, "discounts", s.totals.discounts, "refunds", s.totals.refunds, "net", s.totals.net, "fees", s.totals.fees, "tax", s.totals.tax, "total", s.totals.total, "rounding", s.totals.rounding, "tips", s.totals.tips]);
+  rows.push(["totals", "orders", s.totals.orders, "covers", s.totals.covers, "gross", s.totals.gross, "discounts", s.totals.discounts, "tax_in_prices", s.totals.tax_in_prices, "refunds", s.totals.refunds, "net", s.totals.net, "fees", s.totals.fees, "tax", s.totals.tax, "total", s.totals.total, "rounding", s.totals.rounding, "tips", s.totals.tips]);
   for (const t of s.taxes) rows.push(["tax", t.name, t.bps, t.taxable, t.amount]);
   for (const d of s.by_day) rows.push(["by_day", d.business_date, d.orders, d.covers, d.gross, d.net]);
   for (const t of s.by_order_type) rows.push(["by_order_type", t.order_type, t.orders, t.net]);

@@ -241,10 +241,10 @@ function rateTaxOf(amount: Cents, components: readonly { bps: number }[], mode: 
  * Move each refunded line's tax, per component, so the rate's total given back is the order's tax kept before less the
  * tax on what is kept after. Only lines without a fee take part (a fee may carry another rate inside the same line).
  * A row moves within what is still refundable on its line (its total moves with its tax when tax is on top; with tax
- * included the total is what the guest paid and stays). A cent more than the refunded lines still hold sits on a line
- * of the same rate that is kept: it comes back as a row of that line with no quantity and no price, only the tax (and,
- * with tax on top, the same total), so each line's refunds still never exceed what it took. A cent less is taken only
- * from a line with units left after this refund; the last units of a line give back all of its tax.
+ * included the total is what the guest paid and stays). The last units of a line give back all of its tax; a cent beyond
+ * that moves on a kept line of the same rate on this bill, as a row with no quantity and no price, only the tax (and,
+ * with tax on top, the same total): a cent more comes out of what it holds, a cent less is handed to it as a row of minus
+ * that cent. Each line's refunds, all added up, still never exceed what it took.
  */
 function alignToOrderTax(out: RefundLineResult[], byId: Map<string, RefundableLine>, kept: OrderTaxKept) {
   const inclusive = kept.tax_mode === "inclusive";
@@ -276,14 +276,16 @@ function alignToOrderTax(out: RefundLineResult[], byId: Map<string, RefundableLi
         const next = clampMag(r.taxes[k]!.amount + delta, rem.taxes[k]!);
         if (next !== r.taxes[k]!.amount) move(r, next - r.taxes[k]!.amount);
       }
-      if (delta <= 0) return;
-      // The rest from kept lines of the same rate on this bill, each up to the tax it still holds.
+      if (delta === 0) return;
+      // The rest moves on kept lines of the same rate on this bill: a cent more comes from the tax a kept line still holds;
+      // a cent less is handed to a kept line (a row of minus that cent), which then holds it until it is refunded itself.
       for (const l of byId.values()) {
-        if (delta <= 0) break;
+        if (delta === 0) break;
         if (!eligible(l) || rateKey(l.taxes) !== key || out.some((r) => r.line_id === l.line_id && r.quantity > 0)) continue;
+        const rem = remainingOf(l);
+        if (rem.quantity === 0) continue;
         const already = out.find((r) => r.line_id === l.line_id);
-        const room = remainingOf(l).taxes[k]! - (already?.taxes[k]!.amount ?? 0);
-        const d = Math.min(delta, Math.max(0, room));
+        const d = delta > 0 ? Math.min(delta, Math.max(0, rem.taxes[k]! - (already?.taxes[k]!.amount ?? 0))) : delta;
         if (d === 0) continue;
         const row = already ?? { line_id: l.line_id, quantity: 0, base: 0, discount: 0, fee: 0, tax: 0, taxes: l.taxes.map((t) => ({ name: t.name, bps: t.bps, amount: 0 })), total: 0, adjustments: {} };
         if (!already) out.push(row);

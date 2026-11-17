@@ -83,8 +83,12 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
   useEffect(() => {
     if (!openShifts.data || drawer) return;
     if (openShifts.data.length === 1) setDrawer(openShifts.data[0]!.id);
-    else if (openShifts.data.length === 0 && cardPaid) setDrawer("card");
-  }, [openShifts.data, drawer, cardPaid]);
+    else if (openShifts.data.length === 0 && cardPaid && what !== "full") setDrawer("card");
+  }, [openShifts.data, drawer, cardPaid, what]);
+  // A whole-bill refund cannot go to the card alone: choosing it again clears a card-only choice.
+  useEffect(() => {
+    if (what === "full") setDrawer((d) => (d === "card" ? null : d));
+  }, [what]);
   const avoidCash = cashPaid && drawer === "card";
   const shiftId = cashPaid && drawer && drawer !== "card" ? drawer : undefined;
   const lineById = useMemo(() => new Map(order.lines.map((l) => [l.id, l])), [order.lines]);
@@ -334,11 +338,11 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
             <div className="flex flex-col gap-3">
               {openShifts.isPending ? <p className="text-ink-2">Looking for open shifts…</p> : null}
               {openShifts.data && shiftsOpen.length === 0 ? (
-                <p className="text-ink-2">{cardPaid ? "No shift is open at this outlet, so no drawer can pay cash back. The refund goes back to the card only." : "No shift is open at this outlet, so no drawer can pay cash back. Refund it on a station once a shift is open."}</p>
+                <p className="text-ink-2">{cardPaid && what !== "full" ? "No shift is open at this outlet, so no drawer can pay cash back. The refund goes back to the card only." : cardPaid ? "No shift is open at this outlet, so no drawer can pay cash back. Refund some items or an amount to the card only, or refund on a station once a shift is open." : "No shift is open at this outlet, so no drawer can pay cash back. Refund it on a station once a shift is open."}</p>
               ) : null}
               {shiftsOpen.length ? <p className="text-ink-2">{shiftsOpen.length === 1 ? "The cash comes out of the only open shift's drawer." : "Choose the open shift whose drawer pays the cash back."}</p> : null}
               <ul className="flex flex-col gap-2" aria-label="Cash from">
-                {[...shiftsOpen.map((s) => ({ id: s.id, title: shiftLabel(s), detail: `${s.opened_by ? `opened by ${s.opened_by} · ` : ""}since ${clock(s.opened_at)}` })), ...(cardPaid && openShifts.data ? [{ id: "card", title: "Back to the card only", detail: "Nothing is paid out in cash." }] : [])].map((o) => (
+                {[...shiftsOpen.map((s) => ({ id: s.id, title: shiftLabel(s), detail: `${s.opened_by ? `opened by ${s.opened_by} · ` : ""}since ${clock(s.opened_at)}` })), ...(cardPaid && openShifts.data && what !== "full" ? [{ id: "card", title: "Back to the card only", detail: "Nothing is paid out in cash." }] : [])].map((o) => (
                   <li key={o.id}>
                     <button
                       type="button"

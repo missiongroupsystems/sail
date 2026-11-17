@@ -19,7 +19,7 @@ import { rangeScope, ReportRange, useReportRange } from "../ReportRange";
  * `totals.fees` excludes tax; `totals.total` is what was collected before refunds.
  */
 type SalesSummary = {
-  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; tax: number; refunds: number; net: number; total: number; rounding: number; tips: number; net_before_refunds?: number; total_after_refunds?: number };
+  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; tax: number; refunds: number; net: number; total: number; rounding: number; tips: number; net_before_refunds?: number; total_after_refunds?: number; tax_in_prices?: number };
   /** `totals.tax` by component. */
   taxes: TaxBreakdown[];
   by_day: { business_date: string; orders: number; covers: number; gross: number; net: number }[];

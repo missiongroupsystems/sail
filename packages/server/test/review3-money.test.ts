@@ -443,3 +443,49 @@ describe("R6: the Changes log reports what changed", () => {
     expect(a!.details).toEqual({ active: false, pin_changed: false });
   });
 });
+
+describe("R4 property: across bills and successive refunds by items, what is kept is its rate times its taxable amount", () => {
+  for (const bills of [1, 2]) {
+    it(`US, ${bills} bill(s), every line refunded one unit at a time: ${bills === 1 ? "kept tax per rate obeys the rule" : "each line gives back its own tax (a split bill keeps its rounding)"}, and no line gives back more than it took`, async () => {
+      const o = await open(US, 1);
+      const id = o.body.data.id;
+      await add(US, id, ["burger", "fries", "tea", "coffee", "coffee", "fries", "tea"], 1);
+      expect((await call("POST", `/v1/orders/${id}/fire`, { token: pos(US, 1), body: {} })).status).toBe(200);
+      if (bills > 1) expect((await call<Err>("POST", `/v1/orders/${id}/checks/split-even`, { token: pos(US, 1), body: { n: bills } })).status).toBe(200);
+      if (!(await openShifts(US)).some((x) => x.station_id === US.stations[1]!.id)) expect((await openShift(US, 1, 0)).status).toBe(201);
+      for (const c of (await snap(US, id)).checks) expect((await pay(US, c.id, c.balance, "card", 1)).status).toBe(200);
+      const s = await snap(US, id);
+      const kept = () => db.sql<{ name: string; bps: number; taxable: number; tax: number }[]>`
+        with a as (select a.total, a.tax, t from check_allocations a join checks c on c.id = a.check_id cross join lateral jsonb_array_elements(a.taxes) t where c.order_id = ${id}),
+             r as (select rl.total, rl.tax, t from refund_lines rl join refunds rf on rf.id = rl.refund_id cross join lateral jsonb_array_elements(rl.taxes) t where rf.order_id = ${id})
+        select t->>'name' as name, (t->>'bps')::int as bps, sum(sign * (total - tax))::bigint as taxable, sum(sign * (t->>'amount')::bigint)::bigint as tax
+        from (select 1 as sign, * from a union all select -1, * from r) x group by 1, 2`;
+      for (const line of s.lines) {
+        for (const c of s.checks) {
+          const r = await boRefund(c.id, { kind: "lines", lines: [{ line_id: line.id, quantity: 1 }] });
+          if (r.status === 422 || r.status === 400) continue; // not on this bill, or nothing left
+          expect(r.status, JSON.stringify(r.body)).toBe(201);
+          for (const k of await kept()) {
+            const off = Number(k.tax) - Math.floor((Number(k.taxable) * k.bps + 5000) / 10000);
+            if (bills === 1) expect(off, `${k.name} after refunding ${line.name}`).toBe(0);
+          }
+        }
+      }
+      // Everything refunded: nothing is kept, and every bill gave back exactly what it took.
+      for (const k of await kept()) expect([Number(k.taxable), Number(k.tax)]).toEqual([0, 0]);
+      const over = await db.sql<{ n: number }[]>`select count(*)::int as n from check_allocations a join checks c on c.id = a.check_id where c.order_id = ${id} and a.total < (select coalesce(sum(rl.total),0) from refund_lines rl join refunds rf on rf.id = rl.refund_id where rf.check_id = a.check_id and rl.order_line_id = a.order_line_id)`;
+      expect(over[0]!.n).toBe(0);
+      const left = await snap(US, id);
+      expect(left.checks.map((c) => c.status)).toEqual(left.checks.map(() => "refunded"));
+    });
+  }
+
+  it("a station cannot pay cash out of another station's shift", async () => {
+    const shifts = await openShifts(US);
+    // Station 2's Manager names Station 1's drawer.
+    const other = shifts.find((x) => x.station_id === US.stations[0]!.id)!;
+    const order = await paidOrder(US, ["coffee"], "cash", 1);
+    const r = await call<Err>("POST", `/v1/checks/${order.checks[0]!.id}/refunds`, { token: pos(US, 1), body: { refund_id: randomUUID(), request: { kind: "full" }, reason: "x", print: false, shift_id: other.id } });
+    expect([r.status, r.body.message]).toEqual([422, "That shift belongs to another station"]);
+  });
+});
