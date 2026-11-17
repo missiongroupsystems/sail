@@ -159,13 +159,15 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
       {/* The kitchen bar: what this screen is, how many tickets, Recall, the theme, the time and the connection. */}
       {/* Everything but the station's name keeps its size: the name truncates first, so the clock and the online state always fit (review 3, S6). */}
       <header className="flex h-14 shrink-0 items-center gap-x-4 border-b border-rule bg-surface px-5 max-[1180px]:gap-x-3 max-[960px]:gap-x-2 max-[960px]:px-4">
+        {/* The left group gives way (its name truncates first, then the group clips); the right group never leaves the screen. */}
+        <div className="flex min-w-0 flex-1 items-center gap-x-4 overflow-hidden max-[1180px]:gap-x-3 max-[960px]:gap-x-2">
         <h1 className="flex shrink-0 items-center gap-2 font-heading text-[18px] font-semibold text-ink">
           <Icon icon={ChefHat} size={20} />
           {/* Below a wide screen the icon stands for "Kitchen", so the station's own name has the room (C-11). */}
           <span className="max-[1180px]:sr-only">Kitchen</span>
         </h1>
         {/* The station's name takes the room left over, on up to two lines, and truncates past that (whole on hover). */}
-        <p className="min-w-[7rem] flex-1 text-[14px] leading-tight text-ink-2 line-clamp-2" title={station.name}>
+        <p className="min-w-[4.5rem] flex-1 text-[14px] leading-tight text-ink-2 line-clamp-2" title={station.name}>
           {station.name}
         </p>
         <p className="flex shrink-0 items-center gap-2 text-[14.5px] text-ink">
@@ -183,6 +185,7 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
         {/* Tickets past the screen's edge: how many, and a page across to them (final review B-P10). */}
         {board.before > 0 ? <PageButton icon={ChevronLeft} count={board.before} word="before" onPress={() => board.page(-1)} /> : null}
         {board.after > 0 ? <PageButton icon={ChevronRight} count={board.after} word="more" onPress={() => board.page(1)} trailing /> : null}
+        </div>
         <AriaButton
           isDisabled={!last || act.isPending}
           onPress={() => last && act.mutate({ id: last.id, action: "recall", key: idempotencyKey() })}

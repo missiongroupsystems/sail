@@ -297,7 +297,8 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
     const live = snap.checks.find((c) => c.id === done.check.id);
     if (!live) return;
     const payment = done.figures.id ? live.payments.find((p) => p.id === done.figures.id) : undefined;
-    if ((payment && payment.status !== "recorded") || live.balance > done.check.balance) {
+    // A refund from another station leaves the payment recorded but the bill refunded: that is not "paid" any more either.
+    if ((payment && payment.status !== "recorded") || live.balance > done.check.balance || live.refunded_total > done.check.refunded_total) {
       setDone(null);
       setVoiding(null);
       setDigits(null);

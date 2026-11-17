@@ -44,8 +44,9 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
   const product = line ? menu?.products[line.product_id] : undefined;
   const editsModifiers = Boolean(unsent && menu && product && product.modifier_groups.length > 0);
   const chosen = editsModifiers && menu && product ? toModifiers(menu, product, selection).map((m) => ({ group_id: m.group_id, product_id: m.product_id, quantity: 1 })) : null;
-  const savedKey = line ? priceKey(line.quantity, editsModifiers ? line.modifiers.map((m) => m.product_id) : null) : "";
-  const currentKey = priceKey(quantity, chosen ? chosen.map((m) => m.product_id) : null);
+  // The line and the order's version are in the key: a figure for another line, or for the order before it changed, never shows.
+  const savedKey = line ? priceKey(line.id, order.version, line.quantity, editsModifiers ? line.modifiers.map((m) => m.product_id) : null) : "";
+  const currentKey = priceKey(lineId ?? "", order.version, quantity, chosen ? chosen.map((m) => m.product_id) : null);
   const chosenJson = chosen ? JSON.stringify(chosen) : null;
   const unmetNow = editsModifiers && menu && product ? unmetRequirement(menu, product, selection) : null;
   useEffect(() => {
@@ -59,7 +60,10 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
         if (!gone && after) setPriced({ key: currentKey, line: after });
       } catch {
         // No figure is better than a wrong one: the box says the total shows once saved.
-        if (!gone) setPricedFailed(true);
+        if (!gone) {
+          setPriced(null);
+          setPricedFailed(true);
+        }
       }
     }, 200);
     return () => {
@@ -69,6 +73,7 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
   }, [api, order.id, lineId, unsent, quantity, chosenJson, currentKey, savedKey, offline, unmetNow]);
 
   useEffect(() => {
+    setPriced(null);
     if (!line) return;
     setQuantity(line.quantity);
     setNotes(line.notes ?? "");
@@ -178,7 +183,7 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
             <QuantityStepper value={quantity} onChange={setQuantity} min={1} max={sent ? line.quantity : 999} />
           </section>
           {sent ? <p className="text-body text-ink-2">A sent line cannot be changed. Lower the quantity to void part of it.</p> : null}
-          {currentKey === savedKey && quantity === line.quantity ? (
+          {currentKey === savedKey ? (
             <LineTotal line={line} taxMode={order.totals.tax_mode} />
           ) : !sent && priced?.key === currentKey ? (
             <LineTotal line={priced.line} taxMode={order.totals.tax_mode} />
@@ -271,6 +276,6 @@ function LineTotal({ line, taxMode }: { line: SnapshotLine; taxMode: string }) {
 }
 
 /** What a dry run priced: the quantity and, where the options can change, the options chosen. */
-function priceKey(quantity: number, modifierIds: string[] | null): string {
-  return JSON.stringify([quantity, modifierIds]);
+function priceKey(lineId: string, version: number, quantity: number, modifierIds: string[] | null): string {
+  return JSON.stringify([lineId, version, quantity, modifierIds]);
 }
