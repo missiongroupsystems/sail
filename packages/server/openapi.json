@@ -89837,7 +89837,7 @@
           "kitchen"
         ],
         "operationId": "kitchen_tickets.list",
-        "description": "Tickets still on the kitchen display (not bumped), oldest fire first, with their lines (voided quantities struck), order, table and the `changed` flag, plus the most recently bumped ticket for Recall. With `order_id`, every ticket of that order in any state (the POS shows a line as ready once its tickets are bumped). A display station sees only its assigned destinations. Never changes anything.",
+        "description": "Tickets still on the kitchen display (not bumped), oldest fire first, with their lines (voided quantities struck), order, table and the `changed` flag, plus the most recently bumped ticket for Recall. With `order_id`, every ticket of that order in any state (the POS shows a line as ready once its tickets are bumped). A display station sees only its assigned destinations. Tickets left from an earlier business day (the order finished or its day closed) are not on the board; `earlier` counts them, and `earlier=true` lists them instead. Never changes anything.",
         "summary": "Kitchen display tickets of an outlet",
         "x-sail": {
           "op": "kitchen_tickets.list",
@@ -89886,6 +89886,18 @@
             },
             "required": false,
             "name": "order_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "earlier",
             "in": "query"
           }
         ],
@@ -90260,12 +90272,16 @@
                         "cancelled_at",
                         "lines"
                       ]
+                    },
+                    "earlier": {
+                      "type": "integer"
                     }
                   },
                   "required": [
                     "data",
                     "next_cursor",
-                    "last_bumped"
+                    "last_bumped",
+                    "earlier"
                   ]
                 }
               }

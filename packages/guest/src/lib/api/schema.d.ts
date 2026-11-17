@@ -3497,7 +3497,7 @@ export interface paths {
         };
         /**
          * Kitchen display tickets of an outlet
-         * @description Tickets still on the kitchen display (not bumped), oldest fire first, with their lines (voided quantities struck), order, table and the `changed` flag, plus the most recently bumped ticket for Recall. With `order_id`, every ticket of that order in any state (the POS shows a line as ready once its tickets are bumped). A display station sees only its assigned destinations. Never changes anything.
+         * @description Tickets still on the kitchen display (not bumped), oldest fire first, with their lines (voided quantities struck), order, table and the `changed` flag, plus the most recently bumped ticket for Recall. With `order_id`, every ticket of that order in any state (the POS shows a line as ready once its tickets are bumped). A display station sees only its assigned destinations. Tickets left from an earlier business day (the order finished or its day closed) are not on the board; `earlier` counts them, and `earlier=true` lists them instead. Never changes anything.
          */
         get: operations["kitchen_tickets.list"];
         put?: never;
@@ -34813,6 +34813,7 @@ export interface operations {
             query?: {
                 destination_id?: string;
                 order_id?: string;
+                earlier?: "true" | "false";
             };
             header?: never;
             path: {
@@ -34898,6 +34899,7 @@ export interface operations {
                                 source: string;
                             }[];
                         } | null;
+                        earlier: number;
                     };
                 };
             };

@@ -444,3 +444,32 @@ describe("settings", () => {
     expect(ok.body.data.settings).toMatchObject({ kitchen_warn_minutes: 5, kitchen_late_minutes: 10 });
   });
 });
+
+describe("tickets left from an earlier business day (round 8, 10)", () => {
+  it("leave the board and the all-day count once their order is finished or its day closed, and are listed on request", async () => {
+    const done = await sendOrder([{ product_id: ids.laksa, notes: "earlier day, finished" }]);
+    const stillOpen = await sendOrder([{ product_id: ids.laksa, notes: "earlier day, still open" }]);
+    const ticketOf = async (orderId: string, query = "") => (await list(tokens.d1, query)).body.data.find((t) => t.order_id === orderId);
+    expect(await ticketOf(done.orderId)).toBeDefined();
+    const before = (await list(tokens.d1)).body as List & { earlier: number };
+    const laksaAllDay = async () => (await call<{ data: { product_id: string; quantity: number }[] }>("GET", `/v1/outlets/${A.outletId}/kitchen-tickets/all-day`, { token: tokens.d1 })).body.data.find((i) => i.product_id === ids.laksa)?.quantity ?? 0;
+    const allDayBefore = await laksaAllDay();
+    // Both orders now belong to a day long past; one of them is finished.
+    await db.sql`update orders set business_date = '2020-01-01' where id in ${db.sql([done.orderId, stillOpen.orderId])}`;
+    await db.sql`update orders set status = 'completed' where id = ${done.orderId}`;
+    const after = (await list(tokens.d1)).body as List & { earlier: number };
+    expect(after.data.find((t) => t.order_id === done.orderId)).toBeUndefined();
+    // An order still open from an earlier day stays: the kitchen may still be making it.
+    expect(after.data.find((t) => t.order_id === stillOpen.orderId)).toBeDefined();
+    expect(after.earlier).toBe(before.earlier + 1);
+    expect(after.data.length).toBe(before.data.length - 1);
+    expect(await laksaAllDay()).toBe(allDayBefore - 1);
+    const earlier = (await list(tokens.d1, "?earlier=true")).body as List & { earlier: number };
+    expect(earlier.data.map((t) => t.order_id)).toContain(done.orderId);
+    expect(earlier.data.map((t) => t.order_id)).not.toContain(stillOpen.orderId);
+    // It can still be cleared from there.
+    const t = earlier.data.find((x) => x.order_id === done.orderId)!;
+    expect((await act(tokens.d1, t.id, "bump")).status).toBe(200);
+    expect(((await list(tokens.d1)).body as List & { earlier: number }).earlier).toBe(before.earlier);
+  });
+});

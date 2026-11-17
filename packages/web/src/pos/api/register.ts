@@ -193,8 +193,8 @@ export async function listEvents(api: PosApi, outletId: string, after: number, l
 
 /* ---- Kitchen display ------------------------------------------------------ */
 
-/** Open tickets for the caller's destinations (a display station sees only its own), or every ticket of one order. */
-export async function listKitchenTickets(api: PosApi, outletId: string, query: { order_id?: string } = {}): Promise<KitchenTicketsPage> {
+/** Open tickets for the caller's destinations (a display station sees only its own), those left from earlier business days, or every ticket of one order. */
+export async function listKitchenTickets(api: PosApi, outletId: string, query: { order_id?: string; earlier?: "true" } = {}): Promise<KitchenTicketsPage> {
   return req(api.GET("/v1/outlets/{id}/kitchen-tickets", { params: { path: { id: outletId }, query } }));
 }
 

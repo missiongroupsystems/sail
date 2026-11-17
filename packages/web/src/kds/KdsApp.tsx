@@ -3,7 +3,7 @@
 import { ALLERGY_NOTE_CLASS, Button, ConnectionIndicator, cx, deviceLocale, deviceTimeZone, Icon, InlineError, LocaleProvider, mentionsAllergy, Pill, SegmentedControl, useLocale, type ConnectionStatus, type LocaleSettings } from "@sail/ui";
 import { AlertTriangle, Ban, Check, ChefHat, ChevronLeft, ChevronRight, Circle, Flame, Pencil, RotateCcw } from "lucide-react";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import { ApiError, idempotencyKey } from "@/lib/api";
 import { merchantLocale } from "@/lib/locale";
@@ -127,7 +127,13 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
   // A display station cannot read the outlet record, so the schedule uses the default service hours; the switch overrides it.
   useThemeScheduler(null);
   const status = useTicketStream(station.outlet_id);
-  const tickets = useQuery({ queryKey: keys.tickets, queryFn: () => listKitchenTickets(api, station.outlet_id) });
+  // Tickets left from an earlier business day are off the board; the bar says how many, and this view clears them (round 8, 10).
+  const [earlierView, setEarlierView] = useState(false);
+  const tickets = useQuery({ queryKey: [...keys.tickets, earlierView], queryFn: () => listKitchenTickets(api, station.outlet_id, earlierView ? { earlier: "true" } : {}) });
+  const earlierCount = tickets.data?.earlier ?? 0;
+  useEffect(() => {
+    if (earlierView && tickets.data && tickets.data.data.length === 0) setEarlierView(false);
+  }, [earlierView, tickets.data]);
   const allDay = useQuery({ queryKey: keys.allDay, queryFn: () => kitchenAllDay(api, station.outlet_id) });
   const settle = () => Promise.all([qc.invalidateQueries({ queryKey: keys.tickets }), qc.invalidateQueries({ queryKey: keys.allDay })]);
   // "Table 4 bumped" for a few seconds after a bump, so the cook knows the tap landed (Recall in the bar undoes it).
@@ -159,9 +165,17 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
         </h1>
         <p className="min-w-0 text-[14px] leading-tight text-ink-2 line-clamp-2">{station.name}</p>
         <p className="flex shrink-0 items-center gap-2 text-[14.5px] text-ink">
-          <span className="tabular">{open.length === 1 ? "1 ticket" : `${open.length} tickets`}</span>
+          <span className="tabular">{open.length === 1 ? "1 ticket" : `${open.length} tickets`}{earlierView ? " from earlier days" : ""}</span>
           {lateCount > 0 ? <Pill tone="alert">{lateCount} late</Pill> : null}
         </p>
+        {earlierView ? (
+          <QuietButton onPress={() => setEarlierView(false)}>
+            <Icon icon={ChevronLeft} size={18} />
+            Back to today
+          </QuietButton>
+        ) : earlierCount > 0 ? (
+          <QuietButton onPress={() => setEarlierView(true)}>{earlierCount} from earlier days</QuietButton>
+        ) : null}
         {/* Tickets past the screen's edge: how many, and a page across to them (final review B-P10). */}
         {board.before > 0 ? <PageButton icon={ChevronLeft} label={`${board.before} earlier`} onPress={() => board.page(-1)} /> : null}
         {board.after > 0 ? <PageButton icon={ChevronRight} label={`${board.after} more`} onPress={() => board.page(1)} trailing /> : null}
@@ -255,16 +269,25 @@ function useBoardPages(data: unknown) {
   return { ref, before: hidden.before, after: hidden.after, page };
 }
 
-function PageButton({ icon, label, onPress, trailing }: { icon: typeof ChevronLeft; label: string; onPress: () => void; trailing?: boolean }) {
+/** The kitchen bar's quiet pill, as Recall's. */
+function QuietButton({ onPress, children }: { onPress: () => void; children: ReactNode }) {
   return (
     <AriaButton
       onPress={onPress}
       className="press flex min-h-12 shrink-0 items-center gap-1.5 rounded-full bg-surface-2 px-4 text-[15px] font-medium text-ink tabular outline-none transition-colors duration-[120ms] data-[hovered]:bg-surface-3 data-[pressed]:bg-surface-3 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus"
     >
+      {children}
+    </AriaButton>
+  );
+}
+
+function PageButton({ icon, label, onPress, trailing }: { icon: typeof ChevronLeft; label: string; onPress: () => void; trailing?: boolean }) {
+  return (
+    <QuietButton onPress={onPress}>
       {trailing ? null : <Icon icon={icon} size={18} />}
       {label}
       {trailing ? <Icon icon={icon} size={18} /> : null}
-    </AriaButton>
+    </QuietButton>
   );
 }
 
