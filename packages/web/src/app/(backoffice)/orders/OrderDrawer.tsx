@@ -111,9 +111,11 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
   };
 
   // The register is asked first (a dry run), so a reopen it would refuse (a terminal payment, a refund, a closed day)
-  // says why as the dialog opens, with no reason to type (review 2, N3).
+  // says why as the dialog opens, with no reason to type (review 2, N3). It is asked once per opening: its key is not
+  // under the order's, so reloading the order after the reopen does not send it again (that answered 409, review 4 T2),
+  // and neither does the window regaining focus.
   const reopenCheck = useQuery({
-    queryKey: [...keys.order(orderId ?? ""), "reopen-check"],
+    queryKey: ["reopen-check", orderId ?? ""],
     queryFn: async (): Promise<{ message: string; remedy: string | null } | null> => {
       try {
         await req(api.POST("/v1/orders/{id}/reopen", { params: { path: { id: orderId! } }, body: { reason: "dry run", dry_run: true } }));
@@ -126,6 +128,9 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
     enabled: reopen && orderId !== null,
     staleTime: 0,
     gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
   const reopenRefusal = reopenCheck.data ?? null;
   const doReopen = useMutation<{ warnings: string[] }, ApiError, string>({
@@ -178,7 +183,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
       description={
         o ? (
           <>
-            {[label(ORDER_TYPE_LABEL, o.order_type), `${o.order_type === "dine_in" ? "Table " : ""}${whoFor(o, tableName)}${o.pax ? ` · ${o.pax} ${o.pax === 1 ? "guest" : "guests"}` : ""}`, label(CHANNEL_LABEL, o.channel), `opened ${dayClock(o.opened_at)}`, o.opened_by.name].filter(Boolean).join(" · ")}
+            {[label(ORDER_TYPE_LABEL, o.order_type), whoFor(o, tableName) === "—" ? (o.pax ? `${o.pax} ${o.pax === 1 ? "guest" : "guests"}` : "") : `${o.order_type === "dine_in" ? "Table " : ""}${whoFor(o, tableName)}${o.pax ? ` · ${o.pax} ${o.pax === 1 ? "guest" : "guests"}` : ""}`, label(CHANNEL_LABEL, o.channel), `opened ${dayClock(o.opened_at)}`, o.opened_by.name].filter(Boolean).join(" · ")}
             <span className="block text-caption text-ink-3">
               Business day <BusinessDay value={o.business_date} /> · {o.pricing_status === "frozen" ? "prices frozen at first payment" : "live pricing"} · {kitchenSends(o.round_count)}
             </span>
@@ -313,7 +318,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                     className="px-4 py-3"
                     rows={[
                       { label: "Paid", value: <Money cents={c.paid_total} /> },
-                      ...(c.refunded_total ? [{ label: "Refunded", value: <Money cents={c.refunded_total} /> }] : []),
+                      ...(c.refunded_total ? [{ label: "Refunded", value: <Money cents={-c.refunded_total} /> }] : []),
                       ...(c.balance ? [{ label: "Balance", value: <Money cents={c.balance} /> }] : []),
                       { label: <span className="font-heading text-[15px] font-semibold">Total</span>, value: <Money cents={c.totals.total} size="heading" />, strong: true },
                     ]}

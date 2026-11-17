@@ -16,13 +16,19 @@ export type ReportSales = {
   total_after_refunds?: number;
   /** With tax included in prices, the tax inside the items, so gross − discounts − tax in prices = net. */
   tax_in_prices?: number;
+  /** The fees as charged (their tax included with tax in prices), so gross + discounts + fees as charged = total. */
+  fees_charged?: number;
 };
 
 /** The refunds block of the same report; `net`, `fees`, `tax` and `tips` arrive with the before/after figures. */
 export type ReportRefunds = { count: number; amount: number; net?: number; fees?: number; tax?: number; tips?: number; taxes?: readonly TaxAmountLike[] };
 
 export type ReportBlocks = {
-  /** Gross, discounts, net before refunds, fees, tax, collected: everything as charged. */
+  /**
+   * Everything as charged, in rows that add up as written. Tax added on top: gross, discounts, net before refunds, fees,
+   * each tax, collected. Tax in prices: gross, discounts, fees as charged, collected, then what collected is made of
+   * (net before refunds, fees before tax, each tax), indented.
+   */
   before: ReportRow[];
   /** What was given back: net, fees, tax, then the refunded amount; tips given back are `tipsBack`, outside the amount. */
   refunds: ReportRow[];
@@ -43,17 +49,29 @@ export function refundBlocks(sales: ReportSales, refunds: ReportRefunds, taxMode
   const { net_before_refunds: netBefore, total_after_refunds: totalAfter } = sales;
   if (netBefore === undefined || totalAfter === undefined || refunds.net === undefined || refunds.fees === undefined || refunds.tax === undefined || refunds.tips === undefined) return null;
   const tax = taxRows(sales.taxes, taxMode);
-  const before: ReportRow[] = [
-    { key: "gross", label: "Gross (items)", amount: sales.gross },
-    { key: "discounts", label: "Discounts", amount: sales.discounts, signed: true },
-    // VAT inside the prices comes out before net, so the rows add up as written (as the Items report's column does).
-    ...(sales.tax_in_prices ? [{ key: "tax_in_prices", label: "Tax in prices", amount: -sales.tax_in_prices, signed: true }] : []),
-    { key: "net_before_refunds", label: "Net before refunds", amount: netBefore, strong: true },
-    { key: "fees", label: "Fees (before tax)", amount: sales.fees },
-    ...tax.before.map((t) => ({ key: t.key, label: t.label, amount: t.amount })),
-    { key: "total", label: "Collected", amount: sales.total, strong: true },
-    ...tax.after.map((t) => ({ key: t.key, label: t.label, amount: t.amount })),
-  ];
+  // With tax in prices the tax is inside what was charged: Collected follows from gross, discounts and fees, and the tax
+  // and net are shown as what Collected is made of. Without the fees as charged (an older stored report), as before.
+  const inclusive = taxMode === "inclusive" && sales.fees_charged !== undefined;
+  const before: ReportRow[] = inclusive
+    ? [
+        { key: "gross", label: "Gross (items)", amount: sales.gross },
+        { key: "discounts", label: "Discounts", amount: sales.discounts, signed: true },
+        { key: "fees_charged", label: "Fees", amount: sales.fees_charged! },
+        { key: "total", label: "Collected", amount: sales.total, strong: true },
+        { key: "net_before_refunds", label: "Of which net before refunds", amount: netBefore, indent: true },
+        ...(sales.fees ? [{ key: "fees", label: "Of which fees before tax", amount: sales.fees, indent: true }] : []),
+        ...sortTaxes(sales.taxes).map((t, i) => ({ key: `tax:${i}:${t.name}`, label: `Of which ${t.name}`, amount: t.amount, indent: true })),
+      ]
+    : [
+        { key: "gross", label: "Gross (items)", amount: sales.gross },
+        { key: "discounts", label: "Discounts", amount: sales.discounts, signed: true },
+        ...(sales.tax_in_prices ? [{ key: "tax_in_prices", label: "Tax in prices", amount: -sales.tax_in_prices, signed: true }] : []),
+        { key: "net_before_refunds", label: "Net before refunds", amount: netBefore, strong: true },
+        { key: "fees", label: "Fees (before tax)", amount: sales.fees },
+        ...tax.before.map((t) => ({ key: t.key, label: t.label, amount: t.amount })),
+        { key: "total", label: "Collected", amount: sales.total, strong: true },
+        ...tax.after.map((t) => ({ key: t.key, label: t.label, amount: t.amount })),
+      ];
   const back: ReportRow[] = [
     { key: "refunds.net", label: "Net refunded", amount: refunds.net },
     { key: "refunds.fees", label: "Fees refunded", amount: refunds.fees },
@@ -80,12 +98,16 @@ export function refundableQuantity(quantity: number, refunded: number | undefine
   return Math.max(0, quantity - (refunded ?? 0));
 }
 
-/** A Z-report tender row as the register returns it; `refunds`, `reversed` and `net` arrive with the per-tender figures. */
-export type ReportTender = { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number; refunds?: number; reversed?: number; net?: number };
+/**
+ * A Z-report tender row as the register returns it; `refunds`, `reversed` and `net` arrive with the per-tender figures,
+ * `terminal` (the tender sends payments to a card terminal) after review 4.
+ */
+export type ReportTender = { tender_type_id: string; tender: string; is_cash: boolean; terminal?: boolean; count: number; amount: number; rounding: number; tips: number; refunds?: number; reversed?: number; net?: number };
 
 /**
- * One tender's rows: what was applied, then tips, rounding and refunds on it, and the net the terminal should show (a
- * payment taken and reversed is named apart, counted nowhere). Every amount is the register's.
+ * One tender's rows: what was applied, then tips, rounding and refunds on it, and its net; only a card terminal's net is
+ * "as the terminal shows". A payment taken and reversed is counted in none of these: `reversedRows` names it apart.
+ * Every amount is the register's.
  */
 export function tenderRows(t: ReportTender): ReportRow[] {
   const k = t.tender_type_id;
@@ -94,14 +116,22 @@ export function tenderRows(t: ReportTender): ReportRow[] {
     ...(t.rounding ? [{ key: `${k}:rounding`, label: "Cash rounding", amount: t.rounding, indent: true, signed: true }] : []),
     ...(t.refunds ? [{ key: `${k}:refunds`, label: "Refunded", amount: -t.refunds, indent: true, signed: true }] : []),
   ];
-  const net = t.net !== undefined && extras.length ? [{ key: `${k}:net`, label: t.is_cash ? `${t.tender} net` : `${t.tender} net, as the terminal shows`, amount: t.net, strong: true }] : [];
-  const reversed = t.reversed ? [{ key: `${k}:reversed`, label: "Reversed, not counted", amount: t.reversed, indent: true }] : [];
-  return [{ key: k, label: t.count ? `${t.tender} (${t.count})` : t.tender, amount: t.amount, strong: !extras.length }, ...extras, ...net, ...reversed];
+  const net = t.net !== undefined && extras.length ? [{ key: `${k}:net`, label: (t.terminal ?? !t.is_cash) ? `${t.tender} net, as the terminal shows` : `${t.tender} net`, amount: t.net, strong: true }] : [];
+  return [{ key: k, label: t.count ? `${t.tender} (${t.count})` : t.tender, amount: t.amount, strong: !extras.length }, ...extras, ...net];
 }
 
-/** Whether a card tender shows its own net row, so a hint to compare "each card net" has a line to point at. */
+/**
+ * Payments taken and then given back (a void, or a reopen), one row per tender, for a block of their own below the
+ * tenders: they are in no figure above, so they are not set under a tender's net as if part of it (review 4, T3).
+ */
+export function reversedRows(tenders: readonly ReportTender[]): ReportRow[] {
+  return tenders.filter((t) => t.reversed).map((t) => ({ key: `${t.tender_type_id}:reversed`, label: `${t.tender} taken and reversed`, amount: t.reversed! }));
+}
+
+/** Whether a card terminal's tender shows its own net row, so the hint to compare it with the terminal has a line to point at. */
 export function showsCardNet(tenders: readonly ReportTender[]): boolean {
-  return tenders.some((t) => !t.is_cash && tenderRows(t).some((r) => r.key === `${t.tender_type_id}:net`));
+  // A report stored before `terminal` existed keeps its old wording: every card net was compared with a terminal.
+  return tenders.some((t) => (t.terminal ?? !t.is_cash) && tenderRows(t).some((r) => r.key === `${t.tender_type_id}:net`));
 }
 
 /** The Z-report's `reconciliation` block, once the register splits what is held on open orders. */

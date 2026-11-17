@@ -48,9 +48,10 @@ export type SalesSummary = {
    * `gross` and `discounts` are as charged (tax included in inclusive mode); `fees` excludes tax.
    * `total` is what was collected before refunds: `net + refunds + fees + tax = total`, and
    * `net_before_refunds + fees + tax = total`; after refunds, `total_after_refunds = total - refunds.amount`.
-   * Every `net` below (by day, order type, source and category) is the same figure split up.
+   * Every `net` below (by day, order type, source and category) is the same figure split up. `fees_charged` is the fees
+   * as charged (their tax included in inclusive mode), so with tax in prices `gross + discounts + fees_charged = total`.
    */
-  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; tax: number; refunds: number; net: number; total: number; rounding: number; tips: number; net_before_refunds: number; total_after_refunds: number; tax_in_prices: number };
+  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; fees_charged: number; tax: number; refunds: number; net: number; total: number; rounding: number; tips: number; net_before_refunds: number; total_after_refunds: number; tax_in_prices: number };
   /** totals.tax by component name and rate. */
   taxes: TaxBreakdown[];
   by_day: { business_date: string; orders: number; covers: number; gross: number; net: number }[];
@@ -75,9 +76,9 @@ export async function salesSummary(f: ReportFilters): Promise<SalesSummary> {
   const sql = tx();
   const w = orderWhere(f);
   const catFilter = f.categoryId ? sql`and (r.category_id = ${f.categoryId} or r.parent_category_id = ${f.categoryId})` : sql``;
-  const [t] = await sql<{ orders: number; covers: number; gross: number; discounts: number; fees: number; tax: number; net: number; total: number }[]>`
+  const [t] = await sql<{ orders: number; covers: number; gross: number; discounts: number; fees: number; fees_charged: number; tax: number; net: number; total: number }[]>`
     select count(*)::int as orders, coalesce(sum(pax),0)::bigint as covers, coalesce(sum(subtotal),0)::bigint as gross, coalesce(sum(discount_total),0)::bigint as discounts,
-           coalesce(sum(fees_net),0)::bigint as fees, coalesce(sum(tax_total),0)::bigint as tax, coalesce(sum(net_sales),0)::bigint as net, coalesce(sum(total),0)::bigint as total
+           coalesce(sum(fees_net),0)::bigint as fees, coalesce(sum(fee_total),0)::bigint as fees_charged, coalesce(sum(tax_total),0)::bigint as tax, coalesce(sum(net_sales),0)::bigint as net, coalesce(sum(total),0)::bigint as total
     from report_orders r where ${w}`;
   const taxes = await sql<TaxBreakdown[]>`
     select t->>'name' as name, (t->>'bps')::int as bps, coalesce(sum((t->>'taxable')::bigint),0)::bigint as taxable, coalesce(sum((t->>'amount')::bigint),0)::bigint as amount
@@ -107,7 +108,7 @@ export async function salesSummary(f: ReportFilters): Promise<SalesSummary> {
   const tips = byTender.reduce((s, x) => s + x.tips, 0);
   return {
     filters: f,
-    totals: { orders: t?.orders ?? 0, covers: t?.covers ?? 0, items: items?.n ?? 0, gross: t?.gross ?? 0, discounts: t?.discounts ?? 0, fees: t?.fees ?? 0, tax: t?.tax ?? 0, refunds: refunds?.net ?? 0, net: (t?.net ?? 0) - (refunds?.net ?? 0), total: t?.total ?? 0, rounding, tips, net_before_refunds: t?.net ?? 0, total_after_refunds: (t?.total ?? 0) - (refunds?.amount ?? 0), tax_in_prices: taxInPrices(t?.gross ?? 0, t?.discounts ?? 0, t?.net ?? 0) },
+    totals: { orders: t?.orders ?? 0, covers: t?.covers ?? 0, items: items?.n ?? 0, gross: t?.gross ?? 0, discounts: t?.discounts ?? 0, fees: t?.fees ?? 0, fees_charged: t?.fees_charged ?? 0, tax: t?.tax ?? 0, refunds: refunds?.net ?? 0, net: (t?.net ?? 0) - (refunds?.net ?? 0), total: t?.total ?? 0, rounding, tips, net_before_refunds: t?.net ?? 0, total_after_refunds: (t?.total ?? 0) - (refunds?.amount ?? 0), tax_in_prices: taxInPrices(t?.gross ?? 0, t?.discounts ?? 0, t?.net ?? 0) },
     taxes,
     by_day: byDay,
     by_order_type: byType,
@@ -212,7 +213,7 @@ export function rowsCsv<T extends Record<string, unknown>>(rows: T[]): string {
 
 /* ---- Daily summary PDF ---- */
 
-export async function dailySummaryPdf(input: { outletName: string; businessDate: string; z: ZReport; summary: SalesSummary; money: MoneyFormat }): Promise<Uint8Array> {
+export async function dailySummaryPdf(input: { outletName: string; businessDate: string; z: ZReport; summary: SalesSummary; money: MoneyFormat; taxMode?: string }): Promise<Uint8Array> {
   const formatCents = pdfMoney(input.money);
   const pdf = await PDFDocument.create();
   pdf.setTitle(`Daily summary · ${input.outletName} · ${input.businessDate}`);
@@ -235,18 +236,41 @@ export async function dailySummaryPdf(input: { outletName: string; businessDate:
   text(input.outletName, 48, 16, bold);
   right(`Daily summary · ${input.businessDate}`, 547, 11, font);
   y -= 24;
+  // The same rows as the Z-report screen (packages/ui report-blocks), so each total follows from the rows above it.
+  const z = input.z;
+  const taxes = [...z.sales.taxes].sort((a, b) => a.bps - b.bps || a.name.localeCompare(b.name));
+  const indent = (label: string, value: string) => {
+    text(label, 72, 10, font);
+    right(value, 535, 10, font);
+    y -= 14;
+  };
   section("Sales");
-  row("Orders", String(input.z.orders.count));
-  row("Covers", String(input.z.orders.covers));
-  row("Gross sales", formatCents(input.z.sales.gross));
-  row("Discounts", formatCents(input.z.sales.discounts));
-  row("Refunds (net)", formatCents(-input.z.sales.refunds));
-  row("Net sales", formatCents(input.z.sales.net), bold);
-  row("Fees (net)", formatCents(input.z.sales.fees));
-  for (const t of input.z.sales.taxes) row(t.name, formatCents(t.amount));
-  row("Collected", formatCents(input.z.sales.total), bold);
-  row(`Refunded (${input.z.refunds.count})`, formatCents(-input.z.refunds.amount));
-  for (const t of input.z.refunds.taxes) row(`${t.name} refunded`, formatCents(-t.amount));
+  row("Orders", String(z.orders.count));
+  row("Covers", String(z.orders.covers));
+  row("Gross (items)", formatCents(z.sales.gross));
+  row("Discounts", formatCents(z.sales.discounts));
+  if (input.taxMode === "inclusive") {
+    row("Fees", formatCents(z.sales.fees_charged));
+    row("Collected", formatCents(z.sales.total), bold);
+    indent("Of which net before refunds", formatCents(z.sales.net_before_refunds));
+    if (z.sales.fees) indent("Of which fees before tax", formatCents(z.sales.fees));
+    for (const t of taxes) indent(`Of which ${t.name}`, formatCents(t.amount));
+  } else {
+    row("Net before refunds", formatCents(z.sales.net_before_refunds), bold);
+    row("Fees (before tax)", formatCents(z.sales.fees));
+    for (const t of taxes) row(t.name, formatCents(t.amount));
+    row("Collected", formatCents(z.sales.total), bold);
+  }
+  section("Refunds");
+  row("Net refunded", formatCents(z.refunds.net));
+  row("Fees refunded", formatCents(z.refunds.fees));
+  row("Tax refunded", formatCents(z.refunds.tax));
+  for (const t of [...z.refunds.taxes].sort((a, b) => a.bps - b.bps || a.name.localeCompare(b.name))) indent(t.name, formatCents(t.amount));
+  row(`Refunded (${z.refunds.count})`, formatCents(z.refunds.amount), bold);
+  section("After refunds");
+  row("Net sales", formatCents(z.sales.net), bold);
+  row("Collected after refunds", formatCents(z.sales.total_after_refunds), bold);
+  for (const t of [...z.tax_due].sort((a, b) => a.bps - b.bps || a.name.localeCompare(b.name))) row(`${t.name} due`, formatCents(t.amount));
   section("Tenders");
   for (const t of input.z.tenders) row(`${t.tender} (${t.count})`, `${formatCents(t.amount)}${t.rounding ? ` · rounding ${formatCents(t.rounding)}` : ""}`);
   section("Cash");

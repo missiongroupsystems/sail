@@ -168,8 +168,11 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
       // "1/2 · Share of 2 × Toasted sandwich (€19.00) · €9.50": the share of the whole line's price, which the row names.
       text(l.share, 48, 10);
       text(`Share of ${l.quantity === 1 ? "" : `${l.quantity} × `}${l.name} (${money(unit * l.quantity)})`, 90, 10);
+      // A share has no price of one: the Unit column says so rather than standing empty under its header.
+      right("\u2014", 460, 10);
     } else {
-      text(String(l.quantity), 48, 10);
+      // One minus sign for quantities and amounts alike (a credit note prints "−1", as its "−€4.95").
+      text(l.quantity < 0 ? `\u2212${-l.quantity}` : String(l.quantity), 48, 10);
       text(l.name, 90, 10);
       right(money(unit), 460, 10);
     }
@@ -201,7 +204,18 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
   row(kind === "CREDIT NOTE" ? "Credit total" : "Total", doc.totals.total, bold);
   if (doc.totals.tax_mode === "inclusive") for (const t of taxes) row(`${t.name} (included)`, t.amount);
   if (doc.tax_note) {
-    text(doc.tax_note, Math.max(48, Math.min(340, 547 - font.widthOfTextAtSize(safe(doc.tax_note), 8))), 8, font, grey);
+    // In the totals column, from where its labels start, wrapped to its width.
+    const words = safe(doc.tax_note).split(" ");
+    let lineText = "";
+    for (const w of words) {
+      const next = lineText ? `${lineText} ${w}` : w;
+      if (lineText && font.widthOfTextAtSize(next, 8) > 547 - 340) {
+        text(lineText, 340, 8, font, grey);
+        y -= 11;
+        lineText = w;
+      } else lineText = next;
+    }
+    if (lineText) text(lineText, 340, 8, font, grey);
     y -= 12;
   }
   if (doc.payments?.length) {
@@ -212,10 +226,12 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
       // The same rows, in the same order, as the thermal receipt and the digital one.
       if (p.rounding_cents) row("Cash rounding", p.rounding_cents);
       if (p.tip) row("Tip", p.tip);
-      if (p.charged) row("Charged", p.charged);
+      // With two payments it names the tender, so a part paid in cash does not read as the whole (review 4, T6).
+      if (p.charged) row(doc.payments.length > 1 ? `${p.tender} charged` : "Charged", p.charged);
       if (p.change && p.tendered) row("Tendered", p.tendered);
       if (p.change) row("Change", p.change);
     }
+    if (doc.paid_total !== undefined) row("Paid", doc.paid_total, bold);
   }
   if (extra.reason) {
     y -= 10;

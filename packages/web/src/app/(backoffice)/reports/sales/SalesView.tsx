@@ -19,7 +19,7 @@ import { rangeScope, ReportRange, useReportRange } from "../ReportRange";
  * `totals.fees` excludes tax; `totals.total` is what was collected before refunds.
  */
 type SalesSummary = {
-  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; tax: number; refunds: number; net: number; total: number; rounding: number; tips: number; net_before_refunds?: number; total_after_refunds?: number; tax_in_prices?: number };
+  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; tax: number; refunds: number; net: number; total: number; rounding: number; tips: number; net_before_refunds?: number; total_after_refunds?: number; tax_in_prices?: number; fees_charged?: number };
   /** `totals.tax` by component. */
   taxes: TaxBreakdown[];
   by_day: { business_date: string; orders: number; covers: number; gross: number; net: number }[];
@@ -80,15 +80,17 @@ export function SalesView({ outlets, scope, initialOutletId, today, initialRange
           {blocks && t ? (
             <div className="flex min-w-0 flex-col gap-6">
               <Panel title="Before refunds">
+                {/* The money rows add up as written; the counts and what is outside the orders' totals sit apart below. */}
+                <ValueRows rows={blockRows(blocks.before)} />
                 <ValueRows
+                  className="mt-1.5 border-t border-rule-subtle pt-1.5"
                   rows={[
-                    { label: "Orders", value: t.orders },
-                    { label: "Covers", value: t.covers },
-                    { label: "Items sold", value: t.items },
-                    ...blockRows(blocks.before),
                     { label: "Cash rounding", value: <Money cents={t.rounding} signed /> },
                     { label: "Tips", value: <Money cents={t.tips} /> },
                     { label: "Voids", value: <>{report.data.voids.count} · <Money cents={report.data.voids.value} /></> },
+                    { label: "Orders", value: t.orders },
+                    { label: "Covers", value: t.covers },
+                    { label: "Items sold", value: t.items },
                   ]}
                 />
               </Panel>
