@@ -6,6 +6,7 @@ import { useMemo, useRef, useState } from "react";
 import { ReportExport } from "@/components/backoffice/ReportExport";
 import { ReportPrintHead } from "@/components/backoffice/ReportPrintHead";
 import { useUrlState } from "@/lib/url-state";
+import { localIso } from "@/lib/local-iso";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
 import { boKeys, type Shift } from "@/components/backoffice/register";
 import { ZReportBody } from "@/components/backoffice/ZReportBody";
@@ -17,7 +18,7 @@ import type { Scope } from "@/lib/cookies";
 const ANY = "__any__";
 
 export function ShiftsView({ outlets, scope, initialOutletId, initialStatus, initialDate }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; initialStatus?: "open" | "closed" | null; initialDate?: string | null }) {
-  const { clock, dayClock } = useLocale();
+  const { clock, dayClock, timeZone } = useLocale();
   const { outletId, setOutletId, scoped } = useOutletChoice(outlets, scope, initialOutletId);
   const [status, setStatus] = useState<"open" | "closed" | null>(initialStatus ?? null);
   const [date, setDate] = useState(initialDate ?? "");
@@ -56,7 +57,7 @@ export function ShiftsView({ outlets, scope, initialOutletId, initialStatus, ini
   };
 
   const columns: DataTableColumn<Shift>[] = [
-    { key: "opened_at", header: "Opened", sortable: true, isRowHeader: true, render: (s) => <time dateTime={s.opened_at} className="tabular whitespace-nowrap text-ink">{dayClock(s.opened_at)}</time> },
+    { key: "opened_at", header: "Opened", sortable: true, isRowHeader: true, render: (s) => <time dateTime={localIso(s.opened_at, timeZone)} className="tabular whitespace-nowrap text-ink">{dayClock(s.opened_at)}</time> },
     { key: "business_date", header: "Business date", sortable: true, render: (s) => <span className="whitespace-nowrap text-ink-2"><BusinessDay value={s.business_date} /></span> },
     { key: "name", header: "Shift", sortValue: (s) => s.name ?? stationName(s.station_id), render: (s) => <span className="text-ink">{s.name ?? stationName(s.station_id)}{s.name && s.station_id ? <span className="text-caption text-ink-2"> · {stationName(s.station_id)}</span> : null}</span> },
     { key: "opened_by", header: "Opened by", sortable: true, render: (s) => <span className="text-ink-2">{s.opened_by ?? "—"}</span> },
@@ -65,7 +66,7 @@ export function ShiftsView({ outlets, scope, initialOutletId, initialStatus, ini
     { key: "expected_cash_cents", header: "Expected", numeric: true, sortable: true, render: (s) => (s.expected_cash_cents === null ? <span className="text-ink-2">—</span> : <Money cents={s.expected_cash_cents} />) },
     { key: "counted_cash_cents", header: "Counted", numeric: true, sortable: true, render: (s) => (s.counted_cash_cents === null ? <span className="text-ink-2">—</span> : <Money cents={s.counted_cash_cents} />) },
     { key: "variance_cents", header: "Variance", numeric: true, sortable: true, render: variance },
-    { key: "closed_at", header: "Closed", sortable: true, render: (s) => (s.closed_at ? <span className="flex flex-col leading-5"><time dateTime={s.closed_at} className="tabular whitespace-nowrap text-ink-2" title={dayClock(s.closed_at)}>{clock(s.closed_at)}</time>{s.closed_by ? <span className="text-[12.5px] leading-4 text-ink-3">{s.closed_by}</span> : null}</span> : <span className="text-ink-2">—</span>) },
+    { key: "closed_at", header: "Closed", sortable: true, render: (s) => (s.closed_at ? <span className="flex flex-col leading-5"><time dateTime={localIso(s.closed_at, timeZone)} className="tabular whitespace-nowrap text-ink-2" title={dayClock(s.closed_at)}>{clock(s.closed_at)}</time>{s.closed_by ? <span className="text-[12.5px] leading-4 text-ink-3">{s.closed_by}</span> : null}</span> : <span className="text-ink-2">—</span>) },
   ];
 
   return (

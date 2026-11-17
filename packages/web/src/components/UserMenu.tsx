@@ -59,7 +59,7 @@ export function UserMenu({ me, theme: initialTheme }: { me: Me; theme: Theme }) 
         aria-label={`${name}, ${me.role ? ROLE_LABEL[me.role] ?? me.role : "staff"}. Open user menu`}
         // The menu needs the page's script: until it runs the button says it is not ready, rather than taking a press it drops.
         aria-disabled={hydrated ? undefined : true}
-        className={cx(sideNavRowClass(), "mt-1 cursor-default px-2")}
+        className={cx(sideNavRowClass(), "mt-1 cursor-default px-2 aria-disabled:pointer-events-none")}
       >
         <span aria-hidden className="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-3 text-[11px] font-semibold text-ink">
           {me.initials ?? initialsOf(me.name)}

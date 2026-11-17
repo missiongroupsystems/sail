@@ -100,6 +100,9 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
   for (const r of await sql<{ id: string; sku: string }[]>`select id, sku from products where merchant_id = ${merchantId} and sku is not null`) skuToProduct.set(r.sku, r.id);
   // A category or brand without a legacy id is named in Sail's own export by its name (A P4); a name two records share
   // names neither (null), and the row says so.
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const ids: Record<"categories" | "brands", Set<string>> = { categories: new Set(), brands: new Set() };
+  for (const [ent, table] of [["categories", "report_categories"], ["brands", "brands"]] as const) for (const r of await sql.unsafe<{ id: string }[]>(`select id from ${table} where merchant_id = $1`, [merchantId])) ids[ent].add(r.id);
   const byName = async (table: string) => {
     const map = new Map<string, string | null>();
     for (const r of await sql.unsafe<{ id: string; name: string }[]>(`select id, name from ${table} where merchant_id = $1 and legacy_id is null`, [merchantId])) {
@@ -113,6 +116,8 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
   const refOrName = (ent: "categories" | "brands", key: string, label: string): string | null => {
     const hit = legacy[ent]?.get(key);
     if (hit) return hit;
+    // Sail's own export names a record whose name is shared by its id.
+    if (UUID.test(key) && ids[ent].has(key.toLowerCase())) return key.toLowerCase();
     const named = (ent === "categories" ? namedCategories : namedBrands).get(key.trim().toLowerCase());
     if (named === null) throw new Error(`${label} "${key}" names more than one ${label}: give it a legacy_id`);
     if (named === undefined) throw new Error(`${label} ${key} not found`);
@@ -234,6 +239,9 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               if (errors.length) throw new Error(errors.join("; "));
               const values = { name, sku, description: get(row, "description") || null, price: priceCents, category_id: categoryId, brand_id: brandId, tags, has_deposit: bool(get(row, "has_deposit")), tax_class_id: taxClassId ?? null, open_price: bool(get(row, "open_price")), kind, kitchen_name: get(row, "kitchen_name") || null, archived_at: bool(get(row, "archived")) ? new Date().toISOString() : null };
               const [bySailId] = sailId ? await sql<{ id: string }[]>`select id from products where merchant_id = ${merchantId} and id = ${sailId} limit 1` : [];
+              // A Sail id from another business or database names nothing here: without a SKU or legacy id the row would
+              // create a new copy on every run, so it is refused instead.
+              if (sailId && !bySailId && !lid) throw new Error(`sail_id ${sailId} is not a product of this business: give the row a sku or legacy_id`);
               const match = bySailId ? { column: "id", value: bySailId.id } : sku && !get(row, "legacy_id") ? { column: "sku", value: sku } : { column: "legacy_id", value: lid };
               const unchangedBefore = rep.unchanged;
               // Matched on its Sail id, a product keeps the legacy id it has unless the row gives one (its SKU is not one).

@@ -88,7 +88,8 @@ export function ProductSearch({ onPick, label, placeholder = "Search products by
           } else if (e.key === "Enter") {
             // Enter in the search is a pick (or nothing yet), never a submit of the sheet's form.
             e.preventDefault();
-            if (highlighted && query === q.trim()) pick(highlighted);
+            // Not while the results on screen are still the last search's: Enter would pick from the old list.
+            if (highlighted && query === q.trim() && !results.isPlaceholderData && !results.isFetching) pick(highlighted);
           } else e.continuePropagation();
         }}
       />

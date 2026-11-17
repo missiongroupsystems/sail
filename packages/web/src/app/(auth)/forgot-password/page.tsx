@@ -22,7 +22,8 @@ export default function ForgotPasswordPage() {
         <li>
           <p className="font-medium text-ink">If you are the only Admin</p>
           <p className="mt-1 text-ink-2">Whoever runs this server makes the link with one command, given your email:</p>
-          <p className="mt-2 rounded-field bg-surface-2 px-3 py-2 font-mono text-[12.5px] text-ink [overflow-wrap:anywhere]">pnpm --filter @sail/server reset-link you@example.com</p>
+          <p className="mt-2 rounded-field bg-surface-2 px-3 py-2 font-mono text-[12.5px] text-ink [overflow-wrap:anywhere]">MIGRATE_DATABASE_URL=… WEB_APP_URL=… pnpm --filter @sail/server reset-link you@example.com</p>
+          <p className="mt-2 text-ink-2">The self-hosting guide has the details.</p>
         </li>
       </ol>
       <LinkButton href="/login" variant="secondary" className="w-full">

@@ -46,7 +46,7 @@ export function applyServerErrors<T extends FieldValues>(
     marked++;
   }
   // The refusal is shown where it was marked, which can be below the fold of a long sheet: bring the first into view.
-  if (marked && typeof window !== "undefined") requestAnimationFrame(() => document.querySelector('[slot="errorMessage"]')?.scrollIntoView({ block: "center", behavior: "smooth" }));
+  if (marked && typeof window !== "undefined") requestAnimationFrame(() => (document.querySelector('[role="dialog"]') ?? document).querySelector('[slot="errorMessage"]')?.scrollIntoView({ block: "center", behavior: "smooth" }));
   return marked;
 }
 

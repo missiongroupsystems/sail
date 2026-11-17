@@ -11,9 +11,7 @@ export const dynamic = "force-dynamic";
  * out itself through DELETE /api/session. Only this site's own pages may post it.
  */
 export async function POST(request: Request): Promise<Response> {
-  const origin = request.headers.get("origin");
-  const site = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-  if (!origin || !site || new URL(origin).host !== site) return Response.json({ code: "forbidden", message: "Sign out from the back office itself" }, { status: 403 });
+  if (!sameSite(request)) return new Response(null, { status: 303, headers: { location: "/today" } });
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE)?.value;
   if (token) {
@@ -24,4 +22,16 @@ export async function POST(request: Request): Promise<Response> {
   }
   jar.set(SESSION_COOKIE, "", { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 0 });
   return new Response(null, { status: 303, headers: { location: "/login" } });
+}
+
+/** Whether the form came from this site: the Origin's host against the host the browser asked for (first forwarded one, default ports dropped). */
+function sameSite(request: Request): boolean {
+  const origin = request.headers.get("origin");
+  const site = (request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "").split(",")[0]!.trim().toLowerCase().replace(/:(80|443)$/, "");
+  if (!origin || !site) return false;
+  try {
+    return new URL(origin).host.toLowerCase() === site;
+  } catch {
+    return false;
+  }
 }

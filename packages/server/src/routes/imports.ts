@@ -80,9 +80,16 @@ export function importRoutes(app: OpenAPIHono<AppEnv>) {
     const p = c.get("principal");
     const rows = await db().select().from(products).where(and(eq(products.merchantId, p.merchantId), isNull(products.archivedAt))).orderBy(products.name);
     const cats = await db().select().from(reportCategories).where(eq(reportCategories.merchantId, p.merchantId));
-    const catLegacy = new Map(cats.map((x) => [x.id, x.legacyId ?? x.name]));
+    // A category or brand without a legacy id is written by its name when no other one shares it, else by its own id,
+    // so the file always names one record (the importer reads either).
+    const unique = (rows: { id: string; name: string; legacyId: string | null }[]) => {
+      const seen = new Map<string, number>();
+      for (const r of rows) seen.set(r.name.trim().toLowerCase(), (seen.get(r.name.trim().toLowerCase()) ?? 0) + 1);
+      return new Map(rows.map((r) => [r.id, r.legacyId ?? (seen.get(r.name.trim().toLowerCase()) === 1 ? r.name : r.id)]));
+    };
+    const catLegacy = unique(cats);
     const brandRows = await db().select({ id: brands.id, name: brands.name, legacyId: brands.legacyId }).from(brands).where(eq(brands.merchantId, p.merchantId));
-    const brandLegacy = new Map(brandRows.map((x) => [x.id, x.legacyId ?? x.name]));
+    const brandLegacy = unique(brandRows);
     // Per-order-type prices, so the file carries every price the register charges (A P4).
     const ORDER_TYPES = ["dine_in", "takeaway", "pickup", "delivery"] as const;
     const overrides = new Map<string, number>();

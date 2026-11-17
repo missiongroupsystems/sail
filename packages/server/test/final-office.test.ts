@@ -130,3 +130,23 @@ describe("QR sheet order (A P18)", () => {
     expect(["10", "2", "1"].sort((a, b) => TABLE_ORDER.compare(a, b))).toEqual(["1", "2", "10"]);
   });
 });
+
+describe("products CSV round trip, review findings", () => {
+  it("a category name two categories share travels as its id and comes back; an unknown sail_id without a key is refused", async () => {
+    const s = seeded[1]!;
+    const token = await adminToken(s);
+    const [cat] = await db.sql<{ id: string; name: string }[]>`select c.id, c.name from report_categories c where c.merchant_id = ${s.merchantId} and exists (select 1 from products p where p.category_id = c.id and p.archived_at is null) limit 1`;
+    // An archived twin with the same name.
+    await db.sql`insert into report_categories (merchant_id, name, archived_at) values (${s.merchantId}, ${cat!.name}, now())`;
+    const exported = await call<string>("GET", "/v1/exports/products.csv", { token });
+    const { rows } = parseCsv(exported.body);
+    expect(rows.some((r) => r.category_legacy_id === cat!.id)).toBe(true);
+    const job = await importProducts(token, exported.body);
+    expect(job.report!.entities.products).toMatchObject({ creates: 0, updates: 0, rejected: [] });
+
+    const stranger = "sail_id,name,price\r\n00000000-0000-4000-8000-000000000001,Stranger,1.00\r\n";
+    const refused = await importProducts(token, stranger);
+    expect(refused.report!.entities.products!.creates).toBe(0);
+    expect(refused.report!.entities.products!.rejected[0]!.reason).toMatch(/is not a product of this business/);
+  });
+});

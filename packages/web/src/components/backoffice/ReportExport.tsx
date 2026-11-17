@@ -58,7 +58,7 @@ export function ReportExport({ title, scope, fileName, target, isDisabled }: Rep
         Export
         <Icon icon={ChevronDown} size={14} className="text-ink-3" />
       </Button>
-      <Menu minWidth={180} onAction={(key) => (key === "csv" ? download() : key === "print" ? window.print() : undefined)}>
+      <Menu minWidth={180} onAction={(key) => (key === "csv" ? download() : key === "print" ? setTimeout(() => window.print(), 250) : undefined)}>
         <MenuItem id="csv">Download CSV</MenuItem>
         <MenuItem id="print">Print</MenuItem>
       </Menu>

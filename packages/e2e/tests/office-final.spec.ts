@@ -266,7 +266,7 @@ test("O5 (A P11): Forgotten your password? says how to get a reset link without 
   await page.getByRole("link", { name: "Forgotten your password?" }).click();
   await expect(page).toHaveURL(`${WEB}/forgot-password`);
   await expect(page.getByRole("heading", { level: 1, name: "Forgotten your password?" })).toBeVisible();
-  await expect(page.getByText("pnpm --filter @sail/server reset-link you@example.com")).toBeVisible();
+  await expect(page.getByText("MIGRATE_DATABASE_URL=… WEB_APP_URL=… pnpm --filter @sail/server reset-link you@example.com")).toBeVisible();
   await expect(page.getByText(/Ask an Admin for a reset link/)).toHaveCount(0);
   await page.getByRole("link", { name: "Back to sign in" }).click();
   await expect(page).toHaveURL(`${WEB}/login`);

@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/backoffice/Confirm";
 import { Button, InlineError, TextField, useLocale } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -14,6 +15,7 @@ type Shown = { kind: "link" | "pre_authorised"; email: string; url: string | nul
 
 /** Admin only: whether this person can sign in to the back office, and the invite, reset and revoke actions. */
 export function AccessSection({ staff, emailUnsaved }: { staff: Staff; emailUnsaved: boolean }) {
+  const confirm = useConfirm();
   const { me } = useSession();
   const { stamp } = useLocale();
   const qc = useQueryClient();
@@ -85,7 +87,7 @@ export function AccessSection({ staff, emailUnsaved }: { staff: Staff; emailUnsa
             </Button>
           ) : null}
           {a.status !== "none" && staff.id !== me.id ? (
-            <Button variant="secondary" className={greyPillAlert} onPress={() => act.mutate("revoke")} isPending={act.isPending && act.variables === "revoke"}>
+            <Button variant="secondary" className={greyPillAlert} onPress={() => confirm.ask({ title: `Revoke ${staff.name}'s access?`, body: "They are signed out of the back office at once and their open links stop working. Their staff record and PIN stay, and they can be invited again.", confirmLabel: "Revoke access", cancelLabel: "Keep access", onConfirm: () => act.mutate("revoke") })} isPending={act.isPending && act.variables === "revoke"}>
               Revoke access
             </Button>
           ) : null}
@@ -93,6 +95,7 @@ export function AccessSection({ staff, emailUnsaved }: { staff: Staff; emailUnsa
       ) : null}
       {!staff.email || emailUnsaved ? <p className="text-[12.5px] text-ink-3">Save an email for this person to invite them.</p> : null}
       <InlineError error={act.error ?? access.error} />
+      {confirm.dialog}
     </SheetSection>
   );
 }

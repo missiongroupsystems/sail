@@ -8,7 +8,8 @@
 import postgres from "postgres";
 import { operatorResetLink } from "../src/services/operator-reset.js";
 
-const url = process.env.MIGRATE_DATABASE_URL ?? process.env.DATABASE_URL;
+// The owner connection: the app role sees no merchant's logins under row-level security.
+const url = process.env.MIGRATE_DATABASE_URL;
 const web = process.env.WEB_APP_URL;
 const [email] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 if (!url || !web || !email) {
