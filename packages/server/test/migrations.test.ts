@@ -69,11 +69,20 @@ describe("a database at the last migration before the bigint change migrates for
       readFileSync(join(folder, `${e.tag}.sql`), "utf8").split("--> statement-breakpoint").map((x) => x.split("\n").filter((l) => !l.startsWith("--")).join("\n").trim()).filter(Boolean).flatMap((stmt) => {
         // Checks, triggers and views a later migration replaces are not needed to seed: the forward migration applies them.
         if (/^(CREATE OR REPLACE (FUNCTION|VIEW) |ALTER TABLE \w+ (DROP|ADD) CONSTRAINT )/.test(stmt)) return [];
+        // A table a later migration creates is created for the seed and dropped again (laterTables below).
+        if (/^CREATE TABLE "\w+"/.test(stmt)) return [];
         const m = /^ALTER TABLE "(\w+)" ADD COLUMN "(\w+)" ([^;]+);?$/.exec(stmt);
         // Constraints, triggers and functions change no column today's code reads, so the seed needs nothing undone for them.
         if (!m && !/\b(ADD|DROP|ALTER|RENAME)\s+COLUMN\b/i.test(stmt.replace(/^--.*$/gm, ""))) return [];
         if (!m) throw new Error(`${e.tag}: this test only knows how to undo ADD COLUMN, not: ${stmt}`);
         return [{ table: m[1]!, column: m[2]!, def: m[3]! }];
+      }),
+    );
+    // Tables a later migration creates, which today's code reads: created for the seed, dropped before migrating.
+    const laterTables = journal.entries.slice(last + 1).flatMap((e) =>
+      readFileSync(join(folder, `${e.tag}.sql`), "utf8").split("--> statement-breakpoint").map((x) => x.trim()).flatMap((stmt) => {
+        const m = /^CREATE TABLE "(\w+)"/.exec(stmt);
+        return m ? [{ table: m[1]!, create: stmt }] : [];
       }),
     );
     const before = mkdtempSync(join(tmpdir(), "sail-mig-"));
@@ -88,6 +97,8 @@ describe("a database at the last migration before the bigint change migrates for
       // The data is made by today's code, which reads the columns later migrations add: they are added for the seed and
       // dropped again before migrating, so the database migrated is the old schema with its rows.
       for (const c of later) await t.unsafe(`alter table "${c.table}" add column "${c.column}" ${c.def}`);
+      // Without RLS or policies yet: the agent (whose grants are per table) reads it as today's code does.
+      for (const c of laterTables) await t.unsafe(`${c.create}; grant select, insert on "${c.table}" to app_agent`);
       await t.end({ timeout: 2 });
     } finally {
       rmSync(before, { recursive: true, force: true });
@@ -140,6 +151,7 @@ describe("a database at the last migration before the bigint change migrates for
     const { closePool } = await import("../src/db/client.js");
     await closePool();
     for (const c of later) await db.sql.unsafe(`alter table "${c.table}" drop column "${c.column}"`);
+    for (const c of laterTables) await db.sql.unsafe(`drop table "${c.table}"`);
     const r = await runMigrations(db.url);
     expect(r.applied).toBe(journal.entries.length - first);
     expect(await snapshot()).toEqual(was);

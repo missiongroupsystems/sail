@@ -47,6 +47,8 @@ export const OP_MIN_ROLE: Record<string, Role> = {
   "display_destinations.get": "server",
   "display_destinations.list": "server",
   "display_destinations.update": "admin",
+  "documents.cancellation_credit_note_pdf": "server",
+  "documents.cancelled_invoice_pdf": "server",
   "documents.invoice_pdf": "server",
   "documents.issue_invoice": "cashier",
   "exports.products_csv": "manager",

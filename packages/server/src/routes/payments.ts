@@ -2,7 +2,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, desc, eq, isNull, sql, inArray } from "drizzle-orm";
 import { AmountSchema, PERMISSIONS, registerOperations, roleAtLeast, type OperationSpec } from "@sail/shared";
 import { db, markDryRun, settleInvariants, withTransaction } from "../db/client.js";
-import { businessDayCloses, checks, orders, paymentIntents, payments, printers, shifts, stations, tenderTypes } from "../db/schema/index.js";
+import { businessDayCloses, checks, invoiceCancellations, orders, paymentIntents, payments, printers, shifts, stations, tenderTypes } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted, secret } from "../lib/openapi.js";
@@ -31,6 +31,8 @@ registerOperations({
   "receipts.send": op({ op: "receipts.send", summary: "Send a digital receipt", description: "Creates a receipt link (for a QR code on screen) or queues an email/SMS. Email and SMS need a provider, which is not configured yet; the link always works.", tier: "T2", minRole: "cashier", emits: ["receipt.sent"] }),
   "receipts.read": op({ op: "receipts.read", summary: "Read a digital receipt", description: "Public, by token: the receipt document for the guest's phone.", tier: "T0", minRole: null, principals: [], dryRun: false, mcp: { expose: false, toolsets: [] } }),
   "documents.issue_invoice": op({ op: "documents.issue_invoice", summary: "Issue a tax invoice", description: "Numbered PDF tax invoice for a paid bill, including the outlet's business and tax registration numbers. Gap-free numbering per merchant. Issued once; later calls return the same number.", ...PERMISSIONS["documents.issue_invoice"], emits: ["invoice.issued"] }),
+  "documents.cancelled_invoice_pdf": op({ op: "documents.cancelled_invoice_pdf", summary: "Download a cancelled invoice PDF", description: "An invoice cancelled by a credit note when a reopen or a void reversed its bill's payment, marked as cancelled.", tier: "T0", minRole: "server", dryRun: false, principals: ["staff", "station", "agent"], mcp: { expose: false, toolsets: [] } }),
+  "documents.cancellation_credit_note_pdf": op({ op: "documents.cancellation_credit_note_pdf", summary: "Download the credit note that cancelled an invoice", description: "The credit note for the full amount of an invoice cancelled when a reopen or a void reversed its bill's payment.", tier: "T0", minRole: "server", dryRun: false, principals: ["staff", "station", "agent"], mcp: { expose: false, toolsets: [] } }),
   "documents.invoice_pdf": op({ op: "documents.invoice_pdf", summary: "Download an invoice PDF", description: "The PDF for an issued invoice.", tier: "T0", minRole: "server", dryRun: false, principals: ["staff", "station", "agent"], mcp: { expose: false, toolsets: [] } }),
   "checks.list": op({ op: "checks.list", summary: "Bills of an order", description: "Checks with allocations, payments and balances.", tier: "T0", minRole: "server", dryRun: false, principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read"] } }),
   "shifts.open": op({ op: "shifts.open", summary: "Open a shift", description: "With a counted float. One open shift per station (or per outlet when no station).", ...PERMISSIONS["shifts.open"], emits: ["shift.opened"] }),
@@ -150,7 +152,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     // Every refusal comes before the approval: nobody is asked for a Manager's PIN for a reopen that cannot happen.
     await assertReopenable(order);
     const approval = await requireRoleOrOverride(p, principalRole(p), PERMISSIONS["orders.reopen"].minRole, { action: "orders.reopen", targetId: id, args: {}, overrideId: b.override_id, overrideAllowed: PERMISSIONS["orders.reopen"].overrideAllowed });
-    const reversed = await reopenOrder(order, p, b.reason);
+    const { reversed, cancelled } = await reopenOrder(order, p, b.reason);
     const version = await bumpVersion(id);
     const snapshot = await loadSnapshot(id);
     await settleInvariants();
@@ -158,7 +160,7 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     const events: AppendedEvent[] = [];
     for (const r of reversed) events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "payment.reversed", aggregate: { kind: "order", id, version: order.version }, operationId: "orders.reopen", payload: { payment_id: r.id, amount: r.amount, tender: r.tender }, reason: { text: b.reason }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
     events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "order.reopened", aggregate: { kind: "order", id, version: order.version }, operationId: "orders.reopen", payload: { reversed_payments: reversed.length }, reason: { text: b.reason }, approval: approval ? { override_id: b.override_id, approver_id: approval.id, approver_name: approval.name ?? undefined } : null, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
-    await recordAudit(p, { action: "orders.reopen", targetKind: "order", targetId: id, outletId: order.outletId, reason: b.reason, approver: approval, overrideId: b.override_id ?? null, details: { reversed_payments: reversed.length } });
+    await recordAudit(p, { action: "orders.reopen", targetKind: "order", targetId: id, outletId: order.outletId, reason: b.reason, approver: approval, overrideId: b.override_id ?? null, details: { reversed_payments: reversed.length, ...(cancelled.length ? { cancelled_invoices: cancelled } : {}) } });
     return c.json({ data: { ...snapshot, version }, events, warnings: [] }, 200);
   });
 
@@ -247,6 +249,22 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     if (!check?.invoiceDocument) throw AppError.notFound("invoice for bill", id);
     const pdf = await renderInvoicePdf(check.invoiceDocument as InvoiceDocument);
     return c.body(pdf as unknown as ArrayBuffer, 200, { "content-type": "application/pdf", "content-disposition": `inline; filename="${check.invoiceNo}.pdf"` });
+  });
+
+  const cancellation = async (id: string) => {
+    const [row] = await db().select().from(invoiceCancellations).where(eq(invoiceCancellations.id, id)).limit(1);
+    if (!row) throw AppError.notFound("cancelled invoice", id);
+    return row;
+  };
+  defineOp(app, { op: "documents.cancelled_invoice_pdf", method: "get", path: "/v1/invoice-cancellations/{id}/invoice.pdf", tags: ["payments"], request: { params: z.object({ id: z.uuid() }) }, responses: { 200: { description: "PDF", content: { "application/pdf": { schema: z.string() } } }, ...errorResponses } }, async (c) => {
+    const row = await cancellation(c.req.valid("param").id);
+    const pdf = await renderInvoicePdf(row.invoiceDocument as InvoiceDocument, "TAX INVOICE", { cancelled_by: row.creditNoteNo });
+    return c.body(pdf as unknown as ArrayBuffer, 200, { "content-type": "application/pdf", "content-disposition": `inline; filename="${row.invoiceNo}-cancelled.pdf"` });
+  });
+  defineOp(app, { op: "documents.cancellation_credit_note_pdf", method: "get", path: "/v1/invoice-cancellations/{id}/credit-note.pdf", tags: ["payments"], request: { params: z.object({ id: z.uuid() }) }, responses: { 200: { description: "PDF", content: { "application/pdf": { schema: z.string() } } }, ...errorResponses } }, async (c) => {
+    const row = await cancellation(c.req.valid("param").id);
+    const pdf = await renderInvoicePdf(row.creditNoteDocument as InvoiceDocument, "CREDIT NOTE", { credit_note_no: row.creditNoteNo, original_invoice_no: row.invoiceNo, reason: row.reason });
+    return c.body(pdf as unknown as ArrayBuffer, 200, { "content-type": "application/pdf", "content-disposition": `inline; filename="${row.creditNoteNo}.pdf"` });
   });
 
   /* Shifts and business days */

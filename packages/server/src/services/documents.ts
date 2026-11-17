@@ -1,9 +1,10 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import type { BillDocument } from "@sail/shared";
 import { pdfDateTime, pdfMoney, savePdf, winAnsi } from "../lib/pdf-text.js";
 import { db, tx } from "../db/client.js";
-import { checks, digitalReceipts, merchants, outlets } from "../db/schema/index.js";
+import { checks, digitalReceipts, invoiceCancellations, merchants, outlets } from "../db/schema/index.js";
+import type { Principal } from "../auth/principal.js";
 import { AppError } from "../lib/errors.js";
 import { randomToken, sha256 } from "../auth/tokens.js";
 import { config } from "../config.js";
@@ -42,6 +43,56 @@ export async function issueInvoice(checkId: string, bill: BillDocument): Promise
   return { check: updated!, document, reused: false };
 }
 
+/**
+ * The credit note that cancels a whole invoice: every amount on it negated (items, adjustments, taxes, the payments it
+ * recorded), numbered from the credit-note sequence, against the invoice's number. What a full refund's credit note holds.
+ */
+export function cancellingCreditNote(invoice: InvoiceDocument, creditNoteNo: string, issuedAt: Date, reason: string): InvoiceDocument {
+  const neg = (n: number | undefined) => (n ? -n : n);
+  return {
+    ...invoice,
+    kind: "refund_receipt",
+    check_label: `Cancels ${invoice.invoice.number} · ${invoice.check_label}`,
+    lines: invoice.lines.map((l) => ({ ...l, quantity: -l.quantity, amount: -l.amount, modifiers: l.modifiers.map((m) => ({ ...m, price: -m.price })) })),
+    adjustments: invoice.adjustments.map((a) => ({ ...a, amount: -a.amount })),
+    totals: { ...invoice.totals, subtotal: -invoice.totals.subtotal, discount_total: -invoice.totals.discount_total, fee_total: -invoice.totals.fee_total, tax_total: -invoice.totals.tax_total, total: -invoice.totals.total, taxes: invoice.totals.taxes.map((t) => ({ ...t, amount: -t.amount })) },
+    payments: invoice.payments?.map((p) => ({ tender: p.tender, amount: -p.amount, rounding_cents: neg(p.rounding_cents), tip: neg(p.tip), charged: neg(p.charged) })),
+    balance: undefined,
+    invoice_no: invoice.invoice.number,
+    credit_note_no: creditNoteNo,
+    refund_reason: reason,
+    invoice: { ...invoice.invoice, number: creditNoteNo, issued_at: issuedAt.toISOString() },
+  };
+}
+
+/**
+ * An invoice records a bill as paid. When a reopen or a void reverses the payment of an invoiced bill, so that the bill
+ * owes money again, its invoice is cancelled by a credit note for its full amount; the bill is then free of an invoice and,
+ * once paid again, is invoiced afresh with the next number. The cancelled invoice and its credit note stay retrievable.
+ * Numbers stay gap-free: each is drawn only when its document is written. No money moves, so no report reads this.
+ */
+export async function cancelInvoicesOfReversedBills(orderId: string, reason: string, by: Principal, now = new Date()): Promise<{ check_id: string; invoice_no: string; credit_note_no: string }[]> {
+  const rows = await db().select().from(checks).where(and(eq(checks.orderId, orderId), isNotNull(checks.invoiceNo))).orderBy(asc(checks.index));
+  const out: { check_id: string; invoice_no: string; credit_note_no: string }[] = [];
+  for (const c of rows) {
+    if (c.status !== "open" || !c.invoiceNo || !c.invoiceDocument) continue;
+    const creditNoteNo = await nextDocumentNo(c.merchantId, "credit_note");
+    const invoice = c.invoiceDocument as InvoiceDocument;
+    await db()
+      .insert(invoiceCancellations)
+      .values({ merchantId: c.merchantId, outletId: c.outletId, orderId, checkId: c.id, invoiceNo: c.invoiceNo, invoiceIssuedAt: c.invoiceIssuedAt, invoiceDocument: invoice, creditNoteNo, creditNoteDocument: cancellingCreditNote(invoice, creditNoteNo, now, reason), reason, cancelledBy: by.type === "staff" ? by.id : null, cancelledByName: "name" in by ? (by.name ?? null) : null });
+    await db().update(checks).set({ invoiceNo: null, invoiceIssuedAt: null, invoiceDocument: null, updatedAt: now }).where(eq(checks.id, c.id));
+    out.push({ check_id: c.id, invoice_no: c.invoiceNo, credit_note_no: creditNoteNo });
+  }
+  return out;
+}
+
+/** Cancelled invoices of these bills, oldest first, for the order snapshot. */
+export async function cancelledInvoicesOf(checkIds: string[]) {
+  if (!checkIds.length) return [];
+  return db().select({ id: invoiceCancellations.id, checkId: invoiceCancellations.checkId, invoiceNo: invoiceCancellations.invoiceNo, creditNoteNo: invoiceCancellations.creditNoteNo, createdAt: invoiceCancellations.createdAt }).from(invoiceCancellations).where(inArray(invoiceCancellations.checkId, checkIds)).orderBy(asc(invoiceCancellations.createdAt));
+}
+
 function camel(r: Record<string, unknown>): typeof checks.$inferSelect {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(r)) out[k.replace(/_([a-z])/g, (_, ch: string) => ch.toUpperCase())] = v;
@@ -50,7 +101,7 @@ function camel(r: Record<string, unknown>): typeof checks.$inferSelect {
 }
 
 /** Render a tax invoice or credit note as an A4 PDF from the stored document. Deterministic for the same document. */
-export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE" | "CREDIT NOTE" = "TAX INVOICE", extra: { credit_note_no?: string; original_invoice_no?: string; reason?: string } = {}): Promise<Uint8Array> {
+export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE" | "CREDIT NOTE" = "TAX INVOICE", extra: { credit_note_no?: string; original_invoice_no?: string; reason?: string; cancelled_by?: string } = {}): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   pdf.setTitle(`${kind} ${extra.credit_note_no ?? doc.invoice.number}`);
   pdf.setProducer("Sail");
@@ -94,6 +145,10 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
   if (extra.original_invoice_no) {
     y -= 14;
     right(`Against invoice ${extra.original_invoice_no}`, 547, 9, font);
+  }
+  if (extra.cancelled_by) {
+    y -= 14;
+    right(`Cancelled by credit note ${extra.cancelled_by}`, 547, 9, bold);
   }
   y -= 36;
   text(`Order ${doc.header.order_no} · ${doc.check_label}${doc.header.table_name ? ` · Table ${doc.header.table_name}` : ""}${doc.header.customer_ref?.name ? ` · ${doc.header.customer_ref.name}` : ""}`, 48, 10, font, grey);

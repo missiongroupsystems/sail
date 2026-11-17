@@ -58,6 +58,8 @@ export type CheckSnapshot = {
   balance: number;
   locked: boolean;
   invoice_no: string | null;
+  /** Invoices cancelled by a credit note when a reopen or void reversed this bill's payment. */
+  cancelled_invoices?: { id: string; invoice_no: string; credit_note_no: string; cancelled_at: string }[];
   allocations: { line_id: string; share: string; base: number; discount: number; fee: number; tax: number; taxes: TaxAmount[]; total: number; refunded_quantity?: number }[];
   payments: CheckPayment[];
 };

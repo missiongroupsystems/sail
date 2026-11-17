@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { evenShares, sharedAmong, type Share } from "@sail/shared";
 import { db } from "../db/client.js";
-import { checkAllocations, checks, digitalReceipts, orderLines, paymentIntents, payments } from "../db/schema/index.js";
+import { checkAllocations, checks, digitalReceipts, invoiceCancellations, orderLines, paymentIntents, payments } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { checksFor, syncAllocations, type CheckRow } from "./checks.js";
 
@@ -43,6 +43,9 @@ async function resetChecks(order: { id: string; merchantId: string; outletId: st
   // A numbered tax invoice records its bill as it was; re-splitting would change or remove that bill under it.
   const invoiced = existing.find((c) => c.invoiceNo);
   if (invoiced) throw AppError.state(`${invoiced.label} has tax invoice ${invoiced.invoiceNo}`, [], "Keep the bills as they are: the invoice records this split.");
+  // An invoice cancelled when a reopen reversed its bill's payment still records that bill, and so does its credit note.
+  const [cancelled] = existing.length ? await db().select({ checkId: invoiceCancellations.checkId, invoiceNo: invoiceCancellations.invoiceNo, creditNoteNo: invoiceCancellations.creditNoteNo }).from(invoiceCancellations).where(inArray(invoiceCancellations.checkId, existing.map((c) => c.id))).limit(1) : [];
+  if (cancelled) throw AppError.state(`${existing.find((c) => c.id === cancelled.checkId)?.label ?? "A bill"} had tax invoice ${cancelled.invoiceNo}, cancelled by ${cancelled.creditNoteNo}`, [], "Keep the bills as they are: the invoice and its credit note record this split.");
   const rows: CheckRow[] = [];
   for (let i = 1; i <= n; i++) {
     const seatNo = seats[i - 1] ?? null;

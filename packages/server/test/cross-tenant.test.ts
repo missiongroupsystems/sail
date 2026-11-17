@@ -50,6 +50,10 @@ beforeAll(async () => {
   const paid = await h.paidOrder(w.pins.cashier, [{ product_id: w.ids.kopi }]);
   await must("POST", `/v1/checks/${paid.checks[0]!.id}/invoice`, {}, w.pins.cashier);
   await must("POST", `/v1/checks/${paid.checks[0]!.id}/refunds`, { refund_id: randomUUID(), request: { kind: "full" }, reason: "Spill" }, w.pins.manager);
+  // An invoiced bill whose order is reopened: its invoice is cancelled by a credit note.
+  const reopened = await h.paidOrder(w.pins.cashier, [{ product_id: w.ids.kopi }]);
+  await must("POST", `/v1/checks/${reopened.checks[0]!.id}/invoice`, {}, w.pins.cashier);
+  await must("POST", `/v1/orders/${reopened.id}/reopen`, { reason: "Wrong items" }, w.pins.manager);
   const agent = await must("POST", "/v1/agent-identities", { name: "Helper", role: "server", toolsets: ["pos.order"], risk_ceiling: "T1" });
   const session = await call<{ data: { agent_token: string } }>("POST", "/v1/agent-sessions", { body: { credential: agent.credential }, idempotencyKey: null });
   // A payment sent to a terminal: a row is enough, its route only has to find it or not.
@@ -78,7 +82,7 @@ async function idsOfA(): Promise<Record<string, string>> {
     if (!r) throw new Error("merchant A is missing a row for a route family");
     return r.id;
   };
-  const tables: Record<string, string> = { "agent-identities": "agent_identities", areas: "areas", "availability-rules": "availability_rules", brands: "brands", categories: "report_categories", "channel-links": "channel_links", checks: "checks", "customer-groups": "customer_groups", customers: "customers", "display-destinations": "display_destinations", "kitchen-tickets": "kitchen_tickets", imports: "import_jobs", layouts: "pos_layouts", menus: "menus", "modifier-groups": "modifier_groups", orders: "orders", outlets: "outlets", "payment-intents": "payment_intents", payments: "payments", "print-jobs": "print_jobs", printers: "printers", products: "products", proposals: "proposals", refunds: "refunds", relays: "print_relays", rounds: "guest_rounds", "service-requests": "service_requests", shifts: "shifts", staff: "staff", stations: "stations", tables: "tables", "tax-classes": "tax_classes", "tender-types": "tender_types", "void-reasons": "void_reasons" };
+  const tables: Record<string, string> = { "agent-identities": "agent_identities", areas: "areas", "availability-rules": "availability_rules", brands: "brands", categories: "report_categories", "channel-links": "channel_links", checks: "checks", "customer-groups": "customer_groups", customers: "customers", "display-destinations": "display_destinations", "kitchen-tickets": "kitchen_tickets", imports: "import_jobs", "invoice-cancellations": "invoice_cancellations", layouts: "pos_layouts", menus: "menus", "modifier-groups": "modifier_groups", orders: "orders", outlets: "outlets", "payment-intents": "payment_intents", payments: "payments", "print-jobs": "print_jobs", printers: "printers", products: "products", proposals: "proposals", refunds: "refunds", relays: "print_relays", rounds: "guest_rounds", "service-requests": "service_requests", shifts: "shifts", staff: "staff", stations: "stations", tables: "tables", "tax-classes": "tax_classes", "tender-types": "tender_types", "void-reasons": "void_reasons" };
   const out: Record<string, string> = {};
   for (const [family, table] of Object.entries(tables)) out[family] = await one(db.sql.unsafe(`select id::text as id from ${table} where merchant_id = $1 order by id limit 1`, [m]) as unknown as Promise<{ id: string }[]>);
   // An invoiced bill and a refund with a credit note, so their documents exist.

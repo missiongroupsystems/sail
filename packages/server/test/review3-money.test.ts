@@ -218,4 +218,85 @@ describe("R1: a cash refund from the back office comes out of an open shift's dr
 
 });
 
+describe("R2: a reopen or a void that reverses an invoiced bill's payment cancels its invoice with a credit note", () => {
+  const invoice = (w: World, checkId: string) => call<{ data: { invoice_no: string; reused: boolean } } & Err>("POST", `/v1/checks/${checkId}/invoice`, { token: pos(w), body: {} });
+  const seq = async (w: World, kind: string) => (await db.sql<{ next_no: number }[]>`select next_no from document_sequences where merchant_id = ${w.m.merchantId} and kind = ${kind}`)[0]?.next_no ?? 1;
+  type Cancelled = { id: string; invoice_no: string; credit_note_no: string };
+  const snapChecks = async (w: World, id: string) => (await call<{ data: { checks: (Snap["checks"][number] & { cancelled_invoices: Cancelled[] })[] } }>("GET", `/v1/orders/${id}`, { token: w.m.manager.token })).body.data.checks;
+
+  it("reopen, add an item and pay again: the old invoice is cancelled by a credit note for its full amount, the bill gets a new number, the Z-report counts no refund", async () => {
+    const order = await paidOrder(US, ["burger", "tea"], "cash", 0);
+    const check = order.checks[0]!;
+    const oldTotal = check.totals.total;
+    const inv = await invoice(US, check.id);
+    expect(inv.status, JSON.stringify(inv.body)).toBe(200);
+    const oldNo = inv.body.data.invoice_no;
+    const cnBefore = await seq(US, "credit_note");
+    const zBefore = await zFor(US);
+
+    const reopened = await call<Mut>("POST", `/v1/orders/${order.id}/reopen`, { token: US.m.manager.token, body: { reason: "More items to add" } });
+    expect(reopened.status, JSON.stringify(reopened.body)).toBe(200);
+    const after = (await snapChecks(US, order.id))[0]!;
+    expect(after.invoice_no).toBeNull();
+    expect(after.cancelled_invoices).toHaveLength(1);
+    const cancelled = after.cancelled_invoices[0]!;
+    expect(cancelled.invoice_no).toBe(oldNo);
+    expect(cancelled.credit_note_no).toBe(`CN-${String(cnBefore).padStart(6, "0")}`);
+    const [row] = await db.sql<{ credit_note_document: { totals: { total: number; taxes: Tax[] }; invoice_no: string; payments: { amount: number }[] } ; invoice_document: { totals: { total: number } } }[]>`select credit_note_document, invoice_document from invoice_cancellations where id = ${cancelled.id}`;
+    expect(row!.credit_note_document.totals.total).toBe(-oldTotal);
+    expect(row!.credit_note_document.invoice_no).toBe(oldNo);
+    expect(row!.credit_note_document.totals.taxes.map((t) => t.amount)).toEqual(check.totals.taxes.map((t) => -t.amount));
+    expect(row!.invoice_document.totals.total).toBe(oldTotal);
+    // No invoice while the bill is unpaid again.
+    expect((await invoice(US, check.id)).status).toBe(409);
+
+    // Add coffee and pay again: a new invoice, the next number, for the new total.
+    expect((await add(US, order.id, ["coffee"])).status).toBe(200);
+    const s2 = await snap(US, order.id);
+    const repaid = await pay(US, s2.checks[0]!.id, s2.checks[0]!.balance, "cash");
+    expect(repaid.status, JSON.stringify(repaid.body)).toBe(200);
+    const newTotal = repaid.body.data.checks[0]!.totals.total;
+    expect(newTotal).toBeGreaterThan(oldTotal);
+    const fresh = await invoice(US, check.id);
+    expect(fresh.status, JSON.stringify(fresh.body)).toBe(200);
+    expect(fresh.body.data.reused).toBe(false);
+    expect(Number(fresh.body.data.invoice_no.slice(4))).toBe(Number(oldNo.slice(4)) + 1);
+    const [doc] = await db.sql<{ invoice_document: { totals: { total: number }; payments: { amount: number }[] } }[]>`select invoice_document from checks where id = ${check.id}`;
+    expect(doc!.invoice_document.totals.total).toBe(newTotal);
+    expect(doc!.invoice_document.payments.map((p) => p.amount)).toEqual([newTotal]);
+
+    // The Z-report: no refund, and cash counts the new payment only (the reversed one counts nowhere).
+    const zAfter = await zFor(US);
+    expect(zAfter.refunds).toEqual(zBefore.refunds);
+    const day = (z: Awaited<ReturnType<typeof zFor>>) => z.cash.cash_payments + (z.cash.open_shifts?.cash_payments ?? 0);
+    expect(day(zAfter) - day(zBefore)).toBe(newTotal - oldTotal);
+
+    // Both old documents stay retrievable.
+    const oldPdf = await app.request(`/v1/invoice-cancellations/${cancelled.id}/invoice.pdf`, { headers: { authorization: `Bearer ${US.m.manager.token}` } });
+    const cnPdf = await app.request(`/v1/invoice-cancellations/${cancelled.id}/credit-note.pdf`, { headers: { authorization: `Bearer ${US.m.manager.token}` } });
+    expect([oldPdf.status, cnPdf.status]).toEqual([200, 200]);
+    expect(oldPdf.headers.get("content-type")).toBe("application/pdf");
+    expect(cnPdf.headers.get("content-disposition")).toContain(cancelled.credit_note_no);
+  });
+
+  it("a voided payment on an invoiced bill cancels the invoice too; numbers stay gap-free", async () => {
+    const order = await paidOrder(US, ["fries"], "cash", 0);
+    const check = order.checks[0]!;
+    const inv = await invoice(US, check.id);
+    const payment = (await snap(US, order.id)).checks[0]!;
+    const [p] = await db.sql<{ id: string }[]>`select id from payments where check_id = ${payment.id} and status = 'recorded'`;
+    const voided = await call<Mut>("POST", `/v1/payments/${p!.id}/void`, { token: US.m.manager.token, body: { reason: "Wrong tender" } });
+    expect(voided.status, JSON.stringify(voided.body)).toBe(200);
+    const after = (await snapChecks(US, order.id))[0]!;
+    expect([after.invoice_no, after.cancelled_invoices.map((c) => c.invoice_no)]).toEqual([null, [inv.body.data.invoice_no]]);
+    // Every number issued so far is used exactly once, in invoices, cancellations and refunds.
+    const invoices = await db.sql<{ n: string }[]>`select invoice_no as n from checks where merchant_id = ${US.m.merchantId} and invoice_no is not null union all select invoice_no from invoice_cancellations where merchant_id = ${US.m.merchantId}`;
+    const nums = invoices.map((r) => Number(r.n.slice(4))).sort((a, b) => a - b);
+    expect(nums).toEqual(nums.map((_, i) => i + 1));
+    const notes = await db.sql<{ n: string }[]>`select credit_note_no as n from refunds where merchant_id = ${US.m.merchantId} and credit_note_no is not null union all select credit_note_no from invoice_cancellations where merchant_id = ${US.m.merchantId}`;
+    const cns = notes.map((r) => Number(r.n.slice(3))).sort((a, b) => a - b);
+    expect(cns).toEqual(cns.map((_, i) => i + 1));
+  });
+});
+
 export { EU, tax };
