@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { formatMoney, quoteRefund, RefundError, sumTaxes, type BillDocument, type MoneyFormat, type RefundQuote, type RefundRequest, type RefundableLine, type RefundablePayment } from "@sail/shared";
 import { db } from "../db/client.js";
-import { checkAllocations, checks, merchantSettings, orderAdjustments, orderLines, orders, payments, refundLines, refundTenders, refunds } from "../db/schema/index.js";
+import { checkAllocations, checks, merchantSettings, orderAdjustments, orderLines, orders, payments, refundLines, refundTenders, refunds, shifts, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { Principal } from "../auth/principal.js";
 import { billDocumentFor } from "./checks.js";
@@ -43,10 +43,10 @@ export async function refundableFor(checkId: string): Promise<{ check: typeof ch
   return { check, order, lines, lineNames: new Map(lineRows.map((l) => [l.id, l.name])), paymentsList, increment: settings.cashRoundingIncrement ?? null, money: { currency: settings.currency, locale: settings.locale } };
 }
 
-export function quote(ref: Awaited<ReturnType<typeof refundableFor>>, request: RefundRequest, tenderSplit?: { payment_id: string; amount: number }[]): RefundQuote {
+export function quote(ref: Awaited<ReturnType<typeof refundableFor>>, request: RefundRequest, tenderSplit?: { payment_id: string; amount: number }[], opts: { avoidCash?: boolean } = {}): RefundQuote {
   const money = (amount: number) => formatMoney(amount, ref.money);
   try {
-    return quoteRefund(ref.lines, ref.paymentsList, request, { tenderSplit, cashRoundingIncrement: ref.increment, formatMoney: money });
+    return quoteRefund(ref.lines, ref.paymentsList, request, { tenderSplit, cashRoundingIncrement: ref.increment, formatMoney: money, avoidCash: opts.avoidCash });
   } catch (e) {
     if (e instanceof RefundError) {
       const code = e.code === "exceeds_line" || e.code === "exceeds_payment" || e.code === "nothing_to_refund" ? "invariant_violation" : "validation";
@@ -66,6 +66,7 @@ function refundErrorText(e: RefundError, names: Map<string, string>, money: (amo
     return { message: `Only ${d.remaining_quantity} of ${d.quantity} ${name} can still be refunded`, remedy: `Refund ${d.remaining_quantity} or fewer.` };
   }
   if (e.code === "exceeds_line" && d.refundable !== undefined) return { message: `Only ${money(d.refundable)} can still be refunded on this bill`, remedy: `Enter ${money(d.refundable)} or less.` };
+  if (e.code === "exceeds_payment" && e.details.avoid_cash) return { message: `${e.message.charAt(0).toUpperCase()}${e.message.slice(1)}`, remedy: "Refund the rest in cash on a station with an open shift." };
   if (e.code === "exceeds_payment") return { message: `${e.message.charAt(0).toUpperCase()}${e.message.slice(1)}`, remedy: "Reduce the refund, or split it across the original payments." };
   if (e.code === "tender_mismatch") return { message: `${e.message.charAt(0).toUpperCase()}${e.message.slice(1)}`, remedy: "Make the amounts for each payment add up to the refund." };
   return { message: e.message };
@@ -73,13 +74,14 @@ function refundErrorText(e: RefundError, names: Map<string, string>, money: (amo
 
 export type CreatedRefund = { refund: typeof refunds.$inferSelect; quote: RefundQuote; receipt: BillDocument; creditNote: InvoiceDocument | null };
 
-export async function createRefund(input: { refundId: string; checkId: string; request: RefundRequest; tenderSplit?: { payment_id: string; amount: number }[]; reason: string; reference?: string | null; principal: Principal; approver?: { id: string; name: string | null } | null; overrideId?: string | null; stationId?: string | null }): Promise<CreatedRefund> {
+export async function createRefund(input: { refundId: string; checkId: string; request: RefundRequest; tenderSplit?: { payment_id: string; amount: number }[]; reason: string; reference?: string | null; principal: Principal; approver?: { id: string; name: string | null } | null; overrideId?: string | null; stationId?: string | null; shiftId?: string | null; avoidCash?: boolean }): Promise<CreatedRefund> {
   const ref = await refundableFor(input.checkId);
-  const q = quote(ref, input.request, input.tenderSplit);
+  const q = quote(ref, input.request, input.tenderSplit, { avoidCash: input.avoidCash });
   const now = new Date();
-  const [openShift] = await openShiftFor(ref.order.outletId, input.stationId ?? null);
+  const paysCash = q.tenders.some((t) => t.is_cash && t.amount + t.rounding_cents + t.tip_cents !== 0);
+  const openShift = await refundShift(ref.order.outletId, input.stationId ?? null, input.shiftId ?? null, paysCash);
   // Cash comes out of a drawer; with no shift open it would leave no drawer short. A refund counts on its shift's day.
-  if (q.tenders.some((t) => t.is_cash && t.amount + t.rounding_cents + t.tip_cents !== 0) && !openShift) throw AppError.invariant("no_open_shift", "No shift is open here to pay cash out of", "Open a shift first.");
+  if (paysCash && !openShift) throw AppError.invariant("no_open_shift", "No shift is open here to pay cash out of", input.stationId ? "Open a shift first." : "Open a shift on a station first, or refund to the card only.");
   const businessDate = openShift?.businessDate ?? (await currentBusinessDate(ref.order.merchantId, ref.order.outletId, now));
   const receiptNo = await nextDocumentNo(ref.order.merchantId, "refund_receipt");
   // A credit note corrects the invoice; a refund of only the tip changes nothing the invoice holds, so it gets none.
@@ -128,7 +130,8 @@ export async function createRefund(input: { refundId: string; checkId: string; r
       approvedBy: input.approver?.id ?? null,
       approvedByName: input.approver?.name ?? null,
       overrideId: input.overrideId ?? null,
-      stationId: input.stationId ?? null,
+      // From the back office (no station), the refund counts at the station whose drawer paid the cash out.
+      stationId: input.stationId ?? openShift?.stationId ?? null,
       shiftId: openShift?.id ?? null,
       businessDate,
       base: q.totals.base,
@@ -152,6 +155,36 @@ export async function createRefund(input: { refundId: string; checkId: string; r
   const tipsLeft = ref.paymentsList.reduce((s, p) => s + (p.tip ?? 0) - (p.refunded_tip ?? 0), 0) - q.tip;
   await db().update(checks).set({ refundedTotal: newRefunded, status: newRefunded >= ref.check.total && tipsLeft <= 0 ? "refunded" : "partially_refunded", updatedAt: now }).where(eq(checks.id, input.checkId));
   return { refund: refund!, quote: q, receipt, creditNote };
+}
+
+/**
+ * The open shift a refund counts in. A station uses its own shift, else the outlet's shared drawer. The back office has
+ * no drawer of its own: cash comes out of the open shift the caller names, or the outlet's only open shift; with several
+ * open and none named, the caller must choose (the refund wizard asks). A named shift must be open at the outlet.
+ */
+async function refundShift(outletId: string, stationId: string | null, shiftId: string | null, paysCash: boolean): Promise<{ id: string; businessDate: string; stationId: string | null } | null> {
+  if (shiftId) {
+    const [s] = await db().select({ id: shifts.id, businessDate: shifts.businessDate, stationId: shifts.stationId, outletId: shifts.outletId, status: shifts.status }).from(shifts).where(eq(shifts.id, shiftId)).limit(1);
+    if (!s || s.outletId !== outletId) throw AppError.notFound("shift", shiftId);
+    if (s.status !== "open") throw AppError.invariant("shift_closed", "That shift has been closed", "Choose another open shift, or refund to the card only.");
+    return { id: s.id, businessDate: s.businessDate, stationId: s.stationId };
+  }
+  const [own] = await openShiftFor(outletId, stationId);
+  if (own) return { ...own, stationId: own.stationId ?? null };
+  if (stationId || !paysCash) return null;
+  const open = await db().select({ id: shifts.id, businessDate: shifts.businessDate, stationId: shifts.stationId }).from(shifts).where(and(eq(shifts.outletId, outletId), eq(shifts.status, "open"))).limit(2);
+  if (open.length > 1) throw AppError.invariant("shift_required", "Choose which open shift the cash comes out of", "Name the shift (`shift_id`) whose drawer pays the cash back.");
+  return open[0] ?? null;
+}
+
+/** Open shifts at an outlet a back-office refund can pay cash out of: station and who opened it. */
+export async function openShiftsAt(outletId: string) {
+  return db()
+    .select({ id: shifts.id, station_id: shifts.stationId, station_name: stations.name, name: shifts.name, opened_by: shifts.openedByName, opened_at: shifts.openedAt, business_date: shifts.businessDate })
+    .from(shifts)
+    .leftJoin(stations, eq(stations.id, shifts.stationId))
+    .where(and(eq(shifts.outletId, outletId), eq(shifts.status, "open")))
+    .orderBy(shifts.openedAt);
 }
 
 // Z-report and shift close: refunds on the business day (or shift), with the cash portion (cash tips given back included).

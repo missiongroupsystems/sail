@@ -184,7 +184,7 @@ export async function tipsOn(checkId: string): Promise<number> {
 /** The open shift a payment or refund at this station counts in: the station's own, else the outlet's shared drawer. */
 export function openShiftFor(outletId: string, stationId: string | null) {
   return db()
-    .select({ id: shifts.id, businessDate: shifts.businessDate })
+    .select({ id: shifts.id, businessDate: shifts.businessDate, stationId: shifts.stationId })
     .from(shifts)
     .where(and(eq(shifts.outletId, outletId), eq(shifts.status, "open"), stationId ? sql`(${shifts.stationId} = ${stationId} or ${shifts.stationId} is null)` : sql`${shifts.stationId} is null`))
     .orderBy(sql`${shifts.stationId} nulls last`)

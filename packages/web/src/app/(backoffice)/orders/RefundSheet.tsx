@@ -4,7 +4,7 @@ import { Badge, Button, DescriptionList, InlineError, Money, MoneyField, Sheet, 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { label } from "@/components/backoffice/labels";
-import { CHECK_STATUS_LABEL, openPdf, type CheckSnapshot, type RefundCreated, type RefundQuote, type RefundRequest } from "@/components/backoffice/register";
+import { boKeys, CHECK_STATUS_LABEL, openPdf, shiftLabel, type CheckSnapshot, type Shift, type RefundCreated, type RefundQuote, type RefundRequest } from "@/components/backoffice/register";
 import { Warnings } from "@/components/backoffice/Warnings";
 import { idempotencyKey, req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
@@ -12,13 +12,14 @@ import type { OrderSnapshot } from "@/lib/api/types";
 import { keys } from "@/lib/query";
 import { useFreshErrors } from "@/lib/fresh-errors";
 
-type StepId = "bill" | "what" | "why" | "review";
+type StepId = "bill" | "what" | "why" | "drawer" | "review";
 type What = "full" | "lines" | "amount";
 
 const ALL_STEPS: { id: StepId; label: string }[] = [
   { id: "bill", label: "Which bill" },
   { id: "what", label: "What" },
   { id: "why", label: "Why" },
+  { id: "drawer", label: "Cash from" },
   { id: "review", label: "Review" },
 ];
 
@@ -33,10 +34,9 @@ export function refundableChecks(checks: CheckSnapshot[]): CheckSnapshot[] {
  * sheet never computes money. Manager, Finance or Admin (the caller gates it).
  */
 export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: { order: OrderSnapshot; checks: CheckSnapshot[]; initialCheckId: string | null; isOpen: boolean; onClose: () => void }) {
-  const { money } = useLocale();
+  const { money, clock } = useLocale();
   const qc = useQueryClient();
   const candidates = useMemo(() => refundableChecks(checks), [checks]);
-  const steps = candidates.length > 1 ? ALL_STEPS : ALL_STEPS.filter((s) => s.id !== "bill");
 
   const [checkId, setCheckId] = useState<string | null>(null);
   const [step, setStep] = useState<StepId>("what");
@@ -48,6 +48,8 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
   const [print, setPrint] = useState(true);
   const [done, setDone] = useState<RefundCreated | null>(null);
   const [refundId, setRefundId] = useState(idempotencyKey);
+  /** The open shift whose drawer pays cash back, or "card" to give back to the other payments only. */
+  const [drawer, setDrawer] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -61,11 +63,30 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
     setReasonId(null);
     setPrint(true);
     setDone(null);
+    setDrawer(null);
     setRefundId(idempotencyKey());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialCheckId]);
 
   const check = candidates.find((c) => c.id === checkId) ?? null;
+  // The back office has no drawer of its own: a bill paid partly in cash asks which open shift's drawer pays it back.
+  const cashPaid = !!check?.payments.some((p) => p.is_cash && p.status === "recorded");
+  const cardPaid = !!check?.payments.some((p) => !p.is_cash && p.status === "recorded");
+  const steps = ALL_STEPS.filter((s) => (s.id !== "bill" || candidates.length > 1) && (s.id !== "drawer" || cashPaid));
+  const openShifts = useQuery({
+    queryKey: boKeys.shifts(order.outlet_id, { status: "open" }),
+    queryFn: () => req(api.GET("/v1/outlets/{id}/shifts", { params: { path: { id: order.outlet_id }, query: { status: "open" } } })).then((r) => r.data as unknown as Shift[]),
+    enabled: isOpen && cashPaid,
+  });
+  const shiftsOpen = openShifts.data ?? [];
+  // One open shift is chosen for the owner; none leaves the card as the only way back, when the bill has one.
+  useEffect(() => {
+    if (!openShifts.data || drawer) return;
+    if (openShifts.data.length === 1) setDrawer(openShifts.data[0]!.id);
+    else if (openShifts.data.length === 0 && cardPaid) setDrawer("card");
+  }, [openShifts.data, drawer, cardPaid]);
+  const avoidCash = cashPaid && drawer === "card";
+  const shiftId = cashPaid && drawer && drawer !== "card" ? drawer : undefined;
   const lineById = useMemo(() => new Map(order.lines.map((l) => [l.id, l])), [order.lines]);
   const billLines = useMemo(() => (check ? check.allocations.map((a) => ({ alloc: a, line: lineById.get(a.line_id) ?? null })).filter((x) => x.line && x.line.status !== "voided") : []), [check, lineById]);
   /** "paid $43.16 · $10.00 already refunded": the register's two figures, never their difference. */
@@ -91,8 +112,8 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
   }, [what, qty, amount]);
 
   const quote = useQuery<RefundQuote, ApiError>({
-    queryKey: ["refund-quote", checkId, request],
-    queryFn: () => req(api.POST("/v1/checks/{id}/refunds/quote", { params: { path: { id: checkId! } }, body: { request: request! } })).then((r) => r.data as unknown as RefundQuote),
+    queryKey: ["refund-quote", checkId, request, avoidCash],
+    queryFn: () => req(api.POST("/v1/checks/{id}/refunds/quote", { params: { path: { id: checkId! } }, body: { request: request!, ...(avoidCash ? { avoid_cash: true } : {}) } })).then((r) => r.data as unknown as RefundQuote),
     // An amount is checked as it is typed, so "more than was paid" is said beside the field, not only at Review.
     enabled: isOpen && (step === "review" || (step === "what" && what === "amount")) && checkId !== null && request !== null,
     retry: false,
@@ -104,7 +125,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
       const res = await api.POST("/v1/checks/{id}/refunds", {
         params: { path: { id: checkId! } },
         headers: { "Idempotency-Key": refundId },
-        body: { refund_id: refundId, request: request!, reason: reason.trim(), print },
+        body: { refund_id: refundId, request: request!, reason: reason.trim(), print, ...(shiftId ? { shift_id: shiftId } : {}), ...(avoidCash ? { avoid_cash: true } : {}) },
       });
       const body = res.data as unknown as { refund: RefundCreated["refund"]; warnings: string[] };
       return { refund: body.refund, warnings: body.warnings };
@@ -119,7 +140,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
   const index = steps.findIndex((s) => s.id === step);
   const next = steps[index + 1]?.id;
   const prev = steps[index - 1]?.id;
-  const canContinue = step === "bill" ? checkId !== null : step === "what" ? request !== null && !(what === "amount" && quote.isError) : step === "why" ? reason.trim().length > 0 : false;
+  const canContinue = step === "bill" ? checkId !== null : step === "what" ? request !== null && !(what === "amount" && quote.isError) : step === "why" ? reason.trim().length > 0 : step === "drawer" ? drawer !== null : false;
 
   const lineName = (id: string) => lineById.get(id)?.name ?? `Line ${id.slice(0, 8)}`;
 
@@ -309,6 +330,32 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
             </div>
           ) : null}
 
+          {step === "drawer" && check ? (
+            <div className="flex flex-col gap-3">
+              {openShifts.isPending ? <p className="text-ink-2">Looking for open shifts…</p> : null}
+              {openShifts.data && shiftsOpen.length === 0 ? (
+                <p className="text-ink-2">{cardPaid ? "No shift is open at this outlet, so no drawer can pay cash back. The refund goes back to the card only." : "No shift is open at this outlet, so no drawer can pay cash back. Refund it on a station once a shift is open."}</p>
+              ) : null}
+              {shiftsOpen.length ? <p className="text-ink-2">{shiftsOpen.length === 1 ? "The cash comes out of the only open shift's drawer." : "Choose the open shift whose drawer pays the cash back."}</p> : null}
+              <ul className="flex flex-col gap-2" aria-label="Cash from">
+                {[...shiftsOpen.map((s) => ({ id: s.id, title: shiftLabel(s), detail: `${s.opened_by ? `opened by ${s.opened_by} · ` : ""}since ${clock(s.opened_at)}` })), ...(cardPaid && openShifts.data ? [{ id: "card", title: "Back to the card only", detail: "Nothing is paid out in cash." }] : [])].map((o) => (
+                  <li key={o.id}>
+                    <button
+                      type="button"
+                      onClick={() => setDrawer(o.id)}
+                      aria-pressed={drawer === o.id}
+                      className={cx("press flex w-full items-baseline justify-between gap-4 rounded-tile px-4 py-3 text-left outline-none hairline hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-status-seated", drawer === o.id && "border-ink bg-surface-2")}
+                    >
+                      <span className="text-line text-ink">{o.title}</span>
+                      <span className="text-caption text-ink-2">{o.detail}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <InlineError error={openShifts.error as ApiError | null} />
+            </div>
+          ) : null}
+
           {step === "review" && check ? (
             <div className="flex flex-col gap-5">
               {quote.isPending ? <p className="text-ink-2">Asking the register for the quote…</p> : null}
@@ -364,7 +411,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
                       ]}
                     />
                   </section>
-                  <DescriptionList layout="grid" items={[{ term: "Reason", detail: reason.trim() }, { term: "Documents", detail: check.invoice_no ? `Refund receipt and a credit note against ${check.invoice_no}` : "Refund receipt" }]} />
+                  <DescriptionList layout="grid" items={[{ term: "Reason", detail: reason.trim() }, ...(shiftId && quote.data.cash_out ? [{ term: "Cash from", detail: shiftLabel(shiftsOpen.find((s) => s.id === shiftId) ?? { name: null, station_id: null }) }] : []), { term: "Documents", detail: check.invoice_no ? `Refund receipt and a credit note against ${check.invoice_no}` : "Refund receipt" }]} />
                   <Switch isSelected={print} onChange={setPrint} description="On the outlet's receipt printer. The refund is recorded either way.">
                     Print the refund receipt
                   </Switch>

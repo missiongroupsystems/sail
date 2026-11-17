@@ -1,5 +1,5 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql, inArray } from "drizzle-orm";
 import { AmountSchema, PERMISSIONS, registerOperations, roleAtLeast, type OperationSpec } from "@sail/shared";
 import { db, markDryRun, settleInvariants, withTransaction } from "../db/client.js";
 import { businessDayCloses, checks, orders, paymentIntents, payments, printers, shifts, stations, tenderTypes } from "../db/schema/index.js";
@@ -264,7 +264,10 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
       .where(and(eq(shifts.outletId, id), q.status ? eq(shifts.status, q.status) : sql`true`, q.station_id ? eq(shifts.stationId, q.station_id) : sql`true`, q.business_date ? eq(shifts.businessDate, q.business_date) : sql`true`))
       .orderBy(desc(shifts.openedAt))
       .limit(200);
-    return c.json({ data: rows.map(toShift), next_cursor: null }, 200);
+    // Each shift names its station, so a list of open shifts says which drawer is which.
+    const stationIds = [...new Set(rows.map((r) => r.stationId).filter((x): x is string => !!x))];
+    const names = new Map((stationIds.length ? await db().select({ id: stations.id, name: stations.name }).from(stations).where(inArray(stations.id, stationIds)) : []).map((s) => [s.id, s.name]));
+    return c.json({ data: rows.map((r) => ({ ...toShift(r), station_name: r.stationId ? (names.get(r.stationId) ?? null) : null })), next_cursor: null }, 200);
   });
 
   defineOp(app, { op: "shifts.open", method: "post", path: "/v1/shifts", tags: ["shifts"], request: { body: jsonBody(Mutation.extend({ outlet_id: z.uuid().optional(), station_id: z.uuid().nullable().optional(), name: untrusted(z.string().max(40).nullable().optional(), "name@shifts", "shift_name"), float_cents: AmountSchema, float_counts: z.record(z.string(), z.number().int().min(0)).nullable().optional() })) }, responses: { 201: jsonResponse(mutationResponse(ShiftSchema)), ...errorResponses } }, async (c) => {

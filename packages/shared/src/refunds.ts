@@ -123,7 +123,7 @@ function remainingOf(l: RefundableLine): Remaining {
  * payment's running refunded total, so repeated small refunds never pay out more
  * cash than the payment took.
  */
-export function quoteRefund(lines: readonly RefundableLine[], payments: readonly RefundablePayment[], request: RefundRequest, opts: { tenderSplit?: { payment_id: string; amount: Cents }[]; cashRoundingIncrement?: number | null; formatMoney?: (amount: Cents) => string } = {}): RefundQuote {
+export function quoteRefund(lines: readonly RefundableLine[], payments: readonly RefundablePayment[], request: RefundRequest, opts: { tenderSplit?: { payment_id: string; amount: Cents }[]; cashRoundingIncrement?: number | null; formatMoney?: (amount: Cents) => string; avoidCash?: boolean } = {}): RefundQuote {
   const fmt = opts.formatMoney ?? String;
   const byId = new Map(lines.map((l) => [l.line_id, l]));
   const out: RefundLineResult[] = [];
@@ -161,12 +161,13 @@ export function quoteRefund(lines: readonly RefundableLine[], payments: readonly
 
   const totals = { base: sumCents(out.map((x) => x.base)), discount: sumCents(out.map((x) => x.discount)), fee: sumCents(out.map((x) => x.fee)), tax: sumCents(out.map((x) => x.tax)), taxes: sumTaxes(out.map((x) => x.taxes)), total: sumCents(out.map((x) => x.total)) };
   // A whole-bill refund gives back each payment's tip as well; any other refund leaves tips alone.
-  const tipBack = (p: RefundablePayment) => (request.kind === "full" ? Math.max(0, (p.tip ?? 0) - (p.refunded_tip ?? 0)) : 0);
+  // With `avoidCash` (no drawer to pay cash out of), nothing goes back to a cash payment, its tip included.
+  const tipBack = (p: RefundablePayment) => (request.kind === "full" && !(opts.avoidCash && p.is_cash) ? Math.max(0, (p.tip ?? 0) - (p.refunded_tip ?? 0)) : 0);
   const tip = sumCents(payments.map(tipBack));
   if (totals.total <= 0 && tip === 0) throw new RefundError("nothing_to_refund", "Nothing left to refund on this bill");
 
   // Tenders.
-  const refundable = payments.map((p) => ({ ...p, remaining: p.amount - p.refunded }));
+  const refundable = payments.map((p) => ({ ...p, remaining: opts.avoidCash && p.is_cash ? 0 : p.amount - p.refunded }));
   let tenderAmounts: { payment_id: string; amount: Cents }[];
   if (opts.tenderSplit) {
     // One payment named twice is one amount against that payment, checked once against what it can still return.
@@ -176,7 +177,7 @@ export function quoteRefund(lines: readonly RefundableLine[], payments: readonly
     if (sumCents(tenderAmounts.map((t) => t.amount)) !== totals.total) throw new RefundError("tender_mismatch", `the amounts for each payment add up to ${fmt(sumCents(tenderAmounts.map((t) => t.amount)))}, but the refund is ${fmt(totals.total)}`, { tenders: sumCents(tenderAmounts.map((t) => t.amount)), refund: totals.total });
   } else {
     const pool = sumCents(refundable.map((p) => Math.max(0, p.remaining)));
-    if (pool < totals.total) throw new RefundError("exceeds_payment", `payments can return at most ${fmt(pool)}`, { refundable: pool });
+    if (pool < totals.total) throw new RefundError("exceeds_payment", opts.avoidCash ? `payments other than cash can return at most ${fmt(pool)}` : `payments can return at most ${fmt(pool)}`, { refundable: pool, ...(opts.avoidCash ? { avoid_cash: true } : {}) });
     const parts = allocateLargestRemainder(totals.total, refundable.map((p) => Math.max(0, p.remaining)));
     tenderAmounts = refundable.map((p, i) => ({ payment_id: p.payment_id, amount: parts[i]! })).filter((t) => t.amount > 0);
   }

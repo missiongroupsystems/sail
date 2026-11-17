@@ -191,6 +191,8 @@ export type Shift = {
   id: string;
   outlet_id: string;
   station_id: string | null;
+  /** The station's name (shifts.list joins it); null for the outlet's shared drawer. */
+  station_name?: string | null;
   name: string | null;
   status: "open" | "closed" | string;
   business_date: string;
@@ -206,6 +208,12 @@ export type Shift = {
   variance_reason: string | null;
   summary: ZReport | null;
 };
+/** "Station 2", "Evening · Station 2", or "Outlet shift" for the shared drawer: what a list of shifts calls each one. */
+export function shiftLabel(s: Pick<Shift, "name" | "station_id" | "station_name">): string {
+  const station = s.station_id ? (s.station_name ?? "Station shift") : null;
+  if (s.name) return station && s.station_name ? `${s.name} · ${station}` : s.name;
+  return station ?? "Outlet shift";
+}
 export type BusinessDayClose = { id: string; business_date: string; closed_at: string; report: ZReport };
 
 /** Query keys for the resources this phase adds. Invalidate by prefix after a mutation. */

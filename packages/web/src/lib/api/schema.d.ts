@@ -29289,6 +29289,8 @@ export interface operations {
                         payment_id: string;
                         amount: number;
                     }[];
+                    /** @description Give nothing back to cash payments (no drawer to pay cash out of): the refund goes to the other payments only. */
+                    avoid_cash?: boolean;
                 };
             };
         };
@@ -29453,6 +29455,13 @@ export interface operations {
                     reason: string;
                     reference?: string | null;
                     print?: boolean;
+                    /**
+                     * Format: uuid
+                     * @description The open shift whose drawer pays cash back, for a caller with no station (the back office). Optional when the outlet has one open shift.
+                     */
+                    shift_id?: string;
+                    /** @description Give nothing back to cash payments: the refund goes to the other payments only. */
+                    avoid_cash?: boolean;
                 };
             };
         };
