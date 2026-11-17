@@ -1,6 +1,6 @@
 import createClient, { type Middleware } from "openapi-fetch";
 import type { paths } from "./api/schema";
-import type { CompiledMenu, GuestSession, OrderView, ReceiptRead, RoundInput, RoundResult } from "./types";
+import type { CompiledMenu, GuestSession, OrderView, ReceiptRead, RoundInput, RoundLineInput, RoundQuote, RoundResult } from "./types";
 
 /** The register's address for the phone's browser (CORS is open; the guest token goes in the Bearer header). */
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080").replace(/\/+$/, "");
@@ -184,6 +184,12 @@ export async function getOrder(api: GuestApi): Promise<OrderView> {
 export async function submitRound(api: GuestApi, body: RoundInput, idempotencyKey: string): Promise<RoundResult> {
   const res = await api.POST("/v1/guest/rounds", { body, headers: { "idempotency-key": idempotencyKey } });
   return res.data!.data as unknown as RoundResult;
+}
+
+/** Prices lines before they are sent: each line's amount and their total, as the table's order will then show them. Writes nothing. */
+export async function quoteRound(api: GuestApi, lines: RoundLineInput[]): Promise<RoundQuote> {
+  const res = await api.POST("/v1/guest/rounds/quote", { body: { lines }, headers: { "idempotency-key": uuid() } });
+  return res.data!.data as RoundQuote;
 }
 
 /** Calls staff: one of the channel's requests, or `call_for_bill`. The register allows one per type per minute. */

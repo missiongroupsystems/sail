@@ -8,7 +8,6 @@ import { useStore } from "zustand";
 import { API_URL, ApiError, createGuestApi, createSession, getMenu, getOrder, submitRound, toApiError } from "@/lib/api";
 import { createBasketStore, type BasketItem } from "@/lib/basket";
 import { brandStyle } from "@/lib/brand";
-import { toRoundModifiers } from "@/lib/modifiers";
 import { QueryProvider, keys } from "@/lib/query";
 import { offendingKey, type SendError } from "@/lib/send-errors";
 import { showsPayPrompt } from "@/lib/status";
@@ -21,6 +20,7 @@ import { MenuView } from "./MenuView";
 import { LoadingMenu, Notice } from "./Notices";
 import { OurTableView } from "./OurTableView";
 import { ReviewView } from "./ReviewView";
+import { roundLines, useQuote } from "./useQuote";
 import { StatusView } from "./StatusView";
 
 type Phase = { kind: "loading" } | { kind: "invalid" } | { kind: "ended" } | { kind: "rotated" } | { kind: "unavailable"; error: ApiError } | { kind: "ready" };
@@ -88,10 +88,14 @@ function GuestAppInner({ token }: { token: string }) {
 
   const basketStore = useMemo(() => createBasketStore(token), [token]);
   const basket = useStore(basketStore);
+  const basketLines = useMemo(() => roundLines(basket.items), [basket.items]);
 
   // One client for the page; the token and the 401 handler are read on each request.
   const onUnauthenticatedRef = useRef<(details?: Record<string, unknown>) => void>(() => {});
   const api = useMemo(() => createGuestApi({ getToken: () => sessionRef.current?.guest_token ?? null, onUnauthenticated: (e) => onUnauthenticatedRef.current(e.details) }), []);
+
+  // The register's price for the basket, for the cart bar and the review (final review C-6).
+  const basketQuote = useQuote(api, session?.session_id ?? "", basketLines, Boolean(session));
 
   const applySession = useCallback(
     (s: GuestSession) => {
@@ -332,7 +336,7 @@ function GuestAppInner({ token }: { token: string }) {
         api,
         {
           round_id,
-          lines: basket.items.map((i) => ({ line_id: i.key, product_id: i.product_id, quantity: i.quantity, modifiers: toRoundModifiers(i.modifiers), notes: i.notes ?? undefined })),
+          lines: basketLines,
           ...(name ? { guest_name: name } : {}),
         },
         idempotency_key,
@@ -362,7 +366,7 @@ function GuestAppInner({ token }: { token: string }) {
     } finally {
       setSending(false);
     }
-  }, [session, menu, basket.items, basket.guestName, sending, basketStore, api, queryClient, applySession, navigate, menuQuery]);
+  }, [session, menu, basket.items, basketLines, basket.guestName, sending, basketStore, api, queryClient, applySession, navigate, menuQuery]);
 
   /* ---- Screens ---- */
   if (phase.kind === "invalid") return <Notice icon={QrCode} tone="warning" title="This code isn't valid." body="Ask a member of staff." />;
@@ -407,6 +411,7 @@ function GuestAppInner({ token }: { token: string }) {
             canOrder={canOrder}
             onCheckAgain={() => checkNow.current?.()}
             basketItems={basket.items}
+            basketQuote={basketQuote}
             orderView={orderView}
             onOpenItem={(productId) => openItem(productId, null)}
             onReview={() => navigate("review")}
@@ -417,7 +422,8 @@ function GuestAppInner({ token }: { token: string }) {
         ) : null}
         {view === "review" ? (
           <ReviewView
-            taxMode={orderView?.totals?.tax_mode ?? null}
+            tax={orderView?.tax ?? null}
+            quote={basketQuote}
             session={session}
             menu={menu}
             items={basket.items}
@@ -468,6 +474,8 @@ function GuestAppInner({ token }: { token: string }) {
             menu={menu}
             product={product}
             editing={editing}
+            api={api}
+            sessionId={session.session_id}
             groupError={sendError?.kind === "group" && editing && offendingKey(sendError, basket.items, menu) === editing.key ? sendError.error.message : null}
             onAdd={(item) => {
               basket.add(item);

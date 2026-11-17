@@ -6,7 +6,9 @@ import { Button as AriaButton, Input, SearchField } from "react-aria-components"
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BasketItem } from "@/lib/basket";
 import type { CompiledMenu, CompiledProduct, CompiledSection, GuestSession, OrderView } from "@/lib/types";
-import { billNote, showsPayPrompt } from "@/lib/status";
+import { showsPayPrompt } from "@/lib/status";
+import { priceNote } from "./priceNote";
+import type { Quote } from "./useQuote";
 import { BasketBar } from "./BasketBar";
 import { StaffBanner } from "./StaffBanner";
 
@@ -17,6 +19,8 @@ export type MenuViewProps = {
   /** The table is not open yet: check with the register now. */
   onCheckAgain?: () => void;
   basketItems: BasketItem[];
+  /** The register's price for the basket. */
+  basketQuote?: Quote;
   orderView: OrderView | null;
   onOpenItem: (productId: string) => void;
   onReview: () => void;
@@ -41,7 +45,7 @@ function guestOrderable(p: CompiledProduct | undefined): p is CompiledProduct {
 }
 
 /** The landing screen: outlet and brand with the table pill, one sticky bar (Call staff and the section chips), then the menu. */
-export function MenuView({ session, menu, canOrder, basketItems, orderView, onOpenItem, onReview, onCallStaff, onStatus, onOurTable, onCheckAgain }: MenuViewProps) {
+export function MenuView({ session, menu, canOrder, basketItems, basketQuote, orderView, onOpenItem, onReview, onCallStaff, onStatus, onOurTable, onCheckAgain }: MenuViewProps) {
   const { clock } = useLocale();
   const groups = useMemo<Group[]>(() => {
     const sections = [...menu.menu.sections].sort((a, b) => a.sort - b.sort);
@@ -244,12 +248,12 @@ export function MenuView({ session, menu, canOrder, basketItems, orderView, onOp
           </section>
         ))}
         <div className="mx-4 mt-8 flex flex-col gap-1 rounded-sheet bg-surface-2 px-4 py-3.5 text-[13.5px] leading-relaxed text-ink-2">
-          <p>{billNote(orderView?.totals?.tax_mode)}</p>
+          <p>{priceNote(orderView?.tax)}</p>
           {showsPayPrompt(orderView) ? <p>Pay at the counter or ask your server for the bill.</p> : null}
         </div>
       </main>
 
-      {canOrder && basketCount > 0 ? <BasketBar count={basketCount} onPress={onReview} /> : null}
+      {canOrder && basketCount > 0 ? <BasketBar count={basketCount} quote={basketQuote} onPress={onReview} /> : null}
     </>
   );
 }
