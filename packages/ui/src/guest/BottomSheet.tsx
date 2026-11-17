@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Button as AriaButton, Dialog as AriaDialog, Heading, Modal, ModalOverlay } from "react-aria-components";
 import { cx } from "../lib/cx";
 import { Icon } from "../components/Icon";
@@ -20,6 +20,50 @@ export type BottomSheetProps = {
   className?: string;
 };
 
+/** A closed sheet's history entry, about to be taken off; a sheet opening at once (or React re-running the effect) keeps it. */
+let leaving: { id: string; timer: ReturnType<typeof setTimeout> } | null = null;
+const entryId = () => (window.history.state as { sailSheet?: string } | null)?.sailSheet ?? null;
+
+/**
+ * Browser Back closes an open sheet and does nothing else (final review C-10): opening the sheet adds a history entry
+ * at the same address, Back takes it off and the sheet closes; closing the sheet any other way takes its entry off too,
+ * so Back afterwards goes where it went before.
+ */
+function useBackCloses(isOpen: boolean, onOpenChange: (isOpen: boolean) => void) {
+  const onChange = useRef(onOpenChange);
+  onChange.current = onOpenChange;
+  useEffect(() => {
+    if (!isOpen || typeof window === "undefined") return;
+    let id: string;
+    if (leaving && entryId() === leaving.id) {
+      clearTimeout(leaving.timer);
+      id = leaving.id;
+    } else {
+      id = Math.random().toString(36).slice(2);
+      window.history.pushState({ ...((window.history.state ?? {}) as Record<string, unknown>), sailSheet: id }, "");
+    }
+    leaving = null;
+    let popped = false;
+    const onPop = () => {
+      if (entryId() === id) return;
+      popped = true;
+      onChange.current(false);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      if (popped || entryId() !== id) return;
+      leaving = {
+        id,
+        timer: setTimeout(() => {
+          leaving = null;
+          if (entryId() === id) window.history.back();
+        }, 0),
+      };
+    };
+  }, [isOpen]);
+}
+
 /**
  * The guest sheet: slides up from the bottom of the phone with a grabber,
  * 24px top corners, a title that wraps, a 44px close control, a body that
@@ -27,6 +71,7 @@ export type BottomSheetProps = {
  * into the dialog on open and back to the trigger on close (section 10).
  */
 export function BottomSheet({ isOpen, onOpenChange, title, description, children, footer, isDismissable = true, className }: BottomSheetProps) {
+  useBackCloses(isOpen, onOpenChange);
   return (
     <ModalOverlay
       isOpen={isOpen}

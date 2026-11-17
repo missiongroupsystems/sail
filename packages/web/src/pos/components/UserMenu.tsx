@@ -40,7 +40,7 @@ export function UserMenu() {
 
   return (
     <MenuTrigger>
-      <Button variant="quiet" size="md" aria-label={`${staff.name}, ${ROLE_LABEL[staff.role] ?? staff.role}. Open user menu`} className="gap-1.5! pr-2! pl-3!">
+      <Button variant="quiet" size="md" aria-label={`${staff.name}, ${ROLE_LABEL[staff.role] ?? staff.role}. Open user menu`} className="min-h-12! gap-1.5! pr-2! pl-3!">
         <span className="flex flex-col items-end leading-tight">
           <span className="text-[14px] font-medium text-ink">{staff.name}</span>
           <span className="text-[12px] font-normal text-ink-3">{ROLE_LABEL[staff.role] ?? staff.role}</span>

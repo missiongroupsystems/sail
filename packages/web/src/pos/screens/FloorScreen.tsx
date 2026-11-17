@@ -14,7 +14,7 @@ import { useApplySnapshot, useFloor, useOpenServiceRequests, usePendingRounds } 
 import { useApi } from "../hooks/useApi";
 import { useNowActions } from "../hooks/useNowActions";
 import { useNow } from "../lib/device";
-import { formatElapsed } from "../lib/format";
+import { countItems, formatElapsed } from "../lib/format";
 import { useNavStore } from "../state/nav";
 import { useSoundStore, useUiStore } from "../state/ui";
 
@@ -140,9 +140,14 @@ export function FloorScreen() {
         id: `round:${r.id}`,
         at: new Date(r.submitted_at).getTime(),
         title: `Table ${r.table_name ?? "?"} · QR order`,
-        detail: `${r.lines.length} ${r.lines.length === 1 ? "item" : "items"} · ${clock(r.submitted_at)}${r.guest_name ? ` · ${r.guest_name}` : ""}`,
+        detail: `${countItems(r.lines)} · ${clock(r.submitted_at)}${r.guest_name ? ` · ${r.guest_name}` : ""}`,
         // The guest's kitchen note goes with its line, so whoever accepts the round reads it (live-test D-9).
-        lines: r.lines.slice(0, 4).map((l) => `${l.quantity} ${l.name}${l.modifiers.length ? ` · ${l.modifiers.join(", ")}` : ""}${l.notes ? ` · Note: ${l.notes}` : ""}`).concat(r.lines.length > 4 ? [`+${r.lines.length - 4} more`] : []).concat(r.notes ? [`Note: ${r.notes}`] : []),
+        // Every note is shown whole, under its line, even past the fourth line (final review C-11).
+        lines: [
+          ...r.lines.slice(0, 4).map((l) => ({ text: `${l.quantity} ${l.name}${l.modifiers.length ? ` · ${l.modifiers.join(", ")}` : ""}`, note: l.notes })),
+          ...(r.lines.length > 4 ? [{ text: `+${r.lines.length - 4} more`, note: r.lines.slice(4).filter((l) => l.notes).map((l) => `${l.name}: ${l.notes}`).join(" · ") || null }] : []),
+          ...(r.notes ? [{ text: "", note: r.notes }] : []),
+        ],
         actions: [
           { id: "accept", label: "Accept", variant: "primary", onPress: () => void nowActions.acceptRound(r.id), isDisabled: offline || busy !== null, isPending: busy === r.id },
           { id: "view", label: "View", onPress: () => openOrderScreen(r.order_id, "floor") },
@@ -276,7 +281,7 @@ export function FloorScreen() {
       >
         {seating ? <PaxPicker suggested={seating.seats} isPending={opening} onPick={(pax) => void seat(seating, pax)} onChoose={setPaxChoice} /> : null}
       </Sheet>
-      <RejectRoundSheet isOpen={Boolean(rejecting)} roundLabel={rejecting ? `Table ${rejecting.table_name ?? ""} · ${rejecting.lines.length} ${rejecting.lines.length === 1 ? "item" : "items"}` : null} onClose={() => setRejecting(null)} onReject={(reason) => (rejecting ? nowActions.rejectRound(rejecting.id, reason) : Promise.resolve(null))} />
+      <RejectRoundSheet isOpen={Boolean(rejecting)} roundLabel={rejecting ? `Table ${rejecting.table_name ?? ""} · ${countItems(rejecting.lines)}` : null} lines={rejecting?.lines} onClose={() => setRejecting(null)} onReject={(reason) => (rejecting ? nowActions.rejectRound(rejecting.id, reason) : Promise.resolve(null))} />
     </Frame>
   );
 }

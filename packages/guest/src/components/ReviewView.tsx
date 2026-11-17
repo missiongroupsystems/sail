@@ -6,8 +6,9 @@ import { useEffect, useRef, useState } from "react";
 import { Button as AriaButton, Input, Label, Text, TextField as AriaTextField } from "react-aria-components";
 import type { BasketItem } from "@/lib/basket";
 import { offendingKey, type SendError } from "@/lib/send-errors";
-import { billNote } from "@/lib/status";
-import type { CompiledMenu, GuestSession } from "@/lib/types";
+import type { CompiledMenu, GuestSession, GuestTax } from "@/lib/types";
+import { priceNote } from "./priceNote";
+import type { Quote } from "./useQuote";
 import { Dock, PageHeader } from "./Shell";
 import { StaffBanner } from "./StaffBanner";
 
@@ -29,8 +30,10 @@ export type ReviewViewProps = {
   onSend: () => void;
   onBack: () => void;
   onClearError: () => void;
-  /** The register's tax mode for the table's order, once there is one. */
-  taxMode?: string | null;
+  /** How the merchant taxes its prices, from the first scan. */
+  tax?: GuestTax | null;
+  /** The register's price for these items: each line's amount and the total. */
+  quote?: Quote;
 };
 
 /**
@@ -44,7 +47,7 @@ function maxQuantity(menu: CompiledMenu, productId: string): number {
   return cap != null ? Math.max(1, Math.min(50, cap)) : 50;
 }
 
-export function ReviewView({ session, menu, items, guestName, onGuestName, canOrder, sending, error, onEdit, onRemove, onQuantity, onSend, onBack, onClearError, taxMode }: ReviewViewProps) {
+export function ReviewView({ session, menu, items, guestName, onGuestName, canOrder, sending, error, onEdit, onRemove, onQuantity, onSend, onBack, onClearError, tax, quote }: ReviewViewProps) {
   // How many things go to the kitchen, as on the cart bar (a count, not a figure the register prices).
   const count = items.reduce((n, item) => n + item.quantity, 0);
   const badKey = offendingKey(error, items, menu);
@@ -128,8 +131,14 @@ export function ReviewView({ session, menu, items, guestName, onGuestName, canOr
                       {/* A pasted link or a long unbroken run wraps instead of widening the page past the send button. */}
                       {item.notes ? <p className="mt-0.5 text-[14px] leading-snug text-ink-2 italic wrap-anywhere">Note: {item.notes}</p> : null}
                     </AriaButton>
-                    <p className="shrink-0 text-right text-[14px] whitespace-nowrap text-ink-2">
-                      <Money cents={item.unit_price} className="text-[15.5px] font-medium text-ink" /> each
+                    {/* The line's amount as the register prices it; until it answers, the menu price each. */}
+                    <p className="flex shrink-0 flex-col items-end text-right text-[14px] whitespace-nowrap text-ink-2">
+                      {quote?.amountOf(item.key) != null ? <Money cents={quote.amountOf(item.key)!} pending={quote.updating} className="text-[15.5px] font-medium text-ink" /> : null}
+                      {quote?.amountOf(item.key) == null ? (
+                        <span>
+                          <Money cents={item.unit_price} className="text-[14px] text-ink-2" /> each
+                        </span>
+                      ) : null}
                     </p>
                   </div>
                   {goneKeys.has(item.key) ? (
@@ -162,6 +171,14 @@ export function ReviewView({ session, menu, items, guestName, onGuestName, canOr
           </ul>
         )}
 
+        {items.length > 0 && quote?.quote ? (
+          <div className="-mt-3 flex items-baseline justify-between gap-4 border-t border-rule pt-4">
+            {/* The items as the register prices them; service charge, discounts and any tax added come on the table's bill. */}
+            <p className="font-display text-[18px] font-semibold text-ink">Subtotal</p>
+            <Money cents={quote.quote.total} size="heading" pending={quote.updating} className="font-display text-[18px] font-semibold text-ink" />
+          </div>
+        ) : null}
+
         {items.length > 0 ? (
           <>
             <BrandButton variant="secondary" block onPress={onBack} isDisabled={sending} className="-mt-3">
@@ -179,9 +196,9 @@ export function ReviewView({ session, menu, items, guestName, onGuestName, canOr
               <Text slot="description" className="sr-only">
                 So staff know whose order it is
               </Text>
-              <Input placeholder="So staff know whose order it is" className="h-12 w-full rounded-sheet border border-transparent bg-surface-2 px-4 text-[16px] text-ink outline-none placeholder:text-ink-3 focus:border-rule-strong focus:bg-surface disabled:text-ink-disabled" />
+              <Input placeholder="So staff know whose order it is" className="h-12 w-full scroll-mb-40 rounded-sheet border border-transparent bg-surface-2 px-4 text-[16px] text-ink outline-none placeholder:text-ink-3 focus:border-rule-strong focus:bg-surface disabled:text-ink-disabled" />
             </AriaTextField>
-            <p className="text-[13.5px] leading-relaxed text-ink-3">{billNote(taxMode)}</p>
+            <p className="text-[13.5px] leading-relaxed text-ink-3">{priceNote(tax)}</p>
           </>
         ) : null}
       </main>

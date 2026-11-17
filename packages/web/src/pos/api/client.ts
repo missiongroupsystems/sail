@@ -10,8 +10,8 @@ export type PosApiOptions = {
   baseUrl?: string;
   /** Read on every request, so the same client follows the station token, then each PIN session. */
   getToken: () => string | null;
-  /** The register rejected the token (401). The POS locks or re-pairs; the error still propagates. */
-  onUnauthenticated?: () => void;
+  /** The register rejected the token (401), with its answer. The POS locks or re-pairs; the error still propagates. */
+  onUnauthenticated?: (response: Response) => void;
   timeoutMs?: number;
 };
 
@@ -31,7 +31,7 @@ export function createPosApi({ baseUrl = POS_API_URL, getToken, onUnauthenticate
       return request;
     },
     onResponse({ response }) {
-      if (response.status === 401) onUnauthenticated?.();
+      if (response.status === 401) onUnauthenticated?.(response.clone());
       return response;
     },
   });

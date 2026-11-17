@@ -34,10 +34,21 @@ export function ReopenSheet({ isOpen, onClose, onReopen, payments = [] }: { isOp
 }
 
 /** Reject a QR order with one tap on a reason. The guest sees the reason. */
-export function RejectRoundSheet({ roundLabel, isOpen, onClose, onReject }: { roundLabel: string | null; isOpen: boolean; onClose: () => void; onReject: (reason: string) => Promise<unknown> }) {
+export function RejectRoundSheet({ roundLabel, lines, isOpen, onClose, onReject }: { roundLabel: string | null; lines?: { id: string; name: string; quantity: number; modifiers: string[] }[]; isOpen: boolean; onClose: () => void; onReject: (reason: string) => Promise<unknown> }) {
   const [busy, setBusy] = useState(false);
   return (
     <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Reject QR order" description={roundLabel ? `${roundLabel} · the guest is told why` : "The guest is told why"} isDismissable={!busy}>
+      {/* What is being turned down, so nobody rejects the wrong round (final review C Low). */}
+      {lines?.length ? (
+        <ul aria-label="Items in this order" className="mb-4 flex flex-col gap-1 rounded-tile bg-surface-2 px-4 py-3 text-body text-ink">
+          {lines.map((l) => (
+            <li key={l.id} className="break-words">
+              <span className="tabular font-medium">{l.quantity}</span> {l.name}
+              {l.modifiers.length ? <span className="text-ink-2"> · {l.modifiers.join(", ")}</span> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <ReasonPicker
         reasons={REJECT_ROUND_REASONS.map((r) => ({ id: r, name: r }))}
         isDisabled={busy}

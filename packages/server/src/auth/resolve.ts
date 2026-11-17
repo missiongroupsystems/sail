@@ -27,7 +27,7 @@ export async function resolvePrincipal(token: string, t: RequestTx, opts: { acti
     // (resolve.ts would otherwise see the old hash, and the session would start after the new pairing's time).
     const [st] = await t.db.select().from(stations).where(eq(stations.id, claims.station_id!)).limit(1).for("share");
     // Pairing again replaces the stored hash, so an older token (lost or stolen iPad) stops working.
-    if (!st || st.archivedAt || !st.tokenHash || st.tokenHash !== sha256(token)) throw new AppError("unauthenticated", "This station is no longer paired", { remedy: "Pair the iPad again from the back office." });
+    if (!st || st.archivedAt || !st.tokenHash || st.tokenHash !== sha256(token)) throw new AppError("unauthenticated", "This station is no longer paired", { remedy: "Pair the iPad again from the back office.", details: { reason: "station_unpaired" } });
     return { type: "station", id: st.id, merchantId: st.merchantId, outletId: st.outletId, stationId: st.id };
   }
 
@@ -35,13 +35,16 @@ export async function resolvePrincipal(token: string, t: RequestTx, opts: { acti
     const claims = await verifySailToken(token, "pin");
     const [found] = await t.db.select({ sess: staffSessions, station: { archivedAt: stations.archivedAt, tokenHash: stations.tokenHash, pairedAt: stations.pairedAt } }).from(staffSessions).innerJoin(stations, eq(stations.id, staffSessions.stationId)).where(eq(staffSessions.id, claims.session_id!)).limit(1);
     const sess = found?.sess;
-    if (!sess || sess.endedAt) throw new AppError("unauthenticated", "Your PIN session has ended", { remedy: "Sign in again with your PIN." });
+    if (!sess) throw new AppError("unauthenticated", "Your PIN session has ended", { remedy: "Sign in again with your PIN." });
     // A session lives only as long as the station's pairing it started under: archiving or pairing another device ends it.
+    // That is said as the pairing ending, even once the session is marked ended, so the iPad goes to pairing rather than
+    // to a PIN pad that cannot work (final review B-P15).
     const st = found.station;
     if (st.archivedAt || !st.tokenHash || (st.pairedAt && sess.startedAt < st.pairedAt)) {
-      await t.db.update(staffSessions).set({ endedAt: new Date() }).where(eq(staffSessions.id, sess.id));
-      throw new AppError("unauthenticated", "This station is no longer paired", { remedy: "Pair the iPad again from the back office." });
+      if (!sess.endedAt) await t.db.update(staffSessions).set({ endedAt: new Date() }).where(eq(staffSessions.id, sess.id));
+      throw new AppError("unauthenticated", "This station is no longer paired", { remedy: "Pair the iPad again from the back office.", details: { reason: "station_unpaired" } });
     }
+    if (sess.endedAt) throw new AppError("unauthenticated", "Your PIN session has ended", { remedy: "Sign in again with your PIN." });
     const idle = (Date.now() - sess.lastSeenAt.getTime()) / 1000;
     if (idle > config().PIN_SESSION_IDLE_SECONDS) {
       await t.db.update(staffSessions).set({ endedAt: new Date() }).where(eq(staffSessions.id, sess.id));

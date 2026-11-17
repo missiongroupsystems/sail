@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { registerOperations, type OperationSpec } from "@sail/shared";
-import { db, settleInvariants, tx, withTransaction, type RequestTx } from "../db/client.js";
+import { price, registerOperations, type OperationSpec, type OrderType } from "@sail/shared";
+import { db, markDryRun, settleInvariants, tx, withTransaction, type RequestTx } from "../db/client.js";
 import { channelLinks, guestRounds, guestSessions, orderLines, orders, outlets, printers, serviceRequests, tableQrTokens, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
@@ -15,7 +15,7 @@ import { applyRls } from "../middleware/pipeline.js";
 import { serveStream } from "../sse/stream.js";
 import { compileMenu } from "../services/menu.js";
 import { buildLines, type LineInput } from "../services/lines.js";
-import { bumpVersion, loadSnapshot, lockOrder, nextOrderNo, orderClosed, paidTotal, registerOrderClosedHook, repriceOrder } from "../services/orders.js";
+import { bumpVersion, loadSnapshot, lockOrder, nextOrderNo, orderClosed, paidTotal, pricingLineOf, registerOrderClosedHook, repriceOrder } from "../services/orders.js";
 import { orderTaxSettings } from "../services/tax.js";
 import { createKitchenJobs, insertJob } from "../services/printing.js";
 import { releaseDailyCap } from "./catalogue.js";
@@ -31,6 +31,7 @@ registerOperations({
   "guest_sessions.create": op({ op: "guest_sessions.create", summary: "Start a guest session from a table QR code", description: "Exchanges the table token for a short-lived guest token scoped to the table and its open order. Rate-limited per device and per table. Ordering is possible only while the table has an open order, unless the channel allows opening on first scan.", tier: "T0", principals: [], mcp: { expose: false, toolsets: [] } }),
   "guest.order": op({ op: "guest.order", summary: "What the table has ordered", description: "The table's lines (menu prices only, no fees or totals), round statuses, the guest's requests, and whether ordering is possible (`can_order`). A session started before the table was seated is bound to the table's order here, so no new session is needed.", tier: "T0" }),
   "rounds.submit": op({ op: "rounds.submit", summary: "Send a round to the table's order", description: "Lines in the same shape as lines.add, validated against the channel menu, availability and caps. With hold orders on, the round waits for staff acceptance. With it off, it fires and prints straight away from the seating's first phone and from a phone staff have accepted a round from; another phone's round waits for staff acceptance first. Never takes payment.", emits: ["round.submitted", "line.added", "order.repriced", "order.fired"] }),
+  "rounds.quote": op({ op: "rounds.quote", summary: "Price a round before it is sent", description: "Prices the given lines (the same shape as rounds.submit) against the channel menu as the register would: each line's amount (menu price and choices, before discounts) and the round's total of those amounts, which are the amounts the table's order then shows for them. Pure: writes nothing and reserves no daily cap.", tier: "T0" }),
   "service_requests.create": op({ op: "service_requests.create", summary: "Call staff", description: "One of the channel's configured requests or `call_for_bill`, which also marks the table as bill requested. Rate-limited.", emits: ["service_request.created", "order.bill_requested"] }),
   "guest.stream": op({ op: "guest.stream", summary: "Guest live-update stream (SSE)", description: "Signals changes to the table's order (round accepted, order ready). Poll guest.order when there is no order yet.", tier: "T0", mcp: { expose: false, toolsets: [] } }),
   "rounds.list": op({ op: "rounds.list", summary: "QR rounds of an outlet", description: "Pending rounds waiting for acceptance, and recent decided ones.", tier: "T0", minRole: "server", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read"] } }),
@@ -165,6 +166,37 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     await tx()`select set_config('app.current_order', ${result.orderId}, true)`;
     const view = await guestOrderView({ ...p, orderId: result.orderId });
     return c.json({ data: { round_id: b.round_id, status: result.hold ? "pending" : "accepted", order_opened: result.openedNow, ...view } }, 201);
+  });
+
+  defineOp(app, { op: "rounds.quote", method: "post", path: "/v1/guest/rounds/quote", tags: ["guest"], request: { body: jsonBody(z.object({ lines: z.array(LineInputSchema).min(1).max(30) })) }, responses: { 200: jsonResponse(dataResponse(z.object({ lines: z.array(z.object({ line_id: z.string(), quantity: z.number().int(), amount: z.number().int() })), total: z.number().int() }))), ...errorResponses } }, async (c) => {
+    const p = guestOnly(c.get("principal"));
+    const b = c.req.valid("json");
+    // A phone prices its basket as it changes, two a second at most; the hit is kept although the quote rolls back.
+    await enforceLimit(p.merchantId, `quote:sess:${p.sessionId}`, RATE.quotesPerSession, "price checks from this phone");
+    const [link] = await db().select().from(channelLinks).where(eq(channelLinks.id, p.channelLinkId)).limit(1);
+    if (!link?.enabled) throw new AppError("unavailable", "Ordering from your phone is switched off", { remedy: "Please order with a member of staff." });
+    const menu = await compileMenu(link.id, new Date());
+    const bd = await businessDayInputs(p.merchantId, p.outletId);
+    const today = businessDateFor(new Date(), bd.cutoff, bd.timeZone);
+    const priced = await asSystem(async () => {
+      // A table the POS opened prices at its own order type, as the send would.
+      const orderId = await openOrderIdForTable(p.tableId);
+      const [order] = orderId ? await db().select({ orderType: orders.orderType }).from(orders).where(eq(orders.id, orderId)).limit(1) : [];
+      const orderType = (order?.orderType ?? "dine_in") as OrderType;
+      const built = await buildLines(menu, b.lines as LineInput[], { orderType, outletId: p.outletId, today, source: "guest", addedBy: null, addedByName: null, allowOpenPrice: false, startSort: 0 });
+      const tax = await orderTaxSettings(p.merchantId, p.outletId);
+      // The line amounts are the base the register stores on each line (menu price and choices, before any rule), so
+      // no rule is applied here: what this returns is what "Our table" shows for the same lines once they are sent.
+      return price(
+        { order_type: orderType, channel: "scan_to_order", outlet_id: p.outletId, brand_id: link.brandId, customer_group_ids: [], manual_applications: [], lines: built.map((l) => pricingLineOf({ id: l.id!, productId: l.productId, categoryId: l.categoryId ?? null, parentCategoryId: l.parentCategoryId ?? null, tags: l.tags ?? [], hasDeposit: l.hasDeposit ?? false, taxClassId: l.taxClassId, quantity: l.quantity, basePrice: l.basePrice, pricesByOrderType: l.pricesByOrderType ?? {}, openPrice: l.openPrice ?? null, modifiers: l.modifiers ?? [], name: l.name })) },
+        [],
+        { tax_mode: tax.taxMode, tax_rounding: tax.taxRounding, tax_rates: tax.taxRates, now: new Date().toISOString(), frozen: null },
+      );
+    });
+    // Building the lines checked the day's caps the way a send would; nothing of that is kept.
+    markDryRun();
+    c.set("dryRun", true);
+    return c.json({ data: { lines: priced.lines.map((l) => ({ line_id: l.line_id, quantity: l.quantity, amount: l.base_amount })), total: priced.totals.subtotal } }, 200);
   });
 
   defineOp(app, { op: "service_requests.create", method: "post", path: "/v1/guest/requests", tags: ["guest"], request: { body: jsonBody(z.object({ type: z.string().min(1).max(40), guest_name: untrusted(z.string().max(40).optional(), "guest_name", "added_by", "opened_by") })) }, responses: { 201: jsonResponse(dataResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {

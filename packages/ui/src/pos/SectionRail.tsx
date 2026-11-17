@@ -27,15 +27,17 @@ const item =
 export function SectionRail({ items, selectedId, onSelect, folder, footer, className }: SectionRailProps) {
   return (
     <nav aria-label="Menu sections" className={cx("flex h-full w-[140px] shrink-0 flex-col gap-1 py-2 pr-2", className)}>
+      {/* Inside a folder, the folder is what the grid shows: its row is the raised one, its whole name wraps, and the
+          chevron takes it back (round 8, 2). */}
       {folder ? (
-        <AriaButton onPress={folder.onBack} className={cx(item, "gap-1 text-ink-2")} aria-label={`Back from ${folder.label}`}>
-          <Icon icon={ChevronLeft} size={18} />
-          <span className="truncate">{folder.label}</span>
+        <AriaButton onPress={folder.onBack} aria-current="page" className={cx(item, "gap-1 bg-surface py-3 font-medium text-ink shadow-segment")} aria-label={`Back from ${folder.label}`}>
+          <Icon icon={ChevronLeft} size={18} className="shrink-0" />
+          <span className="min-w-0 leading-tight break-words">{folder.label}</span>
         </AriaButton>
       ) : null}
       <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
         {items.map((it) => {
-          const selected = it.id === selectedId;
+          const selected = !folder && it.id === selectedId;
           return (
             <AriaButton
               key={it.id}

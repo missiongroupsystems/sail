@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, Money, Pill, Sheet, Skeleton, useLocale, type PillTone } from "@sail/ui";
-import { Check, ChefHat, Circle, CircleX, Flame, Truck, type LucideIcon } from "lucide-react";
+import { Check, ChefHat, Circle, CircleX, Flame, Receipt, Truck, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { GuestRound, SnapshotLine } from "../api/types";
 import { Catalogue } from "../components/Catalogue";
@@ -20,7 +20,7 @@ import { ReprintSheet } from "../components/ReprintSheet";
 import { useLateJobs, useManualRules, useOrder, useOrderPrintJobs, usePendingRounds, useReadyLineIds } from "../hooks/queries";
 import { useOrderActions } from "../hooks/useOrderActions";
 import { useNow } from "../lib/device";
-import { formatElapsed, ORDER_TYPE_LABEL } from "../lib/format";
+import { countItems, formatElapsed, ORDER_TYPE_LABEL } from "../lib/format";
 import { useNavStore } from "../state/nav";
 import { useUiStore } from "../state/ui";
 
@@ -88,7 +88,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
         meta,
         actions: snap ? (
           <div className="flex items-center gap-2">
-            <OrderStatusPill status={snap.status} />
+            <OrderStatusPill status={snap.status} billAsked={snap.bill_requested_at != null} />
             <OrderMenu order={snap} actions={actions} onOpen={(k) => setSheet(k === "refund" ? { kind: "refund" } : k === "reopen" ? { kind: "reopen" } : { kind: "reprint", round: null })} />
           </div>
         ) : null,
@@ -173,7 +173,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
         {snap && receiptCheck ? <ReceiptChooser order={snap} check={receiptCheck} actions={actions} caption={`Paid · ${receiptCheck.label}`} amount={receiptCheck.paid_total} sub={receiptCheck.charged_total !== receiptCheck.paid_total ? { main: null, minor: [receiptCheck.tip_total ? `Tip ${money(receiptCheck.tip_total)}` : null, receiptCheck.rounding_total ? `Cash rounding ${money(receiptCheck.rounding_total)}` : null, `Charged ${money(receiptCheck.charged_total)}`].filter(Boolean).join(" · ") } : null} autoReturnMs={0} onDone={() => setSheet(null)} doneLabel="Done" /> : null}
       </Sheet>
       <ReopenSheet isOpen={sheet?.kind === "reopen"} onClose={() => setSheet(null)} onReopen={(reason) => actions.reopen(reason)} payments={(order.data?.checks ?? []).flatMap((c) => c.payments.filter((p) => p.status === "recorded").map((p) => `${p.tender} ${money(p.amount)}`))} />
-      <RejectRoundSheet isOpen={sheet?.kind === "reject"} roundLabel={sheet?.kind === "reject" ? `${sheet.round.lines.length} ${sheet.round.lines.length === 1 ? "item" : "items"}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null} onClose={() => setSheet(null)} onReject={(reason) => (sheet?.kind === "reject" ? actions.rejectRound(sheet.round.id, reason) : Promise.resolve(null))} />
+      <RejectRoundSheet isOpen={sheet?.kind === "reject"} roundLabel={sheet?.kind === "reject" ? `${countItems(sheet.round.lines)}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null} lines={sheet?.kind === "reject" ? sheet.round.lines : undefined} onClose={() => setSheet(null)} onReject={(reason) => (sheet?.kind === "reject" ? actions.rejectRound(sheet.round.id, reason) : Promise.resolve(null))} />
     </Frame>
   );
 }
@@ -188,9 +188,12 @@ const STATUS_PILL: Record<string, { label: string; tone: PillTone; icon: LucideI
   cancelled: { label: "Cancelled", tone: "alert", icon: CircleX },
 };
 
-/** The order's status in the header: "Open", "Sent", "Completed". */
-function OrderStatusPill({ status }: { status: string }) {
-  const p = STATUS_PILL[status];
+/** The floor legend's own words and colour (final review C Low: the header said "Sent" beside a "Bill asked" tile). */
+const BILL_ASKED = { label: "Bill asked", tone: "bill" as PillTone, icon: Receipt };
+
+/** The order's status in the header: "Open", "Sent", "Completed"; "Bill asked" as on the floor's tile once the bill is asked for. */
+function OrderStatusPill({ status, billAsked }: { status: string; billAsked?: boolean }) {
+  const p = billAsked && ["open", "fired", "ready"].includes(status) ? BILL_ASKED : STATUS_PILL[status];
   return p ? (
     <Pill tone={p.tone} icon={p.icon}>
       {p.label}

@@ -120,14 +120,14 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
       footer={
         removing ? (
           <>
-            <span className="mr-auto text-body text-ink-2">{offline ? "Offline" : sent ? `Sent · round ${line.fire_round}. Tap a reason to void it.` : "Not sent yet. Tap a reason to remove it."}</span>
+            <span className="mr-auto text-body text-ink-2">{sent ? `Sent · round ${line.fire_round}. Tap a reason to void it.` : "Not sent yet. Tap a reason to remove it."}</span>
             <Button variant="quiet" size="lg" onPress={() => setRemoving(false)} isDisabled={busy} className={GREY_PILL}>
               Keep the line
             </Button>
           </>
         ) : (
           <>
-            <span className="mr-auto text-body text-ink-2">{offline ? "Offline" : sent ? `Sent · round ${line.fire_round}.` : line.status === "held" ? "Held." : "Not sent yet."}</span>
+            <span className="mr-auto text-body text-ink-2">{sent ? `Sent · round ${line.fire_round}.` : line.status === "held" ? "Held." : "Not sent yet."}</span>
             {!offline ? (
               <Button variant="quiet" size="lg" isDisabled={busy} onPress={() => setRemoving(true)} className={GREY_PILL + (sent && !["manager", "finance", "admin"].includes(actions.role ?? "") ? " flex-col gap-0! py-1" : "")}>
                 <span>{sent ? "Void item" : "Remove item"}</span>
