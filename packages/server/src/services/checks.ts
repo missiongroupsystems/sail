@@ -115,7 +115,8 @@ export async function syncAllocations(orderId: string, opts: { sharesByLine?: Ma
       const weight = (r: TaxRow, k: string) => {
         const l = byId.get(r.lineId)!;
         const row = r as (typeof rows)[number];
-        const drift = row.base + row.discount - ((l.base + l.discount) * r.shareNum) / r.shareDen;
+        const fee = values.find((v) => v.checkId === chks[r.check]!.id && v.orderLineId === r.lineId)?.fee ?? 0;
+        const drift = row.base + row.discount + fee - ((l.base + l.discount + l.fee) * r.shareNum) / r.shareDen;
         const combined = l.taxes.reduce((n, t) => n + t.bps, 0);
         return ((l.taxables[k] ?? 0) * r.shareNum) / r.shareDen + (taxAdds ? drift : (drift * 10_000) / (10_000 + combined));
       };
@@ -253,7 +254,7 @@ export async function checkSnapshots(orderId: string): Promise<CheckSnapshot[]> 
   const recorded = (checkId: string) => pays.filter((p) => p.checkId === checkId && p.status === "recorded");
   // The same note the printed bill and the invoice carry, so the POS Bill screen says it too (review 2, N2).
   const [order] = chks.length > 1 ? await db().select({ taxRounding: orders.taxRounding, taxMode: orders.taxMode }).from(orders).where(eq(orders.id, orderId)).limit(1) : [];
-  const noteLines = order?.taxRounding === "per_rate" ? await db().select({ id: orderLines.id, taxes: orderLines.taxes, netAmount: orderLines.netAmount, baseAmount: orderLines.baseAmount, discountAmount: orderLines.discountAmount }).from(orderLines).where(eq(orderLines.orderId, orderId)) : [];
+  const noteLines = order?.taxRounding === "per_rate" ? await db().select({ id: orderLines.id, taxes: orderLines.taxes, netAmount: orderLines.netAmount, baseAmount: orderLines.baseAmount, discountAmount: orderLines.discountAmount, feeAmount: orderLines.feeAmount }).from(orderLines).where(eq(orderLines.orderId, orderId)) : [];
   const taxNote = (c: (typeof chks)[number]) => (order?.taxRounding === "per_rate" ? (splitTaxNote(c.taxes, allocs.filter((a) => a.checkId === c.id), noteLines, order.taxMode) ?? null) : null);
   return chks.map((c) => ({
     id: c.id,
@@ -341,7 +342,7 @@ export async function billDocumentFor(checkId: string, kind: "prebill" | "receip
  * own taxable amount is its cents: its share of each line's, plus what its base and discount are over that share, as in
  * `syncAllocations`, so the note is on a bill exactly when a rate differs from that bill's own rounding (review 4, T5).
  */
-function splitTaxNote(taxes: TaxAmount[], allocs: (typeof checkAllocations.$inferSelect)[], lines: Pick<typeof orderLines.$inferSelect, "id" | "taxes" | "netAmount" | "baseAmount" | "discountAmount">[], taxMode: string): string | undefined {
+function splitTaxNote(taxes: TaxAmount[], allocs: (typeof checkAllocations.$inferSelect)[], lines: Pick<typeof orderLines.$inferSelect, "id" | "taxes" | "netAmount" | "baseAmount" | "discountAmount" | "feeAmount">[], taxMode: string): string | undefined {
   for (const t of taxes) {
     // Exclusive: the rate on the bill's taxable amount. Inclusive: the component's part of the bill's tax-inclusive
     // amount at the line's combined rate, as the engine takes it.
@@ -352,7 +353,7 @@ function splitTaxNote(taxes: TaxAmount[], allocs: (typeof checkAllocations.$infe
       const b = l?.taxes.find((x) => x.name === t.name && x.bps === t.bps);
       if (!l || !b) continue;
       if (taxMode === "inclusive") combined = l.taxes.reduce((n, x) => n + x.bps, 0);
-      const drift = a.base + a.discount - ((l.baseAmount + l.discountAmount) * a.shareNum) / a.shareDen;
+      const drift = a.base + a.discount + a.fee - ((l.baseAmount + l.discountAmount + l.feeAmount) * a.shareNum) / a.shareDen;
       base += ((taxMode === "inclusive" ? l.netAmount : b.taxable) * a.shareNum) / a.shareDen + drift;
     }
     const own = taxMode === "inclusive" ? Math.floor((Math.round(base) * t.bps) / (10_000 + combined) + 0.5) : Math.floor((Math.round(base) * t.bps) / 10_000 + 0.5);

@@ -158,7 +158,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
   const index = steps.findIndex((s) => s.id === step);
   const next = steps[index + 1]?.id;
   const prev = steps[index - 1]?.id;
-  const canContinue = step === "bill" ? checkId !== null : step === "what" ? request !== null && !(what === "amount" && quote.isError) && !noDrawerBlocks : step === "why" ? reason.trim().length > 0 : step === "drawer" ? drawer !== null : false;
+  const canContinue = step === "bill" ? checkId !== null && !(noDrawer && !cardPaid) : step === "what" ? request !== null && !(what === "amount" && quote.isError) && !noDrawerBlocks : step === "why" ? reason.trim().length > 0 : step === "drawer" ? drawer !== null : false;
 
   const lineName = (id: string) => lineById.get(id)?.name ?? `Line ${id.slice(0, 8)}`;
 
@@ -226,6 +226,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
         <div className="flex flex-col gap-6">
           <Steps steps={steps} current={step} onStepPress={(id) => setStep(id as StepId)} />
 
+          {step === "bill" && noDrawer ? <p className="mb-3 text-ink-2">{noDrawerText}</p> : null}
           {step === "bill" ? (
             <ul className="flex flex-col gap-2" aria-label="Bills">
               {candidates.map((c) => (

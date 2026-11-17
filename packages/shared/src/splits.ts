@@ -229,7 +229,7 @@ export function rebalanceBillTax(rows: TaxRow[], taxables: Record<string, Record
 }
 
 /** One bill's allocation of one line with its base, as `balanceBillTotals` moves it. */
-export type BaseRow = TaxRow & { base: Cents };
+export type BaseRow = TaxRow & { base: Cents; discount?: Cents };
 
 /**
  * Even out split bills' totals (review 4, T4). Each line's cents are allocated on their own, and the per-rate tax
@@ -260,7 +260,8 @@ export function balanceBillTotals(rows: BaseRow[]): number {
     outer: for (const from of byDev) {
       for (const to of [...byDev].reverse()) {
         if (dev.get(from)! - dev.get(to)! <= 1 + eps) break;
-        const candidates = rows.filter((r) => r.check === from && r.base > 0 && rows.some((x) => x.check === to && x.lineId === r.lineId));
+        // The giver keeps base + discount at zero or above, so no allocation's amount turns negative.
+        const candidates = rows.filter((r) => r.check === from && r.base > 0 && r.base + (r.discount ?? 0) > 0 && rows.some((x) => x.check === to && x.lineId === r.lineId));
         if (!candidates.length) continue;
         const pair = (r: BaseRow) => rows.find((x) => x.check === to && x.lineId === r.lineId)!;
         const within = (r: BaseRow) => r.base - 1 - exact(r, lineBase) > -1 + eps && pair(r).base + 1 - exact(pair(r), lineBase) < 1 - eps;

@@ -116,7 +116,7 @@ export function tenderRows(t: ReportTender): ReportRow[] {
     ...(t.rounding ? [{ key: `${k}:rounding`, label: "Cash rounding", amount: t.rounding, indent: true, signed: true }] : []),
     ...(t.refunds ? [{ key: `${k}:refunds`, label: "Refunded", amount: -t.refunds, indent: true, signed: true }] : []),
   ];
-  const net = t.net !== undefined && extras.length ? [{ key: `${k}:net`, label: t.terminal ? `${t.tender} net, as the terminal shows` : `${t.tender} net`, amount: t.net, strong: true }] : [];
+  const net = t.net !== undefined && extras.length ? [{ key: `${k}:net`, label: (t.terminal ?? !t.is_cash) ? `${t.tender} net, as the terminal shows` : `${t.tender} net`, amount: t.net, strong: true }] : [];
   return [{ key: k, label: t.count ? `${t.tender} (${t.count})` : t.tender, amount: t.amount, strong: !extras.length }, ...extras, ...net];
 }
 
@@ -130,7 +130,8 @@ export function reversedRows(tenders: readonly ReportTender[]): ReportRow[] {
 
 /** Whether a card terminal's tender shows its own net row, so the hint to compare it with the terminal has a line to point at. */
 export function showsCardNet(tenders: readonly ReportTender[]): boolean {
-  return tenders.some((t) => t.terminal && tenderRows(t).some((r) => r.key === `${t.tender_type_id}:net`));
+  // A report stored before `terminal` existed keeps its old wording: every card net was compared with a terminal.
+  return tenders.some((t) => (t.terminal ?? !t.is_cash) && tenderRows(t).some((r) => r.key === `${t.tender_type_id}:net`));
 }
 
 /** The Z-report's `reconciliation` block, once the register splits what is held on open orders. */

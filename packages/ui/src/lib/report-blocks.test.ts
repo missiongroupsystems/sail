@@ -94,7 +94,7 @@ describe("tax inside prices (review 3, R5)", () => {
     expect(showsCardNet([{ tender_type_id: "c", tender: "Card (terminal)", is_cash: false, terminal: true, count: 2, amount: 4713, rounding: 0, tips: 0, refunds: 0, net: 4713 }])).toBe(false);
     expect(showsCardNet([{ tender_type_id: "c", tender: "Card (terminal)", is_cash: false, terminal: true, count: 2, amount: 4713, rounding: 0, tips: 200, refunds: 0, net: 4913 }])).toBe(true);
     // A keyed card has a net, but no integrated terminal to compare it with.
-    expect(showsCardNet([{ tender_type_id: "k", tender: "Card", is_cash: false, count: 2, amount: 4713, rounding: 0, tips: 200, refunds: 0, net: 4913 }])).toBe(false);
+    expect(showsCardNet([{ tender_type_id: "k", tender: "Card", is_cash: false, terminal: false, count: 2, amount: 4713, rounding: 0, tips: 200, refunds: 0, net: 4913 }])).toBe(false);
   });
 });
 
@@ -160,7 +160,7 @@ describe("the Sales and Z-report blocks read top to bottom as sums (review 4, T3
 
 describe("tender rows (review 4, T3 / A P4)", () => {
   const terminal = { tender_type_id: "t", tender: "Card (terminal)", is_cash: false, terminal: true, count: 5, amount: 7652, rounding: 0, tips: 852, refunds: 324, reversed: 324, net: 8180 };
-  const keyed = { tender_type_id: "k", tender: "Card", is_cash: false, count: 2, amount: 4310, rounding: 0, tips: 254, refunds: 0, reversed: 0, net: 4564 };
+  const keyed = { tender_type_id: "k", tender: "Card", is_cash: false, terminal: false, count: 2, amount: 4310, rounding: 0, tips: 254, refunds: 0, reversed: 0, net: 4564 };
   it("only the terminal's net says it is what the terminal shows; the net adds up from the rows above it", () => {
     expect(tenderRows(terminal).map((r) => [r.label, r.amount])).toEqual([
       ["Card (terminal) (5)", 7652],
