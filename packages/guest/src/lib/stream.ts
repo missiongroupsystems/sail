@@ -5,6 +5,8 @@ export type GuestStreamOptions = {
   getToken: () => string | null;
   /** Something about the table's order changed (or may have): refetch `/v1/guest/order`. */
   onChange: () => void;
+  /** The outlet's stock changed (an item sold out or back): refetch the menu. */
+  onStock?: () => void;
   onStatus?: (status: GuestStreamStatus) => void;
   /** The register rejected the token: the table session has ended (its reason in `details.reason`, when it gives one). */
   onUnauthenticated?: (details?: Record<string, unknown>) => void;
@@ -166,11 +168,14 @@ export class GuestStream {
     for (const line of frame.split("\n")) {
       if (line.startsWith("event:")) event = line.slice(6).trim();
       else if (line.startsWith("data:")) data = line.slice(5).trim();
-      // Comment lines (": ping") are heartbeats. Only `ended` reads its data; for the rest the order view is the source of truth.
+      // Comment lines (": ping") are heartbeats. Only `ended` and a change's type are read; the order view is the source of truth.
     }
     if (event === "hello") {
       this.setStatus("live");
       this.change();
+    } else if (event === "change" && changeType(data).startsWith("stock.")) {
+      // The outlet's stock, not the table's order: the menu catches up, the order view has nothing new.
+      this.opts.onStock?.();
     } else if (event === "change" || event === "resync") {
       this.change();
     } else if (event === "ended") {
@@ -186,5 +191,15 @@ export class GuestStream {
       }
       this.opts.onUnauthenticated?.(details);
     }
+  }
+}
+
+/** The event type a `change` frame names ("stock.sold_out"), or "" when it names none. */
+export function changeType(data: string): string {
+  try {
+    const t = (JSON.parse(data) as { type?: unknown } | null)?.type;
+    return typeof t === "string" ? t : "";
+  } catch {
+    return "";
   }
 }

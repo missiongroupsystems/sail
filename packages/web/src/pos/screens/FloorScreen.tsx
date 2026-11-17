@@ -5,6 +5,7 @@ import { Button, Icon, NowRail, QuantityStepper, Sheet, Skeleton, StatusLegend, 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import { idempotencyKey, toApiError } from "@/lib/api";
+import { OP_MIN_ROLE } from "@/lib/op-roles";
 import { openOrder } from "../api/register";
 import type { FloorTable, GuestRound } from "../api/types";
 import { Frame } from "../components/Frame";
@@ -13,6 +14,7 @@ import { RejectRoundSheet } from "../components/ReasonSheets";
 import { useApplySnapshot, useFloor, useOpenServiceRequests, usePendingRounds } from "../hooks/queries";
 import { useApi } from "../hooks/useApi";
 import { useNowActions } from "../hooks/useNowActions";
+import { roleAtLeast } from "../hooks/useOrderActions";
 import { useNow } from "../lib/device";
 import { countItems, formatElapsed } from "../lib/format";
 import { useNavStore } from "../state/nav";
@@ -51,7 +53,7 @@ function tone(kind: "new" | "alert") {
 export function FloorScreen() {
   const { clock } = useLocale();
   const api = useApi();
-  const { station, offline } = usePos();
+  const { station, offline, staff } = usePos();
   const floor = useFloor(station.outlet_id);
   const rounds = usePendingRounds(station.outlet_id);
   const requests = useOpenServiceRequests(station.outlet_id);
@@ -281,7 +283,7 @@ export function FloorScreen() {
       >
         {seating ? <PaxPicker suggested={seating.seats} isPending={opening} onPick={(pax) => void seat(seating, pax)} onChoose={setPaxChoice} /> : null}
       </Sheet>
-      <RejectRoundSheet isOpen={Boolean(rejecting)} roundLabel={rejecting ? `Table ${rejecting.table_name ?? ""} · ${countItems(rejecting.lines)}` : null} lines={rejecting?.lines} onClose={() => setRejecting(null)} onReject={(reason) => (rejecting ? nowActions.rejectRound(rejecting.id, reason) : Promise.resolve(null))} />
+      <RejectRoundSheet isOpen={Boolean(rejecting)} roundLabel={rejecting ? `Table ${rejecting.table_name ?? ""} · ${countItems(rejecting.lines)}` : null} lines={rejecting?.lines} onClose={() => setRejecting(null)} onReject={(reason) => (rejecting ? nowActions.rejectRound(rejecting.id, reason) : Promise.resolve(null))} onMarkSoldOut={roleAtLeast(staff.role, OP_MIN_ROLE["stock.mark_sold_out"] ?? "cashier") ? nowActions.markSoldOut : undefined} />
     </Frame>
   );
 }

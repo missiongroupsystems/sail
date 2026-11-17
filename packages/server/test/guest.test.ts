@@ -421,10 +421,39 @@ describe("with hold orders off, a phone is admitted to its seating", () => {
     expect(round.body.data.status, JSON.stringify(round.body)).toBe("pending");
     const pending = async () => (await call<{ data: { id: string }[] }>("GET", `/v1/outlets/${A.outletId}/rounds?status=pending`, { token: serverPin })).body.data.map((r) => r.id);
     expect(await pending()).toContain(round.body.data.round_id);
+    const gs = await app.request("/v1/guest/stream", { headers: { authorization: `Bearer ${guest}` } });
+    const frames = readSse(gs, 2, 3000);
+    await new Promise((r) => setTimeout(r, 100));
     expect((await call("POST", `/v1/orders/${orderId}/cancel`, { token: serverPin, body: { reason: "Guests left" } })).status).toBe(200);
     expect(await pending()).not.toContain(round.body.data.round_id);
+    // The phone hears that the restaurant cancelled the order, not that its session timed out (final2 C-6).
+    expect((await frames)[1]).toMatchObject({ event: "ended", data: { reason: "order_cancelled" } });
+    const after = await guestCall<{ details: { reason: string } }>("GET", "/v1/guest/order", guest);
+    expect(after.status).toBe(401);
+    expect(after.body.details.reason).toBe("order_cancelled");
     expect((await call("POST", `/v1/rounds/${round.body.data.round_id}/accept`, { token: serverPin, body: {} })).status).toBe(409);
     await call("PATCH", `/v1/channel-links/${ids.qrLink}`, { token: t, body: { open_on_first_scan: false, hold_orders: false } });
+  });
+
+  it("an open phone hears the outlet's stock changes on its stream, and nothing of other tables' orders (final2 C-2)", async () => {
+    const t = A.admin.token;
+    const table = randomUUID();
+    await call("POST", "/v1/tables", { token: t, body: { id: table, outlet_id: A.outletId, area_id: ids.area, name: "17" } });
+    const code = tokenFrom((await call<{ data: { url: string } }>("POST", `/v1/tables/${table}/qr/rotate`, { token: t, body: {} })).body.data.url);
+    const orderId = (await call<{ data: Snap }>("POST", "/v1/orders", { token: serverPin, body: { order_id: randomUUID(), order_type: "dine_in", table_id: table, pax: 2, outlet_id: A.outletId, brand_id: A.brandId } })).body.data.id;
+    await resetGuestRateLimitsForTests();
+    const guest = (await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: code, device_id: "device-stock-0017" }, idempotencyKey: null })).body.data.guest_token;
+    const gs = await app.request("/v1/guest/stream", { headers: { authorization: `Bearer ${guest}` } });
+    const frames = readSse(gs, 2, 4000);
+    await new Promise((r) => setTimeout(r, 100));
+    // Another table's order changing is not this phone's business; the sold-out mark is.
+    const other = (await call<{ data: Snap }>("POST", "/v1/orders", { token: serverPin, body: { order_id: randomUUID(), order_type: "takeaway", outlet_id: A.outletId, brand_id: A.brandId } })).body.data.id;
+    expect((await call("POST", "/v1/stock/sold-out", { token: A.admin.token, body: { outlet_id: A.outletId, product_id: ids.kopi, until: "today" } })).status).toBe(200);
+    const got = await frames;
+    expect(got[1]).toMatchObject({ event: "change", data: { type: "stock.sold_out", aggregate_id: ids.kopi } });
+    await call("POST", "/v1/stock/restore", { token: A.admin.token, body: { outlet_id: A.outletId, product_id: ids.kopi } });
+    await call("POST", `/v1/orders/${other}/cancel`, { token: serverPin, body: { reason: "Guests left" } });
+    await call("POST", `/v1/orders/${orderId}/cancel`, { token: serverPin, body: { reason: "Guests left" } });
   });
 
   it("codes derived from the guest secret: the sheet's code admits as the rotated one did, rotating every code keeps a seated phone's admission, and the sheet is never stored for a replay", async () => {

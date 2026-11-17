@@ -3,7 +3,7 @@
 import { BrandButton, LocaleProvider } from "@sail/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCheck, Clock, QrCode } from "lucide-react";
+import { AlertTriangle, Ban, CheckCheck, Clock, QrCode } from "lucide-react";
 import { useStore } from "zustand";
 import { API_URL, ApiError, createGuestApi, createSession, getMenu, getOrder, submitRound, toApiError } from "@/lib/api";
 import { createBasketStore, type BasketItem } from "@/lib/basket";
@@ -23,7 +23,7 @@ import { ReviewView } from "./ReviewView";
 import { roundLines, useQuote } from "./useQuote";
 import { StatusView } from "./StatusView";
 
-type Phase = { kind: "loading" } | { kind: "invalid" } | { kind: "ended"; paid?: boolean } | { kind: "rotated" } | { kind: "unavailable"; error: ApiError } | { kind: "ready" };
+type Phase = { kind: "loading" } | { kind: "invalid" } | { kind: "ended"; paid?: boolean; cancelled?: boolean } | { kind: "rotated" } | { kind: "unavailable"; error: ApiError } | { kind: "ready" };
 
 /** The screens inside the one page. The URL hash carries them so the phone's back button works. */
 export type View = "menu" | "review" | "status" | "table";
@@ -159,7 +159,7 @@ function GuestAppInner({ token }: { token: string }) {
       return;
     }
     setSession(null);
-    setPhase(rotated ? { kind: "rotated" } : { kind: "ended", paid: details?.reason === "order_paid" });
+    setPhase(rotated ? { kind: "rotated" } : { kind: "ended", paid: details?.reason === "order_paid", cancelled: details?.reason === "order_cancelled" });
   }, [token, startSession]);
   onUnauthenticatedRef.current = onUnauthenticated;
 
@@ -188,6 +188,22 @@ function GuestAppInner({ token }: { token: string }) {
     setView(v);
     window.scrollTo({ top: 0 });
   }, []);
+  /**
+   * "Order again" and "Start again" after a session ended: a new session that opens on the menu, with no sheet left open
+   * and nothing of the last session's screen (live-test final2 C-5). The hash is replaced, not pushed, so Back does not
+   * return to the ended session's status page.
+   */
+  const startAgain = useCallback(() => {
+    setItemSheet(null);
+    setStaffSheet(false);
+    setSendError(null);
+    setRequestSent(null);
+    basketStore.setState({ lastRoundId: null });
+    if (window.location.hash) window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    setView("menu");
+    window.scrollTo({ top: 0 });
+    void startSession(true);
+  }, [basketStore, startSession]);
   // The screens swap inside one page, so move focus to the new screen's heading for VoiceOver.
   const firstView = useRef(true);
   useEffect(() => {
@@ -254,6 +270,7 @@ function GuestAppInner({ token }: { token: string }) {
       baseUrl: API_URL,
       getToken: () => sessionRef.current?.guest_token ?? null,
       onChange: () => void queryClient.invalidateQueries({ queryKey: keys.order(sessionId) }),
+      onStock: () => void queryClient.invalidateQueries({ queryKey: keys.menu(sessionRef.current?.channel_link_id ?? "") }),
       onStatus: setStreamStatus,
       onUnauthenticated,
       pollMs: RECHECK_MS,
@@ -385,8 +402,18 @@ function GuestAppInner({ token }: { token: string }) {
     // Ended because the table's bill was paid: a thank-you, not a timeout.
     return (
       <Notice place={placeRef.current} icon={CheckCheck} title="Your bill is paid." body="Thank you for coming. To order again, scan the QR code on the table.">
-        <BrandButton variant="quiet" onPress={() => startSession(true)}>
+        <BrandButton variant="quiet" onPress={startAgain}>
           Order again
+        </BrandButton>
+      </Notice>
+    );
+  }
+  if (phase.kind === "ended" && phase.cancelled) {
+    // Ended because staff cancelled the order (and turned down any round still waiting): say so, not a timeout.
+    return (
+      <Notice place={placeRef.current} icon={Ban} title="The restaurant cancelled this order." body="Anything still waiting was not sent to the kitchen. Ask a member of staff, or start again here.">
+        <BrandButton variant="accent" onPress={startAgain}>
+          Start again
         </BrandButton>
       </Notice>
     );
@@ -394,7 +421,7 @@ function GuestAppInner({ token }: { token: string }) {
   if (phase.kind === "ended") {
     return (
       <Notice place={placeRef.current} icon={Clock} title="This table session has ended." body="Scan the QR code on the table again, or start again here.">
-        <BrandButton variant="accent" onPress={() => startSession(true)}>
+        <BrandButton variant="accent" onPress={startAgain}>
           Start again
         </BrandButton>
       </Notice>

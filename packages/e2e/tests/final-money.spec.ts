@@ -85,7 +85,7 @@ test("M1: a waiting QR order is on no bill; Pay asks about it first, and Accept 
   await settle(order.id);
 });
 
-test("M8: rejecting a QR order as Sold out offers to mark its items sold out", async ({ page }) => {
+test("M8: rejecting a QR order as Sold out asks which of its items are sold out", async ({ page }) => {
   test.setTimeout(300_000);
   const { table, order } = await tableWithWaitingRound();
   test.info().annotations.push({ type: "order", description: order.id });
@@ -93,10 +93,15 @@ test("M8: rejecting a QR order as Sold out offers to mark its items sold out", a
   await openTable(page, table.name);
   await page.getByRole("region", { name: "Order" }).getByRole("button", { name: "Reject", exact: true }).click();
   const sheet = page.getByRole("dialog", { name: "Reject QR order" });
-  await expect(sheet.getByRole("checkbox", { name: /also mark these items sold out/ })).toBeChecked();
+  await sheet.getByRole("button", { name: "Sold out", exact: true }).click();
+  // The round has one item, so it is ticked; with more, none would be (final2 C-2).
+  const choice = sheet.getByRole("group", { name: "Which items are sold out?" });
+  await expect(choice.getByRole("checkbox", { name: "Kopi" })).toBeChecked();
   await bothThemes(page, "M8-reject-sheet");
-  // Turned off here, so the demo's Kopi stays on sale for the other specs.
-  await sheet.getByText(/also mark these items sold out/).click();
+  // Unticked and another reason chosen here, so the demo's Kopi stays on sale for the other specs.
+  await choice.getByText("Kopi").click();
+  await expect(choice.getByRole("checkbox", { name: "Kopi" })).not.toBeChecked();
+  await sheet.getByRole("button", { name: "Choose another reason" }).click();
   await sheet.getByRole("button", { name: "Kitchen is closing" }).click();
   await expect(sheet).toHaveCount(0);
   await settle(order.id);

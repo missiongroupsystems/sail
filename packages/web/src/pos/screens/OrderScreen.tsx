@@ -3,6 +3,7 @@
 import { Button, Money, Pill, Sheet, Skeleton, useLocale, type PillTone } from "@sail/ui";
 import { Check, ChefHat, Circle, CircleX, Flame, Receipt, Truck, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { OP_MIN_ROLE } from "@/lib/op-roles";
 import type { GuestRound, SnapshotLine } from "../api/types";
 import { Catalogue } from "../components/Catalogue";
 import { DiscountSheet } from "../components/DiscountSheet";
@@ -18,7 +19,7 @@ import { RefundSheet } from "../components/RefundSheet";
 import { RejectRoundSheet, ReopenSheet, WaitingRoundSheet } from "../components/ReasonSheets";
 import { ReprintSheet } from "../components/ReprintSheet";
 import { useLateJobs, useManualRules, useOrder, useOrderPrintJobs, usePendingRounds, useReadyLineIds } from "../hooks/queries";
-import { useOrderActions } from "../hooks/useOrderActions";
+import { roleAtLeast, useOrderActions } from "../hooks/useOrderActions";
 import { useNow } from "../lib/device";
 import { countItems, formatElapsed, ORDER_TYPE_LABEL } from "../lib/format";
 import { useNavStore } from "../state/nav";
@@ -29,7 +30,7 @@ type SheetState = { kind: "line"; lineId: string } | { kind: "discount" } | { ki
 /** Order entry: rail + catalogue, the order sheet, and the sheets that hang off them. Closed orders stay readable for Reopen, Refund and receipts. */
 export function OrderScreen({ orderId }: { orderId: string }) {
   const { money, clock } = useLocale();
-  const { tablesById, station, offline } = usePos();
+  const { tablesById, station, offline, staff } = usePos();
   const screen = useNavStore((s) => s.screen);
   const back = useNavStore((s) => s.back);
   const openBill = useNavStore((s) => s.openBill);
@@ -94,7 +95,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
         actions: snap ? (
           <div className="flex items-center gap-2">
             <OrderStatusPill status={snap.status} billAsked={snap.bill_requested_at != null} />
-            <OrderMenu order={snap} actions={actions} onOpen={(k) => setSheet(k === "refund" ? { kind: "refund" } : k === "reopen" ? { kind: "reopen" } : { kind: "reprint", round: null })} />
+            <OrderMenu order={snap} actions={actions} waitingRounds={pendingRounds.length} onOpen={(k) => setSheet(k === "refund" ? { kind: "refund" } : k === "reopen" ? { kind: "reopen" } : { kind: "reprint", round: null })} />
           </div>
         ) : null,
       }}
@@ -190,7 +191,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
           payNow();
         }}
       />
-      <RejectRoundSheet isOpen={sheet?.kind === "reject"} roundLabel={sheet?.kind === "reject" ? `${countItems(sheet.round.lines)}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null} lines={sheet?.kind === "reject" ? sheet.round.lines : undefined} onClose={() => setSheet(null)} onReject={(reason) => (sheet?.kind === "reject" ? actions.rejectRound(sheet.round.id, reason) : Promise.resolve(null))} onMarkSoldOut={sheet?.kind === "reject" ? () => actions.markSoldOut([...new Set(sheet.round.lines.flatMap((l) => (l.product_id ? [l.product_id] : [])))]) : undefined} />
+      <RejectRoundSheet isOpen={sheet?.kind === "reject"} roundLabel={sheet?.kind === "reject" ? `${countItems(sheet.round.lines)}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null} lines={sheet?.kind === "reject" ? sheet.round.lines : undefined} onClose={() => setSheet(null)} onReject={(reason) => (sheet?.kind === "reject" ? actions.rejectRound(sheet.round.id, reason) : Promise.resolve(null))} onMarkSoldOut={roleAtLeast(staff.role, OP_MIN_ROLE["stock.mark_sold_out"] ?? "cashier") ? actions.markSoldOut : undefined} />
     </Frame>
   );
 }

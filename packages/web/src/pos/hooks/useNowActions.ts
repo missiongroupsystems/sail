@@ -73,6 +73,22 @@ export function useNowActions(outletId: string) {
     [api, fail, qc, refreshNow],
   );
 
+  /** Mark products sold out for today (a QR order rejected as sold out from the Now card); the guest menu follows. */
+  const markSoldOut = useCallback(
+    async (productIds: string[]) => {
+      try {
+        for (const id of productIds) await reg.markSoldOut(api, outletId, id, "today");
+        void qc.invalidateQueries({ queryKey: ["pos", "menu"] });
+        void qc.invalidateQueries({ queryKey: ["pos", "stock", outletId] });
+        return true;
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, outletId, qc],
+  );
+
   const acknowledge = useCallback(
     async (requestId: string) => {
       setBusy(requestId);
@@ -112,5 +128,5 @@ export function useNowActions(outletId: string) {
     [api, fail, notify, qc],
   );
 
-  return useMemo(() => ({ acceptRound, rejectRound, acknowledge, collect, busy }), [acceptRound, rejectRound, acknowledge, collect, busy]);
+  return useMemo(() => ({ acceptRound, rejectRound, markSoldOut, acknowledge, collect, busy }), [acceptRound, rejectRound, markSoldOut, acknowledge, collect, busy]);
 }
