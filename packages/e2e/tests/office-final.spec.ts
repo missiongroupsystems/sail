@@ -264,7 +264,9 @@ test("O5 (A P11): Forgotten your password? says how to get a reset link without 
   test.setTimeout(300_000);
   await page.goto(`${WEB}/login`);
   await page.getByRole("link", { name: "Forgotten your password?" }).click();
-  await expect(page).toHaveURL(`${WEB}/forgot-password`);
+  // A link is a client-side navigation, and the dev server compiles the page on its first visit: allow it the time
+  // a `goto` gets, not the 15 s of an ordinary check.
+  await expect(page).toHaveURL(`${WEB}/forgot-password`, { timeout: 120_000 });
   await expect(page.getByRole("heading", { level: 1, name: "Forgotten your password?" })).toBeVisible();
   await expect(page.getByText("MIGRATE_DATABASE_URL=… WEB_APP_URL=… pnpm --filter @sail/server reset-link you@example.com")).toBeVisible();
   await expect(page.getByText(/Ask an Admin for a reset link/)).toHaveCount(0);
