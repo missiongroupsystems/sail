@@ -50,6 +50,8 @@ export function compact(entry: Pick<AuditEntry, "details" | "target_label" | "va
   let nested = 0;
   for (const [k, v] of Object.entries(entry.details)) {
     if (v === null || v === undefined || v === false || HIDDEN_KEY.test(k)) continue;
+    // No rounding or tip at all says nothing ("Rounding: $0.00" on every card payment).
+    if (v === 0 && /(^|_)(rounding|tip|tips)(_cents)?$/.test(k)) continue;
     if (typeof v === "object") {
       nested++;
       continue;
