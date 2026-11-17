@@ -121,7 +121,7 @@ const inclusiveRate = (gross: number, bps: number) => Math.floor((gross * bps * 
 
 describe("N1: a paid bill keeps its tax and the open bill takes the rest of the order's tax", () => {
   it("US: a QR round accepted after the first bill is paid leaves the order's tax its rate times its subtotal ($20.27 → $0.81 + $0.91)", async () => {
-    const table = await open(US, { order_type: "dine_in", table_id: US.qr.id1, covers: 2 });
+    const table = await open(US, { order_type: "dine_in", table_id: US.qr.id1, pax: 2 });
     expect(table.status, JSON.stringify(table.body)).toBe(201);
     const id = table.body.data.id;
     await add(US, id, ["coffee"]);
@@ -234,6 +234,40 @@ describe("N10: the attached customer's name is the order's name", () => {
     const list = await call<{ data: { id: string; customer_ref: { name: string } | null }[] }>("GET", `/v1/outlets/${US.m.outletId}/orders?q=Robin`, { token: US.m.admin.token });
     expect(list.status, JSON.stringify(list.body)).toBe(200);
     expect(list.body.data.find((x) => x.id === id)?.customer_ref?.name).toBe("Robin");
+    await settle(US, id);
+  });
+});
+
+describe("N2: split by seat with a shared line", () => {
+  it("each bill is within a cent per rate of its own rate × subtotal, the bills add up to the order, and a bill with rounding says so", async () => {
+    const o = await open(US, { order_type: "dine_in", table_id: US.qr.id3, pax: 3 });
+    expect(o.status, JSON.stringify(o.body)).toBe(201);
+    const id = o.body.data.id;
+    const lines = [
+      { key: "burger", seat: 1 },
+      { key: "tea", seat: 2 },
+      { key: "coffee", seat: 3 },
+      { key: "burger", seat: null },
+      { key: "coffee", seat: null },
+    ];
+    const r = await call<Mut>("POST", `/v1/orders/${id}/lines`, { token: US.pin, body: { lines: lines.map((l) => ({ line_id: randomUUID(), product_id: US.products[l.key], quantity: 1, seat_no: l.seat })) } });
+    expect(r.status).toBe(200);
+    const split = await call<Mut>("POST", `/v1/orders/${id}/checks/split-by-seat`, { token: US.pin, body: { shared: "even" } });
+    expect(split.status, JSON.stringify(split.body).slice(0, 300)).toBe(200);
+    const s = await snap(US, id);
+    expect(s.checks.length).toBe(3);
+    type C = Snap["checks"][number] & { tax_note: string | null };
+    for (const n of ["State sales tax", "Local sales tax"]) {
+      const bps = n.startsWith("State") ? 400 : 450;
+      expect(s.checks.reduce((x, c) => x + tax(c.totals.taxes, n), 0)).toBe(tax(s.totals.taxes, n));
+      for (const c of s.checks) expect(Math.abs(tax(c.totals.taxes, n) - exclusiveRate(c.totals.subtotal, bps)), `${c.label} ${n}`).toBeLessThanOrEqual(1);
+    }
+    expect(s.checks.reduce((x, c) => x + c.totals.total, 0)).toBe(s.totals.total);
+    for (const c of s.checks as C[]) {
+      const off = ["State sales tax", "Local sales tax"].some((n) => tax(c.totals.taxes, n) !== exclusiveRate(c.totals.subtotal, n.startsWith("State") ? 400 : 450));
+      expect(c.tax_note, c.label).toBe(off ? "Tax includes rounding so the bills add up to the order's tax." : null);
+    }
+    expect((s.checks as C[]).filter((c) => c.tax_note).length).toBeGreaterThan(0); // these prices leave a cent to place
     await settle(US, id);
   });
 });

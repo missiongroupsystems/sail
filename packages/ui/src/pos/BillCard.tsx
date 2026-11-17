@@ -43,13 +43,15 @@ export type BillCardProps = {
   partPaid?: boolean;
   /** [Pre-bill] [Pay] on unpaid bills; [Get invoice] [Refund] on paid ones. */
   actions?: ReactNode;
+  /** One quiet line under the figures, as the printed bill has it ("Tax includes rounding so the bills add up…"). */
+  note?: string | null;
   className?: string;
 };
 
 const STATUS_LABEL: Record<BillCardStatus, string> = { open: "", paid: "Paid", partially_refunded: "Partly refunded", refunded: "Refunded" };
 
 /** One bill as a column card: lines with their share, totals, a lock when paid, and the bill's own actions. */
-export function BillCard({ label, status, lines, rows, tenders, isTarget, onPress, isDisabled, actions, statusLabel, partPaid, className }: BillCardProps) {
+export function BillCard({ label, status, lines, rows, tenders, isTarget, onPress, isDisabled, actions, statusLabel, partPaid, note, className }: BillCardProps) {
   const paid = status !== "open";
   const body = (
     <>
@@ -107,6 +109,7 @@ export function BillCard({ label, status, lines, rows, tenders, isTarget, onPres
           </div>
         ))}
       </dl>
+      {note ? <p className="px-4 pb-2 text-caption text-ink-2">{note}</p> : null}
       {tenders?.length ? (
         <ul className="px-4 pb-2 text-[13px] text-ink-2">
           {tenders.map((t) => (

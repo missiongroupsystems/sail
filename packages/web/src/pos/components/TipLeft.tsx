@@ -14,7 +14,7 @@ export function useTipLeftText(check: CheckSnapshot): string | null {
 /** A bill card whose status says when a tip is still to be given back. */
 export function CheckBillCard({ check, ...props }: BillCardProps & { check: CheckSnapshot }) {
   const text = useTipLeftText(check);
-  return <BillCard {...props} statusLabel={text} />;
+  return <BillCard {...props} statusLabel={text} note={check.tax_note} />;
 }
 
 /** The same words as a quiet note, for the closed order's bill rows. */
