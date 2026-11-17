@@ -5,7 +5,7 @@ import { AlertTriangle, Ban, Check, ChefHat, ChevronLeft, ChevronRight, Circle, 
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button as AriaButton } from "react-aria-components";
-import { ApiError, idempotencyKey } from "@/lib/api";
+import { ApiError, idempotencyKey, onOutcomeUnknown } from "@/lib/api";
 import { merchantLocale } from "@/lib/locale";
 import { createPosApi, POS_API_URL, type PosApi } from "@/pos/api/client";
 import { actOnKitchenTicket, getMerchant, kitchenAllDay, listEvents, listKitchenTickets } from "@/pos/api/register";
@@ -39,6 +39,8 @@ export default function KdsApp() {
   const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { staleTime: 5_000, refetchOnWindowFocus: false, retry: (n, e) => !(e instanceof ApiError && e.status < 500) && n < 2 }, mutations: { retry: false } } }));
   const token = useDisplayStore((s) => s.token);
   const station = useDisplayStore((s) => s.station);
+  // A bump or recall whose answer was lost twice: show the register's tickets again.
+  useEffect(() => onOutcomeUnknown(() => void queryClient.invalidateQueries()), [queryClient]);
   return (
     <QueryClientProvider client={queryClient}>
       <LocaleProvider settings={DEVICE_LOCALE}>{token && station ? <Board station={station} /> : <Pairing />}</LocaleProvider>

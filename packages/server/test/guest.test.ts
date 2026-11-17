@@ -308,6 +308,35 @@ describe("Scan to Order", () => {
     expect(await withTransaction(() => revokeStaleSessions())).toBe(0); // the hook already revoked them
   });
 
+  it("a reject as sold out marks the named products sold out in the same request; a Server may not, and only the round's products count (review4 U1)", async () => {
+    await resetGuestRateLimitsForTests();
+    const seated = await call<{ data: Snap }>("POST", "/v1/orders", { token: serverPin, body: { order_id: randomUUID(), order_type: "dine_in", table_id: ids.table12, pax: 2 } });
+    expect(seated.status, JSON.stringify(seated.body)).toBe(201);
+    const g = (await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl12), device_id: "device-soldout-01" }, idempotencyKey: null })).body.data.guest_token;
+    const roundId = randomUUID();
+    expect((await guestCall("POST", "/v1/guest/rounds", g, { round_id: roundId, lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] })).status).toBe(201);
+    const soldOut = async () => (await call<{ data: { product_id: string; sold_out: boolean }[] }>("GET", `/v1/outlets/${A.outletId}/stock`, { token: serverPin })).body.data.filter((r) => r.sold_out).map((r) => r.product_id);
+    // A Server can reject but not mark sold out; a product not in the round is refused; neither changes anything.
+    const byServer = await call<{ code: string }>("POST", `/v1/rounds/${roundId}/reject`, { token: serverPin, body: { reason: "Sold out", sold_out_product_ids: [ids.kopi] } });
+    expect(byServer.status).toBe(403);
+    const stray = await call<{ code: string }>("POST", `/v1/rounds/${roundId}/reject`, { token: cashierPin, body: { reason: "Sold out", sold_out_product_ids: [ids.laksa] } });
+    expect(stray.status).toBe(400);
+    expect(await soldOut()).toEqual([]);
+    const rejected = await call<{ data: Snap; events: { type: string }[] }>("POST", `/v1/rounds/${roundId}/reject`, { token: cashierPin, body: { reason: "Sold out", sold_out_product_ids: [ids.kopi] } });
+    expect(rejected.status, JSON.stringify(rejected.body)).toBe(200);
+    expect(rejected.body.events.map((e) => e.type)).toContain("stock.sold_out");
+    expect(await soldOut()).toEqual([ids.kopi]);
+    // The guest menu stops offering it at once.
+    await resetGuestRateLimitsForTests();
+    const refused = await guestCall<{ code: string }>("POST", "/v1/guest/rounds", g, { round_id: randomUUID(), lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] });
+    expect(refused.status).toBe(422);
+    expect(refused.body.code).toBe("unavailable");
+    // Leave the stock and the table as they were.
+    expect((await call("POST", "/v1/stock/restore", { token: cashierPin, body: { outlet_id: A.outletId, product_id: ids.kopi } })).status).toBe(200);
+    const open = (await call<{ data: Snap[] }>("GET", `/v1/outlets/${A.outletId}/orders?table_id=${ids.table12}&open_only=true`, { token: serverPin })).body.data;
+    for (const o of open) await call("POST", `/v1/orders/${o.id}/cancel`, { token: serverPin, body: { reason: "test" } });
+  });
+
   it("open on first scan lets a guest open the table's order", async () => {
     await call("PATCH", `/v1/channel-links/${ids.qrLink}`, { token: A.admin.token, body: { open_on_first_scan: true, hold_orders: false } });
     const s = await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl13), device_id: "device-eeee-0005" }, idempotencyKey: null });

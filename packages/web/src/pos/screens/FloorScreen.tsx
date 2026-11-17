@@ -269,7 +269,7 @@ export function FloorScreen() {
         {/* One tap on a count seats the table; no footer repeats a count the tap does not use (final2 B-3). */}
         {seating ? <PaxPicker suggested={seating.seats} isPending={opening} onPick={(pax) => void seat(seating, pax)} /> : null}
       </Sheet>
-      <RejectRoundSheet isOpen={Boolean(rejecting)} roundLabel={rejecting ? `Table ${rejecting.table_name ?? ""} · ${countItems(rejecting.lines)}` : null} lines={rejecting?.lines} onClose={() => setRejecting(null)} onReject={(reason) => (rejecting ? nowActions.rejectRound(rejecting.id, reason) : Promise.resolve(null))} onMarkSoldOut={roleAtLeast(staff.role, OP_MIN_ROLE["stock.mark_sold_out"] ?? "cashier") ? nowActions.markSoldOut : undefined} />
+      <RejectRoundSheet isOpen={Boolean(rejecting)} roundLabel={rejecting ? `Table ${rejecting.table_name ?? ""} · ${countItems(rejecting.lines)}` : null} lines={rejecting?.lines} onClose={() => setRejecting(null)} onReject={(reason, soldOut) => (rejecting ? nowActions.rejectRound(rejecting.id, reason, soldOut) : Promise.resolve(null))} canMarkSoldOut={roleAtLeast(staff.role, OP_MIN_ROLE["stock.mark_sold_out"] ?? "cashier")} />
     </Frame>
   );
 }

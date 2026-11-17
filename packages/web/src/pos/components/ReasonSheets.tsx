@@ -60,11 +60,12 @@ type RejectLine = { id: string; product_id?: string; name: string; quantity: num
 
 /**
  * Reject a QR order with one tap on a reason. The guest sees the reason. "Sold out" asks which items are sold out (the
- * sheet's list of items becomes the choice: the one item ticked when the round has one, none when it has more), rejects,
- * then marks only those sold out for today with the register's sold-out operation, so the guest menu stops offering
- * them. The same sheet serves the Now card and the order screen (live-test final2 C-2).
+ * sheet's list of items becomes the choice: the one item ticked when the round has one, none when it has more), and the
+ * register rejects and marks only those sold out for today in the same request, so the guest menu stops offering them
+ * and a lost answer cannot leave one done without the other (review 4 U1). The same sheet serves the Now card and the
+ * order screen (live-test final2 C-2). `canMarkSoldOut`: the signed-in role may mark sold out (Cashier or above).
  */
-export function RejectRoundSheet({ roundLabel, lines, isOpen, onClose, onReject, onMarkSoldOut }: { roundLabel: string | null; lines?: RejectLine[]; isOpen: boolean; onClose: () => void; onReject: (reason: string) => Promise<unknown>; onMarkSoldOut?: (productIds: string[]) => Promise<unknown> }) {
+export function RejectRoundSheet({ roundLabel, lines, isOpen, onClose, onReject, canMarkSoldOut = false }: { roundLabel: string | null; lines?: RejectLine[]; isOpen: boolean; onClose: () => void; onReject: (reason: string, soldOut: string[]) => Promise<unknown>; canMarkSoldOut?: boolean }) {
   const [busy, setBusy] = useState(false);
   // Each product once, in the round's order: sold out is a product's state, not a line's.
   const products = [...new Map((lines ?? []).flatMap((l) => (l.product_id ? [[l.product_id, l] as const] : []))).entries()];
@@ -75,8 +76,7 @@ export function RejectRoundSheet({ roundLabel, lines, isOpen, onClose, onReject,
   }, [isOpen]);
   const reject = async (reason: string, soldOut: string[]) => {
     setBusy(true);
-    const ok = await onReject(reason);
-    if (ok && soldOut.length && onMarkSoldOut) await onMarkSoldOut(soldOut);
+    const ok = await onReject(reason, soldOut);
     setBusy(false);
     if (ok) onClose();
   };
@@ -116,7 +116,7 @@ export function RejectRoundSheet({ roundLabel, lines, isOpen, onClose, onReject,
             reasons={REJECT_ROUND_REASONS.map((r) => ({ id: r, name: r }))}
             isDisabled={busy}
             onPick={(r) => {
-              if (r.text === REJECT_ROUND_REASONS[0] && onMarkSoldOut && products.length) {
+              if (r.text === REJECT_ROUND_REASONS[0] && canMarkSoldOut && products.length) {
                 setTicked(products.length === 1 ? [products[0]![0]] : []);
                 setChoosing(true);
                 return;

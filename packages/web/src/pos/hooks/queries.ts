@@ -178,6 +178,12 @@ export function useVoidReasons() {
   return useQuery({ queryKey: posKeys.voidReasons, queryFn: () => listVoidReasons(api), staleTime: 10 * 60_000, select: (rs) => rs.filter((r) => !r.archived) });
 }
 
+/** After products were marked sold out: the POS menu and the outlet's stock read again (the guest menu follows on its stream). */
+export function refreshStock(qc: QueryClient, outletId: string) {
+  void qc.invalidateQueries({ queryKey: ["pos", "menu"] });
+  void qc.invalidateQueries({ queryKey: ["pos", "stock", outletId] });
+}
+
 /** Put a register snapshot into the cache (after a mutation) and refresh the views that summarise it. */
 export function applySnapshot(qc: QueryClient, snapshot: OrderSnapshot) {
   qc.setQueryData<OrderSnapshot>(posKeys.order(snapshot.id), (cached) => withPendingLines(newer(cached, snapshot)));

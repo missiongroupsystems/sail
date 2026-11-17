@@ -203,7 +203,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
           payNow();
         }}
       />
-      <RejectRoundSheet isOpen={sheet?.kind === "reject"} roundLabel={sheet?.kind === "reject" ? `${countItems(sheet.round.lines)}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null} lines={sheet?.kind === "reject" ? sheet.round.lines : undefined} onClose={() => setSheet(null)} onReject={(reason) => (sheet?.kind === "reject" ? actions.rejectRound(sheet.round.id, reason) : Promise.resolve(null))} onMarkSoldOut={roleAtLeast(staff.role, OP_MIN_ROLE["stock.mark_sold_out"] ?? "cashier") ? actions.markSoldOut : undefined} />
+      <RejectRoundSheet isOpen={sheet?.kind === "reject"} roundLabel={sheet?.kind === "reject" ? `${countItems(sheet.round.lines)}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null} lines={sheet?.kind === "reject" ? sheet.round.lines : undefined} onClose={() => setSheet(null)} onReject={(reason, soldOut) => (sheet?.kind === "reject" ? actions.rejectRound(sheet.round.id, reason, soldOut) : Promise.resolve(null))} canMarkSoldOut={roleAtLeast(staff.role, OP_MIN_ROLE["stock.mark_sold_out"] ?? "cashier")} />
     </Frame>
   );
 }

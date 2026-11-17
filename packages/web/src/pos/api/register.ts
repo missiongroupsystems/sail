@@ -1,4 +1,4 @@
-import { ApiError, idempotencyKey, req } from "@/lib/api";
+import { ApiError, idempotencyKey, outcomeUnknown, req } from "@/lib/api";
 import type { PosApi } from "./client";
 import type {
   ChannelLink,
@@ -529,8 +529,22 @@ export async function acceptRound(api: PosApi, roundId: string, opts?: MutationO
   return asResult(await req(api.POST("/v1/rounds/{id}/accept", { params: { path: { id: roundId } }, body: {}, headers: headers(opts) })));
 }
 
-export async function rejectRound(api: PosApi, roundId: string, reason: string, opts?: MutationOpts): Promise<MutationResult> {
-  return asResult(await req(api.POST("/v1/rounds/{id}/reject", { params: { path: { id: roundId } }, body: { reason }, headers: headers(opts) })));
+/** `soldOut`: products of the round the register marks sold out for today in the same request (Cashier or above). */
+export async function rejectRound(api: PosApi, roundId: string, reason: string, opts?: MutationOpts, soldOut: string[] = []): Promise<MutationResult> {
+  return asResult(await req(api.POST("/v1/rounds/{id}/reject", { params: { path: { id: roundId } }, body: { reason, ...(soldOut.length ? { sold_out_product_ids: soldOut } : {}) }, headers: headers(opts) })));
+}
+
+/**
+ * An accept or reject whose answer was lost twice (review 4 U1): the register is asked whether the round still waits.
+ * Decided → it went through, and the order is read as it is now (null when the caller has no order to read). Still
+ * waiting → "Not sent", so staff try again. Any other error, or no answer to the question either, is rethrown.
+ */
+export async function afterLostDecision(api: PosApi, e: unknown, outletId: string, roundId: string, orderId: string | null): Promise<OrderSnapshot | null> {
+  if (!outcomeUnknown(e)) throw e;
+  const waiting = await listPendingRounds(api, outletId).catch(() => null);
+  if (!waiting) throw e;
+  if (waiting.some((r) => r.id === roundId)) throw new ApiError({ code: "unavailable", message: "Not sent", remedy: "The QR order is still waiting. Try again." }, 0);
+  return orderId ? getOrder(api, orderId) : null;
 }
 
 export async function listOpenServiceRequests(api: PosApi, outletId: string): Promise<ServiceRequest[]> {

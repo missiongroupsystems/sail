@@ -3087,7 +3087,7 @@ export interface paths {
         put?: never;
         /**
          * Reject a held QR round
-         * @description Removes the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled ("QR order rejected") and the table freed; the guest's phone keeps its session. An order paid while the round waited completes.
+         * @description Removes the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled ("QR order rejected") and the table freed; the guest's phone keeps its session. An order paid while the round waited completes. `sold_out_product_ids` (staff, Cashier or above) marks those of the round's products sold out for today in the same request, so a lost reply never leaves the round rejected and the item still on sale.
          */
         post: operations["rounds.reject"];
         delete?: never;
@@ -31564,6 +31564,8 @@ export interface operations {
             content: {
                 "application/json": {
                     reason: string;
+                    /** @description Products in this round to mark sold out for today with the reject (Cashier or above) */
+                    sold_out_product_ids?: string[];
                 };
             };
         };

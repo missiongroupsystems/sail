@@ -45,6 +45,14 @@ export class ApiError extends Error {
     return new ApiError({ code: "session_ended", message: "Signed out", remedy: "Sign in again." }, 0);
   }
 
+  /**
+   * A mutation went out and no answer came back, even when asked again under the same key: it may or may not have been
+   * done. The screen re-reads the register before anyone tries again.
+   */
+  static noAnswer(): ApiError {
+    return new ApiError({ code: "unavailable", message: "The register did not answer", remedy: "It may not have gone through. Check the screen, then try again.", details: { outcome_unknown: true } }, 0);
+  }
+
   static network(cause: unknown): ApiError {
     return new ApiError({ code: "unavailable", message: "The register could not be reached", remedy: "Check the connection and that the API is running, then try again." }, 0, { cause });
   }
@@ -52,6 +60,11 @@ export class ApiError extends Error {
   get isUnauthenticated(): boolean {
     return this.status === 401;
   }
+}
+
+/** The register's answer to a mutation was lost twice: it may or may not have been done (see `ApiError.noAnswer`). */
+export function outcomeUnknown(e: unknown): boolean {
+  return e instanceof ApiError && e.details?.outcome_unknown === true;
 }
 
 /** Narrow an unknown caught value to an error the UI can show with its remedy. */
@@ -62,6 +75,18 @@ export function toApiError(e: unknown): ApiError {
 }
 
 export const DEFAULT_TIMEOUT_MS = 30_000;
+/** Told when a mutation's outcome is unknown (`ApiError.noAnswer`): the POS and kitchen display re-read what they show. */
+const unknownOutcomeListeners = new Set<() => void>();
+export function onOutcomeUnknown(listener: () => void): () => void {
+  unknownOutcomeListeners.add(listener);
+  return () => void unknownOutcomeListeners.delete(listener);
+}
+const noAnswer = (): ApiError => {
+  for (const l of unknownOutcomeListeners) l();
+  return ApiError.noAnswer();
+};
+/** How long the second ask of a lost mutation waits: the register only has to replay the stored answer, or do it now. */
+const REPLAY_TIMEOUT_MS = 8_000;
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /**
@@ -161,15 +186,24 @@ export function createApi({ baseUrl, token, headers, timeoutMs = DEFAULT_TIMEOUT
     );
     return (await answer).clone();
   };
-  const send = async (request: Request): Promise<Response> => {
+  /**
+   * One attempt. The deadline covers the whole answer, body included: a reply whose headers arrive and whose body
+   * never does is abandoned like one that never starts (review 4 U1, a Reject that spun for two minutes).
+   */
+  const attempt = async (request: Request, ms: number): Promise<Response> => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(ApiError.timeout(timeoutMs)), timeoutMs);
+    const timer = setTimeout(() => controller.abort(ApiError.timeout(ms)), ms);
     const upstream = request.signal;
     if (upstream.aborted) controller.abort(upstream.reason);
     else upstream.addEventListener("abort", () => controller.abort(upstream.reason), { once: true });
+    const whole = async () => {
+      const res = await fetch(request, { signal: controller.signal });
+      const body = res.status === 204 || res.status === 304 ? null : await res.arrayBuffer();
+      return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+    };
     try {
-      if (tracker) return await tracker.run(request, controller, () => fetch(request, { signal: controller.signal }));
-      return await fetch(request, { signal: controller.signal });
+      if (tracker) return await tracker.run(request, controller, whole);
+      return await whole();
     } catch (e) {
       // Refused unsent by the tracker (the session has ended): say so, not "could not be reached".
       if (e instanceof ApiError) throw e;
@@ -178,6 +212,30 @@ export function createApi({ baseUrl, token, headers, timeoutMs = DEFAULT_TIMEOUT
       throw ApiError.network(e);
     } finally {
       clearTimeout(timer);
+    }
+  };
+  /**
+   * A mutation whose answer is lost (no reply in time, or the connection dropped) may still have been done. It is asked
+   * once more with the same Idempotency-Key: the register replays the stored answer when it was done and does it now,
+   * once, when it was not. Only when that also goes unanswered does the caller hear "no answer" (`ApiError.noAnswer`),
+   * and then it re-reads what it shows rather than guess. Requests are never sent twice under two keys.
+   */
+  const send = async (request: Request): Promise<Response> => {
+    if (!MUTATING.has(request.method) || !request.headers.has("idempotency-key")) return attempt(request, timeoutMs);
+    const again = request.clone();
+    try {
+      return await attempt(request, timeoutMs);
+    } catch (e) {
+      if (!(e instanceof ApiError) || e.status !== 0 || e.code !== "unavailable" || request.signal.aborted || tracker?.closed) throw e;
+      try {
+        const res = await attempt(again, REPLAY_TIMEOUT_MS);
+        // Still being worked on by the first request: the outcome is not known yet.
+        if (res.status === 409 && /still being processed/.test(await res.clone().text())) throw noAnswer();
+        return res;
+      } catch (e2) {
+        if (e2 instanceof ApiError && e2.status === 0 && e2.code === "unavailable") throw e2.details?.outcome_unknown ? e2 : noAnswer();
+        throw e2;
+      }
     }
   };
 
