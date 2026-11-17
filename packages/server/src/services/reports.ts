@@ -6,6 +6,7 @@ import { businessDayInputs } from "./business-day.js";
 import { shiftDate } from "../lib/time.js";
 import { embedPdfFonts, pdfMoney, pdfText, savePdf } from "../lib/pdf-text.js";
 import type { ZReport } from "./shifts.js";
+import { taxInPrices } from "../lib/tax-in-prices.js";
 import { taxDue } from "./tax-due.js";
 
 /**
@@ -49,7 +50,7 @@ export type SalesSummary = {
    * `net_before_refunds + fees + tax = total`; after refunds, `total_after_refunds = total - refunds.amount`.
    * Every `net` below (by day, order type, source and category) is the same figure split up.
    */
-  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; tax: number; refunds: number; net: number; total: number; rounding: number; tips: number; net_before_refunds: number; total_after_refunds: number };
+  totals: { orders: number; covers: number; items: number; gross: number; discounts: number; fees: number; tax: number; refunds: number; net: number; total: number; rounding: number; tips: number; net_before_refunds: number; total_after_refunds: number; tax_in_prices: number };
   /** totals.tax by component name and rate. */
   taxes: TaxBreakdown[];
   by_day: { business_date: string; orders: number; covers: number; gross: number; net: number }[];
@@ -106,7 +107,7 @@ export async function salesSummary(f: ReportFilters): Promise<SalesSummary> {
   const tips = byTender.reduce((s, x) => s + x.tips, 0);
   return {
     filters: f,
-    totals: { orders: t?.orders ?? 0, covers: t?.covers ?? 0, items: items?.n ?? 0, gross: t?.gross ?? 0, discounts: t?.discounts ?? 0, fees: t?.fees ?? 0, tax: t?.tax ?? 0, refunds: refunds?.net ?? 0, net: (t?.net ?? 0) - (refunds?.net ?? 0), total: t?.total ?? 0, rounding, tips, net_before_refunds: t?.net ?? 0, total_after_refunds: (t?.total ?? 0) - (refunds?.amount ?? 0) },
+    totals: { orders: t?.orders ?? 0, covers: t?.covers ?? 0, items: items?.n ?? 0, gross: t?.gross ?? 0, discounts: t?.discounts ?? 0, fees: t?.fees ?? 0, tax: t?.tax ?? 0, refunds: refunds?.net ?? 0, net: (t?.net ?? 0) - (refunds?.net ?? 0), total: t?.total ?? 0, rounding, tips, net_before_refunds: t?.net ?? 0, total_after_refunds: (t?.total ?? 0) - (refunds?.amount ?? 0), tax_in_prices: taxInPrices(t?.gross ?? 0, t?.discounts ?? 0, t?.net ?? 0) },
     taxes,
     by_day: byDay,
     by_order_type: byType,

@@ -400,3 +400,18 @@ describe("R3: every PDF embeds the product's typeface", () => {
     expect(daily).not.toMatch(/\/BaseFont \/Helvetica/);
   });
 });
+
+describe("R5: with tax inside prices, the Z-report's and Sales' rows add up as written", () => {
+  type S = { gross: number; discounts: number; net_before_refunds: number; tax_in_prices: number };
+  it("EU: gross − discounts − tax in prices = net before refunds; US: no tax in prices", async () => {
+    for (const [w, inclusive] of [[EU, true], [US, false]] as const) {
+      const z = (await call<{ data: { sales: S } }>("GET", `/v1/outlets/${w.m.outletId}/z-report`, { token: w.m.manager.token })).body.data.sales;
+      const s = (await call<{ data: { totals: S } }>("GET", `/v1/reports/sales-summary?outlet_id=${w.m.outletId}`, { token: w.m.manager.token })).body.data.totals;
+      for (const x of [z, s]) {
+        expect(x.gross + x.discounts - x.tax_in_prices).toBe(x.net_before_refunds);
+        if (inclusive) expect(x.tax_in_prices).toBeGreaterThan(0);
+        else expect(x.tax_in_prices).toBe(0);
+      }
+    }
+  });
+});

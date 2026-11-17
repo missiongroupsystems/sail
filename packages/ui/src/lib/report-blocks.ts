@@ -14,6 +14,8 @@ export type ReportSales = {
   /** Present once the register reports figures before and after refunds. */
   net_before_refunds?: number;
   total_after_refunds?: number;
+  /** With tax included in prices, the tax inside the items, so gross − discounts − tax in prices = net. */
+  tax_in_prices?: number;
 };
 
 /** The refunds block of the same report; `net`, `fees`, `tax` and `tips` arrive with the before/after figures. */
@@ -44,6 +46,8 @@ export function refundBlocks(sales: ReportSales, refunds: ReportRefunds, taxMode
   const before: ReportRow[] = [
     { key: "gross", label: "Gross (items)", amount: sales.gross },
     { key: "discounts", label: "Discounts", amount: sales.discounts, signed: true },
+    // VAT inside the prices comes out before net, so the rows add up as written (as the Items report's column does).
+    ...(sales.tax_in_prices ? [{ key: "tax_in_prices", label: "Tax in prices", amount: -sales.tax_in_prices, signed: true }] : []),
     { key: "net_before_refunds", label: "Net before refunds", amount: netBefore, strong: true },
     { key: "fees", label: "Fees (before tax)", amount: sales.fees },
     ...tax.before.map((t) => ({ key: t.key, label: t.label, amount: t.amount })),
@@ -93,6 +97,11 @@ export function tenderRows(t: ReportTender): ReportRow[] {
   const net = t.net !== undefined && extras.length ? [{ key: `${k}:net`, label: t.is_cash ? `${t.tender} net` : `${t.tender} net, as the terminal shows`, amount: t.net, strong: true }] : [];
   const reversed = t.reversed ? [{ key: `${k}:reversed`, label: "Reversed, not counted", amount: t.reversed, indent: true }] : [];
   return [{ key: k, label: t.count ? `${t.tender} (${t.count})` : t.tender, amount: t.amount, strong: !extras.length }, ...extras, ...net, ...reversed];
+}
+
+/** Whether a card tender shows its own net row, so a hint to compare "each card net" has a line to point at. */
+export function showsCardNet(tenders: readonly ReportTender[]): boolean {
+  return tenders.some((t) => !t.is_cash && tenderRows(t).some((r) => r.key === `${t.tender_type_id}:net`));
 }
 
 /** The Z-report's `reconciliation` block, once the register splits what is held on open orders. */
