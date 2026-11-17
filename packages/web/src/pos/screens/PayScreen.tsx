@@ -290,6 +290,23 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
     else go({ kind: "order", orderId, from });
   }, [go, openBill, order.data, orderId, screen]);
 
+  // The paid screen shows the register's state: once its payment is voided (here, on the terminal, or from another
+  // station) or the bill owes more than it did (a reopen), it goes back to the bill with its balance (review 3, S1).
+  useEffect(() => {
+    if (!done || !snap) return;
+    const live = snap.checks.find((c) => c.id === done.check.id);
+    if (!live) return;
+    const payment = done.figures.id ? live.payments.find((p) => p.id === done.figures.id) : undefined;
+    if ((payment && payment.status !== "recorded") || live.balance > done.check.balance) {
+      setDone(null);
+      setVoiding(null);
+      setDigits(null);
+      setTendered(null);
+      setTip({ kind: "none" });
+      setPad({ target: "amount", fresh: true });
+    }
+  }, [done, snap]);
+
   if (!snap || !check || !tender) {
     return (
       <Frame sub={{ back: { label: "Bill", onPress: back }, title: "Pay" }}>
