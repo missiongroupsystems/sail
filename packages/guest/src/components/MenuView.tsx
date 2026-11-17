@@ -172,7 +172,7 @@ export function MenuView({ session, menu, canOrder, basketItems, basketQuote, or
       ) : null}
 
       {/* The one sticky bar: search, Call staff where the thumb finds it, then the section chips; searching, the field. */}
-      <div ref={headerRef} className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-rule-subtle bg-surface/95 pl-4 backdrop-blur-md">
+      <div ref={headerRef} className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-rule-subtle bg-surface pl-4">
         {searching ? (
           <SearchField aria-label="Search the menu" value={query} onChange={setQuery} onClear={() => setQuery("")} autoFocus className="flex min-w-0 flex-1 items-center gap-2 pr-2">
             <span className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-full bg-surface-2 px-4">

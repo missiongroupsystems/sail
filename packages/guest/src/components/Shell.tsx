@@ -7,11 +7,11 @@ import { Button as AriaButton } from "react-aria-components";
 
 /**
  * A page header: a 44px back control, the page's heading (which takes focus when the screen changes) with one
- * line under it, and an optional control at the right. Sticky, on a frosted white with a hairline under it.
+ * line under it, and an optional control at the right. Sticky, opaque on the page background, with a hairline under it.
  */
 export function PageHeader({ title, subtitle, onBack, backLabel, right }: { title: string; subtitle?: ReactNode; onBack: () => void; backLabel: string; right?: ReactNode }) {
   return (
-    <header className="sticky top-0 z-20 border-b border-rule-subtle bg-surface/95 backdrop-blur-md">
+    <header className="sticky top-0 z-20 border-b border-rule-subtle bg-surface">
       <div className="flex min-h-14 items-center gap-1 px-2 pt-[env(safe-area-inset-top)]">
         <AriaButton
           onPress={onBack}
@@ -36,7 +36,7 @@ export function PageHeader({ title, subtitle, onBack, backLabel, right }: { titl
 export function Dock({ children }: { children: ReactNode }) {
   return (
     <div className="fixed inset-x-0 bottom-0 z-30">
-      <div className="mx-auto w-full max-w-[480px] border-t border-rule-subtle bg-surface/95 px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] backdrop-blur-md">{children}</div>
+      <div className="mx-auto w-full max-w-[480px] border-t border-rule-subtle bg-surface px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">{children}</div>
     </div>
   );
 }

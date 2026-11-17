@@ -101,3 +101,27 @@ test("guest: browser Back closes an open sheet and nothing else (C-10)", async (
     await expect(phone.getByRole("button", { name: /^Kopi,/ })).toBeVisible();
   });
 });
+
+test("guest: sticky bars are opaque on the page background, so scrolled text never shows through (C-12)", async ({ browser, watch }) => {
+  test.setTimeout(180_000);
+  const { token } = await seatedTableToken();
+  const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  watch.attach(phone);
+  await phone.goto(`${GUEST}/t/${token}`);
+  await expect(phone.getByRole("button", { name: /^Kopi,/ })).toBeVisible();
+  const opaque = async (selector: string) => {
+    const s = await phone.locator(selector).first().evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { bg: cs.backgroundColor, filter: cs.backdropFilter, page: getComputedStyle(document.querySelector("div.min-h-dvh") ?? document.body).backgroundColor };
+    });
+    expect(s.bg, selector).toBe(s.page);
+    expect(s.bg, selector).not.toMatch(/rgba\(.*,\s*0?\.\d+\)|\/\s*0?\.\d+\)/);
+    expect(["none", ""], selector).toContain(s.filter);
+  };
+  await opaque("div.sticky");
+  await phone.getByRole("button", { name: /^Kopi,/ }).click();
+  await phone.getByRole("dialog", { name: "Kopi" }).getByRole("button", { name: /^Add to order/ }).click();
+  await opaque("div.fixed.bottom-0 > div");
+  await phone.getByRole("button", { name: /^View your order/ }).click();
+  await opaque("header.sticky");
+});
