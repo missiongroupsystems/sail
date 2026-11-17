@@ -404,6 +404,25 @@ describe("with hold orders off, a phone is admitted to its seating", () => {
     expect((await send(await scan(code14, "phone-aaaa-0001"))).status).toBe("pending");
   });
 
+  it("cancelling an order decides its waiting QR rounds, so none is left for staff to accept", async () => {
+    const t = A.admin.token;
+    await call("PATCH", `/v1/channel-links/${ids.qrLink}`, { token: t, body: { open_on_first_scan: false, hold_orders: true } });
+    const table = randomUUID();
+    await call("POST", "/v1/tables", { token: t, body: { id: table, outlet_id: A.outletId, area_id: ids.area, name: "16" } });
+    const code = tokenFrom((await call<{ data: { url: string } }>("POST", `/v1/tables/${table}/qr/rotate`, { token: t, body: {} })).body.data.url);
+    const orderId = (await call<{ data: Snap }>("POST", "/v1/orders", { token: serverPin, body: { order_id: randomUUID(), order_type: "dine_in", table_id: table, pax: 2, outlet_id: A.outletId, brand_id: A.brandId } })).body.data.id;
+    const guest = (await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: code, device_id: "device-cancel-0016" }, idempotencyKey: null })).body.data.guest_token;
+    await resetGuestRateLimitsForTests();
+    const round = await guestCall<{ data: { round_id: string; status: string } }>("POST", "/v1/guest/rounds", guest, { round_id: randomUUID(), lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] });
+    expect(round.body.data.status, JSON.stringify(round.body)).toBe("pending");
+    const pending = async () => (await call<{ data: { id: string }[] }>("GET", `/v1/outlets/${A.outletId}/rounds?status=pending`, { token: serverPin })).body.data.map((r) => r.id);
+    expect(await pending()).toContain(round.body.data.round_id);
+    expect((await call("POST", `/v1/orders/${orderId}/cancel`, { token: serverPin, body: { reason: "Guests left" } })).status).toBe(200);
+    expect(await pending()).not.toContain(round.body.data.round_id);
+    expect((await call("POST", `/v1/rounds/${round.body.data.round_id}/accept`, { token: serverPin, body: {} })).status).toBe(409);
+    await call("PATCH", `/v1/channel-links/${ids.qrLink}`, { token: t, body: { open_on_first_scan: false, hold_orders: false } });
+  });
+
   it("codes derived from the guest secret: the sheet's code admits as the rotated one did, rotating every code keeps a seated phone's admission, and the sheet is never stored for a replay", async () => {
     const t = A.admin.token;
     const t16 = randomUUID();
