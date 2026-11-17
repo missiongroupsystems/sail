@@ -37,17 +37,17 @@ async function tableWithWaitingRound() {
   return { order: order.data, table, token, guest };
 }
 
-async function openOrder(page: Page, orderNo: string) {
-  await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Orders", exact: true }).click();
-  await page.getByRole("button", { name: new RegExp(orderNo) }).first().click();
+async function openTable(page: Page, tableName: string) {
+  await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Floor", exact: true }).click();
+  await page.getByRole("button", { name: new RegExp(`^Table ${tableName},`) }).first().click();
 }
 
 test("M1: a waiting QR order is on no bill; Pay asks about it first, and Accept puts it on the bill", async ({ page }) => {
   test.setTimeout(300_000);
-  const { order } = await tableWithWaitingRound();
+  const { order, table } = await tableWithWaitingRound();
   const before = await register<{ data: { balance: number } }>("GET", `/v1/orders/${order.id}`);
   await pairAndSignIn(page, MANAGER_PIN);
-  await openOrder(page, order.order_no);
+  await openTable(page, table.name);
   const panel = page.getByRole("region", { name: "Order" });
   await expect(panel.getByText("QR order · waiting for acceptance")).toBeVisible();
   await bothThemes(page, "M1-order-waiting");
@@ -65,9 +65,9 @@ test("M1: a waiting QR order is on no bill; Pay asks about it first, and Accept 
 
 test("M8: rejecting a QR order as Sold out offers to mark its items sold out", async ({ page }) => {
   test.setTimeout(300_000);
-  const { order } = await tableWithWaitingRound();
+  const { table } = await tableWithWaitingRound();
   await pairAndSignIn(page, MANAGER_PIN);
-  await openOrder(page, order.order_no);
+  await openTable(page, table.name);
   await page.getByRole("region", { name: "Order" }).getByRole("button", { name: "Reject", exact: true }).click();
   const sheet = page.getByRole("dialog", { name: "Reject QR order" });
   await expect(sheet.getByRole("checkbox", { name: /mark these items sold out/ })).toBeChecked();
@@ -102,7 +102,7 @@ test("M2, M3, M11: the back office Z-report, Today and the order drawer", async 
   await page.waitForTimeout(800);
   await shot(page, out("M3-today.png"));
   await page.goto(`${WEB}/reports/z-report`);
-  await expect(page.getByRole("heading", { name: "Payments" })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole("heading", { name: "Payments", exact: true })).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(500);
   await page.screenshot({ path: out("M2-office-z-report.png"), fullPage: true });
   await page.goto(`${WEB}/orders`);

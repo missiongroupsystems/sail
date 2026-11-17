@@ -147,6 +147,10 @@ test.describe("iPad landscape 1180×820", () => {
       await page.getByRole("button", { name: /^Pay \$/ }).click();
       const pay = page.getByRole("region", { name: "Payment" });
       const balance = cents(await pay.getByText(/^\$[\d,.]+$/).first().innerText());
+      // Tax is added on top of these prices, so a percentage tip is on the bill before tax (final review M21).
+      const open = await register<{ data: { opened_at: string; checks: { totals: { total: number; tax_total: number } }[] }[] }>("GET", `/v1/outlets/${outletId}/orders?status=open&limit=50`);
+      const bill = open.data.filter((o) => o.checks[0]?.totals.total === balance).sort((a, b) => b.opened_at.localeCompare(a.opened_at))[0]!.checks[0]!.totals;
+      const preTax = bill.total - bill.tax_total;
 
       await test.step("cash with 15%: the tip is a whole number of 5-cent steps", async () => {
         await page.getByRole("group", { name: "Payment method" }).getByRole("button", { name: "Cash", exact: true }).click();
@@ -155,8 +159,8 @@ test.describe("iPad landscape 1180×820", () => {
         const status = pay.getByRole("status").filter({ hasText: /Tip\s*\$/ });
         await expect(status).toBeVisible();
         const tip = cents((await status.innerText()).match(/Tip\s*(\$[\d.]+)/)![1]!);
-        // 15% of the amount, rounded half up to the cent, then to the nearest 5 cents.
-        expect(tip).toBe(Math.round(Math.round((balance * 15) / 100) / 5) * 5);
+        // 15% of the bill before tax, rounded half up to the cent, then to the nearest 5 cents.
+        expect(tip).toBe(Math.round(Math.round((preTax * 15) / 100) / 5) * 5);
       });
 
       let shown = 0;
@@ -167,7 +171,7 @@ test.describe("iPad landscape 1180×820", () => {
         const take = page.getByRole("button", { name: /^Take \$[\d.]+ by Card/ });
         await expect(take).toBeEnabled();
         shown = cents((await pay.getByText(/including a \$[\d.]+ tip/).innerText()).match(/including a (\$[\d.]+) tip/)![1]!);
-        expect(shown).toBe(Math.round((balance * 18) / 100));
+        expect(shown).toBe(Math.round((preTax * 18) / 100));
         expect(cents(await take.innerText())).toBe(balance + shown);
         await take.click();
         await expect(page.getByText(/^Paid · Bill 1 · /)).toBeVisible();

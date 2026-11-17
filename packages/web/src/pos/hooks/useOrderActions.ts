@@ -137,8 +137,9 @@ export function useOrderActions(orderId: string) {
   );
 
   /**
-   * Manager approval: the register is asked first; when it says permission_denied with
-   * override_allowed, the PIN prompt asks for the role it names. Returns null when the approval was declined.
+   * Manager approval: if the role is below the action's minimum,
+   * ask first; if the register still says permission_denied with
+   * override_allowed, ask then. Returns null when the approval was declined.
    */
   const withApproval = useCallback(
     async <T,>(subject: OverrideSubject, title: string, quote: string | null, exec: (overrideId: string | null) => Promise<T>, minRole: Role = MIN_ROLE[subject.action]): Promise<T | null> => {
@@ -146,8 +147,11 @@ export function useOrderActions(orderId: string) {
         const grant = await requestOverride({ subject, title, quote, minRole: needed });
         return grant;
       };
-      // The register is asked first even below the role it needs: anything it would refuse anyway (a terminal payment, a
-      // closed day, a paid bill) is said before anyone is asked for a PIN. Only its permission refusal opens the prompt.
+      if (!roleAtLeast(role, minRole)) {
+        const grant = await ask();
+        if (!grant) return null;
+        return exec(grant.override_id);
+      }
       try {
         return await exec(null);
       } catch (e) {
@@ -161,7 +165,7 @@ export function useOrderActions(orderId: string) {
         throw e;
       }
     },
-    [requestOverride],
+    [requestOverride, role],
   );
 
   const addLine = useCallback(
