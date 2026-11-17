@@ -26,6 +26,8 @@ export type OrderSheetProps = {
   /** QR rounds waiting for acceptance on this order. */
   pendingRounds: GuestRound[];
   onAcceptRound: (round: GuestRound) => void;
+  /** Rounds whose accept is on the wire: their Accept waits rather than sending a second one. */
+  accepting?: ReadonlySet<string>;
   onRejectRound: (round: GuestRound) => void;
   /** Print jobs for this order and the ids the register lists as late (⚠ instead of ✓). */
   jobs: PrintJob[];
@@ -58,7 +60,9 @@ function usePricing(orderId: string): boolean {
  * status per sent round, the totals block with every adjustment by
  * name plus Paid and Balance once money has been taken, and the action dock.
  */
-export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, onDiscount, onBill, onPay, onReprintRound, pendingRounds, onAcceptRound, onRejectRound, jobs, lateJobIds, readyLineIds, onReopen, onRefund }: OrderSheetProps) {
+const NONE: ReadonlySet<string> = new Set();
+
+export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, onDiscount, onBill, onPay, onReprintRound, pendingRounds, onAcceptRound, accepting = NONE, onRejectRound, jobs, lateJobIds, readyLineIds, onReopen, onRefund }: OrderSheetProps) {
   const { money, clock } = useLocale();
   const { station, offline, staff } = usePos();
   const pricing = usePricing(order.id);
@@ -188,7 +192,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
                   </Button>
                   {/* The order's one primary is the dock's (Pay, or Accept QR order): Accept here is secondary (review 3, S7). */}
                   {dockAccepts ? null : (
-                    <Button size="md" variant="secondary" isDisabled={offline} onPress={() => onAcceptRound(r)}>
+                    <Button size="md" variant="secondary" isDisabled={offline || accepting.has(r.id)} isPending={accepting.has(r.id)} onPress={() => onAcceptRound(r)}>
                       Accept
                     </Button>
                   )}
@@ -258,7 +262,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
                 : order.balance <= 0 && pendingRounds.length > 0
                   ? // Nothing to pay but a QR order waits: the primary accepts it (its lines are in the block above, with Reject),
                     // sends it to the kitchen and stays on the order; payment comes later, from Pay (review 4 U5).
-                    { id: "accept", label: "Accept QR order", ariaLabel: "Accept the QR order and send it to the kitchen", onPress: () => onAcceptRound(pendingRounds[0]!) }
+                    { id: "accept", label: "Accept QR order", ariaLabel: "Accept the QR order and send it to the kitchen", onPress: () => onAcceptRound(pendingRounds[0]!), isPending: accepting.has(pendingRounds[0]!.id) }
                 : { id: "pay", label: `Pay ${money(order.balance)}`, ariaLabel: `Pay ${money(order.balance)}`, onPress: onPay, isDisabled: live.length === 0 || (order.balance <= 0 && pendingRounds.length === 0), needsApproval: !["cashier", "manager", "finance", "admin"].includes(staff.role), approvalLabel: "Cashier approval" }
           }
           secondaries={[

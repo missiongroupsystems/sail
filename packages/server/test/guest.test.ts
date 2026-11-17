@@ -349,12 +349,20 @@ describe("Scan to Order", () => {
     expect((await call("POST", `/v1/rounds/${roundId}/accept`, { token: serverPin, body: {} })).status).toBe(200);
     const open = await call<{ data: Snap }>("GET", `/v1/orders/${seated.body.data.id}`, { token: cashierPin });
     const check = open.body.data.checks[0]!;
+    // Phone A's stream: paid is said once and the stream stays open; the void then comes as a change (no request needed).
+    const gs = await app.request("/v1/guest/stream", { headers: { authorization: `Bearer ${a}` } });
+    expect(gs.status).toBe(200);
+    const frames = readSse(gs, 3, 6000);
+    await new Promise((r) => setTimeout(r, 100));
     const paid = await call<{ data: Snap & { checks: { payments: { id: string }[] }[] } }>("POST", `/v1/checks/${check.id}/payments`, { token: cashierPin, body: { payment_id: randomUUID(), tender_type_id: ids.cash, amount: check.totals.total } });
     expect(paid.body.data.status).toBe("completed");
     for (const g of [a, b]) expect((await guestCall<{ details: { reason: string } }>("GET", "/v1/guest/order", g)).body.details.reason).toBe("order_paid");
     const paymentId = paid.body.data.checks[0]!.payments[0]!.id;
     const voided = await call("POST", `/v1/payments/${paymentId}/void`, { token: A.admin.token, body: { reason: "Wrong payment method" } });
     expect(voided.status, JSON.stringify(voided.body)).toBe(200);
+    const got = await frames;
+    expect(got.map((f) => f.event)).toEqual(["hello", "ended", "change"]);
+    expect(got[1]!.data).toEqual({ reason: "order_paid" });
     type View = { data: { order: { status: string } | null; rounds: { id: string; mine: boolean }[] } };
     const viewA = await guestCall<View>("GET", "/v1/guest/order", a);
     expect(viewA.status, JSON.stringify(viewA.body)).toBe(200);
@@ -366,11 +374,18 @@ describe("Scan to Order", () => {
     // Phone A scans again (a reload that lost its session): what it sent is still its own.
     const again = await scan("device-u4-phone-a");
     expect((await guestCall<View>("GET", "/v1/guest/order", again)).body.data.rounds.find((r) => r.id === roundId)).toMatchObject({ mine: true });
-    // Paid again: the phones hear it is paid; the table is free for the next scenario.
+    // A code rotated after a payment keeps that payment's phones out, even when the order is open again.
+    await call("POST", `/v1/checks/${(await call<{ data: Snap }>("GET", `/v1/orders/${seated.body.data.id}`, { token: cashierPin })).body.data.checks[0]!.id}/payments`, { token: cashierPin, body: { payment_id: randomUUID(), tender_type_id: ids.cash, amount: (await call<{ data: Snap }>("GET", `/v1/orders/${seated.body.data.id}`, { token: cashierPin })).body.data.checks[0]!.totals.total } });
+    const repaid1 = (await call<{ data: Snap & { checks: { payments: { id: string; status: string }[] }[] } }>("GET", `/v1/orders/${seated.body.data.id}`, { token: cashierPin })).body.data;
+    expect(repaid1.status).toBe("completed");
+    qrUrl12 = (await call<{ data: { url: string } }>("POST", `/v1/tables/${ids.table12}/qr/rotate`, { token: A.admin.token, body: {} })).body.data.url;
+    const second = repaid1.checks[0]!.payments.find((x) => x.status === "recorded")!.id;
+    expect((await call("POST", `/v1/payments/${second}/void`, { token: A.admin.token, body: { reason: "Wrong payment method" } })).status).toBe(200);
+    expect((await guestCall("GET", "/v1/guest/order", b)).status).toBe(401);
+    // Paid again: the table is free for the next scenario.
     const after = await call<{ data: Snap }>("GET", `/v1/orders/${seated.body.data.id}`, { token: cashierPin });
     const repaid = await call<{ data: Snap }>("POST", `/v1/checks/${after.body.data.checks[0]!.id}/payments`, { token: cashierPin, body: { payment_id: randomUUID(), tender_type_id: ids.cash, amount: after.body.data.checks[0]!.totals.total } });
     expect(repaid.body.data.status).toBe("completed");
-    expect((await guestCall("GET", "/v1/guest/order", a)).status).toBe(401);
   });
 
   it("open on first scan lets a guest open the table's order", async () => {

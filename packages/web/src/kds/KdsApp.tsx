@@ -310,7 +310,7 @@ function PageButton({ icon, count, word, onPress, trailing }: { icon: typeof Che
     <QuietButton onPress={onPress}>
       {trailing ? null : <Icon icon={icon} size={18} />}
       <span>
-        {count} {word}
+        {count} <span>{word}</span>
       </span>
       {trailing ? <Icon icon={icon} size={18} /> : null}
     </QuietButton>

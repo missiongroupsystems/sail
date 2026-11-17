@@ -174,23 +174,6 @@ export async function getMenu(api: GuestApi, channelLinkId: string): Promise<Com
   return res.data!.data as unknown as CompiledMenu;
 }
 
-/**
- * Whether an ended session works again: a paid order whose payment was voided, or that was reopened, takes its phones
- * back (review 4 U4). "live", or the register's reason for refusing it; null when it could not be asked. A plain fetch,
- * outside the client, so a refusal here is not handled as a fresh end of the session.
- */
-export async function sessionLive(guestToken: string, baseUrl = API_URL): Promise<"live" | { reason: string | null } | null> {
-  try {
-    const res = await fetch(`${baseUrl}/v1/guest/order`, { headers: { authorization: `Bearer ${guestToken}`, accept: "application/json" }, signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS) });
-    if (res.ok) return "live";
-    if (res.status !== 401) return null;
-    const body = (await res.json().catch(() => null)) as { details?: { reason?: string } } | null;
-    return { reason: body?.details?.reason ?? null };
-  } catch {
-    return null;
-  }
-}
-
 /** What the table has ordered: lines (menu prices only), rounds and this guest's requests. */
 export async function getOrder(api: GuestApi): Promise<OrderView> {
   const res = await api.GET("/v1/guest/order");

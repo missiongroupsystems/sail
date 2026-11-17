@@ -1,5 +1,5 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import { price, registerOperations, roleAtLeast, type OperationSpec, type OrderType } from "@sail/shared";
 import { db, markDryRun, settleInvariants, tx, withTransaction, type RequestTx } from "../db/client.js";
 import { channelLinks, guestRounds, guestSessions, orderLines, orders, outlets, printers, serviceRequests, tableQrTokens, tables } from "../db/schema/index.js";
@@ -55,9 +55,19 @@ async function orderClosedReason(t: RequestTx, orderId: string | null): Promise<
   return o?.status === "completed" ? "order_paid" : o?.status === "cancelled" ? "order_cancelled" : null;
 }
 
-/** The order a paid-for session was on is open again: a voided payment or a reopen put it back in service. */
-async function orderOpenAgain(t: RequestTx, orderId: string): Promise<boolean> {
-  const [o] = await t.db.select({ status: orders.status }).from(orders).where(eq(orders.id, orderId)).limit(1);
+/** How long after the payment a void or a reopen still brings the table's phones back: past it, the party has left. */
+const REOPEN_BRINGS_PHONES_BACK_MS = 30 * 60_000;
+
+/**
+ * A session the order's payment ended works again when the order is open again (a voided payment, a reopen), within
+ * half an hour of the payment, and only if the table's code has not been rotated since (a rotation after the payment
+ * found the session already ended and could not mark it, review 4 independent review).
+ */
+async function orderOpenAgain(t: RequestTx, s: { orderId: string | null; tableId: string; revokedAt: Date | null; expiresAt: Date }): Promise<boolean> {
+  if (!s.orderId || !s.revokedAt || s.expiresAt.getTime() < Date.now() || Date.now() - s.revokedAt.getTime() > REOPEN_BRINGS_PHONES_BACK_MS) return false;
+  const [rotated] = await t.db.select({ id: tableQrTokens.id }).from(tableQrTokens).where(and(eq(tableQrTokens.tableId, s.tableId), gte(tableQrTokens.rotatedAt, s.revokedAt))).limit(1);
+  if (rotated) return false;
+  const [o] = await t.db.select({ status: orders.status }).from(orders).where(eq(orders.id, s.orderId)).limit(1);
   return !!o && ["open", "fired", "ready", "out_for_delivery"].includes(o.status);
 }
 
@@ -77,7 +87,7 @@ registerGuestResolver(async (token: string, t: RequestTx) => {
     // Ended because the order was paid, and the order is open again (a payment voided, the order reopened): the phone is
     // back on its order, with its own rounds, as every phone at the table is (review 4 U4). Only the close ends a session
     // whose order is still open; a rotation and an expiry were answered above and below.
-    if (s.orderId && s.expiresAt.getTime() >= Date.now() && (await orderOpenAgain(t, s.orderId))) {
+    if (await orderOpenAgain(t, s)) {
       await t.db.update(guestSessions).set({ revokedAt: null }).where(eq(guestSessions.id, s.id));
       s.revokedAt = null;
     }
@@ -271,16 +281,22 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     if (!orderId) throw AppError.state("No order yet for this table", [], "Ask staff to seat you, then try again.");
     // Paying or closing the order ends its guest sessions in the same transaction (a cancel after a rejected round
     // unbinds them instead), and so does rotating the table's code: the phone hears `ended`, with the reason the
-    // resolver's 401 would give (`code_rotated`), and sends nothing more with the session.
+    // resolver's 401 would give (`code_rotated`), and sends nothing more with the session. After a payment the stream
+    // stays open: a later `change` means the order is open again and the session works.
     const ended = () =>
       withTransaction(async (t) => {
-        const [s] = await t.db.select({ revokedAt: guestSessions.revokedAt, expiresAt: guestSessions.expiresAt, tableId: guestSessions.tableId }).from(guestSessions).where(eq(guestSessions.id, p.sessionId)).limit(1);
+        const [s] = await t.db.select({ revokedAt: guestSessions.revokedAt, expiresAt: guestSessions.expiresAt, tableId: guestSessions.tableId, orderId: guestSessions.orderId }).from(guestSessions).where(eq(guestSessions.id, p.sessionId)).limit(1);
         if (s && !s.revokedAt && s.expiresAt.getTime() >= Date.now()) return null;
         if (s?.revokedAt) {
           const [rotated] = await t.db.select({ id: tableQrTokens.id }).from(tableQrTokens).where(and(eq(tableQrTokens.tableId, s.tableId), eq(tableQrTokens.rotatedAt, s.revokedAt))).limit(1);
           if (rotated) return { reason: "code_rotated" };
           const closed = await orderClosedReason(t, orderId);
           if (closed) return { reason: closed };
+          // Paid, then open again (a payment voided, the order reopened): the session works again, as on its next request.
+          if (await orderOpenAgain(t, s)) {
+            await t.db.update(guestSessions).set({ revokedAt: null }).where(eq(guestSessions.id, p.sessionId));
+            return null;
+          }
         }
         return {};
       });
@@ -294,6 +310,8 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
       { order_id: orderId },
       (n, key) => (key === outletKey ? n.kind === "event" && n.type.startsWith("stock.") : n.kind === "resync" || (n.kind === "event" && (n.aggregate_id === orderId || n.aggregate_id === p.tableId))),
       ended,
+      // Paid: the phone shows its paid screen and keeps listening, so a void or a reopen brings it back without a request.
+      (end) => end.reason === "order_paid",
     );
   });
 

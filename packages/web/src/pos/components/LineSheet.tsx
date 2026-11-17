@@ -91,13 +91,15 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
   const unmet = canEditModifiers ? unmetRequirement(menu, product, selection) : null;
   const seats = Math.max(order.pax ?? 0, ...order.lines.map((l) => l.seat_no ?? 0), seat ?? 0, 1);
 
-  const changed = quantity !== line.quantity || (notes.trim() || null) !== (line.notes ?? null) || seat !== line.seat_no || (canEditModifiers && JSON.stringify(toModifiers(menu, product, selection).map((m) => m.product_id)) !== JSON.stringify(line.modifiers.map((m) => m.product_id)));
+  // The saved note as these parts would write it: an old "No ice, Less sugar" opened and not touched is not a change.
+  const unchangedNote = joinNote(splitNote(line.notes));
+  const changed = quantity !== line.quantity || (notes.trim() || null) !== unchangedNote || seat !== line.seat_no || (canEditModifiers && JSON.stringify(toModifiers(menu, product, selection).map((m) => m.product_id)) !== JSON.stringify(line.modifiers.map((m) => m.product_id)));
 
   const save = async () => {
     setBusy(true);
     const patch: Parameters<typeof actions.patchLine>[1] = {};
     if (quantity !== line.quantity) patch.quantity = quantity;
-    if ((notes.trim() || null) !== (line.notes ?? null)) patch.notes = notes.trim() || null;
+    if ((notes.trim() || null) !== unchangedNote) patch.notes = notes.trim() || null;
     if (seat !== line.seat_no) patch.seat_no = seat;
     if (canEditModifiers) patch.modifiers = toModifiers(menu, product, selection).map((m) => ({ group_id: m.group_id, product_id: m.product_id, quantity: 1 }));
     const snap = await actions.patchLine(line.id, patch);

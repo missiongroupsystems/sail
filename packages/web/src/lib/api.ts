@@ -49,8 +49,9 @@ export class ApiError extends Error {
    * A mutation went out and no answer came back, even when asked again under the same key: it may or may not have been
    * done. The screen re-reads the register before anyone tries again.
    */
-  static noAnswer(): ApiError {
-    return new ApiError({ code: "unavailable", message: "The register did not answer", remedy: "It may not have gone through. Check the screen, then try again.", details: { outcome_unknown: true } }, 0);
+  static noAnswer(processing = false): ApiError {
+    // `processing`: the register is still working on the first request (the same key is in progress there).
+    return new ApiError({ code: "unavailable", message: "The register did not answer", remedy: "It may not have gone through. Check the screen, then try again.", details: { outcome_unknown: true, ...(processing ? { processing: true } : {}) } }, 0);
   }
 
   static network(cause: unknown): ApiError {
@@ -81,9 +82,9 @@ export function onOutcomeUnknown(listener: () => void): () => void {
   unknownOutcomeListeners.add(listener);
   return () => void unknownOutcomeListeners.delete(listener);
 }
-const noAnswer = (): ApiError => {
+const noAnswer = (processing = false): ApiError => {
   for (const l of unknownOutcomeListeners) l();
-  return ApiError.noAnswer();
+  return ApiError.noAnswer(processing);
 };
 /**
  * Mutations the register keeps no answer for (they run outside its idempotency store: sign-in, set-up, pairing with a
@@ -235,7 +236,13 @@ export function createApi({ baseUrl, token, headers, timeoutMs = DEFAULT_TIMEOUT
       try {
         const res = await attempt(again, REPLAY_TIMEOUT_MS);
         // Still being worked on by the first request: the outcome is not known yet.
-        if (res.status === 409 && /still being processed/.test(await res.clone().text())) throw noAnswer();
+        if (res.status === 409) {
+          const text = await res.clone().text();
+          if (/still being processed/.test(text)) throw noAnswer(true);
+          // Done, but its answer held a secret the register shows only once (a receipt QR, a pairing code): it cannot be
+          // replayed, so the screen re-reads rather than show the register's note about keys.
+          if (/result was shown once/.test(text)) throw noAnswer();
+        }
         return res;
       } catch (e2) {
         if (e2 instanceof ApiError && e2.status === 0 && e2.code === "unavailable") throw e2.details?.outcome_unknown ? e2 : noAnswer();

@@ -352,8 +352,8 @@ test("S6: the kitchen display's clock and online state fit at 1024 with both pag
           await shot(kds, out(`S6-kds-${viewport.width}-${theme}.png`));
         }
         expect(overflow).toEqual([]);
-        // In portrait (an iPad on its side) the count and chevron stand alone; the word stays for screen readers.
-        expect(words).toEqual(viewport.width > 960 ? [true, true] : [false, false]);
+        // The word shows at every width, portrait too: a bare "7 ›" did not say what it was (review 4 U7).
+        expect(words).toEqual([true, true]);
         await expect(header.getByText(/online/i)).toBeInViewport();
         await ctx.close();
       });

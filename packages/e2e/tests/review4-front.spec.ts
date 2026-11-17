@@ -255,7 +255,9 @@ test.describe("U2: the paid screen stays for every tender", () => {
     test(`${t.name}: the last bill's paid screen waits 10 s for the cashier, with its receipt, void and invoice`, async ({ page }) => {
       test.setTimeout(300_000);
       const { outletId, stationId } = devLocal();
-      const shift = t.name === "cash" ? await register<{ data: { id: string } }>("POST", "/v1/shifts", { outlet_id: outletId, station_id: stationId, float_cents: 10_000 }) : null;
+      // Cash needs a shift on the station: one already open (another spec's) is used and left open.
+      const already = (await register<{ data: { id: string; station_id: string | null }[] }>("GET", `/v1/outlets/${outletId}/shifts?status=open`)).data.some((x) => x.station_id === stationId || x.station_id === null);
+      const shift = t.name === "cash" && !already ? await register<{ data: { id: string } }>("POST", "/v1/shifts", { outlet_id: outletId, station_id: stationId, float_cents: 10_000 }) : null;
       await pairAndSignIn(page, MANAGER_PIN);
       const orderId = await sentToPay(page);
       try {
@@ -460,6 +462,9 @@ test("U6: after Open shift the card shows the opened shift from the register's r
   test.setTimeout(300_000);
   const { outletId, stationId } = devLocal();
   watch.allow({ status: 503, url: /\/v1\/outlets\/[^/]+\/shifts/, why: "a busy register refuses the reads after the open, on purpose" });
+  // A shift another spec left open on this station is closed for the test and opened again after, as it was.
+  const before = (await register<{ data: { id: string; station_id: string | null; float_cents: number }[] }>("GET", `/v1/outlets/${outletId}/shifts?status=open`)).data.filter((x) => x.station_id === stationId);
+  for (const x of before) await register("POST", `/v1/shifts/${x.id}/close`, { counted_cash_cents: x.float_cents, variance_reason: "End of an end-to-end test" });
   await pairAndSignIn(page, MANAGER_PIN);
   await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Shift", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Open shift" })).toBeVisible();
@@ -484,5 +489,6 @@ test("U6: after Open shift the card shows the opened shift from the register's r
     await page.unrouteAll({ behavior: "ignoreErrors" });
     const open = await register<{ data: { id: string; station_id: string | null }[] }>("GET", `/v1/outlets/${outletId}/shifts?status=open`);
     for (const s of open.data.filter((x) => x.station_id === stationId)) await register("POST", `/v1/shifts/${s.id}/close`, { counted_cash_cents: 10_000, variance_reason: "End of an end-to-end test" }).catch(() => undefined);
+    for (const x of before) await register("POST", "/v1/shifts", { outlet_id: outletId, station_id: stationId, float_cents: x.float_cents }).catch(() => undefined);
   }
 });

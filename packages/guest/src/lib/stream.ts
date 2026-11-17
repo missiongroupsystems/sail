@@ -10,6 +10,11 @@ export type GuestStreamOptions = {
   onStatus?: (status: GuestStreamStatus) => void;
   /** The register rejected the token: the table session has ended (its reason in `details.reason`, when it gives one). */
   onUnauthenticated?: (details?: Record<string, unknown>) => void;
+  /**
+   * The order was paid and the stream stays open (review 4 U4): a later change means it is open again (a payment voided,
+   * the order reopened) and the session works. Without it, `ended` stops the stream whatever the reason.
+   */
+  onResumed?: () => void;
   /** How often to refetch while there is no order to stream (15 s). */
   pollMs?: number;
 };
@@ -35,6 +40,8 @@ export class GuestStream {
   private staleTimer: ReturnType<typeof setTimeout> | null = null;
   private changeTimer: ReturnType<typeof setTimeout> | null = null;
   private status: GuestStreamStatus | null = null;
+  /** Paid: the register said `ended` and kept the stream open; nothing goes out with the token until a change. */
+  private held = false;
 
   constructor(private readonly opts: GuestStreamOptions) {}
 
@@ -72,7 +79,7 @@ export class GuestStream {
   }
 
   private onVisibility = () => {
-    if (document.visibilityState !== "visible" || this.stopped) return;
+    if (document.visibilityState !== "visible" || this.stopped || this.held) return;
     this.change();
     if (!this.abort) this.kick();
   };
@@ -154,6 +161,8 @@ export class GuestStream {
       throw new Error("stream ended");
     } catch {
       if (this.stopped || controller !== this.abort) return;
+      // Paid and the connection dropped: reconnecting would only be refused (the session is ended). Stop quietly.
+      if (this.held) return this.stop();
       this.abort = null;
       if (this.staleTimer) clearTimeout(this.staleTimer);
       this.setStatus("reconnecting");
@@ -170,6 +179,14 @@ export class GuestStream {
       else if (line.startsWith("data:")) data = line.slice(5).trim();
       // Comment lines (": ping") are heartbeats. Only `ended` and a change's type are read; the order view is the source of truth.
     }
+    if (this.held && (event === "change" || event === "resync") && !changeType(data).startsWith("stock.")) {
+      // Paid, and now the order is open again: the session works.
+      this.held = false;
+      this.opts.onResumed?.();
+      this.change();
+      return;
+    }
+    if (this.held) return;
     if (event === "hello") {
       this.setStatus("live");
       this.change();
@@ -178,6 +195,12 @@ export class GuestStream {
       this.opts.onStock?.();
     } else if (event === "change" || event === "resync") {
       this.change();
+    } else if (event === "ended" && this.opts.onResumed && endReason(data) === "order_paid") {
+      // Paid: say so, and keep listening without sending anything (no refetch, no reconnect) until a change.
+      this.held = true;
+      if (this.changeTimer) clearTimeout(this.changeTimer);
+      this.changeTimer = null;
+      this.opts.onUnauthenticated?.({ reason: "order_paid" });
     } else if (event === "ended") {
       // The table session has ended (the order was paid, say): nothing more goes out with its token, not even the
       // refetch an earlier change had queued, which the register would refuse with a 401.
@@ -191,6 +214,16 @@ export class GuestStream {
       }
       this.opts.onUnauthenticated?.(details);
     }
+  }
+}
+
+/** The reason an `ended` frame gives ("order_paid"), or null. */
+function endReason(data: string): string | null {
+  try {
+    const r = (JSON.parse(data) as { reason?: unknown } | null)?.reason;
+    return typeof r === "string" ? r : null;
+  } catch {
+    return null;
   }
 }
 

@@ -75,6 +75,8 @@ export function OrderScreen({ orderId }: { orderId: string }) {
   const receiptCheck = sheet?.kind === "receipt" ? (snap?.checks.find((c) => c.id === sheet.checkId) ?? null) : null;
   const line: SnapshotLine | null = sheet?.kind === "line" ? (snap?.lines.find((l) => l.id === sheet.lineId) ?? null) : null;
 
+  /** QR rounds whose accept is on the wire (a lost answer can take a while): a second tap sends nothing. */
+  const [accepting, setAccepting] = useState<ReadonlySet<string>>(new Set());
   const payNow = (s = snap) => {
     if (!s) return;
     const open = s.checks.filter((c) => c.status === "open");
@@ -165,7 +167,12 @@ export function OrderScreen({ orderId }: { orderId: string }) {
             onPay={pay}
             onReprintRound={(round) => setSheet({ kind: "reprint", round })}
             pendingRounds={pendingRounds}
-            onAcceptRound={(r) => void actions.acceptRound(r.id)}
+            onAcceptRound={(r) => {
+              if (accepting.has(r.id)) return;
+              setAccepting((a) => new Set(a).add(r.id));
+              void actions.acceptRound(r.id).finally(() => setAccepting((a) => new Set([...a].filter((x) => x !== r.id))));
+            }}
+            accepting={accepting}
             onRejectRound={(r) => setSheet({ kind: "reject", round: r })}
             jobs={jobs.data ?? []}
             lateJobIds={lateJobIds}

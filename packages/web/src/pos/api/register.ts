@@ -541,9 +541,15 @@ export async function rejectRound(api: PosApi, roundId: string, reason: string, 
  */
 export async function afterLostDecision(api: PosApi, e: unknown, outletId: string, roundId: string, orderId: string | null): Promise<OrderSnapshot | null> {
   if (!outcomeUnknown(e)) throw e;
+  const processing = e instanceof ApiError && e.details?.processing === true;
+  // Still being worked on by the register: give it a moment before reading whether the round still waits.
+  if (processing) await new Promise((r) => setTimeout(r, 2_000));
   const waiting = await listPendingRounds(api, outletId).catch(() => null);
   if (!waiting) throw e;
-  if (waiting.some((r) => r.id === roundId)) throw new ApiError({ code: "unavailable", message: "Not sent", remedy: "The QR order is still waiting. Try again." }, 0);
+  if (waiting.some((r) => r.id === roundId)) {
+    if (processing) throw new ApiError({ code: "unavailable", message: "Still being processed", remedy: "The register is working on it. Check the QR order in a moment." }, 0);
+    throw new ApiError({ code: "unavailable", message: "Not sent", remedy: "The QR order is still waiting. Try again." }, 0);
+  }
   return orderId ? getOrder(api, orderId) : null;
 }
 
