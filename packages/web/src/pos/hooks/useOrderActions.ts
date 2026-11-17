@@ -511,10 +511,22 @@ export function useOrderActions(orderId: string) {
       const input: reg.AdjustmentInput = { application_id: applicationId, rule_key: rule.rule_key, entered_value: enteredValue, reason, line_ids: lineIds };
       const valueText = rule.value.type === "open" && enteredValue != null ? (rule.calc === "percent" ? formatBpsText(enteredValue) : money(enteredValue)) : null;
       try {
+        // Above this role, the approver is shown what it does in money first: the register's dry run of it, never a
+        // figure worked out here (final review B-P15). Without one the sheet still names the action.
+        let effect: string | null = null;
+        if (!roleAtLeast(role, rule.min_role)) {
+          try {
+            const dry = await reg.applyAdjustment(api, orderId, input, { dryRun: true });
+            const adj = dry.data.adjustments.find((a) => a.manual_application_id === applicationId);
+            if (adj) effect = `${adj.total === 0 ? "No change" : `${rule.kind === "fee" ? "Fee" : "Discount"} ${money(adj.total, { signed: true })}`} · New total ${money(dry.data.totals.total)}`;
+          } catch {
+            effect = null;
+          }
+        }
         return await withApproval(
           { action: "adjustments.apply_manual", target_kind: "order", target_id: orderId, args: { rule_key: rule.rule_key, entered_value: enteredValue, line_ids: lineIds } },
           `Apply ${rule.name}${valueText ? ` · ${valueText}` : ""}`,
-          reason ? `Reason: ${reason}` : null,
+          [effect, reason ? `Reason: ${reason}` : null].filter(Boolean).join(" · ") || null,
           (overrideId) => run((expected) => reg.applyAdjustment(api, orderId, input, { expectedVersion: expected, overrideId })),
           rule.min_role,
         );
@@ -523,7 +535,7 @@ export function useOrderActions(orderId: string) {
         return null;
       }
     },
-    [api, fail, money, orderId, run, withApproval],
+    [api, fail, money, orderId, role, run, withApproval],
   );
 
   const removeDiscount = useCallback(

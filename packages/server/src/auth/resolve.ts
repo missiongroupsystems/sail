@@ -27,7 +27,7 @@ export async function resolvePrincipal(token: string, t: RequestTx, opts: { acti
     // (resolve.ts would otherwise see the old hash, and the session would start after the new pairing's time).
     const [st] = await t.db.select().from(stations).where(eq(stations.id, claims.station_id!)).limit(1).for("share");
     // Pairing again replaces the stored hash, so an older token (lost or stolen iPad) stops working.
-    if (!st || st.archivedAt || !st.tokenHash || st.tokenHash !== sha256(token)) throw new AppError("unauthenticated", "This station is no longer paired", { remedy: "Pair the iPad again from the back office." });
+    if (!st || st.archivedAt || !st.tokenHash || st.tokenHash !== sha256(token)) throw new AppError("unauthenticated", "This station is no longer paired", { remedy: "Pair the iPad again from the back office.", details: { reason: "station_unpaired" } });
     return { type: "station", id: st.id, merchantId: st.merchantId, outletId: st.outletId, stationId: st.id };
   }
 
@@ -40,7 +40,7 @@ export async function resolvePrincipal(token: string, t: RequestTx, opts: { acti
     const st = found.station;
     if (st.archivedAt || !st.tokenHash || (st.pairedAt && sess.startedAt < st.pairedAt)) {
       await t.db.update(staffSessions).set({ endedAt: new Date() }).where(eq(staffSessions.id, sess.id));
-      throw new AppError("unauthenticated", "This station is no longer paired", { remedy: "Pair the iPad again from the back office." });
+      throw new AppError("unauthenticated", "This station is no longer paired", { remedy: "Pair the iPad again from the back office.", details: { reason: "station_unpaired" } });
     }
     const idle = (Date.now() - sess.lastSeenAt.getTime()) / 1000;
     if (idle > config().PIN_SESSION_IDLE_SECONDS) {

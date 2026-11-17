@@ -591,7 +591,9 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     if (!check.ok) throw new AppError("validation", check.message, { remedy: check.remedy });
     if (rule.reason_required && !b.reason) throw AppError.validation(`${rule.name} needs a reason`, { remedy: "Pick a reason." });
     if (o.pricingFrozenAt && isFreezable(rule)) throw AppError.invariant("pricing_frozen", `${rule.name} is an order-level rule and the order already has a payment`, "Order-level discounts are frozen once a bill is paid. Refund the payment first, or apply an item-level discount to the unpaid items.");
-    const approval = await requireRoleOrOverride(p, principalRole(p), (rule.min_role ?? "server") as Role, { action: "adjustments.apply_manual", targetId: id, args: { rule_key: rule.id, entered_value: b.entered_value ?? null, line_ids: b.line_ids ?? null }, overrideId: b.override_id, overrideAllowed: rule.override_allowed });
+    // A dry run applies nothing and is rolled back: it is the figure an approver is shown before approving (final review
+    // B-P15), so it is priced for anyone who may open the order, whatever the rule's minimum role.
+    const approval = b.dry_run ? null : await requireRoleOrOverride(p, principalRole(p), (rule.min_role ?? "server") as Role, { action: "adjustments.apply_manual", targetId: id, args: { rule_key: rule.id, entered_value: b.entered_value ?? null, line_ids: b.line_ids ?? null }, overrideId: b.override_id, overrideAllowed: rule.override_allowed });
     if (b.line_ids) {
       const found = await db().select({ id: orderLines.id }).from(orderLines).where(and(eq(orderLines.orderId, id), inArray(orderLines.id, b.line_ids), sql`${orderLines.status} <> 'voided'`));
       if (found.length !== b.line_ids.length) throw AppError.notFound("line on this order");

@@ -385,3 +385,28 @@ describe("concurrency, caps, dry runs and live updates", () => {
     }
   });
 });
+
+describe("the figure an approver is shown (final review B-P15)", () => {
+  it("a dry run prices a manual rule above the caller's role without applying it, at exactly what applying it then gives", async () => {
+    const o = await open(cashierPin, { order_type: "takeaway" });
+    const added = await call<Mut["body"]>("POST", `/v1/orders/${o.body.data.id}/lines`, { token: cashierPin, body: { lines: [{ line_id: randomUUID(), product_id: cat.kopi, quantity: 10 }] } });
+    const before = added.body.data.totals;
+    const applicationId = randomUUID();
+    const body = { application_id: applicationId, rule_key: SEED_RULE_IDS.percentOffBill, entered_value: 1000 };
+    const dry = await call<Mut["body"]>("POST", `/v1/orders/${o.body.data.id}/adjustments`, { token: cashierPin, body: { ...body, dry_run: true } });
+    expect(dry.status, JSON.stringify(dry.body)).toBe(200);
+    const quoted = dry.body.data.adjustments.find((a) => a.manual_application_id === applicationId)!;
+    expect(quoted.total).toBeLessThan(0);
+    // Nothing was applied: the order is as it was, and the cashier still cannot apply it.
+    const after = await call<{ data: Snap }>("GET", `/v1/orders/${o.body.data.id}`, { token: cashierPin });
+    expect(after.body.data.totals).toEqual(before);
+    expect(after.body.data.adjustments.some((a) => a.manual_application_id === applicationId)).toBe(false);
+    expect((await call("POST", `/v1/orders/${o.body.data.id}/adjustments`, { token: cashierPin, body })).status).toBe(403);
+    // A manager applying it gets the quoted figures to the cent.
+    const real = await call<Mut["body"]>("POST", `/v1/orders/${o.body.data.id}/adjustments`, { token: managerPin, body });
+    expect(real.status, JSON.stringify(real.body)).toBe(200);
+    expect(real.body.data.adjustments.find((a) => a.manual_application_id === applicationId)!.total).toBe(quoted.total);
+    expect(real.body.data.totals).toEqual(dry.body.data.totals);
+    await call("POST", `/v1/orders/${o.body.data.id}/cancel`, { token: managerPin, body: { reason: "test" } });
+  });
+});
