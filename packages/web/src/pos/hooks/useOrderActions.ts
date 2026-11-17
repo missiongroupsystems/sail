@@ -137,9 +137,8 @@ export function useOrderActions(orderId: string) {
   );
 
   /**
-   * Manager approval: if the role is below the action's minimum,
-   * ask first; if the register still says permission_denied with
-   * override_allowed, ask then. Returns null when the approval was declined.
+   * Manager approval: the register is asked first; when it says permission_denied with
+   * override_allowed, the PIN prompt asks for the role it names. Returns null when the approval was declined.
    */
   const withApproval = useCallback(
     async <T,>(subject: OverrideSubject, title: string, quote: string | null, exec: (overrideId: string | null) => Promise<T>, minRole: Role = MIN_ROLE[subject.action]): Promise<T | null> => {
@@ -162,7 +161,7 @@ export function useOrderActions(orderId: string) {
         throw e;
       }
     },
-    [requestOverride, role],
+    [requestOverride],
   );
 
   const addLine = useCallback(

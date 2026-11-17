@@ -23,7 +23,9 @@ export function DayPanel({ className, layout = "panel" }: { className?: string; 
   const { station, staff, offline, tablesById, floor } = usePos();
   const notify = useUiStore((s) => s.notify);
   const [busy, setBusy] = useState(false);
-  const [closedAt, setClosedAt] = useState<string | null>(null);
+  const [closed, setClosed] = useState<{ at: string; day: string } | null>(null);
+  // "Closed" holds for the day that was closed; once the floor reads the new business day, that day can be closed in turn.
+  const closedAt = closed && closed.day === floor?.business_date ? closed.at : null;
   const [confirming, setConfirming] = useState(false);
   const openOrders = useOpenOrders(station.outlet_id);
   // Today's business day only, as the back office lists them.
@@ -34,10 +36,14 @@ export function DayPanel({ className, layout = "panel" }: { className?: string; 
     setBusy(true);
     try {
       const res = await closeBusinessDay(api, station.outlet_id);
-      setClosedAt(res.closed_at);
+      setClosed({ at: res.closed_at, day: res.business_date });
       setConfirming(false);
       notify({ text: `Business day ${businessDay(res.business_date)} closed`, tone: "success" }, 5000);
+      // The day rolls over at once: the floor's business day, the shifts and every report are read again, not on a reload.
       void qc.invalidateQueries({ queryKey: ["pos", "z-report", station.outlet_id] });
+      void qc.invalidateQueries({ queryKey: ["pos", "floor", station.outlet_id] });
+      void qc.invalidateQueries({ queryKey: ["pos", "shifts", station.outlet_id] });
+      void qc.invalidateQueries({ queryKey: ["pos", "orders"] });
     } catch (e) {
       const err = toApiError(e);
       notify({ text: err.message, remedy: err.remedy ?? null, tone: "alert" }, 8000);

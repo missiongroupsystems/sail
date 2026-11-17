@@ -4,7 +4,7 @@ import type { TaxBreakdown } from "@sail/shared";
 import "../src/modules.js";
 import { buildApp, type App } from "../src/app.js";
 import { resetGuestRateLimitsForTests } from "../src/services/guest.js";
-import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
+import { api, freshDb, settleOpenOrders, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
 
 /** Final review round, money: a US diner (4% state + 4.5% local, rounded per rate). */
 let db: TestDb;
@@ -13,7 +13,7 @@ let US: SeededMerchant;
 let call: ReturnType<typeof api>["call"];
 let pin: string;
 const qr: Record<string, string> = {};
-const ids = { mint: randomUUID(), a: randomUUID(), b: randomUUID(), c: randomUUID(), qrLink: randomUUID(), t2: randomUUID(), t3: randomUUID(), t4: randomUUID(), burger: randomUUID(), soda: randomUUID(), menu: randomUUID(), link: randomUUID(), area: randomUUID(), t1: randomUUID(), station: randomUUID(), cash: randomUUID(), card: randomUUID() };
+const ids = { card: randomUUID(), mint: randomUUID(), a: randomUUID(), b: randomUUID(), c: randomUUID(), qrLink: randomUUID(), t2: randomUUID(), t3: randomUUID(), t4: randomUUID(), burger: randomUUID(), soda: randomUUID(), menu: randomUUID(), link: randomUUID(), area: randomUUID(), t1: randomUUID(), station: randomUUID(), cash: randomUUID(), };
 
 type Snap = { id: string; version: number; status: string; totals: { subtotal: number; tax_total: number; taxes: TaxBreakdown[]; total: number }; lines: { id: string; status: string; amounts: { total: number; tax: number } }[]; checks: { id: string; total?: number; totals: { total: number; subtotal: number; tax_total: number }; balance: number; allocations: { line_id: string }[] }[]; balance: number; paid_total: number };
 type Mut = { data: Snap; code?: string };
@@ -43,6 +43,7 @@ beforeAll(async () => {
     qr[k] = (await call<{ data: { url: string } }>("POST", `/v1/tables/${ids[k]}/qr/rotate`, { token: t, body: {} })).body.data.url;
   }
   await must("/v1/tender-types", { id: ids.cash, name: "Cash", is_cash: true });
+  await must("/v1/tender-types", { id: ids.card, name: "Card" });
   await must("/v1/shifts", { outlet_id: US.outletId, station_id: null, float_cents: 0 });
   await must("/v1/stations", { id: ids.station, outlet_id: US.outletId, brand_id: US.brandId, name: "Floor" });
   const code = await call<{ data: { code: string } }>("POST", `/v1/stations/${ids.station}/pairing-code`, { token: t, body: {} });
@@ -227,5 +228,80 @@ describe("M14: each split bill's tax is its own rate times its own subtotal", ()
       expect(billTax(b, "Local sales tax")).toBe(47);
     }
     expect(r.body.data.totals.tax_total).toBe(84 + 94);
+  });
+});
+
+type Z = {
+  scope: { business_date: string };
+  sales: { total: number };
+  tenders: { tender_type_id: string; count: number; amount: number; rounding: number; tips: number; refunds: number; reversed: number; net: number }[];
+  reconciliation: { tenders: number; sales_total: number; paid_on_other_orders: number; paid_elsewhere: number; held_on_open_orders: number; paid_for_other_orders: number };
+  reversals: { count: number; amount: number; items: { order_no: string; amount: number }[] };
+  closed: { closed_at: string } | null;
+  previous_closed_date: string | null;
+};
+const zr = async (q = "") => {
+  const r = await call<{ data: Z }>("GET", `/v1/outlets/${US.outletId}/z-report${q}`, { token: US.admin.token });
+  expect(r.status, JSON.stringify(r.body)).toBe(200);
+  return r.body.data;
+};
+
+describe("M2, M20, M16: the Z-report reconciles on its face, per tender, and stays readable once the day is closed", () => {
+  it("per tender: sales, tips, refunds, reversals and the net the terminal shows; payments = collected + held on open orders + other orders − paid elsewhere", async () => {
+    // A: $35.96 + 4% + 4.5% = $39.02, paid by card with a $5 tip, sent (completes), then $10 refunded by amount.
+    const a = await open({ order_type: "takeaway" });
+    const al = await add(a.body.data.id, ids.burger);
+    expect(al.body.data.totals.total).toBe(3596 + 144 + 162);
+    const ap = await call<Mut>("POST", `/v1/checks/${al.body.data.checks[0]!.id}/payments`, { token: US.admin.token, body: { payment_id: randomUUID(), tender_type_id: ids.card, amount: 3902, tip_cents: 500 } });
+    expect(ap.status, JSON.stringify(ap.body)).toBe(200);
+    expect((await call<Mut>("POST", `/v1/orders/${a.body.data.id}/fire`, { token: pin, body: {} })).body.data.status).toBe("completed");
+    const rf = await call("POST", `/v1/checks/${al.body.data.checks[0]!.id}/refunds`, { token: US.admin.token, body: { refund_id: randomUUID(), request: { kind: "amount", amount: 1000 }, reason: "Cold" } });
+    expect(rf.status, JSON.stringify(rf.body)).toBe(201);
+    // B: $46.87 by card, then voided: reversed, counted in no tender.
+    const b = await open({ order_type: "takeaway" });
+    const bl = await add(b.body.data.id, ids.soda);
+    expect(bl.body.data.totals.total).toBe(4320 + 173 + 194);
+    const paymentId = randomUUID();
+    const bp = await call("POST", `/v1/checks/${bl.body.data.checks[0]!.id}/payments`, { token: US.admin.token, body: { payment_id: paymentId, tender_type_id: ids.card, amount: 4687 } });
+    expect(bp.status, JSON.stringify(bp.body)).toBe(200);
+    const v = await call("POST", `/v1/payments/${paymentId}/void`, { token: US.admin.token, body: { reason: "Charged twice" } });
+    expect(v.status, JSON.stringify(v.body)).toBe(200);
+    // C: an open table part-paid $10.00 in cash: money held on an open order.
+    const c = await open({ order_type: "takeaway" });
+    const cl = await add(c.body.data.id, ids.a);
+    const cp = await pay(c.body.data.id, cl.body.data.checks[0]!.id, 1000);
+    expect(cp.status, JSON.stringify(cp.body)).toBe(200);
+
+    const z = await zr();
+    const card = z.tenders.find((t) => t.tender_type_id === ids.card)!;
+    expect(card).toMatchObject({ count: 1, amount: 3902, tips: 500, refunds: 1000, reversed: 4687, net: 3902 + 500 - 1000 });
+    expect(z.reversals.items.map((x) => x.amount)).toContain(4687);
+    const rec = z.reconciliation;
+    expect(rec.held_on_open_orders).toBeGreaterThanOrEqual(1000);
+    expect(rec.held_on_open_orders + rec.paid_for_other_orders).toBe(rec.paid_on_other_orders);
+    expect(rec.tenders).toBe(rec.sales_total + rec.held_on_open_orders + rec.paid_for_other_orders - rec.paid_elsewhere);
+    expect(rec.sales_total).toBe(z.sales.total);
+    expect(rec.tenders).toBe(z.tenders.reduce((n, t) => n + t.amount, 0));
+    for (const t of z.tenders) expect(t.net).toBe(t.amount + t.rounding + t.tips - t.refunds);
+  });
+
+  it("once the day is closed its Z-report is the snapshot, and the next day's report names it", async () => {
+    await settleOpenOrders(db.sql, call, US.admin.token, US.outletId, ids.card);
+    const before = await zr();
+    const day = before.scope.business_date;
+    const shifts = await call<{ data: { id: string; status: string }[] }>("GET", `/v1/outlets/${US.outletId}/shifts?status=open`, { token: US.admin.token });
+    for (const sh of shifts.body.data.filter((x) => x.status === "open")) {
+      const r = await call("POST", `/v1/shifts/${sh.id}/close`, { token: US.admin.token, body: { counted_cash_cents: 0, variance_reason: "Test count" } });
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+    }
+    const close = await call("POST", `/v1/outlets/${US.outletId}/business-days/close`, { token: US.admin.token, body: {} });
+    expect(close.status, JSON.stringify(close.body)).toBe(200);
+    const closedDay = await zr(`?business_date=${day}`);
+    expect(closedDay.closed).not.toBeNull();
+    expect(closedDay.reconciliation.tenders).toBe(before.reconciliation.tenders);
+    const next = await zr();
+    expect(next.scope.business_date).not.toBe(day);
+    expect(next.closed).toBeNull();
+    expect(next.previous_closed_date).toBe(day);
   });
 });

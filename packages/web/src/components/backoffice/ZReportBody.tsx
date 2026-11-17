@@ -1,6 +1,6 @@
 "use client";
 
-import { BusinessDay, Badge, kindTone, Money, Panel, refundBlocks, taxRows, useLocale, ValueRows, type ReportRow } from "@sail/ui";
+import { BusinessDay, Badge, kindTone, Money, Panel, reconciliationRows, refundBlocks, taxRows, tenderRows, useLocale, ValueRows, type ReportRow } from "@sail/ui";
 import { useSession } from "@/lib/session-context";
 import { label, ORDER_TYPE_LABEL, REPORT_CLASS_LABEL } from "./labels";
 import { plural, type ZReport } from "./register";
@@ -26,6 +26,7 @@ export function ZReportBody({ report, stationName }: { report: ZReport; stationN
   const tax = taxRows(r.sales.taxes, taxMode);
   const types = Object.entries(r.orders.by_type);
   const blocks = refundBlocks(r.sales, r.refunds, taxMode, r.tax_due);
+  const reconciliation = reconciliationRows(r.reconciliation);
   const salesAside = types.length ? types.map(([t, n]) => `${label(ORDER_TYPE_LABEL, t)} ${n}`).join(" · ") : undefined;
   const sales = blocks ? (
     <>
@@ -110,16 +111,18 @@ export function ZReportBody({ report, stationName }: { report: ZReport; stationN
             {r.tenders.length === 0 ? (
               <p className="text-ink-2">No payments on this day.</p>
             ) : (
-              <ValueRows
-                rows={[
-                  ...r.tenders.map((t: Tender) => ({ key: t.tender_type_id, label: `${t.tender}${t.count ? ` (${t.count})` : ""}`, value: <Money cents={t.amount} /> })),
-                  ...r.tenders.filter((t: Tender) => t.tips).map((t: Tender) => ({ key: `${t.tender_type_id}:tips`, label: `Tips on ${t.tender}`, value: <Money cents={t.tips} />, indent: true })),
-                  ...r.tenders.filter((t: Tender) => t.rounding).map((t: Tender) => ({ key: `${t.tender_type_id}:rounding`, label: `Rounding on ${t.tender}`, value: <Money cents={t.rounding} signed />, indent: true })),
-                ]}
-              />
+              r.tenders.map((t: Tender, i: number) => <ValueRows key={t.tender_type_id} className={i ? "mt-1.5 border-t border-rule-subtle pt-1.5" : undefined} rows={blockRows(tenderRows(t))} />)
             )}
-            {r.tenders.some((t) => !t.is_cash) ? <p className="mt-2 text-caption text-ink-2">Compare each card figure with the terminal&rsquo;s end-of-day total.</p> : null}
+            {reconciliation ? <ValueRows className="mt-1.5 border-t border-rule-subtle pt-1.5" rows={blockRows(reconciliation)} /> : null}
+            {r.tenders.some((t) => !t.is_cash) ? <p className="mt-2 text-caption text-ink-2">Compare each card net with the terminal&rsquo;s end-of-day total.</p> : null}
           </Panel>
+
+          {r.reversals?.count ? (
+            <Panel title="Reversed payments" aside={plural(r.reversals.count, "payment")}>
+              <ValueRows rows={r.reversals.items.map((x) => ({ key: x.payment_id, label: `${x.order_no} · ${x.tender}${x.reason ? ` · ${x.reason.replace(/^reopened: /, "reopened, ")}` : ""}`, value: <Money cents={x.amount} /> }))} />
+              <p className="mt-2 text-caption text-ink-2">Taken and then given back on the terminal or in the register; counted in no figure above.</p>
+            </Panel>
+          ) : null}
 
           <Panel title="Cash drawer">
             <ValueRows

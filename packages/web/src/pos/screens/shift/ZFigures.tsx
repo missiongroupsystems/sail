@@ -1,6 +1,6 @@
 "use client";
 
-import { cx, refundBlocks, Skeleton, taxRows, useLocale, type ReportRow } from "@sail/ui";
+import { cx, reconciliationRows, refundBlocks, Skeleton, taxRows, tenderRows, useLocale, type ReportRow } from "@sail/ui";
 import { toApiError } from "@/lib/api";
 import { useMerchant } from "../../hooks/queries";
 import { ORDER_TYPE_LABEL } from "../../lib/format";
@@ -23,6 +23,7 @@ export function ZFigures({ report, title }: { report: { data?: ZReport | ZReport
   const tax = taxRows(r?.sales.taxes ?? [], taxMode);
   // One basis per block, as the back office's Z-report: as charged, what was refunded, and after refunds (R new 2).
   const blocks = r ? refundBlocks(r.sales, r.refunds, taxMode, r.tax_due) : null;
+  const reconciliation = r ? reconciliationRows(r.reconciliation) : null;
   const adjustments = r?.adjustments.length ? (
     <dl className="mt-2 pt-2 border-t border-rule">
       {r.adjustments.map((a) => (
@@ -102,12 +103,18 @@ export function ZFigures({ report, title }: { report: { data?: ZReport | ZReport
           <section className={group}>
             <h3 className={head}>Tenders</h3>
             <dl>
-              {r.tenders.map((t) => (
-                <Row key={t.tender_type_id} label={`${t.tender} · ${t.count}${t.tips ? ` · tips ${money(t.tips)}` : ""}`} cents={t.amount} />
-              ))}
+              {r.tenders.map((t) => rows(tenderRows(t)))}
               {r.tenders.length === 0 ? <p className="py-2 text-body text-ink-2">No payments yet.</p> : null}
             </dl>
-            {nonCash.length ? <p className="pt-2 text-caption text-ink-2">Compare each card and terminal figure with the terminal&rsquo;s end-of-day total.</p> : null}
+            {reconciliation ? <dl className="mt-2 border-t border-rule pt-2">{rows(reconciliation)}</dl> : null}
+            {r.reversals?.count ? (
+              <dl className="mt-2 border-t border-rule pt-2">
+                {r.reversals.items.map((x) => (
+                  <Row key={x.payment_id} label={`Reversed · ${x.order_no} · ${x.tender}`} cents={x.amount} indent />
+                ))}
+              </dl>
+            ) : null}
+            {nonCash.length ? <p className="pt-2 text-caption text-ink-2">Compare each card net with the terminal&rsquo;s end-of-day total. Reversed payments are counted in no figure.</p> : null}
           </section>
 
           <section className={group}>
