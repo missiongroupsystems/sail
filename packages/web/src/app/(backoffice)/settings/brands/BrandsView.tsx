@@ -96,7 +96,7 @@ export function BrandsView({ initialBrands }: { initialBrands: Brand[] }) {
         defaultSort={{ column: "name", direction: "ascending" }}
         onRowAction={(b) => setSheet({ mode: "edit", brand: b })}
         rowClassName={(b) => (b.archived ? "text-ink-2" : undefined)}
-        emptyState={<EmptyState variant="centred" title="No brands yet" hint="Tap Add brand to create the first one." />}
+        emptyState={<EmptyState variant="centred" title="No brands yet" hint="Select Add brand to create the first one." />}
       />
       <BrandSheet state={sheet} onClose={() => setSheet(null)} />
     </>

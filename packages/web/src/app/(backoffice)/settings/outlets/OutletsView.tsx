@@ -74,7 +74,7 @@ export function OutletsView({ initialOutlets }: { initialOutlets: Outlet[] }) {
         defaultSort={{ column: "name", direction: "ascending" }}
         onRowAction={(o) => setSheet({ mode: "edit", outlet: o })}
         rowClassName={(o) => (o.archived ? "text-ink-2" : undefined)}
-        emptyState={<EmptyState variant="centred" title="No outlets yet" hint="Tap Add outlet to create the first one." />}
+        emptyState={<EmptyState variant="centred" title="No outlets yet" hint="Select Add outlet to create the first one." />}
       />
 
       <OutletSheet state={sheet} onClose={() => setSheet(null)} />

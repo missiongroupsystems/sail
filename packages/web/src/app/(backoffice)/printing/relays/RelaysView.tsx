@@ -75,7 +75,7 @@ export function RelaysView({ outlets, scope, initialOutletId, initialRelays, ini
           {relays.isPending ? (
             <Skeleton lines={3} />
           ) : rows.length === 0 ? (
-            <EmptyState variant="quiet" title="No relay at this outlet" hint={admin ? "Tap Add relay, then Pair: the device takes a 6-digit code on first start." : "An Admin adds and pairs relays."} />
+            <EmptyState variant="quiet" title="No relay at this outlet" hint={admin ? "Select Add relay, then Pair: the device takes a 6-digit code on first start." : "An Admin adds and pairs relays."} />
           ) : (
             <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {rows.map((r) => (

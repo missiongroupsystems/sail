@@ -92,7 +92,7 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
         <Panel title="Order">
           <div className="flex flex-col gap-4 py-2">
             <div className="grid gap-4 sm:grid-cols-2">
-              <Select label="Outlet" selectedKey={outletId} onSelectionChange={setOutletId} items={outlets.map((o) => ({ id: o.id, label: o.name }))} />
+              <Select label="Outlet" className="sm:col-span-2" selectedKey={outletId} onSelectionChange={setOutletId} items={outlets.map((o) => ({ id: o.id, label: o.name }))} />
               <Select label="Brand" selectedKey={brandId} onSelectionChange={setBrandId} items={brands.map((b) => ({ id: b.id, label: b.name }))} />
               <Select label="Order type" selectedKey={orderType} onSelectionChange={(k) => k && setOrderType(k)} items={ORDER_TYPES.map((t) => ({ id: t, label: ORDER_TYPE_LABEL[t]! }))} />
               <Select label="Channel" selectedKey={channel} onSelectionChange={(k) => k && setChannel(k)} items={CHANNELS.map((c) => ({ id: c, label: CHANNEL_LABEL[c]! }))} />
@@ -196,7 +196,7 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
 
       <div className="flex min-w-0 flex-col gap-6">
         {!result ? (
-          <EmptyState title="No result yet" hint={lines.length ? "Tap Price this basket for the register's figures for it as it is now." : "Build a basket and tap Price this basket."} />
+          <EmptyState title="No result yet" hint={lines.length ? "Select Price this basket for the register's figures for it as it is now." : "Build a basket and tap Price this basket."} />
         ) : (
           <>
             <Panel title="Totals" aside={<Badge tone={result.pricing_status === "frozen" ? "sent" : "paid"}>{result.pricing_status}</Badge>}>

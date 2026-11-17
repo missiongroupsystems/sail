@@ -415,3 +415,31 @@ describe("R5: with tax inside prices, the Z-report's and Sales' rows add up as w
     }
   });
 });
+
+describe("R6: an even split's bill says it carries rounding only when it does (guard; B 9 not reproduced here)", () => {
+  it("each bill's note matches whether its tax per rate differs from its rate times its own amount", async () => {
+    for (const [basket, n] of [[["burger", "fries", "tea", "coffee"], 3], [["burger", "burger", "fries", "tea", "coffee", "coffee"], 3], [["fries", "tea"], 3], [["burger", "tea", "coffee"], 2], [["burger", "fries", "fries", "tea"], 4]] as const) {
+      const o = await open(US);
+      const id = o.body.data.id;
+      await add(US, id, [...basket]);
+      const split = await call<{ data: { checks: { id: string; totals: { total: number; tax_total: number; taxes: Tax[] }; tax_note: string | null; allocations: { total: number; tax: number }[] }[] } } & Err>("POST", `/v1/orders/${id}/checks/split-even`, { token: pos(US), body: { n } });
+      expect(split.status, JSON.stringify(split.body)).toBe(200);
+      for (const c of split.body.data.checks) {
+        const taxable = c.allocations.reduce((sum, a) => sum + a.total - a.tax, 0);
+        const off = c.totals.taxes.some((t) => t.amount !== Math.floor((taxable * t.bps + 5000) / 10000));
+        expect(c.tax_note !== null, `${basket.join("+")}/${n}: ${JSON.stringify(c.totals)} ${c.tax_note}`).toBe(off);
+      }
+      expect((await call("POST", `/v1/orders/${id}/cancel`, { token: US.m.manager.token, body: { reason: "test" } })).status).toBeLessThan(300);
+    }
+  });
+});
+
+describe("R6: the Changes log reports what changed", () => {
+  it("deactivating staff with the whole form sent back logs only `active`, not an unchanged email", async () => {
+    const [s] = await db.sql<{ id: string; name: string; email: string; role: string; initials: string | null }[]>`select id, name, email, role, initials from staff where id = ${US.m.server.id}`;
+    const r = await call<Err>("PATCH", `/v1/staff/${s!.id}`, { token: US.m.admin.token, body: { name: s!.name, email: s!.email, role: s!.role, active: false } });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    const [a] = await db.sql<{ details: Record<string, unknown> }[]>`select details from audit_log where action = 'staff.update' and target_id = ${s!.id} order by occurred_at desc limit 1`;
+    expect(a!.details).toEqual({ active: false, pin_changed: false });
+  });
+});

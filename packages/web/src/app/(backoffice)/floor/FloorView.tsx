@@ -39,7 +39,7 @@ export function FloorIntro() {
   const canEdit = useCan("tables.update").ok;
   const description = canEdit
     ? "Areas and tables per outlet. Drag a table to move it; tap it to edit. Download the QR sheet for the tables, or rotate one table's code."
-    : "Areas and tables per outlet. Tap a table to see its name, seats and shape. The QR codes and their sheet need an Admin.";
+    : "Areas and tables per outlet. Select a table to see its name, seats and shape. The QR codes and their sheet need an Admin.";
   return <PageHeader title="Floor & QR" description={description} />;
 }
 
@@ -168,7 +168,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
       {outlets.length === 0 ? (
         <EmptyState title="No outlets yet" hint="A floor plan belongs to an outlet. Add an outlet first." />
       ) : sortedAreas.length === 0 ? (
-        <EmptyState title="No areas yet" hint="Tap Add area: Main dining, Terrace, Bar. Tables live in an area." />
+        <EmptyState title="No areas yet" hint="Select Add area: Main dining, Terrace, Bar. Tables live in an area." />
       ) : (
         // The table panel goes beside the plan from 1280px; below that the plan takes the width, so tables keep their size.
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
@@ -262,7 +262,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
                   </div>
                 );
               })}
-              {areaTables.length === 0 ? <p className="absolute inset-x-0 top-1/2 -translate-y-1/2 px-4 text-center text-[15px] text-ink-2">No tables in {area?.name}.{canAddTable.ok ? " Tap Add table." : ""}</p> : null}
+              {areaTables.length === 0 ? <p className="absolute inset-x-0 top-1/2 -translate-y-1/2 px-4 text-center text-[15px] text-ink-2">No tables in {area?.name}.{canAddTable.ok ? " Select Add table." : ""}</p> : null}
             </div>
             </div>
             <InlineError error={patchTable.error ?? addTable.error ?? areas.error ?? tables.error} />
@@ -276,7 +276,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
             {selectedTable ? (
               <TablePanel key={selectedTable.id} table={selectedTable} areas={sortedAreas} onSave={(body) => patchTable.mutate({ id: selectedTable.id, body })} saving={patchTable.isPending} canRotateQr={admin} denied={canEditTable.reason} error={patchTable.variables?.id === selectedTable.id ? patchTable.error : null} />
             ) : (
-              <p className="text-[14px] text-ink-2">{canEditTable.ok ? "Tap a table to edit its name, seats, shape and size, or to rotate its QR code. Drag it to move it; drag the corner to resize. Arrow keys nudge a focused table." : `Tap a table to see its details. ${canEditTable.reason}`}</p>
+              <p className="text-[14px] text-ink-2">{canEditTable.ok ? "Select a table to edit its name, seats, shape and size, or to rotate its QR code. Drag it to move it; drag the corner to resize. Arrow keys nudge a focused table." : `Select a table to see its details. ${canEditTable.reason}`}</p>
             )}
           </aside>
         </div>

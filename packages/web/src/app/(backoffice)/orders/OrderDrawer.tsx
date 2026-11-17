@@ -235,9 +235,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
             </Group>
             {!readOnly && !(cancelled && refundable.length === 0) ? (
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Button size="sm" onPress={() => setRefund({ checkId: null })} isDisabled={!canRefund || refundable.length === 0}>
-                  Refund…
-                </Button>
+                {/* Refund is on each paid bill below: one button per thing to refund, not a second one for the order. */}
                 {o.status === "completed" ? (
                   <Button
                     size="sm"

@@ -42,7 +42,7 @@ test("L1: Manager and Server open a table's details on Floor & QR, read only, an
     const who = await loginFor(role);
     await officeSignIn(page, who.email, who.password);
     await page.goto(`${WEB}/floor`);
-    await expect(page.getByText("Tap a table to see its name, seats and shape. The QR codes and their sheet need an Admin.")).toBeVisible();
+    await expect(page.getByText("Select a table to see its name, seats and shape. The QR codes and their sheet need an Admin.")).toBeVisible();
     await expect(page.getByText(/Drag a table to move it/)).toHaveCount(0);
     const plan = page.getByRole("application", { name: /Floor plan/ });
     const table = plan.getByRole("button").first();

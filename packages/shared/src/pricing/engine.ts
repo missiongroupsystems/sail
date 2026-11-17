@@ -48,6 +48,11 @@ export function price(orderIn: PricingOrderInput, rulesIn: readonly PricingRuleI
 
   const warnings: string[] = [];
   const trace: TraceStep[] = [];
+  let anyCapped = false;
+  const noteCap = <T extends { capped: boolean }>(r: T): T => {
+    anyCapped ||= r.capped;
+    return r;
+  };
   const nowMs = Date.parse(context.now);
 
   /* ---- Step 1: base prices --------------------------------------------- */
@@ -157,7 +162,7 @@ export function price(orderIn: PricingOrderInput, rulesIn: readonly PricingRuleI
         if (app) adjustments.push(emptyAdjustment(rule, app));
         continue;
       }
-      const { amounts, capped } = computeAmounts(rule, value, discountEligible);
+      const { amounts, capped } = noteCap(computeAmounts(rule, value, discountEligible));
       const total = sumCents(amounts);
       if (total === 0 && !app) {
         stepEntries.push({ rule_id: rule.id, rule_name: rule.name, outcome: "skipped", detail: "amount is zero" });
@@ -218,7 +223,12 @@ export function price(orderIn: PricingOrderInput, rulesIn: readonly PricingRuleI
     title: `Tax (${context.tax_mode}, rounded ${context.tax_rounding === "per_line" ? "per line" : "once per rate"})`,
     entries: [
       // Prices that include tax say so: the tax is inside the amount, not on top of a net one (review 2, N11).
-      ...lines.map((l) => ({ outcome: "info" as const, detail: context.tax_mode === "inclusive" ? `${l.line_id}: included in ${m(l.net_amount)} → ${m(l.tax_on_net)}; in fees ${m(l.fee_amount)} → ${m(l.tax_on_fees)}` : `${l.line_id}: on net ${m(l.net_amount)} → ${m(l.tax_on_net)}; on fees ${m(l.fee_amount)} → ${m(l.tax_on_fees)}`, amount: l.tax_on_net + l.tax_on_fees })),
+      // A line whose tax differs from its own rounding took a cent so the lines add up to the rate's tax: the trace says so.
+      ...lines.map((l) => {
+        const own = context.tax_rounding === "per_rate" && l.fee_amount === 0 ? sumCents(rateTax(l.net_amount, l.taxes, context)) : l.tax_on_net;
+        const moved = own !== l.tax_on_net ? ` (${m(own)} on its own; a cent moved so the lines add up to the rate's tax)` : "";
+        return { outcome: "info" as const, detail: (context.tax_mode === "inclusive" ? `${l.line_id}: included in ${m(l.net_amount)} → ${m(l.tax_on_net)}; in fees ${m(l.fee_amount)} → ${m(l.tax_on_fees)}` : `${l.line_id}: on net ${m(l.net_amount)} → ${m(l.tax_on_net)}; on fees ${m(l.fee_amount)} → ${m(l.tax_on_fees)}`) + moved, amount: l.tax_on_net + l.tax_on_fees };
+      }),
       ...tax.breakdown.map((b) => ({ outcome: "info" as const, detail: `${b.name}: ${b.bps / 100}% on ${m(b.taxable)}`, amount: b.amount })),
     ],
   });
@@ -233,7 +243,8 @@ export function price(orderIn: PricingOrderInput, rulesIn: readonly PricingRuleI
   trace.push({
     step: 6,
     title: "Caps and rounding",
-    entries: [{ outcome: "info", detail: "caps were applied inside each rule and spread back across its lines; every rule's line amounts add up to its total (largest remainder)" }],
+    // Said only when a rule's cap was reached (review 3, P8: the line showed with no caps).
+    entries: [{ outcome: "info", detail: anyCapped ? "caps were applied inside each rule and spread back across its lines; every rule's line amounts add up to its total (largest remainder)" : "every rule's line amounts add up to its total (largest remainder)" }],
   });
 
   return {

@@ -106,7 +106,7 @@ export function AvailabilityView({ initialRules, outlets, menus }: { initialRule
         rows={rules.data}
         rowKey={(r) => r.id}
         onRowAction={(r) => setSheet({ mode: "edit", rule: r })}
-        emptyState={<EmptyState variant="centred" title="No availability rules" hint="Everything on a live menu is available at all times. Tap Add availability rule for breakfast-only items and the like." />}
+        emptyState={<EmptyState variant="centred" title="No availability rules" hint="Everything on a live menu is available at all times. Select Add availability rule for breakfast-only items and the like." />}
       />
       <InlineError error={rules.error} className="mt-4" />
       <RuleSheet state={sheet} outlets={outlets} sections={sections} byId={byId} onClose={() => setSheet(null)} />
@@ -116,7 +116,13 @@ export function AvailabilityView({ initialRules, outlets, menus }: { initialRule
 
 function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetState; outlets: Outlet[]; sections: { id: string; label: string }[]; byId: Map<string, Product>; onClose: () => void }) {
   const qc = useQueryClient();
-  const rule = state?.mode === "edit" ? state.rule : null;
+  // While the sheet closes (state is null), it keeps showing what it was: no flash of "New availability rule" after a delete.
+  const [shown, setShown] = useState<SheetState>(state);
+  useEffect(() => {
+    if (state) setShown(state);
+  }, [state]);
+  const current = state ?? shown;
+  const rule = current?.mode === "edit" ? current.rule : null;
   const [form, setForm] = useState<Form>(empty);
   const [warnings, setWarnings] = useState<string[]>([]);
   useEffect(() => {

@@ -224,7 +224,7 @@ export function PrintersView({ outlets, scope, initialOutletId, initialPrinters,
           defaultSort={{ column: "name", direction: "ascending" }}
           onRowAction={(p) => setSheet({ mode: "edit", printer: p })}
           rowClassName={(p) => (p.archived ? "text-ink-2" : undefined)}
-          emptyState={<EmptyState variant="centred" title="No printers at this outlet" hint={admin ? "Tap Add printer. Give it a fixed IP on the outlet LAN, port 9100." : "An Admin adds printers."} />}
+          emptyState={<EmptyState variant="centred" title="No printers at this outlet" hint={admin ? "Select Add printer. Give it a fixed IP on the outlet LAN, port 9100." : "An Admin adds printers."} />}
         />
         </>
       )}

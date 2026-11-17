@@ -79,7 +79,7 @@ export function RotateQrButton({ table, canRotate }: { table: Table; canRotate: 
         <Button onPress={() => setConfirming(true)} isDisabled={!canRotate || table.archived}>
           Rotate code…
         </Button>
-        <span className="text-[12.5px] text-ink-3">{canRotate ? `The code on ${table.name} stops working.` : "Admin only"}</span>
+        <span className="text-[12.5px] text-ink-3">{canRotate ? "The card on the table stops working." : "Admin only"}</span>
       </div>
       {rotate.data ? (
         <div className="flex flex-col gap-1.5 rounded-field bg-surface-2 px-3 py-2.5">

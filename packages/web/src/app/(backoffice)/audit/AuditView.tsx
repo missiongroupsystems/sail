@@ -38,7 +38,7 @@ type Filters = { action?: string; actor_id?: string; target_kind?: string; from?
 /** Keys an owner has no use for: ids and internal keys (the target column already names what changed). */
 const HIDDEN_KEY = /(^|_)(id|ids|key)$|^(order_no|sections_replaced|archived|seeded)$/;
 /** Words for the keys whose own name reads poorly. */
-const KEY_WORDS: Record<string, string> = { rule_name: "Discount", entered_value: "Value", order_type: "Type", invoice_no: "Invoice", refund_receipt_no: "Receipt", reversed_payments: "Payments reversed", tip_cents: "Tip", rounding_cents: "Rounding", pin_changed: "PIN changed", provider_ref: "Provider reference", takeaway_ref: "Takeaway reference" };
+const KEY_WORDS: Record<string, string> = { action: "For", rule_name: "Discount", entered_value: "Value", order_type: "Type", invoice_no: "Invoice", refund_receipt_no: "Receipt", reversed_payments: "Payments reversed", tip_cents: "Tip", rounding_cents: "Rounding", pin_changed: "PIN changed", provider_ref: "Provider reference", takeaway_ref: "Takeaway reference" };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -65,7 +65,9 @@ export function compact(entry: Pick<AuditEntry, "details" | "target_label" | "va
       continue;
     }
     let shown: string;
-    if (k === "entered_value" && typeof v === "number") shown = entry.value_kind === "percent" ? percent(v) : entry.value_kind === "amount" ? money(v) : String(v);
+    // An override names the action it approved: in words ("Refunded"), never the register's key.
+    if (k === "action" && typeof v === "string" && /^[a-z_]+\.[a-z_]+$/.test(v)) shown = auditActionLabel(v);
+    else if (k === "entered_value" && typeof v === "number") shown = entry.value_kind === "percent" ? percent(v) : entry.value_kind === "amount" ? money(v) : String(v);
     else if (typeof v === "number" && Number.isInteger(v) && MONEY_KEY.test(k)) shown = money(v);
     else if (typeof v === "string" && /^[a-z]+(_[a-z]+)+$/.test(v)) shown = v.replace(/_/g, " ");
     else shown = String(v);
@@ -82,6 +84,8 @@ export function actionLabel(a: Pick<AuditEntry, "action" | "target_kind" | "deta
   // Only an update that does nothing but archive or restore reads as one; a wider update keeps its own words.
   const onlyArchive = Object.keys(a.details).every((k) => ["archived", "name", "sections_replaced"].includes(k)) && a.details.sections_replaced !== true;
   if (typeof archived === "boolean" && onlyArchive) return `${archived ? "Archived" : "Restored"} ${auditTargetLabel(a.target_kind).toLowerCase()}`;
+  // Staff are deactivated, not "changed" (review 3, P4).
+  if (a.action === "staff.update" && typeof a.details.active === "boolean") return a.details.active ? "Reactivated staff" : "Deactivated staff";
   return auditActionLabel(a.action);
 }
 
@@ -148,7 +152,8 @@ const columns: DataTableColumn<AuditEntry>[] = [
     // The register's words for the target: "P-0007 · Bill 1", "Product Kopi"; a target that no longer exists by its kind alone.
     render: (a) => (
       <span className="block min-w-0 break-words">
-        {a.target_label && SELF_NAMED.has(a.target_kind) ? (
+        {/* "Station 2" names its kind already: never "Station Station 2". */}
+        {a.target_label && (SELF_NAMED.has(a.target_kind) || a.target_label.toLowerCase().startsWith(`${auditTargetLabel(a.target_kind).toLowerCase()} `)) ? (
           <span className="text-ink tabular">{a.target_label}</span>
         ) : (
           <>
