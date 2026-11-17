@@ -113,7 +113,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
                 <p className={PANEL_LABEL}>Done</p>
                 <Money cents={snap.paid_total} size="display" className="text-ink" />
                 <p className="text-body text-ink-2">
-                  {snap.checks.length} {snap.checks.length === 1 ? "bill" : "bills"} · paid {snap.completed_at ? clock(snap.completed_at) : ""}
+                  {snap.checks.length} {snap.checks.length === 1 ? "bill" : "bills"} · paid {lastPaidAt(snap) ? clock(lastPaidAt(snap)!) : snap.completed_at ? clock(snap.completed_at) : ""}
                   {refundWord(snap.checks)}
                 </p>
               </div>
@@ -224,4 +224,10 @@ function refundWord(checks: { status: string; paid_total: number; refunded_total
   const paid = checks.filter((c) => c.paid_total > 0);
   if (paid.length && paid.every((c) => c.status === "refunded" || c.refunded_total >= c.paid_total)) return " · refunded";
   return checks.some((c) => c.refunded_total > 0 || c.status === "partially_refunded") ? " · partly refunded" : "";
+}
+
+/** When the order was paid: its last recorded payment, not the moment it completed (a takeaway paid early completes on send). */
+function lastPaidAt(snap: { checks: { payments: { status: string; created_at: string }[] }[] }): string | null {
+  const at = snap.checks.flatMap((c) => c.payments.filter((p) => p.status === "recorded").map((p) => p.created_at)).sort();
+  return at.length ? at[at.length - 1]! : null;
 }

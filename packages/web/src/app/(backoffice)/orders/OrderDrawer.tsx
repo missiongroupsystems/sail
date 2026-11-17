@@ -319,7 +319,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                       {l.notes ? <p className="pl-11 text-caption text-ink-2">“{l.notes}”</p> : null}
                       {l.void_reason ? <p className="pl-11 text-caption text-status-alert no-underline">{l.fired_at ? "Voided" : "Removed"}: {l.void_reason}</p> : null}
                       <p className="pl-11 text-caption text-ink-2 tabular">
-                        {l.unit_price ? <Money cents={l.unit_price} size="caption" /> : "open price"} each{l.fired_at ? ` · sent ${dayClock(l.fired_at)}` : ""}
+                        {l.unit_price ? <Money cents={l.unit_amount ?? l.unit_price} size="caption" /> : "open price"} each{l.fired_at ? ` · sent ${dayClock(l.fired_at)}` : ""}
                         {l.added_by ? ` · ${l.added_by}` : ""}
                       </p>
                     </li>

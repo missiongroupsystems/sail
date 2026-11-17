@@ -63,6 +63,8 @@ export type SnapshotLine = {
   sku: string | null;
   quantity: number;
   unit_price: number;
+  /** One item with its options: `unit_price` plus each modifier's price per item, so "each" reads right beside a size or extra. */
+  unit_amount: number;
   open_price: number | null;
   modifiers: { modifier_id: string; product_id: string; name: string; quantity: number; price: number; group_id: string }[];
   notes: string | null;
@@ -464,6 +466,7 @@ export async function loadSnapshot(orderId: string): Promise<OrderSnapshot> {
       sku: l.sku,
       quantity: l.quantity,
       unit_price: l.unitPrice,
+      unit_amount: l.unitPrice + sumCents(l.modifiers.map((m) => m.price * m.quantity)),
       open_price: l.openPrice,
       modifiers: l.modifiers,
       notes: l.notes,

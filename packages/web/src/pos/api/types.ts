@@ -150,6 +150,8 @@ export type SnapshotLine = {
   sku: string | null;
   quantity: number;
   unit_price: number;
+  /** One item with its options, as the register adds them. */
+  unit_amount?: number;
   open_price: number | null;
   modifiers: SnapshotModifier[];
   notes: string | null;

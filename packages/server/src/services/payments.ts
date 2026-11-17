@@ -85,7 +85,7 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
       applied = balance;
     }
     // A percentage tip in cash is rounded to the smallest cash amount, so the change can be paid.
-    if (input.tipBps != null) tip = roundCash(percentOfCents(applied, input.tipBps), settings.cashRoundingIncrement ?? 1).rounded;
+    if (input.tipBps != null) tip = roundCash(percentOfCents(tipBasis(applied, check, order.taxMode), input.tipBps), settings.cashRoundingIncrement ?? 1).rounded;
     if (applied === balance && settings.cashRoundingIncrement && settings.cashRoundingIncrement > 1) {
       rounding = roundCash(balance, settings.cashRoundingIncrement).roundingCents;
     }
@@ -100,7 +100,7 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
       change = tendered - due;
     }
   } else {
-    if (input.tipBps != null) tip = percentOfCents(applied, input.tipBps);
+    if (input.tipBps != null) tip = percentOfCents(tipBasis(applied, check, order.taxMode), input.tipBps);
     if (applied > balance) throw AppError.validation(`${tender.name} payments cannot exceed the balance of ${formatCents(balance)}`, { remedy: "Enter the balance or a smaller part payment.", details: { balance, check_id: check.id, check_total: check.total } });
   }
 
@@ -147,6 +147,20 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
 
   const completed = await maybeComplete(order.id, now);
   return { payment: payment!, check: updatedCheck!, changeDue: change, firstPayment, orderCompleted: completed };
+}
+
+/**
+ * What a percentage tip is a percentage of. Where tax is added on top of the prices (the US preset), the part of the
+ * bill before tax that this payment pays: a part payment tips its own share, the amount applied times the bill's
+ * pre-tax total over its total, rounded half up. Where prices include tax, the amount applied, the figure the guest sees.
+ */
+export function tipBasis(applied: number, check: { total: number; taxTotal: number }, taxMode: string): number {
+  if (taxMode !== "exclusive" || check.total <= 0) return applied;
+  const preTax = check.total - check.taxTotal;
+  const num = BigInt(applied) * BigInt(Math.max(0, preTax));
+  const den = BigInt(check.total);
+  const q = num / den;
+  return Number((num - q * den) * 2n >= den ? q + 1n : q);
 }
 
 /**

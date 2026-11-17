@@ -125,6 +125,8 @@ export type OrderLine = {
   sku: string | null;
   quantity: number;
   unit_price: number;
+  /** One item with its options, as the register adds them. */
+  unit_amount?: number;
   open_price: number | null;
   modifiers: { modifier_id: string; product_id: string; name: string; quantity: number; price: number; group_id: string }[];
   notes: string | null;

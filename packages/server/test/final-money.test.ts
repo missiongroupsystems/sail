@@ -415,3 +415,19 @@ describe("M12: customer mobiles in E.164, found by any 3 or more digits", () => 
     expect(old.body.data.map((x) => x.name)).toContain("Old Row");
   });
 });
+
+describe("M21: a percentage tip in the US preset is on the bill before tax", () => {
+  it("20% of a $39.02 bill ($35.96 before tax) is $7.19; a half part payment tips half", async () => {
+    const o = await open({ order_type: "takeaway" });
+    const a = await add(o.body.data.id, ids.burger);
+    const checkId = a.body.data.checks[0]!.id;
+    type P = { payment: { tip_cents: number } };
+    const full = await call<P>("POST", `/v1/checks/${checkId}/payments`, { token: US.admin.token, body: { payment_id: randomUUID(), tender_type_id: ids.card, amount: 3902, tip_bps: 2000, dry_run: true } });
+    expect(full.status, JSON.stringify(full.body)).toBe(200);
+    expect(full.body.payment.tip_cents).toBe(719);
+    const half = await call<P>("POST", `/v1/checks/${checkId}/payments`, { token: US.admin.token, body: { payment_id: randomUUID(), tender_type_id: ids.card, amount: 1951, tip_bps: 2000, dry_run: true } });
+    expect(half.body.payment.tip_cents).toBe(360);
+    // The line's price "each" includes its options.
+    expect((a.body.data.lines[0] as unknown as { unit_amount: number }).unit_amount).toBe(3596);
+  });
+});
