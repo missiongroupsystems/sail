@@ -117,8 +117,8 @@ export async function syncAllocations(orderId: string, opts: { sharesByLine?: Ma
         const row = r as (typeof rows)[number];
         const fee = values.find((v) => v.checkId === chks[r.check]!.id && v.orderLineId === r.lineId)?.fee ?? 0;
         const drift = row.base + row.discount + fee - ((l.base + l.discount + l.fee) * r.shareNum) / r.shareDen;
-        const combined = l.taxes.reduce((n, t) => n + t.bps, 0);
-        return ((l.taxables[k] ?? 0) * r.shareNum) / r.shareDen + (taxAdds ? drift : (drift * 10_000) / (10_000 + combined));
+        // With tax in prices a bill's tax does not change its total and nothing below moves its cents: its share, as before.
+        return ((l.taxables[k] ?? 0) * r.shareNum) / r.shareDen + (taxAdds ? drift : 0);
       };
       const moved = new Map<string, Map<string, number>>();
       for (let pass = 0; pass < 6; pass++) {
@@ -133,7 +133,9 @@ export async function syncAllocations(orderId: string, opts: { sharesByLine?: Ma
             moved.set(lineId, m);
           }
         }
-        // An even split is even: no two bills' totals more than a cent apart (review 4, T4).
+        // An even split is even: no two bills' totals more than a cent apart (review 4, T4). Only with tax on top: there the
+        // tax rebalance changes bill totals; with tax in prices it does not, and each line's odd cents already keep them even.
+        if (!taxAdds) break;
         balanceBillTotals(rows);
         if (JSON.stringify(rows.map((r) => [r.base, r.taxes])) === before) break;
       }
@@ -354,7 +356,7 @@ function splitTaxNote(taxes: TaxAmount[], allocs: (typeof checkAllocations.$infe
       if (!l || !b) continue;
       if (taxMode === "inclusive") combined = l.taxes.reduce((n, x) => n + x.bps, 0);
       const drift = a.base + a.discount + a.fee - ((l.baseAmount + l.discountAmount + l.feeAmount) * a.shareNum) / a.shareDen;
-      base += ((taxMode === "inclusive" ? l.netAmount : b.taxable) * a.shareNum) / a.shareDen + drift;
+      base += ((taxMode === "inclusive" ? l.netAmount : b.taxable) * a.shareNum) / a.shareDen + (taxMode === "inclusive" ? 0 : drift);
     }
     const own = taxMode === "inclusive" ? Math.floor((Math.round(base) * t.bps) / (10_000 + combined) + 0.5) : Math.floor((Math.round(base) * t.bps) / 10_000 + 0.5);
     if (own !== t.amount) return "Tax includes rounding so the bills add up to the order's tax.";

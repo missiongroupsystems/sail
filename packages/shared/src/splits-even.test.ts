@@ -69,6 +69,8 @@ describe("T4 property: even splits are a cent apart at most", () => {
           for (let pass = 0; pass < 6; pass++) {
             const snap = JSON.stringify(rows.map((x) => [x.base, x.taxes]));
             rebalanceBillTax(rows, Object.fromEntries(lines.map((l, li) => [String(li), l.taxables])), { taxAddsToTotal: !r.inclusive, movable: new Set(lines.flatMap((l, li) => (l.fee === 0 ? [String(li)] : []))) });
+            // As syncAllocations does: with tax in prices one rebalance, which leaves bill totals as they were.
+            if (r.inclusive) break;
             balanceBillTotals(rows);
             if (JSON.stringify(rows.map((x) => [x.base, x.taxes])) === snap) break;
           }
