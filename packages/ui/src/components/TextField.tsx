@@ -52,7 +52,9 @@ export function TextField({
   ...rest
 }: TextFieldProps) {
   const isDisabled = useLockedDisabled(rest.isDisabled);
-  const control = cx(size === "sm" ? fieldControlSm : fieldControl, mono && "font-mono", numeric && "tabular", suffix ? "pr-12" : null, inputClassName);
+  // No native clear "×" on a search field (WebKit and Chromium draw a blue one, out of tone with the rest; final2 A P-A8):
+  // the field clears with Backspace, or by itself once a result is picked.
+  const control = cx(size === "sm" ? fieldControlSm : fieldControl, mono && "font-mono", numeric && "tabular", suffix ? "pr-12" : null, "[&::-webkit-search-cancel-button]:hidden", inputClassName);
   return (
     <AriaTextField {...rest} isDisabled={isDisabled} validationBehavior={rest.validationBehavior ?? "aria"} className={cx(fieldWrap, className)}>
       {label ? <Label className={fieldLabel}>{label}</Label> : null}

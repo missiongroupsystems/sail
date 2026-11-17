@@ -5,6 +5,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import { useEffect, useMemo, useState } from "react";
 import { greyPill, Quiet, SheetSection, TwoLine } from "@/components/office/parts";
 import { CHANNELS, CHANNEL_LABEL, WEEKDAYS } from "@/components/backoffice/labels";
+import { useConfirm } from "@/components/backoffice/Confirm";
 import { ProductSearch } from "@/components/backoffice/ProductSearch";
 import { Warnings } from "@/components/backoffice/Warnings";
 import { productName, useProductsById } from "@/components/backoffice/products";
@@ -165,8 +166,8 @@ function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetSt
     },
   });
 
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  useEffect(() => setConfirmDelete(false), [state]);
+  // Deleting asks once in the back office's confirm dialog, as every other destructive action does (final2 A P-A8).
+  const confirm = useConfirm();
   const remove = useMutation<unknown, ApiError>({
     mutationFn: () => req(api.DELETE("/v1/availability-rules/{id}", { params: { path: { id: rule!.id } }, body: {} })),
     onSuccess: async () => {
@@ -185,31 +186,25 @@ function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetSt
       title={rule ? "Availability rule" : "New availability rule"}
       description={rule ? "The target of a rule cannot change; add a new rule for another item." : "Choose what the rule applies to, then narrow where and when it can be ordered."}
       footer={
-        confirmDelete ? (
-          <>
-            <span className="mr-auto text-body text-ink">Delete this rule? The item is then available whenever its menu is live, unless another rule limits it.</span>
-            <Button variant="secondary" className={greyPill} onPress={() => setConfirmDelete(false)} isDisabled={remove.isPending}>
-              Keep rule
-            </Button>
-            <Button variant="destructive" isPending={remove.isPending} onPress={() => remove.mutate()}>
+        <>
+          {rule ? (
+            <Button
+              variant="destructive"
+              className="mr-auto"
+              isPending={remove.isPending}
+              onPress={() => confirm.ask({ title: "Delete this rule?", body: "The item is then available whenever its menu is live, unless another rule limits it.", confirmLabel: "Delete rule", cancelLabel: "Keep rule", onConfirm: () => remove.mutate() })}
+              isDisabled={save.isPending || !mayEdit.ok}
+            >
               Delete rule
             </Button>
-          </>
-        ) : (
-          <>
-            {rule ? (
-              <Button variant="destructive" className="mr-auto" onPress={() => setConfirmDelete(true)} isDisabled={save.isPending || !mayEdit.ok}>
-                Delete rule
-              </Button>
-            ) : null}
-            <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={save.isPending}>
-              Cancel
-            </Button>
-            <Button variant="primary" isDisabled={!mayEdit.ok || !targetId} isPending={save.isPending} onPress={() => save.mutate()}>
-              {rule ? "Save rule" : "Add rule"}
-            </Button>
-          </>
-        )
+          ) : null}
+          <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={save.isPending}>
+            Cancel
+          </Button>
+          <Button variant="primary" isDisabled={!mayEdit.ok || !targetId} isPending={save.isPending} onPress={() => save.mutate()}>
+            {rule ? "Save rule" : "Add rule"}
+          </Button>
+        </>
       }
     >
       <div className="flex flex-col gap-7">
@@ -279,6 +274,7 @@ function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetSt
         <InlineError error={save.error ?? remove.error} />
       </div>
     </Sheet>
+    {confirm.dialog}
     </FieldsLocked>
   );
 }

@@ -185,7 +185,8 @@ test("E-N3, E-N4, E-N2: an overnight availability rule saves, is marked next day
     await row.click();
     const edit = page.getByRole("dialog", { name: "Availability rule" });
     await edit.getByRole("button", { name: "Delete rule" }).click();
-    await edit.getByRole("button", { name: "Delete rule" }).click();
+    // It asks once, in the confirm dialog every destructive action uses (final2 A P-A8).
+    await page.getByRole("alertdialog", { name: "Delete this rule?" }).getByRole("button", { name: "Delete rule" }).click();
     await expect(edit).toBeHidden();
     await expect(page.getByRole("row").filter({ hasText: "(next day)" })).toHaveCount(0);
     passed = true;

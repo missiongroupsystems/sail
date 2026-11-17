@@ -95,7 +95,8 @@ export function ImportView({ initialJobs }: { initialJobs: ImportJobSummary[] })
         const entity = guessEntity(f.name);
         next.push({ name: f.name, text, headers, rows: csvRowCount(text), entity, columns: entity ? autoMap(FIELDS[entity], headers) : {} });
       }
-      setUploads((prev) => [...prev.filter((u) => !next.some((n) => n.name === u.name)), ...next]);
+      // One file per entity: a file chosen for an entity already here replaces the earlier one (final2 A P-A6).
+      setUploads((prev) => [...prev.filter((u) => !next.some((n) => n.name === u.name || (n.entity && n.entity === u.entity))), ...next]);
     } catch (e) {
       setReadError(e instanceof Error ? e.message : "The file could not be read");
     }
@@ -107,6 +108,9 @@ export function ImportView({ initialJobs }: { initialJobs: ImportJobSummary[] })
   const problems = useMemo(() => {
     const out: string[] = [];
     for (const u of uploads) {
+      // Two files for one entity would apply in turn, the later silently winning where they disagree.
+      const first = uploads.find((x) => x.entity && x.entity === u.entity);
+      if (first && first !== u) out.push(`${first.name} and ${u.name} both hold ${ENTITY_LABEL[u.entity!].toLowerCase()}: keep one.`);
       if (!u.entity) out.push(`${u.name}: choose what the file contains.`);
       else for (const f of FIELDS[u.entity]) if (f.required && !u.columns[f.name]) out.push(`${u.name}: map the required field "${f.name}".`);
     }
