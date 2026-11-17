@@ -3,6 +3,7 @@
 import { ChevronDown, Store } from "lucide-react";
 import { Dialog as AriaDialog, DialogTrigger, Popover, Button as AriaButton } from "react-aria-components";
 import { cx } from "../lib/cx";
+import { useHydrated } from "../lib/use-hydrated";
 import { Icon } from "./Icon";
 import { Select } from "./Select";
 
@@ -32,13 +33,16 @@ export function ScopePicker({ merchantName, brands, outlets, value, onChange, co
   const brandLabel = brand?.name ?? "All brands";
   const outletLabel = outlet?.name ?? "All outlets";
   const summary = `${merchantName} ▸ ${brandLabel} ▸ ${outletLabel}`;
+  const hydrated = useHydrated();
 
   return (
     <DialogTrigger>
       <AriaButton
         aria-label={`Scope: ${summary}`}
+        // Server-rendered, the button has no handler yet: it says so until then, so an early press is not taken and lost.
+        aria-disabled={hydrated ? undefined : true}
         className={cx(
-          "press flex w-full min-h-11 items-center gap-2 rounded-[10px] bg-surface px-3 py-2 text-left shadow-[inset_0_0_0_1px_var(--line)] outline-none transition-shadow duration-[120ms]",
+          "press aria-disabled:pointer-events-none flex w-full min-h-11 items-center gap-2 rounded-[10px] bg-surface px-3 py-2 text-left shadow-[inset_0_0_0_1px_var(--line)] outline-none transition-shadow duration-[120ms]",
           "data-[hovered]:shadow-[inset_0_0_0_1px_var(--line-strong)] data-[pressed]:bg-surface-2",
           "data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus",
           collapsed && "justify-center px-0",

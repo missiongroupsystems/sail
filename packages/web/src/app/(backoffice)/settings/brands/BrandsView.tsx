@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/backoffice/Confirm";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, DataTable, EmptyState, InlineError, Sheet, StatusDot, Switch, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -103,6 +104,7 @@ export function BrandsView({ initialBrands }: { initialBrands: Brand[] }) {
 }
 
 function BrandSheet({ state, onClose }: { state: SheetState; onClose: () => void }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const router = useRouter();
   const brand = state?.mode === "edit" ? state.brand : null;
@@ -154,7 +156,7 @@ function BrandSheet({ state, onClose }: { state: SheetState; onClose: () => void
       footer={
         <>
           {brand && mayEdit.ok ? (
-            <Button variant="secondary" onPress={() => archive.mutate(!brand.archived)} isPending={archive.isPending} isDisabled={save.isPending} className={`mr-auto ${brand.archived ? greyPill : greyPillAlert}`}>
+            <Button variant="secondary" onPress={() => (brand.archived ? archive.mutate(false) : confirm.ask({ title: `Archive ${brand.name}?`, body: "It leaves the brand lists. Past orders and reports keep it. You can restore it later.", confirmLabel: "Archive brand", cancelLabel: "Keep the brand", onConfirm: () => archive.mutate(true) }))} isPending={archive.isPending} isDisabled={save.isPending} className={`mr-auto ${brand.archived ? greyPill : greyPillAlert}`}>
               {brand.archived ? "Restore brand" : "Archive brand"}
             </Button>
           ) : null}
@@ -218,6 +220,7 @@ function BrandSheet({ state, onClose }: { state: SheetState; onClose: () => void
         {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
         <InlineError error={save.error ?? archive.error} />
       </form>
+      {confirm.dialog}
     </Sheet>
     </FieldsLocked>
   );

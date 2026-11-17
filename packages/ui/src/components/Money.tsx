@@ -31,6 +31,7 @@ export function Money({ cents, className, size = "body", pending, signed }: Mone
     <span
       className={cx("tabular whitespace-nowrap", sizeClass[size], pending && "opacity-60", className)}
       aria-busy={pending || undefined}
+      data-cents={cents}
     >
       {text}
     </span>

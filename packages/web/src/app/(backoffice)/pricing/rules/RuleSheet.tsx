@@ -446,7 +446,7 @@ function ProductList({ control, name, byId, label }: { control: ReturnType<typeo
               ))}
             </ul>
           ) : null}
-          <ProductSearch exclude={field.value} keepQuery onPick={(p) => field.onChange([...field.value, p.id])} className="max-w-[480px]" />
+          <ProductSearch exclude={field.value} onPick={(p) => field.onChange([...field.value, p.id])} className="max-w-[480px]" />
           {fieldState.error ? <span className="text-caption text-status-alert">{fieldState.error.message}</span> : null}
         </div>
       )}

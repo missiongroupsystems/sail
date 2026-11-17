@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/backoffice/Confirm";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, DataTable, EmptyState, Icon, InlineError, parsePercent, percentText, Sheet, Switch, TextField, type DataTableColumn, Pill, FieldsLocked, useFieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -125,6 +126,7 @@ export function TaxClassesView({ initialClasses, outlets }: { initialClasses: Ta
 }
 
 function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean; taxClass: TaxClass | null; outlets: Outlet[]; onClose: () => void }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [rate, setRate] = useState<TaxRate | "new" | null>(null);
   const form = useForm<ClassValues>({ resolver: zodResolver(ClassSchema), defaultValues: { name: "", components: [], is_default: false } });
@@ -191,7 +193,7 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
       footer={
         <>
           {taxClass && mayEdit.ok ? (
-            <Button variant="secondary" onPress={() => archive.mutate(!taxClass.archived)} isPending={archive.isPending} isDisabled={taxClass.is_default || save.isPending} className={`mr-auto ${taxClass.archived ? greyPill : greyPillAlert}`}>
+            <Button variant="secondary" onPress={() => (taxClass.archived ? archive.mutate(false) : confirm.ask({ title: `Archive ${taxClass.name}?`, body: "It can no longer be chosen for a product. Orders already priced keep their tax. You can restore it later.", confirmLabel: "Archive tax class", cancelLabel: "Keep the tax class", onConfirm: () => archive.mutate(true) }))} isPending={archive.isPending} isDisabled={taxClass.is_default || save.isPending} className={`mr-auto ${taxClass.archived ? greyPill : greyPillAlert}`}>
               {taxClass.archived ? "Restore" : "Archive"}
             </Button>
           ) : null}
@@ -264,6 +266,7 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
           </SheetSection>
         ) : null}
       </div>
+      {confirm.dialog}
     </Sheet>
     </FieldsLocked>
   );

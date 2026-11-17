@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE } from "@/lib/cookies";
+import { PATH_HEADER, SESSION_COOKIE } from "@/lib/cookies";
 
 /**
  * Presence check only: the register validates the token on every call. Signed-out
@@ -20,14 +20,17 @@ export function middleware(request: NextRequest) {
     return signedIn ? NextResponse.redirect(new URL("/today", request.url)) : NextResponse.next();
   }
   // First-run setup and invitation or reset links are for people who are not signed in yet.
-  if (pathname === "/setup" || pathname === "/set-password") return NextResponse.next();
+  if (pathname === "/setup" || pathname === "/set-password" || pathname === "/forgot-password") return NextResponse.next();
   if (!signedIn) {
     const login = new URL("/login", request.url);
     // The deep link keeps its query (a report's date, a filter), so signing in lands where the link pointed.
     if (pathname !== "/") login.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(login);
   }
-  return NextResponse.next();
+  // The page's path, for the refusal page to name the role it needs (forbidden.tsx has no other way to know it).
+  const headers = new Headers(request.headers);
+  headers.set(PATH_HEADER, pathname);
+  return NextResponse.next({ request: { headers } });
 }
 
 export const config = {

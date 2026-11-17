@@ -37,8 +37,9 @@ export const FIELDS: Record<ImportEntity, ImportField[]> = {
   products: [
     { name: "name", required: true },
     { name: "price", required: true, hint: "In the currency's decimals with \".\" (16.00), or minor units (1600c)" },
-    { name: "sku", hint: "Required unless legacy_id is mapped" },
-    id("Required unless sku is mapped"),
+    { name: "sku", hint: "Required unless legacy_id or sail_id is mapped" },
+    id("Required unless sku or sail_id is mapped"),
+    { name: "sail_id", hint: "The product's id in Sail's own export" },
     { name: "kind", hint: "product or component" },
     { name: "description" },
     { name: "category_legacy_id" },

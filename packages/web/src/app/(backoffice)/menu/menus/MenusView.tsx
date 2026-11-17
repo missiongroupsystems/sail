@@ -5,10 +5,11 @@ import { unsavedChanges } from "@/lib/unsaved";
 import type { SyntheticListenerMap } from "@dnd-kit/core/dist/hooks/utilities";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Badge, Button, Dialog, EmptyState, Icon, InlineError, Money, Select, Skeleton, Switch, TextField, useLocale, Pill } from "@sail/ui";
+import { Badge, Button, Dialog, EmptyState, Icon, InlineError, Menu as ActionMenu, MenuItem, MenuTrigger, Money, Select, Skeleton, Switch, TextField, useLocale, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GripVertical, Pencil, Plus, X } from "lucide-react";
+import { Ellipsis, GripVertical, Pencil, Plus, X } from "lucide-react";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { useConfirm } from "@/components/backoffice/Confirm";
 import { BrandChoice } from "@/components/backoffice/OutletChoice";
 import { ProductSearch } from "@/components/backoffice/ProductSearch";
 import { Warnings } from "@/components/backoffice/Warnings";
@@ -181,7 +182,14 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
   }, [menu.data, dirty, locale]);
 
   const products = useAllProducts({ brand_id: undefined, include_archived: "true" });
+  const confirm = useConfirm();
   const sections = draft ?? [];
+  // Where else in this menu each product already sits, for the open search lists (round 8 S-6).
+  const placedIn = (sectionId: string) => {
+    const out = new Map<string, string>();
+    for (const s of sections) if (s.id !== sectionId) for (const p of s.items) if (!out.has(p)) out.set(p, s.name);
+    return out;
+  };
   const tops = sections.filter((s) => !s.parent_id);
   const childrenOf = (id: string) => sections.filter((s) => s.parent_id === id);
 
@@ -234,7 +242,23 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
   });
 
   const addSection = (parent_id: string | null) => edit((prev) => [...prev, { id: crypto.randomUUID(), name: parent_id ? "New sub-section" : "New section", parent_id, items: [] }]);
-  const removeSection = (id: string) => edit((prev) => prev.filter((s) => s.id !== id && s.parent_id !== id));
+  const dropSection = (id: string) => edit((prev) => prev.filter((s) => s.id !== id && s.parent_id !== id));
+  // A section that holds products or sub-sections asks once; an empty one goes at once (round 8 S-6).
+  const removeSection = (id: string) => {
+    const s = sections.find((x) => x.id === id);
+    if (!s) return;
+    const subs = sections.filter((x) => x.parent_id === id);
+    const count = s.items.length + subs.reduce((n, x) => n + x.items.length, 0);
+    if (count === 0 && subs.length === 0) return dropSection(id);
+    const what = [count ? `its ${count === 1 ? "product" : `${count} products`}` : null, subs.length ? `its ${subs.length === 1 ? "sub-section" : `${subs.length} sub-sections`}` : null].filter(Boolean).join(" and ");
+    confirm.ask({
+      title: `Remove ${s.name}?`,
+      body: `It goes with ${what} when you save the menu: they stop showing under it on the POS and the guest menu. The products themselves stay.`,
+      confirmLabel: s.parent_id ? "Remove sub-section" : "Remove section",
+      cancelLabel: "Keep it",
+      onConfirm: () => dropSection(id),
+    });
+  };
   const rename = (id: string, name: string) => edit((prev) => prev.map((s) => (s.id === id ? { ...s, name } : s)));
   const addItem = (id: string, product_id: string) => edit((prev) => prev.map((s) => (s.id === id && !s.items.includes(product_id) ? { ...s, items: [...s.items, product_id] } : s)));
   const removeItem = (id: string, product_id: string) => edit((prev) => prev.map((s) => (s.id === id ? { ...s, items: s.items.filter((p) => p !== product_id) } : s)));
@@ -285,15 +309,34 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
         </div>
         {mayEdit.ok ? (
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" className={greyPill} onPress={() => patchMenu.mutate({ archived: !summary.archived })} isPending={patchMenu.isPending && patchMenu.variables?.archived !== undefined}>
-            {summary.archived ? "Restore menu" : "Archive menu"}
-          </Button>
           <Button onPress={() => addSection(null)}>
             <Icon icon={Plus} size={16} /> Add section
           </Button>
           <Button variant="primary" isDisabled={!dirty} isPending={save.isPending} onPress={() => save.mutate()}>
             {dirty ? "Save menu order" : "Saved"}
           </Button>
+          {/* Archiving sits out of the way, at the row's quiet end, and asks once (A P15). */}
+          <MenuTrigger>
+            <Button variant="quiet" iconOnly aria-label="More for this menu" isPending={patchMenu.isPending && patchMenu.variables?.archived !== undefined}>
+              <Icon icon={Ellipsis} size={18} />
+            </Button>
+            <ActionMenu
+              minWidth={200}
+              onAction={(key) => {
+                if (key === "restore") patchMenu.mutate({ archived: false });
+                if (key === "archive")
+                  confirm.ask({
+                    title: `Archive ${summary.name}?`,
+                    body: "It stops showing on the POS and the guest menu on every channel it is linked to, at once. You can restore it with Show archived.",
+                    confirmLabel: "Archive menu",
+                    cancelLabel: "Keep the menu",
+                    onConfirm: () => patchMenu.mutate({ archived: true }),
+                  });
+              }}
+            >
+              {summary.archived ? <MenuItem id="restore">Restore menu</MenuItem> : <MenuItem id="archive" tone="destructive">Archive menu</MenuItem>}
+            </ActionMenu>
+          </MenuTrigger>
         </div>
         ) : (
           <p className="text-[13px] text-ink-2">{mayEdit.reason}</p>
@@ -301,6 +344,7 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
       </div>
       <Warnings warnings={warnings} />
       <InlineError error={save.error ?? patchMenu.error} />
+      {confirm.dialog}
 
       <ReadOnly.Provider value={!mayEdit.ok}>
       {tops.length === 0 ? (
@@ -316,6 +360,7 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
                       section={s}
                       handle={handle}
                       byId={products.byId}
+                      placedIn={placedIn(s.id)}
                       onRename={(n) => rename(s.id, n)}
                       onRemove={() => removeSection(s.id)}
                       onAddItem={(pid) => addItem(s.id, pid)}
@@ -332,6 +377,7 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
                                     section={c}
                                     handle={h}
                                     byId={products.byId}
+                                    placedIn={placedIn(c.id)}
                                     sub
                                     onRename={(n) => rename(c.id, n)}
                                     onRemove={() => removeSection(c.id)}
@@ -390,6 +436,7 @@ function SectionBlock({
   section,
   handle,
   byId,
+  placedIn,
   sub,
   onRename,
   onRemove,
@@ -401,6 +448,8 @@ function SectionBlock({
   section: Draft;
   handle: Handle;
   byId: ReturnType<typeof useAllProducts>["byId"];
+  /** Products already in another section of this menu, with that section's name. */
+  placedIn: Map<string, string>;
   sub?: boolean;
   onRename: (name: string) => void;
   onRemove: () => void;
@@ -495,7 +544,7 @@ function SectionBlock({
         <p className="mx-1 rounded-field border border-dashed border-rule-dashed px-3 py-2.5 text-[13px] text-ink-3">No products in this section yet.</p>
       )}
 
-      {adding ? <ProductSearch autoFocus keepQuery exclude={section.items} onPick={(p) => onAddItem(p.id)} className="w-full max-w-[520px]" /> : null}
+      {adding ? <ProductSearch autoFocus exclude={section.items} elsewhere={placedIn} onPick={(p) => onAddItem(p.id)} className="w-full max-w-[520px]" /> : null}
       {children}
     </div>
   );

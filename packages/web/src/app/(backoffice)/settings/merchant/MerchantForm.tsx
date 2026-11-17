@@ -200,7 +200,7 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
           label="Business day ends at"
           type="time"
           numeric
-          description="Sales after this time count towards the same business day. Outlets can set their own."
+          description="Sales before this time count towards the day before: at 04:00, a sale at 1 am belongs to the evening it came from. Outlets can set their own."
           className="sm:max-w-[240px]"
         />
       </SheetSection>

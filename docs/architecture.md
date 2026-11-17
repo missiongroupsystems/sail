@@ -169,4 +169,4 @@ These are deliberate gaps, not hidden features. The [roadmap](roadmap.md) says w
 - **Real payment providers and online payments.** The provider seam, intents, webhooks and the simulator are built; no adapter for a real provider ships, and nothing takes a payment online or on the guest's phone. A refund of a terminal payment is recorded in the register and given back on the terminal by hand.
 - **Offline mode.** Every action needs the API. Queued print jobs survive a relay or printer outage.
 - **Changesets.** Configuration is edited directly through the API and back-office forms; there is no draft, diff, simulate and approve flow. The back-office Changes page is a placeholder.
-- **Agent runner.** Sail exposes agents to the register but ships no agents, playbooks, sandbox or evals. The back-office Assistants page is a placeholder; identities are managed through the API.
+- **Agent runner.** Sail exposes agents to the register but ships no agents, playbooks, sandbox or evals. The back office has no Assistants page until there is something to manage there; identities are managed through the API. The rail's Changes opens the audit log.

@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/backoffice/Confirm";
 import { Users } from "lucide-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Badge, Button, DataTable, EmptyState, InlineError, Panel, Pill, Sheet, StatusDot, TextField, type DataTableColumn, FieldsLocked } from "@sail/ui";
@@ -162,6 +163,7 @@ export function CustomersView({ initialGroups, initialCustomers }: { initialGrou
 }
 
 function CustomerFormSheet({ state, groups, onClose }: { state: CustomerSheet; groups: CustomerGroup[]; onClose: () => void }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const customer = state?.mode === "edit" ? state.customer : null;
   const defaults = (c: Customer | null): CustomerValues => ({ name: c?.name ?? "", mobile: c?.mobile ?? "", email: c?.email ?? "", marketing_consent: c?.marketing_consent ?? false, notes: c?.notes ?? "", group_ids: c?.group_ids ?? [] });
@@ -213,7 +215,7 @@ function CustomerFormSheet({ state, groups, onClose }: { state: CustomerSheet; g
       footer={
         <>
           {customer ? (
-            <Button variant={customer.archived ? "secondary" : "destructive"} onPress={() => archive.mutate(!customer.archived)} isPending={archive.isPending} isDisabled={save.isPending || !mayEdit.ok} className="mr-auto">
+            <Button variant={customer.archived ? "secondary" : "destructive"} onPress={() => (customer.archived ? archive.mutate(false) : confirm.ask({ title: `Archive ${customer.name}?`, body: "The POS no longer finds them. Their past orders keep their name. You can restore it later.", confirmLabel: "Archive customer", cancelLabel: "Keep the customer", onConfirm: () => archive.mutate(true) }))} isPending={archive.isPending} isDisabled={save.isPending || !mayEdit.ok} className="mr-auto">
               {customer.archived ? "Restore customer" : "Archive customer"}
             </Button>
           ) : null}
@@ -246,12 +248,14 @@ function CustomerFormSheet({ state, groups, onClose }: { state: CustomerSheet; g
         </FormSection>
         <InlineError error={save.error ?? archive.error} />
       </form>
+      {confirm.dialog}
     </Sheet>
     </FieldsLocked>
   );
 }
 
 function GroupFormSheet({ state, onClose }: { state: GroupSheet; onClose: () => void }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const group = state?.mode === "edit" ? state.group : null;
   const form = useForm<GroupValues>({ resolver: zodResolver(GroupSchema), defaultValues: { name: group?.name ?? "", description: group?.description ?? "" } });
@@ -285,7 +289,7 @@ function GroupFormSheet({ state, onClose }: { state: GroupSheet; onClose: () => 
       footer={
         <>
           {group ? (
-            <Button variant={group.archived ? "secondary" : "destructive"} onPress={() => archive.mutate(!group.archived)} isPending={archive.isPending} className="mr-auto">
+            <Button variant={group.archived ? "secondary" : "destructive"} onPress={() => (group.archived ? archive.mutate(false) : confirm.ask({ title: `Archive ${group.name}?`, body: "Its prices stop applying to its members on the POS. You can restore it later.", confirmLabel: "Archive group", cancelLabel: "Keep the group", onConfirm: () => archive.mutate(true) }))} isPending={archive.isPending} className="mr-auto">
               {group.archived ? "Restore group" : "Archive group"}
             </Button>
           ) : null}
@@ -305,6 +309,7 @@ function GroupFormSheet({ state, onClose }: { state: GroupSheet; onClose: () => 
         </FormSection>
         <InlineError error={save.error ?? archive.error} />
       </form>
+      {confirm.dialog}
     </Sheet>
   );
 }

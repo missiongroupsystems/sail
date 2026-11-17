@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/backoffice/Confirm";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, EmptyState, Icon, InlineError, Sheet, Switch, useLocale, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -130,6 +131,7 @@ export function CategoriesView({ initialCategories }: { initialCategories: Categ
 }
 
 function CategorySheet({ state, parents, parentIds, onClose }: { state: SheetState; parents: Category[]; parentIds: Set<string>; onClose: () => void }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const category = state?.mode === "edit" ? state.category : null;
   const defaults = (s: SheetState): Values => ({ name: s?.mode === "edit" ? s.category.name : "", parent_id: s?.mode === "edit" ? s.category.parent_id ?? ROOT : s?.mode === "create" ? s.parentId ?? ROOT : ROOT });
@@ -173,7 +175,7 @@ function CategorySheet({ state, parents, parentIds, onClose }: { state: SheetSta
       footer={
         <>
           {category && mayEdit.ok ? (
-            <Button variant="secondary" onPress={() => archive.mutate(!category.archived)} isPending={archive.isPending} isDisabled={save.isPending} className={`mr-auto ${category.archived ? greyPill : greyPillAlert}`}>
+            <Button variant="secondary" onPress={() => (category.archived ? archive.mutate(false) : confirm.ask({ title: `Archive ${category.name}?`, body: "It leaves the category lists here. Its products stay on sale, and past reports keep the category. You can restore it later.", confirmLabel: "Archive category", cancelLabel: "Keep the category", onConfirm: () => archive.mutate(true) }))} isPending={archive.isPending} isDisabled={save.isPending} className={`mr-auto ${category.archived ? greyPill : greyPillAlert}`}>
               {category.archived ? "Restore category" : "Archive category"}
             </Button>
           ) : null}
@@ -202,6 +204,7 @@ function CategorySheet({ state, parents, parentIds, onClose }: { state: SheetSta
         {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
         <InlineError error={save.error ?? archive.error} />
       </form>
+      {confirm.dialog}
     </Sheet>
     </FieldsLocked>
   );

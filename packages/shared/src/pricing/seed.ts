@@ -149,21 +149,25 @@ const DISCOUNTS = (opts: SeedRuleOptions): PricingRuleInput[] => [
     report_class: "comp",
     seeded: true,
   },
-  {
-    id: SEED_RULE_IDS.serviceChargeWaiver,
-    kind: "discount",
-    name: "Service charge waiver",
-    calc: "fixed_per_order",
-    level: "order",
-    value: { type: "fixed", amount: 0 },
-    scope: { type: "all" },
-    priority: 90,
-    application: "manual",
-    min_role: "manager",
-    override_allowed: true,
-    reason_required: true,
-    report_class: "other",
-    disables: { report_classes: ["service_charge"] },
-    seeded: true,
-  },
+  // The waiver switches off the service charge, so it is seeded only where the preset has one: on a merchant with no
+  // service charge it would only be a rule that does nothing, and Pricing would warn about it on first open (A P19).
+  ...(opts.service_charge ? [WAIVER] : []),
 ];
+
+const WAIVER: PricingRuleInput = {
+  id: SEED_RULE_IDS.serviceChargeWaiver,
+  kind: "discount",
+  name: "Service charge waiver",
+  calc: "fixed_per_order",
+  level: "order",
+  value: { type: "fixed", amount: 0 },
+  scope: { type: "all" },
+  priority: 90,
+  application: "manual",
+  min_role: "manager",
+  override_allowed: true,
+  reason_required: true,
+  report_class: "other",
+  disables: { report_classes: ["service_charge"] },
+  seeded: true,
+};

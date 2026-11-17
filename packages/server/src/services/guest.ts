@@ -103,13 +103,17 @@ export function guestUrl(token: string) {
   return `${config().GUEST_APP_URL.replace(/\/$/, "")}/t/${token}`;
 }
 
+/** Table names compared as people read them, numbers by value ("Table 2" before "Table 10"). */
+export const TABLE_ORDER = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
+
 /**
  * The live code of each table at the outlet, as it is printed on the table now; a table with no code gets its first
  * one. A code that cannot be printed again (made before codes were derived, or under another GUEST_TOKEN_SECRET) is
  * never replaced here: the sheet is refused with those tables named, and rotating them is the Admin's own choice.
  */
 export async function currentTableTokens(outletId: string, merchantId: string): Promise<{ table: typeof tables.$inferSelect; token: string }[]> {
-  const rows = await db().select().from(tables).where(and(eq(tables.outletId, outletId), isNull(tables.archivedAt))).orderBy(tables.name);
+  // Tables in the order people count them: 1, 2, 10, not 1, 10, 2 (A P18).
+  const rows = (await db().select().from(tables).where(and(eq(tables.outletId, outletId), isNull(tables.archivedAt)))).sort((a, b) => TABLE_ORDER.compare(a.name, b.name));
   const out: { table: typeof tables.$inferSelect; token: string }[] = [];
   const unprintable: string[] = [];
   for (const t of rows) {

@@ -3,7 +3,7 @@ import { req } from "@/lib/api";
 import { orSignIn, requireApi } from "@/lib/api.server";
 import { AuditView } from "./AuditView";
 
-export const metadata = { title: "Audit" };
+export const metadata = { title: "Changes" };
 
 export default async function AuditPage() {
   const api = await requireApi();
@@ -12,7 +12,7 @@ export default async function AuditPage() {
   );
   return (
     <>
-      <PageHeader title="Audit" description="Who did what, on which target, when, and who approved it." />
+      <PageHeader title="Changes" description="The audit log: who changed what, on which target, when, and who approved it." />
       <AuditView initialPage={first} staff={staff.data} />
     </>
   );

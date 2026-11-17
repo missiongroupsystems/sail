@@ -1,13 +1,15 @@
 import { req } from "@/lib/api";
 import { getScope, orSignIn, registerToday, requireApi } from "@/lib/api.server";
+import { dateParam, reportOutlet, type PageSearchParams } from "@/lib/url-params";
 import { PrintHealthView } from "./PrintHealthView";
 
 export const metadata = { title: "Print health" };
 
-export default async function PrintHealthPage() {
+export default async function PrintHealthPage({ searchParams }: { searchParams: PageSearchParams }) {
+  const params = await searchParams;
   const api = await requireApi();
   const scope = await getScope();
   const outlets = await orSignIn(req(api.GET("/v1/outlets")));
-  const outletId = outlets.data.find((o) => o.id === scope.outletId)?.id ?? outlets.data[0]?.id ?? null;
-  return <PrintHealthView outlets={outlets.data} scope={scope} initialOutletId={outletId} today={await registerToday(api, outletId)} />;
+  const outletId = reportOutlet(outlets.data, scope.outletId, params);
+  return <PrintHealthView outlets={outlets.data} scope={scope} initialOutletId={outletId} today={await registerToday(api, outletId)} initialRange={{ from: dateParam(params, "from"), to: dateParam(params, "to") }} />;
 }

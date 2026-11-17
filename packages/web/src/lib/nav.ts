@@ -1,8 +1,7 @@
 import {
   BookOpen,
-  Bot,
   ChartNoAxesColumn,
-  GitPullRequestArrow,
+  History,
   LayoutGrid,
   Printer,
   Receipt,
@@ -18,15 +17,11 @@ export type Section = {
   href: string;
   label: string;
   icon: LucideIcon;
-  /** Roadmap phase when the section is not built yet. */
-  arrives?: string;
-  /** One line on what the section will hold, shown on its placeholder page. */
-  summary?: string;
   /** The lowest role the register lets read this section; the rail leaves it out for anyone below. */
   minRole?: Role;
 };
 
-/** Every section, in order. Unbuilt sections still render, never a gap. */
+/** Every section, in order. Only destinations that exist: a section arrives in the rail with its page (A P12). */
 export const SECTIONS: Section[] = [
   { href: "/today", label: "Today", icon: Sun },
   { href: "/orders", label: "Orders", icon: Receipt },
@@ -36,8 +31,8 @@ export const SECTIONS: Section[] = [
   { href: "/printing", label: "Printing", icon: Printer },
   { href: "/team", label: "Team", icon: Users, minRole: "manager" },
   { href: "/reports", label: "Reports", icon: ChartNoAxesColumn, minRole: "manager" },
-  { href: "/changes", label: "Changes", icon: GitPullRequestArrow, arrives: "with the agent work", summary: "Every configuration change, from a person or an assistant, will be reviewed here before it applies: summary, checks and impact first, then the row-level diff." },
-  { href: "/assistants", label: "Assistants", icon: Bot, arrives: "with the agent work", summary: "Assistant identities and roles, playbooks, activity and traces, budgets, and the on/off switch. Until then the register runs with assistants off." },
+  // The audit log: every change, by whom, approved by whom (audit.list is a Manager's).
+  { href: "/audit", label: "Changes", icon: History, minRole: "manager" },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -60,7 +55,8 @@ export const MENU_TABS = [
   { href: "/menu/categories", label: "Categories" },
   { href: "/menu/availability", label: "Availability" },
   { href: "/menu/sold-out", label: "Sold out" },
-  { href: "/menu/import", label: "Import" },
+  // Imports are an Admin's (imports.list): the tab is left out for anyone below, as the rail leaves out a section.
+  { href: "/menu/import", label: "Import", minRole: "admin" },
 ] as const;
 
 /** Pricing section tabs: rules, simulator, customer groups; tax classes and rounding live in settings. */
@@ -86,3 +82,21 @@ export const REPORTS_TABS = [
   { href: "/reports/shifts", label: "Shifts" },
   { href: "/reports/print-health", label: "Print health" },
 ] as const;
+
+/**
+ * The lowest role each restricted page needs, by path prefix (most specific first), for the refusal page to name it.
+ * Each matches the register's own rule for what the page reads.
+ */
+export const PAGE_MIN_ROLE: { prefix: string; role: Role }[] = [
+  { prefix: "/menu/import", role: "admin" },
+  { prefix: "/pricing/simulator", role: "manager" },
+  { prefix: "/reports", role: "manager" },
+  { prefix: "/team", role: "manager" },
+  { prefix: "/audit", role: "manager" },
+];
+
+/** The lowest role a page needs, or null when the page names none. */
+export function pageMinRole(path: string | null): Role | null {
+  if (!path) return null;
+  return PAGE_MIN_ROLE.find((p) => path === p.prefix || path.startsWith(`${p.prefix}/`))?.role ?? null;
+}

@@ -65,7 +65,8 @@ async function signInBackOffice(page: Page, watch: { allowConsole: (r: RegExp) =
 async function goTo(page: Page, path: string) {
   await expect(async () => {
     await page.goto(`${WEB}${path}`);
-    await expect(page).toHaveURL(`${WEB}${path}`, { timeout: 5_000 });
+    // A report page then writes its outlet and day into the address, so only the path is compared.
+    await expect(page).toHaveURL((url) => url.pathname === path, { timeout: 5_000 });
   }).toPass({ timeout: 120_000 });
 }
 

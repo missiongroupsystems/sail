@@ -98,6 +98,31 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
   };
   for (const [entity, table] of Object.entries({ brands: "brands", outlets: "outlets", categories: "report_categories", products: "products", modifier_groups: "modifier_groups", menus: "menus", menu_sections: "menu_sections", areas: "areas", tables: "tables", tender_types: "tender_types", void_reasons: "void_reasons", staff: "staff", customers: "customers", layouts: "pos_layouts" })) await preload(entity, table);
   for (const r of await sql<{ id: string; sku: string }[]>`select id, sku from products where merchant_id = ${merchantId} and sku is not null`) skuToProduct.set(r.sku, r.id);
+  // A category or brand without a legacy id is named in Sail's own export by its name (A P4); a name two records share
+  // names neither (null), and the row says so.
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const ids: Record<"categories" | "brands", Set<string>> = { categories: new Set(), brands: new Set() };
+  for (const [ent, table] of [["categories", "report_categories"], ["brands", "brands"]] as const) for (const r of await sql.unsafe<{ id: string }[]>(`select id from ${table} where merchant_id = $1`, [merchantId])) ids[ent].add(r.id);
+  const byName = async (table: string) => {
+    const map = new Map<string, string | null>();
+    for (const r of await sql.unsafe<{ id: string; name: string }[]>(`select id, name from ${table} where merchant_id = $1 and legacy_id is null`, [merchantId])) {
+      const k = r.name.trim().toLowerCase();
+      map.set(k, map.has(k) ? null : r.id);
+    }
+    return map;
+  };
+  const namedCategories = await byName("report_categories");
+  const namedBrands = await byName("brands");
+  const refOrName = (ent: "categories" | "brands", key: string, label: string): string | null => {
+    const hit = legacy[ent]?.get(key);
+    if (hit) return hit;
+    // Sail's own export names a record whose name is shared by its id.
+    if (UUID.test(key) && ids[ent].has(key.toLowerCase())) return key.toLowerCase();
+    const named = (ent === "categories" ? namedCategories : namedBrands).get(key.trim().toLowerCase());
+    if (named === null) throw new Error(`${label} "${key}" names more than one ${label}: give it a legacy_id`);
+    if (named === undefined) throw new Error(`${label} ${key} not found`);
+    return named;
+  };
 
   const files_ = mapping.files.filter((f) => files[f.name] != null);
   for (const f of mapping.files) if (files[f.name] == null) report.warnings.push(`file ${f.name} was not uploaded; skipped`);
@@ -123,7 +148,7 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
         const cols = Object.keys(values);
         if (!existing) {
           const id = randomUUID();
-          await sql.unsafe(`insert into ${table} (id, merchant_id, legacy_id, ${cols.join(", ")}) values ($1, $2, $3, ${cols.map((_, i) => `$${i + 4}`).join(", ")})`, [id, merchantId, legacyId, ...cols.map((c) => serialise(values[c]))] as never);
+          await sql.unsafe(`insert into ${table} (id, merchant_id, legacy_id, ${cols.join(", ")}) values ($1, $2, nullif($3, ''), ${cols.map((_, i) => `$${i + 4}`).join(", ")})`, [id, merchantId, legacyId, ...cols.map((c) => serialise(values[c]))] as never);
           rep.creates++;
           return { id, created: true };
         }
@@ -132,7 +157,8 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
           rep.unchanged++;
           return { id: existing["id"] as string, created: false };
         }
-        await sql.unsafe(`update ${table} set legacy_id = $2, ${changed.map((c, i) => `${c} = $${i + 3}`).join(", ")}${changed.length ? "," : ""} ${table === "products" || table === "customers" ? "updated_at = now()" : "legacy_id = $2"} where id = $1`, [existing["id"], legacyId, ...changed.map((c) => serialise(values[c]))] as never);
+        // An empty legacy id (a product matched on its Sail id) keeps the one stored.
+        await sql.unsafe(`update ${table} set legacy_id = coalesce(nullif($2, ''), legacy_id), ${changed.map((c, i) => `${c} = $${i + 3}`).join(", ")}${changed.length ? "," : ""} ${table === "products" || table === "customers" ? "updated_at = now()" : "legacy_id = $2"} where id = $1`, [existing["id"], legacyId, ...changed.map((c) => serialise(values[c]))] as never);
         rep.updates++;
         return { id: existing["id"] as string, created: false };
       };
@@ -172,34 +198,68 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               break;
             }
             case "products": {
+              // Every problem on the row is reported together, not only the first (A P13).
+              const errors: string[] = [];
+              const check = <T,>(read: () => T, fallback: T): T => {
+                try {
+                  return read();
+                } catch (e) {
+                  errors.push((e as Error).message);
+                  return fallback;
+                }
+              };
               const sku = get(row, "sku") || null;
               const lid = get(row, "legacy_id") || sku || "";
+              // Sail's own export names every product by its id (`sail_id`), so one without a SKU or legacy id comes back.
+              const sailId = get(row, "sail_id");
+              if (sailId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sailId)) errors.push(`sail_id "${sailId}" is not a Sail product id`);
               const name = get(row, "name");
-              if (!name) throw new Error("name is required");
-              if (!lid) throw new Error("sku or legacy_id is required");
-              const priceCents = amountCell("price", get(row, "price"));
+              if (!name) errors.push("name is required");
+              if (!lid && !sailId) errors.push("sku, legacy_id or sail_id is required");
+              const priceCents = check(() => amountCell("price", get(row, "price")), 0);
               const catKey = get(row, "category_legacy_id");
-              const categoryId = (catKey ? ref("categories", catKey) : null) ?? null;
-              if (catKey && !categoryId) throw new Error(`category ${catKey} not found`);
+              const categoryId = catKey ? check(() => refOrName("categories", catKey, "category"), null) : null;
               const brandKey = get(row, "brand_legacy_id") || mapping.options?.brand_legacy_id || "";
-              const brandId = (brandKey ? ref("brands", brandKey) : null) ?? null;
-              if (brandKey && !brandId) throw new Error(`brand ${brandKey} not found`);
+              const brandId = brandKey ? check(() => refOrName("brands", brandKey, "brand"), null) : null;
               const tags = get(row, "tags").split(/[;|]/).map((s) => s.trim()).filter(Boolean);
-              const kind = /^(component|modifier)$/i.test(get(row, "kind")) ? "component" : "product";
+              const kindCell = get(row, "kind");
+              // A legacy "Item" is a product and a "Modifier" a component; any other word is refused, never guessed.
+              if (kindCell && !/^(product|item|component|modifier)$/i.test(kindCell)) errors.push(`kind "${kindCell}" is not product or component`);
+              const kind = /^(component|modifier)$/i.test(kindCell) ? "component" : "product";
               const className = get(row, "tax_class");
               const taxClassId = className ? taxClasses.get(className.toLowerCase()) : null;
-              if (taxClassId === undefined) throw new Error(`tax class "${className}" not found`);
-              const values = { name, sku, description: get(row, "description") || null, price: priceCents, category_id: categoryId, brand_id: brandId, tags, has_deposit: bool(get(row, "has_deposit")), tax_class_id: taxClassId, open_price: bool(get(row, "open_price")), kind, kitchen_name: get(row, "kitchen_name") || null, archived_at: bool(get(row, "archived")) ? new Date().toISOString() : null };
-              const match = sku && !get(row, "legacy_id") ? { column: "sku", value: sku } : { column: "legacy_id", value: lid };
-              const { id } = await upsert("products", lid, values, match);
-              legacy.products!.set(lid, id);
-              if (sku) skuToProduct.set(sku, id);
-              for (const ot of ["dine_in", "takeaway", "pickup", "delivery"] as const) {
+              if (taxClassId === undefined) errors.push(`tax class "${className}" not found`);
+              // Read the per-order-type prices first, so a bad one refuses the row before anything is written.
+              const prices = (["dine_in", "takeaway", "pickup", "delivery"] as const).flatMap((ot) => {
                 const v = get(row, `price_${ot}`);
-                if (v) {
-                  const c = amountCell(`price_${ot}`, v);
-                  await sql`insert into product_prices (merchant_id, product_id, order_type, price) values (${merchantId}, ${id}, ${ot}, ${c}) on conflict (product_id, order_type) do update set price = excluded.price`;
-                }
+                // A blank cell in a mapped column is "no price for that order type"; an unmapped column leaves it alone.
+                if (!v) return file.columns[`price_${ot}`] ? [{ ot, price: null as number | null }] : [];
+                return check(() => [{ ot, price: amountCell(`price_${ot}`, v) as number | null }], []);
+              });
+              if (errors.length) throw new Error(errors.join("; "));
+              const values = { name, sku, description: get(row, "description") || null, price: priceCents, category_id: categoryId, brand_id: brandId, tags, has_deposit: bool(get(row, "has_deposit")), tax_class_id: taxClassId ?? null, open_price: bool(get(row, "open_price")), kind, kitchen_name: get(row, "kitchen_name") || null, archived_at: bool(get(row, "archived")) ? new Date().toISOString() : null };
+              const [bySailId] = sailId ? await sql<{ id: string }[]>`select id from products where merchant_id = ${merchantId} and id = ${sailId} limit 1` : [];
+              // A Sail id from another business or database names nothing here: without a SKU or legacy id the row would
+              // create a new copy on every run, so it is refused instead.
+              if (sailId && !bySailId && !lid) throw new Error(`sail_id ${sailId} is not a product of this business: give the row a sku or legacy_id`);
+              const match = bySailId ? { column: "id", value: bySailId.id } : sku && !get(row, "legacy_id") ? { column: "sku", value: sku } : { column: "legacy_id", value: lid };
+              const unchangedBefore = rep.unchanged;
+              // Matched on its Sail id, a product keeps the legacy id it has unless the row gives one (its SKU is not one).
+              const { id, created } = await upsert("products", bySailId ? get(row, "legacy_id") : lid, values, match);
+              if (lid) legacy.products!.set(lid, id);
+              if (sku) skuToProduct.set(sku, id);
+              let pricesChanged = false;
+              for (const { ot, price } of prices) {
+                const changedRows =
+                  price === null
+                    ? await sql`delete from product_prices where product_id = ${id} and order_type = ${ot} returning 1`
+                    : await sql`insert into product_prices (merchant_id, product_id, order_type, price) values (${merchantId}, ${id}, ${ot}, ${price}) on conflict (product_id, order_type) do update set price = excluded.price where product_prices.price is distinct from excluded.price returning 1`;
+                if (changedRows.length) pricesChanged = true;
+              }
+              // A row whose only change is a per-order-type price is an update, not "unchanged".
+              if (pricesChanged && !created && rep.unchanged > unchangedBefore) {
+                rep.unchanged--;
+                rep.updates++;
               }
               break;
             }

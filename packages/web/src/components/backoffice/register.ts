@@ -267,11 +267,13 @@ export async function openPdf(path: string, filename: string, method: "GET" | "P
 
 /** "0:14" elapsed from seconds, or "2 h 05" past an hour. */
 export function formatElapsed(seconds: number): string {
+  // A duration in words ("14 min", "1 h 05 min"), never "14:56", which reads like a time of day (A P19).
   const s = Math.max(0, Math.floor(seconds));
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
-  if (h > 0) return `${h} h ${String(m).padStart(2, "0")}`;
-  return `${m}:${String(s % 60).padStart(2, "0")}`;
+  if (h > 0) return `${h} h ${String(m).padStart(2, "0")} min`;
+  if (m > 0) return `${m} min`;
+  return `${s} s`;
 }
 
 /** "3 tickets", "1 ticket". */

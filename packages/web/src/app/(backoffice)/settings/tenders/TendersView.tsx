@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/backoffice/Confirm";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, DataTable, EmptyState, InlineError, Sheet, Switch, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -43,9 +44,17 @@ export function TendersView({ initialTenders }: { initialTenders: TenderType[] }
   });
   const rows = tenders.data.filter((t) => showArchived || !t.archived);
 
+  // The order is shown as the POS lists the methods, 1, 2, 3, not the stored sort keys with their gaps (0, 1, 5) (A P19).
+  const position = new Map(
+    [...rows]
+      .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name))
+      .map((t, i) => [t.id, i + 1] as const),
+  );
+  const how = (t: TenderType) => ((t as { provider?: string | null }).provider ? "Sent to the card terminal" : t.is_terminal ? "Card terminal, keyed in" : t.is_cash ? "Cash" : "Recorded by hand");
   const columns: DataTableColumn<TenderType>[] = [
-    { key: "sort", header: "Order", numeric: true, sortable: true, width: 80, render: (t) => t.sort },
-    { key: "name", header: "Payment method", isRowHeader: true, sortable: true, width: "2fr", render: (t) => <TwoLine primary={t.name} meta={[t.is_cash ? "Cash" : null, t.is_terminal ? "Card terminal" : null].filter(Boolean).join(" · ") || undefined} /> },
+    { key: "sort", header: "Order", numeric: true, sortable: true, width: 80, render: (t) => position.get(t.id) ?? "—" },
+    // Each method says how it is taken, so "Card" and "Card (terminal)" read as two different things (A P19).
+    { key: "name", header: "Payment method", isRowHeader: true, sortable: true, width: "2fr", render: (t) => <TwoLine primary={t.name} meta={how(t)} /> },
     { key: "is_cash", header: "Cash", render: (t) => (t.is_cash ? "Yes · rounding applies" : "—") },
     { key: "opens_drawer", header: "Opens drawer", render: (t) => (t.opens_drawer ? "Yes" : "—") },
     // A provider-linked method names its provider and terminal (live-test E-L10); a by-hand terminal is keyed in.
@@ -84,6 +93,7 @@ export function TendersView({ initialTenders }: { initialTenders: TenderType[] }
 }
 
 function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort: number; onClose: () => void }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const tender = state?.mode === "edit" ? state.tender : null;
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(tender) });
@@ -126,7 +136,7 @@ function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
       footer={
         <>
           {tender && mayEdit.ok ? (
-            <Button variant="secondary" onPress={() => archive.mutate(!tender.archived)} isPending={archive.isPending} className={`mr-auto ${tender.archived ? greyPill : greyPillAlert}`}>
+            <Button variant="secondary" onPress={() => (tender.archived ? archive.mutate(false) : confirm.ask({ title: `Archive ${tender.name}?`, body: "The POS no longer offers it for payment. Payments already taken with it stay on their orders and reports. You can restore it later.", confirmLabel: "Archive tender", cancelLabel: "Keep the tender", onConfirm: () => archive.mutate(true) }))} isPending={archive.isPending} className={`mr-auto ${tender.archived ? greyPill : greyPillAlert}`}>
               {tender.archived ? "Restore" : "Archive"}
             </Button>
           ) : null}
@@ -172,6 +182,7 @@ function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
         {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
         <InlineError error={save.error ?? archive.error} />
       </form>
+      {confirm.dialog}
     </Sheet>
     </FieldsLocked>
   );

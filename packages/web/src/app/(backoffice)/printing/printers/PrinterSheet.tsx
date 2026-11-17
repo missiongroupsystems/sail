@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/backoffice/Confirm";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, InlineError, Sheet, TagsField, FieldsLocked } from "@sail/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -88,6 +89,7 @@ function toBody(v: Values): PrinterPatch {
 
 /** Create or edit a printer. The backup picker only offers printers of the same role. */
 export function PrinterSheet({ state, outletId, printers, stations, canEdit, onClose }: { state: PrinterSheetState; outletId: string; printers: Printer[]; stations: Station[]; canEdit: boolean; onClose: () => void }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const printer = state?.mode === "edit" ? state.printer : null;
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(printer) });
@@ -145,7 +147,7 @@ export function PrinterSheet({ state, outletId, printers, stations, canEdit, onC
       footer={
         <>
           {printer && canEdit ? (
-            <Button variant={printer.archived ? "secondary" : "destructive"} onPress={() => archive.mutate(!printer.archived)} isPending={archive.isPending} isDisabled={save.isPending} className="mr-auto">
+            <Button variant={printer.archived ? "secondary" : "destructive"} onPress={() => (printer.archived ? archive.mutate(false) : confirm.ask({ title: `Archive ${printer.name}?`, body: "Tickets stop printing on it. You can restore it later.", confirmLabel: "Archive printer", cancelLabel: "Keep the printer", onConfirm: () => archive.mutate(true) }))} isPending={archive.isPending} isDisabled={save.isPending} className="mr-auto">
               {printer.archived ? "Restore printer" : "Archive printer"}
             </Button>
           ) : null}
@@ -256,6 +258,7 @@ export function PrinterSheet({ state, outletId, printers, stations, canEdit, onC
         <Warnings warnings={warnings} />
         <InlineError error={save.error ?? archive.error} />
       </form>
+      {confirm.dialog}
     </Sheet>
   );
 }

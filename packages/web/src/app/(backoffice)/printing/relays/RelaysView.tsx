@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/backoffice/Confirm";
 import { Button, Dialog, EmptyState, Group, InlineError, Sheet, Skeleton, StatusDot, Switch, TextField, useLocale } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -126,6 +127,7 @@ export function RelaysView({ outlets, scope, initialOutletId, initialRelays, ini
 }
 
 function RelaySheet({ relay, printers, canEdit, canPair, onClose }: { relay: Relay | null; printers: Printer[]; canEdit: boolean; canPair: boolean; onClose: () => void }) {
+  const confirm = useConfirm();
   const { dayClock } = useLocale();
   const qc = useQueryClient();
   const [name, setName] = useState(relay?.name ?? "");
@@ -151,7 +153,7 @@ function RelaySheet({ relay, printers, canEdit, canPair, onClose }: { relay: Rel
       footer={
         <>
           {relay && canEdit ? (
-            <Button variant={relay.archived ? "secondary" : "destructive"} onPress={() => patch.mutate({ archived: !relay.archived })} isPending={patch.isPending && patch.variables?.archived !== undefined} className="mr-auto">
+            <Button variant={relay.archived ? "secondary" : "destructive"} onPress={() => (relay.archived ? patch.mutate({ archived: false }) : confirm.ask({ title: "Archive this relay?", body: "Printers behind it stop printing until they are on another relay. You can restore it later.", confirmLabel: "Archive relay", cancelLabel: "Keep the relay", onConfirm: () => patch.mutate({ archived: true }) }))} isPending={patch.isPending && patch.variables?.archived !== undefined} className="mr-auto">
               {relay.archived ? "Restore relay" : "Archive relay"}
             </Button>
           ) : null}
@@ -196,6 +198,7 @@ function RelaySheet({ relay, printers, canEdit, canPair, onClose }: { relay: Rel
           <InlineError error={patch.error} />
         </div>
       ) : null}
+      {confirm.dialog}
     </Sheet>
   );
 }

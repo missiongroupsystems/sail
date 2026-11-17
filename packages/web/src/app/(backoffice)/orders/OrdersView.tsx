@@ -14,6 +14,7 @@ import type { Scope } from "@/lib/cookies";
 import { keys } from "@/lib/query";
 import { StatTile, StatTiles } from "@/components/backoffice/StatTiles";
 import { OrderDrawer } from "./OrderDrawer";
+import { useUrlState } from "@/lib/url-state";
 
 const OPEN_STATUSES = new Set(["open", "fired", "ready", "out_for_delivery"]);
 
@@ -61,17 +62,19 @@ export function whoFor(o: OrderSnapshot, tableName: (id: string | null) => strin
 }
 
 /** Orders: today and all, per outlet, with a read-only detail drawer. Amounts are the register's. */
-export function OrdersView({ outlets, scope, initialOutletId }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null }) {
+export function OrdersView({ outlets, scope, initialOutletId, initial }: { outlets: Outlet[]; scope: Scope; initialOutletId: string | null; initial?: { orderId: string | null; range: Range | null; date: string | null } }) {
   const { clock, dayClock } = useLocale();
-  const { outletId, setOutletId } = useOutletChoice(outlets, scope, initialOutletId);
+  const { outletId, setOutletId, scoped } = useOutletChoice(outlets, scope, initialOutletId);
   const today = useBusinessDate(outletId);
-  const [range, setRange] = useState<Range>("today");
+  const [range, setRange] = useState<Range>(initial?.range ?? "today");
   // Status is a tab the register filters by; the chosen tab shows how many rows came back.
   const [statusTab, setStatusTab] = useState<StatusTab>("all");
   const [orderType, setOrderType] = useState<string | null>(null);
-  const [date, setDate] = useState("");
+  const [date, setDate] = useState(initial?.date ?? "");
   const [q, setQ] = useState("");
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(initial?.orderId ?? null);
+  // The open order and the range live in the address, so a refresh keeps them and an order can be linked (A P14).
+  useUrlState({ outlet: scoped ? null : outletId, order: openId, range: range === "all" ? "all" : null, date: range === "all" && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null });
   const dq = useDebounced(q.trim());
 
   const filters = useMemo(

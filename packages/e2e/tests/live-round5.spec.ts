@@ -178,7 +178,7 @@ test("M4, M5: after a tipped card payment the receipt sheet shows Tip and Charge
   }
 });
 
-test("M6: in a read-only form the chips and their × are in the disabled ink, in the Day and Service themes", async ({ page }) => {
+test("M6, round 8 S-8: in a read-only form the chips are in the disabled ink with no ×, in the Day and Service themes", async ({ page }) => {
   test.setTimeout(300_000);
   const who = await loginFor("manager");
   await officeSignIn(page, who.email, who.password);
@@ -189,8 +189,9 @@ test("M6: in a read-only form the chips and their × are in the disabled ink, in
       if (dark) document.documentElement.dataset.theme = "service";
       else delete document.documentElement.dataset.theme;
     }, scheme === "dark");
-    const remove = page.getByRole("button", { name: /^Remove / }).first();
-    await expect(remove).toBeDisabled();
+    const remove = page.locator("[data-tag]").first();
+    await expect(remove).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Remove / })).toHaveCount(0);
     const [ink, disabled] = await remove.evaluate((el) => {
       const probe = document.createElement("span");
       probe.style.color = "var(--ink-disabled)";

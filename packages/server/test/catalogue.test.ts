@@ -187,7 +187,7 @@ describe("catalogue", () => {
     const r = await call<string>("GET", "/v1/exports/products.csv", { token: A.manager.token });
     expect(r.status).toBe(200);
     expect(r.headers.get("content-type")).toMatch(/text\/csv/);
-    expect(r.body).toMatch(/^legacy_id,sku,name,kind,price/);
-    expect(r.body).toMatch(/LAK-001,Laksa,product,16\.00/);
+    expect(r.body).toMatch(/^sail_id,legacy_id,sku,name,kind,price,/);
+    expect(r.body).toMatch(/,LAK-001,Laksa,product,16\.00,/);
   });
 });

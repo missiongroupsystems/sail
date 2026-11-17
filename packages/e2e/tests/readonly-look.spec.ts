@@ -73,7 +73,7 @@ test("a Manager's read-only product sheet: the modifier-group picker looks like 
     expect(selectInks.length).toBeGreaterThan(2);
     for (const line of selectInks) expect(line, `${theme}: text in a disabled select`).toMatch(new RegExp(`: ${ink.replace(/[()]/g, "\\$&")}$`));
     // The tags field (chips in a field) has the same fill and no border.
-    const tags = await sheet.getByRole("button", { name: /^Remove / }).first().evaluate((el) => {
+    const tags = await sheet.locator("[data-tag]").first().evaluate((el) => {
       const field = el.closest(".sail-field")!;
       return { background: getComputedStyle(field).backgroundColor, border: getComputedStyle(field).borderColor };
     });

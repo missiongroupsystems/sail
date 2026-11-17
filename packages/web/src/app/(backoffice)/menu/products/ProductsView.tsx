@@ -110,24 +110,28 @@ export function ProductsView({ initialPage, categories, brands, scope }: { initi
       key: "name",
       header: "Name",
       isRowHeader: true,
+      sortable: true,
       width: "2fr",
       render: (p) => <TwoLine primary={p.name} meta={p.kitchen_name && p.kitchen_name !== p.name ? `Kitchen: ${p.kitchen_name}` : undefined} />,
     },
-    { key: "sku", header: "SKU", render: (p) => <span className="text-ink-2 tabular break-words">{p.sku ?? "—"}</span> },
+    { key: "sku", header: "SKU", sortable: true, width: 130, render: (p) => <span className="text-ink-2 tabular break-words">{p.sku ?? "—"}</span> },
     {
       key: "kind",
       header: "Kind",
+      sortable: true,
+      width: 120,
       render: (p) => (
         <Pill size="sm" tone={p.kind === "component" ? "seated" : "neutral"}>
           {p.kind === "component" ? "Component" : "Product"}
         </Pill>
       ),
     },
-    { key: "category_id", header: "Category", render: (p) => <Quiet>{p.category_id ? catLabel.get(p.category_id) ?? "—" : "—"}</Quiet> },
-    { key: "brand_id", header: "Brand", hideBelow: "xl", render: (p) => <Quiet className="whitespace-nowrap">{p.brand_id ? brandName.get(p.brand_id) ?? "—" : "All brands"}</Quiet> },
+    { key: "category_id", header: "Category", sortable: true, width: "1fr", sortValue: (p) => (p.category_id ? catLabel.get(p.category_id) ?? "" : ""), render: (p) => <Quiet>{p.category_id ? catLabel.get(p.category_id) ?? "—" : "—"}</Quiet> },
+    { key: "brand_id", header: "Brand", hideBelow: "xl", sortable: true, width: 150, sortValue: (p) => (p.brand_id ? brandName.get(p.brand_id) ?? "" : ""), render: (p) => <Quiet className="whitespace-nowrap">{p.brand_id ? brandName.get(p.brand_id) ?? "—" : "All brands"}</Quiet> },
     {
       key: "tags",
       header: "Tags",
+      width: "1fr",
       render: (p) => (
         <span className="flex flex-wrap gap-1">
           {p.tags.map((t) => (
@@ -142,6 +146,8 @@ export function ProductsView({ initialPage, categories, brands, scope }: { initi
       key: "price",
       header: "Price",
       numeric: true,
+      sortable: true,
+      width: 120,
       render: (p) => (
         <span className="inline-flex flex-col items-end">
           <Money cents={p.price} />
@@ -152,6 +158,8 @@ export function ProductsView({ initialPage, categories, brands, scope }: { initi
     {
       key: "archived",
       header: "Status",
+      sortable: true,
+      width: 110,
       render: (p) =>
         p.archived ? (
           <Pill size="sm" tone="neutral">
@@ -229,6 +237,7 @@ export function ProductsView({ initialPage, categories, brands, scope }: { initi
 
       <DataTable
         aria-label="Products"
+        steadyColumns
         columns={columns}
         rows={rows}
         rowKey={(p) => p.id}
@@ -246,9 +255,12 @@ export function ProductsView({ initialPage, categories, brands, scope }: { initi
             Show more
           </Button>
         ) : null}
-        <span className="text-[13px] text-ink-2 tabular">
-          {rows.length} of {total} {total === 1 ? "product" : "products"}
-        </span>
+        {/* No count line for an empty list: the table already says nothing matches (A P20). Sorting orders the rows shown. */}
+        {total > 0 ? (
+          <span className="text-[13px] text-ink-2 tabular">
+            {rows.length === total ? `${total} ${total === 1 ? "product" : "products"}` : `${rows.length} of ${total} products shown${pages.hasNextPage ? ": a sort orders these" : ""}`}
+          </span>
+        ) : null}
       </div>
 
       <ProductSheet state={sheet} onClose={() => setSheet(null)} categories={categories} brands={brands} />

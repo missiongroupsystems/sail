@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/backoffice/Confirm";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, InlineError, Sheet, Switch, TextField, FieldsLocked } from "@sail/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -67,6 +68,7 @@ function toBody(v: Values): Omit<OutletCreate, "id"> {
 }
 
 export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClose: () => void }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const router = useRouter();
   const { business_registration_label, tax_registration_label } = useSession().merchant.settings;
@@ -122,7 +124,7 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
           {outlet && mayEdit.ok ? (
             <Button
               variant={outlet.archived ? "secondary" : "destructive"}
-              onPress={() => archive.mutate(!outlet.archived)}
+              onPress={() => (outlet.archived ? archive.mutate(false) : confirm.ask({ title: `Archive ${outlet.name}?`, body: "It leaves the outlet lists in the back office and on the POS. Past orders and reports keep it. You can restore it later.", confirmLabel: "Archive outlet", cancelLabel: "Keep the outlet", onConfirm: () => archive.mutate(true) }))}
               isPending={archive.isPending}
               isDisabled={save.isPending}
               className="mr-auto"
@@ -156,7 +158,7 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
             label="Business day ends at"
             type="time"
             numeric
-            description="Leave empty to use the merchant's cutoff. Sales after this time count towards the same day."
+            description="Sales before this time count towards the day before. Leave empty to use the merchant's."
             className="sm:max-w-[240px]"
           />
         </SheetSection>
@@ -217,6 +219,7 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
 
         <InlineError error={error} />
       </form>
+      {confirm.dialog}
     </Sheet>
     </FieldsLocked>
   );

@@ -4,21 +4,20 @@ import { TagsField } from "./TagsField";
 
 const chip = (isDisabled: boolean) => {
   const html = renderToStaticMarkup(<TagsField label="Notes and coins" value={["$5.00"]} onChange={() => {}} isDisabled={isDisabled} />);
-  const remove = html.match(/<button\b[^>]*aria-label="Remove \$5\.00"[^>]*>/)![0];
+  const remove = html.match(/<button\b[^>]*aria-label="Remove \$5\.00"[^>]*>/)?.[0] ?? null;
   const tag = html.match(/<span\b[^>]*>\$5\.00/)![0];
   return { remove, tag };
 };
 
-describe("TagsField locked chips (M6)", () => {
-  it("a locked chip and its × look off, in the disabled ink of other controls", () => {
+describe("TagsField locked chips (M6, round 8 S-8)", () => {
+  it("a locked chip is its text in the disabled ink, with no × to press", () => {
     const { remove, tag } = chip(true);
-    expect(remove).toMatch(/\sdisabled=""/);
-    expect(remove).toContain("text-ink-disabled");
-    expect(remove).toContain("cursor-not-allowed");
+    expect(remove).toBeNull();
     expect(tag).toContain("text-ink-disabled");
   });
-  it("a live chip keeps its normal ink", () => {
+  it("a live chip keeps its normal ink and its ×", () => {
     const { remove, tag } = chip(false);
+    expect(remove).not.toBeNull();
     expect(remove).not.toMatch(/\sdisabled=""/);
     expect(remove).not.toMatch(/(^|\s)text-ink-disabled/);
     expect(tag).not.toContain("text-ink-disabled");

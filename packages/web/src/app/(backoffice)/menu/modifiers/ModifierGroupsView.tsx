@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/backoffice/Confirm";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, Checkbox, DataTable, EmptyState, Icon, InlineError, Money, MoneyField, Select, Sheet, Switch, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -39,7 +40,7 @@ const Schema = z
         child_group_id: z.string().nullable(),
         is_default: z.boolean(),
       }),
-    ),
+    ).min(1, "Add at least one option: a group without options gives nothing to choose."),
   })
   .superRefine((v, ctx) => {
     if (v.max_select !== "" && v.min_select !== "" && Number(v.max_select) < Number(v.min_select)) ctx.addIssue({ code: "custom", path: ["max_select"], message: "Maximum cannot be below the minimum" });
@@ -129,6 +130,7 @@ export function ModifierGroupsView({ initialGroups }: { initialGroups: ModifierG
 }
 
 function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: ModifierGroup[]; onClose: () => void }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const group = state?.mode === "edit" ? state.group : null;
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(group) });
@@ -177,7 +179,7 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
       footer={
         <>
           {group && mayEdit.ok ? (
-            <Button variant="secondary" onPress={() => archive.mutate(!group.archived)} isPending={archive.isPending} isDisabled={save.isPending} className={`mr-auto ${group.archived ? greyPill : greyPillAlert}`}>
+            <Button variant="secondary" onPress={() => (group.archived ? archive.mutate(false) : confirm.ask({ title: `Archive ${group.name}?`, body: "Its options are no longer offered on the POS or the guest menu for the products that use it. You can restore it later.", confirmLabel: "Archive group", cancelLabel: "Keep the group", onConfirm: () => archive.mutate(true) }))} isPending={archive.isPending} isDisabled={save.isPending} className={`mr-auto ${group.archived ? greyPill : greyPillAlert}`}>
               {group.archived ? "Restore group" : "Archive group"}
             </Button>
           ) : null}
@@ -286,7 +288,7 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
                     label="Add an option"
                     placeholder="Search products and components"
                     exclude={list.map((o) => o.product_id)}
-                    keepQuery
+                    errorMessage={form.formState.errors.options?.message}
                     onPick={(p) => field.onChange([...list, { product_id: p.id, price_override: null, child_group_id: null, is_default: false }])}
                   />
                 </div>
@@ -299,6 +301,7 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
         {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}
         <InlineError error={save.error ?? archive.error} />
       </form>
+      {confirm.dialog}
     </Sheet>
     </FieldsLocked>
   );

@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, InlineError, TextField } from "@sail/ui";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -105,7 +106,13 @@ export function LoginForm({ mode, nextPath }: { mode: LoginMode; nextPath: strin
         Sign in
       </Button>
       <p className="text-center text-caption text-ink-2">
-        {mode.kind === "password" ? "Forgotten your password? Ask an Admin for a reset link." : "Signed in with your organisation's account."}
+        {mode.kind === "password" ? (
+          <Link href="/forgot-password" className="text-ink underline underline-offset-4 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
+            Forgotten your password?
+          </Link>
+        ) : (
+          "Signed in with your organisation's account."
+        )}
       </p>
     </form>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/backoffice/Confirm";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Badge, Button, DataTable, EmptyState, InlineError, SectionHead, Sheet, TagsField, type DataTableColumn, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -102,6 +103,7 @@ export function DisplayDestinations({ outletId, stations, canEdit }: { outletId:
 }
 
 function DestinationSheet({ state, outletId, canEdit, onClose }: { state: SheetState; outletId: string; canEdit: boolean; onClose: () => void }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const destination = state?.mode === "edit" ? state.destination : null;
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(destination) });
@@ -137,7 +139,7 @@ function DestinationSheet({ state, outletId, canEdit, onClose }: { state: SheetS
       footer={
         <>
           {destination && canEdit ? (
-            <Button variant={destination.archived ? "secondary" : "destructive"} onPress={() => archive.mutate(!destination.archived)} isPending={archive.isPending} isDisabled={save.isPending} className="mr-auto">
+            <Button variant={destination.archived ? "secondary" : "destructive"} onPress={() => (destination.archived ? archive.mutate(false) : confirm.ask({ title: `Archive ${destination.name}?`, body: "Tickets stop going to it. You can restore it later.", confirmLabel: "Archive destination", cancelLabel: "Keep the destination", onConfirm: () => archive.mutate(true) }))} isPending={archive.isPending} isDisabled={save.isPending} className="mr-auto">
               {destination.archived ? "Restore destination" : "Archive destination"}
             </Button>
           ) : null}
@@ -171,6 +173,7 @@ function DestinationSheet({ state, outletId, canEdit, onClose }: { state: SheetS
         </fieldset>
         <InlineError error={save.error ?? archive.error} />
       </form>
+      {confirm.dialog}
     </Sheet>
   );
 }

@@ -182,6 +182,10 @@ test("back office: an Admin invites a staff member, who sets a password in anoth
     const edit = page.getByRole("dialog", { name });
     await expect(edit.getByText(`Can sign in as ${email}.`)).toBeVisible();
     await edit.getByRole("button", { name: "Revoke access" }).click();
+    // Revoking asks once, and says what it ends.
+    const confirm = page.getByRole("alertdialog", { name: `Revoke ${name}'s access?` });
+    await expect(confirm).toContainText("signed out of the back office at once");
+    await confirm.getByRole("button", { name: "Revoke access" }).click();
     await expect(edit.getByText("No back-office access.")).toBeVisible();
   });
 
