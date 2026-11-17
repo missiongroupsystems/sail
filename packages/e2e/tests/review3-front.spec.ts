@@ -202,7 +202,9 @@ test("S4: the next shift's prefilled open form replaces a count on a tap and a d
     await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Shift", exact: true }).click();
     // A shift another spec left open is closed first (with a reason for its variance), so the form below is the open form.
     await expect(page.getByRole("heading", { name: /^(Open shift|Shift open)$/ })).toBeVisible();
-    if (await page.getByRole("heading", { name: "Shift open" }).isVisible()) {
+    const wasOpen = await page.getByRole("heading", { name: "Shift open" }).isVisible();
+    if (wasOpen) {
+      watch.allow({ status: 400, url: /\/v1\/shifts\/[^/]+\/close$/, why: "a count outside the variance is refused until a reason is given" });
       await page.getByRole("button", { name: "Close shift", exact: true }).tap();
       await leaveChecklistOpen(page);
       await page.getByRole("button", { name: /^Next: count the cash/ }).tap();
@@ -256,7 +258,11 @@ test("S4: the next shift's prefilled open form replaces a count on a tap and a d
     await total.tap();
     await page.keyboard.type("80");
     await expect(total).toHaveValue("80");
-    // No shift is left open for the specs after this one.
+    // Later specs take cash, so a shift that was open before this one is opened again.
+    if (wasOpen) {
+      await page.getByRole("button", { name: "Open shift with $80.00" }).tap();
+      await expect(page.getByRole("heading", { name: "Shift open" })).toBeVisible();
+    }
   } finally {
     await context.close();
   }
