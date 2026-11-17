@@ -41,9 +41,17 @@ test("paying the table ends the phone's session without a refused request", asyn
     const orderId = seated.data.tables.find((t) => t.id === table.id)!.order!.id;
     const rounds = await register<{ data: { id: string; order_id: string }[] }>("GET", `/v1/outlets/${outletId}/rounds?status=pending`);
     const round = rounds.data.find((r) => r.order_id === orderId);
-    if (round) await register("POST", `/v1/rounds/${round.id}/accept`, {});
-    // The phone is live on the order's stream before the table is paid.
+    // The phone is live on the order's stream before the round is decided and the table is paid.
     await expect.poll(() => guestCalls.some((c) => c.startsWith("200 GET /v1/guest/stream"))).toBe(true);
+    const orderReads = () => guestCalls.filter((c) => c === "200 GET /v1/guest/order").length;
+    const readsBefore = orderReads();
+    if (round) {
+      await register("POST", `/v1/rounds/${round.id}/accept`, {});
+      // The phone reads the order again when the round is accepted. Let that finish before the table is paid: a read
+      // already on its way when the session ends is refused, and that is not the phone using an ended session.
+      await expect.poll(orderReads).toBeGreaterThan(readsBefore);
+      await phone.waitForTimeout(1_000);
+    }
     const order = await register<{ data: { balance: number; checks: { id: string }[] } }>("GET", `/v1/orders/${orderId}`);
     await register("POST", `/v1/checks/${order.data.checks[0]!.id}/payments`, { payment_id: crypto.randomUUID(), tender_type_id: byHand.id, amount: order.data.balance });
     await register("POST", `/v1/orders/${orderId}/complete`, {}).catch(() => undefined);
