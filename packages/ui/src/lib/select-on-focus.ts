@@ -13,10 +13,13 @@ const DELIBERATE_TAP_MS = 500;
 export function selectOnFocus(e: FocusEvent<HTMLInputElement>) {
   const el = e.currentTarget;
   const focusedAt = Date.now();
+  let ended = false;
   requestAnimationFrame(() => {
-    if (document.activeElement === el) el.select();
+    // Not once the person has typed: selecting then would make the next key replace the first.
+    if (!ended && document.activeElement === el) el.select();
   });
   const done = () => {
+    ended = true;
     el.removeEventListener("beforeinput", onBeforeInput);
     el.removeEventListener("pointerdown", onPointerDown);
     el.removeEventListener("keydown", onKeyDown);

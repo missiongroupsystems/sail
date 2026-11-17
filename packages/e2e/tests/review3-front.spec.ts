@@ -200,6 +200,25 @@ test("S4: the next shift's prefilled open form replaces a count on a tap and a d
   try {
     await pairAndSignIn(page, MANAGER_PIN);
     await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Shift", exact: true }).click();
+    // A shift another spec left open is closed first (with a reason for its variance), so the form below is the open form.
+    await expect(page.getByRole("heading", { name: /^(Open shift|Shift open)$/ })).toBeVisible();
+    if (await page.getByRole("heading", { name: "Shift open" }).isVisible()) {
+      await page.getByRole("button", { name: "Close shift", exact: true }).tap();
+      await leaveChecklistOpen(page);
+      await page.getByRole("button", { name: /^Next: count the cash/ }).tap();
+      await page.getByRole("button", { name: "One total" }).tap();
+      await page.getByRole("textbox", { name: "Cash counted in the drawer" }).fill("0.00");
+      await page.getByRole("button", { name: /^Close shift · counted/ }).tap();
+      // A Cashier sees "Count outside the allowed variance"; a Manager sees the variance itself.
+      const variance = page.getByRole("heading", { name: /^(Count outside the allowed variance|Variance )/ });
+      await expect(variance.or(page.getByRole("heading", { name: "Shift closed" }))).toBeVisible();
+      if (await variance.isVisible()) {
+        await page.getByRole("button", { name: "Change given wrongly", exact: true }).tap();
+        await page.getByRole("button", { name: /^Close shift/ }).last().tap();
+      }
+      await expect(page.getByRole("heading", { name: "Shift closed" })).toBeVisible();
+      await page.getByRole("button", { name: "Done", exact: true }).tap();
+    }
     await expect(page.getByRole("heading", { name: "Open shift" })).toBeVisible();
     await page.getByRole("button", { name: "Count notes and coins" }).tap();
     await page.getByRole("textbox", { name: "$100 count" }).fill("1");
