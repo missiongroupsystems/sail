@@ -297,8 +297,17 @@ export function BillScreen({ orderId }: { orderId: string }) {
                         <Button size="md" variant="quiet" isDisabled={offline} onPress={() => void actions.printReceipt(check.id)}>
                           Receipt
                         </Button>
-                        <Button size="md" variant="quiet" isDisabled={offline} onPress={() => void actions.issueInvoice(check.id)}>
-                          {check.invoice_no ? `Invoice ${check.invoice_no}` : "Get invoice"}
+                        <Button
+                          size="md"
+                          variant="quiet"
+                          isDisabled={offline}
+                          onPress={async () => {
+                            // The invoice opens wherever it is shown: issued first when the bill has none yet (M19).
+                            const no = check.invoice_no ?? (await actions.issueInvoice(check.id))?.invoice_no ?? null;
+                            if (no && actions.mayReadInvoice) await actions.openInvoicePdf(check.id, no);
+                          }}
+                        >
+                          {check.invoice_no ? `Invoice ${check.invoice_no} · PDF` : "Get invoice"}
                         </Button>
                         <Button size="md" variant="secondary" isDisabled={offline || check.status === "refunded"} onPress={() => setRefundCheck(check)}>
                           Refund

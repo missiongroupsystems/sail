@@ -17,7 +17,7 @@ import { useSession } from "@/lib/session-context";
 import { statusIcon, statusTone, whoFor } from "./OrdersView";
 import { RefundSheet, refundableChecks } from "./RefundSheet";
 import { useFreshErrors } from "@/lib/fresh-errors";
-import { eventLabel } from "@/lib/format";
+import { auditActionLabel, eventLabel } from "@/lib/format";
 
 const REFUND_KIND_LABEL: Record<string, string> = { full: "Whole bill", lines: "Some items", amount: "An amount" };
 
@@ -62,8 +62,9 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
     enabled: orderId !== null && outletId !== null,
   });
   const audit = useQuery({
-    queryKey: keys.audit({ target_id: orderId ?? undefined }),
-    queryFn: () => req(api.GET("/v1/audit", { params: { query: { target_id: orderId!, limit: 100 } } })).then((r) => r.data),
+    // Everything about the order, its lines (a void is audited on the line) and its bills included.
+    queryKey: keys.audit({ order_id: orderId ?? undefined }),
+    queryFn: () => req(api.GET("/v1/audit", { params: { query: { order_id: orderId!, limit: 100 } } })).then((r) => r.data),
     enabled: orderId !== null,
   });
   const refunds = useQuery({
@@ -148,7 +149,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
           <>
             {[label(ORDER_TYPE_LABEL, o.order_type), `${o.order_type === "dine_in" ? "Table " : ""}${whoFor(o, tableName)}${o.pax ? ` · ${o.pax} ${o.pax === 1 ? "guest" : "guests"}` : ""}`, label(CHANNEL_LABEL, o.channel), `opened ${dayClock(o.opened_at)}`, o.opened_by.name].filter(Boolean).join(" · ")}
             <span className="block text-caption text-ink-3">
-              Business day <BusinessDay value={o.business_date} /> · {o.pricing_status === "frozen" ? "prices frozen at first payment" : "live pricing"} · v{o.version} · {kitchenSends(o.round_count)}
+              Business day <BusinessDay value={o.business_date} /> · {o.pricing_status === "frozen" ? "prices frozen at first payment" : "live pricing"} · {kitchenSends(o.round_count)}
             </span>
           </>
         ) : undefined
@@ -193,7 +194,11 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                   { label: <span className="font-heading text-[15px] font-semibold">Total</span>, value: <Money cents={o.totals.total} size="heading" />, strong: true },
                   ...taxRows(o.totals.taxes, o.totals.tax_mode).after.map((t) => ({ label: t.label, value: <Money cents={t.amount} /> })),
                   { label: "Paid", value: <Money cents={o.paid_total} /> },
-                  { label: <span className="font-heading text-[15px] font-semibold">Balance</span>, value: <Money cents={o.balance} size="heading" />, strong: true },
+                  ...(o.refunded_total ? [{ label: "Refunded", value: <Money cents={-o.refunded_total} /> }] : []),
+                  // A negative balance is money taken beyond the order's total: owed to the guest, with the refund beside it.
+                  o.balance < 0
+                    ? { label: <span className="font-heading text-[15px] font-semibold">Owed to the guest</span>, value: <Money cents={-o.balance} size="heading" />, strong: true }
+                    : { label: <span className="font-heading text-[15px] font-semibold">Balance</span>, value: <Money cents={o.balance} size="heading" />, strong: true },
                 ]}
               />
             </Group>
@@ -435,7 +440,6 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                       </span>
                       <span className="text-caption text-ink" title={e.type}>{eventLabel(e.type, e.payload)}</span>
                       <span className="text-caption text-ink-2">
-                        seq {e.seq} · v{e.aggregate.version}
                         {typeof e.actor === "object" && e.actor && "name" in e.actor && e.actor.name ? ` · ${String(e.actor.name)}` : ""}
                         {e.reason && typeof e.reason === "object" && "text" in e.reason && e.reason.text ? ` · ${String(e.reason.text)}` : ""}
                       </span>
@@ -458,7 +462,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                       <span className="tabular whitespace-nowrap text-ink-2" title={fullStamp(a.occurred_at)}>
                         {dayClock(a.occurred_at)}
                       </span>
-                      <span className="font-mono text-caption text-ink">{a.action}</span>
+                      <span className="text-caption text-ink">{auditActionLabel(a.action)}</span>
                       <span className="text-caption text-ink-2">
                         {a.actor_name ?? a.actor_type}
                         {a.actor_role ? ` (${a.actor_role})` : ""}

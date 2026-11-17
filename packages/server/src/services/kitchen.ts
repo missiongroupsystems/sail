@@ -247,7 +247,22 @@ export async function actOnTicket(action: TicketAction, ticketId: string, p: Pri
     throw AppError.state(`The ticket is ${current.status.replace("_", " ")}`, allowed);
   }
   const type = action === "start" ? "kitchen_ticket.started" : action === "bump" ? "kitchen_ticket.bumped" : "kitchen_ticket.recalled";
-  const ev = await event(row, type, { kind: "kitchen_ticket", id: row.id }, { ticket_id: row.id, destination_id: row.destinationId, order_id: row.orderId, status: row.status }, { principal: p, correlationId: ctx.correlationId, idempotencyKey: ctx.idempotencyKey, operationId: `kitchen_tickets.${action}`, bd: await ticketBusinessDay(row.outletId) });
+  // The order follows its kitchen: once every ticket it sent is bumped it is ready (the POS shows Ready, the guest's
+  // rounds show Done); a recall takes it back to sent. Written before any event, as every register write is.
+  let progress: { from: string; to: string } | null = null;
+  if (action !== "start") {
+    const [o] = await db().select({ status: orders.status }).from(orders).where(eq(orders.id, row.orderId)).limit(1);
+    const [left] = await db().select({ n: sql<number>`count(*)::int` }).from(kitchenTickets).where(and(eq(kitchenTickets.orderId, row.orderId), isNull(kitchenTickets.bumpedAt), ne(kitchenTickets.status, "cancelled")));
+    const [unsent] = await db().select({ n: sql<number>`count(*)::int` }).from(orderLines).where(and(eq(orderLines.orderId, row.orderId), inArray(orderLines.status, ["pending", "held"])));
+    if (action === "bump" && o?.status === "fired" && (left?.n ?? 0) === 0 && (unsent?.n ?? 0) === 0) progress = { from: "fired", to: "ready" };
+    if (action === "recall" && o?.status === "ready") progress = { from: "ready", to: "fired" };
+    if (progress) await db().update(orders).set({ status: progress.to as "ready" | "fired", readyAt: progress.to === "ready" ? now : null, updatedAt: now }).where(eq(orders.id, row.orderId));
+  }
+  const bd = await ticketBusinessDay(row.outletId);
+  const ctxFor = { principal: p, correlationId: ctx.correlationId, idempotencyKey: ctx.idempotencyKey, operationId: `kitchen_tickets.${action}`, bd };
+  const ev = await event(row, type, { kind: "kitchen_ticket", id: row.id }, { ticket_id: row.id, destination_id: row.destinationId, order_id: row.orderId, status: row.status }, ctxFor);
+  // The order's own event, so the POS order screen and the guest's phone (which follow the order) hear the kitchen at once.
+  const orderEv = await event(row, "order.kitchen_progress", { kind: "order", id: row.orderId }, { order_id: row.orderId, ticket_id: row.id, round_no: row.roundNo, action, ...(progress ? { status_from: progress.from, status_to: progress.to } : {}) }, ctxFor);
   const [ticket] = await loadTickets([eq(kitchenTickets.id, row.id)]);
-  return { ticket: ticket!, changed: true, events: [ev] };
+  return { ticket: ticket!, changed: true, events: [ev, orderEv] };
 }

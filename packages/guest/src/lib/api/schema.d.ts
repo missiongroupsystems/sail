@@ -3539,7 +3539,7 @@ export interface paths {
         put?: never;
         /**
          * Bump a kitchen ticket (ready)
-         * @description Marks the ticket ready and takes it off the display; a cancelled ticket stays cancelled and only leaves the display. A second bump, from this display or another showing the same destination, returns the ticket unchanged.
+         * @description Marks the ticket ready and takes it off the display; a cancelled ticket stays cancelled and only leaves the display. When it was the order's last ticket still on a display (and nothing waits to be sent), a sent order becomes ready. A second bump, from this display or another showing the same destination, returns the ticket unchanged.
          */
         post: operations["kitchen_tickets.bump"];
         delete?: never;
@@ -7687,6 +7687,7 @@ export interface operations {
                 action?: string;
                 target_kind?: string;
                 target_id?: string;
+                order_id?: string;
                 from?: string;
                 to?: string;
                 limit?: number;

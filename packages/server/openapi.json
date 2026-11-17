@@ -11648,6 +11648,15 @@
           {
             "schema": {
               "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "order_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "format": "date-time"
             },
             "required": false,
@@ -90491,7 +90500,8 @@
             "staff"
           ],
           "emits": [
-            "kitchen_ticket.started"
+            "kitchen_ticket.started",
+            "order.kitchen_progress"
           ],
           "mcp": {
             "expose": false,
@@ -91031,7 +91041,7 @@
           "kitchen"
         ],
         "operationId": "kitchen_tickets.bump",
-        "description": "Marks the ticket ready and takes it off the display; a cancelled ticket stays cancelled and only leaves the display. A second bump, from this display or another showing the same destination, returns the ticket unchanged.",
+        "description": "Marks the ticket ready and takes it off the display; a cancelled ticket stays cancelled and only leaves the display. When it was the order's last ticket still on a display (and nothing waits to be sent), a sent order becomes ready. A second bump, from this display or another showing the same destination, returns the ticket unchanged.",
         "summary": "Bump a kitchen ticket (ready)",
         "x-sail": {
           "op": "kitchen_tickets.bump",
@@ -91045,7 +91055,8 @@
             "staff"
           ],
           "emits": [
-            "kitchen_ticket.bumped"
+            "kitchen_ticket.bumped",
+            "order.kitchen_progress"
           ],
           "mcp": {
             "expose": false,
@@ -91599,7 +91610,8 @@
             "staff"
           ],
           "emits": [
-            "kitchen_ticket.recalled"
+            "kitchen_ticket.recalled",
+            "order.kitchen_progress"
           ],
           "mcp": {
             "expose": false,

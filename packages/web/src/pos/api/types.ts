@@ -494,7 +494,7 @@ export type GuestRound = {
   decided_by: string | null;
   reject_reason: string | null;
   table_name: string | null;
-  lines: { id: string; name: string; quantity: number; modifiers: string[]; notes: string | null; status: string }[];
+  lines: { id: string; product_id?: string; name: string; quantity: number; modifiers: string[]; notes: string | null; status: string }[];
 };
 export type ServiceRequest = {
   id: string;

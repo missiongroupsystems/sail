@@ -3,7 +3,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import QRCode from "qrcode";
 import { and, asc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db, tx, withOwnTransaction } from "../db/client.js";
-import { brands, channelLinks, guestRounds, guestSessions, orderAdjustments, orderLines, orders, outlets, serviceRequests, tableQrTokens, tables } from "../db/schema/index.js";
+import { brands, channelLinks, guestRounds, guestSessions, kitchenTickets, orderAdjustments, orderLines, orders, outlets, serviceRequests, tableQrTokens, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { sha256, signSailToken } from "../auth/tokens.js";
 import { config } from "../config.js";
@@ -255,6 +255,20 @@ export async function guestOrderView(p: Extract<Principal, { type: "guest" }>) {
         .where(and(eq(orderLines.orderId, orderId), rejectedRounds.length ? or(ne(orderLines.status, "voided"), inArray(orderLines.roundId, rejectedRounds)) : ne(orderLines.status, "voided")))
         .orderBy(orderLines.sort)
     : [];
+  // The kitchen per round: a fire round is done once every ticket it sent is bumped (at every station); a round with no
+  // ticket (nothing routed to a display) is done when the order is ready. A guest round is done when its lines' rounds are.
+  const tickets = order ? await asSystem(() => db().select({ roundNo: kitchenTickets.roundNo, bumpedAt: kitchenTickets.bumpedAt, status: kitchenTickets.status }).from(kitchenTickets).where(and(eq(kitchenTickets.orderId, order.id), eq(kitchenTickets.merchantId, order.merchantId)))) : [];
+  const orderDone = order?.status === "ready" || order?.status === "completed";
+  const fireDone = (n: number | null) => {
+    if (n == null) return false;
+    const mine = tickets.filter((t) => t.roundNo === n);
+    return mine.length ? mine.every((t) => t.bumpedAt != null || t.status === "cancelled") : orderDone;
+  };
+  const lineDone = (l: typeof orderLines.$inferSelect) => l.status === "fired" && fireDone(l.fireRound);
+  const roundDone = (r: typeof guestRounds.$inferSelect) => {
+    const mine = lines.filter((l) => r.lineIds.includes(l.id) && l.status === "fired");
+    return mine.length > 0 && mine.every(lineDone);
+  };
   return {
     table_id: p.tableId,
     order_open: !!order,
@@ -263,9 +277,9 @@ export async function guestOrderView(p: Extract<Principal, { type: "guest" }>) {
     order: order ? { id: order.id, order_no: order.orderNo, status: order.status, opened_at: order.openedAt.toISOString(), bill_requested: order.billRequestedAt != null } : null,
     // Each line's amount (menu price and choices, before discounts) and the table's totals as the register priced them,
     // so the phone shows them without adding anything up. Payments and balances stay at the POS.
-    lines: lines.map(toLine),
+    lines: lines.map((l) => ({ ...toLine(l), kitchen_done: lineDone(l) })),
     totals: order ? await guestTotals(order) : null,
-    rounds: allRounds.map((r) => ({ ...toRound(r), mine: r.guestSessionId === p.sessionId })),
+    rounds: allRounds.map((r) => ({ ...toRound(r), mine: r.guestSessionId === p.sessionId, kitchen_done: roundDone(r) })),
     requests: requests.map(toRequest),
   };
 }

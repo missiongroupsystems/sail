@@ -202,5 +202,7 @@ export type OrderSnapshot = {
   manual_applications: { id: string; rule_key: string; entered_value: number | null; line_ids: string[] | null; applied_by: string | null; approved_by?: string | null; reason: string | null }[];
   checks: unknown[];
   paid_total: number;
+  /** Sum of the bills' refunded totals, as the register adds them. */
+  refunded_total: number;
   balance: number;
 };

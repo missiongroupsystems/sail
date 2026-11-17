@@ -4,7 +4,8 @@ import type { TaxBreakdown } from "@sail/shared";
 import "../src/modules.js";
 import { buildApp, type App } from "../src/app.js";
 import { resetGuestRateLimitsForTests } from "../src/services/guest.js";
-import { api, freshDb, settleOpenOrders, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
+import { startListener, stopListener } from "../src/sse/listener.js";
+import { api, backOfficeSession, freshDb, readSse, settleOpenOrders, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
 
 /** Final review round, money: a US diner (4% state + 4.5% local, rounded per rate). */
 let db: TestDb;
@@ -13,7 +14,7 @@ let US: SeededMerchant;
 let call: ReturnType<typeof api>["call"];
 let pin: string;
 const qr: Record<string, string> = {};
-const ids = { card: randomUUID(), mint: randomUUID(), a: randomUUID(), b: randomUUID(), c: randomUUID(), qrLink: randomUUID(), t2: randomUUID(), t3: randomUUID(), t4: randomUUID(), burger: randomUUID(), soda: randomUUID(), menu: randomUUID(), link: randomUUID(), area: randomUUID(), t1: randomUUID(), station: randomUUID(), cash: randomUUID(), };
+const ids = { t5: randomUUID(), t6: randomUUID(), hot: randomUUID(), bar: randomUUID(), card: randomUUID(), mint: randomUUID(), a: randomUUID(), b: randomUUID(), c: randomUUID(), qrLink: randomUUID(), t2: randomUUID(), t3: randomUUID(), t4: randomUUID(), burger: randomUUID(), soda: randomUUID(), menu: randomUUID(), link: randomUUID(), area: randomUUID(), t1: randomUUID(), station: randomUUID(), cash: randomUUID(), };
 
 type Snap = { id: string; version: number; status: string; totals: { subtotal: number; tax_total: number; taxes: TaxBreakdown[]; total: number }; lines: { id: string; status: string; amounts: { total: number; tax: number } }[]; checks: { id: string; total?: number; totals: { total: number; subtotal: number; tax_total: number }; balance: number; allocations: { line_id: string }[] }[]; balance: number; paid_total: number };
 type Mut = { data: Snap; code?: string };
@@ -22,6 +23,7 @@ beforeAll(async () => {
   db = await freshDb({ GUEST_APP_URL: "https://order.example.test" });
   app = buildApp();
   call = api(app).call;
+  await startListener();
   US = await seedMerchant(db.sql, "Diner", { preset: "us", timeZone: "America/New_York", locale: "en-US" });
   const t = US.admin.token;
   const must = async (path: string, body: unknown) => {
@@ -36,9 +38,11 @@ beforeAll(async () => {
   await must("/v1/products", { id: ids.c, name: "Pie", price: 2098, tags: ["kitchen"] });
   await must("/v1/menus", { id: ids.menu, brand_id: US.brandId, name: "M", sections: [{ name: "All", items: [{ product_id: ids.burger }, { product_id: ids.soda }, { product_id: ids.a }, { product_id: ids.b }, { product_id: ids.c }, { product_id: ids.mint }] }] });
   await must("/v1/channel-links", { id: ids.link, channel: "pos", outlet_id: US.outletId, brand_id: US.brandId, menu_id: ids.menu });
+  await must("/v1/display-destinations", { id: ids.hot, outlet_id: US.outletId, name: "Hot line", include_tags: ["kitchen"], is_default: true });
+  await must("/v1/display-destinations", { id: ids.bar, outlet_id: US.outletId, name: "Bar", include_tags: ["bar"] });
   await must("/v1/areas", { id: ids.area, outlet_id: US.outletId, name: "Main" });
   await must("/v1/channel-links", { id: ids.qrLink, channel: "scan_to_order", outlet_id: US.outletId, brand_id: US.brandId, menu_id: ids.menu, hold_orders: true, open_on_first_scan: true, service_requests: ["call_for_bill"] });
-  for (const [k, name] of [["t1", "1"], ["t2", "2"], ["t3", "3"], ["t4", "4"]] as const) {
+  for (const [k, name] of [["t1", "1"], ["t2", "2"], ["t3", "3"], ["t4", "4"], ["t5", "5"], ["t6", "6"]] as const) {
     await must("/v1/tables", { id: ids[k], outlet_id: US.outletId, area_id: ids.area, name });
     qr[k] = (await call<{ data: { url: string } }>("POST", `/v1/tables/${ids[k]}/qr/rotate`, { token: t, body: {} })).body.data.url;
   }
@@ -50,7 +54,10 @@ beforeAll(async () => {
   const paired = await call<{ data: { station_token: string } }>("POST", "/v1/stations/pair", { body: { code: code.body.data.code, device_label: "iPad" }, idempotencyKey: null });
   pin = (await call<{ data: { session_token: string } }>("POST", "/v1/stations/sessions", { token: paired.body.data.station_token, body: { pin: "333333" } })).body.data.session_token;
 });
-afterAll(async () => db.drop());
+afterAll(async () => {
+  await stopListener();
+  await db.drop();
+});
 
 const open = (body: Record<string, unknown>) => call<Mut>("POST", "/v1/orders", { token: pin, body: { order_id: randomUUID(), ...body } });
 const add = (orderId: string, product_id: string, quantity = 1) => call<Mut>("POST", `/v1/orders/${orderId}/lines`, { token: pin, body: { lines: [{ line_id: randomUUID(), product_id, quantity }] } });
@@ -303,5 +310,90 @@ describe("M2, M20, M16: the Z-report reconciles on its face, per tender, and sta
     expect(next.scope.business_date).not.toBe(day);
     expect(next.closed).toBeNull();
     expect(next.previous_closed_date).toBe(day);
+  });
+});
+
+describe("M6: the guest's steps and the POS status follow the kitchen, round by round", () => {
+  type GV = { data: { order: { status: string }; rounds: { id: string; status: string; kitchen_done: boolean }[]; lines: { round_id: string; kitchen_done: boolean }[] } };
+  it("a round is Done when every ticket it sent is bumped, at every station; the order is ready when all are", async () => {
+    const g = await phone("t1", "device-m6-0001");
+    const r1 = await guestRound(g, ids.burger);
+    await call("POST", `/v1/rounds/${r1.roundId}/accept`, { token: pin, body: {} });
+    const r2 = await guestRound(g, ids.soda);
+    await call("POST", `/v1/rounds/${r2.roundId}/accept`, { token: pin, body: {} });
+    const tickets = (await call<{ data: { id: string; order_id: string; destination_id: string; round_no: number }[] }>("GET", `/v1/outlets/${US.outletId}/kitchen-tickets`, { token: US.admin.token })).body.data.filter((t) => t.order_id === r1.orderId);
+    expect(tickets).toHaveLength(2);
+    const view = async () => (await call<GV>("GET", "/v1/guest/order", { token: g })).body.data;
+    const first = tickets.find((t) => t.destination_id === ids.hot)!;
+    const b1 = await call<{ events: { type: string }[] }>("POST", `/v1/kitchen-tickets/${first.id}/bump`, { token: US.admin.token, body: {} });
+    expect(b1.status, JSON.stringify(b1.body)).toBe(200);
+    expect(b1.body.events.map((e) => e.type)).toContain("order.kitchen_progress");
+    let v = await view();
+    expect(v.rounds.find((x) => x.id === r1.roundId)!.kitchen_done).toBe(true);
+    expect(v.rounds.find((x) => x.id === r2.roundId)!.kitchen_done).toBe(false);
+    expect(v.order.status).toBe("fired");
+    await call("POST", `/v1/kitchen-tickets/${tickets.find((t) => t.destination_id === ids.bar)!.id}/bump`, { token: US.admin.token, body: {} });
+    v = await view();
+    expect(v.rounds.every((x) => x.kitchen_done)).toBe(true);
+    expect(v.order.status).toBe("ready");
+    // A recall takes the order back to sent, and that round is no longer done.
+    await call("POST", `/v1/kitchen-tickets/${tickets.find((t) => t.destination_id === ids.bar)!.id}/recall`, { token: US.admin.token, body: {} });
+    v = await view();
+    expect(v.order.status).toBe("fired");
+    expect(v.rounds.find((x) => x.id === r2.roundId)!.kitchen_done).toBe(false);
+  });
+});
+
+describe("M9, M10: a rotated code and a paid bill reach every open phone at once, on the stream, with no 401", () => {
+  const stream = async (g: string) => {
+    const res = await app.request("/v1/guest/stream", { headers: { authorization: `Bearer ${g}` } });
+    expect(res.status).toBe(200);
+    return res;
+  };
+  it("rotating the table's code sends `ended` (code_rotated) on the open stream straight away", async () => {
+    const g = await phone("t5", "device-m9-0001");
+    await guestRound(g, ids.burger);
+    const res = await stream(g);
+    const got = readSse(res, 2, 3000);
+    await new Promise((r) => setTimeout(r, 100));
+    const rot = await call("POST", `/v1/tables/${ids.t5}/qr/rotate`, { token: US.admin.token, body: {} });
+    expect(rot.status).toBe(201);
+    const events = await got;
+    expect(events[0]!.event).toBe("hello");
+    expect(events[1]).toMatchObject({ event: "ended", data: { reason: "code_rotated" } });
+  });
+
+  it("paying the table's bill sends `ended` with order_paid, and the 401 afterwards says the bill is paid", async () => {
+    const g = await phone("t6", "device-m9-0002");
+    const r = await guestRound(g, ids.burger);
+    await call("POST", `/v1/rounds/${r.roundId}/accept`, { token: pin, body: {} });
+    const s = await snap(r.orderId);
+    const res = await stream(g);
+    const got = readSse(res, 2, 3000);
+    await new Promise((x) => setTimeout(x, 100));
+    const paid = await call<Mut>("POST", `/v1/checks/${s.checks[0]!.id}/payments`, { token: US.admin.token, body: { payment_id: randomUUID(), tender_type_id: ids.card, amount: s.balance } });
+    expect(paid.body.data.status).toBe("completed");
+    const events = await got;
+    expect(events[1]).toMatchObject({ event: "ended", data: { reason: "order_paid" } });
+    const after = await call<{ details: { reason: string } }>("GET", "/v1/guest/order", { token: g });
+    expect(after.status).toBe(401);
+    expect(after.body.details.reason).toBe("order_paid");
+  });
+});
+
+describe("M5: an issued invoice shows on the bill wherever the bill is read", () => {
+  it("the order, its bills and a reload all carry the invoice number", async () => {
+    const o = await open({ order_type: "takeaway" });
+    const a = await add(o.body.data.id, ids.burger);
+    const checkId = a.body.data.checks[0]!.id;
+    await call("POST", `/v1/checks/${checkId}/payments`, { token: US.admin.token, body: { payment_id: randomUUID(), tender_type_id: ids.card, amount: a.body.data.balance } });
+    // Issued from the back office, as the owner does it (a signed-in session, not a station).
+    const owner = await backOfficeSession(db.sql, US.merchantId, US.admin.id);
+    const inv = await call<{ data: { invoice_no: string } }>("POST", `/v1/checks/${checkId}/invoice`, { token: owner, body: {} });
+    expect(inv.status, JSON.stringify(inv.body)).toBeLessThan(300);
+    const again = await call<{ data: { checks: { id: string; invoice_no: string | null }[] } }>("GET", `/v1/orders/${o.body.data.id}`, { token: owner });
+    expect(again.body.data.checks.find((c) => c.id === checkId)!.invoice_no).toBe(inv.body.data.invoice_no);
+    const list = await call<{ data: { id: string; invoice_no: string | null }[] }>("GET", `/v1/orders/${o.body.data.id}/checks`, { token: US.admin.token });
+    expect(list.body.data.find((c) => c.id === checkId)!.invoice_no).toBe(inv.body.data.invoice_no);
   });
 });

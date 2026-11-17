@@ -3,7 +3,7 @@
 import { BrandButton, LocaleProvider } from "@sail/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Clock, QrCode } from "lucide-react";
+import { AlertTriangle, CheckCheck, Clock, QrCode } from "lucide-react";
 import { useStore } from "zustand";
 import { API_URL, ApiError, createGuestApi, createSession, getMenu, getOrder, submitRound, toApiError } from "@/lib/api";
 import { createBasketStore, type BasketItem } from "@/lib/basket";
@@ -23,7 +23,7 @@ import { OurTableView } from "./OurTableView";
 import { ReviewView } from "./ReviewView";
 import { StatusView } from "./StatusView";
 
-type Phase = { kind: "loading" } | { kind: "invalid" } | { kind: "ended" } | { kind: "rotated" } | { kind: "unavailable"; error: ApiError } | { kind: "ready" };
+type Phase = { kind: "loading" } | { kind: "invalid" } | { kind: "ended"; paid?: boolean } | { kind: "rotated" } | { kind: "unavailable"; error: ApiError } | { kind: "ready" };
 
 /** The screens inside the one page. The URL hash carries them so the phone's back button works. */
 export type View = "menu" | "review" | "status" | "table";
@@ -145,7 +145,7 @@ function GuestAppInner({ token }: { token: string }) {
       return;
     }
     setSession(null);
-    setPhase({ kind: rotated ? "rotated" : "ended" });
+    setPhase(rotated ? { kind: "rotated" } : { kind: "ended", paid: details?.reason === "order_paid" });
   }, [token, startSession]);
   onUnauthenticatedRef.current = onUnauthenticated;
 
@@ -367,6 +367,16 @@ function GuestAppInner({ token }: { token: string }) {
   /* ---- Screens ---- */
   if (phase.kind === "invalid") return <Notice icon={QrCode} tone="warning" title="This code isn't valid." body="Ask a member of staff." />;
   if (phase.kind === "rotated") return <Notice icon={QrCode} title="This table has a new QR code." body="Scan the code on the table again to keep ordering." />;
+  if (phase.kind === "ended" && phase.paid) {
+    // Ended because the table's bill was paid: a thank-you, not a timeout.
+    return (
+      <Notice icon={CheckCheck} title="Your bill is paid." body="Thank you for coming. To order again, scan the QR code on the table.">
+        <BrandButton variant="quiet" onPress={() => startSession(true)}>
+          Order again
+        </BrandButton>
+      </Notice>
+    );
+  }
   if (phase.kind === "ended") {
     return (
       <Notice icon={Clock} title="This table session has ended." body="Scan the QR code on the table again, or start again here.">

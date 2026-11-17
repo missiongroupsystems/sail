@@ -72,6 +72,8 @@ export type GuestRound = {
   decided_by: string | null;
   reject_reason: string | null;
   mine: boolean;
+  /** Every kitchen ticket of the round is bumped, at every station. */
+  kitchen_done?: boolean;
 };
 export type GuestLine = {
   id: string;
@@ -86,6 +88,8 @@ export type GuestLine = {
   mine: boolean;
   /** The line's amount as the register priced it (menu price and choices, before discounts). */
   amount: number;
+  /** Sent, and every kitchen ticket of its round is bumped. */
+  kitchen_done?: boolean;
 };
 /** The table's totals as the register priced the order; the phone shows them and never adds them up. */
 export type GuestTotals = { tax_mode: string; subtotal: number; adjustments: { name: string; total: number }[]; taxes: { name: string; bps: number; amount: number }[]; total: number };

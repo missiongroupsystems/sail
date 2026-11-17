@@ -33,6 +33,9 @@ type Choice = "print" | "qr" | "send" | "none" | null;
  * QR on screen, Email/SMS and No receipt as large buttons, Get invoice, and an
  * auto-return that any tap cancels.
  */
+/** Whether an email or SMS provider delivers receipts. None is configured in Sail, so the guest scans or is sent the link. */
+const DELIVERY_CONFIGURED = false;
+
 export function ReceiptChooser({ order, check, actions, caption, amount, extra, sub, autoReturnMs = 4000, onDone, doneLabel }: ReceiptChooserProps) {
   const { offline } = usePos();
   const { money } = useLocale();
@@ -47,6 +50,7 @@ export function ReceiptChooser({ order, check, actions, caption, amount, extra, 
   const [sent, setSent] = useState<ReceiptSend | null>(null);
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [channel, setChannel] = useState<"email" | "sms">("email");
+  const [copied, setCopied] = useState(false);
   const [destination, setDestination] = useState("");
   const [printed, setPrinted] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -134,6 +138,8 @@ export function ReceiptChooser({ order, check, actions, caption, amount, extra, 
             <Icon icon={QrCode} size={18} className="opacity-70" />
             QR on screen
           </Button>
+          {/* Email and SMS are offered only where a delivery provider is set up; Sail ships none, so the QR code and the link are the delivery. */}
+          {DELIVERY_CONFIGURED ? (
           <Button
             size="lg"
             variant="secondary"
@@ -147,6 +153,7 @@ export function ReceiptChooser({ order, check, actions, caption, amount, extra, 
             <Icon icon={Mail} size={18} className="opacity-70" />
             Email / SMS
           </Button>
+          ) : null}
           <Button
             size="lg"
             variant="secondary"
@@ -167,9 +174,25 @@ export function ReceiptChooser({ order, check, actions, caption, amount, extra, 
         <div className="flex flex-col items-center gap-3">
           {sent ? <QrCodeImage url={sent.url} size={260} label="Receipt link as a QR code" /> : <div className="size-[260px] animate-skeleton rounded-tile bg-surface-2" />}
           <p className="text-body text-ink-2">The guest scans this to open their receipt.</p>
-          <Button size="lg" variant="quiet" onPress={() => setChoice(null)}>
-            Other receipt options
-          </Button>
+          <div className="flex flex-wrap justify-center gap-2">
+            {sent ? (
+              <Button
+                size="lg"
+                variant="secondary"
+                onPress={() => {
+                  void navigator.clipboard?.writeText(sent.url).then(
+                    () => setCopied(true),
+                    () => setCopied(false),
+                  );
+                }}
+              >
+                {copied ? "Link copied" : "Copy link"}
+              </Button>
+            ) : null}
+            <Button size="lg" variant="quiet" onPress={() => setChoice(null)}>
+              Other receipt options
+            </Button>
+          </div>
         </div>
       ) : null}
 

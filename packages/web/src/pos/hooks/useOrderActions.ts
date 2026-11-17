@@ -625,6 +625,16 @@ export function useOrderActions(orderId: string) {
           notify({ text: "The order changed on another station", remedy: "Check the bill and try again.", tone: "info", orderId }, 6000);
           return null;
         }
+        // The answer was lost (no reply, or the register failed while replying): read the order again before saying
+        // anything. A payment the register recorded under this payment id is shown as taken; a retry reuses the id.
+        if (e instanceof ApiError && (e.status === 0 || e.status >= 500)) {
+          const taken = await reg.getOrder(api, orderId).catch(() => null);
+          const recorded = taken?.checks.flatMap((c) => c.payments).find((p) => p.id === input.payment_id && p.status === "recorded");
+          if (taken && recorded) {
+            applySnapshot(qc, taken);
+            return { data: taken, payment: { ...recorded, change_due: recorded.change_cents, due_cents: recorded.amount + recorded.rounding_cents + recorded.tip_cents }, events: [], warnings: [] };
+          }
+        }
         refreshIfBalanceChanged(e);
         // The register's refusal is shown as it is given; the screen may also point at the field it names.
         if (e instanceof ApiError) opts.onRefused?.(e);
@@ -867,6 +877,24 @@ export function useOrderActions(orderId: string) {
     [api, fail, qc, run],
   );
 
+  /** Mark products sold out for today (after a QR order was rejected as sold out); the guest menu follows. */
+  const markSoldOut = useCallback(
+    async (productIds: string[]) => {
+      try {
+        const outletId = snapshot()?.outlet_id;
+        if (!outletId) return null;
+        for (const id of productIds) await reg.markSoldOut(api, outletId, id, "today");
+        void qc.invalidateQueries({ queryKey: ["pos", "menu"] });
+        void qc.invalidateQueries({ queryKey: ["pos", "stock", outletId] });
+        return true;
+      } catch (e) {
+        fail(e);
+        return null;
+      }
+    },
+    [api, fail, qc, snapshot],
+  );
+
   /* ---- Printing ---- */
 
   const reprint = useCallback(
@@ -924,10 +952,11 @@ export function useOrderActions(orderId: string) {
       printRefundReceipt,
       acceptRound,
       rejectRound,
+      markSoldOut,
       reprint,
       role,
     }),
-    [addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, splitEven, splitBySeat, allocate, unsplit, prebill, previewPayment, pay, startTerminal, cancelTerminal, voidPayment, complete, reopen, reopenRefusal, printReceipt, sendReceipt, issueInvoice, openInvoicePdf, mayReadInvoice, quoteRefund, refund, printRefundReceipt, acceptRound, rejectRound, reprint, role],
+    [addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, splitEven, splitBySeat, allocate, unsplit, prebill, previewPayment, pay, startTerminal, cancelTerminal, voidPayment, complete, reopen, reopenRefusal, printReceipt, sendReceipt, issueInvoice, openInvoicePdf, mayReadInvoice, quoteRefund, refund, printRefundReceipt, acceptRound, rejectRound, markSoldOut, reprint, role],
   );
 }
 

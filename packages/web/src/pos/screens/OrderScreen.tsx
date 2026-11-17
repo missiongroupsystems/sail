@@ -190,7 +190,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
           payNow();
         }}
       />
-      <RejectRoundSheet isOpen={sheet?.kind === "reject"} roundLabel={sheet?.kind === "reject" ? `${sheet.round.lines.length} ${sheet.round.lines.length === 1 ? "item" : "items"}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null} onClose={() => setSheet(null)} onReject={(reason) => (sheet?.kind === "reject" ? actions.rejectRound(sheet.round.id, reason) : Promise.resolve(null))} />
+      <RejectRoundSheet isOpen={sheet?.kind === "reject"} roundLabel={sheet?.kind === "reject" ? `${sheet.round.lines.length} ${sheet.round.lines.length === 1 ? "item" : "items"}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null} onClose={() => setSheet(null)} onReject={(reason) => (sheet?.kind === "reject" ? actions.rejectRound(sheet.round.id, reason) : Promise.resolve(null))} onMarkSoldOut={sheet?.kind === "reject" ? () => actions.markSoldOut([...new Set(sheet.round.lines.flatMap((l) => (l.product_id ? [l.product_id] : [])))]) : undefined} />
     </Frame>
   );
 }

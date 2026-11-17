@@ -44,6 +44,13 @@ registerOperations({
   "tables.rotate_all_qr_tokens": op({ op: "tables.rotate_all_qr_tokens", summary: "Rotate every QR code at an outlet", description: "Every table's QR token at the outlet is replaced: the printed cards stop working at once (for example after cards were photographed). Print the sheet again afterwards. Admin.", tier: "T3", minRole: "admin", principals: ["staff"], emits: ["table.qr_rotated"], mcp: { expose: false, toolsets: [] } }),
 });
 
+/** The session's order completed (paid in full): why the session ended, for the phone's last screen. */
+async function orderPaid(t: RequestTx, orderId: string | null): Promise<boolean> {
+  if (!orderId) return false;
+  const [o] = await t.db.select({ status: orders.status }).from(orders).where(eq(orders.id, orderId)).limit(1);
+  return o?.status === "completed";
+}
+
 /* ---- Guest principal ---- */
 registerGuestResolver(async (token: string, t: RequestTx) => {
   const claims = await verifySailToken(token, "guest");
@@ -53,6 +60,8 @@ registerGuestResolver(async (token: string, t: RequestTx) => {
     // A rotation marks the old code with the same instant it ends the sessions with.
     const [rotated] = await t.db.select({ id: tableQrTokens.id }).from(tableQrTokens).where(and(eq(tableQrTokens.tableId, s.tableId), eq(tableQrTokens.rotatedAt, s.revokedAt))).limit(1);
     if (rotated) throw new AppError("unauthenticated", "This table has a new QR code", { remedy: "Scan the code on the table again to keep ordering.", details: { reason: "code_rotated" } });
+    // Ended because the table's bill was paid: the phone thanks the guest rather than reading like a timeout.
+    if (await orderPaid(t, s.orderId)) throw new AppError("unauthenticated", "The bill is paid", { remedy: "Thank you. Scan the table's QR code to order again.", details: { reason: "order_paid" } });
   }
   if (!s || s.revokedAt || s.expiresAt.getTime() < Date.now()) throw new AppError("unauthenticated", "This table session has ended", { remedy: "Scan the table's QR code again." });
   await t.db.update(guestSessions).set({ lastSeenAt: new Date() }).where(eq(guestSessions.id, s.id));
@@ -220,10 +229,12 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
         if (s?.revokedAt) {
           const [rotated] = await t.db.select({ id: tableQrTokens.id }).from(tableQrTokens).where(and(eq(tableQrTokens.tableId, s.tableId), eq(tableQrTokens.rotatedAt, s.revokedAt))).limit(1);
           if (rotated) return { reason: "code_rotated" };
+          if (await orderPaid(t, orderId)) return { reason: "order_paid" };
         }
         return {};
       });
-    return serveStream(c, [`order:${orderId}`], { order_id: orderId }, (n) => n.kind === "resync" || (n.kind === "event" && n.aggregate_id === orderId), ended);
+    // The table's events too: a rotated code ends the session on every open phone at once, not on its next request.
+    return serveStream(c, [`order:${orderId}`, `table:${p.tableId}`], { order_id: orderId }, (n) => n.kind === "resync" || (n.kind === "event" && (n.aggregate_id === orderId || n.aggregate_id === p.tableId)), ended);
   });
 
   /* ---- Staff side ---- */
@@ -237,7 +248,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     const lineIds = rows.flatMap((r) => r.lineIds);
     const lines = lineIds.length ? await db().select().from(orderLines).where(inArray(orderLines.id, lineIds)) : [];
     const tableRows = rows.length ? await db().select({ id: tables.id, name: tables.name }).from(tables).where(inArray(tables.id, rows.map((r) => r.tableId))) : [];
-    return c.json({ data: rows.map((r) => ({ ...toRound(r), table_name: tableRows.find((t) => t.id === r.tableId)?.name ?? null, lines: r.lineIds.flatMap((lid) => lines.filter((l) => l.id === lid)).map((l) => ({ id: l.id, name: l.name, quantity: l.quantity, modifiers: l.modifiers.map((m) => m.name), notes: l.notes, status: l.status })) })), next_cursor: null }, 200);
+    return c.json({ data: rows.map((r) => ({ ...toRound(r), table_name: tableRows.find((t) => t.id === r.tableId)?.name ?? null, lines: r.lineIds.flatMap((lid) => lines.filter((l) => l.id === lid)).map((l) => ({ id: l.id, product_id: l.productId, name: l.name, quantity: l.quantity, modifiers: l.modifiers.map((m) => m.name), notes: l.notes, status: l.status })) })), next_cursor: null }, 200);
   });
 
   const decide = async (c: Parameters<Parameters<typeof defineOp>[2]>[0], roundId: string, action: "accept" | "reject", reason?: string) => {

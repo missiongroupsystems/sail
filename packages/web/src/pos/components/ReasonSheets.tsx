@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, ReasonPicker, Sheet } from "@sail/ui";
+import { Button, Checkbox, ReasonPicker, Sheet } from "@sail/ui";
 import { useEffect, useState } from "react";
 
 export const REOPEN_REASONS = ["Guest came back", "Closed by mistake", "More items to add", "Payment recorded wrongly"];
@@ -52,16 +52,24 @@ export function ReopenSheet({ isOpen, onClose, onReopen, payments = [], checkRef
 }
 
 /** Reject a QR order with one tap on a reason. The guest sees the reason. */
-export function RejectRoundSheet({ roundLabel, isOpen, onClose, onReject }: { roundLabel: string | null; isOpen: boolean; onClose: () => void; onReject: (reason: string) => Promise<unknown> }) {
+export function RejectRoundSheet({ roundLabel, isOpen, onClose, onReject, onMarkSoldOut }: { roundLabel: string | null; isOpen: boolean; onClose: () => void; onReject: (reason: string) => Promise<unknown>; onMarkSoldOut?: () => Promise<unknown> }) {
   const [busy, setBusy] = useState(false);
+  // "Sold out" also marks the items sold out (on by default), with the register's sold-out operation, so the guest menu stops offering them.
+  const [markSoldOut, setMarkSoldOut] = useState(true);
   return (
     <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Reject QR order" description={roundLabel ? `${roundLabel} · the guest is told why` : "The guest is told why"} isDismissable={!busy}>
+      {onMarkSoldOut ? (
+        <Checkbox isSelected={markSoldOut} onChange={setMarkSoldOut} isDisabled={busy} className="mb-3">
+          <span className="text-line">With Sold out, mark these items sold out for today</span>
+        </Checkbox>
+      ) : null}
       <ReasonPicker
         reasons={REJECT_ROUND_REASONS.map((r) => ({ id: r, name: r }))}
         isDisabled={busy}
         onPick={async (r) => {
           setBusy(true);
           const ok = await onReject(r.text);
+          if (ok && r.text === REJECT_ROUND_REASONS[0] && markSoldOut && onMarkSoldOut) await onMarkSoldOut();
           setBusy(false);
           if (ok) onClose();
         }}
