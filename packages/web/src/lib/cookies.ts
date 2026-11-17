@@ -28,3 +28,6 @@ export function parseScope(value: string | undefined): Scope {
 /** Twelve hours: the lifetime of a back-office session from the register. External-provider tokens are shorter; a 401 sends the user back to sign in. */
 export const SESSION_MAX_AGE_SECONDS = 12 * 60 * 60;
 export const PREFS_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
+
+/** A request header the middleware sets to the page's path (read by the refusal page). */
+export const PATH_HEADER = "x-sail-path";

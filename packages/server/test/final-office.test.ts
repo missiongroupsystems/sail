@@ -83,3 +83,16 @@ describe("products CSV export and import round-trip (A P4)", () => {
     expect(still).toEqual({ legacy_id: null, n: 1 });
   });
 });
+
+describe("import report (A P13)", () => {
+  it("a product row lists every problem it has, a bad kind among them, and a good row with a legacy kind is accepted", async () => {
+    const token = await adminToken(seeded[0]!);
+    const csv = "sku,name,price,kind,tax_class\r\nX-1,,abc,widget,Luxury\r\nX-2,Thing,1.00,Item,\r\nX-3,Extra,0.50,Modifier,\r\n";
+    const job = await importProducts(token, csv);
+    const products = job.report!.entities.products!;
+    expect(products.creates).toBe(2);
+    expect(products.rejected).toHaveLength(1);
+    const reason = products.rejected[0]!.reason;
+    for (const part of ["name is required", 'price "abc" is not an amount', 'kind "widget" is not product or component', 'tax class "Luxury" not found']) expect(reason).toContain(part);
+  });
+});

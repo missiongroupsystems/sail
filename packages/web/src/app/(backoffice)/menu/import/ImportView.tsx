@@ -3,7 +3,7 @@
 import { Button, DataTable, DescriptionList, EmptyState, Icon, InlineError, Select, Stat, TextField, type DataTableColumn, useLocale, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Upload, X } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Warnings } from "@/components/backoffice/Warnings";
 import { Group, Quiet, SectionLabel } from "@/components/office/parts";
 import { req, type ApiError } from "@/lib/api";
@@ -77,6 +77,13 @@ export function ImportView({ initialJobs }: { initialJobs: ImportJobSummary[] })
     refetchInterval: (q) => (q.state.data && RUNNING.has(q.state.data.status) ? 2_000 : false),
   });
 
+  // The report and the history row are two reads of one job: when the report sees it finish, the history follows at
+  // once rather than at its next poll, so the two never disagree (A P13).
+  const finished = job.data && !RUNNING.has(job.data.status) ? `${job.data.id}:${job.data.status}` : null;
+  useEffect(() => {
+    if (finished) void qc.invalidateQueries({ queryKey: keys.imports, exact: true });
+  }, [finished, qc]);
+
   const addFiles = async (files: FileList | null) => {
     if (!files) return;
     setReadError(null);
@@ -148,7 +155,8 @@ export function ImportView({ initialJobs }: { initialJobs: ImportJobSummary[] })
   ];
 
   return (
-    <div className="grid gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+    // One column: the history table needs the page's width for its five columns (A P13).
+    <div className="flex flex-col gap-10">
       <section className="flex min-w-0 flex-col gap-6">
         <div className="flex flex-col gap-4 rounded-panel border border-rule bg-surface p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -322,6 +330,8 @@ function JobReport({ job, canApply, onApply, applying, applyError }: { job: Impo
     { creates: 0, updates: 0, unchanged: 0, rejected: 0 },
   );
 
+  const nothingToApply = totals.creates + totals.updates === 0;
+
   const rejectedColumns: DataTableColumn<(typeof rejected)[number]>[] = [
     {
       key: "entity",
@@ -427,9 +437,9 @@ function JobReport({ job, canApply, onApply, applying, applyError }: { job: Impo
             <div className="flex flex-wrap items-center gap-3 rounded-panel border border-rule bg-surface-2/40 px-4 py-3">
               <div className="min-w-0 flex-1 basis-[220px]">
                 <p className="font-medium text-ink">Apply this import</p>
-                <p className="text-[13px] text-ink-2">{canApply ? "Runs the same files and mapping for real. Rejected rows stay out." : "Only an Admin can apply an import."}</p>
+                <p className="text-[13px] text-ink-2">{!canApply ? "Only an Admin can apply an import." : nothingToApply ? "Nothing to apply: every row is unchanged or rejected." : "Runs the same files and mapping for real. Rejected rows stay out."}</p>
               </div>
-              <Button variant="primary" isDisabled={!canApply} isPending={applying} onPress={onApply}>
+              <Button variant="primary" isDisabled={!canApply || nothingToApply} isPending={applying} onPress={onApply}>
                 Apply {totals.creates + totals.updates} {totals.creates + totals.updates === 1 ? "change" : "changes"}
               </Button>
               <InlineError error={applyError} className="basis-full" />

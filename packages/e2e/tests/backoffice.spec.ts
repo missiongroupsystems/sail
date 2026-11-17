@@ -40,7 +40,6 @@ const PAGES = [
   "/reports/shifts",
   "/reports/print-health",
   "/changes",
-  "/assistants",
   "/settings/outlets",
   "/settings/brands",
   "/settings/stations",

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { Page } from "@playwright/test";
-import { devLocal, expect, register, SG_ADMIN, test, WEB } from "./fixtures";
+import { writeFileSync } from "node:fs";
+import { API, devLocal, expect, register, SG_ADMIN, signInToken, test, WEB } from "./fixtures";
 
 /** The final office round's checks (back office: reports, import and export, pickers, archive, sign-in). */
 
@@ -13,6 +14,19 @@ async function signIn(page: Page, email = SG_ADMIN, password = devLocal().admin_
     await page.waitForURL(`${WEB}/today`, { timeout: 30_000 });
   }).toPass({ timeout: 300_000 });
   await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
+}
+
+/** A back-office login for a new staff member of this role. */
+async function loginFor(role: "manager" | "finance" | "cashier") {
+  const suffix = `${role}${String(Date.now()).slice(-6)}`;
+  const email = `office.${suffix}@sail.local`;
+  const password = `quiet harbour lantern ${String(Date.now()).slice(-4)} office`;
+  const created = await register<{ data: { id: string } }>("POST", "/v1/staff", { name: `Office ${suffix}`, email, role });
+  const link = await register<{ data: { url: string | null } }>("POST", `/v1/staff/${created.data.id}/invite`, {});
+  const token = new URL(link.data.url!).hash.replace(/^#token=/, "");
+  await fetch(`${API}/v1/auth/links/accept`, { method: "POST", headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() }, body: JSON.stringify({ token, password }) });
+  await signInToken(API, email, password);
+  return { email, password, id: created.data.id };
 }
 
 /** A paid takeaway Kopi on the Singapore demo outlet, by a tender that is neither cash nor a terminal. */
@@ -117,4 +131,58 @@ test.describe("O1 (A P3): every report downloads as CSV with the screen's figure
     expect(csv.rows[0]).toEqual(["Print health"]);
     expect(csv.rows.some((r) => r[0] === "Printer")).toBe(true);
   });
+});
+
+test.describe("O3 (A P13, P7): the import page", () => {
+  test("history has the page's width and follows the report; a run with nothing to apply cannot be applied", async ({ page }, info) => {
+    test.setTimeout(300_000);
+    await signIn(page);
+    await page.goto(`${WEB}/menu/import`);
+    const file = info.outputPath("products.csv");
+    // Every row refused: nothing to create or update.
+    writeFileSync(file, "sku,name,price,kind\nX-1,,abc,widget\n");
+    await page.locator("input[type=file]").setInputFiles(file);
+    await page.getByRole("button", { name: /Run a dry run/ }).click();
+    const apply = page.getByRole("button", { name: /^Apply 0 changes$/ });
+    await expect(apply).toBeDisabled();
+    await expect(page.getByText("Nothing to apply: every row is unchanged or rejected.")).toBeVisible();
+    // The rejected row says every problem it has.
+    const reason = page.getByRole("grid", { name: "Rejected rows" }).getByRole("row").nth(1);
+    await expect(reason).toContainText("name is required");
+    await expect(reason).toContainText('kind "widget" is not product or component');
+    // The history row says what the report says as soon as the report has it.
+    const latest = page.getByRole("grid", { name: "Import jobs" }).getByRole("row").nth(1);
+    await expect(latest).toContainText("Dry run complete", { timeout: 2_000 });
+    // Five readable columns: the history spans the page, not a crushed side column.
+    const grid = await page.getByRole("grid", { name: "Import jobs" }).boundingBox();
+    expect(grid!.width).toBeGreaterThan(800);
+    const result = await latest.getByRole("gridcell").last().boundingBox();
+    expect(result!.height).toBeLessThan(60);
+  });
+
+  test("a Manager is not offered the Import tab, and the page names the role it needs", async ({ page, watch }) => {
+    test.setTimeout(300_000);
+    watch.allow({ status: 403, url: /\/menu\/import/, why: "a Manager may not open the importer" });
+    const { email, password } = await loginFor("manager");
+    await signIn(page, email, password);
+    await page.goto(`${WEB}/menu/products`);
+    const tabs = page.getByRole("navigation", { name: "Menu sections" });
+    await expect(tabs.getByRole("link", { name: "Products" })).toBeVisible();
+    await expect(tabs.getByRole("link", { name: "Import" })).toHaveCount(0);
+    await page.goto(`${WEB}/menu/import`);
+    await expect(page.getByText("You are signed in with the Manager role. This page needs an Admin.")).toBeVisible();
+  });
+});
+
+test("O6 (A P12): the rail has no destination that does nothing; Changes is the audit log", async ({ page }) => {
+  test.setTimeout(300_000);
+  await signIn(page);
+  const rail = page.getByRole("navigation", { name: "Sections" });
+  await expect(rail.getByRole("link", { name: "Assistants" })).toHaveCount(0);
+  await rail.getByRole("link", { name: "Changes" }).click();
+  await expect(page).toHaveURL(`${WEB}/audit`);
+  await expect(page.getByRole("heading", { level: 1, name: "Changes" })).toBeVisible();
+  await expect(page.getByText(/arrives in a later phase/)).toHaveCount(0);
+  await page.goto(`${WEB}/changes`);
+  await expect(page).toHaveURL(`${WEB}/audit`);
 });
