@@ -217,7 +217,8 @@ export function price(orderIn: PricingOrderInput, rulesIn: readonly PricingRuleI
     step: 5,
     title: `Tax (${context.tax_mode}, rounded ${context.tax_rounding === "per_line" ? "per line" : "once per rate"})`,
     entries: [
-      ...lines.map((l) => ({ outcome: "info" as const, detail: `${l.line_id}: on net ${m(l.net_amount)} → ${m(l.tax_on_net)}; on fees ${m(l.fee_amount)} → ${m(l.tax_on_fees)}`, amount: l.tax_on_net + l.tax_on_fees })),
+      // Prices that include tax say so: the tax is inside the amount, not on top of a net one (review 2, N11).
+      ...lines.map((l) => ({ outcome: "info" as const, detail: context.tax_mode === "inclusive" ? `${l.line_id}: included in ${m(l.net_amount)} → ${m(l.tax_on_net)}; in fees ${m(l.fee_amount)} → ${m(l.tax_on_fees)}` : `${l.line_id}: on net ${m(l.net_amount)} → ${m(l.tax_on_net)}; on fees ${m(l.fee_amount)} → ${m(l.tax_on_fees)}`, amount: l.tax_on_net + l.tax_on_fees })),
       ...tax.breakdown.map((b) => ({ outcome: "info" as const, detail: `${b.name}: ${b.bps / 100}% on ${m(b.taxable)}`, amount: b.amount })),
     ],
   });
