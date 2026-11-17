@@ -67,7 +67,7 @@ test("A-1: the lock screen asks before it unpairs the iPad", async ({ page }) =>
   // One tap only asks; the iPad stays paired and the PIN pad stays up.
   await expect(page.getByRole("heading", { name: "Pair this iPad to a station" })).toHaveCount(0);
   await expect(page.getByRole("group", { name: "PIN keys" })).toBeVisible();
-  await page.getByRole("button", { name: "Keep this iPad paired" }).click();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await keyIn(page, "PIN keys", CASHIER_PIN);
   await expect(page.getByRole("navigation", { name: "Destinations" })).toBeVisible();
 });

@@ -1,11 +1,13 @@
 "use client";
 
 import { BottomSheet, BrandButton, ChoiceGroup, cx, GuestStepper, Money, type ChoiceValue, useLocale } from "@sail/ui";
-import { useState } from "react";
-import { Input, Label, TextField as AriaTextField } from "react-aria-components";
+import { useMemo, useState } from "react";
+import { uuid, type GuestApi } from "@/lib/api";
+import { Label, TextArea, TextField as AriaTextField } from "react-aria-components";
 import type { BasketItem } from "@/lib/basket";
 import { childGroup, defaultSelection, ruleText, selectionFromModifiers, setGroupValue, toModifiers, topGroups, unmetRequirement, type Selection } from "@/lib/modifiers";
 import type { CompiledGroup, CompiledMenu, CompiledProduct } from "@/lib/types";
+import { roundLines, useQuote } from "./useQuote";
 
 export type ItemSheetProps = {
   isOpen: boolean;
@@ -18,6 +20,9 @@ export type ItemSheetProps = {
   groupError?: string | null;
   onAdd: (item: Omit<BasketItem, "key">) => void;
   onUpdate: (key: string, item: Omit<BasketItem, "key">) => void;
+  /** For the register's price of the line as chosen. */
+  api: GuestApi;
+  sessionId: string;
 };
 
 const MAX_QTY = 50;
@@ -29,7 +34,7 @@ const MAX_QTY = 50;
  * "Add to order" button that carries the menu price and stays disabled, with the reason, until every
  * minimum is met.
  */
-export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupError, onAdd, onUpdate }: ItemSheetProps) {
+export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupError, onAdd, onUpdate, api, sessionId }: ItemSheetProps) {
   const { money } = useLocale();
   // The parent keys this component per opening, so the initial state is the whole reset; a menu refetch while
   // the sheet is open leaves the guest's choices alone.
@@ -100,15 +105,20 @@ export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupE
     else onAdd(item);
   };
 
+  // The line as chosen, priced by the register (final review C-6): the button carries the line's total.
+  const [lineId] = useState(() => editing?.key ?? uuid());
+  const chosen = toModifiers(menu, product, selection);
+  const draft = useMemo(() => roundLines([{ key: lineId, product_id: product.id, quantity, modifiers: chosen, notes: null }]), [lineId, product.id, quantity, JSON.stringify(chosen)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const quote = useQuote(api, sessionId, draft, isOpen && !unmet);
+  const lineTotal = quote.quote?.total ?? null;
+
   // The same rule as the POS picker: while a minimum is unmet the button says what is missing ("Choose 1 more: Protein").
   // It stays pressable so a VoiceOver user can reach it; pressing takes them to that group.
-  // The price is the menu price and each chosen option's price, as the register lists them (a default option that costs
-  // extra included); the phone never adds them up, so the button shows the parts, as the review page does.
-  const extras = toModifiers(menu, product, selection).filter((m) => m.price !== 0).map((m) => (m.quantity > 1 ? `${m.quantity} × ${money(m.price)}` : money(m.price)));
-  const price = [money(product.price), ...extras].join(" + ");
+  // The price is the register's total for the line as chosen (quantity and every option); the phone adds nothing.
+  // Until the register has answered, the button carries the verb alone.
   const verb = editing ? "Update item" : quantity > 1 ? `Add ${quantity} to order` : "Add to order";
-  const priceLine = editing ? null : quantity > 1 ? `${price} each` : price;
-  const addLabel = priceLine ? `${verb} · ${priceLine}` : verb;
+  const priceLine = lineTotal != null ? money(lineTotal) : null;
+  const addLabel = priceLine && !quote.updating ? `${verb} · ${priceLine}` : verb;
   const label = unmet ? unmet.message : addLabel;
 
   return (
@@ -137,7 +147,7 @@ export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupE
             ) : (
               <span className="flex max-w-full flex-wrap items-baseline justify-center gap-x-1.5 text-center">
                 <span className="whitespace-nowrap">{priceLine ? `${verb} ·` : verb}</span>
-                {priceLine ? <span className="whitespace-nowrap tabular">{priceLine}</span> : null}
+                {priceLine ? <span className={cx("whitespace-nowrap tabular", quote.updating && "opacity-60")}>{priceLine}</span> : null}
               </span>
             )}
           </BrandButton>
@@ -154,7 +164,8 @@ export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupE
           <Label className="flex items-baseline justify-between gap-3">
             <span className="font-display text-[16px] font-semibold text-ink">Note for the kitchen</span>
           </Label>
-          <Input placeholder="Allergies, less spicy, no ice…" className="h-12 w-full rounded-sheet border border-transparent bg-surface-2 px-4 text-[16px] text-ink outline-none placeholder:text-ink-3 focus:border-rule-strong focus:bg-surface" />
+          {/* Several lines, so a long note is read whole before it goes (final review C Low). */}
+          <TextArea rows={3} placeholder="Allergies, less spicy, no ice…" className="min-h-12 w-full resize-none rounded-sheet border border-transparent bg-surface-2 px-4 py-3 text-[16px] leading-snug text-ink outline-none placeholder:text-ink-3 focus:border-rule-strong focus:bg-surface" />
         </AriaTextField>
         {product.cap_remaining != null && product.cap_remaining <= 5 ? <p className="text-caption text-ink-3">Only {product.cap_remaining} left today.</p> : null}
       </div>

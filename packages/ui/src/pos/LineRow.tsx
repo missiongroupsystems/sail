@@ -5,6 +5,7 @@ import { Button as AriaButton } from "react-aria-components";
 import { cx } from "../lib/cx";
 import { Icon } from "../components/Icon";
 import { Money } from "../components/Money";
+import { ALLERGY_NOTE_CLASS, mentionsAllergy } from "../lib/allergy";
 
 /** "voided": taken off after it was sent to the kitchen; "removed": taken off before it was sent. */
 export type LineRowStatus = "new" | "held" | "sent" | "voided" | "removed" | "pending";
@@ -68,8 +69,9 @@ export function LineRow({ quantity, name, modifiers = [], notes, seat, amountCen
             · {m}
           </span>
         ))}
-        {notes ? <span className="mt-0.5 block truncate text-[13.5px] leading-[1.35] text-ink-2 italic">{notes}</span> : null}
-        {voided && voidReason ? <span className="mt-0.5 block truncate text-caption text-ink-3">{status === "removed" ? "Removed" : "Voided"} · {voidReason}</span> : null}
+        {/* A note and a reason are never cut off where staff decide: they wrap (final review C-11). */}
+        {notes ? <span className={cx("mt-0.5 block text-[13.5px] leading-[1.35] break-words", mentionsAllergy(notes) ? ALLERGY_NOTE_CLASS : "text-ink-2 italic")}>{notes}</span> : null}
+        {voided && voidReason ? <span className="mt-0.5 block text-caption text-ink-3 break-words">{status === "removed" ? "Removed" : "Voided"} · {voidReason}</span> : null}
       </span>
       <span className="shrink-0 pt-px text-right">
         {noAmount ? null : status === "pending" || amountCents == null ? (

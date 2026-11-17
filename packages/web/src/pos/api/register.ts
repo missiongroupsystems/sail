@@ -55,17 +55,18 @@ import type {
  * the register's role gate reads before the handler runs.
  */
 
-export type MutationOpts = { key?: string; overrideId?: string | null; expectedVersion?: number | null };
+export type MutationOpts = { key?: string; overrideId?: string | null; expectedVersion?: number | null; /** Price it and roll it back: the register's figures, nothing applied. */ dryRun?: boolean };
 
 function headers(opts: MutationOpts = {}): Record<string, string> {
   const h: Record<string, string> = { "Idempotency-Key": opts.key ?? idempotencyKey() };
   if (opts.overrideId) h["X-Override-Id"] = opts.overrideId;
   return h;
 }
-function mutation(opts: MutationOpts = {}): { expected_version?: number; override_id?: string } {
-  const b: { expected_version?: number; override_id?: string } = {};
+function mutation(opts: MutationOpts = {}): { expected_version?: number; override_id?: string; dry_run?: boolean } {
+  const b: { expected_version?: number; override_id?: string; dry_run?: boolean } = {};
   if (opts.expectedVersion != null) b.expected_version = opts.expectedVersion;
   if (opts.overrideId) b.override_id = opts.overrideId;
+  if (opts.dryRun) b.dry_run = true;
   return b;
 }
 const asResult = (r: unknown) => r as MutationResult;
@@ -77,9 +78,21 @@ export async function pairStation(api: PosApi, code: string, deviceLabel: string
   return { station_token: res.data.station_token, station: res.data.station as unknown as Station };
 }
 
+/**
+ * The PIN sign-in waits at most this long: a sign-in that cannot be answered says so and the pad is ready again, instead
+ * of "Checking…" for the client's whole 15 s (final review B-P15).
+ */
+export const SIGN_IN_TIMEOUT_MS = 8_000;
+
 export async function startSession(api: PosApi, pin: string): Promise<SessionStart> {
-  const res = await req(api.POST("/v1/stations/sessions", { body: { pin }, headers: headers() }));
-  return res.data as unknown as SessionStart;
+  const bound = new AbortController();
+  const timer = setTimeout(() => bound.abort(ApiError.timeout(SIGN_IN_TIMEOUT_MS)), SIGN_IN_TIMEOUT_MS);
+  try {
+    const res = await req(api.POST("/v1/stations/sessions", { body: { pin }, headers: headers(), signal: bound.signal }));
+    return res.data as unknown as SessionStart;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Ends this iPad's pairing on the register: its station token stops working and the back office shows it as not paired. */
@@ -182,14 +195,19 @@ export async function findCustomers(api: PosApi, mobile: string): Promise<Custom
   return (await req(api.GET("/v1/customers", { params: { query: { mobile, limit: 10 } } }))).data as unknown as Customer[];
 }
 
+/** A new customer from the POS (customers.upsert; Cashier and up): their name and mobile, then attach them to the order. */
+export async function addCustomer(api: PosApi, body: { name: string; mobile: string }): Promise<Customer> {
+  return (await req(api.PUT("/v1/customers", { body, headers: headers() }))).data as unknown as Customer;
+}
+
 export async function listEvents(api: PosApi, outletId: string, after: number, limit = 500): Promise<EventsPage> {
   return (await req(api.GET("/v1/outlets/{id}/events", { params: { path: { id: outletId }, query: { after, limit } } }))) as unknown as EventsPage;
 }
 
 /* ---- Kitchen display ------------------------------------------------------ */
 
-/** Open tickets for the caller's destinations (a display station sees only its own), or every ticket of one order. */
-export async function listKitchenTickets(api: PosApi, outletId: string, query: { order_id?: string } = {}): Promise<KitchenTicketsPage> {
+/** Open tickets for the caller's destinations (a display station sees only its own), those left from earlier business days, or every ticket of one order. */
+export async function listKitchenTickets(api: PosApi, outletId: string, query: { order_id?: string; earlier?: "true" } = {}): Promise<KitchenTicketsPage> {
   return req(api.GET("/v1/outlets/{id}/kitchen-tickets", { params: { path: { id: outletId }, query } }));
 }
 

@@ -12,6 +12,12 @@ export function formatElapsed(totalSeconds: number): string {
   return `${h > 0 ? `${h}:` : ""}${mm}:${String(sec).padStart(2, "0")}`;
 }
 
+/** "4 items": units, as the guest's phone counts them (final review C Low: the POS once counted lines). */
+export function countItems(lines: readonly { quantity: number }[]): string {
+  const n = lines.reduce((sum, l) => sum + l.quantity, 0);
+  return `${n} ${n === 1 ? "item" : "items"}`;
+}
+
 export const ORDER_TYPE_LABEL: Record<OrderType, string> = { dine_in: "Dine-in", takeaway: "Takeaway", pickup: "Pickup", delivery: "Delivery" };
 
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = { open: "New", fired: "Sent", ready: "Ready", out_for_delivery: "Out for delivery", completed: "Done", cancelled: "Cancelled" };

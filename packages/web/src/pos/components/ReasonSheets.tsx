@@ -52,12 +52,23 @@ export function ReopenSheet({ isOpen, onClose, onReopen, payments = [], checkRef
 }
 
 /** Reject a QR order with one tap on a reason. The guest sees the reason. */
-export function RejectRoundSheet({ roundLabel, isOpen, onClose, onReject, onMarkSoldOut }: { roundLabel: string | null; isOpen: boolean; onClose: () => void; onReject: (reason: string) => Promise<unknown>; onMarkSoldOut?: () => Promise<unknown> }) {
+export function RejectRoundSheet({ roundLabel, lines, isOpen, onClose, onReject, onMarkSoldOut }: { roundLabel: string | null; lines?: { id: string; name: string; quantity: number; modifiers: string[] }[]; isOpen: boolean; onClose: () => void; onReject: (reason: string) => Promise<unknown>; onMarkSoldOut?: () => Promise<unknown> }) {
   const [busy, setBusy] = useState(false);
   // "Sold out" also marks the items sold out (on by default), with the register's sold-out operation, so the guest menu stops offering them.
   const [markSoldOut, setMarkSoldOut] = useState(true);
   return (
     <Sheet labelledClose isOpen={isOpen} onOpenChange={(o) => (!o ? onClose() : undefined)} title="Reject QR order" description={roundLabel ? `${roundLabel} · the guest is told why` : "The guest is told why"} isDismissable={!busy}>
+      {/* What is being turned down, so nobody rejects the wrong round (final review C Low). */}
+      {lines?.length ? (
+        <ul aria-label="Items in this order" className="mb-4 flex flex-col gap-1 rounded-tile bg-surface-2 px-4 py-3 text-body text-ink">
+          {lines.map((l) => (
+            <li key={l.id} className="break-words">
+              <span className="tabular font-medium">{l.quantity}</span> {l.name}
+              {l.modifiers.length ? <span className="text-ink-2"> · {l.modifiers.join(", ")}</span> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {onMarkSoldOut ? (
         <Checkbox isSelected={markSoldOut} onChange={setMarkSoldOut} isDisabled={busy} className="mb-3">
           <span className="text-line">If sold out, also mark these items sold out for today</span>

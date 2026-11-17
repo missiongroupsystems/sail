@@ -6,6 +6,7 @@ import { AppError } from "../lib/errors.js";
 import { appendEvent, type AppendedEvent } from "../lib/events.js";
 import type { Principal } from "../auth/principal.js";
 import type { BusinessDayInputs } from "./business-day.js";
+import { businessDateFor } from "../lib/time.js";
 
 /**
  * Kitchen display tickets. Tickets are created by the fire that sends the
@@ -188,10 +189,32 @@ async function loadTickets(where: SQL[], order: "fired" | "bumped" = "fired", li
 }
 
 /** Open tickets (not bumped) of an outlet in fired order, and the most recent bumped one for Recall. */
-export async function openTickets(outletId: string, scope: string[] | null, destinationId?: string) {
+/**
+ * A ticket left from an earlier business day (round 8, 10: tickets from two days before stayed on the board): its
+ * order belongs to a business date before today's, and that order is finished or its day is closed. Such tickets leave
+ * the board and the all-day count; the display lists them on request, to clear. A ticket of an order still open from
+ * before the cutoff stays, since the kitchen may still be making it.
+ */
+function fromEarlierDay(today: string): SQL {
+  return sql`exists (select 1 from ${orders} o where o.id = ${kitchenTickets.orderId} and o.business_date < ${today} and (o.status not in ('open', 'fired', 'ready', 'out_for_delivery') or exists (select 1 from business_day_closes c where c.outlet_id = o.outlet_id and c.business_date = o.business_date)))`;
+}
+
+async function boardToday(outletId: string): Promise<string> {
+  const bd = await ticketBusinessDay(outletId);
+  return businessDateFor(new Date(), bd.cutoff, bd.timeZone);
+}
+
+/** The board's tickets: today's, or with `earlier` those left from earlier business days; and how many of those there are. */
+export async function openTickets(outletId: string, scope: string[] | null, destinationId?: string, opts: { earlier?: boolean } = {}) {
   const base = [eq(kitchenTickets.outletId, outletId), ...scopeConds(scope, destinationId)];
-  const [open, last] = await Promise.all([loadTickets([...base, isNull(kitchenTickets.bumpedAt)]), loadTickets([...base, eq(kitchenTickets.status, "ready")], "bumped", 1)]);
-  return { open, lastBumped: last[0] ?? null };
+  const old = fromEarlierDay(await boardToday(outletId));
+  const unbumped = [...base, isNull(kitchenTickets.bumpedAt)];
+  const [open, last, [earlier]] = await Promise.all([
+    loadTickets([...unbumped, opts.earlier ? old : sql`not ${old}`]),
+    loadTickets([...base, eq(kitchenTickets.status, "ready")], "bumped", 1),
+    db().select({ n: sql<number>`count(*)::int` }).from(kitchenTickets).where(and(...unbumped, old)),
+  ]);
+  return { open, lastBumped: last[0] ?? null, earlier: earlier?.n ?? 0 };
 }
 
 /** Every ticket of one order (any state), for the POS's ready marks. */
@@ -205,7 +228,7 @@ export async function allDay(outletId: string, scope: string[] | null, destinati
     .select({ productId: kitchenTicketLines.productId, name: kitchenTicketLines.name, quantity: sql<number>`sum(${kitchenTicketLines.quantity} - ${kitchenTicketLines.voidedQuantity})::int` })
     .from(kitchenTicketLines)
     .innerJoin(kitchenTickets, eq(kitchenTickets.id, kitchenTicketLines.ticketId))
-    .where(and(eq(kitchenTickets.outletId, outletId), isNull(kitchenTickets.bumpedAt), ne(kitchenTickets.status, "cancelled"), ...scopeConds(scope, destinationId)))
+    .where(and(eq(kitchenTickets.outletId, outletId), isNull(kitchenTickets.bumpedAt), ne(kitchenTickets.status, "cancelled"), sql`not ${fromEarlierDay(await boardToday(outletId))}`, ...scopeConds(scope, destinationId)))
     .groupBy(kitchenTicketLines.productId, kitchenTicketLines.name)
     .having(sql`sum(${kitchenTicketLines.quantity} - ${kitchenTicketLines.voidedQuantity}) > 0`)
     .orderBy(desc(sql`sum(${kitchenTicketLines.quantity} - ${kitchenTicketLines.voidedQuantity})`), asc(kitchenTicketLines.name));

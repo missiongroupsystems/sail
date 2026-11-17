@@ -228,7 +228,7 @@ export function NewOrderSheet({ type, onClose, onCreate }: { type: OrderType | n
     >
       <div className="flex flex-col gap-4">
         <TextField label={type === "takeaway" ? "Name (optional)" : "Customer name"} value={name} onChange={setName} inputClassName="min-h-14 text-line" maxLength={80} autoFocus />
-        {needsCustomer ? <TextField label="Mobile" value={mobile} onChange={setMobile} type="tel" inputClassName="min-h-14 text-line tabular" maxLength={30} /> : null}
+        {needsCustomer ? <TextField label="Mobile" value={mobile} onChange={setMobile} type="tel" inputClassName="min-h-14 text-line" maxLength={30} /> : null}
         {needsCustomer ? <TextField label="Ready by (HH:MM, optional)" value={readyBy} onChange={setReadyBy} placeholder="19:30" inputClassName="min-h-14 text-line tabular" errorMessage={readyBy && !ready ? "Use HH:MM, for example 19:30" : undefined} isInvalid={Boolean(readyBy && !ready)} /> : null}
         {type === "delivery" ? <TextField label="Delivery address" value={address} onChange={setAddress} multiline rows={2} inputClassName="text-line" maxLength={400} /> : null}
         {type === "delivery" ? <TextField label="Delivery notes (optional)" value={notes} onChange={setNotes} inputClassName="min-h-14 text-line" maxLength={400} /> : null}

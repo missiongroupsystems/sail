@@ -105,11 +105,15 @@ export type GuestRequest = {
   acknowledged_by: string | null;
 };
 export type GuestOrder = { id: string; order_no: string; status: OrderStatus; opened_at: string; bill_requested: boolean };
-export type OrderView = { table_id: string; order: GuestOrder | null; lines: GuestLine[]; rounds: GuestRound[]; requests: GuestRequest[]; totals?: GuestTotals | null };
+/** Whether menu prices include tax, and the merchant's tax names ("VAT"), from the first scan. */
+export type GuestTax = { mode: "inclusive" | "exclusive"; names: string[] };
+export type OrderView = { table_id: string; tax?: GuestTax; order: GuestOrder | null; lines: GuestLine[]; rounds: GuestRound[]; requests: GuestRequest[]; totals?: GuestTotals | null };
 export type RoundResult = OrderView & { round_id: string; status: "pending" | "accepted"; order_opened: boolean };
 
 export type RoundModifierInput = { group_id: string; product_id: string; quantity?: number };
 export type RoundLineInput = { line_id: string; product_id: string; quantity: number; modifiers?: RoundModifierInput[]; notes?: string | null };
+/** The register's price for lines not yet sent: each line's amount and their total. */
+export type RoundQuote = { lines: { line_id: string; quantity: number; amount: number }[]; total: number };
 export type RoundInput = { round_id: string; lines: RoundLineInput[]; guest_name?: string; notes?: string };
 
 /** The document carries its own currency, locale and zone. */

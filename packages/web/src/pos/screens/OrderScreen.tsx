@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, Money, Pill, Sheet, Skeleton, useLocale, type PillTone } from "@sail/ui";
-import { Check, ChefHat, Circle, CircleX, Flame, Truck, type LucideIcon } from "lucide-react";
+import { Check, ChefHat, Circle, CircleX, Flame, Receipt, Truck, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { GuestRound, SnapshotLine } from "../api/types";
 import { Catalogue } from "../components/Catalogue";
@@ -20,7 +20,7 @@ import { ReprintSheet } from "../components/ReprintSheet";
 import { useLateJobs, useManualRules, useOrder, useOrderPrintJobs, usePendingRounds, useReadyLineIds } from "../hooks/queries";
 import { useOrderActions } from "../hooks/useOrderActions";
 import { useNow } from "../lib/device";
-import { formatElapsed, ORDER_TYPE_LABEL } from "../lib/format";
+import { countItems, formatElapsed, ORDER_TYPE_LABEL } from "../lib/format";
 import { useNavStore } from "../state/nav";
 import { useUiStore } from "../state/ui";
 
@@ -93,7 +93,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
         meta,
         actions: snap ? (
           <div className="flex items-center gap-2">
-            <OrderStatusPill status={snap.status} />
+            <OrderStatusPill status={snap.status} billAsked={snap.bill_requested_at != null} />
             <OrderMenu order={snap} actions={actions} onOpen={(k) => setSheet(k === "refund" ? { kind: "refund" } : k === "reopen" ? { kind: "reopen" } : { kind: "reprint", round: null })} />
           </div>
         ) : null,
@@ -190,7 +190,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
           payNow();
         }}
       />
-      <RejectRoundSheet isOpen={sheet?.kind === "reject"} roundLabel={sheet?.kind === "reject" ? `${sheet.round.lines.length} ${sheet.round.lines.length === 1 ? "item" : "items"}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null} onClose={() => setSheet(null)} onReject={(reason) => (sheet?.kind === "reject" ? actions.rejectRound(sheet.round.id, reason) : Promise.resolve(null))} onMarkSoldOut={sheet?.kind === "reject" ? () => actions.markSoldOut([...new Set(sheet.round.lines.flatMap((l) => (l.product_id ? [l.product_id] : [])))]) : undefined} />
+      <RejectRoundSheet isOpen={sheet?.kind === "reject"} roundLabel={sheet?.kind === "reject" ? `${countItems(sheet.round.lines)}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null} lines={sheet?.kind === "reject" ? sheet.round.lines : undefined} onClose={() => setSheet(null)} onReject={(reason) => (sheet?.kind === "reject" ? actions.rejectRound(sheet.round.id, reason) : Promise.resolve(null))} onMarkSoldOut={sheet?.kind === "reject" ? () => actions.markSoldOut([...new Set(sheet.round.lines.flatMap((l) => (l.product_id ? [l.product_id] : [])))]) : undefined} />
     </Frame>
   );
 }
@@ -205,9 +205,12 @@ const STATUS_PILL: Record<string, { label: string; tone: PillTone; icon: LucideI
   cancelled: { label: "Cancelled", tone: "alert", icon: CircleX },
 };
 
-/** The order's status in the header: "Open", "Sent", "Completed". */
-function OrderStatusPill({ status }: { status: string }) {
-  const p = STATUS_PILL[status];
+/** The floor legend's own words and colour (final review C Low: the header said "Sent" beside a "Bill asked" tile). */
+const BILL_ASKED = { label: "Bill asked", tone: "bill" as PillTone, icon: Receipt };
+
+/** The order's status in the header: "Open", "Sent", "Completed"; "Bill asked" as on the floor's tile once the bill is asked for. */
+function OrderStatusPill({ status, billAsked }: { status: string; billAsked?: boolean }) {
+  const p = billAsked && ["open", "fired", "ready"].includes(status) ? BILL_ASKED : STATUS_PILL[status];
   return p ? (
     <Pill tone={p.tone} icon={p.icon}>
       {p.label}

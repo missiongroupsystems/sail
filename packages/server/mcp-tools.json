@@ -1969,7 +1969,7 @@
         "variance_reason",
         "void_reason"
       ],
-      "description": "Kitchen display tickets of an outlet\n\nTickets still on the kitchen display (not bumped), oldest fire first, with their lines (voided quantities struck), order, table and the `changed` flag, plus the most recently bumped ticket for Recall. With `order_id`, every ticket of that order in any state (the POS shows a line as ready once its tickets are bumped). A display station sees only its assigned destinations. Never changes anything.\n\nRisk tier T0.",
+      "description": "Kitchen display tickets of an outlet\n\nTickets still on the kitchen display (not bumped), oldest fire first, with their lines (voided quantities struck), order, table and the `changed` flag, plus the most recently bumped ticket for Recall. With `order_id`, every ticket of that order in any state (the POS shows a line as ready once its tickets are bumped). A display station sees only its assigned destinations. Tickets left from an earlier business day (the order finished or its day closed) are not on the board; `earlier` counts them, and `earlier=true` lists them instead. Never changes anything.\n\nRisk tier T0.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1984,6 +1984,13 @@
           "order_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "earlier": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
           }
         },
         "required": [

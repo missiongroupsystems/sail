@@ -329,7 +329,7 @@ test.describe("guest phone 390×844", () => {
     await page.getByRole("button", { name: /^Laksa,/ }).click();
     const sheet = page.getByRole("dialog", { name: "Laksa" });
     // Prawn (+$2.00) is preselected: the button names it, rather than the menu price alone.
-    await expect(sheet.getByRole("button", { name: /^Add to order · \$16\.00 \+ \$2\.00$/ })).toBeVisible();
+    await expect(sheet.getByRole("button", { name: /^Add to order · \$18\.00$/ })).toBeVisible();
     await sheet.getByLabel("Note for the kitchen").pressSequentially(`no peanuts https://example.com/${"x".repeat(120)}`);
     await sheet.getByRole("button", { name: /^Add to order/ }).click();
     await page.getByRole("button", { name: /^View your order, 1 item/ }).click();

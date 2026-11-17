@@ -12,7 +12,7 @@ export type PosContextValue = {
   floor: FloorSnapshot | undefined;
   tablesById: Map<string, FloorTable>;
   stationNames: Map<string, string>;
-  /** The register cannot be reached: buttons that change things read "Offline". */
+  /** The register cannot be reached: buttons that change things are off, with their own labels. */
   offline: boolean;
 };
 
