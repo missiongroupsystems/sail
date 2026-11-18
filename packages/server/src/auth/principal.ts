@@ -48,6 +48,8 @@ export type Principal =
       orderId: string | null;
       channelLinkId: string;
       sessionId: string;
+      /** The guest stream of a session its order's payment ended: it may only listen (review 5 W1). */
+      paidHeld?: true;
     }
   | {
       type: "relay";

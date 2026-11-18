@@ -56,6 +56,8 @@ export type GuestSession = {
   expires_at: string;
   /** The merchant's currency (with its exponent), locale and zone. */
   settings: { currency: string; currency_exponent: number; locale: string; timezone: string };
+  /** Kept on this phone only: its last screen was the paid one, so a reload opens on it (review 5 W1). */
+  paid?: boolean;
 };
 
 export type RoundStatus = "pending" | "accepted" | "fired" | "rejected";

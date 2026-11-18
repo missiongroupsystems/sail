@@ -14,7 +14,7 @@ import { peekTokenType, sha256, verifySailToken } from "./tokens.js";
  * `activity` says whether the request is something a person did (any non-GET): only that keeps a PIN session from
  * idling out, so a POS that polls or streams in the background does not keep an unattended session alive.
  */
-export async function resolvePrincipal(token: string, t: RequestTx, opts: { activity: boolean } = { activity: true }): Promise<Principal> {
+export async function resolvePrincipal(token: string, t: RequestTx, opts: ResolveOptions = { activity: true }): Promise<Principal> {
   const typ = peekTokenType(token);
   if (typ === null) throw new AppError("unauthenticated", "Malformed token");
 
@@ -70,14 +70,19 @@ export async function resolvePrincipal(token: string, t: RequestTx, opts: { acti
     };
   }
 
-  if (typ === "guest") return resolveGuest(token, t);
+  if (typ === "guest") return resolveGuest(token, t, opts);
   if (typ === "relay") return resolveRelay(token, t);
   if (typ === "agent") return resolveAgent(token, t);
   throw new AppError("unauthenticated", "Unsupported token type");
 }
 
 // Extended by later phases (v0.5 relay, v0.8 guest, agents). Each module registers its resolver.
-type Resolver = (token: string, t: RequestTx) => Promise<Principal>;
+/**
+ * `paidHeld`: the guest stream only. A guest session its order's payment ended is let in, marked `paidHeld`, so a phone
+ * reloaded (or woken) on its paid screen can hear a void or a reopen without being refused (review 5 W1).
+ */
+export type ResolveOptions = { activity: boolean; paidHeld?: boolean };
+type Resolver = (token: string, t: RequestTx, opts?: ResolveOptions) => Promise<Principal>;
 let guestResolver: Resolver = async () => {
   throw new AppError("unauthenticated", "Guest access is not enabled");
 };
@@ -96,6 +101,6 @@ export function registerRelayResolver(r: Resolver) {
 export function registerAgentResolver(r: Resolver) {
   agentResolver = r;
 }
-const resolveGuest: Resolver = (tok, t) => guestResolver(tok, t);
+const resolveGuest: Resolver = (tok, t, opts) => guestResolver(tok, t, opts);
 const resolveRelay: Resolver = (tok, t) => relayResolver(tok, t);
 const resolveAgent: Resolver = (tok, t) => agentResolver(tok, t);

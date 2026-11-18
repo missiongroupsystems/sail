@@ -55,6 +55,12 @@ async function orderClosedReason(t: RequestTx, orderId: string | null): Promise<
   return o?.status === "completed" ? "order_paid" : o?.status === "cancelled" ? "order_cancelled" : null;
 }
 
+/** The table's code was rotated at or after this instant (the rotation that ended the session, or a later one). */
+async function rotatedSince(t: RequestTx, tableId: string, since: Date): Promise<boolean> {
+  const [rotated] = await t.db.select({ id: tableQrTokens.id }).from(tableQrTokens).where(and(eq(tableQrTokens.tableId, tableId), gte(tableQrTokens.rotatedAt, since))).limit(1);
+  return !!rotated;
+}
+
 /** How long after the payment a void or a reopen still brings the table's phones back: past it, the party has left. */
 const REOPEN_BRINGS_PHONES_BACK_MS = 30 * 60_000;
 
@@ -65,23 +71,26 @@ const REOPEN_BRINGS_PHONES_BACK_MS = 30 * 60_000;
  */
 async function orderOpenAgain(t: RequestTx, s: { orderId: string | null; tableId: string; revokedAt: Date | null; expiresAt: Date }): Promise<boolean> {
   if (!s.orderId || !s.revokedAt || s.expiresAt.getTime() < Date.now() || Date.now() - s.revokedAt.getTime() > REOPEN_BRINGS_PHONES_BACK_MS) return false;
-  const [rotated] = await t.db.select({ id: tableQrTokens.id }).from(tableQrTokens).where(and(eq(tableQrTokens.tableId, s.tableId), gte(tableQrTokens.rotatedAt, s.revokedAt))).limit(1);
-  if (rotated) return false;
+  if (await rotatedSince(t, s.tableId, s.revokedAt)) return false;
   const [o] = await t.db.select({ status: orders.status }).from(orders).where(eq(orders.id, s.orderId)).limit(1);
   return !!o && ["open", "fired", "ready", "out_for_delivery"].includes(o.status);
 }
 
 /* ---- Guest principal ---- */
-registerGuestResolver(async (token: string, t: RequestTx) => {
+const toGuestPrincipal = (s: typeof guestSessions.$inferSelect) => ({ type: "guest" as const, id: s.id, merchantId: s.merchantId, outletId: s.outletId, brandId: s.brandId, tableId: s.tableId, orderId: s.orderId, channelLinkId: s.channelLinkId, sessionId: s.id });
+
+registerGuestResolver(async (token: string, t: RequestTx, opts) => {
   const claims = await verifySailToken(token, "guest");
   const [s] = await t.db.select().from(guestSessions).where(eq(guestSessions.id, claims.session_id!)).limit(1);
   if (s?.revokedAt) {
-    // Ended by "Rotate code": the card this phone scanned no longer works, so starting again from it would dead-end (D-N1).
-    // A rotation marks the old code with the same instant it ends the sessions with.
-    const [rotated] = await t.db.select({ id: tableQrTokens.id }).from(tableQrTokens).where(and(eq(tableQrTokens.tableId, s.tableId), eq(tableQrTokens.rotatedAt, s.revokedAt))).limit(1);
-    if (rotated) throw new AppError("unauthenticated", "This table has a new QR code", { remedy: "Scan the code on the table again to keep ordering.", details: { reason: "code_rotated" } });
+    // Ended by "Rotate code", or the code was rotated after the session ended (paid, then a new code): the card this
+    // phone scanned no longer works, so starting again from it would dead-end (D-N1, review 5 W5). A rotation marks the
+    // old code with the same instant it ends the sessions with.
+    if (await rotatedSince(t, s.tableId, s.revokedAt)) throw new AppError("unauthenticated", "This table has a new QR code", { remedy: "Scan the code on the table again to keep ordering.", details: { reason: "code_rotated" } });
     // Ended because the table's bill was paid, or staff cancelled the order: the phone says which rather than reading like a timeout.
     const closed = await orderClosedReason(t, s.orderId);
+    // Paid, on the stream: the phone may listen (only) for a void or a reopen, also after a reload (review 5 W1).
+    if (closed === "order_paid" && opts?.paidHeld && s.expiresAt.getTime() >= Date.now()) return { ...toGuestPrincipal(s), paidHeld: true as const };
     if (closed === "order_paid") throw new AppError("unauthenticated", "The bill is paid", { remedy: "Thank you. Scan the table's QR code to order again.", details: { reason: "order_paid" } });
     if (closed === "order_cancelled") throw new AppError("unauthenticated", "The restaurant cancelled this order", { remedy: "Ask a member of staff, or scan the table's QR code to order again.", details: { reason: "order_cancelled" } });
     // Ended because the order was paid, and the order is open again (a payment voided, the order reopened): the phone is
@@ -94,7 +103,7 @@ registerGuestResolver(async (token: string, t: RequestTx) => {
   }
   if (!s || s.revokedAt || s.expiresAt.getTime() < Date.now()) throw new AppError("unauthenticated", "This table session has ended", { remedy: "Scan the table's QR code again." });
   await t.db.update(guestSessions).set({ lastSeenAt: new Date() }).where(eq(guestSessions.id, s.id));
-  return { type: "guest", id: s.id, merchantId: s.merchantId, outletId: s.outletId, brandId: s.brandId, tableId: s.tableId, orderId: s.orderId, channelLinkId: s.channelLinkId, sessionId: s.id };
+  return toGuestPrincipal(s);
 });
 
 registerFloorExtra(async (outletId) => {
@@ -288,8 +297,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
         const [s] = await t.db.select({ revokedAt: guestSessions.revokedAt, expiresAt: guestSessions.expiresAt, tableId: guestSessions.tableId, orderId: guestSessions.orderId }).from(guestSessions).where(eq(guestSessions.id, p.sessionId)).limit(1);
         if (s && !s.revokedAt && s.expiresAt.getTime() >= Date.now()) return null;
         if (s?.revokedAt) {
-          const [rotated] = await t.db.select({ id: tableQrTokens.id }).from(tableQrTokens).where(and(eq(tableQrTokens.tableId, s.tableId), eq(tableQrTokens.rotatedAt, s.revokedAt))).limit(1);
-          if (rotated) return { reason: "code_rotated" };
+          if (await rotatedSince(t, s.tableId, s.revokedAt)) return { reason: "code_rotated" };
           const closed = await orderClosedReason(t, orderId);
           if (closed) return { reason: closed };
           // Paid, then open again (a payment voided, the order reopened): the session works again, as on its next request.

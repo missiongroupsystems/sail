@@ -388,6 +388,59 @@ describe("Scan to Order", () => {
     expect(repaid.body.data.status).toBe("completed");
   });
 
+  it("a phone reloaded on its paid screen opens a held stream: `ended` and no `hello`, a void or a reopen brings it back, a reconnect after one hears `hello`, a later rotation says so, and nothing else is let in (review5 W1)", async () => {
+    await resetGuestRateLimitsForTests();
+    const seated = await call<{ data: Snap }>("POST", "/v1/orders", { token: serverPin, body: { order_id: randomUUID(), order_type: "dine_in", table_id: ids.table12, pax: 2 } });
+    expect(seated.status, JSON.stringify(seated.body)).toBe(201);
+    const orderId = seated.body.data.id;
+    const g = (await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl12), device_id: "device-w1-phone" }, idempotencyKey: null })).body.data.guest_token;
+    const roundId = randomUUID();
+    expect((await guestCall("POST", "/v1/guest/rounds", g, { round_id: roundId, lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] })).status).toBe(201);
+    expect((await call("POST", `/v1/rounds/${roundId}/accept`, { token: serverPin, body: {} })).status).toBe(200);
+    type Paid = { data: Snap & { checks: { id: string; totals: { total: number }; payments: { id: string; status: string }[] }[] } };
+    const payAll = async () => {
+      const o = (await call<Paid>("GET", `/v1/orders/${orderId}`, { token: cashierPin })).body.data;
+      const res = await call<Paid>("POST", `/v1/checks/${o.checks[0]!.id}/payments`, { token: cashierPin, body: { payment_id: randomUUID(), tender_type_id: ids.cash, amount: o.checks[0]!.totals.total } });
+      expect(res.body.data.status).toBe("completed");
+      return res.body.data.checks[0]!.payments.find((x) => x.status === "recorded")!.id;
+    };
+    const stream = () => app.request("/v1/guest/stream", { headers: { authorization: `Bearer ${g}` } });
+
+    // Paid, then the phone reloads: its new stream is let in and says paid first; the other guest routes still refuse.
+    const first = await payAll();
+    const held = await stream();
+    expect(held.status).toBe(200);
+    const heldFrames = readSse(held, 2, 6000);
+    await new Promise((r) => setTimeout(r, 150));
+    for (const path of ["/v1/guest/order", "/v1/guest/menu"]) expect((await guestCall<{ details: { reason: string } }>("GET", path, g)).body.details.reason).toBe("order_paid");
+    // Voided: the held stream hears a change, and the session works.
+    expect((await call("POST", `/v1/payments/${first}/void`, { token: A.admin.token, body: { reason: "Wrong payment method" } })).status).toBe(200);
+    const got = await heldFrames;
+    expect(got.map((f) => f.event)).toEqual(["ended", "change"]);
+    expect(got[0]!.data).toEqual({ reason: "order_paid" });
+    expect((await guestCall("GET", "/v1/guest/order", g)).status).toBe(200);
+
+    // Paid again, then reopened while the phone was locked (no stream): its next connection hears `hello`.
+    await payAll();
+    expect((await call("POST", `/v1/orders/${orderId}/reopen`, { token: A.admin.token, body: { reason: "Guest wants dessert" } })).status).toBe(200);
+    const back = readSse(await stream(), 1, 3000);
+    expect((await back).map((f) => f.event)).toEqual(["hello"]);
+
+    // Paid again; a rotation afterwards ends the held stream with its reason, and a new one is refused with it.
+    await payAll();
+    const held2 = await stream();
+    const held2Frames = readSse(held2, 2, 6000);
+    await new Promise((r) => setTimeout(r, 150));
+    qrUrl12 = (await call<{ data: { url: string } }>("POST", `/v1/tables/${ids.table12}/qr/rotate`, { token: A.admin.token, body: {} })).body.data.url;
+    const got2 = await held2Frames;
+    expect(got2.map((f) => f.event)).toEqual(["ended", "ended"]);
+    expect(got2[1]!.data).toEqual({ reason: "code_rotated" });
+    const refused = await stream();
+    expect(refused.status).toBe(401);
+    expect(((await refused.json()) as { details: { reason: string } }).details.reason).toBe("code_rotated");
+    expect(((await guestCall<{ details: { reason: string } }>("GET", "/v1/guest/order", g)).body.details.reason)).toBe("code_rotated");
+  });
+
   it("open on first scan lets a guest open the table's order", async () => {
     await call("PATCH", `/v1/channel-links/${ids.qrLink}`, { token: A.admin.token, body: { open_on_first_scan: true, hold_orders: false } });
     const s = await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl13), device_id: "device-eeee-0005" }, idempotencyKey: null });

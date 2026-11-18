@@ -51,7 +51,7 @@ export const requestPipeline: MiddlewareHandler<AppEnv> = async (c, next) => {
 
   // Long-lived streams resolve access in a short transaction, then stream outside it.
   if (SHORT_TX_ROUTES.some((p) => p.test(path))) {
-    const principal = await withTransaction((t) => resolvePrincipal(bearer, t, { activity: false }));
+    const principal = await withTransaction((t) => resolvePrincipal(bearer, t, { activity: false, paidHeld: path === "/v1/guest/stream" }));
     c.set("principal", principal);
     return next();
   }
