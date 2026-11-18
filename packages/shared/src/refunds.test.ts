@@ -93,7 +93,15 @@ describe("refund quotes", () => {
         expect(full.tenders[0]!.amount).toBe(total);
         const a = lines[0]!;
         const q = Math.min(qty, a.quantity);
-        const part = quoteRefund(lines, [pay], { kind: "lines", lines: [{ line_id: "a", quantity: q }] });
+        // Units that come to no money are refused; a whole line that took money never is.
+        let part: ReturnType<typeof quoteRefund>;
+        try {
+          part = quoteRefund(lines, [pay], { kind: "lines", lines: [{ line_id: "a", quantity: q }] });
+        } catch (e) {
+          expect(e).toMatchObject({ code: "nothing_to_refund" });
+          expect(q < a.quantity || a.total === 0).toBe(true);
+          return;
+        }
         const l = part.lines[0]!;
         expect(Math.abs(l.base)).toBeLessThanOrEqual(Math.abs(a.base));
         expect(Math.abs(l.fee)).toBeLessThanOrEqual(Math.abs(a.fee));

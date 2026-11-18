@@ -87,7 +87,7 @@ test("W1: two phones, one reloaded on the paid screen, follow every void and reo
   test.setTimeout(420_000);
   const ids = await products();
   const { order, table, token } = await seatedTable([{ product_id: ids["Kopi"]!, quantity: 1 }]);
-  const phones: { ctx: BrowserContext; page: Page; refused: string[] }[] = [];
+  const phones: { ctx: BrowserContext; page: Page; refused: string[]; open: Set<unknown> }[] = [];
   for (let i = 0; i < 2; i++) {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
     const page = await ctx.newPage();
@@ -95,13 +95,27 @@ test("W1: two phones, one reloaded on the paid screen, follow every void and reo
     page.on("response", (r) => {
       if (r.url().startsWith(API) && r.status() === 401) refused.push(`${r.request().method()} ${r.url()}`);
     });
-    phones.push({ ctx, page, refused });
+    // Reads in flight, the held stream aside: a payment is taken only once the phones have finished theirs.
+    const open = new Set<unknown>();
+    page.on("request", (r) => {
+      if (r.url().startsWith(API) && !r.url().includes("/guest/stream")) open.add(r);
+    });
+    page.on("requestfinished", (r) => void open.delete(r));
+    page.on("requestfailed", (r) => void open.delete(r));
+    phones.push({ ctx, page, refused, open });
   }
   const [live, reloaded] = phones as [(typeof phones)[number], (typeof phones)[number]];
   const paid = (p: Page) => p.getByText("Your bill is paid.");
   // Back on the order: the menu's items are tappable again.
   const ordering = (p: Page) => p.getByRole("button", { name: /^Kopi,/ });
   const both = async (check: (p: Page) => Promise<void>) => Promise.all(phones.map((x) => check(x.page)));
+  /** Every phone has finished reading: nothing in flight for a full second. */
+  const settled = async () => {
+    for (let quiet = 0; quiet < 4; ) {
+      quiet = phones.every((x) => x.open.size === 0) ? quiet + 1 : 0;
+      await live.page.waitForTimeout(250);
+    }
+  };
   try {
     await both(async (p) => {
       await p.goto(`${GUEST}/t/${token}`);
@@ -121,7 +135,7 @@ test("W1: two phones, one reloaded on the paid screen, follow every void and reo
     await both((p) => expect(ordering(p)).toBeVisible({ timeout: 10_000 }));
     // The phones read their order again on the way back; a payment taken within that moment is refused on the phone by
     // design (it then shows the paid screen). Staff do not pay that fast; let the read finish.
-    await live.page.waitForTimeout(2000);
+    await settled();
     const voidMs = Date.now() - started;
 
     // 2. Paid again, both reloaded, then the phones lock (the connection drops) and the order is reopened meanwhile.
@@ -136,7 +150,7 @@ test("W1: two phones, one reloaded on the paid screen, follow every void and reo
     started = Date.now();
     for (const x of phones) await x.ctx.setOffline(false);
     await both((p) => expect(ordering(p)).toBeVisible({ timeout: 15_000 }));
-    await live.page.waitForTimeout(2000);
+    await settled();
     const reopenMs = Date.now() - started;
 
     // 3. Paid and reloaded once more: a reopen with the phones open.
@@ -149,7 +163,7 @@ test("W1: two phones, one reloaded on the paid screen, follow every void and reo
     await both((p) => expect(ordering(p)).toBeVisible({ timeout: 10_000 }));
     // The phones read their order again on the way back; a payment taken within that moment is refused on the phone by
     // design (it then shows the paid screen). Staff do not pay that fast; let the read finish.
-    await live.page.waitForTimeout(2000);
+    await settled();
 
     // No phone was refused anything on the way: the paid screen holds the stream, and a reload asks nothing else.
     for (const x of phones) expect(x.refused, "401s on the phone").toEqual([]);
