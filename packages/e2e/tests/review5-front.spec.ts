@@ -68,8 +68,10 @@ async function settle(orderId: string) {
 /** A dine-in order on a free table with sent lines, and the table's QR code. */
 async function seatedTable(lines: { product_id: string; quantity: number }[] = []) {
   const { outletId, brandId } = devLocal();
-  const floor = await register<{ data: { tables: { id: string; name: string; order: unknown }[] } }>("GET", `/v1/outlets/${outletId}/floor`);
-  const table = floor.data.tables.find((t) => !t.order)!;
+  const floor = await register<{ data: { tables: { id: string; name: string; area_id: string; order: unknown }[] } }>("GET", `/v1/outlets/${outletId}/floor`);
+  // A table of the first area: the one the POS floor opens on.
+  const area = floor.data.tables[0]!.area_id;
+  const table = floor.data.tables.find((t) => !t.order && t.area_id === area) ?? floor.data.tables.find((t) => !t.order)!;
   const order = await register<{ data: { id: string; order_no: string } }>("POST", "/v1/orders", { order_id: crypto.randomUUID(), order_type: "dine_in", table_id: table.id, pax: 2, outlet_id: outletId, brand_id: brandId });
   if (lines.length) {
     await register("POST", `/v1/orders/${order.data.id}/lines`, { lines: lines.map((l) => ({ line_id: crypto.randomUUID(), ...l })) });
@@ -327,12 +329,12 @@ test("W5: a QR order arriving while the POS is on the Shift screen counts on the
     await pairAndSignIn(page, MANAGER_PIN);
     await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Shift", exact: true }).click();
     const floorTab = page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Floor", exact: true });
-    await expect(floorTab).not.toHaveAttribute("aria-description", /waiting/);
+    await expect(floorTab).not.toHaveAccessibleDescription(/waiting/);
     const s = await fetch(`${API}/v1/guest/sessions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token, device_id: "review5-w5-phone" }) });
     const guest = ((await s.json()) as { data: { guest_token: string } }).data.guest_token;
     const r = await fetch(`${API}/v1/guest/rounds`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${guest}`, "idempotency-key": crypto.randomUUID() }, body: JSON.stringify({ round_id: crypto.randomUUID(), guest_name: "Alexandra Konstantinopoulou", lines: [{ line_id: crypto.randomUUID(), product_id: ids["Otah"]!, quantity: 1 }] }) });
     expect(r.status).toBe(201);
-    await expect(floorTab).toHaveAttribute("aria-description", "1 waiting", { timeout: 10_000 });
+    await expect(floorTab).toHaveAccessibleDescription("1 waiting", { timeout: 10_000 });
     await bothThemes(page, "W5-shift-floor-count");
 
     // The waiting header on the order, with lines below it: the name and time stay, the label gives way.
