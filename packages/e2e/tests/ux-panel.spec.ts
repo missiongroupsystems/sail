@@ -155,7 +155,7 @@ test.describe("iPad landscape 1180×820", () => {
       // The order this test just seated: Mee Goreng only, its bill's balance the one on the pay screen.
       const bill = snaps.map((x) => x.data).find((d) => d.lines.length === 1 && d.lines[0]!.name === "Mee Goreng" && d.checks[0]?.balance === balance)!.checks[0]!.totals;
       // The tip base is the items after discounts: no fee (the service charge) and no tax (review 5, V8).
-      const preTax = bill.subtotal - bill.discount_total;
+      const preTax = bill.subtotal + bill.discount_total; // discount_total is negative
 
       await test.step("cash with 15%: the tip is a whole number of 5-cent steps", async () => {
         await page.getByRole("group", { name: "Payment method" }).getByRole("button", { name: "Cash", exact: true }).click();
