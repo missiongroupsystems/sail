@@ -168,6 +168,8 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
     <section className={PANEL + " flex h-full w-[400px] shrink-0 flex-col overflow-hidden max-[1100px]:w-[360px] max-[900px]:w-[340px]"} aria-label="Order">
       {station.seats_enabled && order.order_type === "dine_in" && !closed ? <SeatStrip seats={seats} active={activeSeat} onChange={onSeat} onAddSeat={() => onSeat(seats + 1)} className="shrink-0 border-b border-rule px-3" /> : null}
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        {/* A reopen's reversed payments: the first row of the order, in the flow of the lines, never over one (review 5 W4). */}
+        {closed ? null : <ReopenedNote checks={order.checks} className="mx-2 mt-1 border-b border-rule-subtle" />}
         {empty ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
             <Icon icon={Utensils} size={22} className="text-ink-2" />
@@ -182,9 +184,10 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
             <div key={r.id} className="mx-2 mt-2 rounded-tile bg-[color-mix(in_srgb,var(--status-seated)_8%,transparent)] pb-2">
               <div className="flex min-h-9 items-center justify-between gap-2 px-3 pt-2 pb-1">
                 {/* One line next to the buttons (review 4 U7): what it is and when; the full name is in its title. */}
-                <span className="min-w-0 truncate text-caption text-status-seated uppercase tracking-[0.04em]" title={`QR order waiting · ${clock(r.submitted_at)}${r.guest_name ? ` · ${r.guest_name}` : ""}`}>
-                  QR order waiting
-                  <span className="normal-case tracking-normal text-ink-2"> · {clock(r.submitted_at)}{r.guest_name ? ` · ${r.guest_name}` : ""}</span>
+                {/* Short of room, the label gives way first: the guest's name and the time stay (review 5 W5). */}
+                <span className="flex min-w-0 items-baseline text-caption" title={`QR order waiting · ${clock(r.submitted_at)}${r.guest_name ? ` · ${r.guest_name}` : ""}`}>
+                  <span className="min-w-[3ch] truncate text-status-seated uppercase tracking-[0.04em]">QR order waiting</span>
+                  <span className="max-w-[80%] shrink-0 truncate whitespace-pre text-ink-2"> · {clock(r.submitted_at)}{r.guest_name ? ` · ${r.guest_name}` : ""}</span>
                 </span>
                 <span className="flex shrink-0 gap-1">
                   <Button size="md" variant="quiet" isDisabled={offline} onPress={() => onRejectRound(r)} className="text-ink-2">
@@ -232,7 +235,6 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
           </>
         ) : null}
       </div>
-      {closed ? null : <ReopenedNote checks={order.checks} className="mx-3 mb-2 shrink-0" />}
       {/* An empty order has nothing to total: the figures appear with the first line. */}
       {empty ? null : (
         <div className="shrink-0 border-t border-rule px-1 pt-1">

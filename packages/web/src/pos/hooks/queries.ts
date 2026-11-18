@@ -232,6 +232,9 @@ export async function putShift(qc: QueryClient, outletId: string, shift: Shift) 
   qc.setQueryData<Shift[]>(posKeys.shifts(outletId, "open"), (list) => (shift.status === "open" ? [...without(list), shift] : without(list)));
   qc.setQueryData<Shift[]>(posKeys.shifts(outletId, "closed"), (list) => (shift.status === "open" ? without(list) : [...without(list), shift]));
   void qc.invalidateQueries({ queryKey: ["pos", "shifts", outletId] });
+  // The Z-report figures from before the shift opened or closed are wrong now (the float of the other drawer alone,
+  // review 5 W5): they go at once, and the report shows as loading until the register answers.
+  void qc.resetQueries({ queryKey: ["pos", "z-report", outletId] });
 }
 
 export function useZReport(outletId: string | null, stationId: string | null, businessDate: string | null, enabled = true) {

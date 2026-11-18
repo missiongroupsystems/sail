@@ -35143,6 +35143,7 @@ export interface operations {
                             order_type: string;
                             table_name: string | null;
                             customer_name: string | null;
+                            ready_by: string | null;
                             pax: number | null;
                             round_no: number;
                             server_name: string | null;
@@ -35178,6 +35179,7 @@ export interface operations {
                             order_type: string;
                             table_name: string | null;
                             customer_name: string | null;
+                            ready_by: string | null;
                             pax: number | null;
                             round_no: number;
                             server_name: string | null;
@@ -35477,6 +35479,7 @@ export interface operations {
                             order_type: string;
                             table_name: string | null;
                             customer_name: string | null;
+                            ready_by: string | null;
                             pax: number | null;
                             round_no: number;
                             server_name: string | null;
@@ -35651,6 +35654,7 @@ export interface operations {
                             order_type: string;
                             table_name: string | null;
                             customer_name: string | null;
+                            ready_by: string | null;
                             pax: number | null;
                             round_no: number;
                             server_name: string | null;
@@ -35825,6 +35829,7 @@ export interface operations {
                             order_type: string;
                             table_name: string | null;
                             customer_name: string | null;
+                            ready_by: string | null;
                             pax: number | null;
                             round_no: number;
                             server_name: string | null;

@@ -39,7 +39,8 @@ function LineWords({ line, struck }: { line: GuestLine; struck: boolean }) {
     <span className={cx("block min-w-0 flex-1 wrap-anywhere", struck && "text-ink-3 line-through")}>
       <span className={cx("block text-[15.5px] leading-snug", struck ? "text-ink-3" : "text-ink")}>
         <span className="font-medium tabular">{line.quantity} ×</span> {line.name}
-        {line.modifiers.length ? <span className="text-ink-2"> ({line.modifiers.join(", ")})</span> : null}
+        {/* One text node, names trimmed: WebKit showed a gap before ")" when the brackets were nodes of their own (review 5 W5). */}
+        {line.modifiers.length ? <span className="text-ink-2">{` (${line.modifiers.map((m) => m.trim()).join(", ")})`}</span> : null}
       </span>
       {line.notes ? <span className="block text-[13.5px] leading-snug text-ink-2 italic">Note: {line.notes}</span> : null}
     </span>

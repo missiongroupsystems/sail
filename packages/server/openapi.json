@@ -90641,6 +90641,12 @@
                             ],
                             "x-sail-untrusted": true
                           },
+                          "ready_by": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "pax": {
                             "type": [
                               "integer",
@@ -90767,6 +90773,7 @@
                           "order_type",
                           "table_name",
                           "customer_name",
+                          "ready_by",
                           "pax",
                           "round_no",
                           "server_name",
@@ -90826,6 +90833,12 @@
                             "null"
                           ],
                           "x-sail-untrusted": true
+                        },
+                        "ready_by": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         },
                         "pax": {
                           "type": [
@@ -90953,6 +90966,7 @@
                         "order_type",
                         "table_name",
                         "customer_name",
+                        "ready_by",
                         "pax",
                         "round_no",
                         "server_name",
@@ -91710,6 +91724,12 @@
                           ],
                           "x-sail-untrusted": true
                         },
+                        "ready_by": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "pax": {
                           "type": [
                             "integer",
@@ -91836,6 +91856,7 @@
                         "order_type",
                         "table_name",
                         "customer_name",
+                        "ready_by",
                         "pax",
                         "round_no",
                         "server_name",
@@ -92265,6 +92286,12 @@
                           ],
                           "x-sail-untrusted": true
                         },
+                        "ready_by": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "pax": {
                           "type": [
                             "integer",
@@ -92391,6 +92418,7 @@
                         "order_type",
                         "table_name",
                         "customer_name",
+                        "ready_by",
                         "pax",
                         "round_no",
                         "server_name",
@@ -92820,6 +92848,12 @@
                           ],
                           "x-sail-untrusted": true
                         },
+                        "ready_by": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "pax": {
                           "type": [
                             "integer",
@@ -92946,6 +92980,7 @@
                         "order_type",
                         "table_name",
                         "customer_name",
+                        "ready_by",
                         "pax",
                         "round_no",
                         "server_name",

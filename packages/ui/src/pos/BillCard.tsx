@@ -109,7 +109,6 @@ export function BillCard({ label, status, lines, rows, tenders, isTarget, onPres
           </div>
         ))}
       </dl>
-      {note ? <p className="px-4 pb-2 text-caption text-ink-2">{note}</p> : null}
       {tenders?.length ? (
         <ul className="px-4 pb-2 text-[13px] text-ink-2">
           {tenders.map((t) => (
@@ -120,6 +119,8 @@ export function BillCard({ label, status, lines, rows, tenders, isTarget, onPres
           ))}
         </ul>
       ) : null}
+      {/* Under the paid rows and their tenders, not between them (review 5 W5). */}
+      {note ? <p className="px-4 pb-2 text-caption text-ink-2">{note}</p> : null}
       {actions ? <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-rule-subtle px-2.5 py-2.5">{actions}</footer> : null}
     </>
   );

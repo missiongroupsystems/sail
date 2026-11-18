@@ -335,6 +335,7 @@ const AGE_CHIP = { neutral: "bg-surface-2 text-ink", warn: "bg-status-sent-tint 
  * card is the bump target; the Bump pill in its footer is part of it.
  */
 function TicketCard({ ticket: t, now, warn, late, pending, onBump }: { ticket: KitchenTicket; now: number; warn: number; late: number; pending: boolean; onBump: () => void }) {
+  const { clock } = useLocale();
   const seconds = Math.max(0, (now - new Date(t.fired_at).getTime()) / 1000);
   const cancelled = t.status === "cancelled";
   // Nothing left to make (every line voided): cleared like a cancelled ticket, not bumped as New (review 3, S8).
@@ -345,7 +346,7 @@ function TicketCard({ ticket: t, now, warn, late, pending, onBump }: { ticket: K
   const title = ticketTitle(t);
   // A round the guest ordered by QR code says so; the name with it is whoever accepted it, not who took the order (final review C Low).
   const fromQr = t.lines.length > 0 && t.lines.every((l) => l.source === "guest");
-  const meta = [t.order_type === "dine_in" ? t.order_no : ORDER_TYPE_LABEL[t.order_type as keyof typeof ORDER_TYPE_LABEL], t.pax ? `${t.pax} ${t.pax === 1 ? "guest" : "guests"}` : null, fromQr ? (t.server_name ? `QR order, accepted by ${t.server_name}` : "QR order") : t.server_name, t.round_no > 1 ? `round ${t.round_no}` : null].filter(Boolean).join(" · ");
+  const meta = [t.order_type === "dine_in" ? t.order_no : ORDER_TYPE_LABEL[t.order_type as keyof typeof ORDER_TYPE_LABEL], t.ready_by ? `Ready by ${clock(t.ready_by)}` : null, t.pax ? `${t.pax} ${t.pax === 1 ? "guest" : "guests"}` : null, fromQr ? (t.server_name ? `QR order, accepted by ${t.server_name}` : "QR order") : t.server_name, t.round_no > 1 ? `round ${t.round_no}` : null].filter(Boolean).join(" · ");
   const state = cancelled ? { label: "Cancelled", tone: "alert" as const, icon: Ban } : voided ? { label: "Voided", tone: "alert" as const, icon: Ban } : t.status === "recalled" ? { label: "Recalled", tone: "seated" as const, icon: RotateCcw } : t.status === "in_progress" ? { label: "In progress", tone: "sent" as const, icon: Flame } : { label: "New", tone: "seated" as const, icon: Circle };
   return (
     <AriaButton

@@ -16,7 +16,7 @@ let cashierPin: string;
 let managerPin: string;
 const ids = { laksa: randomUUID(), wine: randomUUID(), kopi: randomUUID(), menu: randomUUID(), link: randomUUID(), area: randomUUID(), station: randomUUID(), cash: randomUUID(), card: randomUUID(), printer: randomUUID() };
 
-type Check = { id: string; index: number; label: string; status: string; seat_no: number | null; totals: { total: number; subtotal: number; tax_total: number; fee_total: number }; paid_total: number; balance: number; locked: boolean; refunded_total: number; allocations: { line_id: string; share: string; total: number }[]; payments: { id: string; amount: number; tender: string }[] };
+type Check = { id: string; index: number; label: string; status: string; seat_no: number | null; totals: { total: number; subtotal: number; tax_total: number; fee_total: number }; paid_total: number; balance: number; locked: boolean; refunded_total: number; allocations: { line_id: string; share: string; total: number }[]; payments: { id: string; amount: number; tender: string }[]; invoice_no?: string | null; cancelled_invoices: { id: string; invoice_no: string; credit_note_no: string }[] };
 type Snap = { id: string; version: number; status: string; totals: { total: number; tax_total: number }; lines: { id: string; name: string; quantity: number; seat_no: number | null; amounts: { total: number } }[]; checks: Check[]; balance: number };
 type Body = { data: Snap; refund?: { id: string; refund_receipt_no: string; credit_note_no: string | null; totals: { total: number; tax: number; base: number }; quote: { lines: { line_id: string; quantity: number; total: number; tax: number }[]; tenders: { payment_id: string; amount: number; rounding_cents: number; is_cash: boolean }[]; cash_out: number } }; events: { type: string }[]; warnings: string[]; code?: string; message?: string; details?: Record<string, unknown> };
 
@@ -332,8 +332,7 @@ describe("refunds", () => {
 });
 
 describe("a re-split keeps numbered documents", () => {
-  type Cancelled = { id: string; invoice_no: string; credit_note_no: string };
-  const snap = async (orderId: string) => (await call<{ data: Snap & { checks: (Check & { invoice_no: string | null; cancelled_invoices: Cancelled[] })[] } }>("GET", `/v1/orders/${orderId}`, { token: managerPin })).body.data;
+  const snap = async (orderId: string) => (await call<{ data: Snap }>("GET", `/v1/orders/${orderId}`, { token: managerPin })).body.data;
   const invoice = async (checkId: string) => {
     const inv = await call<{ data: { invoice_no: string } }>("POST", `/v1/checks/${checkId}/invoice`, { token: managerPin, body: {} });
     expect(inv.status, JSON.stringify(inv.body)).toBe(200);
