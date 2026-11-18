@@ -132,10 +132,13 @@ export function BillCard({ label, status, lines, rows, tenders, isTarget, onPres
     className,
   );
   if (onPress) {
+    // The whole card is the target: one button laid over it, so a tap on a line, the figures or the actions moves the
+    // picked line here, and no button sits inside another (review 5 W3).
     return (
-      <AriaButton onPress={onPress} isDisabled={isDisabled} aria-label={`${label}, move the selected line here`} className={cx(classes, "press pos-touch outline-none data-[pressed]:scale-[0.99] data-[disabled]:opacity-60 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus")}>
+      <section aria-label={label} className={cx(classes, "relative")}>
         {body}
-      </AriaButton>
+        <AriaButton onPress={onPress} isDisabled={isDisabled} aria-label={`${label}, move the selected line here`} className="press pos-touch absolute inset-0 z-10 rounded-panel outline-none data-[disabled]:opacity-60 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus" />
+      </section>
     );
   }
   return (

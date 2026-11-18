@@ -255,10 +255,13 @@ test("W3: By item with touch: a tap on a line inside the other bill moves the pi
     await expect(page.getByRole("region", { name: "Bill 2" })).toContainText("Kopi");
     // Pick Otah on Bill 1, then tap the Kopi line inside Bill 2: Otah moves there.
     await bill1.getByRole("button", { name: /Otah/ }).tap();
-    const target = page.getByRole("button", { name: "Bill 2, move the selected line here" });
-    await expect(target).toContainText("Tap to move here");
+    const bill2 = page.getByRole("region", { name: "Bill 2" });
+    await expect(bill2).toContainText("Tap to move here");
     await bothThemes(page, "W3-by-item-picked");
-    await target.getByText("Kopi", { exact: true }).tap();
+    // A tap right on Bill 2's Kopi line (the card's target lies over it).
+    const kopi = (await bill2.getByText("Kopi", { exact: true }).boundingBox())!;
+    const card = (await bill2.boundingBox())!;
+    await page.getByRole("button", { name: "Bill 2, move the selected line here" }).tap({ position: { x: kopi.x - card.x + kopi.width / 2, y: kopi.y - card.y + kopi.height / 2 } });
     await expect(page.getByRole("region", { name: "Bill 2" })).toContainText("Otah");
     await expect(page.getByRole("region", { name: "Bill 1" })).not.toContainText("Otah");
     // In its own bill a tap picks another line, and a tap on the picked line lets go.
