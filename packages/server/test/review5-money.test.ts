@@ -415,3 +415,47 @@ describe("V6: a station's Z-report is blind only while a drawer in its scope is 
     expect((await z(w, cashier)).body.data.withheld).toBeUndefined();
   });
 });
+
+describe("V8: a percentage tip is on the items, before fees and tax, with or without a service fee", () => {
+  it("15% on a salad with the 10% service fee is 15% of $8.99, not of $9.89; a half payment tips half", async () => {
+    const o = await feeOrder(US, ["salad"]);
+    const check = o.checks[0]!;
+    expect(check.totals.total).toBe(899 + 90 + 40 + 45);
+    type P = { payment: { tip_cents: number } };
+    const full = await call<P>("POST", `/v1/checks/${check.id}/payments`, { token: US.m.manager.token, body: { payment_id: randomUUID(), tender_type_id: US.card, amount: check.balance, tip_bps: 1500, dry_run: true } });
+    expect(full.status, JSON.stringify(full.body)).toBe(200);
+    expect(full.body.payment.tip_cents).toBe(135);
+    const half = await call<P>("POST", `/v1/checks/${check.id}/payments`, { token: US.m.manager.token, body: { payment_id: randomUUID(), tender_type_id: US.card, amount: 537, tip_bps: 1500, dry_run: true } });
+    expect(half.body.payment.tip_cents).toBe(Math.round(Math.round((537 * 899) / 1074) * 0.15));
+    await cancel(US, o.id);
+  });
+});
+
+describe("V8: words on documents and in the back office", () => {
+  it("a fee applied by hand is audited as a fee; a rule version names who saved it", async () => {
+    const o = await feeOrder(US, ["soda", "rings"]);
+    const [row] = await db.sql<{ details: { rule_kind?: string } }[]>`select details from audit_log where action = 'adjustments.apply_manual' and target_id = ${o.id}`;
+    expect(row!.details.rule_kind).toBe("fee");
+    const versions = (await call<{ data: { created_by_name: string | null }[] }>("GET", "/v1/pricing-rules?rule_key=svc10", { token: US.m.admin.token })).body.data;
+    expect(versions[0]!.created_by_name).toBeTruthy();
+    expect(versions[0]!.created_by_name).not.toMatch(/^[0-9a-f]{8}-/);
+    await cancel(US, o.id);
+  });
+
+  it("a credit note's share row uses the same true minus as its amounts: Share of −2 × soda", async () => {
+    const o = await open(US, 1);
+    const s = await call<Mut>("POST", `/v1/orders/${o.body.data.id}/lines`, { token: pos(US, 1), body: { lines: [{ line_id: randomUUID(), product_id: US.products.soda, quantity: 2 }] } });
+    expect(s.status, JSON.stringify(s.body)).toBe(200);
+    expect((await call("POST", `/v1/orders/${o.body.data.id}/fire`, { token: pos(US, 1), body: {} })).status).toBe(200);
+    const split = await call<{ data: Snap }>("POST", `/v1/orders/${o.body.data.id}/checks/split-even`, { token: US.m.manager.token, body: { n: 2 } });
+    expect(split.status, JSON.stringify(split.body)).toBe(200);
+    for (const c of split.body.data.checks) expect((await pay(US, c.id, c.balance, "card", 1)).status).toBe(200);
+    const bill1 = split.body.data.checks[0]!.id;
+    expect((await call("POST", `/v1/checks/${bill1}/invoice`, { token: US.m.manager.token, body: {} })).status).toBe(200);
+    expect((await call("POST", `/v1/orders/${o.body.data.id}/reopen`, { token: US.m.manager.token, body: { reason: "Wrong items" } })).status).toBe(200);
+    const [x] = await db.sql<{ id: string }[]>`select id from invoice_cancellations where check_id = ${bill1}`;
+    const words = await pdfWords(`/v1/invoice-cancellations/${x!.id}/credit-note.pdf`, US.m.manager.token);
+    expect(words.some((w) => w.startsWith("Share of −2 × soda")), words.join(" | ")).toBe(true);
+    expect(words.some((w) => w.includes("-2"))).toBe(false);
+  });
+});

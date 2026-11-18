@@ -39464,6 +39464,13 @@
                               "null"
                             ]
                           },
+                          "created_by_name": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "The name of the staff member who saved this version, when a person did."
+                          },
                           "created_at": {
                             "type": "string"
                           },
@@ -39480,6 +39487,7 @@
                           "body",
                           "note",
                           "created_by",
+                          "created_by_name",
                           "created_at",
                           "archived"
                         ]
@@ -39885,6 +39893,13 @@
                             "null"
                           ]
                         },
+                        "created_by_name": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "The name of the staff member who saved this version, when a person did."
+                        },
                         "created_at": {
                           "type": "string"
                         },
@@ -39901,6 +39916,7 @@
                         "body",
                         "note",
                         "created_by",
+                        "created_by_name",
                         "created_at",
                         "archived"
                       ]
@@ -67000,7 +67016,7 @@
           "payments"
         ],
         "operationId": "payments.record",
-        "description": "Applies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. A tip is `tip_cents`, or, on a dry run only, `tip_bps` (a percentage of the amount applied, before tax where tax is added on top of prices, which the dry run turns into `tip_cents`; in cash it is rounded to the cash rounding step); the reply's `payment.due_cents` is what the guest hands over (amount, cash rounding and tip). The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.",
+        "description": "Applies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. A tip is `tip_cents`, or, on a dry run only, `tip_bps` (a percentage of the bill's items after discounts, without fees and, where tax is added on top of prices, without tax, in proportion to the amount applied; the dry run turns it into `tip_cents`; in cash it is rounded to the cash rounding step); the reply's `payment.due_cents` is what the guest hands over (amount, cash rounding and tip). The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.",
         "summary": "Record a payment on a bill",
         "x-sail": {
           "op": "payments.record",

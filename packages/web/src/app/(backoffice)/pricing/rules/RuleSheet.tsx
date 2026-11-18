@@ -195,7 +195,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
                     <Badge tone={v.status === "active" ? "paid" : v.status === "scheduled" ? "sent" : v.status === "archived" ? "alert" : "neutral"}>{STATUS_LABEL[v.status]}</Badge>
                     <span className="tabular text-caption text-ink-2">from {dayClock(v.effective_from)}</span>
                     {v.note ? <span className="text-caption text-ink-2">· {v.note}</span> : null}
-                    {v.created_by ? <span className="text-caption text-ink-2">· by {v.created_by}</span> : null}
+                    {v.created_by_name ? <span className="text-caption text-ink-2">· by {v.created_by_name}</span> : null}
                   </li>
                 ))}
               </ul>

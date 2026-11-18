@@ -186,7 +186,9 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
     if (l.share) {
       // "1/2 · Share of 2 × Toasted sandwich (€19.00) · €9.50": the share of the whole line's price, which the row names.
       text(l.share, 48, 10);
-      text(`Share of ${l.quantity === 1 ? "" : `${l.quantity} × `}${l.name} (${money(unit * l.quantity)})`, 90, 10);
+      // A credit note's share is of "−1 × Classic burger": the same true minus as its amounts (review 5, V8).
+      const qty = l.quantity < 0 ? `\u2212${-l.quantity}` : String(l.quantity);
+      text(`Share of ${l.quantity === 1 ? "" : `${qty} × `}${l.name} (${money(unit * l.quantity)})`, 90, 10);
       // A share has no price of one: the Unit column says so rather than standing empty under its header.
       right("\u2014", 460, 10);
     } else {

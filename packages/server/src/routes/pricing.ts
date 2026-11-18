@@ -2,7 +2,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { AmountSchema, ChannelTypeSchema, formatMoney, OrderTypeSchema, PricingContextSchema, PricingLineSchema, PricingResultSchema, PricingRuleSchema, ManualApplicationSchema, MAX_AMOUNT, price, registerOperations, sumCents, validateRuleSet, type PricingRuleInput } from "@sail/shared";
 import { db, tx } from "../db/client.js";
-import { merchantSettings, products, reportCategories } from "../db/schema/index.js";
+import { merchantSettings, products, reportCategories, staff } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, plainIssue, z, untrusted } from "../lib/openapi.js";
@@ -20,7 +20,7 @@ registerOperations({
 });
 
 const RuleBodySchema = z.record(z.string(), z.unknown());
-const VersionSchema = z.object({ id: z.string(), rule_key: z.string(), version: z.number().int(), status: z.enum(["scheduled", "active", "superseded", "archived"]), effective_from: z.string(), body: RuleBodySchema, note: untrusted(z.string().nullable()), created_by: z.string().nullable(), created_at: z.string(), archived: z.boolean() });
+const VersionSchema = z.object({ id: z.string(), rule_key: z.string(), version: z.number().int(), status: z.enum(["scheduled", "active", "superseded", "archived"]), effective_from: z.string(), body: RuleBodySchema, note: untrusted(z.string().nullable()), created_by: z.string().nullable(), created_by_name: z.string().nullable().describe("The name of the staff member who saved this version, when a person did."), created_at: z.string(), archived: z.boolean() });
 
 const SimulateBody = z.object({
   outlet_id: z.uuid(),
@@ -43,10 +43,14 @@ export function pricingRoutes(app: OpenAPIHono<AppEnv>) {
     const q = c.req.valid("query");
     if (q.active_at) {
       const rules = await activeRules(p.merchantId, new Date(q.active_at));
-      return c.json({ data: rules.map((r) => ({ id: `${r.id}@${r.version}`, rule_key: r.id, version: r.version, status: "active" as const, effective_from: q.active_at!, body: r as unknown as Record<string, unknown>, note: null, created_by: null, created_at: q.active_at!, archived: false })), next_cursor: null }, 200);
+      return c.json({ data: rules.map((r) => ({ id: `${r.id}@${r.version}`, rule_key: r.id, version: r.version, status: "active" as const, effective_from: q.active_at!, body: r as unknown as Record<string, unknown>, note: null, created_by: null, created_by_name: null, created_at: q.active_at!, archived: false })), next_cursor: null }, 200);
     }
     const rows = await ruleVersions(p.merchantId, q.rule_key);
-    return c.json({ data: rows.map((r) => ({ id: r.id, rule_key: r.ruleKey, version: r.version, status: r.status, effective_from: r.effectiveFrom.toISOString(), body: r.body, note: r.note, created_by: r.createdBy, created_at: r.createdAt.toISOString(), archived: r.archivedAt != null })), next_cursor: null }, 200);
+    // Who saved each version, by name: the version list never shows a raw staff id (review 5, V8).
+    const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const ids = [...new Set(rows.map((r) => r.createdBy).filter((x): x is string => !!x && UUID.test(x)))];
+    const names = new Map((ids.length ? await db().select({ id: staff.id, name: staff.name }).from(staff).where(inArray(staff.id, ids)) : []).map((x) => [x.id, x.name]));
+    return c.json({ data: rows.map((r) => ({ id: r.id, rule_key: r.ruleKey, version: r.version, status: r.status, effective_from: r.effectiveFrom.toISOString(), body: r.body, note: r.note, created_by: r.createdBy, created_by_name: (r.createdBy && names.get(r.createdBy)) ?? null, created_at: r.createdAt.toISOString(), archived: r.archivedAt != null })), next_cursor: null }, 200);
   });
 
   defineOp(
@@ -66,7 +70,7 @@ export function pricingRoutes(app: OpenAPIHono<AppEnv>) {
       const warnings = validateRuleSet(current).map((w) => `${w.severity}: ${w.message}`);
       const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "pricing_rule.version_created", aggregate: { kind: "pricing_rule", id: row.id, version: row.version }, operationId: "pricing_rules.create_version", payload: { rule_key: row.ruleKey, version: row.version, effective_from: row.effectiveFrom.toISOString(), status: row.status }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
       await recordAudit(p, { action: "pricing_rules.create_version", targetKind: "pricing_rule", targetId: row.ruleKey, details: { version: row.version, effective_from: row.effectiveFrom.toISOString(), name: (row.body as { name?: string }).name } });
-      return c.json({ data: { id: row.id, rule_key: row.ruleKey, version: row.version, status: row.status, effective_from: row.effectiveFrom.toISOString(), body: row.body, note: row.note, created_by: row.createdBy, created_at: row.createdAt.toISOString(), archived: false }, events: [ev], warnings }, 201);
+      return c.json({ data: { id: row.id, rule_key: row.ruleKey, version: row.version, status: row.status, effective_from: row.effectiveFrom.toISOString(), body: row.body, note: row.note, created_by: row.createdBy, created_by_name: "name" in p ? (p.name ?? null) : null, created_at: row.createdAt.toISOString(), archived: false }, events: [ev], warnings }, 201);
     },
   );
 
