@@ -119,6 +119,9 @@ test("W1: two phones, one reloaded on the paid screen, follow every void and reo
     let started = Date.now();
     await register("POST", `/v1/payments/${payments[0]}/void`, { reason: "Wrong payment method" });
     await both((p) => expect(ordering(p)).toBeVisible({ timeout: 10_000 }));
+    // The phones read their order again on the way back; a payment taken within that moment is refused on the phone by
+    // design (it then shows the paid screen). Staff do not pay that fast; let the read finish.
+    await live.page.waitForTimeout(2000);
     const voidMs = Date.now() - started;
 
     // 2. Paid again, both reloaded, then the phones lock (the connection drops) and the order is reopened meanwhile.
@@ -133,6 +136,7 @@ test("W1: two phones, one reloaded on the paid screen, follow every void and reo
     started = Date.now();
     for (const x of phones) await x.ctx.setOffline(false);
     await both((p) => expect(ordering(p)).toBeVisible({ timeout: 15_000 }));
+    await live.page.waitForTimeout(2000);
     const reopenMs = Date.now() - started;
 
     // 3. Paid and reloaded once more: a reopen with the phones open.
@@ -143,6 +147,9 @@ test("W1: two phones, one reloaded on the paid screen, follow every void and reo
     await reloaded.page.waitForTimeout(1500);
     await register("POST", `/v1/orders/${order.id}/reopen`, { reason: "Wrong items" });
     await both((p) => expect(ordering(p)).toBeVisible({ timeout: 10_000 }));
+    // The phones read their order again on the way back; a payment taken within that moment is refused on the phone by
+    // design (it then shows the paid screen). Staff do not pay that fast; let the read finish.
+    await live.page.waitForTimeout(2000);
 
     // No phone was refused anything on the way: the paid screen holds the stream, and a reload asks nothing else.
     for (const x of phones) expect(x.refused, "401s on the phone").toEqual([]);
