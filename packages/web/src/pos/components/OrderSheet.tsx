@@ -187,7 +187,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
                 {/* Short of room, the label gives way first: the guest's name and the time stay (review 5 W5). */}
                 <span className="flex min-w-0 items-baseline text-caption" title={`QR order waiting · ${clock(r.submitted_at)}${r.guest_name ? ` · ${r.guest_name}` : ""}`}>
                   <span className="min-w-[3ch] truncate text-status-seated uppercase tracking-[0.04em]">QR order waiting</span>
-                  <span className="max-w-[80%] shrink-0 truncate whitespace-pre text-ink-2"> · {clock(r.submitted_at)}{r.guest_name ? ` · ${r.guest_name}` : ""}</span>
+                  <span className="max-w-[calc(100%-3ch)] shrink-0 truncate whitespace-pre text-ink-2"> · {clock(r.submitted_at)}{r.guest_name ? ` · ${r.guest_name}` : ""}</span>
                 </span>
                 <span className="flex shrink-0 gap-1">
                   <Button size="md" variant="quiet" isDisabled={offline} onPress={() => onRejectRound(r)} className="text-ink-2">

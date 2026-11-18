@@ -234,12 +234,14 @@ for (const how of ["void", "reopen"] as const) {
   });
 }
 
-test("W3: By item with touch: a tap on a line inside the other bill moves the picked line there; a tap in its own bill picks another; a second tap lets go", async ({ browser }) => {
+test("W3: By item with touch: a tap on a line inside the other bill moves the picked line there; a tap in its own bill picks another; a second tap lets go", async ({ browser, watch }) => {
   test.setTimeout(400_000);
   const ids = await products();
   const { order, table } = await seatedTable([{ product_id: ids["Mee Goreng"]!, quantity: 1 }, { product_id: ids["Kopi"]!, quantity: 1 }, { product_id: ids["Otah"]!, quantity: 1 }]);
   const ctx = await browser.newContext({ viewport: { width: 1180, height: 820 }, hasTouch: true });
   const page = await ctx.newPage();
+  // Console errors fail the test here too (a button inside a button would).
+  watch.attach(page);
   try {
     await pairAndSignIn(page, MANAGER_PIN);
     await openBill(page, table.name);
@@ -256,7 +258,7 @@ test("W3: By item with touch: a tap on a line inside the other bill moves the pi
     const target = page.getByRole("button", { name: "Bill 2, move the selected line here" });
     await expect(target).toContainText("Tap to move here");
     await bothThemes(page, "W3-by-item-picked");
-    await target.getByRole("button", { name: /Kopi/ }).tap();
+    await target.getByText("Kopi", { exact: true }).tap();
     await expect(page.getByRole("region", { name: "Bill 2" })).toContainText("Otah");
     await expect(page.getByRole("region", { name: "Bill 1" })).not.toContainText("Otah");
     // In its own bill a tap picks another line, and a tap on the picked line lets go.
@@ -332,7 +334,7 @@ test("W5: a QR order arriving while the POS is on the Shift screen counts on the
     await expect(floorTab).not.toHaveAccessibleDescription(/waiting/);
     const s = await fetch(`${API}/v1/guest/sessions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token, device_id: "review5-w5-phone" }) });
     const guest = ((await s.json()) as { data: { guest_token: string } }).data.guest_token;
-    const r = await fetch(`${API}/v1/guest/rounds`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${guest}`, "idempotency-key": crypto.randomUUID() }, body: JSON.stringify({ round_id: crypto.randomUUID(), guest_name: "Alexandra Konstantinopoulou", lines: [{ line_id: crypto.randomUUID(), product_id: ids["Otah"]!, quantity: 1 }] }) });
+    const r = await fetch(`${API}/v1/guest/rounds`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${guest}`, "idempotency-key": crypto.randomUUID() }, body: JSON.stringify({ round_id: crypto.randomUUID(), guest_name: "Konstantina", lines: [{ line_id: crypto.randomUUID(), product_id: ids["Otah"]!, quantity: 1 }] }) });
     expect(r.status).toBe(201);
     await expect(floorTab).toHaveAccessibleDescription("1 waiting", { timeout: 10_000 });
     await bothThemes(page, "W5-shift-floor-count");
@@ -341,8 +343,8 @@ test("W5: a QR order arriving while the POS is on the Shift screen counts on the
     await floorTab.click();
     await page.getByRole("button", { name: new RegExp(`^Table ${table.name},`) }).click();
     const panel = page.getByRole("region", { name: "Order" });
-    await expect(panel.getByText(/· Alexandra Konstantinopoulou/)).toBeVisible();
-    const detail = panel.getByText(/· Alexandra Konstantinopoulou/);
+    await expect(panel.getByText(/· Konstantina/)).toBeVisible();
+    const detail = panel.getByText(/· Konstantina/);
     expect(await detail.evaluate((e) => e.scrollWidth <= e.clientWidth + 1), "the name is not cut").toBe(true);
     await bothThemes(page, "W5-waiting-header");
 

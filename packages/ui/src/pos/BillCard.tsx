@@ -88,7 +88,8 @@ export function BillCard({ label, status, lines, rows, tenders, isTarget, onPres
             l.isSelected && "bg-surface-3 shadow-[inset_0_0_0_1.5px_var(--ink)]",
             l.onPress && "press pos-touch min-h-11 transition-colors duration-[120ms] data-[pressed]:bg-surface-3 data-[hovered]:bg-surface-2 data-[disabled]:text-ink-disabled data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-[-2px] data-[focus-visible]:outline-focus",
           );
-          return l.onPress ? (
+          // Inside a bill that is itself the tap target, a line is part of that target: no button in a button (review 5 W3).
+          return l.onPress && !onPress ? (
             <AriaButton key={l.id} onPress={l.onPress} isDisabled={l.isDisabled} aria-pressed={l.isSelected} className={cls}>
               {inner}
             </AriaButton>
