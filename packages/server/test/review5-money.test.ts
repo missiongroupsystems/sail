@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import "../src/modules.js";
 import { buildApp, type App } from "../src/app.js";
-import { readFileSync } from "node:fs";
 import { pdfStrings } from "./pdf-strings.js";
 import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
 
