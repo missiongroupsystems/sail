@@ -255,8 +255,15 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
     if (!voiding) return false;
     const res = await actions.voidPayment(voiding, reason);
     if (!res) return false;
-    // A by-hand payment is reversed now and the bill is open again; a terminal one waits for the provider.
-    if (res.void.status === "voided") setDone(null);
+    // A by-hand payment is reversed now and the bill is open again; a terminal one waits for the provider. The pay screen
+    // starts afresh: the voided payment's cash handed over and tip are not this payment's (review 4 U7).
+    if (res.void.status === "voided") {
+      setDone(null);
+      setDigits(null);
+      setTendered(null);
+      setTip({ kind: "none" });
+      setPad({ target: "amount", fresh: true });
+    }
     setVoiding(null);
     return true;
   };
@@ -335,12 +342,13 @@ export function PayScreen({ orderId, checkId }: { orderId: string; checkId: stri
     // A part payment leaves this bill open: the screen says so, and its way on is the rest of the same bill.
     const partPaid = done.check.status === "open" && done.check.balance > 0;
     return (
-      // No back or title row: the result is the screen. Leaving is the done button (or the 4 s auto-return).
+      // No back or title row: the result is the screen. Leaving is the done button.
       <Frame>
         <VoidPaymentSheet label={voiding ? `${money(voiding.amount)} by ${voiding.tender}` : null} onTerminal={voiding ? mine.some((i) => i.payment_id === voiding.id) : false} isOpen={voiding !== null} onClose={() => setVoiding(null)} onVoid={voidPayment} />
+        {/* The paid screen stays until the cashier leaves it, for every tender and every bill (review 4 U2): its receipt
+            choice, Void payment and Get invoice must still be there when the guest asks. It leaves by itself only when the
+            bill stops being paid (the effect above). */}
         <ReceiptChooser
-          // With change to hand over, the screen stays until it is tapped: the figure must not vanish mid-count (A-N5).
-          autoReturnMs={voiding || partPaid || (tender.is_cash && change > 0) ? 0 : undefined}
           order={done.order}
           check={done.check}
           actions={actions}

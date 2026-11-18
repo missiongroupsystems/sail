@@ -45,7 +45,8 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
   const [amount, setAmount] = useState<number | null>(null);
   const [reason, setReason] = useState("");
   const [reasonId, setReasonId] = useState<string | null>(null);
-  const [print, setPrint] = useState(true);
+  // Null until changed: then it follows whether the outlet has a receipt printer (review 4, T6).
+  const [print, setPrint] = useState<boolean | null>(null);
   const [done, setDone] = useState<RefundCreated | null>(null);
   const [refundId, setRefundId] = useState(idempotencyKey);
   /** The open shift whose drawer pays cash back, or "card" to give back to the other payments only. */
@@ -61,7 +62,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
     setAmount(null);
     setReason("");
     setReasonId(null);
-    setPrint(true);
+    setPrint(null);
     setDone(null);
     setDrawer(null);
     setRefundId(idempotencyKey());
@@ -79,6 +80,19 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
     enabled: isOpen && cashPaid,
   });
   const shiftsOpen = openShifts.data ?? [];
+  const printers = useQuery({
+    queryKey: boKeys.printers(order.outlet_id),
+    queryFn: () => req(api.GET("/v1/printers", { params: { query: { outlet_id: order.outlet_id, include_archived: "true" } } })).then((r) => r.data),
+    enabled: isOpen,
+    staleTime: 60_000,
+  });
+  // With no receipt printer at the outlet the switch starts off, so a refund does not end on "the receipt did not print".
+  const hasReceiptPrinter = (printers.data ?? []).some((p) => p.role === "receipt" && !p.archived);
+  const printOn = print ?? hasReceiptPrinter;
+  // A cash refund with no open shift has no drawer to come out of: said on the first step, not the third (review 4, T6).
+  const noDrawer = cashPaid && openShifts.data !== undefined && shiftsOpen.length === 0;
+  const noDrawerText = cardPaid && what !== "full" ? "No shift is open at this outlet, so no drawer can pay cash back. The refund goes back to the card only." : cardPaid ? "No shift is open at this outlet, so no drawer can pay cash back. Refund some items or an amount to the card only, or refund on a station once a shift is open." : "No shift is open at this outlet, so no drawer can pay cash back. Refund it on a station once a shift is open.";
+  const noDrawerBlocks = noDrawer && !(cardPaid && what !== "full");
   // One open shift is chosen for the owner; none leaves the card as the only way back, when the bill has one.
   useEffect(() => {
     if (!openShifts.data || drawer) return;
@@ -129,7 +143,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
       const res = await api.POST("/v1/checks/{id}/refunds", {
         params: { path: { id: checkId! } },
         headers: { "Idempotency-Key": refundId },
-        body: { refund_id: refundId, request: request!, reason: reason.trim(), print, ...(shiftId ? { shift_id: shiftId } : {}), ...(avoidCash ? { avoid_cash: true } : {}) },
+        body: { refund_id: refundId, request: request!, reason: reason.trim(), print: printOn, ...(shiftId ? { shift_id: shiftId } : {}), ...(avoidCash ? { avoid_cash: true } : {}) },
       });
       const body = res.data as unknown as { refund: RefundCreated["refund"]; warnings: string[] };
       return { refund: body.refund, warnings: body.warnings };
@@ -144,7 +158,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
   const index = steps.findIndex((s) => s.id === step);
   const next = steps[index + 1]?.id;
   const prev = steps[index - 1]?.id;
-  const canContinue = step === "bill" ? checkId !== null : step === "what" ? request !== null && !(what === "amount" && quote.isError) : step === "why" ? reason.trim().length > 0 : step === "drawer" ? drawer !== null : false;
+  const canContinue = step === "bill" ? checkId !== null && !(noDrawer && !cardPaid) : step === "what" ? request !== null && !(what === "amount" && quote.isError) && !noDrawerBlocks : step === "why" ? reason.trim().length > 0 : step === "drawer" ? drawer !== null : false;
 
   const lineName = (id: string) => lineById.get(id)?.name ?? `Line ${id.slice(0, 8)}`;
 
@@ -212,6 +226,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
         <div className="flex flex-col gap-6">
           <Steps steps={steps} current={step} onStepPress={(id) => setStep(id as StepId)} />
 
+          {step === "bill" && noDrawer ? <p className="mb-3 text-ink-2">{noDrawerText}</p> : null}
           {step === "bill" ? (
             <ul className="flex flex-col gap-2" aria-label="Bills">
               {candidates.map((c) => (
@@ -236,6 +251,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
 
           {step === "what" && check ? (
             <div className="flex flex-col gap-4">
+              {noDrawer ? <p className="text-ink-2">{noDrawerText}</p> : null}
               <div role="radiogroup" aria-label="What to refund" className="grid gap-2 sm:grid-cols-3">
                 {(
                   [
@@ -338,7 +354,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
             <div className="flex flex-col gap-3">
               {openShifts.isPending ? <p className="text-ink-2">Looking for open shifts…</p> : null}
               {openShifts.data && shiftsOpen.length === 0 ? (
-                <p className="text-ink-2">{cardPaid && what !== "full" ? "No shift is open at this outlet, so no drawer can pay cash back. The refund goes back to the card only." : cardPaid ? "No shift is open at this outlet, so no drawer can pay cash back. Refund some items or an amount to the card only, or refund on a station once a shift is open." : "No shift is open at this outlet, so no drawer can pay cash back. Refund it on a station once a shift is open."}</p>
+                <p className="text-ink-2">{noDrawerText}</p>
               ) : null}
               {shiftsOpen.length ? <p className="text-ink-2">{shiftsOpen.length === 1 ? "The cash comes out of the only open shift's drawer." : "Choose the open shift whose drawer pays the cash back."}</p> : null}
               <ul className="flex flex-col gap-2" aria-label="Cash from">
@@ -417,7 +433,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
                     />
                   </section>
                   <DescriptionList layout="grid" items={[{ term: "Reason", detail: reason.trim() }, ...(shiftId && quote.data.cash_out ? [{ term: "Cash from", detail: shiftLabel(shiftsOpen.find((s) => s.id === shiftId) ?? { name: null, station_id: null }) }] : []), { term: "Documents", detail: check.invoice_no ? `Refund receipt and a credit note against ${check.invoice_no}` : "Refund receipt" }]} />
-                  <Switch isSelected={print} onChange={setPrint} description="On the outlet's receipt printer. The refund is recorded either way.">
+                  <Switch isSelected={printOn} onChange={setPrint} description="On the outlet's receipt printer. The refund is recorded either way.">
                     Print the refund receipt
                   </Switch>
                 </>

@@ -94,6 +94,6 @@ export { Checklist, checklistDone, checklistStatus, type ChecklistProps, type Ch
 export { Panel, ValueRows, SheetSection, Group, type PanelProps, type ValueRowsProps, type SheetSectionProps, type GroupProps } from "./backoffice/Panel";
 export { FilterTabs, type FilterTabsProps, type FilterTabOption } from "./backoffice/FilterTabs";
 export { minorToDecimal, toCsv, csvCell, reportRows, cellText, type CsvRow } from "./lib/report-csv";
-export { reconciliationRows, refundBlocks, refundableQuantity, showsCardNet, tenderRows, type ReportBlocks, type ReportReconciliation, type ReportRow, type ReportSales, type ReportRefunds, type ReportTender } from "./lib/report-blocks";
+export { reconciliationRows, refundBlocks, refundableQuantity, reversedRows, showsCardNet, tenderRows, type ReportBlocks, type ReportReconciliation, type ReportRow, type ReportSales, type ReportRefunds, type ReportTender } from "./lib/report-blocks";
 
 export { useHydrated } from "./lib/use-hydrated";

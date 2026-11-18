@@ -6,7 +6,7 @@ import { toApiError } from "@/lib/api";
 import * as reg from "../api/register";
 import type { FloorSnapshot } from "../api/types";
 import { useUiStore } from "../state/ui";
-import { applySnapshot, posKeys } from "./queries";
+import { applySnapshot, posKeys, refreshStock } from "./queries";
 import { useApi } from "./useApi";
 
 /**
@@ -34,6 +34,20 @@ export function useNowActions(outletId: string) {
     void qc.invalidateQueries({ queryKey: posKeys.floor(outletId) });
   }, [outletId, qc]);
 
+  /** A decision whose answer was lost: done when the round no longer waits (true), otherwise the error is shown (null). */
+  const settled = useCallback(
+    async (e: unknown, roundId: string): Promise<true | null> => {
+      try {
+        await reg.afterLostDecision(api, e, outletId, roundId, null);
+        return true;
+      } catch (err) {
+        fail(err);
+        return null;
+      }
+    },
+    [api, fail, outletId],
+  );
+
   const acceptRound = useCallback(
     async (roundId: string) => {
       setBusy(roundId);
@@ -44,49 +58,35 @@ export function useNowActions(outletId: string) {
         refreshNow();
         return res.data;
       } catch (e) {
-        fail(e);
         refreshNow();
-        return null;
+        return settled(e, roundId);
       } finally {
         setBusy(null);
       }
     },
-    [api, fail, notify, qc, refreshNow],
+    [api, notify, qc, refreshNow, settled],
   );
 
+  /** A reject as sold out names the products: the register rejects and marks them in one request (review 4 U1). */
   const rejectRound = useCallback(
-    async (roundId: string, reason: string) => {
+    async (roundId: string, reason: string, soldOut: string[] = []) => {
       setBusy(roundId);
       try {
-        const res = await reg.rejectRound(api, roundId, reason);
+        const res = await reg.rejectRound(api, roundId, reason, undefined, soldOut);
         applySnapshot(qc, res.data);
+        if (soldOut.length) refreshStock(qc, outletId);
         refreshNow();
         return res.data;
       } catch (e) {
-        fail(e);
         refreshNow();
-        return null;
+        const done = await settled(e, roundId);
+        if (done && soldOut.length) refreshStock(qc, outletId);
+        return done;
       } finally {
         setBusy(null);
       }
     },
-    [api, fail, qc, refreshNow],
-  );
-
-  /** Mark products sold out for today (a QR order rejected as sold out from the Now card); the guest menu follows. */
-  const markSoldOut = useCallback(
-    async (productIds: string[]) => {
-      try {
-        for (const id of productIds) await reg.markSoldOut(api, outletId, id, "today");
-        void qc.invalidateQueries({ queryKey: ["pos", "menu"] });
-        void qc.invalidateQueries({ queryKey: ["pos", "stock", outletId] });
-        return true;
-      } catch (e) {
-        fail(e);
-        return null;
-      }
-    },
-    [api, fail, outletId, qc],
+    [api, outletId, qc, refreshNow, settled],
   );
 
   const acknowledge = useCallback(
@@ -128,5 +128,5 @@ export function useNowActions(outletId: string) {
     [api, fail, notify, qc],
   );
 
-  return useMemo(() => ({ acceptRound, rejectRound, markSoldOut, acknowledge, collect, busy }), [acceptRound, rejectRound, markSoldOut, acknowledge, collect, busy]);
+  return useMemo(() => ({ acceptRound, rejectRound, acknowledge, collect, busy }), [acceptRound, rejectRound, acknowledge, collect, busy]);
 }

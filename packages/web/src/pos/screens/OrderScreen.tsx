@@ -75,13 +75,16 @@ export function OrderScreen({ orderId }: { orderId: string }) {
   const receiptCheck = sheet?.kind === "receipt" ? (snap?.checks.find((c) => c.id === sheet.checkId) ?? null) : null;
   const line: SnapshotLine | null = sheet?.kind === "line" ? (snap?.lines.find((l) => l.id === sheet.lineId) ?? null) : null;
 
+  /** QR rounds whose accept is on the wire (a lost answer can take a while): a second tap sends nothing. */
+  const [accepting, setAccepting] = useState<ReadonlySet<string>>(new Set());
   const payNow = (s = snap) => {
     if (!s) return;
     const open = s.checks.filter((c) => c.status === "open");
     if (s.checks.length === 1 && open[0]) openPay(orderId, open[0].id, "order");
     else openBill(orderId);
   };
-  // A QR order waiting for acceptance is on no bill: Pay asks about it first.
+  // A QR order waiting for acceptance is on no bill: Pay asks about it first, and only this sheet goes on to the payment.
+  // With nothing to pay, the order's primary accepts the waiting round itself and stays on the order (review 4 U5).
   const pay = () => {
     if (pendingRounds[0]) setSheet({ kind: "waiting", round: pendingRounds[0] });
     else payNow();
@@ -164,7 +167,12 @@ export function OrderScreen({ orderId }: { orderId: string }) {
             onPay={pay}
             onReprintRound={(round) => setSheet({ kind: "reprint", round })}
             pendingRounds={pendingRounds}
-            onAcceptRound={(r) => void actions.acceptRound(r.id)}
+            onAcceptRound={(r) => {
+              if (accepting.has(r.id)) return;
+              setAccepting((a) => new Set(a).add(r.id));
+              void actions.acceptRound(r.id).finally(() => setAccepting((a) => new Set([...a].filter((x) => x !== r.id))));
+            }}
+            accepting={accepting}
             onRejectRound={(r) => setSheet({ kind: "reject", round: r })}
             jobs={jobs.data ?? []}
             lateJobIds={lateJobIds}
@@ -180,12 +188,13 @@ export function OrderScreen({ orderId }: { orderId: string }) {
       {snap ? <ReprintSheet isOpen={sheet?.kind === "reprint"} onClose={() => setSheet(null)} order={snap} actions={actions} round={sheet?.kind === "reprint" ? sheet.round : null} /> : null}
       {/* After the paid screen has gone: print the receipt, show it as a QR code, or send it. */}
       <Sheet labelledClose isOpen={sheet?.kind === "receipt"} onOpenChange={(o) => (!o ? setSheet(null) : undefined)} title={receiptCheck ? `Receipt · ${receiptCheck.label}` : "Receipt"} width="lg">
-        {snap && receiptCheck ? <ReceiptChooser order={snap} check={receiptCheck} actions={actions} caption={`Paid · ${receiptCheck.label}`} amount={receiptCheck.paid_total} sub={receiptCheck.charged_total !== receiptCheck.paid_total ? { main: null, minor: [receiptCheck.tip_total ? `Tip ${money(receiptCheck.tip_total)}` : null, receiptCheck.rounding_total ? `Cash rounding ${money(receiptCheck.rounding_total)}` : null, `Charged ${money(receiptCheck.charged_total)}`].filter(Boolean).join(" · ") } : null} autoReturnMs={0} onDone={() => setSheet(null)} doneLabel="Done" /> : null}
+        {snap && receiptCheck ? <ReceiptChooser order={snap} check={receiptCheck} actions={actions} caption={`Paid · ${receiptCheck.label}`} amount={receiptCheck.paid_total} sub={receiptCheck.charged_total !== receiptCheck.paid_total ? { main: null, minor: [receiptCheck.tip_total ? `Tip ${money(receiptCheck.tip_total)}` : null, receiptCheck.rounding_total ? `Cash rounding ${money(receiptCheck.rounding_total)}` : null, `Charged ${money(receiptCheck.charged_total)}`].filter(Boolean).join(" · ") } : null} onDone={() => setSheet(null)} doneLabel="Done" /> : null}
       </Sheet>
-      <ReopenSheet isOpen={sheet?.kind === "reopen"} onClose={() => setSheet(null)} onReopen={(reason) => actions.reopen(reason)} checkRefusal={actions.reopenRefusal} payments={(order.data?.checks ?? []).flatMap((c) => c.payments.filter((p) => p.status === "recorded").map((p) => `${p.tender} ${money(p.amount)}`))} />
+      <ReopenSheet isOpen={sheet?.kind === "reopen"} onClose={() => setSheet(null)} onReopen={(reason) => actions.reopen(reason)} checkRefusal={actions.reopenRefusal} invoices={(order.data?.checks ?? []).flatMap((c) => (c.invoice_no ? [c.invoice_no] : []))} payments={(order.data?.checks ?? []).flatMap((c) => c.payments.filter((p) => p.status === "recorded").map((p) => `${p.tender} ${money(p.amount)}`))} />
       <WaitingRoundSheet
         isOpen={sheet?.kind === "waiting"}
-        roundLabel={sheet?.kind === "waiting" ? `${sheet.round.lines.map((l) => `${l.quantity} ${l.name}`).join(", ")}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null}
+        roundLabel={sheet?.kind === "waiting" ? `${countItems(sheet.round.lines)}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null}
+        lines={sheet?.kind === "waiting" ? sheet.round.lines : undefined}
         canPayRest={Boolean(snap && snap.balance > 0)}
         onClose={() => setSheet(null)}
         onAccept={async () => {
@@ -203,7 +212,7 @@ export function OrderScreen({ orderId }: { orderId: string }) {
           payNow();
         }}
       />
-      <RejectRoundSheet isOpen={sheet?.kind === "reject"} roundLabel={sheet?.kind === "reject" ? `${countItems(sheet.round.lines)}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null} lines={sheet?.kind === "reject" ? sheet.round.lines : undefined} onClose={() => setSheet(null)} onReject={(reason) => (sheet?.kind === "reject" ? actions.rejectRound(sheet.round.id, reason) : Promise.resolve(null))} onMarkSoldOut={roleAtLeast(staff.role, OP_MIN_ROLE["stock.mark_sold_out"] ?? "cashier") ? actions.markSoldOut : undefined} />
+      <RejectRoundSheet isOpen={sheet?.kind === "reject"} roundLabel={sheet?.kind === "reject" ? `${countItems(sheet.round.lines)}${sheet.round.guest_name ? ` · ${sheet.round.guest_name}` : ""}` : null} lines={sheet?.kind === "reject" ? sheet.round.lines : undefined} onClose={() => setSheet(null)} onReject={(reason, soldOut) => (sheet?.kind === "reject" ? actions.rejectRound(sheet.round.id, reason, soldOut) : Promise.resolve(null))} canMarkSoldOut={roleAtLeast(staff.role, OP_MIN_ROLE["stock.mark_sold_out"] ?? "cashier")} />
     </Frame>
   );
 }

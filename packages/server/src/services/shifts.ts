@@ -2,7 +2,7 @@ import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { taxInPrices } from "../lib/tax-in-prices.js";
 import { drawerCap, formatMoney, type TaxAmount, type TaxBreakdown } from "@sail/shared";
 import { db, tx } from "../db/client.js";
-import { businessDayCloses, merchantSettings, orderAdjustments, orderLines, orders, payments, refundTenders, refunds as refundRows, shifts, staff } from "../db/schema/index.js";
+import { businessDayCloses, merchantSettings, orderAdjustments, orderLines, orders, payments, refundTenders, refunds as refundRows, shifts, staff, tenderTypes } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import { businessToday } from "./business-day.js";
 import { brandScopeFor, type Principal } from "../auth/principal.js";
@@ -25,15 +25,20 @@ export type ZReport = {
    * Before refunds, `net_before_refunds + fees + tax = total`; after them, `total_after_refunds = total - refunds.amount`
    * (the `refunds` block splits that amount into net, fees and tax).
    */
-  /** `tax_in_prices`: with tax included in prices, the tax inside the items (gross less discounts less net before refunds), so the rows add up as written; 0 when tax is added on top. */
-  sales: { gross: number; discounts: number; fees: number; tax: number; taxes: TaxBreakdown[]; refunds: number; net: number; total: number; net_before_refunds: number; total_after_refunds: number; tax_in_prices: number };
+  /**
+   * `tax_in_prices`: with tax included in prices, the tax inside the items (gross less discounts less net before refunds); 0 when tax is added on top.
+   * `fees_charged`: the fees as they were charged, their tax included in inclusive mode (`fees` plus the fees' tax), so
+   * with tax in prices `gross + discounts + fees_charged = total`; with tax added on top it equals `fees`.
+   */
+  sales: { gross: number; discounts: number; fees: number; fees_charged: number; tax: number; taxes: TaxBreakdown[]; refunds: number; net: number; total: number; net_before_refunds: number; total_after_refunds: number; tax_in_prices: number };
   adjustments: { rule_key: string; name: string; kind: string; report_class: string; total: number; count: number }[];
   /**
    * Per tender: `amount` applied, `rounding` and `tips` on top, `refunds` given back on it (amount, rounding and tips),
    * `reversed` taken and then reversed (counted nowhere else), and `net = amount + rounding + tips − refunds`: what the
-   * card terminal's end-of-day total should show for that tender.
+   * card terminal's end-of-day total should show for that tender. `terminal`: the tender sends payments to a card
+   * terminal (it has a payment provider), so its net is what that terminal's end-of-day total shows.
    */
-  tenders: { tender_type_id: string; tender: string; is_cash: boolean; count: number; amount: number; rounding: number; tips: number; refunds: number; reversed: number; net: number }[];
+  tenders: { tender_type_id: string; tender: string; is_cash: boolean; terminal: boolean; count: number; amount: number; rounding: number; tips: number; refunds: number; reversed: number; net: number }[];
   /** Register-computed totals across tenders, so clients never add rows up: `non_cash` is the figure to compare with the terminal's end-of-day total. */
   tenders_summary: { cash: number; non_cash: number; tips: number; count: number };
   /**
@@ -80,9 +85,9 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
   // tenders cover the same orders; an order paid at two stations shows up in `reconciliation`.
   const orderWhere = and(eq(orders.outletId, scope.outletId), eq(orders.businessDate, scope.businessDate), scope.stationId ? sql`coalesce((select p.station_id from payments p where p.order_id = ${orders.id} and p.status = 'recorded' order by p.created_at desc, p.id desc limit 1), ${orders.stationId}) = ${scope.stationId}` : sql`true`);
   const completed = and(orderWhere, eq(orders.status, "completed"));
-  const [o] = await tx()<{ count: number; covers: number; gross: number; discounts: number; fees: number; tax: number; net: number; total: number }[]>`
+  const [o] = await tx()<{ count: number; covers: number; gross: number; discounts: number; fees: number; fees_charged: number; tax: number; net: number; total: number }[]>`
     select count(*)::int as count, coalesce(sum(pax),0)::bigint as covers, coalesce(sum(subtotal),0)::bigint as gross, coalesce(sum(discount_total),0)::bigint as discounts,
-           coalesce(sum(fees_net),0)::bigint as fees, coalesce(sum(tax_total),0)::bigint as tax, coalesce(sum(net_sales),0)::bigint as net, coalesce(sum(total),0)::bigint as total
+           coalesce(sum(fees_net),0)::bigint as fees, coalesce(sum(fee_total),0)::bigint as fees_charged, coalesce(sum(tax_total),0)::bigint as tax, coalesce(sum(net_sales),0)::bigint as net, coalesce(sum(total),0)::bigint as total
     from report_orders r
     where r.outlet_id = ${scope.outletId} and r.business_date = ${scope.businessDate} ${scope.stationId ? tx()`and coalesce((select p.station_id from payments p where p.order_id = r.order_id and p.status = 'recorded' order by p.created_at desc, p.id desc limit 1), r.station_id) = ${scope.stationId}` : tx()``}`;
   const byType = await db().select({ t: orders.orderType, n: sql<number>`count(*)::int` }).from(orders).where(completed).groupBy(orders.orderType);
@@ -120,6 +125,7 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
     .where(and(payScope, eq(payments.status, "reversed")))
     .groupBy(payments.tenderTypeId, payments.tenderName, payments.isCash);
   const tenderKeys = [...taken, ...backByTender, ...reversedByTender].filter((t, i, all) => all.findIndex((x) => x.tender_type_id === t.tender_type_id) === i);
+  const terminalTenders = tenderKeys.length ? await db().select({ id: tenderTypes.id, provider: tenderTypes.provider }).from(tenderTypes).where(inArray(tenderTypes.id, tenderKeys.map((k) => k.tender_type_id))) : [];
   const tenders = tenderKeys.map((k) => {
     const t = taken.find((x) => x.tender_type_id === k.tender_type_id);
     const back = Number(backByTender.find((x) => x.tender_type_id === k.tender_type_id)?.amount ?? 0);
@@ -127,7 +133,8 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
     const amount = Number(t?.amount ?? 0);
     const rounding = Number(t?.rounding ?? 0);
     const tips = Number(t?.tips ?? 0);
-    return { tender_type_id: k.tender_type_id, tender: t?.tender ?? k.tender, is_cash: k.is_cash, count: t?.count ?? 0, amount, rounding, tips, refunds: back, reversed, net: amount + rounding + tips - back };
+    const terminal = Boolean(terminalTenders.find((x) => x.id === k.tender_type_id)?.provider);
+    return { tender_type_id: k.tender_type_id, tender: t?.tender ?? k.tender, is_cash: k.is_cash, terminal, count: t?.count ?? 0, amount, rounding, tips, refunds: back, reversed, net: amount + rounding + tips - back };
   });
   const voidRows = await db()
     // A voided line is worth quantity × (unit price + modifiers per unit); the same formula as the report_voids view.
@@ -173,7 +180,7 @@ export async function zReport(scope: Scope, cashCounts: { float: number; counted
   return {
     scope: { outlet_id: scope.outletId, station_id: scope.stationId ?? null, business_date: scope.businessDate, shift_id: scope.shiftId ?? null },
     orders: { count: o?.count ?? 0, by_type: Object.fromEntries(byType.map((b) => [b.t, b.n])), covers: o?.covers ?? 0, open_count: open?.n ?? 0 },
-    sales: { gross: o?.gross ?? 0, discounts: o?.discounts ?? 0, fees: o?.fees ?? 0, tax: o?.tax ?? 0, taxes, refunds: refunds.net, net: (o?.net ?? 0) - refunds.net, total: o?.total ?? 0, net_before_refunds: o?.net ?? 0, total_after_refunds: (o?.total ?? 0) - refunds.amount, tax_in_prices: taxInPrices(o?.gross ?? 0, o?.discounts ?? 0, o?.net ?? 0) },
+    sales: { gross: o?.gross ?? 0, discounts: o?.discounts ?? 0, fees: o?.fees ?? 0, fees_charged: o?.fees_charged ?? 0, tax: o?.tax ?? 0, taxes, refunds: refunds.net, net: (o?.net ?? 0) - refunds.net, total: o?.total ?? 0, net_before_refunds: o?.net ?? 0, total_after_refunds: (o?.total ?? 0) - refunds.amount, tax_in_prices: taxInPrices(o?.gross ?? 0, o?.discounts ?? 0, o?.net ?? 0) },
     adjustments: adj,
     tenders,
     tenders_summary: { cash: cashPayments, non_cash: tenders.filter((t) => !t.is_cash).reduce((s, t) => s + t.amount, 0), tips: tenders.reduce((s, t) => s + t.tips, 0), count: tenders.reduce((s, t) => s + t.count, 0) },

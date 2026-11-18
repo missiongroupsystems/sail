@@ -5,7 +5,7 @@ import { AlertTriangle, Ban, Check, ChefHat, ChevronLeft, ChevronRight, Circle, 
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button as AriaButton } from "react-aria-components";
-import { ApiError, idempotencyKey } from "@/lib/api";
+import { ApiError, idempotencyKey, onOutcomeUnknown } from "@/lib/api";
 import { merchantLocale } from "@/lib/locale";
 import { createPosApi, POS_API_URL, type PosApi } from "@/pos/api/client";
 import { actOnKitchenTicket, getMerchant, kitchenAllDay, listEvents, listKitchenTickets } from "@/pos/api/register";
@@ -39,6 +39,8 @@ export default function KdsApp() {
   const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { staleTime: 5_000, refetchOnWindowFocus: false, retry: (n, e) => !(e instanceof ApiError && e.status < 500) && n < 2 }, mutations: { retry: false } } }));
   const token = useDisplayStore((s) => s.token);
   const station = useDisplayStore((s) => s.station);
+  // A bump or recall whose answer was lost twice: show the register's tickets again.
+  useEffect(() => onOutcomeUnknown(() => void queryClient.invalidateQueries()), [queryClient]);
   return (
     <QueryClientProvider client={queryClient}>
       <LocaleProvider settings={DEVICE_LOCALE}>{token && station ? <Board station={station} /> : <Pairing />}</LocaleProvider>
@@ -302,14 +304,13 @@ function QuietButton({ onPress, children }: { onPress: () => void; children: Rea
   );
 }
 
-/** "3 more" with its chevron; in portrait the number and chevron alone (the word stays for screen readers). */
+/** "3 more" with its chevron, the word kept in portrait too: a bare "7 ›" did not say what it was (review 4 U7). */
 function PageButton({ icon, count, word, onPress, trailing }: { icon: typeof ChevronLeft; count: number; word: string; onPress: () => void; trailing?: boolean }) {
   return (
     <QuietButton onPress={onPress}>
       {trailing ? null : <Icon icon={icon} size={18} />}
       <span>
-        {count}
-        <span className="max-[960px]:sr-only"> {word}</span>
+        {count} <span>{word}</span>
       </span>
       {trailing ? <Icon icon={icon} size={18} /> : null}
     </QuietButton>

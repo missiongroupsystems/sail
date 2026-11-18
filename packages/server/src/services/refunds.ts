@@ -112,6 +112,10 @@ export async function createRefund(input: { refundId: string; checkId: string; r
   // Cash comes out of a drawer; with no shift open it would leave no drawer short. A refund counts on its shift's day.
   if (paysCash && !openShift) throw AppError.invariant("no_open_shift", "No shift is open here to pay cash out of", input.stationId ? "Open a shift first." : "Open a shift on a station first, or refund to the card only.");
   const businessDate = openShift?.businessDate ?? (await currentBusinessDate(ref.order.merchantId, ref.order.outletId, now));
+  // From the back office (no station), the refund counts at the station whose drawer paid the cash out; with no cash, at
+  // the station of the payment it gives back (the largest, when it gives back several), else the order's own. So every
+  // refund counts on one station and the stations' Z-reports add up to the day's.
+  const stationId = input.stationId ?? openShift?.stationId ?? (await reversedPaymentStation(q.tenders, ref.order.stationId));
   const receiptNo = await nextDocumentNo(ref.order.merchantId, "refund_receipt");
   // A credit note corrects the invoice; a refund of only the tip changes nothing the invoice holds, so it gets none.
   const creditNoteNo = ref.check.invoiceNo && q.totals.total > 0 ? await nextDocumentNo(ref.order.merchantId, "credit_note") : null;
@@ -160,8 +164,7 @@ export async function createRefund(input: { refundId: string; checkId: string; r
       approvedBy: input.approver?.id ?? null,
       approvedByName: input.approver?.name ?? null,
       overrideId: input.overrideId ?? null,
-      // From the back office (no station), the refund counts at the station whose drawer paid the cash out.
-      stationId: input.stationId ?? openShift?.stationId ?? null,
+      stationId,
       shiftId: openShift?.id ?? null,
       businessDate,
       base: q.totals.base,
@@ -185,6 +188,19 @@ export async function createRefund(input: { refundId: string; checkId: string; r
   const tipsLeft = ref.paymentsList.reduce((s, p) => s + (p.tip ?? 0) - (p.refunded_tip ?? 0), 0) - q.tip;
   await db().update(checks).set({ refundedTotal: newRefunded, status: newRefunded >= ref.check.total && tipsLeft <= 0 ? "refunded" : "partially_refunded", updatedAt: now }).where(eq(checks.id, input.checkId));
   return { refund: refund!, quote: q, receipt, creditNote };
+}
+
+/** The station of the payment a back-office refund gives back: the largest of its tenders, else the order's station. */
+async function reversedPaymentStation(tenders: { payment_id: string; amount: number; tip_cents: number; rounding_cents: number }[], orderStationId: string | null): Promise<string | null> {
+  const ids = tenders.map((t) => t.payment_id);
+  const rows = ids.length ? await db().select({ id: payments.id, stationId: payments.stationId }).from(payments).where(inArray(payments.id, ids)) : [];
+  const byId = new Map(rows.map((r) => [r.id, r.stationId]));
+  const ranked = [...tenders].sort((a, b) => b.amount + b.tip_cents + b.rounding_cents - (a.amount + a.tip_cents + a.rounding_cents));
+  for (const t of ranked) {
+    const station = byId.get(t.payment_id);
+    if (station) return station;
+  }
+  return orderStationId;
 }
 
 /**

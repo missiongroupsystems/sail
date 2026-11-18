@@ -12,7 +12,11 @@ describe("cash given buttons", () => {
 
   it("keep the nearest round-ups and add the next single note when it is not among them", () => {
     expect(likelyTendered(1394, SGD)).toEqual([1400, 1500, 2000, 5000]);
-    expect(likelyTendered(4747, SGD)).toEqual([5000, 10000]);
+    expect(likelyTendered(4747, SGD)).toEqual([4800, 5000, 10000]);
+  });
+
+  it("offer the next whole unit for an amount with cents: €17 for €16.22, not only €18 (review 4 U7)", () => {
+    expect(likelyTendered(1622, EUR)).toEqual([1700, 1800, 2000]);
   });
 
   it("meet a whole amount with whole units: $3 and $5 for $2.00, never $2.25 (review 3, S8)", () => {

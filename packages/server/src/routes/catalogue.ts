@@ -524,12 +524,7 @@ export function catalogueRoutes(app: OpenAPIHono<AppEnv>) {
       else if (b.until === "today") until = nextCutoff(new Date(), bd.cutoff, bd.timeZone); // until the next business-day cutoff at the outlet
       else until = new Date(b.until);
       if (until.getTime() <= Date.now()) throw AppError.validation("That time has already passed", { remedy: "Pick a time later than now, or mark it sold out for today.", details: { field: "until" } });
-      const [row] = await db()
-        .insert(stockStatus)
-        .values({ merchantId: p.merchantId, outletId: b.outlet_id, productId: b.product_id, soldOutUntil: until })
-        .onConflictDoUpdate({ target: [stockStatus.outletId, stockStatus.productId], set: { soldOutUntil: until, updatedAt: new Date() } })
-        .returning();
-      const data = toStock(row!, today);
+      const data = await markSoldOutUntil(p.merchantId, b.outlet_id, b.product_id, until, today);
       const ev = await appendEvent({ merchantId: p.merchantId, outletId: b.outlet_id, type: "stock.sold_out", aggregate: { kind: "product", id: b.product_id }, operationId: "stock.mark_sold_out", payload: data, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p);
       await recordAudit(p, { action: "stock.mark_sold_out", targetKind: "product", targetId: b.product_id, outletId: b.outlet_id, details: { until: b.until } });
       return c.json({ data, events: [ev], warnings: [] }, 200);
@@ -584,6 +579,16 @@ export async function consumeDailyCap(outletId: string, productId: string, qty: 
   const [st] = await tx()<{ cap_remaining: number | null; daily_cap: number | null; cap_date: string | null }[]>`select cap_remaining, daily_cap, cap_date from stock_status where outlet_id = ${outletId} and product_id = ${productId}`;
   if (!st || st.daily_cap == null) return { ok: true, remaining: null };
   return { ok: false, remaining: st.cap_date === today ? (st.cap_remaining ?? 0) : st.daily_cap };
+}
+
+/** A product sold out at an outlet until `until`, as clients see it (stock.mark_sold_out, and a QR order rejected as sold out). */
+export async function markSoldOutUntil(merchantId: string, outletId: string, productId: string, until: Date, today: string) {
+  const [row] = await db()
+    .insert(stockStatus)
+    .values({ merchantId, outletId, productId, soldOutUntil: until })
+    .onConflictDoUpdate({ target: [stockStatus.outletId, stockStatus.productId], set: { soldOutUntil: until, updatedAt: new Date() } })
+    .returning();
+  return toStock(row!, today);
 }
 
 /** Release cap units (void before firing). */

@@ -172,7 +172,7 @@ const taxKey = (t: { name: string; bps: number }) => `${t.bps}|${t.name}`;
  * the two bills (each keeps its total across bills; only lines in `movable` when given). Mutates `rows`; returns the per-line tax change by component key.
  * `taxables[lineId][key]` is the line's taxable amount for that component.
  */
-export function rebalanceBillTax(rows: TaxRow[], taxables: Record<string, Record<string, number>>, opts: { taxAddsToTotal: boolean; movable?: ReadonlySet<string> }): Map<string, Map<string, number>> {
+export function rebalanceBillTax(rows: TaxRow[], taxables: Record<string, Record<string, number>>, opts: { taxAddsToTotal: boolean; movable?: ReadonlySet<string>; weight?: (row: TaxRow, key: string) => number }): Map<string, Map<string, number>> {
   const lineDelta = new Map<string, Map<string, number>>();
   const checksSeen = [...new Set(rows.map((r) => r.check))].sort((a, b) => a - b);
   if (checksSeen.length < 2) return lineDelta;
@@ -188,7 +188,8 @@ export function rebalanceBillTax(rows: TaxRow[], taxables: Record<string, Record
   };
   for (const k of keys) {
     const current = checksSeen.map((c) => sumCents(rows.filter((r) => r.check === c).map((r) => amountOf(r, k))));
-    const weights = checksSeen.map((c) => rows.filter((r) => r.check === c).reduce((s, r) => s + ((taxables[r.lineId]?.[k] ?? 0) * r.shareNum) / r.shareDen, 0));
+    // A row's weight is its share of the line's taxable amount, or what `opts.weight` says it is (the bill's own cents).
+    const weights = checksSeen.map((c) => rows.filter((r) => r.check === c && r.taxes.some((t) => taxKey(t) === k)).reduce((s, r) => s + (opts.weight ? opts.weight(r, k) : ((taxables[r.lineId]?.[k] ?? 0) * r.shareNum) / r.shareDen), 0));
     const total = sumCents(current);
     if (total <= 0 || weights.some((w) => w < 0) || weights.every((w) => w === 0)) continue;
     const target = allocateLargestRemainder(total, weights);
@@ -225,4 +226,59 @@ export function rebalanceBillTax(rows: TaxRow[], taxables: Record<string, Record
     }
   }
   return lineDelta;
+}
+
+/** One bill's allocation of one line with its base, as `balanceBillTotals` moves it. */
+export type BaseRow = TaxRow & { base: Cents; discount?: Cents };
+
+/**
+ * Even out split bills' totals (review 4, T4). Each line's cents are allocated on their own, and the per-rate tax
+ * rebalance moves tax cents after that, so the odd cents could pile up on the same bills ($40.80 five ways came to $8.14
+ * to $8.18). Here a cent of base moves, on a line two bills share, from the bill furthest over its exact share of the
+ * order to the one furthest under, until no two bills are more than a cent apart from their exact shares. A line's
+ * allocations still add up to the line and no tax moves, so the order's tax per rate is untouched. A move that keeps both
+ * allocations within a cent of their own exact share is taken first. Mutates `rows`; returns the number of cents moved.
+ */
+export function balanceBillTotals(rows: BaseRow[]): number {
+  const checksSeen = [...new Set(rows.map((r) => r.check))].sort((a, b) => a - b);
+  if (checksSeen.length < 2) return 0;
+  const lineTotal = new Map<string, number>();
+  const lineBase = new Map<string, number>();
+  for (const r of rows) {
+    lineTotal.set(r.lineId, (lineTotal.get(r.lineId) ?? 0) + r.total);
+    lineBase.set(r.lineId, (lineBase.get(r.lineId) ?? 0) + r.base);
+  }
+  const exact = (r: BaseRow, of: Map<string, number>) => ((of.get(r.lineId) ?? 0) * r.shareNum) / r.shareDen;
+  const dev = new Map<number, number>(checksSeen.map((c) => [c, 0]));
+  for (const r of rows) dev.set(r.check, dev.get(r.check)! + r.total - exact(r, lineTotal));
+  const eps = 1e-9;
+  let moved = 0;
+  for (let guard = 0; guard < 100_000; guard++) {
+    const byDev = [...checksSeen].sort((a, b) => dev.get(b)! - dev.get(a)! || a - b);
+    let done = true;
+    // The furthest-over bill gives to the furthest-under one it shares a line with.
+    outer: for (const from of byDev) {
+      for (const to of [...byDev].reverse()) {
+        if (dev.get(from)! - dev.get(to)! <= 1 + eps) break;
+        // The giver keeps base + discount at zero or above, so no allocation's amount turns negative.
+        const candidates = rows.filter((r) => r.check === from && r.base > 0 && r.base + (r.discount ?? 0) > 0 && rows.some((x) => x.check === to && x.lineId === r.lineId));
+        if (!candidates.length) continue;
+        const pair = (r: BaseRow) => rows.find((x) => x.check === to && x.lineId === r.lineId)!;
+        const within = (r: BaseRow) => r.base - 1 - exact(r, lineBase) > -1 + eps && pair(r).base + 1 - exact(pair(r), lineBase) < 1 - eps;
+        const giver = candidates.find(within) ?? candidates[0]!;
+        const taker = pair(giver);
+        giver.base -= 1;
+        giver.total -= 1;
+        taker.base += 1;
+        taker.total += 1;
+        dev.set(from, dev.get(from)! - 1);
+        dev.set(to, dev.get(to)! + 1);
+        moved++;
+        done = false;
+        break outer;
+      }
+    }
+    if (done) break;
+  }
+  return moved;
 }

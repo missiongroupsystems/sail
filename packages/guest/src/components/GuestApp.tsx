@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Ban, CheckCheck, Clock, QrCode } from "lucide-react";
 import { useStore } from "zustand";
-import { API_URL, ApiError, createGuestApi, createSession, getMenu, getOrder, submitRound, toApiError } from "@/lib/api";
+import { API_URL, ApiError, createGuestApi, createSession, getMenu, getOrder, sessionLive, submitRound, toApiError } from "@/lib/api";
 import { createBasketStore, type BasketItem } from "@/lib/basket";
 import { brandStyle } from "@/lib/brand";
 import { QueryProvider, keys } from "@/lib/query";
@@ -159,6 +159,13 @@ function GuestAppInner({ token }: { token: string }) {
     const current = sessionRef.current?.session_id ?? "";
     if (endedSession.current === current) return;
     endedSession.current = current;
+    // Paid: one screen, live or after a reload, and the session is kept: when staff void the payment or reopen the order,
+    // the phone is back on it with its own rounds.
+    if (details?.reason === "order_paid" && sessionRef.current) {
+      restored.current = false;
+      setPhase({ kind: "ended", paid: true });
+      return;
+    }
     clearSession(token);
     if (restored.current && !rotated) {
       restored.current = false;
@@ -169,6 +176,25 @@ function GuestAppInner({ token }: { token: string }) {
     setPhase(rotated ? { kind: "rotated" } : { kind: "ended", paid: details?.reason === "order_paid", cancelled: details?.reason === "order_cancelled" });
   }, [token, startSession]);
   onUnauthenticatedRef.current = onUnauthenticated;
+
+  /*
+   * Paid, without a live stream to hear a void or a reopen on (the page was reloaded on the paid screen, or the phone
+   * locked and the stream dropped): when the phone is shown again it asks the register once (review 4 U4).
+   */
+  const paidSession = phase.kind === "ended" && phase.paid ? session : null;
+  useEffect(() => {
+    if (!paidSession) return;
+    const onVisible = async () => {
+      if (document.visibilityState !== "visible" || streamRef.current?.listening) return;
+      if ((await sessionLive(paidSession.guest_token)) !== "live") return;
+      endedSession.current = null;
+      setPhase({ kind: "ready" });
+      void queryClient.invalidateQueries({ queryKey: keys.order(paidSession.session_id) });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [paidSession, queryClient]);
+
 
   const started = useRef(false);
   useEffect(() => {
@@ -201,6 +227,7 @@ function GuestAppInner({ token }: { token: string }) {
    * return to the ended session's status page.
    */
   const startAgain = useCallback(() => {
+    clearSession(token);
     setItemSheet(null);
     setStaffSheet(false);
     setSendError(null);
@@ -210,7 +237,7 @@ function GuestAppInner({ token }: { token: string }) {
     setView("menu");
     window.scrollTo({ top: 0 });
     void startSession(true);
-  }, [basketStore, startSession]);
+  }, [basketStore, startSession, token]);
   // The screens swap inside one page, so move focus to the new screen's heading for VoiceOver.
   const firstView = useRef(true);
   useEffect(() => {
@@ -225,7 +252,8 @@ function GuestAppInner({ token }: { token: string }) {
   const menuQuery = useQuery({
     queryKey: keys.menu(session?.channel_link_id ?? ""),
     queryFn: () => getMenu(api, session!.channel_link_id),
-    enabled: Boolean(session),
+    // Not on the paid screen: the session is ended there (kept only to hear a void or a reopen on the stream).
+    enabled: Boolean(session) && phase.kind === "ready",
     // Sold out and availability change during service: an open menu catches up within half a minute, and at once
     // when the phone comes back to the page (live-test D-7, E-L19).
     staleTime: 20_000,
@@ -235,7 +263,7 @@ function GuestAppInner({ token }: { token: string }) {
   const orderQuery = useQuery({
     queryKey: keys.order(session?.session_id ?? ""),
     queryFn: () => getOrder(api),
-    enabled: Boolean(session),
+    enabled: Boolean(session) && phase.kind === "ready",
     // No order on the table yet: the stream would only answer 409 (logged in the console, live-test D-14), so poll.
     refetchInterval: (q) => (q.state.data?.order ? false : RECHECK_MS),
   });
@@ -280,6 +308,12 @@ function GuestAppInner({ token }: { token: string }) {
       onStock: () => void queryClient.invalidateQueries({ queryKey: keys.menu(sessionRef.current?.channel_link_id ?? "") }),
       onStatus: setStreamStatus,
       onUnauthenticated,
+      // Paid, then open again (a payment voided, the order reopened): back on the order, the same session and rounds.
+      onResumed: () => {
+        endedSession.current = null;
+        setPhase({ kind: "ready" });
+        void queryClient.invalidateQueries({ queryKey: keys.order(sessionId) });
+      },
       pollMs: RECHECK_MS,
     });
     streamRef.current = stream;
@@ -377,6 +411,9 @@ function GuestAppInner({ token }: { token: string }) {
       );
       basketStore.getState().finishSend(round_id);
       const { round_id: _r, status: _s, order_opened: _o, ...viewData } = result;
+      // A read already on the wire left before the round existed: it must not replace this answer with a view that has
+      // no round from this phone ("No orders have been sent from this phone yet" for a few seconds, review 4 U4).
+      await queryClient.cancelQueries({ queryKey: keys.order(session.session_id) });
       queryClient.setQueryData<OrderView>(keys.order(session.session_id), viewData as OrderView);
       restored.current = false; // the register has accepted this session
       if (!session.order_open) applySession({ ...session, order_open: true, can_order: true });
@@ -443,7 +480,7 @@ function GuestAppInner({ token }: { token: string }) {
     );
   }
   if (phase.kind === "loading" || !session) return <LoadingMenu />;
-  if (menuQuery.isError && !menu) {
+  if (menuQuery.isError && !menu && toApiError(menuQuery.error).status !== 401) {
     const err = toApiError(menuQuery.error);
     return (
       <Notice place={placeRef.current} icon={AlertTriangle} title={err.message} body={err.remedy ?? "Try again in a moment."}>

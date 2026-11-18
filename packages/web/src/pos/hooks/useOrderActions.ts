@@ -10,7 +10,7 @@ import { reportUnreachable } from "../events/stream";
 import type { CheckPayment, CheckSnapshot, CompiledProduct, ManualRule, MutationResult, OrderSnapshot, OrderType, OverrideAction, OverrideSubject, PaymentIntent, PaymentResult, ReceiptChannel, RefundRequest, RefundResult, Role, SnapshotLine } from "../api/types";
 import { useSessionStore } from "../state/session";
 import { useConnectionStore, useUiStore } from "../state/ui";
-import { applySnapshot, holdPendingLine, posKeys, releasePendingLine } from "./queries";
+import { applySnapshot, holdPendingLine, posKeys, refreshStock, releasePendingLine } from "./queries";
 import { useApi } from "./useApi";
 
 /** The Send on the wire for each order, shared by every screen that offers Send. */
@@ -933,6 +933,23 @@ export function useOrderActions(orderId: string) {
 
   /* ---- Scan to Order: a held round is accepted (sent) or rejected with a reason. ---- */
 
+  /** A decision whose answer was lost: the order as it is now when the round no longer waits, otherwise the error is shown. */
+  const lostDecision = useCallback(
+    async (e: unknown, roundId: string): Promise<OrderSnapshot | null> => {
+      try {
+        const outletId = snapshot()?.outlet_id;
+        if (!outletId) throw e;
+        const snap = await reg.afterLostDecision(api, e, outletId, roundId, orderId);
+        if (snap) applySnapshot(qc, snap);
+        return snap;
+      } catch (err) {
+        fail(err);
+        return null;
+      }
+    },
+    [api, fail, orderId, qc, snapshot],
+  );
+
   const acceptRound = useCallback(
     async (roundId: string) => {
       try {
@@ -940,43 +957,29 @@ export function useOrderActions(orderId: string) {
         void qc.invalidateQueries({ queryKey: ["pos", "rounds"] });
         return snap;
       } catch (e) {
-        fail(e);
-        return null;
+        void qc.invalidateQueries({ queryKey: ["pos", "rounds"] });
+        return lostDecision(e, roundId);
       }
     },
-    [api, fail, qc, run],
+    [api, lostDecision, qc, run],
   );
 
+  /** A reject as sold out names the products: the register rejects and marks them in one request (review 4 U1). */
   const rejectRound = useCallback(
-    async (roundId: string, reason: string) => {
+    async (roundId: string, reason: string, soldOut: string[] = []) => {
       try {
-        const snap = await run((expected) => reg.rejectRound(api, roundId, reason, { expectedVersion: expected }), { versioned: false });
+        const snap = await run((expected) => reg.rejectRound(api, roundId, reason, { expectedVersion: expected }, soldOut), { versioned: false });
         void qc.invalidateQueries({ queryKey: ["pos", "rounds"] });
+        if (snap && soldOut.length) refreshStock(qc, snap.outlet_id);
         return snap;
       } catch (e) {
-        fail(e);
-        return null;
+        void qc.invalidateQueries({ queryKey: ["pos", "rounds"] });
+        const snap = await lostDecision(e, roundId);
+        if (snap && soldOut.length) refreshStock(qc, snap.outlet_id);
+        return snap;
       }
     },
-    [api, fail, qc, run],
-  );
-
-  /** Mark products sold out for today (after a QR order was rejected as sold out); the guest menu follows. */
-  const markSoldOut = useCallback(
-    async (productIds: string[]) => {
-      try {
-        const outletId = snapshot()?.outlet_id;
-        if (!outletId) return null;
-        for (const id of productIds) await reg.markSoldOut(api, outletId, id, "today");
-        void qc.invalidateQueries({ queryKey: ["pos", "menu"] });
-        void qc.invalidateQueries({ queryKey: ["pos", "stock", outletId] });
-        return true;
-      } catch (e) {
-        fail(e);
-        return null;
-      }
-    },
-    [api, fail, qc, snapshot],
+    [api, lostDecision, qc, run],
   );
 
   /* ---- Printing ---- */
@@ -1037,11 +1040,10 @@ export function useOrderActions(orderId: string) {
       printRefundReceipt,
       acceptRound,
       rejectRound,
-      markSoldOut,
       reprint,
       role,
     }),
-    [addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, splitEven, splitBySeat, allocate, unsplit, prebill, previewPayment, pay, startTerminal, cancelTerminal, voidPayment, complete, reopen, reopenRefusal, printReceipt, sendReceipt, issueInvoice, openInvoicePdf, getInvoice, mayReadInvoice, quoteRefund, refund, printRefundReceipt, acceptRound, rejectRound, markSoldOut, reprint, role],
+    [addLine, patchLine, removeLine, send, holdAllNew, releaseHeld, changeType, moveTable, attachCustomer, detachCustomer, updateDetails, cancel, markReady, applyDiscount, removeDiscount, splitEven, splitBySeat, allocate, unsplit, prebill, previewPayment, pay, startTerminal, cancelTerminal, voidPayment, complete, reopen, reopenRefusal, printReceipt, sendReceipt, issueInvoice, openInvoicePdf, getInvoice, mayReadInvoice, quoteRefund, refund, printRefundReceipt, acceptRound, rejectRound, reprint, role],
   );
 }
 

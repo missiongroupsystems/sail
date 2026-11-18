@@ -352,8 +352,8 @@ test("S6: the kitchen display's clock and online state fit at 1024 with both pag
           await shot(kds, out(`S6-kds-${viewport.width}-${theme}.png`));
         }
         expect(overflow).toEqual([]);
-        // In portrait (an iPad on its side) the count and chevron stand alone; the word stays for screen readers.
-        expect(words).toEqual(viewport.width > 960 ? [true, true] : [false, false]);
+        // The word shows at every width, portrait too: a bare "7 ›" did not say what it was (review 4 U7).
+        expect(words).toEqual([true, true]);
         await expect(header.getByText(/online/i)).toBeInViewport();
         await ctx.close();
       });
@@ -377,7 +377,7 @@ test("S7: one primary on the order screen while a QR order waits; the approval h
 
     await pairAndSignIn(page, CASHIER_PIN);
     await page.getByRole("button", { name: new RegExp(`^Table ${table.name},`) }).click();
-    const waiting = page.getByText("QR order · waiting for acceptance");
+    const waiting = page.getByText("QR order waiting");
     await expect(waiting).toBeVisible();
     // The dock's Pay is the one primary; the waiting block's Accept is secondary.
     await expect(primaries(page)).toHaveCount(1);

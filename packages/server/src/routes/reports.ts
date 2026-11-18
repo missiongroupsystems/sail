@@ -100,9 +100,9 @@ export function reportRoutes(app: OpenAPIHono<AppEnv>) {
     const q = c.req.valid("query");
     const { outlet, date, z, summary } = await daily(p, id, q.business_date);
     if (q.format === "pdf") {
-      const [settings] = await db().select({ currency: merchantSettings.currency, locale: merchantSettings.locale }).from(merchantSettings).where(eq(merchantSettings.merchantId, p.merchantId)).limit(1);
+      const [settings] = await db().select({ currency: merchantSettings.currency, locale: merchantSettings.locale, taxMode: merchantSettings.taxMode }).from(merchantSettings).where(eq(merchantSettings.merchantId, p.merchantId)).limit(1);
       if (!settings) throw AppError.notFound("merchant settings");
-      const pdf = await dailySummaryPdf({ outletName: outlet.name, businessDate: date, z, summary, money: settings });
+      const pdf = await dailySummaryPdf({ outletName: outlet.name, businessDate: date, z, summary, money: { currency: settings.currency, locale: settings.locale }, taxMode: settings.taxMode });
       return c.body(pdf as unknown as ArrayBuffer, 200, { "content-type": "application/pdf", "content-disposition": `inline; filename="daily-${date}.pdf"` });
     }
     return c.json({ data: { outlet: { id: outlet.id, name: outlet.name }, business_date: date, z_report: z, summary } }, 200);

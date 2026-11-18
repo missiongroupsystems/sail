@@ -9,7 +9,7 @@ import { closeShift, openShift } from "../../api/register";
 import type { Shift, ZReport } from "../../api/types";
 import { usePos } from "../../components/PosContext";
 import { GREY_PILL } from "../../components/styles";
-import { posKeys, useLateJobs, useMerchant, useOpenOrders, useOpenServiceRequests, usePendingRounds, useShifts } from "../../hooks/queries";
+import { posKeys, putShift, useLateJobs, useMerchant, useOpenOrders, useOpenServiceRequests, usePendingRounds, useShifts } from "../../hooks/queries";
 import { useApi } from "../../hooks/useApi";
 import { useCashDenominations } from "../../lib/cash";
 import { roleAtLeast } from "../../hooks/useOrderActions";
@@ -76,7 +76,9 @@ export function ShiftHome({ onShowReport, onCounting }: { onShowReport: () => vo
   const doOpen = async () => {
     setBusy(true);
     try {
-      await openShift(api, { float_cents: total, float_counts: mode === "counts" ? counts : null });
+      const shift = await openShift(api, { float_cents: total, float_counts: mode === "counts" ? counts : null });
+      // The card follows the register's reply, not a read that may be slower or refused (review 4 U6).
+      await putShift(qc, station.outlet_id, shift);
       notify({ text: `Shift open with ${money(total)}`, tone: "success" }, 4000);
       refresh();
       setDigits("");
@@ -161,6 +163,7 @@ export function ShiftHome({ onShowReport, onCounting }: { onShowReport: () => vo
       // Count first, then the register's expected figure (a blind count). Above the merchant's threshold the register refuses the close without a reason.
       const res = await closeShift(api, mine.id, { ...counted, variance_reason: varianceReason });
       setPhase({ kind: "result", shift: res.data, report: res.data.report });
+      await putShift(qc, station.outlet_id, res.data);
       // The next open starts from this shift's float, which the open form names as the last close's, not from the cash
       // just counted (review 2, N11).
       const floatCounts = mine.float_counts && Object.keys(mine.float_counts).length && denominations.length ? mine.float_counts : null;

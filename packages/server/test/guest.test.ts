@@ -308,6 +308,86 @@ describe("Scan to Order", () => {
     expect(await withTransaction(() => revokeStaleSessions())).toBe(0); // the hook already revoked them
   });
 
+  it("a reject as sold out marks the named products sold out in the same request; a Server may not, and only the round's products count (review4 U1)", async () => {
+    await resetGuestRateLimitsForTests();
+    const seated = await call<{ data: Snap }>("POST", "/v1/orders", { token: serverPin, body: { order_id: randomUUID(), order_type: "dine_in", table_id: ids.table12, pax: 2 } });
+    expect(seated.status, JSON.stringify(seated.body)).toBe(201);
+    const g = (await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl12), device_id: "device-soldout-01" }, idempotencyKey: null })).body.data.guest_token;
+    const roundId = randomUUID();
+    expect((await guestCall("POST", "/v1/guest/rounds", g, { round_id: roundId, lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] })).status).toBe(201);
+    const soldOut = async () => (await call<{ data: { product_id: string; sold_out: boolean }[] }>("GET", `/v1/outlets/${A.outletId}/stock`, { token: serverPin })).body.data.filter((r) => r.sold_out).map((r) => r.product_id);
+    // A Server can reject but not mark sold out; a product not in the round is refused; neither changes anything.
+    const byServer = await call<{ code: string }>("POST", `/v1/rounds/${roundId}/reject`, { token: serverPin, body: { reason: "Sold out", sold_out_product_ids: [ids.kopi] } });
+    expect(byServer.status).toBe(403);
+    const stray = await call<{ code: string }>("POST", `/v1/rounds/${roundId}/reject`, { token: cashierPin, body: { reason: "Sold out", sold_out_product_ids: [ids.laksa] } });
+    expect(stray.status).toBe(400);
+    expect(await soldOut()).toEqual([]);
+    const rejected = await call<{ data: Snap; events: { type: string }[] }>("POST", `/v1/rounds/${roundId}/reject`, { token: cashierPin, body: { reason: "Sold out", sold_out_product_ids: [ids.kopi] } });
+    expect(rejected.status, JSON.stringify(rejected.body)).toBe(200);
+    expect(rejected.body.events.map((e) => e.type)).toContain("stock.sold_out");
+    expect(await soldOut()).toEqual([ids.kopi]);
+    // The guest menu stops offering it at once.
+    await resetGuestRateLimitsForTests();
+    const refused = await guestCall<{ code: string }>("POST", "/v1/guest/rounds", g, { round_id: randomUUID(), lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] });
+    expect(refused.status).toBe(422);
+    expect(refused.body.code).toBe("unavailable");
+    // Leave the stock and the table as they were.
+    expect((await call("POST", "/v1/stock/restore", { token: cashierPin, body: { outlet_id: A.outletId, product_id: ids.kopi } })).status).toBe(200);
+    const open = (await call<{ data: Snap[] }>("GET", `/v1/outlets/${A.outletId}/orders?table_id=${ids.table12}&open_only=true`, { token: serverPin })).body.data;
+    for (const o of open) await call("POST", `/v1/orders/${o.id}/cancel`, { token: serverPin, body: { reason: "test" } });
+  });
+
+  it("after a paid order's payment is voided, every phone at the table is back on the open order with its own rounds, a fresh scan from the same phone included (review4 U4)", async () => {
+    await resetGuestRateLimitsForTests();
+    const seated = await call<{ data: Snap }>("POST", "/v1/orders", { token: serverPin, body: { order_id: randomUUID(), order_type: "dine_in", table_id: ids.table12, pax: 2 } });
+    expect(seated.status, JSON.stringify(seated.body)).toBe(201);
+    const scan = async (device: string) => (await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl12), device_id: device }, idempotencyKey: null })).body.data.guest_token;
+    const a = await scan("device-u4-phone-a");
+    const b = await scan("device-u4-phone-b");
+    const roundId = randomUUID();
+    expect((await guestCall("POST", "/v1/guest/rounds", a, { round_id: roundId, lines: [{ line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }] })).status).toBe(201);
+    expect((await call("POST", `/v1/rounds/${roundId}/accept`, { token: serverPin, body: {} })).status).toBe(200);
+    const open = await call<{ data: Snap }>("GET", `/v1/orders/${seated.body.data.id}`, { token: cashierPin });
+    const check = open.body.data.checks[0]!;
+    // Phone A's stream: paid is said once and the stream stays open; the void then comes as a change (no request needed).
+    const gs = await app.request("/v1/guest/stream", { headers: { authorization: `Bearer ${a}` } });
+    expect(gs.status).toBe(200);
+    const frames = readSse(gs, 3, 6000);
+    await new Promise((r) => setTimeout(r, 100));
+    const paid = await call<{ data: Snap & { checks: { payments: { id: string }[] }[] } }>("POST", `/v1/checks/${check.id}/payments`, { token: cashierPin, body: { payment_id: randomUUID(), tender_type_id: ids.cash, amount: check.totals.total } });
+    expect(paid.body.data.status).toBe("completed");
+    for (const g of [a, b]) expect((await guestCall<{ details: { reason: string } }>("GET", "/v1/guest/order", g)).body.details.reason).toBe("order_paid");
+    const paymentId = paid.body.data.checks[0]!.payments[0]!.id;
+    const voided = await call("POST", `/v1/payments/${paymentId}/void`, { token: A.admin.token, body: { reason: "Wrong payment method" } });
+    expect(voided.status, JSON.stringify(voided.body)).toBe(200);
+    const got = await frames;
+    expect(got.map((f) => f.event)).toEqual(["hello", "ended", "change"]);
+    expect(got[1]!.data).toEqual({ reason: "order_paid" });
+    type View = { data: { order: { status: string } | null; rounds: { id: string; mine: boolean }[] } };
+    const viewA = await guestCall<View>("GET", "/v1/guest/order", a);
+    expect(viewA.status, JSON.stringify(viewA.body)).toBe(200);
+    expect(viewA.body.data.order!.status).not.toBe("completed");
+    expect(viewA.body.data.rounds.find((r) => r.id === roundId)).toMatchObject({ mine: true });
+    const viewB = await guestCall<View>("GET", "/v1/guest/order", b);
+    expect(viewB.status).toBe(200);
+    expect(viewB.body.data.rounds.find((r) => r.id === roundId)).toMatchObject({ mine: false });
+    // Phone A scans again (a reload that lost its session): what it sent is still its own.
+    const again = await scan("device-u4-phone-a");
+    expect((await guestCall<View>("GET", "/v1/guest/order", again)).body.data.rounds.find((r) => r.id === roundId)).toMatchObject({ mine: true });
+    // A code rotated after a payment keeps that payment's phones out, even when the order is open again.
+    await call("POST", `/v1/checks/${(await call<{ data: Snap }>("GET", `/v1/orders/${seated.body.data.id}`, { token: cashierPin })).body.data.checks[0]!.id}/payments`, { token: cashierPin, body: { payment_id: randomUUID(), tender_type_id: ids.cash, amount: (await call<{ data: Snap }>("GET", `/v1/orders/${seated.body.data.id}`, { token: cashierPin })).body.data.checks[0]!.totals.total } });
+    const repaid1 = (await call<{ data: Snap & { checks: { payments: { id: string; status: string }[] }[] } }>("GET", `/v1/orders/${seated.body.data.id}`, { token: cashierPin })).body.data;
+    expect(repaid1.status).toBe("completed");
+    qrUrl12 = (await call<{ data: { url: string } }>("POST", `/v1/tables/${ids.table12}/qr/rotate`, { token: A.admin.token, body: {} })).body.data.url;
+    const second = repaid1.checks[0]!.payments.find((x) => x.status === "recorded")!.id;
+    expect((await call("POST", `/v1/payments/${second}/void`, { token: A.admin.token, body: { reason: "Wrong payment method" } })).status).toBe(200);
+    expect((await guestCall("GET", "/v1/guest/order", b)).status).toBe(401);
+    // Paid again: the table is free for the next scenario.
+    const after = await call<{ data: Snap }>("GET", `/v1/orders/${seated.body.data.id}`, { token: cashierPin });
+    const repaid = await call<{ data: Snap }>("POST", `/v1/checks/${after.body.data.checks[0]!.id}/payments`, { token: cashierPin, body: { payment_id: randomUUID(), tender_type_id: ids.cash, amount: after.body.data.checks[0]!.totals.total } });
+    expect(repaid.body.data.status).toBe("completed");
+  });
+
   it("open on first scan lets a guest open the table's order", async () => {
     await call("PATCH", `/v1/channel-links/${ids.qrLink}`, { token: A.admin.token, body: { open_on_first_scan: true, hold_orders: false } });
     const s = await call<{ data: Session }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(qrUrl13), device_id: "device-eeee-0005" }, idempotencyKey: null });

@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
-import { price, registerOperations, type OperationSpec, type OrderType } from "@sail/shared";
+import { and, asc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
+import { price, registerOperations, roleAtLeast, type OperationSpec, type OrderType } from "@sail/shared";
 import { db, markDryRun, settleInvariants, tx, withTransaction, type RequestTx } from "../db/client.js";
 import { channelLinks, guestRounds, guestSessions, orderLines, orders, outlets, printers, serviceRequests, tableQrTokens, tables } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -19,11 +19,11 @@ import { maybeComplete } from "../services/payments.js";
 import { bumpVersion, loadSnapshot, lockOrder, nextOrderNo, orderClosed, paidTotal, pricingLineOf, registerOrderClosedHook, repriceOrder } from "../services/orders.js";
 import { orderTaxSettings } from "../services/tax.js";
 import { createKitchenJobs, insertJob } from "../services/printing.js";
-import { releaseDailyCap } from "./catalogue.js";
+import { markSoldOutUntil, releaseDailyCap } from "./catalogue.js";
 import { registerFloorExtra } from "./orders.js";
 import { LocaleSettingsSchema, localeSettingsFor } from "./org.js";
 import { businessDayInputs, currentBusinessDate, printLocale } from "../services/business-day.js";
-import { businessDateFor } from "../lib/time.js";
+import { businessDateFor, nextCutoff } from "../lib/time.js";
 import { asSystem, bindSessionToTableOrder, checkLimit, createGuestSession, enforceLimit, guestOrderView, openOrderIdForTable, phoneAdmitted, qrSheetPdf, RATE, recordHit, revokeSessionsForOrder, rotateTableToken, toRequest, toRound } from "../services/guest.js";
 
 const op = (o: Partial<OperationSpec> & { op: string; summary: string; description: string }): OperationSpec => ({ tier: "T1", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["guest"], emits: [], mcp: { expose: true, toolsets: ["guest"] }, ...o });
@@ -37,7 +37,7 @@ registerOperations({
   "guest.stream": op({ op: "guest.stream", summary: "Guest live-update stream (SSE)", description: "Signals changes to the table's order (round accepted, order ready). Poll guest.order when there is no order yet.", tier: "T0", mcp: { expose: false, toolsets: [] } }),
   "rounds.list": op({ op: "rounds.list", summary: "QR rounds of an outlet", description: "Pending rounds waiting for acceptance, and recent decided ones.", tier: "T0", minRole: "server", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read"] } }),
   "rounds.accept": op({ op: "rounds.accept", summary: "Accept a held QR round", description: "Fires the round's lines and prints kitchen tickets.", tier: "T2", minRole: "server", dryRun: true, principals: ["staff", "agent"], emits: ["round.accepted", "order.fired", "print_job.created"], mcp: { expose: true, toolsets: ["pos.order"] } }),
-  "rounds.reject": op({ op: "rounds.reject", summary: "Reject a held QR round", description: "Removes the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled (\"QR order rejected\") and the table freed; the guest's phone keeps its session. An order paid while the round waited completes.", tier: "T2", minRole: "server", reasonRequired: true, dryRun: true, principals: ["staff", "agent"], emits: ["round.rejected", "line.voided", "order.cancelled", "order.completed"], mcp: { expose: true, toolsets: ["pos.order"] } }),
+  "rounds.reject": op({ op: "rounds.reject", summary: "Reject a held QR round", description: "Removes the round's lines with the given reason and releases daily caps. When the round's guest opened the order and nothing else is on it (no other item, nothing sent, no payment), the order is cancelled (\"QR order rejected\") and the table freed; the guest's phone keeps its session. An order paid while the round waited completes. `sold_out_product_ids` (staff, Cashier or above) marks those of the round's products sold out for today in the same request, so a lost reply never leaves the round rejected and the item still on sale.", tier: "T2", minRole: "server", reasonRequired: true, dryRun: true, principals: ["staff", "agent"], emits: ["round.rejected", "line.voided", "order.cancelled", "order.completed", "stock.sold_out"], mcp: { expose: true, toolsets: ["pos.order"] } }),
   "service_requests.list": op({ op: "service_requests.list", summary: "Table requests of an outlet", description: "Open and recently acknowledged requests.", tier: "T0", minRole: "server", principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read"] } }),
   "service_requests.acknowledge": op({ op: "service_requests.acknowledge", summary: "Acknowledge a table request", description: "Marks the request done. An agent may acknowledge at most 60 an hour.", agentPerHour: 60, minRole: "server", principals: ["staff", "agent"], emits: ["service_request.acknowledged"], mcp: { expose: true, toolsets: ["pos.order"] } }),
   "tables.rotate_qr_token": op({ op: "tables.rotate_qr_token", summary: "Rotate a table's QR token", description: "Old QR codes for the table stop working. Admin.", tier: "T3", minRole: "admin", principals: ["staff"], emits: ["table.qr_rotated"], mcp: { expose: false, toolsets: [] } }),
@@ -55,6 +55,22 @@ async function orderClosedReason(t: RequestTx, orderId: string | null): Promise<
   return o?.status === "completed" ? "order_paid" : o?.status === "cancelled" ? "order_cancelled" : null;
 }
 
+/** How long after the payment a void or a reopen still brings the table's phones back: past it, the party has left. */
+const REOPEN_BRINGS_PHONES_BACK_MS = 30 * 60_000;
+
+/**
+ * A session the order's payment ended works again when the order is open again (a voided payment, a reopen), within
+ * half an hour of the payment, and only if the table's code has not been rotated since (a rotation after the payment
+ * found the session already ended and could not mark it, review 4 independent review).
+ */
+async function orderOpenAgain(t: RequestTx, s: { orderId: string | null; tableId: string; revokedAt: Date | null; expiresAt: Date }): Promise<boolean> {
+  if (!s.orderId || !s.revokedAt || s.expiresAt.getTime() < Date.now() || Date.now() - s.revokedAt.getTime() > REOPEN_BRINGS_PHONES_BACK_MS) return false;
+  const [rotated] = await t.db.select({ id: tableQrTokens.id }).from(tableQrTokens).where(and(eq(tableQrTokens.tableId, s.tableId), gte(tableQrTokens.rotatedAt, s.revokedAt))).limit(1);
+  if (rotated) return false;
+  const [o] = await t.db.select({ status: orders.status }).from(orders).where(eq(orders.id, s.orderId)).limit(1);
+  return !!o && ["open", "fired", "ready", "out_for_delivery"].includes(o.status);
+}
+
 /* ---- Guest principal ---- */
 registerGuestResolver(async (token: string, t: RequestTx) => {
   const claims = await verifySailToken(token, "guest");
@@ -68,6 +84,13 @@ registerGuestResolver(async (token: string, t: RequestTx) => {
     const closed = await orderClosedReason(t, s.orderId);
     if (closed === "order_paid") throw new AppError("unauthenticated", "The bill is paid", { remedy: "Thank you. Scan the table's QR code to order again.", details: { reason: "order_paid" } });
     if (closed === "order_cancelled") throw new AppError("unauthenticated", "The restaurant cancelled this order", { remedy: "Ask a member of staff, or scan the table's QR code to order again.", details: { reason: "order_cancelled" } });
+    // Ended because the order was paid, and the order is open again (a payment voided, the order reopened): the phone is
+    // back on its order, with its own rounds, as every phone at the table is (review 4 U4). Only the close ends a session
+    // whose order is still open; a rotation and an expiry were answered above and below.
+    if (await orderOpenAgain(t, s)) {
+      await t.db.update(guestSessions).set({ revokedAt: null }).where(eq(guestSessions.id, s.id));
+      s.revokedAt = null;
+    }
   }
   if (!s || s.revokedAt || s.expiresAt.getTime() < Date.now()) throw new AppError("unauthenticated", "This table session has ended", { remedy: "Scan the table's QR code again." });
   await t.db.update(guestSessions).set({ lastSeenAt: new Date() }).where(eq(guestSessions.id, s.id));
@@ -258,16 +281,22 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     if (!orderId) throw AppError.state("No order yet for this table", [], "Ask staff to seat you, then try again.");
     // Paying or closing the order ends its guest sessions in the same transaction (a cancel after a rejected round
     // unbinds them instead), and so does rotating the table's code: the phone hears `ended`, with the reason the
-    // resolver's 401 would give (`code_rotated`), and sends nothing more with the session.
+    // resolver's 401 would give (`code_rotated`), and sends nothing more with the session. After a payment the stream
+    // stays open: a later `change` means the order is open again and the session works.
     const ended = () =>
       withTransaction(async (t) => {
-        const [s] = await t.db.select({ revokedAt: guestSessions.revokedAt, expiresAt: guestSessions.expiresAt, tableId: guestSessions.tableId }).from(guestSessions).where(eq(guestSessions.id, p.sessionId)).limit(1);
+        const [s] = await t.db.select({ revokedAt: guestSessions.revokedAt, expiresAt: guestSessions.expiresAt, tableId: guestSessions.tableId, orderId: guestSessions.orderId }).from(guestSessions).where(eq(guestSessions.id, p.sessionId)).limit(1);
         if (s && !s.revokedAt && s.expiresAt.getTime() >= Date.now()) return null;
         if (s?.revokedAt) {
           const [rotated] = await t.db.select({ id: tableQrTokens.id }).from(tableQrTokens).where(and(eq(tableQrTokens.tableId, s.tableId), eq(tableQrTokens.rotatedAt, s.revokedAt))).limit(1);
           if (rotated) return { reason: "code_rotated" };
           const closed = await orderClosedReason(t, orderId);
           if (closed) return { reason: closed };
+          // Paid, then open again (a payment voided, the order reopened): the session works again, as on its next request.
+          if (await orderOpenAgain(t, s)) {
+            await t.db.update(guestSessions).set({ revokedAt: null }).where(eq(guestSessions.id, p.sessionId));
+            return null;
+          }
         }
         return {};
       });
@@ -281,6 +310,8 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
       { order_id: orderId },
       (n, key) => (key === outletKey ? n.kind === "event" && n.type.startsWith("stock.") : n.kind === "resync" || (n.kind === "event" && (n.aggregate_id === orderId || n.aggregate_id === p.tableId))),
       ended,
+      // Paid: the phone shows its paid screen and keeps listening, so a void or a reopen brings it back without a request.
+      (end) => end.reason === "order_paid",
     );
   });
 
@@ -298,22 +329,30 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     return c.json({ data: rows.map((r) => ({ ...toRound(r), table_name: tableRows.find((t) => t.id === r.tableId)?.name ?? null, lines: r.lineIds.flatMap((lid) => lines.filter((l) => l.id === lid)).map((l) => ({ id: l.id, product_id: l.productId, name: l.name, quantity: l.quantity, modifiers: l.modifiers.map((m) => m.name), notes: l.notes, status: l.status })) })), next_cursor: null }, 200);
   });
 
-  const decide = async (c: Parameters<Parameters<typeof defineOp>[2]>[0], roundId: string, action: "accept" | "reject", reason?: string) => {
+  const decide = async (c: Parameters<Parameters<typeof defineOp>[2]>[0], roundId: string, action: "accept" | "reject", reason?: string, soldOutIds: string[] = []) => {
     const p = c.get("principal");
     const [round] = await db().select().from(guestRounds).where(eq(guestRounds.id, roundId)).limit(1);
     if (!round) throw AppError.notFound("QR order", roundId);
     if (round.status !== "pending") throw AppError.state(`This QR order is already ${round.status}`, []);
+    // Sold out is the stock operation's rule (Cashier or above, staff only: an agent's marks are rate-limited there).
+    const soldOut = [...new Set(soldOutIds)];
+    if (soldOut.length && !(p.type === "staff" && roleAtLeast(p.role, "cashier"))) throw AppError.permission("cashier", false, "stock.mark_sold_out");
     const order = await lockOrder(round.orderId);
     const bd = await businessDayInputs(order.merchantId, order.outletId);
     const now = new Date();
     const events: AppendedEvent[] = [];
     let warnings: string[] = [];
     let cancelled = false;
+    const marked: Awaited<ReturnType<typeof markSoldOutUntil>>[] = [];
     if (action === "accept") {
       await db().update(guestRounds).set({ status: "accepted", decidedAt: now, decidedBy: p.type === "staff" ? p.id : null, decidedByName: "name" in p ? p.name : null }).where(eq(guestRounds.id, roundId));
     } else {
       const lines = await db().select().from(orderLines).where(and(inArray(orderLines.id, round.lineIds), sql`${orderLines.status} <> 'voided'`));
       const today = businessDateFor(now, bd.cutoff, bd.timeZone);
+      const stray = soldOut.find((id) => !lines.some((l) => l.productId === id));
+      if (stray) throw AppError.validation("Only an item in this QR order can be marked sold out with it", { details: { field: "sold_out_product_ids", product_id: stray } });
+      const until = nextCutoff(now, bd.cutoff, bd.timeZone);
+      for (const id of soldOut) marked.push(await markSoldOutUntil(order.merchantId, order.outletId, id, until, today));
       for (const l of lines) {
         await releaseDailyCap(order.outletId, l.productId, l.quantity, today);
         await db().update(orderLines).set({ status: "voided", voidedAt: now, voidReason: `QR order rejected: ${reason}`, voidedBy: p.type === "staff" ? p.id : null, baseAmount: 0, discountAmount: 0, netAmount: 0, feeAmount: 0, taxAmount: 0, taxes: [], total: 0 }).where(eq(orderLines.id, l.id));
@@ -322,6 +361,7 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
       cancelled = await cancelIfEmptyAfterReject(order, now);
     }
     await recordAudit(p, { action: `rounds.${action}`, targetKind: "order", targetId: order.id, outletId: order.outletId, reason: reason ?? null, details: { round_id: roundId, ...(cancelled ? { order_cancelled: true } : {}) } });
+    for (const s of marked) await recordAudit(p, { action: "stock.mark_sold_out", targetKind: "product", targetId: s.product_id, outletId: order.outletId, details: { until: "today", round_id: roundId } });
     if (cancelled) await recordAudit(p, { action: "orders.cancel", targetKind: "order", targetId: order.id, outletId: order.outletId, reason: REJECTED_CANCEL_REASON, details: { round_id: roundId } });
     // Price and check first; events (and the kitchen tickets of an accepted round) last, so the outlet's sequence lock is held briefly.
     await repriceOrder(order.id);
@@ -336,11 +376,12 @@ export function guestRoutes(app: OpenAPIHono<AppEnv>) {
     } else {
       events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "round.rejected", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "rounds.reject", payload: { round_id: roundId, line_ids: round.lineIds }, reason: { text: reason }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
       if (cancelled) events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "order.cancelled", aggregate: { kind: "order", id: order.id, version: order.version }, operationId: "rounds.reject", payload: { reason: REJECTED_CANCEL_REASON, round_id: roundId }, reason: { text: REJECTED_CANCEL_REASON }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
+      for (const s of marked) events.push(await appendEvent({ merchantId: order.merchantId, outletId: order.outletId, type: "stock.sold_out", aggregate: { kind: "product", id: s.product_id }, operationId: "rounds.reject", payload: s, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: bd }, p));
     }
     return c.json({ data: { ...(await loadSnapshot(order.id)), version }, events, warnings }, 200);
   };
   defineOp(app, { op: "rounds.accept", method: "post", path: "/v1/rounds/{id}/accept", tags: ["guest"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 200: jsonResponse(mutationResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, (c) => decide(c, c.req.valid("param").id, "accept"));
-  defineOp(app, { op: "rounds.reject", method: "post", path: "/v1/rounds/{id}/reject", tags: ["guest"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({ reason: untrusted(z.string().min(1).max(200), "reason", "reject_reason") })) }, responses: { 200: jsonResponse(mutationResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, (c) => decide(c, c.req.valid("param").id, "reject", c.req.valid("json").reason));
+  defineOp(app, { op: "rounds.reject", method: "post", path: "/v1/rounds/{id}/reject", tags: ["guest"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({ reason: untrusted(z.string().min(1).max(200), "reason", "reject_reason"), sold_out_product_ids: z.array(z.uuid()).max(50).optional().describe("Products in this round to mark sold out for today with the reject (Cashier or above)") })) }, responses: { 200: jsonResponse(mutationResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, (c) => decide(c, c.req.valid("param").id, "reject", c.req.valid("json").reason, c.req.valid("json").sold_out_product_ids));
 
   defineOp(app, { op: "service_requests.list", method: "get", path: "/v1/outlets/{id}/service-requests", tags: ["guest"], request: { params: z.object({ id: z.uuid() }), query: z.object({ status: z.enum(["open", "acknowledged"]).optional() }) }, responses: { 200: jsonResponse(listResponse(z.record(z.string(), z.unknown()))), ...errorResponses } }, async (c) => {
     const p = c.get("principal");

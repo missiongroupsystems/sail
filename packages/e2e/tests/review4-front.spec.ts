@@ -1,0 +1,502 @@
+import type { Page, Route } from "@playwright/test";
+import { API, devLocal, expect, GUEST, keyIn, pairAndSignIn, register, shot, test, WEB } from "./fixtures";
+
+/**
+ * Fourth review round, front (`fix/review4-front`): a POS action whose answer is lost never spins without end (the
+ * sold-out reject is one request), the paid screen stays for every tender, quick notes and the typed note stay apart,
+ * the guest phone follows the table's state, the QR review sheet, and the shift screen after Open shift. Shots go to
+ * REVIEW4_SHOTS when set (the report's folder), else the test's output.
+ */
+const MANAGER_PIN = "222222";
+const out = (name: string) => (process.env.REVIEW4_SHOTS ? `${process.env.REVIEW4_SHOTS}/${name}` : test.info().outputPath(name));
+
+async function bothThemes(page: Page, name: string) {
+  for (const theme of ["day", "service"] as const) {
+    await page.evaluate((t) => (t === "service" ? (document.documentElement.dataset.theme = "service") : delete document.documentElement.dataset.theme), theme);
+    await page.waitForTimeout(150);
+    await shot(page, out(`${name}-${theme}.png`));
+  }
+  await page.evaluate(() => delete document.documentElement.dataset.theme);
+}
+
+async function products(): Promise<Record<string, string>> {
+  const p = await register<{ data: { id: string; name: string }[] }>("GET", "/v1/products?limit=60");
+  return Object.fromEntries(p.data.map((x) => [x.name, x.id]));
+}
+
+async function bumpAll(orderId: string) {
+  const tickets = await register<{ data: { id: string; order_id: string }[] }>("GET", `/v1/outlets/${devLocal().outletId}/kitchen-tickets`);
+  for (const t of tickets.data.filter((x) => x.order_id === orderId)) await register("POST", `/v1/kitchen-tickets/${t.id}/bump`, {}).catch(() => undefined);
+}
+
+async function rejectWaiting(orderId: string) {
+  const rounds = await register<{ data: { id: string; order_id: string }[] }>("GET", `/v1/outlets/${devLocal().outletId}/rounds?status=pending`);
+  for (const r of rounds.data.filter((x) => x.order_id === orderId)) await register("POST", `/v1/rounds/${r.id}/reject`, { reason: "Test over" }).catch(() => undefined);
+}
+
+/** Leave nothing behind: waiting rounds rejected, the order paid by hand and completed (or cancelled when empty), its tickets bumped. */
+async function settle(orderId: string) {
+  await rejectWaiting(orderId);
+  const o = await register<{ data: { status: string; totals: { total: number }; checks: { id: string; balance: number }[] } }>("GET", `/v1/orders/${orderId}`);
+  if (o.data.status !== "completed" && o.data.status !== "cancelled") {
+    if (o.data.totals.total === 0) await register("POST", `/v1/orders/${orderId}/cancel`, { reason: "Test over" }).catch(() => undefined);
+    else {
+      const tenders = await register<{ data: { id: string; is_cash: boolean; provider?: string | null }[] }>("GET", "/v1/tender-types");
+      const byHand = tenders.data.find((t) => !t.is_cash && !t.provider)!;
+      for (const c of o.data.checks.filter((x) => x.balance > 0)) await register("POST", `/v1/checks/${c.id}/payments`, { payment_id: crypto.randomUUID(), tender_type_id: byHand.id, amount: c.balance });
+      await register("POST", `/v1/orders/${orderId}/complete`, {}).catch(() => undefined);
+    }
+  }
+  await bumpAll(orderId);
+}
+
+/** A dine-in order on a free table and its QR code. */
+async function seatedTable() {
+  const { outletId, brandId } = devLocal();
+  const floor = await register<{ data: { tables: { id: string; name: string; area_id: string; order: unknown }[] } }>("GET", `/v1/outlets/${outletId}/floor`);
+  const area = floor.data.tables[0]!.area_id;
+  const table = floor.data.tables.find((t) => !t.order && t.area_id === area) ?? floor.data.tables.find((t) => !t.order)!;
+  const order = await register<{ data: { id: string; order_no: string } }>("POST", "/v1/orders", { order_id: crypto.randomUUID(), order_type: "dine_in", table_id: table.id, pax: 2, outlet_id: outletId, brand_id: brandId });
+  const qr = await register<{ data: { url: string } }>("POST", `/v1/tables/${table.id}/qr/rotate`, {});
+  return { order: order.data, table, token: qr.data.url.split("/t/")[1]! };
+}
+
+/** A waiting round from a phone session on the table (made through the API). */
+async function guestRound(token: string, device: string, lines: { product_id: string; quantity: number }[]) {
+  const s = await fetch(`${API}/v1/guest/sessions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token, device_id: device, guest_name: "Ben" }) });
+  expect(s.status, await s.clone().text()).toBe(201);
+  const guest = ((await s.json()) as { data: { guest_token: string } }).data.guest_token;
+  const roundId = crypto.randomUUID();
+  const r = await fetch(`${API}/v1/guest/rounds`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${guest}`, "idempotency-key": crypto.randomUUID() }, body: JSON.stringify({ round_id: roundId, lines: lines.map((l) => ({ line_id: crypto.randomUUID(), ...l })) }) });
+  expect(r.status, await r.clone().text()).toBe(201);
+  return { roundId, guest };
+}
+
+const soldOutNow = async () => (await register<{ data: { product_id: string; sold_out: boolean }[] }>("GET", `/v1/outlets/${devLocal().outletId}/stock`)).data.filter((s) => s.sold_out).map((s) => s.product_id);
+const roundStatus = async (roundId: string) => {
+  for (const status of ["pending", "rejected"] as const) {
+    const rounds = await register<{ data: { id: string }[] }>("GET", `/v1/outlets/${devLocal().outletId}/rounds?status=${status}`);
+    if (rounds.data.some((r) => r.id === roundId)) return status;
+  }
+  return "other";
+};
+
+/** Open the Now card's Reject sheet for the table's round and pick Sold out with one item ticked. */
+async function soldOutSheet(page: Page, tableName: string, item?: string) {
+  const rail = page.getByRole("complementary", { name: "Now" });
+  await rail.getByRole("listitem").filter({ hasText: `Table ${tableName} · QR order` }).first().getByRole("button", { name: "Reject" }).click();
+  const sheet = page.getByRole("dialog", { name: "Reject QR order" });
+  await sheet.getByRole("button", { name: "Sold out", exact: true }).click();
+  // One item is ticked already; with more, staff say which.
+  if (item) await sheet.getByRole("group", { name: "Which items are sold out?" }).getByText(item).click();
+  return sheet;
+}
+
+test.describe("U1: a lost answer", () => {
+  test("Reject as sold out is one request: when its answer is dropped, the POS asks again under the same key, the sheet closes and the item is sold out, done once", async ({ page, watch }) => {
+    test.setTimeout(300_000);
+    // The dropped answers on purpose.
+    watch.allowConsole(/ERR_CONNECTION_RESET/);
+    const ids = await products();
+    const { order, table, token } = await seatedTable();
+    const { roundId } = await guestRound(token, "review4-u1-a", [
+      { product_id: ids["Otah"]!, quantity: 1 },
+      { product_id: ids["Popiah"]!, quantity: 1 },
+    ]);
+    try {
+      await pairAndSignIn(page, MANAGER_PIN);
+      const sent: { key: string | null; body: string | null }[] = [];
+      let replayed: string | null = null;
+      await page.route("**/v1/rounds/*/reject", async (route: Route) => {
+        sent.push({ key: route.request().headers()["idempotency-key"] ?? null, body: route.request().postData() });
+        if (sent.length === 1) {
+          // The register does it, and its answer never reaches the iPad.
+          await route.fetch();
+          await route.abort("connectionreset");
+          return;
+        }
+        const res = await route.fetch();
+        replayed = res.headers()["idempotent-replayed"] ?? null;
+        await route.fulfill({ response: res });
+      });
+      const stockCalls: string[] = [];
+      page.on("request", (r) => {
+        if (r.url().includes("/v1/stock/")) stockCalls.push(r.url());
+      });
+      const sheet = await soldOutSheet(page, table.name, "Otah");
+      await sheet.getByRole("button", { name: "Reject as sold out" }).click();
+      await expect(sheet).toHaveCount(0);
+      // One action, one request: the reject carries the sold-out item; no second call marks it.
+      expect(sent).toHaveLength(2);
+      expect(sent[1]!.key).toBe(sent[0]!.key);
+      expect(JSON.parse(sent[0]!.body!)).toEqual({ reason: "Sold out", sold_out_product_ids: [ids["Otah"]] });
+      expect(replayed).toBe("true");
+      expect(stockCalls).toEqual([]);
+      expect(await roundStatus(roundId)).toBe("rejected");
+      expect(await soldOutNow()).toContain(ids["Otah"]!);
+      expect(await soldOutNow()).not.toContain(ids["Popiah"]!);
+    } finally {
+      await register("POST", "/v1/stock/restore", { outlet_id: devLocal().outletId, product_id: ids["Otah"]! }).catch(() => undefined);
+      await settle(order.id);
+    }
+  });
+
+  test("a reject that never reaches the register says Not sent and stays ready to try again; the try goes through", async ({ page, watch }) => {
+    test.setTimeout(300_000);
+    // The dropped answers on purpose.
+    watch.allowConsole(/ERR_CONNECTION_RESET/);
+    const ids = await products();
+    const { order, table, token } = await seatedTable();
+    const { roundId } = await guestRound(token, "review4-u1-b", [{ product_id: ids["Otah"]!, quantity: 1 }]);
+    try {
+      await pairAndSignIn(page, MANAGER_PIN);
+      let drop = true;
+      await page.route("**/v1/rounds/*/reject", async (route: Route) => {
+        if (drop) return route.abort("connectionreset");
+        await route.continue();
+      });
+      const rail = page.getByRole("complementary", { name: "Now" });
+      await rail.getByRole("listitem").filter({ hasText: `Table ${table.name} · QR order` }).first().getByRole("button", { name: "Reject" }).click();
+      const sheet = page.getByRole("dialog", { name: "Reject QR order" });
+      await sheet.getByRole("button", { name: "Sold out", exact: true }).click();
+      const button = sheet.getByRole("button", { name: "Reject as sold out" });
+      await button.click();
+      await expect(page.getByText("Not sent", { exact: true })).toBeVisible();
+      await expect(page.getByText("The QR order is still waiting. Try again.")).toBeVisible();
+      await expect(button).toBeEnabled();
+      await bothThemes(page, "U1-not-sent");
+      expect(await roundStatus(roundId)).toBe("pending");
+      expect(await soldOutNow()).not.toContain(ids["Otah"]!);
+      drop = false;
+      await button.click();
+      await expect(sheet).toHaveCount(0);
+      expect(await roundStatus(roundId)).toBe("rejected");
+      expect(await soldOutNow()).toContain(ids["Otah"]!);
+    } finally {
+      await register("POST", "/v1/stock/restore", { outlet_id: devLocal().outletId, product_id: ids["Otah"]! }).catch(() => undefined);
+      await settle(order.id);
+    }
+  });
+
+  test("a reject the register does but never answers, even when asked again, is abandoned in bounded time; the POS re-reads, sees it done and closes the sheet", async ({ page, watch }) => {
+    test.setTimeout(300_000);
+    // The dropped answers on purpose.
+    watch.allowConsole(/ERR_CONNECTION_RESET/);
+    const ids = await products();
+    const { order, table, token } = await seatedTable();
+    const { roundId } = await guestRound(token, "review4-u1-c", [{ product_id: ids["Otah"]!, quantity: 1 }]);
+    try {
+      await pairAndSignIn(page, MANAGER_PIN);
+      let calls = 0;
+      await page.route("**/v1/rounds/*/reject", async (route: Route) => {
+        calls++;
+        // The register does it; neither answer ever arrives (the route is never fulfilled).
+        if (calls === 1) await route.fetch();
+      });
+      const sheet = await soldOutSheet(page, table.name);
+      const started = Date.now();
+      await sheet.getByRole("button", { name: "Reject as sold out" }).click();
+      await expect(sheet).toHaveCount(0, { timeout: 40_000 });
+      expect(Date.now() - started).toBeLessThan(35_000);
+      expect(calls).toBe(2);
+      expect(await roundStatus(roundId)).toBe("rejected");
+      expect(await soldOutNow()).toContain(ids["Otah"]!);
+    } finally {
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+      await register("POST", "/v1/stock/restore", { outlet_id: devLocal().outletId, product_id: ids["Otah"]! }).catch(() => undefined);
+      await settle(order.id);
+    }
+  });
+});
+
+/** Seat a free table for two, add a Mee Goreng, send it and open the pay screen. */
+async function sentToPay(page: Page): Promise<string> {
+  await page.getByRole("button", { name: "Floor", exact: true }).click();
+  const free = page.getByRole("button", { name: /^Table \d+, Free/ }).first();
+  const name = /^Table (\d+),/.exec((await free.getAttribute("aria-label")) ?? (await free.innerText()))?.[1];
+  await free.click();
+  await page.getByRole("button", { name: "2 guests", exact: true }).click();
+  await page.getByRole("button", { name: /^Mee Goreng,/ }).click();
+  await page.getByRole("button", { name: "Send 1 to kitchen" }).click();
+  await expect(page.getByRole("region", { name: "Order" }).getByText(/^Sent /)).toBeVisible();
+  await page.getByRole("button", { name: /^Pay \$/ }).click();
+  await expect(page.getByRole("heading", { name: "Take payment" })).toBeVisible();
+  const floor = await register<{ data: { tables: { name: string; order: { id: string } | null }[] } }>("GET", `/v1/outlets/${devLocal().outletId}/floor`);
+  return floor.data.tables.find((t) => t.name === name)!.order!.id;
+}
+
+test.describe("U2: the paid screen stays for every tender", () => {
+  const tenders = [
+    {
+      name: "cash",
+      pay: async (page: Page) => {
+        await page.getByRole("group", { name: "Payment method" }).getByRole("button", { name: "Cash", exact: true }).click();
+        await page.getByRole("button", { name: /^Take \$[\d.]+ cash$/ }).click();
+      },
+    },
+    {
+      name: "card",
+      pay: async (page: Page) => {
+        await page.getByRole("group", { name: "Payment method" }).getByRole("button", { name: "Card", exact: true }).click();
+        await page.getByRole("button", { name: /^Take \$[\d.]+ by Card$/ }).click();
+      },
+    },
+    {
+      name: "terminal",
+      pay: async (page: Page) => {
+        const methods = page.getByRole("group", { name: "Payment method" });
+        await methods.getByRole("button", { name: /^More payment methods/ }).click();
+        await methods.getByRole("button", { name: "Card (terminal)", exact: true }).click();
+        await page.getByRole("button", { name: /^Send \$[\d.]+ to the terminal/ }).click();
+      },
+    },
+  ];
+  for (const t of tenders) {
+    test(`${t.name}: the last bill's paid screen waits 10 s for the cashier, with its receipt, void and invoice`, async ({ page }) => {
+      test.setTimeout(300_000);
+      const { outletId, stationId } = devLocal();
+      // Cash needs a shift on the station: one already open (another spec's) is used and left open.
+      const already = (await register<{ data: { id: string; station_id: string | null }[] }>("GET", `/v1/outlets/${outletId}/shifts?status=open`)).data.some((x) => x.station_id === stationId || x.station_id === null);
+      const shift = t.name === "cash" && !already ? await register<{ data: { id: string } }>("POST", "/v1/shifts", { outlet_id: outletId, station_id: stationId, float_cents: 10_000 }) : null;
+      await pairAndSignIn(page, MANAGER_PIN);
+      const orderId = await sentToPay(page);
+      try {
+        await t.pay(page);
+        await expect(page.getByText(/^Paid · Bill 1 · /)).toBeVisible({ timeout: 30_000 });
+        await page.waitForTimeout(10_000);
+        await expect(page.getByText(/^Paid · Bill 1 · /)).toBeVisible();
+        await expect(page.getByText("Every bill is paid. The order is done.")).toBeVisible();
+        for (const name of ["Void payment", "Get invoice"]) await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+        await expect(page.getByRole("button", { name: /No receipt|Done/ }).first()).toBeVisible();
+        if (t.name === "terminal") await bothThemes(page, "U2-paid-terminal");
+      } finally {
+        await settle(orderId);
+        if (shift) await register("POST", `/v1/shifts/${shift.data.id}/close`, { counted_cash_cents: 10_000, variance_reason: "End of an end-to-end test" }).catch(() => undefined);
+      }
+    });
+  }
+});
+
+test("U3: a quick note and the typed note stay apart: the chip stays on, the note reads with a separator on the order, the kitchen ticket, the kitchen display and the guest view", async ({ browser, page, watch }) => {
+  test.setTimeout(300_000);
+  const { outletId } = devLocal();
+  const { order, table, token } = await seatedTable();
+  const note = "Allergy: see note · Peanut allergy";
+  const kdsCtx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  try {
+    await pairAndSignIn(page, MANAGER_PIN);
+    await page.getByRole("button", { name: new RegExp(`^Table ${table.name},`) }).click();
+    await page.getByRole("button", { name: /^Mee Goreng,/ }).click();
+    const orderPanel = page.getByRole("region", { name: "Order" });
+    await orderPanel.getByRole("button", { name: /Mee Goreng/ }).first().click();
+    const sheet = page.getByRole("dialog", { name: "Mee Goreng" });
+    const chip = sheet.getByRole("button", { name: "Allergy: see note", exact: true });
+    await chip.click();
+    await expect(chip).toHaveAttribute("aria-pressed", "true");
+    const field = sheet.getByRole("textbox", { name: "Note" });
+    await field.click();
+    await page.keyboard.type("Peanut allergy");
+    // Typing goes into the note's own part: nothing runs into the chip, which stays on.
+    await expect(field).toHaveValue("Peanut allergy");
+    await expect(chip).toHaveAttribute("aria-pressed", "true");
+    await bothThemes(page, "U3-line-sheet");
+    await sheet.getByRole("button", { name: "Save changes" }).click();
+    await expect(sheet).toHaveCount(0);
+    await expect(orderPanel.getByText(note)).toBeVisible();
+    // Edited again: the chip shows chosen and the field holds only the typed part.
+    await orderPanel.getByRole("button", { name: /Mee Goreng/ }).first().click();
+    await expect(chip).toHaveAttribute("aria-pressed", "true");
+    await expect(field).toHaveValue("Peanut allergy");
+    await page.keyboard.press("Escape");
+    const snap = await register<{ data: { lines: { notes: string | null; status: string }[] } }>("GET", `/v1/orders/${order.id}`);
+    expect(snap.data.lines.filter((l) => l.status !== "voided").map((l) => l.notes)).toEqual([note]);
+    await page.getByRole("button", { name: "Send 1 to kitchen" }).click();
+    await expect(orderPanel.getByText(/^Sent /)).toBeVisible();
+    await shot(page, out("U3-order-line-day.png"));
+    // The kitchen ticket as the register keeps it, and the kitchen display.
+    const tickets = await register<{ data: { order_id: string; lines: { notes: string | null }[] }[] }>("GET", `/v1/outlets/${outletId}/kitchen-tickets`);
+    expect(tickets.data.filter((t) => t.order_id === order.id).flatMap((t) => t.lines.map((l) => l.notes))).toEqual([note]);
+    const stations = await register<{ data: { id: string; kind: string }[] }>("GET", `/v1/outlets/${outletId}/stations`);
+    const display = stations.data.find((s) => s.kind === "display")!;
+    const code = await register<{ data: { code: string } }>("POST", `/v1/stations/${display.id}/pairing-code`, {});
+    const kds = await kdsCtx.newPage();
+    watch.attach(kds);
+    await kds.goto(`${WEB}/kds`);
+    await expect(kds.getByRole("heading", { name: "Pair this screen to a station" })).toBeVisible({ timeout: 180_000 });
+    await keyIn(kds, "PIN keys", code.data.code);
+    await kds.getByRole("button", { name: "Pair this screen" }).click();
+    await expect(kds.getByText(note).first()).toBeVisible({ timeout: 30_000 });
+    // The guest's view of the table.
+    const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    watch.attach(phone);
+    await phone.goto(`${GUEST}/t/${token}#table`);
+    await expect(phone.getByText(`Note: ${note}`)).toBeVisible({ timeout: 120_000 });
+    await shot(phone, out("U3-guest-table.png"));
+    await phone.close();
+  } finally {
+    await kdsCtx.close();
+    await settle(order.id);
+  }
+});
+
+/** The phone's guest token, read from the page's own session. */
+async function phoneToken(phone: Page): Promise<string> {
+  return phone.evaluate(() => {
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const v = sessionStorage.getItem(sessionStorage.key(i)!) ?? "";
+      if (v.includes("guest_token")) return (JSON.parse(v) as { guest_token: string }).guest_token;
+    }
+    throw new Error("no guest session on the page");
+  });
+}
+
+test("U4: two phones follow the table: Send shows the round at once, both get the paid screen, both leave it when the payment is voided with their rounds kept, and a reload when paid is the same paid screen", async ({ browser }) => {
+  test.setTimeout(400_000);
+  const { order, token } = await seatedTable();
+  const ids = await products();
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const phoneA = await ctx.newPage();
+  const ctxB = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const phoneB = await ctxB.newPage();
+  const noOrders = (p: Page) => p.getByText("No orders have been sent from this phone yet.");
+  const paidScreen = (p: Page) => p.getByText("Your bill is paid.");
+  try {
+    for (const p of [phoneA, phoneB]) {
+      await p.goto(`${GUEST}/t/${token}`);
+      await expect(p.getByRole("button", { name: /^Kopi,/ })).toBeVisible({ timeout: 120_000 });
+    }
+    // Phone A sends from the screen: its round is there at once, never "No orders" first.
+    await phoneA.getByRole("button", { name: /^Kopi,/ }).click();
+    await phoneA.getByRole("dialog", { name: "Kopi" }).getByRole("button", { name: /^Add to order/ }).click();
+    await phoneA.getByRole("button", { name: /^View your order, 1 item/ }).click();
+    await phoneA.getByRole("button", { name: /^Send/ }).first().click();
+    await expect(phoneA.getByRole("heading", { name: "Order sent" })).toBeVisible();
+    for (let i = 0; i < 8; i++) {
+      await expect(noOrders(phoneA)).toHaveCount(0);
+      await phoneA.waitForTimeout(500);
+    }
+    await shot(phoneA, out("U4-phone-after-send.png"));
+    const rounds = await register<{ data: { id: string; order_id: string }[] }>("GET", `/v1/outlets/${devLocal().outletId}/rounds?status=pending`);
+    const roundId = rounds.data.find((r) => r.order_id === order.id)!.id;
+    await register("POST", `/v1/rounds/${roundId}/accept`, {});
+    // On the phone the round is not done while its kitchen ticket is new.
+    const view = await fetch(`${API}/v1/guest/order`, { headers: { authorization: `Bearer ${await phoneToken(phoneA)}` } }).then((r) => r.json() as Promise<{ data: { rounds: { id: string; kitchen_done: boolean }[] } }>);
+    expect(view.data.rounds.find((r) => r.id === roundId)!.kitchen_done).toBe(false);
+    // Phone B looks at the table.
+    await phoneB.goto(`${GUEST}/t/${token}#table`);
+    await expect(phoneB.getByText("Kopi").first()).toBeVisible({ timeout: 60_000 });
+
+    // Paid in full at the POS: both phones show the paid screen.
+    const tenders = await register<{ data: { id: string; is_cash: boolean; provider?: string | null }[] }>("GET", "/v1/tender-types");
+    const byHand = tenders.data.find((t) => !t.is_cash && !t.provider)!;
+    const pay = async () => {
+      const o = await register<{ data: { checks: { id: string; balance: number }[] } }>("GET", `/v1/orders/${order.id}`);
+      const c = o.data.checks.find((x) => x.balance > 0)!;
+      const res = await register<{ data: { checks: { id: string; payments: { id: string; status: string }[] }[] } }>("POST", `/v1/checks/${c.id}/payments`, { payment_id: crypto.randomUUID(), tender_type_id: byHand.id, amount: c.balance });
+      return res.data.checks.find((x) => x.id === c.id)!.payments.find((p) => p.status === "recorded")!.id;
+    };
+    const paymentId = await pay();
+    for (const p of [phoneA, phoneB]) await expect(paidScreen(p)).toBeVisible({ timeout: 20_000 });
+    await shot(phoneB, out("U4-phone-paid.png"));
+
+    // Staff void the payment: both phones are back on the open order, phone A with its own round.
+    await register("POST", `/v1/payments/${paymentId}/void`, { reason: "Wrong payment method" });
+    for (const p of [phoneA, phoneB]) await expect(paidScreen(p)).toHaveCount(0, { timeout: 30_000 });
+    await phoneA.goto(`${GUEST}/t/${token}#status`);
+    await expect(phoneA.getByRole("heading", { name: "Order sent" }).or(phoneA.getByText(/Order sent|Preparing|accepted/i).first())).toBeVisible({ timeout: 60_000 });
+    await expect(noOrders(phoneA)).toHaveCount(0);
+    await shot(phoneA, out("U4-phone-after-void-reload.png"));
+
+    // Paid again; a reload on the paid screen is the same paid screen, never the error page.
+    await pay();
+    for (const p of [phoneA, phoneB]) await expect(paidScreen(p)).toBeVisible({ timeout: 20_000 });
+    await phoneB.reload();
+    await expect(paidScreen(phoneB)).toBeVisible({ timeout: 60_000 });
+    await expect(phoneB.getByRole("button", { name: "Order again" })).toBeVisible();
+    await expect(phoneB.getByRole("button", { name: "Try again" })).toHaveCount(0);
+    await shot(phoneB, out("U4-phone-paid-after-reload.png"));
+    // Reloaded on the paid screen it has no stream: voided now, it learns it when the phone is shown again.
+    const o2 = await register<{ data: { checks: { payments: { id: string; status: string }[] }[] } }>("GET", `/v1/orders/${order.id}`);
+    const second = o2.data.checks.flatMap((c) => c.payments).find((p) => p.status === "recorded")!.id;
+    await register("POST", `/v1/payments/${second}/void`, { reason: "Wrong payment method" });
+    await phoneB.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(paidScreen(phoneB)).toHaveCount(0, { timeout: 20_000 });
+  } finally {
+    await ctx.close();
+    await ctxB.close();
+    await settle(order.id);
+  }
+});
+
+test("U5: with only a waiting QR order, the order's primary accepts it, sends it to the kitchen and stays on the order; Pay's sheet lists the round's lines", async ({ page }) => {
+  test.setTimeout(300_000);
+  const ids = await products();
+  const { order, table, token } = await seatedTable();
+  try {
+    await guestRound(token, "review4-u5-a", [{ product_id: ids["Otah"]!, quantity: 2 }]);
+    await pairAndSignIn(page, MANAGER_PIN);
+    await page.getByRole("button", { name: new RegExp(`^Table ${table.name},`) }).click();
+    const panel = page.getByRole("region", { name: "Order" });
+    await expect(panel.getByText("QR order waiting")).toBeVisible();
+    // One line next to Reject, not three.
+    const header = panel.getByText("QR order waiting");
+    const box = await header.boundingBox();
+    expect(box!.height).toBeLessThan(24);
+    const accept = page.getByRole("button", { name: "Accept the QR order and send it to the kitchen" });
+    await expect(accept).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Accept", exact: true })).toHaveCount(0);
+    await bothThemes(page, "U5-order-only-waiting");
+    await accept.click();
+    await expect(panel.getByText("QR order waiting")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Take payment" })).toHaveCount(0);
+    await expect(panel.getByText(/^Sent /)).toBeVisible();
+    // A second round while there is something to pay: Pay asks about it, and its sheet lists what is accepted.
+    await guestRound(token, "review4-u5-b", [{ product_id: ids["Popiah"]!, quantity: 1 }]);
+    await expect(panel.getByText("QR order waiting")).toBeVisible({ timeout: 15_000 });
+    await page.getByRole("button", { name: /^Pay / }).first().click();
+    const sheet = page.getByRole("dialog", { name: "A QR order is waiting" });
+    await expect(sheet.getByRole("list", { name: "Items in this order" })).toContainText("Popiah");
+    await bothThemes(page, "U5-pay-waiting-sheet");
+    await sheet.getByRole("button", { name: "Accept", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Take payment" })).toBeVisible();
+  } finally {
+    // Off the pay screen first: its dry run must not race the payment that settles the order.
+    await page.goto("about:blank");
+    await settle(order.id);
+  }
+});
+
+test("U6: after Open shift the card shows the opened shift from the register's reply, even when the next reads are refused", async ({ page, watch }) => {
+  test.setTimeout(300_000);
+  const { outletId, stationId } = devLocal();
+  watch.allow({ status: 503, url: /\/v1\/outlets\/[^/]+\/shifts/, why: "a busy register refuses the reads after the open, on purpose" });
+  // A shift another spec left open on this station is closed for the test and opened again after, as it was.
+  const before = (await register<{ data: { id: string; station_id: string | null; float_cents: number }[] }>("GET", `/v1/outlets/${outletId}/shifts?status=open`)).data.filter((x) => x.station_id === stationId);
+  for (const x of before) await register("POST", `/v1/shifts/${x.id}/close`, { counted_cash_cents: x.float_cents, variance_reason: "End of an end-to-end test" });
+  await pairAndSignIn(page, MANAGER_PIN);
+  await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Shift", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Open shift" })).toBeVisible();
+  let refuse = false;
+  await page.route(/\/v1\/outlets\/[^/]+\/shifts/, async (route) => {
+    if (refuse && route.request().method() === "GET") return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ code: "overloaded", message: "The server is busy", remedy: "Retry in a moment." }) });
+    await route.continue();
+  });
+  try {
+    await page.getByRole("button", { name: "Count notes and coins" }).click();
+    await page.getByRole("textbox", { name: "$100 count" }).fill("1");
+    refuse = true;
+    await page.getByRole("button", { name: "Open shift with $100.00" }).click();
+    await expect(page.getByRole("heading", { name: "Shift open" })).toBeVisible({ timeout: 5_000 });
+    await page.waitForTimeout(7_000);
+    await expect(page.getByRole("heading", { name: "Shift open" })).toBeVisible();
+    await expect(page.getByText("No shift is open on this station")).toHaveCount(0);
+    await bothThemes(page, "U6-shift-open");
+    refuse = false;
+  } finally {
+    refuse = false;
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    const open = await register<{ data: { id: string; station_id: string | null }[] }>("GET", `/v1/outlets/${outletId}/shifts?status=open`);
+    for (const s of open.data.filter((x) => x.station_id === stationId)) await register("POST", `/v1/shifts/${s.id}/close`, { counted_cash_cents: 10_000, variance_reason: "End of an end-to-end test" }).catch(() => undefined);
+    for (const x of before) await register("POST", "/v1/shifts", { outlet_id: outletId, station_id: stationId, float_cents: x.float_cents }).catch(() => undefined);
+  }
+});

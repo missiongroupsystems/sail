@@ -1,14 +1,15 @@
 "use client";
 
-import { Button, Money, QuantityStepper, ReasonPicker, Sheet, sortTaxes, TextField } from "@sail/ui";
+import { Button, Money, QuantityStepper, ReasonPicker, Sheet, sortTaxes } from "@sail/ui";
 import { Fragment, useEffect, useState } from "react";
 import type { OrderSnapshot, SnapshotLine } from "../api/types";
 import { updateLine } from "../api/register";
 import { useApi } from "../hooks/useApi";
 import { useVoidReasons } from "../hooks/queries";
 import type { useOrderActions } from "../hooks/useOrderActions";
-import { ModifierPicker, QUICK_NOTES, selectionFromLine, toModifiers, unmetRequirement, type Selection } from "./ModifierPicker";
+import { ModifierPicker, selectionFromLine, toModifiers, unmetRequirement, type Selection } from "./ModifierPicker";
 import { usePos } from "./PosContext";
+import { NO_NOTE, joinNote, QuickNotes, splitNote, type NoteParts } from "./QuickNotes";
 import { GREY_PILL } from "./styles";
 
 export type LineSheetProps = {
@@ -26,7 +27,8 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
   const { menu, station, offline } = usePos();
   const reasons = useVoidReasons();
   const [quantity, setQuantity] = useState(1);
-  const [notes, setNotes] = useState("");
+  const [noteParts, setNoteParts] = useState<NoteParts>(NO_NOTE);
+  const notes = joinNote(noteParts) ?? "";
   const [seat, setSeat] = useState<number | null>(null);
   const [selection, setSelection] = useState<Selection>({});
   const [removing, setRemoving] = useState(false);
@@ -76,7 +78,7 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
     setPriced(null);
     if (!line) return;
     setQuantity(line.quantity);
-    setNotes(line.notes ?? "");
+    setNoteParts(splitNote(line.notes));
     setSeat(line.seat_no);
     setSelection(selectionFromLine(line));
     setRemoving(false);
@@ -89,13 +91,15 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
   const unmet = canEditModifiers ? unmetRequirement(menu, product, selection) : null;
   const seats = Math.max(order.pax ?? 0, ...order.lines.map((l) => l.seat_no ?? 0), seat ?? 0, 1);
 
-  const changed = quantity !== line.quantity || (notes.trim() || null) !== (line.notes ?? null) || seat !== line.seat_no || (canEditModifiers && JSON.stringify(toModifiers(menu, product, selection).map((m) => m.product_id)) !== JSON.stringify(line.modifiers.map((m) => m.product_id)));
+  // The saved note as these parts would write it: an old "No ice, Less sugar" opened and not touched is not a change.
+  const unchangedNote = joinNote(splitNote(line.notes));
+  const changed = quantity !== line.quantity || (notes.trim() || null) !== unchangedNote || seat !== line.seat_no || (canEditModifiers && JSON.stringify(toModifiers(menu, product, selection).map((m) => m.product_id)) !== JSON.stringify(line.modifiers.map((m) => m.product_id)));
 
   const save = async () => {
     setBusy(true);
     const patch: Parameters<typeof actions.patchLine>[1] = {};
     if (quantity !== line.quantity) patch.quantity = quantity;
-    if ((notes.trim() || null) !== (line.notes ?? null)) patch.notes = notes.trim() || null;
+    if ((notes.trim() || null) !== unchangedNote) patch.notes = notes.trim() || null;
     if (seat !== line.seat_no) patch.seat_no = seat;
     if (canEditModifiers) patch.modifiers = toModifiers(menu, product, selection).map((m) => ({ group_id: m.group_id, product_id: m.product_id, quantity: 1 }));
     const snap = await actions.patchLine(line.id, patch);
@@ -118,9 +122,6 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
     if (snap) onClose();
   };
 
-  // A quick note is a toggle: on once it is in the note (and shown so, filled), off again on a second tap (final2 B-4).
-  const noteHas = (chip: string) => notes.split(", ").includes(chip);
-  const addNote = (chip: string) => setNotes((n) => (n.split(", ").includes(chip) ? n.split(", ").filter((x) => x !== chip).join(", ") : n ? `${n}, ${chip}` : chip));
 
   return (
     <Sheet labelledClose
@@ -230,14 +231,7 @@ export function LineSheet({ order, line, onClose, actions }: LineSheetProps) {
           {!sent ? (
             <section>
               <h3 className="mb-2 text-[16px] font-medium text-ink">Notes</h3>
-              <div className="mb-2 flex flex-wrap gap-2">
-                {QUICK_NOTES.map((c) => (
-                  <Button key={c} size="md" variant={noteHas(c) ? "primary" : "quiet"} aria-pressed={noteHas(c)} onPress={() => addNote(c)} className={(noteHas(c) ? "" : GREY_PILL + " ") + "text-[14.5px] font-normal"}>
-                    {c}
-                  </Button>
-                ))}
-              </div>
-              <TextField aria-label="Note" value={notes} onChange={setNotes} placeholder="Note for the kitchen" inputClassName="min-h-14 text-line" maxLength={200} />
+              <QuickNotes value={noteParts} onChange={setNoteParts} />
             </section>
           ) : line.notes ? (
             <p className="text-body text-ink-2 italic">{line.notes}</p>

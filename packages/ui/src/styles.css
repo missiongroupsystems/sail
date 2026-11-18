@@ -728,21 +728,8 @@
 }
 
 /* ---- POS (v0.6 to v0.8): payment done screen and print alerts -------------
- * The auto-return bar on the receipt chooser (back to the floor
- * after 4 s) and the on-screen QR, which must stay crisp when scaled.
+ * The on-screen QR, which must stay crisp when scaled.
  */
-@keyframes pos-countdown {
-  from {
-    transform: scaleX(1);
-  }
-  to {
-    transform: scaleX(0);
-  }
-}
-.pos-countdown {
-  transform-origin: left;
-  animation: pos-countdown var(--pos-countdown-ms, 4000ms) linear forwards;
-}
 .pos-qr {
   image-rendering: pixelated;
 }

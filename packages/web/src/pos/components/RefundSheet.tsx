@@ -265,7 +265,7 @@ export function RefundSheet({ isOpen, onClose, order, actions, initialCheckId }:
                 {refundable.map((c) => (
                   <AriaButton key={c.id} onPress={() => setCheckId(c.id)} aria-pressed={checkId === c.id} className={`press pos-touch flex min-h-16 w-full items-center justify-between gap-3 rounded-tile bg-surface px-4 text-left text-ink outline-none data-[pressed]:scale-[0.98] data-[focus-visible]:outline-2 data-[focus-visible]:outline-focus ${checkId === c.id ? "shadow-[inset_0_0_0_2px_var(--ink)]" : "shadow-[inset_0_0_0_1px_var(--line-strong)] data-[hovered]:bg-surface-2"}`}>
                     <span>
-                      <span className="block text-line">{c.label}{c.seat_no != null ? ` · Seat ${c.seat_no}` : ""}</span>
+                      <span className="block text-line">{c.label}{c.seat_no != null && !c.label.includes(`Seat ${c.seat_no}`) ? ` · Seat ${c.seat_no}` : ""}</span>
                       <span className="block text-caption opacity-80">
                         {c.payments.filter((p) => p.status === "recorded").map((p) => `${p.tender} ${money(p.amount)}`).join(" · ")}
                         {c.refunded_total > 0 ? ` · refunded ${money(c.refunded_total)}` : ""}

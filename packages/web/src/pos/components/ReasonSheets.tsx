@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Checkbox, CheckboxGroup, ReasonPicker, Sheet, Skeleton } from "@sail/ui";
+import { ALLERGY_NOTE_CLASS, Button, Checkbox, CheckboxGroup, cx, mentionsAllergy, ReasonPicker, Sheet, Skeleton } from "@sail/ui";
 import { useEffect, useState } from "react";
 
 export const REOPEN_REASONS = ["Guest came back", "Closed by mistake", "More items to add", "Payment recorded wrongly"];
@@ -8,7 +8,7 @@ export const VOID_PAYMENT_REASONS = ["Wrong payment method", "Charged twice", "W
 export const REJECT_ROUND_REASONS = ["Sold out", "Kitchen is closing", "Cannot make it right now", "Table did not order this"];
 
 /** Reopen a completed order: a reason, then the register's Manager check (same business day). */
-export function ReopenSheet({ isOpen, onClose, onReopen, payments = [], checkRefusal }: { isOpen: boolean; onClose: () => void; onReopen: (reason: string) => Promise<unknown>; payments?: string[]; checkRefusal?: () => Promise<{ message: string; remedy: string | null } | null> }) {
+export function ReopenSheet({ isOpen, onClose, onReopen, payments = [], invoices = [], checkRefusal }: { isOpen: boolean; onClose: () => void; onReopen: (reason: string) => Promise<unknown>; payments?: string[]; invoices?: string[]; checkRefusal?: () => Promise<{ message: string; remedy: string | null } | null> }) {
   const [busy, setBusy] = useState(false);
   // The register is asked first (a dry run), so nobody gives a reason or a PIN for a reopen it would refuse.
   const [refusal, setRefusal] = useState<{ message: string; remedy: string | null } | null | undefined>(undefined);
@@ -36,7 +36,7 @@ export function ReopenSheet({ isOpen, onClose, onReopen, payments = [], checkRef
       {refusal === null && payments.length ? (
         <div role="note" className="mb-4 rounded-tile bg-status-bill-tint px-4 py-3 text-body text-ink">
           <p className="font-medium">Reopening reverses {payments.length === 1 ? "its payment" : `its ${payments.length} payments`}.</p>
-          <p className="text-ink-2">{payments.join(" · ")}. The bill is then open for its full balance and is paid again.</p>
+          <p className="text-ink-2">{payments.join(" · ")}. The bill is then open for its full balance and is paid again.{invoices.length ? ` ${invoices.length === 1 ? `Invoice ${invoices[0]} is` : `Invoices ${invoices.join(", ")} are`} cancelled by a credit note.` : ""}</p>
         </div>
       ) : null}
       {refusal === undefined ? <Skeleton lines={3} /> : null}
@@ -56,15 +56,31 @@ export function ReopenSheet({ isOpen, onClose, onReopen, payments = [], checkRef
   );
 }
 
-type RejectLine = { id: string; product_id?: string; name: string; quantity: number; modifiers: string[] };
+type RejectLine = { id: string; product_id?: string; name: string; quantity: number; modifiers: string[]; notes?: string | null };
+
+/** A QR order's lines as staff decide on them: quantity, name, choices and the guest's note (final review C Low, review 4 U5). */
+function RoundLines({ lines }: { lines: RejectLine[] }) {
+  return (
+    <ul aria-label="Items in this order" className="mb-4 flex flex-col gap-1 rounded-tile bg-surface-2 px-4 py-3 text-body text-ink">
+      {lines.map((l) => (
+        <li key={l.id} className="break-words">
+          <span className="tabular font-medium">{l.quantity}</span> {l.name}
+          {l.modifiers.length ? <span className="text-ink-2"> · {l.modifiers.join(", ")}</span> : null}
+          {l.notes ? <span className={cx("block", mentionsAllergy(l.notes) ? ALLERGY_NOTE_CLASS : "text-ink-2 italic")}>{l.notes}</span> : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 /**
  * Reject a QR order with one tap on a reason. The guest sees the reason. "Sold out" asks which items are sold out (the
- * sheet's list of items becomes the choice: the one item ticked when the round has one, none when it has more), rejects,
- * then marks only those sold out for today with the register's sold-out operation, so the guest menu stops offering
- * them. The same sheet serves the Now card and the order screen (live-test final2 C-2).
+ * sheet's list of items becomes the choice: the one item ticked when the round has one, none when it has more), and the
+ * register rejects and marks only those sold out for today in the same request, so the guest menu stops offering them
+ * and a lost answer cannot leave one done without the other (review 4 U1). The same sheet serves the Now card and the
+ * order screen (live-test final2 C-2). `canMarkSoldOut`: the signed-in role may mark sold out (Cashier or above).
  */
-export function RejectRoundSheet({ roundLabel, lines, isOpen, onClose, onReject, onMarkSoldOut }: { roundLabel: string | null; lines?: RejectLine[]; isOpen: boolean; onClose: () => void; onReject: (reason: string) => Promise<unknown>; onMarkSoldOut?: (productIds: string[]) => Promise<unknown> }) {
+export function RejectRoundSheet({ roundLabel, lines, isOpen, onClose, onReject, canMarkSoldOut = false }: { roundLabel: string | null; lines?: RejectLine[]; isOpen: boolean; onClose: () => void; onReject: (reason: string, soldOut: string[]) => Promise<unknown>; canMarkSoldOut?: boolean }) {
   const [busy, setBusy] = useState(false);
   // Each product once, in the round's order: sold out is a product's state, not a line's.
   const products = [...new Map((lines ?? []).flatMap((l) => (l.product_id ? [[l.product_id, l] as const] : []))).entries()];
@@ -75,8 +91,7 @@ export function RejectRoundSheet({ roundLabel, lines, isOpen, onClose, onReject,
   }, [isOpen]);
   const reject = async (reason: string, soldOut: string[]) => {
     setBusy(true);
-    const ok = await onReject(reason);
-    if (ok && soldOut.length && onMarkSoldOut) await onMarkSoldOut(soldOut);
+    const ok = await onReject(reason, soldOut);
     setBusy(false);
     if (ok) onClose();
   };
@@ -102,21 +117,12 @@ export function RejectRoundSheet({ roundLabel, lines, isOpen, onClose, onReject,
       ) : (
         <>
           {/* What is being turned down, so nobody rejects the wrong round (final review C Low). */}
-          {lines?.length ? (
-            <ul aria-label="Items in this order" className="mb-4 flex flex-col gap-1 rounded-tile bg-surface-2 px-4 py-3 text-body text-ink">
-              {lines.map((l) => (
-                <li key={l.id} className="break-words">
-                  <span className="tabular font-medium">{l.quantity}</span> {l.name}
-                  {l.modifiers.length ? <span className="text-ink-2"> · {l.modifiers.join(", ")}</span> : null}
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          {lines?.length ? <RoundLines lines={lines} /> : null}
           <ReasonPicker
             reasons={REJECT_ROUND_REASONS.map((r) => ({ id: r, name: r }))}
             isDisabled={busy}
             onPick={(r) => {
-              if (r.text === REJECT_ROUND_REASONS[0] && onMarkSoldOut && products.length) {
+              if (r.text === REJECT_ROUND_REASONS[0] && canMarkSoldOut && products.length) {
                 setTicked(products.length === 1 ? [products[0]![0]] : []);
                 setChoosing(true);
                 return;
@@ -154,7 +160,7 @@ export function VoidPaymentSheet({ label, onTerminal = false, isOpen, onClose, o
  * Pay was pressed while a guest's QR order waits: its items are on no bill until accepted, so the choice comes first.
  * Accept puts them on the bill; Reject opens the reasons; paying the rest leaves the round waiting.
  */
-export function WaitingRoundSheet({ isOpen, roundLabel, canPayRest, onClose, onAccept, onReject, onPayRest }: { isOpen: boolean; roundLabel: string | null; canPayRest: boolean; onClose: () => void; onAccept: () => Promise<unknown>; onReject: () => void; onPayRest: () => void }) {
+export function WaitingRoundSheet({ isOpen, roundLabel, lines, canPayRest, onClose, onAccept, onReject, onPayRest }: { isOpen: boolean; roundLabel: string | null; lines?: RejectLine[]; canPayRest: boolean; onClose: () => void; onAccept: () => Promise<unknown>; onReject: () => void; onPayRest: () => void }) {
   const [busy, setBusy] = useState(false);
   return (
     <Sheet
@@ -190,6 +196,7 @@ export function WaitingRoundSheet({ isOpen, roundLabel, canPayRest, onClose, onA
         </>
       }
     >
+      {lines?.length ? <RoundLines lines={lines} /> : null}
       {canPayRest ? <p className="text-body text-ink-2">Paying without it takes only what is on the bill now; the QR order keeps waiting.</p> : null}
     </Sheet>
   );

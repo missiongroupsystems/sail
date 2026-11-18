@@ -71,7 +71,7 @@ test("M1: a waiting QR order is on no bill; Pay asks about it first, and Accept 
   await pairAndSignIn(page, MANAGER_PIN);
   await openTable(page, table.name);
   const panel = page.getByRole("region", { name: "Order" });
-  await expect(panel.getByText("QR order · waiting for acceptance")).toBeVisible();
+  await expect(panel.getByText("QR order waiting")).toBeVisible();
   await bothThemes(page, "M1-order-waiting");
   await page.getByRole("button", { name: /^Pay / }).first().click();
   const sheet = page.getByRole("dialog", { name: "A QR order is waiting" });
@@ -80,7 +80,7 @@ test("M1: a waiting QR order is on no bill; Pay asks about it first, and Accept 
   await bothThemes(page, "M1-waiting-sheet");
   await sheet.getByRole("button", { name: "Accept", exact: true }).click();
   await expect(sheet).toHaveCount(0);
-  await expect(panel.getByText("QR order · waiting for acceptance")).toHaveCount(0);
+  await expect(panel.getByText("QR order waiting")).toHaveCount(0);
   await expect.poll(async () => (await register<{ data: { balance: number } }>("GET", `/v1/orders/${order.id}`)).data.balance).toBeGreaterThan(before.data.balance);
   await settle(order.id);
 });

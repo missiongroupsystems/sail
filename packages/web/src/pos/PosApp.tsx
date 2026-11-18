@@ -3,7 +3,7 @@
 import { deviceLocale, deviceTimeZone, LocaleProvider, type LocaleSettings } from "@sail/ui";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
-import { ApiError } from "@/lib/api";
+import { ApiError, onOutcomeUnknown } from "@/lib/api";
 import { merchantLocale } from "@/lib/locale";
 import { PosShell } from "./components/PosShell";
 import { useMerchant } from "./hooks/queries";
@@ -37,6 +37,8 @@ export default function PosApp() {
   const stationToken = useStationStore((s) => s.token);
   const sessionToken = useSessionStore((s) => s.token);
   useStayOnPos();
+  // A change the register may or may not have made (its answer was lost twice): show the register's state again.
+  useEffect(() => onOutcomeUnknown(() => void client.invalidateQueries()), [client]);
   return (
     <QueryClientProvider client={client}>
       {/* An unpaired iPad cannot read the merchant's settings, so pairing uses the iPad's own locale and zone. */}

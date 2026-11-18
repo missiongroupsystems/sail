@@ -178,6 +178,8 @@ export const BillDocumentSchema = z.object({
   payments: z.array(BillPaymentSchema).optional(),
   /** One plain line under the tax rows when a split bill carries a cent of the order's tax rounding. */
   tax_note: z.string().optional(),
+  /** What the guest paid in all across the payments (amounts, cash rounding and tips), when there is more than one: printed as "Paid". */
+  paid_total: CentsSchema.optional(),
   /** Remaining balance; printed as "Balance due" when present. */
   balance: CentsSchema.optional(),
   invoice_no: z.string().optional(),

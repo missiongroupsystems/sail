@@ -78,6 +78,8 @@ const EVENT_LABEL: Record<string, string> = {
   "order.reopened": "Order reopened", "order.moved": "Moved table", "line.added": "Item added", "line.updated": "Item changed", "line.voided": "Item voided", "payment.recorded": "Payment taken",
   "payment.voided": "Payment voided", "refund.created": "Refunded", "kitchen_ticket.created": "Shown on the kitchen display", "kitchen_ticket.bumped": "Bumped on the kitchen display", "round.submitted": "QR order sent",
   "round.accepted": "QR order accepted", "checks.split": "Bills split", "checks.allocated": "Items moved between bills", "check.split": "Bills split", "check.allocated": "Items moved between bills", "round.rejected": "QR order rejected", "adjustment.applied": "Discount applied", "adjustment.removed": "Discount removed", "print_job.created": "Print job created",
+  // The product says bill, not check (review 4, T6).
+  "check.paid": "Bill paid", "check.refunded": "Bill refunded",
 };
 export function eventLabel(type: string, payload?: unknown): string {
   // A line taken off before it was sent is removed, not voided: only a sent line is a void (L2).

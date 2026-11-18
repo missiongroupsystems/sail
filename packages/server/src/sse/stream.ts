@@ -11,11 +11,12 @@ const HEARTBEAT_MS = 20_000;
  *   - `change`  { seq, type }   a new event exists
  *   - `job`     { job_id, status } a print job changed (relays)
  *   - `resync`  {}              the LISTEN connection was re-established; catch up now
- *   - `ended`   { reason? }     the stream's session has ended (`ended` below); the stream closes after it
+ *   - `ended`   { reason? }     the stream's session has ended (`ended` below); the stream closes after it, except
+ *                               for an end `holds` keeps open (a paid order): a later `change` means it works again
  *   - heartbeat comment every 20 s keeps proxies from closing idle connections
  */
 // `filter` is told which key the notification came on, so a stream can take only some events from a wide key (an outlet's).
-export function serveStream(c: AppContext, keys: string[], hello: Record<string, unknown>, filter?: (n: Notification, key: string) => boolean, ended?: () => Promise<Record<string, unknown> | null>) {
+export function serveStream(c: AppContext, keys: string[], hello: Record<string, unknown>, filter?: (n: Notification, key: string) => boolean, ended?: () => Promise<Record<string, unknown> | null>, holds?: (end: Record<string, unknown>) => boolean) {
   return streamSSE(c, async (stream) => {
     let id = 0;
     const send = (event: string, data: unknown) => stream.writeSSE({ event, data: JSON.stringify(data), id: String(++id) });
@@ -24,11 +25,23 @@ export function serveStream(c: AppContext, keys: string[], hello: Record<string,
     // client hears `ended` instead of a change it could only answer with a request the register would refuse.
     let queue: Promise<void> = Promise.resolve();
     let over = false;
+    let held = false;
     const relay = async (n: Notification) => {
       if (over) return;
       if (n.kind === "print_job") return void (await send("job", { job_id: n.job_id, status: n.status, printer_id: n.printer_id }));
       // A resync makes the client refetch too, so it is checked like a change.
       const end = ended ? await ended().catch(() => null) : null;
+      // An end the session may come back from (`holds`: the order was paid, and a void or reopen can put it back in
+      // service) is said once and the stream stays open, relaying nothing until the session works again; the first
+      // change after that tells the client it is back (review 4 U4).
+      if (end && holds?.(end)) {
+        if (!held) {
+          held = true;
+          await send("ended", end);
+        }
+        return;
+      }
+      held = false;
       if (end) {
         over = true;
         await send("ended", end);

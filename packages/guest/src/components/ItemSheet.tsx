@@ -122,6 +122,9 @@ export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupE
   const priceLine = lineTotal != null && !quote.updating ? money(lineTotal) : null;
   const addLabel = priceLine ? `${verb} · ${priceLine}` : verb;
   const label = unmet ? unmet.message : addLabel;
+  // On the button itself "Add 2 · €19.00": the sentence wrapped onto two lines at 390 wide (review 4 U7). Its accessible
+  // name keeps the whole sentence.
+  const shown = !editing && quantity > 1 ? `Add ${quantity}` : verb;
 
   return (
     <BottomSheet
@@ -148,7 +151,7 @@ export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupE
               <span className="max-w-full truncate whitespace-nowrap">{unmet.message}</span>
             ) : (
               <span className="flex max-w-full flex-wrap items-baseline justify-center gap-x-1.5 text-center">
-                <span className="whitespace-nowrap">{priceLine ? `${verb} ·` : verb}</span>
+                <span className="whitespace-nowrap">{priceLine ? `${shown} ·` : shown}</span>
                 {priceLine ? <span className="whitespace-nowrap tabular">{priceLine}</span> : null}
               </span>
             )}

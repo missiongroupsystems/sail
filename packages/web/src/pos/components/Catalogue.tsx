@@ -1,14 +1,14 @@
 "use client";
 
-import { AmountPad, Button, FolderTile, QuantityStepper, Sheet, SearchField, SectionRail, Skeleton, TextField, Tile, useLocale } from "@sail/ui";
+import { AmountPad, Button, FolderTile, QuantityStepper, Sheet, SearchField, SectionRail, Skeleton, Tile, useLocale } from "@sail/ui";
 import { useMemo, useState } from "react";
 import type { CompiledProduct, FolderTile as FolderTileData, OrderSnapshot, ProductTile } from "../api/types";
 import type { useOrderActions } from "../hooks/useOrderActions";
 import { needsChoices, priceFor, searchMenu, tileIndex, tileRestriction } from "../lib/menu";
 import { useUiStore } from "../state/ui";
-import { defaultSelection, ModifierPicker, QUICK_NOTES, toModifiers, unmetRequirement, type Selection } from "./ModifierPicker";
+import { defaultSelection, ModifierPicker, toModifiers, unmetRequirement, type Selection } from "./ModifierPicker";
 import { usePos } from "./PosContext";
-import { GREY_PILL } from "./styles";
+import { joinNote, NO_NOTE, QuickNotes, type NoteParts } from "./QuickNotes";
 
 type Panel = { kind: "modifiers"; product: CompiledProduct } | { kind: "open-price"; product: CompiledProduct } | null;
 
@@ -134,12 +134,9 @@ function ModifierSheet({ product, orderType, onClose, onAdd }: { product: Compil
   const { money } = useLocale();
   const [selection, setSelection] = useState<Selection>(() => (menu ? defaultSelection(menu, product) : {}));
   const [quantity, setQuantity] = useState(1);
-  const [notes, setNotes] = useState("");
+  const [noteParts, setNoteParts] = useState<NoteParts>(NO_NOTE);
   if (!menu) return null;
   const unmet = unmetRequirement(menu, product, selection);
-  // A quick note is a toggle: on once it is in the note (and shown so, filled), off again on a second tap (final2 B-4).
-  const noteHas = (chip: string) => notes.split(", ").includes(chip);
-  const addNote = (chip: string) => setNotes((n) => (n.split(", ").includes(chip) ? n.split(", ").filter((x) => x !== chip).join(", ") : n ? `${n}, ${chip}` : chip));
   return (
     <Sheet labelledClose
       isOpen
@@ -154,7 +151,7 @@ function ModifierSheet({ product, orderType, onClose, onAdd }: { product: Compil
             variant="primary"
             size="lg"
             isDisabled={Boolean(unmet)}
-            onPress={() => void onAdd({ product, quantity, modifiers: toModifiers(menu, product, selection), notes: notes.trim() || null })}
+            onPress={() => void onAdd({ product, quantity, modifiers: toModifiers(menu, product, selection), notes: joinNote(noteParts) })}
             className="min-w-[220px] text-[17px]"
           >
             {unmet ?? `Add ${quantity > 1 ? `${quantity} × ` : ""}${product.name}`}
@@ -170,14 +167,7 @@ function ModifierSheet({ product, orderType, onClose, onAdd }: { product: Compil
       <ModifierPicker menu={menu} product={product} selection={selection} onChange={setSelection} />
       <section className="mt-6" aria-label="Notes for the kitchen">
         <h3 className="mb-2 text-[16px] font-medium text-ink">Notes</h3>
-        <div className="mb-2 flex flex-wrap gap-2">
-          {QUICK_NOTES.map((c) => (
-            <Button key={c} size="md" variant={noteHas(c) ? "primary" : "quiet"} aria-pressed={noteHas(c)} onPress={() => addNote(c)} className={(noteHas(c) ? "" : GREY_PILL + " ") + "text-[14.5px] font-normal"}>
-              {c}
-            </Button>
-          ))}
-        </div>
-        <TextField aria-label="Note" value={notes} onChange={setNotes} placeholder="Note for the kitchen" inputClassName="min-h-14 text-line" maxLength={200} />
+        <QuickNotes value={noteParts} onChange={setNoteParts} />
       </section>
     </Sheet>
   );
