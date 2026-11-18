@@ -279,7 +279,7 @@ test("W3: By item with touch: a tap on a line inside the other bill moves the pi
     // A shared line: tapping it in a bill that holds a share picks it and lets go; it stays shared.
     await lines.getByRole("button", { name: /Mee Goreng/ }).tap();
     await page.getByRole("button", { name: "Share between bills…" }).tap();
-    await page.getByRole("dialog", { name: "Share Mee Goreng" }).getByRole("checkbox", { name: "Bill 2" }).check();
+    await page.getByRole("dialog", { name: "Share Mee Goreng" }).getByText("Bill 2", { exact: true }).tap();
     await page.getByRole("button", { name: "Share between 2 bills" }).tap();
     await expect(page.getByRole("region", { name: "Bill 2" })).toContainText("Mee Goreng");
     const shared = page.getByRole("region", { name: "Bill 1" }).getByRole("button", { name: /Mee Goreng/ });
