@@ -30,7 +30,7 @@ const AUDIT_ACTION: Record<string, string> = {
   "pricing_rules.create_version": "Saved a pricing rule", "pricing_rules.archive": "Archived a pricing rule", "tax_rates.set": "Set tax rates",
   "stock.mark_sold_out": "Marked sold out", "stock.restore": "Restored stock", "tables.rotate_qr_token": "Rotated a table code",
   "orders.open": "Opened order", "orders.cancel": "Cancelled order", "orders.reopen": "Reopened order", "orders.send": "Sent to the kitchen",
-  "adjustments.apply_manual": "Applied a discount", "adjustments.remove": "Removed a discount", "payments.record": "Took a payment",
+  "adjustments.apply_manual": "Applied a discount or fee", "adjustments.remove": "Removed a discount or fee", "payments.record": "Took a payment",
   "payments.cancel": "Cancelled a terminal payment", "refunds.create": "Refunded", "overrides.grant": "Approved an override", "shifts.open": "Opened shift",
   "shifts.close": "Closed shift", "business_days.close": "Closed the business day", "imports.apply": "Imported a menu",
   "stock.set_daily_cap": "Set a daily cap",

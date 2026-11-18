@@ -194,6 +194,15 @@ describe("V1: split bills with a service fee keep each bill's own rounding when 
       expect(s.checks.map((b) => rate(b, "20%")).reduce((a, b) => a + b, 0)).toBe(382);
       expectNotes(s.checks, own, step.join("+"));
       if (step.length === 1) expect(s.checks.map((b) => b.tax_note)).toEqual([null, null]);
+      // Every line's taxable per rate is still its amount at that rate less its tax there, whatever cents moved (review).
+      const rows = await db.sql<{ product_id: string; fee_amount: number; taxes: { bps: number; amount: number; taxable: number }[] }[]>`select product_id, fee_amount, taxes from order_lines where order_id = ${o.id}`;
+      for (const l of rows) {
+        const key = Object.entries(EU.products).find(([, id]) => id === l.product_id)![0];
+        for (const t of l.taxes) {
+          const gross = (t.bps === 1000 ? (reduced.has(key) ? price[key]! : 0) : reduced.has(key) ? 0 : price[key]!) + (t.bps === 2000 ? l.fee_amount : 0);
+          expect(t.taxable, `${step.join("+")} ${key} ${t.bps}`).toBe(gross - t.amount);
+        }
+      }
       if (step.length === 4) {
         expect(s.checks.map((b) => [rate(b, "10%"), rate(b, "20%")])).toEqual([[77, 207], [137, 175]]);
         expect(s.checks.map((b) => b.tax_note !== null)).toEqual([false, true]);

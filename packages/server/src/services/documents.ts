@@ -32,12 +32,12 @@ export type InvoiceDocument = BillDocument & {
 };
 
 /** Issue (or return the existing) tax invoice for a paid check. Issued once; reprints reuse the number. */
-export async function issueInvoice(checkId: string, bill: BillDocument): Promise<{ check: typeof checks.$inferSelect; document: InvoiceDocument; reused: boolean }> {
+export async function issueInvoice(checkId: string, bill: BillDocument): Promise<{ check: typeof checks.$inferSelect; document: InvoiceDocument; reused: boolean; creditNotes: { refund_id: string; credit_note_no: string }[] }> {
   const [c] = await tx()<(typeof checks.$inferSelect & Record<string, unknown>)[]>`select * from checks where id = ${checkId} for update`;
   const check = c ? camel(c) : undefined;
   if (!check) throw AppError.notFound("bill", checkId);
   if (check.status !== "paid" && check.status !== "partially_refunded" && check.status !== "refunded") throw AppError.state(`${check.label} is not paid yet`, ["pay the bill first"], "An invoice can be issued once the bill is paid.");
-  if (check.invoiceNo && check.invoiceDocument) return { check, document: check.invoiceDocument as InvoiceDocument, reused: true };
+  if (check.invoiceNo && check.invoiceDocument) return { check, document: check.invoiceDocument as InvoiceDocument, reused: true, creditNotes: [] };
   const [merchant] = await db().select().from(merchants).where(eq(merchants.id, check.merchantId)).limit(1);
   const [outlet] = await db().select({ address: outlets.address }).from(outlets).where(eq(outlets.id, check.outletId)).limit(1);
   const number = await nextDocumentNo(check.merchantId, "invoice");
@@ -48,6 +48,7 @@ export async function issueInvoice(checkId: string, bill: BillDocument): Promise
   // invoice holds, so it gets none.
   const earlier = await db().select().from(refunds).where(and(eq(refunds.checkId, checkId), isNull(refunds.creditNoteNo))).orderBy(asc(refunds.createdAt), asc(refunds.refundReceiptNo));
   const notes: { number: string; total: number }[] = [];
+  const issued: { refund_id: string; credit_note_no: string }[] = [];
   for (const r of earlier) {
     if (r.total <= 0) continue;
     const creditNoteNo = await nextDocumentNo(check.merchantId, "credit_note");
@@ -55,10 +56,11 @@ export async function issueInvoice(checkId: string, bill: BillDocument): Promise
     const creditNote: InvoiceDocument = { ...receipt, kind: "refund_receipt", invoice_no: number, credit_note_no: creditNoteNo, invoice: { ...document.invoice, number: creditNoteNo, issued_at: issuedAt.toISOString() } };
     await db().update(refunds).set({ creditNoteNo, creditNoteDocument: creditNote }).where(eq(refunds.id, r.id));
     notes.push({ number: creditNoteNo, total: -r.total });
+    issued.push({ refund_id: r.id, credit_note_no: creditNoteNo });
   }
   if (notes.length) document.credit_notes = notes;
   const [updated] = await db().update(checks).set({ invoiceNo: number, invoiceIssuedAt: issuedAt, invoiceDocument: document, updatedAt: issuedAt }).where(eq(checks.id, checkId)).returning();
-  return { check: updated!, document, reused: false };
+  return { check: updated!, document, reused: false, creditNotes: issued };
 }
 
 /**

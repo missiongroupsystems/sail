@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import postgres, { type Sql, type TransactionSql } from "postgres";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { config } from "../config.js";
+import { logger } from "../logger.js";
 import * as schema from "./schema/index.js";
 import type { MoneyEffect } from "./schema/index.js";
 
@@ -155,9 +156,11 @@ function controlConnection(): Sql {
 
 /**
  * For tests: hold a request's transaction before its commit or after it (its reply late) for `ms`; or let its COMMIT run
- * past every timeout (`slow_commit`: the statement timeout is lifted for it, so a deferred trigger can keep it waiting).
+ * past every timeout (`slow_commit`: the statement timeout is lifted for it, so a deferred trigger can keep it waiting);
+ * `lost_reply` does the same with the transaction's marker reset first, as when its commit has landed and only the reply
+ * is lost, so no session is left to end.
  */
-let stallForTests: { at: "before_commit" | "after_commit" | "slow_commit"; ms: number } | null = null;
+let stallForTests: { at: "before_commit" | "after_commit" | "slow_commit" | "lost_reply"; ms: number } | null = null;
 export function setTxStallForTests(s: typeof stallForTests) {
   stallForTests = s;
 }
@@ -184,20 +187,26 @@ export async function withRequestTransaction<T>(fn: (ctx: RequestTx) => Promise<
   let ctx: RequestTx | null = null;
   let codeDone = false;
   let abandoned = false;
+  let released = false;
   const work = (sql.begin(async (t) => {
     try {
+      // Given a connection only after the deadline: the request has been answered, so nothing here runs.
+      if (abandoned) throw new TxDeadlineError(ms);
       await boundWaits(t, marker);
       const client = Object.assign(t, { options: (sql as unknown as { options: unknown }).options }) as unknown as Sql;
       ctx = { sql: t, db: drizzle(client, { schema }), principal: null, dryRun: false, settled: false, pinnedOrder: null };
       const out = await als.run(ctx, () => fn(ctx!));
       if (stall?.at === "before_commit") await new Promise((r) => setTimeout(r, stall.ms));
-      if (stall?.at === "slow_commit") await t`select set_config('statement_timeout', '0', true)`;
+      if (stall?.at === "slow_commit" || stall?.at === "lost_reply") await t`select set_config('statement_timeout', '0', true)`;
+      if (stall?.at === "lost_reply") await t`select set_config('application_name', 'sail-lost-reply', true)`;
       if (abandoned) throw new TxDeadlineError(ms);
       return out;
     } finally {
       codeDone = true;
     }
-  }) as Promise<T>).then(async (out) => {
+  }) as Promise<T>).finally(() => {
+    released = true;
+  }).then(async (out) => {
     if (stall?.at === "after_commit") await new Promise((r) => setTimeout(r, stall.ms));
     return out;
   });
@@ -210,7 +219,10 @@ export async function withRequestTransaction<T>(fn: (ctx: RequestTx) => Promise<
       abandoned = true;
       work.catch(() => {});
       if (ctx) refuseFurtherQueries(ctx, ms);
-      if (codeDone) await endSession(marker);
+      // Its code is done and only the reply is awaited: end the session if it is still in this transaction. If none is
+      // (the commit landed; its reply was lost), the connection would wait for that reply for good: the pool it belongs to
+      // is retired, so it is closed once every other transaction on that pool has had its own deadline to finish.
+      if (codeDone && !released && (await endSession(marker)) === 0) retirePool(sql, ms);
     }
     throw e;
   } finally {
@@ -227,19 +239,35 @@ function refuseFurtherQueries(ctx: RequestTx, ms: number) {
   ctx.sql = new Proxy(refuse as unknown as TransactionSql, { apply: refuse, get: refuse });
 }
 
-/** End the session still running the transaction marked `marker`, if any; at most two seconds, and never throws. */
-async function endSession(marker: string) {
+/** End the session still running the transaction marked `marker`, if any; at most two seconds, and never throws. Returns how many it ended (-1: it could not tell). */
+async function endSession(marker: string): Promise<number> {
   let timer: NodeJS.Timeout | undefined;
   try {
-    await Promise.race([
-      controlConnection()`select pg_terminate_backend(pid) from pg_stat_activity where application_name = ${marker} and pid <> pg_backend_pid()`,
-      new Promise((r) => (timer = setTimeout(r, 2_000))),
+    const rows = await Promise.race([
+      controlConnection()`select pg_terminate_backend(pid) as ended from pg_stat_activity where application_name = ${marker} and pid <> pg_backend_pid()`,
+      new Promise<null>((r) => (timer = setTimeout(() => r(null), 2_000))),
     ]);
+    return rows ? rows.length : -1;
   } catch {
     // The session is gone already, or the database is unreachable: either way nothing of it can be handed on.
+    return -1;
   } finally {
     clearTimeout(timer);
   }
+}
+
+let retirements = 0;
+/** For tests: how many times a request pool has been retired. */
+export function poolRetirementsForTests(): number {
+  return retirements;
+}
+/** Stop handing out `old`'s connections; close them once its transactions have had their deadline, which closes a stuck one. */
+function retirePool(old: Sql, ms: number) {
+  if (pool !== old) return;
+  pool = null;
+  retirements++;
+  logger.warn("request pool retired: a transaction's commit reply never came");
+  void old.end({ timeout: Math.ceil(ms / 1000) }).catch(() => {});
 }
 
 /**

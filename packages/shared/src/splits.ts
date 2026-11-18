@@ -273,13 +273,12 @@ export function rebalanceBillTax(rows: TaxRow[], opts: RebalanceOptions): TaxMov
   }
   for (const { k, current, target } of plans) {
     const delta = checksSeen.map((_, i) => target[i]! - current[i]!);
-    for (let guard = 0; guard < 100_000; guard++) {
-      const from = delta.findIndex((d) => d < 0);
-      if (from < 0) break;
+    // One cent at a time, from a bill with a cent too many; when one such bill cannot give, the next is tried.
+    const step = (from: number): boolean => {
       const cf = checksSeen[from]!;
       // A bill short of its target that shares a line with this one, else any bill short of its target.
       const takers = checksSeen.map((_, i) => i).filter((i) => delta[i]! > 0);
-      if (!takers.length) break;
+      if (!takers.length) return false;
       let done = false;
       // A line on both bills: move the cent between its two allocations, from the larger share; the line's tax is unchanged.
       let best: { r: TaxRow; x: TaxRow; to: number } | undefined;
@@ -330,7 +329,11 @@ export function rebalanceBillTax(rows: TaxRow[], opts: RebalanceOptions): TaxMov
           }
         }
       }
-      if (!done) break;
+      return done;
+    };
+    for (let guard = 0; guard < 100_000; guard++) {
+      const givers = checksSeen.map((_, i) => i).filter((i) => delta[i]! < 0);
+      if (!givers.length || !givers.some((from) => step(from))) break;
     }
   }
   return { lines: lineDelta, slots: slotDelta };
@@ -409,7 +412,10 @@ export function settleSplit(rows: BaseRow[], opts: RebalanceOptions & { perRate:
   for (let pass = 0; pass < 6; pass++) {
     const before = JSON.stringify(rows.map((r) => [r.base, r.taxes]));
     if (opts.perRate) {
-      const d = rebalanceBillTax(rows, opts);
+      // Each pass sees what the earlier passes moved on each taxed amount, so none gives more than it holds.
+      const base = opts.slots;
+      const slots = base ? (lineId: string) => base(lineId).map((x) => ({ ...x, tax: x.tax + (moves.slots.get(lineId)?.get(x.id) ?? 0) })) : undefined;
+      const d = rebalanceBillTax(rows, { ...opts, slots });
       merge(moves.lines, d.lines);
       merge(moves.slots, d.slots);
     }

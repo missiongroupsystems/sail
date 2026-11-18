@@ -104,6 +104,9 @@ function refundErrorText(e: RefundError, names: Map<string, string>, money: (amo
 export type CreatedRefund = { refund: typeof refunds.$inferSelect; quote: RefundQuote; receipt: BillDocument; creditNote: InvoiceDocument | null };
 
 export async function createRefund(input: { refundId: string; checkId: string; request: RefundRequest; tenderSplit?: { payment_id: string; amount: number }[]; reason: string; reference?: string | null; principal: Principal; approver?: { id: string; name: string | null } | null; overrideId?: string | null; stationId?: string | null; shiftId?: string | null; avoidCash?: boolean }): Promise<CreatedRefund> {
+  // The bill's row, locked as issuing an invoice locks it: a refund and an invoice on one bill at once are taken one after
+  // the other, so the refund sees the invoice (and gets its credit note now) or the invoice sees the refund (and issues it).
+  await db().select({ id: checks.id }).from(checks).where(eq(checks.id, input.checkId)).for("update");
   const ref = await refundableFor(input.checkId);
   const q = quote(ref, input.request, input.tenderSplit, { avoidCash: input.avoidCash });
   const now = new Date();

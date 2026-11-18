@@ -232,13 +232,13 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     const b = c.req.valid("json");
     dryRunFrom(c, b);
     const bill = await billDocumentFor(id, "receipt", { serverName: "name" in p ? p.name : null });
-    const { check, document, reused } = await issueInvoice(id, bill);
+    const { check, document, reused, creditNotes } = await issueInvoice(id, bill);
     const events: AppendedEvent[] = [];
     if (!reused) {
       // The order's read carries the bill's invoice number and is cached by the order's version: move it on.
       await bumpVersion(check.orderId);
-      events.push(await appendEvent({ merchantId: check.merchantId, outletId: check.outletId, type: "invoice.issued", aggregate: { kind: "order", id: check.orderId }, operationId: "documents.issue_invoice", payload: { check_id: id, invoice_no: document.invoice.number }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(check.merchantId, check.outletId) }, p));
-      await recordAudit(p, { action: "documents.issue_invoice", targetKind: "check", targetId: id, outletId: check.outletId, details: { order_id: check.orderId, invoice_no: document.invoice.number } });
+      events.push(await appendEvent({ merchantId: check.merchantId, outletId: check.outletId, type: "invoice.issued", aggregate: { kind: "order", id: check.orderId }, operationId: "documents.issue_invoice", payload: { check_id: id, invoice_no: document.invoice.number, ...(creditNotes.length ? { credit_notes: creditNotes } : {}) }, correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(check.merchantId, check.outletId) }, p));
+      await recordAudit(p, { action: "documents.issue_invoice", targetKind: "check", targetId: id, outletId: check.outletId, details: { order_id: check.orderId, invoice_no: document.invoice.number, ...(creditNotes.length ? { credit_notes: creditNotes.map((x) => x.credit_note_no).join(", ") } : {}) } });
     }
     return c.json({ data: { invoice_no: document.invoice.number, issued_at: document.invoice.issued_at, reused, pdf_url: `/v1/checks/${id}/invoice.pdf` }, events, warnings: [] }, 200);
   });

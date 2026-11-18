@@ -141,7 +141,10 @@ export async function syncAllocations(orderId: string, opts: { sharesByLine?: Ma
           await db().update(orderAdjustmentLines).set({ taxAmount: sql`${orderAdjustmentLines.taxAmount} + ${d}` }).where(and(eq(orderAdjustmentLines.adjustmentId, slot), eq(orderAdjustmentLines.orderLineId, lineId)));
         }
       }
-      for (const [lineId, byKey] of moved.lines) await moveLineTax(lineId, byKey, taxAdds);
+      // With tax in prices a taxed amount's taxable is its amount less its tax: a cent moved on one taxed amount changes the
+      // taxable of that amount's rate only (a fee at 20% on 10% food leaves the line's 10% taxable as it was).
+      const groupOf = (lineId: string, slot: string) => slots(lineId).find((x) => x.id === slot)?.group ?? "";
+      for (const [lineId, byKey] of moved.lines) await moveLineTax(lineId, byKey, taxAdds, [...(moved.slots.get(lineId) ?? new Map<string, number>())].map(([slot, d]) => ({ group: groupOf(lineId, slot), d })));
     }
     if (values.length) await db().insert(checkAllocations).values(values);
   }
@@ -176,12 +179,13 @@ export async function syncAllocations(orderId: string, opts: { sharesByLine?: Ma
 }
 
 /** Apply a split's moved tax cents to a line (its order and its other figures are unchanged; the order's tax still adds up). */
-async function moveLineTax(lineId: string, byKey: Map<string, number>, taxAdds: boolean) {
+async function moveLineTax(lineId: string, byKey: Map<string, number>, taxAdds: boolean, bySlot: { group: string; d: number }[]) {
   const [l] = await db().select().from(orderLines).where(eq(orderLines.id, lineId)).limit(1);
   if (!l) return;
   const d = [...byKey.values()].reduce((a, b) => a + b, 0);
   if (d === 0 && [...byKey.values()].every((x) => x === 0)) return;
-  const taxes = l.taxes.map((t) => ({ ...t, amount: t.amount + (byKey.get(`${t.bps}|${t.name}`) ?? 0), taxable: taxAdds ? t.taxable : t.taxable - d }));
+  const taxableChange = (key: string) => bySlot.filter((x) => x.group.split("+").includes(key)).reduce((n, x) => n + x.d, 0);
+  const taxes = l.taxes.map((t) => ({ ...t, amount: t.amount + (byKey.get(`${t.bps}|${t.name}`) ?? 0), taxable: taxAdds ? t.taxable : t.taxable - taxableChange(`${t.bps}|${t.name}`) }));
   await db().update(orderLines).set({ taxes, taxAmount: l.taxAmount + d, total: taxAdds ? l.total + d : l.total }).where(eq(orderLines.id, lineId));
 }
 
@@ -258,7 +262,8 @@ export async function checkSnapshots(orderId: string): Promise<CheckSnapshot[]> 
   // The same note the printed bill and the invoice carry, so the POS Bill screen says it too (review 2, N2).
   const [order] = chks.length > 1 ? await db().select({ id: orders.id, taxRounding: orders.taxRounding, taxMode: orders.taxMode, taxRates: orders.taxRates, outletId: orders.outletId, orderType: orders.orderType }).from(orders).where(eq(orders.id, orderId)).limit(1) : [];
   const noteRates = order?.taxRounding === "per_rate" ? await taxRatesOf(order) : null;
-  const taxNote = (c: (typeof chks)[number]) => (order && noteRates ? (splitTaxNote(c.taxes, allocs.filter((a) => a.checkId === c.id), noteRates, order.taxMode) ?? null) : null);
+  const skipFor = sharedWithPaid(chks, allocs);
+  const taxNote = (c: (typeof chks)[number]) => (order && noteRates ? (splitTaxNote(allocs.filter((a) => a.checkId === c.id), noteRates, order.taxMode, skipFor(c.id)) ?? null) : null);
   return chks.map((c) => ({
     id: c.id,
     index: c.index,
@@ -297,6 +302,7 @@ export async function billDocumentFor(checkId: string, kind: "prebill" | "receip
   const adjs = await db().select().from(orderAdjustments).where(eq(orderAdjustments.orderId, o.id)).orderBy(asc(orderAdjustments.sort));
   const pays = await db().select().from(payments).where(and(eq(payments.checkId, checkId), eq(payments.status, "recorded"))).orderBy(asc(payments.createdAt));
   const allChecks = await checksFor(o.id);
+  const orderAllocs = allChecks.length > 1 ? await db().select({ checkId: checkAllocations.checkId, orderLineId: checkAllocations.orderLineId }).from(checkAllocations).where(inArray(checkAllocations.checkId, allChecks.map((x) => x.id))) : [];
 
   const adjustmentTotals = new Map<string, number>();
   for (const a of allocs) for (const [adjId, v] of Object.entries(a.adjustments)) adjustmentTotals.set(adjId, (adjustmentTotals.get(adjId) ?? 0) + v.amount);
@@ -330,7 +336,7 @@ export async function billDocumentFor(checkId: string, kind: "prebill" | "receip
     payments: kind === "receipt" ? pays.map((p) => ({ tender: p.tenderName, amount: p.amount, rounding_cents: p.roundingCents || undefined, reference: p.reference ?? undefined, tip: p.tipCents || undefined, change: p.changeCents || undefined, tendered: p.changeCents && p.tendered ? p.tendered : undefined, charged: p.tipCents || p.roundingCents ? p.amount + p.roundingCents + p.tipCents : undefined })) : undefined,
     paid_total: kind === "receipt" && pays.length > 1 ? pays.reduce((n, p) => n + p.amount + p.roundingCents + p.tipCents, 0) : undefined,
     balance: c.total - c.paidTotal > 0 ? c.total - c.paidTotal : undefined,
-    tax_note: o.taxRounding === "per_rate" && allChecks.length > 1 ? splitTaxNote(c.taxes, allocs, ratesFrom(o, lines, adjs), o.taxMode) : undefined,
+    tax_note: o.taxRounding === "per_rate" && allChecks.length > 1 ? splitTaxNote(allocs, ratesFrom(o, lines, adjs), o.taxMode, sharedWithPaid(allChecks, orderAllocs)(checkId)) : undefined,
     invoice_no: c.invoiceNo ?? undefined,
     footer_lines: settings.receiptFooter ? settings.receiptFooter.split("\n") : undefined,
     outlet_phone: settings.receiptShowOutletPhone && outlet?.phone ? outlet.phone : undefined,
@@ -391,10 +397,19 @@ function billTaxItems(allocs: { lineId: string; base: number; discount: number; 
  * bill), the bill says so in one line; otherwise nothing is printed. Its own rounding is `ownBillTax` of its amounts,
  * as `syncAllocations` reckons it, so the note is on a bill exactly when one of its rates carries such a cent (review 5, V1).
  */
-function splitTaxNote(taxes: TaxAmount[], allocs: (typeof checkAllocations.$inferSelect)[], rates: OrderRates, taxMode: string): string | undefined {
-  const own = ownBillTax(billTaxItems(allocs.map((a) => ({ lineId: a.orderLineId, base: a.base, discount: a.discount, adjustments: a.adjustments })), rates), taxMode === "inclusive" ? "inclusive" : "exclusive");
+function splitTaxNote(allocs: (typeof checkAllocations.$inferSelect)[], rates: OrderRates, taxMode: string, skip: ReadonlySet<string>): string | undefined {
+  // Lines this bill shares with another, paid bill keep the figures that bill fixed: the split decided only the rest.
+  const mine = allocs.filter((a) => !skip.has(a.orderLineId));
+  const own = ownBillTax(billTaxItems(mine.map((a) => ({ lineId: a.orderLineId, base: a.base, discount: a.discount, adjustments: a.adjustments })), rates), taxMode === "inclusive" ? "inclusive" : "exclusive");
+  const taxes = sumTaxes(mine.map((a) => a.taxes));
   for (const t of taxes) if ((own.get(`${t.bps}|${t.name}`)?.own ?? 0) !== t.amount) return "Tax includes rounding so the bills add up to the order's tax.";
   return undefined;
+}
+
+/** For each bill, the lines it shares with another bill that is paid (locked): their allocations were fixed there. */
+function sharedWithPaid(chks: { id: string; lockedAt: Date | null }[], allocs: { checkId: string; orderLineId: string }[]) {
+  const locked = new Set(chks.filter((c) => c.lockedAt).map((c) => c.id));
+  return (checkId: string) => new Set(allocs.filter((a) => a.checkId !== checkId && locked.has(a.checkId) && allocs.some((b) => b.checkId === checkId && b.orderLineId === a.orderLineId)).map((a) => a.orderLineId));
 }
 
 /** The outlet's registration numbers as printed, each after the merchant's label for it. */

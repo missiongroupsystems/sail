@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import "../src/modules.js";
 import { buildApp } from "../src/app.js";
-import { setTxStallForTests, txDeadlineMs } from "../src/db/client.js";
+import { poolRetirementsForTests, setTxStallForTests, txDeadlineMs } from "../src/db/client.js";
 import { admissionGate } from "../src/middleware/pipeline.js";
 import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
 
@@ -27,7 +27,7 @@ afterAll(async () => db.drop());
 
 const product = (id: string, key: string) => call<{ code?: string; message?: string; remedy?: string }>("POST", "/v1/products", { token: m.admin.token, body: { id, name: `Kopi ${id.slice(0, 6)}`, price: 180 }, idempotencyKey: key });
 const count = async (id: string) => (await db.sql<{ n: number }[]>`select count(*)::int as n from products where id = ${id}`)[0]!.n;
-const markedSessions = async () => (await db.sql<{ n: number }[]>`select count(*)::int as n from pg_stat_activity where application_name like 'sail-tx-%' and state <> 'idle'`)[0]!.n;
+const markedSessions = async () => (await db.sql<{ n: number }[]>`select count(*)::int as n from pg_stat_activity where datname = current_database() and application_name like 'sail-tx-%' and state <> 'idle'`)[0]!.n;
 
 describe("V7: a request transaction past its deadline answers 503 and leaves nothing half done", () => {
   const ms = () => txDeadlineMs();
@@ -105,6 +105,27 @@ describe("V7: a request transaction past its deadline answers 503 and leaves not
       expect(retry.status, JSON.stringify(retry.body)).toBe(201);
       expect(await count(id)).toBe(1);
     } finally {
+      await db.sql.unsafe(`drop trigger if exists test_slow_commit on products; drop function if exists test_slow_commit()`);
+    }
+  });
+
+  it("its commit landed and only the reply is lost (no session left in that transaction): the request pool is retired, so the stuck connection is closed rather than kept", async () => {
+    await db.sql.unsafe(`
+      create or replace function test_slow_commit() returns trigger language plpgsql as $$ begin if NEW.name like 'Lost %' then perform pg_sleep(9); end if; return null; end $$;
+      create constraint trigger test_slow_commit after insert on products deferrable initially deferred for each row execute function test_slow_commit();`);
+    try {
+      const before = poolRetirementsForTests();
+      const id = randomUUID();
+      setTxStallForTests({ at: "lost_reply", ms: 0 });
+      const r = await call("POST", "/v1/products", { token: m.admin.token, body: { id, name: `Lost ${id.slice(0, 6)}`, price: 180 }, idempotencyKey: randomUUID() });
+      setTxStallForTests(null);
+      expect(r.status, JSON.stringify(r.body)).toBe(503);
+      expect(admissionGate().inFlight).toBe(0);
+      expect(poolRetirementsForTests()).toBe(before + 1);
+      // A new pool serves the next requests at once.
+      for (let i = 0; i < 4; i++) expect((await call("GET", "/v1/products", { token: m.admin.token })).status).toBe(200);
+    } finally {
+      await new Promise((res) => setTimeout(res, 3_000));
       await db.sql.unsafe(`drop trigger if exists test_slow_commit on products; drop function if exists test_slow_commit()`);
     }
   });
