@@ -98,13 +98,26 @@ export function reportRows(root: Element, exponent: number): CsvRow[] {
       return;
     }
     if (el.tagName === "TABLE") {
-      const header = Array.from(el.querySelectorAll("thead th")).map((th) => cellText(th, exponent));
+      // A column whose cell shows two things on two lines (a time and who did it) names its CSV columns in
+      // `data-export-columns` ("Closed|Closed by") and marks each part of the cell `data-export-part`, so a spreadsheet
+      // gets one value per column (review 5, V5).
+      const ths = Array.from(el.querySelectorAll("thead th"));
+      const split = ths.map((th) => th.querySelector("[data-export-columns]")?.getAttribute("data-export-columns")?.split("|") ?? null);
+      const header = ths.flatMap((th, i) => split[i] ?? [cellText(th, exponent)]);
       if (header.length) rows.push(header);
       for (const tr of Array.from(el.querySelectorAll("tbody tr"))) {
         const cells = Array.from(tr.querySelectorAll(":scope > th, :scope > td"));
         // An empty table's one wide cell is its empty-state line, not a row.
-        if (cells.length !== header.length) continue;
-        rows.push(cells.map((c) => figure(cellText(c, exponent))));
+        if (cells.length !== ths.length) continue;
+        rows.push(
+          cells.flatMap((c, i) => {
+            const names = split[i];
+            if (!names) return [figure(cellText(c, exponent))];
+            const parts = Array.from(c.querySelectorAll("[data-export-part]")).map((x) => figure(cellText(x, exponent)));
+            const values = parts.length ? parts : [figure(cellText(c, exponent))];
+            return names.map((_, k) => values[k] ?? "");
+          }),
+        );
       }
       return;
     }

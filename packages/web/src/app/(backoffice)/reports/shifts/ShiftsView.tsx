@@ -66,7 +66,8 @@ export function ShiftsView({ outlets, scope, initialOutletId, initialStatus, ini
     { key: "expected_cash_cents", header: "Expected", numeric: true, sortable: true, render: (s) => (s.expected_cash_cents === null ? <span className="text-ink-2">—</span> : <Money cents={s.expected_cash_cents} />) },
     { key: "counted_cash_cents", header: "Counted", numeric: true, sortable: true, render: (s) => (s.counted_cash_cents === null ? <span className="text-ink-2">—</span> : <Money cents={s.counted_cash_cents} />) },
     { key: "variance_cents", header: "Variance", numeric: true, sortable: true, render: variance },
-    { key: "closed_at", header: "Closed", sortable: true, render: (s) => (s.closed_at ? <span className="flex flex-col leading-5"><time dateTime={localIso(s.closed_at, timeZone)} className="tabular whitespace-nowrap text-ink-2" title={dayClock(s.closed_at)}>{clock(s.closed_at)}</time>{s.closed_by ? <span className="text-[12.5px] leading-4 text-ink-3">{s.closed_by}</span> : null}</span> : <span className="text-ink-2">—</span>) },
+    // Two lines on screen, two columns in the CSV (Closed, Closed by), as Opened and Opened by.
+    { key: "closed_at", header: <span data-export-columns="Closed|Closed by">Closed</span>, sortable: true, render: (s) => (s.closed_at ? <span className="flex flex-col leading-5"><time data-export-part dateTime={localIso(s.closed_at, timeZone)} className="tabular whitespace-nowrap text-ink-2" title={dayClock(s.closed_at)}>{clock(s.closed_at)}</time>{s.closed_by ? <span data-export-part className="text-[12.5px] leading-4 text-ink-3">{s.closed_by}</span> : null}</span> : <span className="text-ink-2">—</span>) },
   ];
 
   return (
