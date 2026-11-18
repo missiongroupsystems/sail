@@ -228,13 +228,15 @@ export function createApi({ baseUrl, token, headers, timeoutMs = DEFAULT_TIMEOUT
    */
   const send = async (request: Request): Promise<Response> => {
     if (!MUTATING.has(request.method) || !request.headers.has("idempotency-key") || NO_STORED_ANSWER.some((r) => r.test(new URL(request.url).pathname))) return attempt(request, timeoutMs);
-    const again = request.clone();
+    // The body is read once and each ask carries it as bytes: a cloned request would send a stream instead.
+    const body = await request.arrayBuffer();
+    const ask = () => new Request(request, { body });
     try {
-      return await attempt(request, timeoutMs);
+      return await attempt(ask(), timeoutMs);
     } catch (e) {
       if (!(e instanceof ApiError) || e.status !== 0 || e.code !== "unavailable" || request.signal.aborted || tracker?.closed) throw e;
       try {
-        const res = await attempt(again, REPLAY_TIMEOUT_MS);
+        const res = await attempt(ask(), REPLAY_TIMEOUT_MS);
         // Still being worked on by the first request: the outcome is not known yet.
         if (res.status === 409) {
           const text = await res.clone().text();

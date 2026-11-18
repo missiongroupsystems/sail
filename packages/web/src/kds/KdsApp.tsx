@@ -168,8 +168,8 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
           {/* Below a wide screen the heading is for screen readers only: the station's own name beside it has the room (C-11). */}
           <span className="max-[1180px]:sr-only">Kitchen</span>
         </h1>
-        {/* The station's name takes the room left over, on one line, and truncates past that (whole on hover, review 4 U7). */}
-        <p className="min-w-[4.5rem] flex-1 truncate text-[14px] leading-tight text-ink-2" title={station.name}>
+        {/* The station's name takes the room left over, on up to two lines, and truncates past that (whole on hover). */}
+        <p className="min-w-[4.5rem] flex-1 text-[14px] leading-tight text-ink-2 line-clamp-2" title={station.name}>
           {station.name}
         </p>
         <p className="flex shrink-0 items-center gap-2 text-[14.5px] text-ink">
