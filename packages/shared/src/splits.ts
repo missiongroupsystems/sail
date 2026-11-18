@@ -1,5 +1,6 @@
 import { allocateByShares, allocateLargestRemainder, sumCents, type Cents, type Share } from "./money.js";
 import type { TaxAmount } from "./pricing/schemas.js";
+import { componentTax } from "./pricing/engine.js";
 
 /**
  * Bill allocation. A line's priced components are split across
@@ -164,68 +165,175 @@ export type TaxRow = { check: number; lineId: string; shareNum: number; shareDen
 
 const taxKey = (t: { name: string; bps: number }) => `${t.bps}|${t.name}`;
 
+/** One amount on a bill that carries tax, with its rate: a line's net share, or its share of one taxed fee. */
+export type BillTaxItem = { components: readonly { name: string; bps: number }[]; amount: Cents };
+
 /**
- * Split bills under per-rate rounding: each bill's tax for a rate component is made the order's tax for that component
- * spread across the bills by largest remainder, weighted by each bill's taxable amount, so a bill's tax row is its own
- * rate times its own subtotal to within the one cent the order's single rounding leaves (the order's tax always wins and
- * stays exact). Cents move between bills on a line the bills share, else between two whole lines of the same rate on
- * the two bills (each keeps its total across bills; only lines in `movable` when given). Mutates `rows`; returns the per-line tax change by component key.
- * `taxables[lineId][key]` is the line's taxable amount for that component.
+ * A bill's own tax by component: its items grouped by rate, each component rounded once on the group's total, as the
+ * engine rounds the order (a fee taxed at another rate than its line is in that rate's group). `exact` is the unrounded
+ * figure. Keyed by `bps|name`.
  */
-export function rebalanceBillTax(rows: TaxRow[], taxables: Record<string, Record<string, number>>, opts: { taxAddsToTotal: boolean; movable?: ReadonlySet<string>; weight?: (row: TaxRow, key: string) => number }): Map<string, Map<string, number>> {
+export function ownBillTax(items: readonly BillTaxItem[], taxMode: "inclusive" | "exclusive"): Map<string, { own: Cents; exact: number }> {
+  const groups = new Map<string, { components: BillTaxItem["components"]; amount: Cents }>();
+  for (const i of items) {
+    if (i.components.length === 0) continue;
+    const g = i.components.map(taxKey).join("+");
+    const cur = groups.get(g) ?? { components: i.components, amount: 0 };
+    cur.amount += i.amount;
+    groups.set(g, cur);
+  }
+  const out = new Map<string, { own: Cents; exact: number }>();
+  for (const g of groups.values()) {
+    const combined = sumCents(g.components.map((c) => c.bps));
+    const own = componentTax(g.amount, g.components, taxMode);
+    g.components.forEach((c, k) => {
+      const cur = out.get(taxKey(c)) ?? { own: 0, exact: 0 };
+      cur.own += own[k]!;
+      cur.exact += (g.amount * c.bps) / (taxMode === "inclusive" ? 10_000 + combined : 10_000);
+      out.set(taxKey(c), cur);
+    });
+  }
+  return out;
+}
+
+/** One taxed amount on a line: its own amount (`net`) or one fee (its adjustment id), with its rate and its tax now. */
+export type TaxSlot = { id: string; group: string; tax: Cents };
+export type RebalanceOptions = { taxAddsToTotal: boolean; taxMode: "inclusive" | "exclusive"; items: (check: number) => BillTaxItem[]; slots?: (lineId: string) => TaxSlot[] };
+/** Tax cents moved between whole lines: by line and component key, and by line and taxed amount (`TaxSlot.id`). */
+export type TaxMoves = { lines: Map<string, Map<string, number>>; slots: Map<string, Map<string, number>> };
+
+/**
+ * Split bills under per-rate rounding (review 5, V1). For each tax component, every bill starts from its own rounding
+ * (`ownBillTax` of its items). When the bills' own roundings add up to the order's tax for that component, that is
+ * each bill's tax and no rounding cent is needed. Otherwise the order's tax wins and the difference, the fewest cents,
+ * goes to as many bills: with tax on top, to the bills whose totals are furthest under (or over) their exact share, so
+ * an even split stays even (review 5, V2); then to the bill whose own figure is furthest from its exact one; then by
+ * bill order. Nothing here depends on ids.
+ * Cents move between bills on a line the bills share (the line's tax is unchanged), else between two whole lines, from
+ * one of the giver's taxed amounts (`slots`) to the same kind on the taker: two own amounts at the same rate, or the same
+ * fee; the order's tax per component never changes, nor does any fee's tax or any rate's tax on items.
+ * Mutates `rows`; returns the per-line tax change by component key.
+ */
+export function rebalanceBillTax(rows: TaxRow[], opts: RebalanceOptions): TaxMoves {
   const lineDelta = new Map<string, Map<string, number>>();
+  const slotDelta = new Map<string, Map<string, number>>();
   const checksSeen = [...new Set(rows.map((r) => r.check))].sort((a, b) => a - b);
-  if (checksSeen.length < 2) return lineDelta;
-  const keys = [...new Set(rows.flatMap((r) => r.taxes.map(taxKey)))];
+  if (checksSeen.length < 2) return { lines: lineDelta, slots: slotDelta };
+  const keys = [...new Set(rows.flatMap((r) => r.taxes.map(taxKey)))].sort();
   const amountOf = (r: TaxRow, k: string) => r.taxes.find((t) => taxKey(t) === k)?.amount ?? 0;
   const bump = (r: TaxRow, k: string, d: number) => {
-    const t = r.taxes.find((x) => taxKey(x) === k);
-    if (!t) return false;
+    const t = r.taxes.find((x) => taxKey(x) === k)!;
     t.amount += d;
     r.tax += d;
     if (opts.taxAddsToTotal) r.total += d;
-    return true;
   };
+  const own = checksSeen.map((c) => ownBillTax(opts.items(c), opts.taxMode));
+  // What each whole line can still give from each of its taxed amounts (unbounded when the caller does not say).
+  const slotLeft = new Map<string, TaxSlot[]>();
+  for (const r of rows) if (!slotLeft.has(r.lineId)) slotLeft.set(r.lineId, opts.slots ? opts.slots(r.lineId).map((x) => ({ ...x })) : [{ id: "net", group: r.taxes.map(taxKey).join("+"), tax: Number.POSITIVE_INFINITY }]);
+  const lineOrder = [...new Set(rows.map((r) => r.lineId))];
+  // Each component starts from the bills' own roundings; the components whose own roundings do not add up to the order
+  // then get their difference, decided with every component's figure in view.
+  type Plan = { k: string; current: Cents[]; target: Cents[]; diff: number };
+  const plans: Plan[] = [];
   for (const k of keys) {
     const current = checksSeen.map((c) => sumCents(rows.filter((r) => r.check === c).map((r) => amountOf(r, k))));
-    // A row's weight is its share of the line's taxable amount, or what `opts.weight` says it is (the bill's own cents).
-    const weights = checksSeen.map((c) => rows.filter((r) => r.check === c && r.taxes.some((t) => taxKey(t) === k)).reduce((s, r) => s + (opts.weight ? opts.weight(r, k) : ((taxables[r.lineId]?.[k] ?? 0) * r.shareNum) / r.shareDen), 0));
     const total = sumCents(current);
-    if (total <= 0 || weights.some((w) => w < 0) || weights.every((w) => w === 0)) continue;
-    const target = allocateLargestRemainder(total, weights);
-    const delta = checksSeen.map((_, i) => target[i]! - current[i]!);
-    for (let guard = 0; guard < 10_000; guard++) {
-      const from = delta.findIndex((d) => d < 0);
-      const to = delta.findIndex((d) => d > 0);
-      if (from < 0 || to < 0) break;
-      const cf = checksSeen[from]!;
-      const ct = checksSeen[to]!;
-      // A line on both bills: move the cent between its two allocations; the line's own tax is unchanged.
-      const shared = rows.find((r) => r.check === cf && amountOf(r, k) > 0 && rows.some((x) => x.check === ct && x.lineId === r.lineId && x.taxes.some((t) => taxKey(t) === k)));
-      if (shared) {
-        const other = rows.find((x) => x.check === ct && x.lineId === shared.lineId)!;
-        bump(shared, k, -1);
-        bump(other, k, 1);
-      } else {
-        // Two whole lines of the same rate: one gives a cent of its tax to the other, so the order's tax is unchanged.
-        // Only a line whose tax is all on its own amount (no fee carrying tax of its own) gives or takes a cent.
-        const whole = (r: TaxRow) => r.shareNum === r.shareDen && r.taxes.some((t) => taxKey(t) === k) && (opts.movable?.has(r.lineId) ?? true);
-        const giver = rows.find((r) => r.check === cf && whole(r) && amountOf(r, k) > 0);
-        const taker = rows.find((r) => r.check === ct && whole(r));
-        if (!giver || !taker) break;
-        bump(giver, k, -1);
-        bump(taker, k, 1);
-        for (const [id, d] of [[giver.lineId, -1], [taker.lineId, 1]] as const) {
-          const m = lineDelta.get(id) ?? new Map<string, number>();
-          m.set(k, (m.get(k) ?? 0) + d);
-          lineDelta.set(id, m);
-        }
-      }
-      delta[from]! += 1;
-      delta[to]! -= 1;
+    if (total <= 0) continue;
+    const target = checksSeen.map((_, i) => own[i]!.get(k)?.own ?? 0);
+    if (target.some((t) => t < 0)) continue;
+    plans.push({ k, current, target, diff: total - sumCents(target) });
+  }
+  // With tax on top, each bill's distance from its exact share of the order once every planned component has its target.
+  const lean = checksSeen.map(() => 0);
+  if (opts.taxAddsToTotal) {
+    const planned = new Set(plans.map((p) => p.k));
+    const lineTotal = new Map<string, number>();
+    for (const r of rows) lineTotal.set(r.lineId, (lineTotal.get(r.lineId) ?? 0) + r.total);
+    checksSeen.forEach((c, i) => {
+      for (const r of rows.filter((x) => x.check === c)) lean[i]! += r.total - r.taxes.filter((t) => planned.has(taxKey(t))).reduce((n, t) => n + t.amount, 0) - (lineTotal.get(r.lineId)! * r.shareNum) / r.shareDen;
+    });
+    for (const p of plans) p.target.forEach((t, i) => (lean[i]! += t));
+  }
+  const gap = (x: number) => (Math.abs(x) < 1e-6 ? 0 : x);
+  for (const { k, target } of plans) {
+    const p = plans.find((x) => x.k === k)!;
+    const eligible = checksSeen.map((c, i) => (own[i]!.get(k)?.exact ?? 0) > 0 || rows.some((r) => r.check === c && r.taxes.some((t) => taxKey(t) === k)));
+    for (let guard = 0; p.diff !== 0 && guard < 10_000; guard++) {
+      const sign = p.diff > 0 ? 1 : -1;
+      const pick = checksSeen
+        .map((_, i) => i)
+        .filter((i) => eligible[i] && target[i]! + sign >= 0)
+        .sort((a, b) => (opts.taxAddsToTotal ? gap(sign * (lean[a]! - lean[b]!)) : 0) || gap(sign * ((own[b]!.get(k)?.exact ?? 0) - target[b]! - ((own[a]!.get(k)?.exact ?? 0) - target[a]!))) || a - b)[0];
+      if (pick === undefined) break;
+      target[pick]! += sign;
+      lean[pick]! += sign;
+      p.diff -= sign;
     }
   }
-  return lineDelta;
+  for (const { k, current, target } of plans) {
+    const delta = checksSeen.map((_, i) => target[i]! - current[i]!);
+    for (let guard = 0; guard < 100_000; guard++) {
+      const from = delta.findIndex((d) => d < 0);
+      if (from < 0) break;
+      const cf = checksSeen[from]!;
+      // A bill short of its target that shares a line with this one, else any bill short of its target.
+      const takers = checksSeen.map((_, i) => i).filter((i) => delta[i]! > 0);
+      if (!takers.length) break;
+      let done = false;
+      // A line on both bills: move the cent between its two allocations, from the larger share; the line's tax is unchanged.
+      let best: { r: TaxRow; x: TaxRow; to: number } | undefined;
+      for (const to of takers) {
+        for (const r of rows) {
+          if (r.check !== cf || amountOf(r, k) <= 0) continue;
+          const x = rows.find((y) => y.check === checksSeen[to] && y.lineId === r.lineId && y.taxes.some((t) => taxKey(t) === k));
+          if (!x) continue;
+          if (!best || amountOf(r, k) - amountOf(x, k) > amountOf(best.r, k) - amountOf(best.x, k)) best = { r, x, to };
+        }
+      }
+      if (best) {
+        bump(best.r, k, -1);
+        bump(best.x, k, 1);
+        delta[from]! += 1;
+        delta[best.to]! -= 1;
+        done = true;
+      } else {
+        // Two whole lines: one gives a cent of its tax to the other, from one amount to another taxed at the same rate in
+        // the same way (two lines' own amounts at that rate, or the same fee on both lines), so the order's tax, each
+        // rate's tax on items and each fee's tax are unchanged.
+        const whole = (r: TaxRow) => r.shareNum === r.shareDen && r.taxes.some((t) => taxKey(t) === k);
+        const slotsOf = (r: TaxRow) => (slotLeft.get(r.lineId) ?? []).filter((x) => x.group.split("+").includes(k));
+        const givers = rows.filter((r) => r.check === cf && whole(r) && amountOf(r, k) > 0).sort((a, b) => lineOrder.indexOf(a.lineId) - lineOrder.indexOf(b.lineId));
+        outer: for (const giver of givers) {
+          for (const gs of slotsOf(giver).filter((x) => x.tax > 0)) {
+            for (const to of takers) {
+              const taker = rows.find((r) => r.check === checksSeen[to] && whole(r) && slotsOf(r).some((x) => x.id === gs.id && x.group === gs.group));
+              if (!taker) continue;
+              const ts = slotsOf(taker).find((x) => x.id === gs.id && x.group === gs.group)!;
+              bump(giver, k, -1);
+              bump(taker, k, 1);
+              gs.tax -= 1;
+              ts.tax += 1;
+              for (const [id, d] of [[giver.lineId, -1], [taker.lineId, 1]] as const) {
+                const m = lineDelta.get(id) ?? new Map<string, number>();
+                m.set(k, (m.get(k) ?? 0) + d);
+                lineDelta.set(id, m);
+                const sm = slotDelta.get(id) ?? new Map<string, number>();
+                sm.set(gs.id, (sm.get(gs.id) ?? 0) + d);
+                slotDelta.set(id, sm);
+              }
+              delta[from]! += 1;
+              delta[to]! -= 1;
+              done = true;
+              break outer;
+            }
+          }
+        }
+      }
+      if (!done) break;
+    }
+  }
+  return { lines: lineDelta, slots: slotDelta };
 }
 
 /** One bill's allocation of one line with its base, as `balanceBillTotals` moves it. */
@@ -281,4 +389,35 @@ export function balanceBillTotals(rows: BaseRow[]): number {
     if (done) break;
   }
   return moved;
+}
+
+/**
+ * Settle a split's tax and totals as `syncAllocations` does: under per-rate rounding the tax rebalance; with tax on top
+ * the even-out of bill totals; again while either moves anything (at most six rounds). `converged` is false when the
+ * two still disagreed after the last round; the bills' totals are then within a cent (the even-out ran last) and a bill
+ * may carry a rounding cent more than the fewest, which its note says. Mutates `rows`.
+ */
+export function settleSplit(rows: BaseRow[], opts: RebalanceOptions & { perRate: boolean }): TaxMoves & { converged: boolean } {
+  const moves: TaxMoves = { lines: new Map(), slots: new Map() };
+  const merge = (into: Map<string, Map<string, number>>, from: Map<string, Map<string, number>>) => {
+    for (const [id, byKey] of from) {
+      const m = into.get(id) ?? new Map<string, number>();
+      for (const [k, d] of byKey) m.set(k, (m.get(k) ?? 0) + d);
+      into.set(id, m);
+    }
+  };
+  for (let pass = 0; pass < 6; pass++) {
+    const before = JSON.stringify(rows.map((r) => [r.base, r.taxes]));
+    if (opts.perRate) {
+      const d = rebalanceBillTax(rows, opts);
+      merge(moves.lines, d.lines);
+      merge(moves.slots, d.slots);
+    }
+    // An even split is even: no two bills' totals more than a cent apart (review 4, T4). Only with tax on top: there the
+    // tax rebalance changes bill totals; with tax in prices it does not, and each line's odd cents already keep them even.
+    if (!opts.taxAddsToTotal) return { ...moves, converged: true };
+    balanceBillTotals(rows);
+    if (JSON.stringify(rows.map((r) => [r.base, r.taxes])) === before) return { ...moves, converged: true };
+  }
+  return { ...moves, converged: false };
 }

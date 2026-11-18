@@ -414,6 +414,11 @@ export function resolveTaxRate(rates: readonly TaxRate[], taxClassId: string, ou
  * share of the amount; inclusive: its part of the tax-inclusive amount at the combined rate), so every tax row a
  * receipt, invoice or report prints is its own rate times its own taxable amount, checkable by hand.
  */
+/** Tax on one amount at a rate, by component, rounded as the engine rounds it (exported for split bills' own rounding). */
+export function componentTax(amount: Cents, components: readonly TaxComponent[], taxMode: "inclusive" | "exclusive"): Cents[] {
+  return rateTax(amount, components, { tax_mode: taxMode } as PricingContext);
+}
+
 function rateTax(amount: Cents, components: readonly TaxComponent[], context: PricingContext): Cents[] {
   const combined = sumCents(components.map((c) => c.bps));
   if (combined === 0) return components.map(() => 0);
