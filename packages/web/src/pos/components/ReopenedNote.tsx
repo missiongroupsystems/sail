@@ -14,7 +14,8 @@ export function reopenedPayments(checks: CheckSnapshot[]) {
   // One reopen reverses its payments at one instant.
   const last = reopened.reduce<string | null>((m, p) => (m === null || p.reversed_at! > m ? p.reversed_at! : m), null);
   if (last === null || !checks.some((c) => c.balance > 0)) return [];
-  if (all.some((p) => p.status === "recorded" && p.created_at > last)) return [];
+  // Any payment taken since (kept or voided later) means the reopen is no longer the news.
+  if (all.some((p) => p.created_at > last)) return [];
   return reopened.filter((p) => p.reversed_at === last);
 }
 

@@ -98,6 +98,8 @@ export function BillScreen({ orderId }: { orderId: string }) {
   // A bill whose invoice was cancelled by a credit note stays on the order through any re-split (review 5 W2): with more
   // than one, the order cannot go back to fewer bills than that.
   const keepAtLeast = (snap?.checks ?? []).filter((c) => c.cancelled_invoices?.length).length;
+  // By seat makes one bill per seat (and one Shared bill for lines without a seat when they are assigned by hand).
+  const seatBills = new Set((snap?.lines ?? []).filter((l) => l.status !== "voided" && l.seat_no != null).map((l) => l.seat_no)).size;
   const keepReason = keepAtLeast > 1 ? `This order keeps ${keepAtLeast} bills: each had an invoice that was cancelled.` : null;
   const lockedLineIds = useMemo(() => new Set(paidChecks.flatMap((c) => c.allocations.map((a) => a.line_id))), [paidChecks]);
   const canPay = roleAtLeast(staff.role, "cashier");
@@ -179,17 +181,18 @@ export function BillScreen({ orderId }: { orderId: string }) {
   const modeOptions = (["one", "even", "seat", "item"] as Mode[]).map((m) => ({
     id: m,
     label: MODE_LABEL[m],
-    isDisabled: (Boolean(lockReason) || (m === "one" && Boolean(keepReason))) && m !== mode,
-    reason: lockReason ?? (m === "one" ? keepReason : null),
+    isDisabled: (Boolean(lockReason) || ((m === "one" || (m === "seat" && seatBills < keepAtLeast)) && Boolean(keepReason))) && m !== mode,
+    reason: lockReason ?? (m === "one" || m === "seat" ? keepReason : null),
   }));
 
   /**
-   * With a line picked, a bill that does not hold it whole is where it can go: a tap anywhere on that bill, on one of its
+   * With a line picked, a bill that does not hold it is where it can go: a tap anywhere on that bill, on one of its
    * lines too, moves it there (review 5 W3). A tap on the bill that holds it picks another of its lines; on the picked
    * line again, it lets go.
    */
-  const holdsWhole = (check: CheckSnapshot) => Boolean(selectedLine) && check.allocations.some((a) => a.line_id === selectedLine && a.share === "1");
-  const isMoveTarget = (check: CheckSnapshot) => Boolean(selectedLine) && !check.locked && !holdsWhole(check);
+  // A bill that holds any share of the picked line is its own bill (a shared line has several).
+  const holdsPicked = (check: CheckSnapshot) => Boolean(selectedLine) && check.allocations.some((a) => a.line_id === selectedLine);
+  const isMoveTarget = (check: CheckSnapshot) => Boolean(selectedLine) && !check.locked && !holdsPicked(check);
   const cardLines = (check: CheckSnapshot): BillCardLine[] =>
     [...check.allocations]
       .sort((a, b) => lineOrder(snap, a.line_id) - lineOrder(snap, b.line_id))

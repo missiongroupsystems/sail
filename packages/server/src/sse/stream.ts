@@ -28,11 +28,23 @@ export function serveStream(c: AppContext, keys: string[], hello: Record<string,
     let held = false;
     // A session that is held at connect (a paid phone reloaded on its paid screen, review 5 W1) hears `ended` first, not
     // `hello`, so it fetches nothing the register would refuse; a later change still tells it the session works again.
+    // Subscribed before the check (below, the relay waits on `started`), so a void in between is relayed, not missed.
+    let release: () => void = () => {};
+    const started = new Promise<void>((r) => (release = r));
+    queue = started;
+    const unsubs = keys.map((k) =>
+      subscribe(k, (n) => {
+        if (filter && !filter(n, k)) return;
+        queue = queue.then(() => relay(n)).catch(() => undefined);
+      }),
+    );
     const atStart = ended ? await ended().catch(() => null) : null;
     if (atStart && holds?.(atStart)) {
       held = true;
       await send("ended", atStart);
     } else if (atStart) {
+      over = true;
+      for (const u of unsubs) u();
       await send("ended", atStart);
       await stream.close();
       return;
@@ -62,12 +74,7 @@ export function serveStream(c: AppContext, keys: string[], hello: Record<string,
       if (n.kind === "resync") return void (await send("resync", {}));
       await send("change", { seq: n.seq, type: n.type, outlet_id: n.outlet_id, aggregate_kind: n.aggregate_kind, aggregate_id: n.aggregate_id });
     };
-    const unsubs = keys.map((k) =>
-      subscribe(k, (n) => {
-        if (filter && !filter(n, k)) return;
-        queue = queue.then(() => relay(n)).catch(() => undefined);
-      }),
-    );
+    release();
     const heartbeat = setInterval(() => void stream.write(`: ping ${Date.now()}\n\n`), HEARTBEAT_MS);
     let closed = false;
     const close = () => {

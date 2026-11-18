@@ -269,6 +269,18 @@ test("W3: By item with touch: a tap on a line inside the other bill moves the pi
     await expect(page.getByRole("region", { name: "Bill 1" }).getByRole("button", { name: /Mee Goreng/ })).toHaveAttribute("aria-pressed", "true");
     await page.getByRole("region", { name: "Bill 1" }).getByRole("button", { name: /Mee Goreng/ }).tap();
     await expect(page.getByRole("button", { name: /move the selected line here/ })).toHaveCount(0);
+    // A shared line: tapping it in a bill that holds a share picks it and lets go; it stays shared.
+    await lines.getByRole("button", { name: /Mee Goreng/ }).tap();
+    await page.getByRole("button", { name: "Share between bills…" }).tap();
+    await page.getByRole("dialog", { name: "Share Mee Goreng" }).getByRole("checkbox", { name: "Bill 2" }).check();
+    await page.getByRole("button", { name: "Share between 2 bills" }).tap();
+    await expect(page.getByRole("region", { name: "Bill 2" })).toContainText("Mee Goreng");
+    const shared = page.getByRole("region", { name: "Bill 1" }).getByRole("button", { name: /Mee Goreng/ });
+    await shared.tap();
+    await expect(shared).toHaveAttribute("aria-pressed", "true");
+    await shared.tap();
+    await expect(page.getByRole("button", { name: /move the selected line here/ })).toHaveCount(0);
+    await expect(lines.getByRole("button", { name: /Mee Goreng/ })).toContainText("Shared");
     // Nothing stacked at the bottom of the screen: no toast for a move.
     await expect(page.getByText(/moved to Bill/)).toHaveCount(0);
     // Every line on a bill is a 44 px target.
