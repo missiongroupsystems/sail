@@ -94,7 +94,8 @@ export const useUiStore = create<UiState>()((set, get) => ({
     // Locked, there is no one to tell: an action cut short by the lock (a 401 as the session ended) shows the PIN pad, not an error.
     if (!useSessionStore.getState().token) return;
     const id = ++seq;
-    set({ notices: [...get().notices, { ...n, id }] });
+    // The same notice again (a refused tap repeated) replaces the one showing: one, never a stack over the screen.
+    set({ notices: [...get().notices.filter((x) => x.text !== n.text), { ...n, id }] });
     if (ttlMs > 0) setTimeout(() => get().dismissNotice(id), ttlMs);
   },
   dismissNotice: (id) => set({ notices: get().notices.filter((n) => n.id !== id) }),

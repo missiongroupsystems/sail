@@ -332,23 +332,90 @@ describe("refunds", () => {
 });
 
 describe("a re-split keeps numbered documents", () => {
-  it("an order reopened after its bill was invoiced cannot be re-split: the invoice records that bill", async () => {
-    const o = await open(managerPin, { order_type: "takeaway", takeaway_ref: "Inv" });
-    const added = await addLines(managerPin, o.body.data.id, [{ line_id: randomUUID(), product_id: ids.laksa, quantity: 1 }, { line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }]);
-    await call("POST", `/v1/orders/${o.body.data.id}/fire`, { token: managerPin, body: {} });
-    const check = added.body.data.checks[0]!;
-    expect((await pay(managerPin, check.id, { tender_type_id: ids.card, amount: check.balance })).status).toBe(200);
-    const inv = await call<{ data: { invoice_no: string } }>("POST", `/v1/checks/${check.id}/invoice`, { token: managerPin, body: {} });
+  type Cancelled = { id: string; invoice_no: string; credit_note_no: string };
+  const snap = async (orderId: string) => (await call<{ data: Snap & { checks: (Check & { invoice_no: string | null; cancelled_invoices: Cancelled[] })[] } }>("GET", `/v1/orders/${orderId}`, { token: managerPin })).body.data;
+  const invoice = async (checkId: string) => {
+    const inv = await call<{ data: { invoice_no: string } }>("POST", `/v1/checks/${checkId}/invoice`, { token: managerPin, body: {} });
     expect(inv.status, JSON.stringify(inv.body)).toBe(200);
-    const reopened = await call<Body>("POST", `/v1/orders/${o.body.data.id}/reopen`, { token: managerPin, body: { reason: "Wrong items" } });
-    expect(reopened.status, JSON.stringify(reopened.body)).toBe(200);
-    const split = await call<Body>("POST", `/v1/orders/${o.body.data.id}/checks/split-even`, { token: managerPin, body: { n: 2 } });
-    // The reopen cancelled the invoice with a credit note (review 3, R2); the bill it records is kept as it was.
-    const [cancelled] = await db.sql<{ invoice_no: string; credit_note_no: string; check_id: string }[]>`select invoice_no, credit_note_no, check_id from invoice_cancellations where check_id = ${check.id}`;
-    expect(cancelled).toMatchObject({ invoice_no: inv.body.data.invoice_no, check_id: check.id });
-    expect(split.status).toBe(409);
-    expect(split.body.message).toBe(`Bill 1 had tax invoice ${inv.body.data.invoice_no}, cancelled by ${cancelled!.credit_note_no}`);
-    const [kept] = await db.sql<{ id: string }[]>`select id from checks where id = ${check.id}`;
-    expect(kept!.id).toBe(check.id);
+    return inv.body.data.invoice_no;
+  };
+  /** An order of two lines, split into `bills` and each bill paid by card and invoiced. */
+  const paidAndInvoiced = async (ref: string, bills: number) => {
+    const o = await open(managerPin, { order_type: "takeaway", takeaway_ref: ref });
+    await addLines(managerPin, o.body.data.id, [{ line_id: randomUUID(), product_id: ids.laksa, quantity: 1 }, { line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }]);
+    await call("POST", `/v1/orders/${o.body.data.id}/fire`, { token: managerPin, body: {} });
+    if (bills > 1) expect((await call<Body>("POST", `/v1/orders/${o.body.data.id}/checks/split-even`, { token: managerPin, body: { n: bills } })).status).toBe(200);
+    const numbers: string[] = [];
+    const paymentIds: string[] = [];
+    for (const c of (await snap(o.body.data.id)).checks) {
+      const paid = await pay(managerPin, c.id, { tender_type_id: ids.card, amount: c.balance });
+      expect(paid.status, JSON.stringify(paid.body)).toBe(200);
+      paymentIds.push((paid.body as unknown as { payment: { id: string } }).payment.id);
+      numbers.push(await invoice(c.id));
+    }
+    return { orderId: o.body.data.id, numbers, paymentIds };
+  };
+  const allCancelled = (s: Awaited<ReturnType<typeof snap>>) => s.checks.flatMap((c) => c.cancelled_invoices.map((x) => x.invoice_no)).sort();
+
+  it("one bill on an order whose Bill 2 alone had its invoice cancelled keeps that bill and its documents (review5 W2)", async () => {
+    const o = await open(managerPin, { order_type: "takeaway", takeaway_ref: "Second" });
+    const orderId = o.body.data.id;
+    await addLines(managerPin, orderId, [{ line_id: randomUUID(), product_id: ids.laksa, quantity: 1 }, { line_id: randomUUID(), product_id: ids.kopi, quantity: 1 }]);
+    await call("POST", `/v1/orders/${orderId}/fire`, { token: managerPin, body: {} });
+    expect((await call<Body>("POST", `/v1/orders/${orderId}/checks/split-even`, { token: managerPin, body: { n: 2 } })).status).toBe(200);
+    const [b1, b2] = (await snap(orderId)).checks;
+    for (const c of [b1!, b2!]) expect((await pay(managerPin, c.id, { tender_type_id: ids.card, amount: c.balance })).status).toBe(200);
+    const no = await invoice(b2!.id);
+    expect((await call<Body>("POST", `/v1/orders/${orderId}/reopen`, { token: managerPin, body: { reason: "Wrong items" } })).status).toBe(200);
+    const one = await call<Body>("POST", `/v1/orders/${orderId}/checks/unsplit`, { token: managerPin, body: {} });
+    expect(one.status, JSON.stringify(one.body)).toBe(200);
+    const after = await snap(orderId);
+    expect(after.checks.map((c) => ({ id: c.id, label: c.label, cancelled: c.cancelled_invoices.map((x) => x.invoice_no) }))).toEqual([{ id: b2!.id, label: "Bill 1", cancelled: [no] }]);
+    expect(after.checks[0]!.totals.total).toBe(after.totals.total);
+    // Both bills' reversed payments are on the one bill left.
+    expect(after.checks[0]!.payments.length).toBe(2);
+    expect((await pay(managerPin, after.checks[0]!.id, { tender_type_id: ids.card, amount: after.checks[0]!.balance })).status).toBe(200);
   });
+
+  for (const how of ["reopen", "void"] as const) {
+    for (const bills of [1, 2]) {
+      it(`after a ${how} cancelled the invoice${bills > 1 ? "s of a split order" : ""} with a credit note, the order can be split and merged again; the cancelled invoices and credit notes stay listed and print as issued (review5 W2)`, async () => {
+        const { orderId, numbers, paymentIds } = await paidAndInvoiced(`${how}-${bills}`, bills);
+        if (how === "reopen") expect((await call<Body>("POST", `/v1/orders/${orderId}/reopen`, { token: managerPin, body: { reason: "Wrong items" } })).status).toBe(200);
+        else for (const id of paymentIds) expect((await call("POST", `/v1/payments/${id}/void`, { token: managerPin, body: { reason: "Wrong payment method" } })).status).toBe(200);
+        const before = await snap(orderId);
+        expect(allCancelled(before)).toEqual([...numbers].sort());
+        const cancelled = before.checks.flatMap((c) => c.cancelled_invoices);
+        const pdfs = async () => Promise.all(cancelled.flatMap((c) => [`/v1/invoice-cancellations/${c.id}/invoice.pdf`, `/v1/invoice-cancellations/${c.id}/credit-note.pdf`].map(async (path) => Buffer.from(await (await app.request(path, { headers: { authorization: `Bearer ${managerPin}` } })).arrayBuffer()).toString("base64"))));
+        const printed = await pdfs();
+
+        // Even 3, then fewer bills: each works, and the documents stay on the order with the bills they name.
+        const steps = bills === 1 ? ([["split-even", { n: 3 }], ["unsplit", {}], ["split-even", { n: 2 }]] as const) : ([["split-even", { n: 3 }], ["split-even", { n: 2 }]] as const);
+        for (const [path, body] of steps) {
+          const res = await call<Body>("POST", `/v1/orders/${orderId}/checks/${path}`, { token: managerPin, body });
+          expect(res.status, JSON.stringify(res.body)).toBe(200);
+          expect(res.body.data.checks.reduce((a, c) => a + c.totals.total, 0)).toBe(res.body.data.totals.total);
+          expect(allCancelled(await snap(orderId))).toEqual([...numbers].sort());
+        }
+        if (bills > 1) {
+          // Both bills had an invoice cancelled: one bill would drop one of them, so it is refused in plain words.
+          const one = await call<Body>("POST", `/v1/orders/${orderId}/checks/unsplit`, { token: managerPin, body: {} });
+          expect(one.status).toBe(409);
+          expect(one.body.message).toBe("2 bills had a tax invoice that was cancelled");
+          expect((await snap(orderId)).checks.map((c) => c.cancelled_invoices.length)).toEqual([1, 1]);
+        }
+        // The stored documents print exactly as before the re-split.
+        expect(await pdfs()).toEqual(printed);
+
+        // Paid again and invoiced: new numbers, none reused.
+        const after = await snap(orderId);
+        for (const c of after.checks) {
+          expect((await pay(managerPin, c.id, { tender_type_id: ids.card, amount: c.balance })).status).toBe(200);
+          const n = await invoice(c.id);
+          expect(numbers).not.toContain(n);
+        }
+        expect((await snap(orderId)).status).toBe("completed");
+      });
+    }
+  }
 });
