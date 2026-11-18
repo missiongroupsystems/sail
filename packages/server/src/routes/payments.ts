@@ -1,5 +1,5 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { and, desc, eq, isNull, sql, inArray } from "drizzle-orm";
+import { and, desc, eq, isNull, or, sql, inArray } from "drizzle-orm";
 import { AmountSchema, PERMISSIONS, registerOperations, roleAtLeast, type OperationSpec } from "@sail/shared";
 import { db, markDryRun, settleInvariants, withTransaction } from "../db/client.js";
 import { businessDayCloses, checks, invoiceCancellations, orders, paymentIntents, payments, printers, shifts, stations, tenderTypes } from "../db/schema/index.js";
@@ -38,7 +38,7 @@ registerOperations({
   "shifts.open": op({ op: "shifts.open", summary: "Open a shift", description: "With a counted float. One open shift per station (or per outlet when no station).", ...PERMISSIONS["shifts.open"], emits: ["shift.opened"] }),
   "shifts.close": op({ op: "shifts.close", summary: "Close a shift", description: "With the counted cash. Returns expected vs counted cash including rounding, and the shift's Z figures. A variance above the merchant's `cash_variance_threshold` needs `variance_reason`; without one the close is refused (400, `details` has expected, counted, variance and variance_threshold). Cashier+ for own shift; Manager+ for another's.", ...PERMISSIONS["shifts.close"], emits: ["shift.closed"] }),
   "shifts.list": op({ op: "shifts.list", summary: "Shifts of an outlet", description: "Open and closed shifts with their summaries.", tier: "T0", minRole: "server", dryRun: false, principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["pos.read", "reports"] } }),
-  "business_days.z_report": op({ op: "business_days.z_report", summary: "Z-report", description: "Sales, tenders, expected vs counted cash, rounding, voids and covers for an outlet (or station) and business date. Figures come from the register. `voids` are lines voided after they were sent to the kitchen; a line removed before sending, or by cancelling an order with nothing sent, is not a void. `sales.net` is net sales: items after discounts, without tax and fees, less `sales.refunds` (the refunds' net); `sales.fees` excludes tax; `sales.total` is what was collected before refunds (`net + refunds + fees + tax = total`), and `refunds.amount` is the money refunded. While any shift at the outlet is still open, a caller below Manager gets `withheld: \"open_shift\"` with only the scope, order counts, void and refund counts, and the open drawers' number and floats (a blind count).", tier: "T0", minRole: "cashier", dryRun: false, principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["reports", "pos.read"] } }),
+  "business_days.z_report": op({ op: "business_days.z_report", summary: "Z-report", description: "Sales, tenders, expected vs counted cash, rounding, voids and covers for an outlet (or station) and business date. Figures come from the register. `voids` are lines voided after they were sent to the kitchen; a line removed before sending, or by cancelling an order with nothing sent, is not a void. `sales.net` is net sales: items after discounts, without tax and fees, less `sales.refunds` (the refunds' net); `sales.fees` excludes tax; `sales.total` is what was collected before refunds (`net + refunds + fees + tax = total`), and `refunds.amount` is the money refunded. While a shift in the report's scope is still open (for the whole outlet any shift; for one station its own shift or a whole-outlet drawer), a caller below Manager gets `withheld: \"open_shift\"` with only the scope, order counts, void and refund counts, and the number and floats of the open drawers in scope (a blind count).", tier: "T0", minRole: "cashier", dryRun: false, principals: ["staff", "station", "agent"], mcp: { expose: true, toolsets: ["reports", "pos.read"] } }),
   "business_days.close": op({ op: "business_days.close", summary: "Close a business day", description: "Snapshots the Z-report once every shift is closed. Manager+. T3: it cannot be undone and closes the day for the whole outlet.", tier: "T3", ...PERMISSIONS["business_days.close"], emits: ["business_day.closed"], mcp: { expose: true, toolsets: ["pos.payment"] } }),
 });
 
@@ -341,10 +341,12 @@ export function paymentRoutes(app: OpenAPIHono<AppEnv>) {
     // The close is a blind count (S-9): while a drawer at the outlet is open, a caller below Manager, who may be the one
     // to count it, gets no money figure the open drawer's expected cash could be read or worked out from (its sales,
     // tenders, cash and refunds all hold that drawer's takings). The floats, that shifts are open, and counts stay.
-    // Any drawer open at the outlet counts, not only this report's: a whole-outlet drawer takes this station's cash too.
+    // The drawers that count are those in the report's scope (review 5, V6): for the whole outlet any open drawer; for one
+    // station its own open shift, and a whole-outlet drawer, which takes that station's cash when it has no shift of its
+    // own. Another station's open drawer holds none of this station's cash, so it leaves this station's figures shown.
     const role = principalRole(p);
     if (!(role && roleAtLeast(role, "manager"))) {
-      const drawers = await openFloats(id);
+      const drawers = await openFloats(id, q.station_id ?? null);
       if (drawers.count > 0) return c.json({ data: withheldZReport(report, drawers) }, 200);
     }
     return c.json({ data: report }, 200);
@@ -380,9 +382,15 @@ function withheldZReport(r: Awaited<ReturnType<typeof zReport>> & { closed: unkn
   };
 }
 
-/** The number and floats of the drawers open at an outlet, whatever business day they opened on (one left open past the cutoff still takes cash). */
-async function openFloats(outletId: string) {
-  const [r] = await db().select({ count: sql<number>`count(*)::int`, float: sql<number>`coalesce(sum(${shifts.floatCents}),0)::bigint` }).from(shifts).where(and(eq(shifts.outletId, outletId), eq(shifts.status, "open")));
+/**
+ * The number and floats of the drawers open at an outlet (or those that take a station's cash: its own and a whole-outlet
+ * drawer), whatever business day they opened on (one left open past the cutoff still takes cash).
+ */
+async function openFloats(outletId: string, stationId: string | null) {
+  const [r] = await db()
+    .select({ count: sql<number>`count(*)::int`, float: sql<number>`coalesce(sum(${shifts.floatCents}),0)::bigint` })
+    .from(shifts)
+    .where(and(eq(shifts.outletId, outletId), eq(shifts.status, "open"), stationId ? or(eq(shifts.stationId, stationId), isNull(shifts.stationId)) : sql`true`));
   return { count: r?.count ?? 0, float: Number(r?.float ?? 0) };
 }
 

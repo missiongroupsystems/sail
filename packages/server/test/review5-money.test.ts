@@ -372,3 +372,47 @@ describe("V4: a credit note for a bill paid with two tenders closes with what wa
     expect(rr!.receipt_document.paid_total).toBe(-1900);
   });
 });
+
+describe("V6: a station's Z-report is blind only while a drawer in its scope is open", () => {
+  type ZRes = { data: { withheld?: string; cash: { float: number; expected?: number; variance?: number | null; open_shifts: { count: number; float: number } }; sales?: { net: number } } };
+  const z = (w: World, token: string, stationId?: string) => call<ZRes["data"] extends infer D ? { data: D } : never>("GET", `/v1/outlets/${w.m.outletId}/z-report${stationId ? `?station_id=${stationId}` : ""}`, { token });
+  it("Station 1's Cashier closes their shift while Station 2's drawer stays open: Station 1's report shows its figures; the whole outlet and Station 2 stay blind and name only their own drawers", async () => {
+    const w = US;
+    const cashier = pos(w, 0);
+    const s1 = await call<{ data: { id: string } }>("POST", "/v1/shifts", { token: cashier, body: { float_cents: 8_000 } });
+    expect(s1.status, JSON.stringify(s1.body)).toBe(201);
+    const s2 = await call<{ data: { id: string } }>("POST", "/v1/shifts", { token: pos(w, 1), body: { float_cents: 10_000 } });
+    expect(s2.status, JSON.stringify(s2.body)).toBe(201);
+    for (const i of [0, 1]) {
+      const o = await open(w, i);
+      const s = await add(w, o.body.data.id, ["coffee"], i);
+      expect((await call("POST", `/v1/orders/${o.body.data.id}/fire`, { token: pos(w, i), body: {} })).status).toBe(200);
+      expect((await pay(w, s.body.data.checks[0]!.id, s.body.data.checks[0]!.balance, "cash", i)).status).toBe(200);
+    }
+    // Before the close: Station 1's own drawer is open, so its report is blind and names only that drawer.
+    const before = await z(w, cashier, w.stations[0]!.id);
+    expect(before.body.data.withheld).toBe("open_shift");
+    expect(before.body.data.cash.open_shifts).toEqual({ count: 1, float: 8_000 });
+
+    const coffee = 279 + 24; // $2.79 + 4% + 4.5%
+    const closed = await call("POST", `/v1/shifts/${s1.body.data.id}/close`, { token: cashier, body: { counted_cash_cents: 8_000 + coffee } });
+    expect(closed.status, JSON.stringify(closed.body)).toBe(200);
+
+    const mine = await z(w, cashier, w.stations[0]!.id);
+    expect(mine.body.data.withheld).toBeUndefined();
+    expect(mine.body.data.cash).toMatchObject({ float: 8_000, expected: 8_000 + coffee, variance: 0 });
+    const outlet = await z(w, cashier);
+    expect(outlet.body.data.withheld).toBe("open_shift");
+    expect(outlet.body.data.cash.open_shifts).toEqual({ count: 1, float: 10_000 });
+    const other = await z(w, cashier, w.stations[1]!.id);
+    expect(other.body.data.withheld).toBe("open_shift");
+    expect(other.body.data.cash.open_shifts).toEqual({ count: 1, float: 10_000 });
+    // Nothing the Cashier is shown lets them work out Station 2's expected cash.
+    for (const r of [outlet, other]) expect(JSON.stringify(r.body.data)).not.toContain(String(10_000 + coffee));
+    // A Manager sees every scope.
+    expect((await z(w, w.m.manager.token)).body.data.withheld).toBeUndefined();
+    const close2 = await call("POST", `/v1/shifts/${s2.body.data.id}/close`, { token: pos(w, 1), body: { counted_cash_cents: 10_000 + coffee } });
+    expect(close2.status, JSON.stringify(close2.body)).toBe(200);
+    expect((await z(w, cashier)).body.data.withheld).toBeUndefined();
+  });
+});
