@@ -255,3 +255,120 @@ describe("V2: an even split keeps every line's shares within a cent as well as t
     await cancel(US, o.id);
   });
 });
+
+const pay = (w: World, checkId: string, amount: number, tender: "cash" | "card", i = 0, tip = 0) => call<Mut>("POST", `/v1/checks/${checkId}/payments`, { token: pos(w, i), body: { payment_id: randomUUID(), tender_type_id: tender === "cash" ? w.cash : w.card, amount, ...(tip ? { tip_cents: tip } : {}) } });
+const boRefund = (w: World, checkId: string, request: unknown, extra: Record<string, unknown> = {}) => call<RefundRes>("POST", `/v1/checks/${checkId}/refunds`, { token: w.m.manager.token, body: { refund_id: randomUUID(), request, reason: "Wrong item keyed", print: false, ...extra } });
+const pdfWords = async (path: string, token: string) => {
+  const r = await app.request(path, { headers: { authorization: `Bearer ${token}` } });
+  expect(r.status, path).toBe(200);
+  return pdfStrings(new Uint8Array(await r.arrayBuffer()));
+};
+/** A takeaway order at station `i`, sent and paid by card (with a tip) in one tender. */
+async function paidByCard(w: World, keys: string[], tip = 0, i = 1) {
+  const o = await open(w, i);
+  const s = await add(w, o.body.data.id, keys, i);
+  expect((await call("POST", `/v1/orders/${o.body.data.id}/fire`, { token: pos(w, i), body: {} })).status).toBe(200);
+  const check = s.body.data.checks[0]!;
+  const paid = await pay(w, check.id, check.balance, "card", i, tip);
+  expect(paid.status, JSON.stringify(paid.body)).toBe(200);
+  return paid.body.data;
+}
+type RefundRow = { id: string; credit_note_no: string | null; totals: { total: number } };
+const refundsOf = async (w: World, orderId: string) => (await db.sql<RefundRow[]>`select id, credit_note_no, jsonb_build_object('total', total) as totals from refunds where order_id = ${orderId} order by created_at`);
+
+describe("V3: an invoice issued after a refund comes with a credit note for it", () => {
+  for (const which of ["US", "EU"] as const) {
+    it(`${which}: refund by items, then Get invoice: the refund gets the next credit note, the invoice lists it; a later refund gets its own at once; a tip refund none`, async () => {
+      const w = which === "US" ? US : EU;
+      const fmt = (c: number) => new Intl.NumberFormat(which === "US" ? "en-US" : "de-DE", { style: "currency", currency: which === "US" ? "USD" : "EUR" }).format(c / 100);
+      // The café has tips turned off.
+      const o = await paidByCard(w, which === "US" ? ["coffee", "tea", "rings"] : ["cake", "juice", "wine"], which === "US" ? 200 : 0);
+      const check = o.checks[0]!;
+      const first = await boRefund(w, check.id, { kind: "lines", lines: [{ line_id: o.lines[0]!.id, quantity: 1 }, { line_id: o.lines[1]!.id, quantity: 1 }] });
+      expect(first.status, JSON.stringify(first.body)).toBe(201);
+      expect(first.body.refund.credit_note_no).toBeNull();
+      const cnBefore = (await db.sql<{ n: number }[]>`select coalesce(max(next_no), 1)::int as n from document_sequences where merchant_id = ${w.m.merchantId} and kind = 'credit_note'`)[0]!.n;
+
+      const inv = await call<{ data: { invoice_no: string } }>("POST", `/v1/checks/${check.id}/invoice`, { token: w.m.manager.token, body: {} });
+      expect(inv.status, JSON.stringify(inv.body)).toBe(200);
+      const [r1] = await refundsOf(w, o.id);
+      expect(r1!.credit_note_no).toBe(`CN-${String(cnBefore).padStart(6, "0")}`);
+      // The invoice: the sale as paid, then its credit note.
+      const words = await pdfWords(`/v1/checks/${check.id}/invoice.pdf`, w.m.manager.token);
+      const at = words.indexOf(`Credit note ${r1!.credit_note_no}`);
+      expect(at, words.join(" | ")).toBeGreaterThan(-1);
+      expect(words[at + 1]).toBe(`−${fmt(first.body.refund.totals.total)}`);
+      // The credit note: against the invoice, the refund's lines and tax, signed.
+      const cn = await pdfWords(`/v1/refunds/${r1!.id}/credit-note.pdf`, w.m.manager.token);
+      expect(cn).toContain("CREDIT NOTE");
+      expect(cn).toContain(`Against invoice ${inv.body.data.invoice_no}`);
+      expect(cn).toContain(`−${fmt(first.body.refund.totals.total)}`);
+      // Asking again reuses the invoice and issues nothing more.
+      const again = await call<{ data: { invoice_no: string; reused: boolean } }>("POST", `/v1/checks/${check.id}/invoice`, { token: w.m.manager.token, body: {} });
+      expect(again.body.data).toMatchObject({ invoice_no: inv.body.data.invoice_no, reused: true });
+      // The reverse order still works: a refund after the invoice gets a credit note at once.
+      const later = await boRefund(w, check.id, { kind: "lines", lines: [{ line_id: o.lines[2]!.id, quantity: 1 }] });
+      expect(later.status, JSON.stringify(later.body)).toBe(201);
+      expect(later.body.refund.credit_note_no).toBe(`CN-${String(cnBefore + 1).padStart(6, "0")}`);
+      // Now only the tip is left: its refund gets no credit note.
+      if (which === "US") {
+        const tip = await boRefund(w, check.id, { kind: "full" });
+        expect(tip.status, JSON.stringify(tip.body)).toBe(201);
+        expect(tip.body.refund.totals.total).toBe(0);
+        expect(tip.body.refund.credit_note_no).toBeNull();
+      }
+      // Refund rows stay immutable otherwise.
+      await expect(db.sql`update refunds set total = total + 1 where id = ${r1!.id}`).rejects.toThrow(/append_only/);
+      await expect(db.sql`update refunds set credit_note_no = 'CN-999999' where id = ${r1!.id}`).rejects.toThrow(/append_only/);
+    });
+  }
+
+  it("a tip-only refund made before the invoice gets no credit note when the invoice is issued", async () => {
+    const o = await paidByCard(US, ["coffee"], 100);
+    const check = o.checks[0]!;
+    // Every item back, then the tip on its own.
+    expect((await boRefund(US, check.id, { kind: "lines", lines: [{ line_id: o.lines[0]!.id, quantity: 1 }] })).status).toBe(201);
+    expect((await boRefund(US, check.id, { kind: "full" })).status).toBe(201);
+    expect((await call("POST", `/v1/checks/${check.id}/invoice`, { token: US.m.manager.token, body: {} })).status).toBe(200);
+    const rows = await refundsOf(US, o.id);
+    expect(rows.map((r) => r.credit_note_no !== null)).toEqual([true, false]);
+  });
+});
+
+describe("V4: a credit note for a bill paid with two tenders closes with what was refunded", () => {
+  const eur = (c: number) => new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(c / 100);
+  it("the reopen's credit note reads Cash −, Card −, Refunded − (never a positive Paid); a two-tender refund's too", async () => {
+    const o = await open(EU, 1);
+    const s = await add(EU, o.body.data.id, ["sandwich", "wine", "tea"], 1);
+    expect((await call("POST", `/v1/orders/${o.body.data.id}/fire`, { token: pos(EU, 1), body: {} })).status).toBe(200);
+    const check = s.body.data.checks[0]!;
+    const shift = await call<{ data: { id: string } }>("POST", "/v1/shifts", { token: pos(EU, 1), body: { float_cents: 5000 } });
+    expect(shift.status, JSON.stringify(shift.body)).toBe(201);
+    expect((await pay(EU, check.id, 1000, "cash", 1)).status).toBe(200);
+    expect((await pay(EU, check.id, check.balance - 1000, "card", 1)).status).toBe(200);
+    expect((await call("POST", `/v1/checks/${check.id}/invoice`, { token: EU.m.manager.token, body: {} })).status).toBe(200);
+    const invoice = await pdfWords(`/v1/checks/${check.id}/invoice.pdf`, EU.m.manager.token);
+    expect(invoice[invoice.indexOf("Paid") + 1]).toBe(eur(1900));
+    const reopen = await call<Mut>("POST", `/v1/orders/${o.body.data.id}/reopen`, { token: EU.m.manager.token, body: { reason: "Wrong items" } });
+    expect(reopen.status, JSON.stringify(reopen.body)).toBe(200);
+    const [x] = await db.sql<{ id: string }[]>`select id from invoice_cancellations where check_id = ${check.id}`;
+    const cn = await pdfWords(`/v1/invoice-cancellations/${x!.id}/credit-note.pdf`, EU.m.manager.token);
+    expect(cn).not.toContain("Paid");
+    expect(cn[cn.indexOf("Refunded") + 1]).toBe(`−${eur(1900)}`);
+    expect(cn[cn.indexOf("Cash") + 1]).toBe(`−${eur(1000)}`);
+
+    // Paid again in two tenders, invoiced, then refunded in full to both: the same closing row.
+    const again = (await call<{ data: Snap }>("GET", `/v1/orders/${o.body.data.id}`, { token: EU.m.manager.token })).body.data.checks[0]!;
+    expect((await pay(EU, again.id, 1000, "cash", 1)).status).toBe(200);
+    expect((await pay(EU, again.id, again.balance - 1000, "card", 1)).status).toBe(200);
+    expect((await call("POST", `/v1/checks/${again.id}/invoice`, { token: EU.m.manager.token, body: {} })).status).toBe(200);
+    const full = await call<RefundRes>("POST", `/v1/checks/${again.id}/refunds`, { token: pos(EU, 1), body: { refund_id: randomUUID(), request: { kind: "full" }, reason: "Complaint", print: false } });
+    expect(full.status, JSON.stringify(full.body)).toBe(201);
+    const words = await pdfWords(`/v1/refunds/${full.body.refund.id}/credit-note.pdf`, EU.m.manager.token);
+    expect(words).not.toContain("Paid");
+    expect(words[words.indexOf("Refunded") + 1]).toBe(`−${eur(1900)}`);
+    // The refund receipt says the same (the thermal and digital receipts read this document).
+    const [rr] = await db.sql<{ receipt_document: { paid_total?: number } }[]>`select receipt_document from refunds where id = ${full.body.refund.id}`;
+    expect(rr!.receipt_document.paid_total).toBe(-1900);
+  });
+});

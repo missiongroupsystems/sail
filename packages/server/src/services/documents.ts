@@ -1,9 +1,9 @@
 import { PDFDocument, rgb } from "pdf-lib";
-import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { BillDocument } from "@sail/shared";
 import { embedPdfFonts, pdfDateTime, pdfMoney, pdfText, savePdf } from "../lib/pdf-text.js";
 import { db, tx } from "../db/client.js";
-import { checks, digitalReceipts, invoiceCancellations, merchants, outlets } from "../db/schema/index.js";
+import { checks, digitalReceipts, invoiceCancellations, merchants, outlets, refunds } from "../db/schema/index.js";
 import type { Principal } from "../auth/principal.js";
 import { AppError } from "../lib/errors.js";
 import { randomToken, sha256 } from "../auth/tokens.js";
@@ -25,7 +25,11 @@ export async function nextDocumentNo(merchantId: string, kind: "invoice" | "cred
   return `${DOCUMENT_PREFIX[kind] ?? ""}${String(row!.n).padStart(6, "0")}`;
 }
 
-export type InvoiceDocument = BillDocument & { invoice: { number: string; issued_at: string; merchant_name: string; outlet_address: string | null } };
+export type InvoiceDocument = BillDocument & {
+  invoice: { number: string; issued_at: string; merchant_name: string; outlet_address: string | null };
+  /** Credit notes issued with the invoice for refunds made before it, each with its (negative) total (review 5, V3). */
+  credit_notes?: { number: string; total: number }[];
+};
 
 /** Issue (or return the existing) tax invoice for a paid check. Issued once; reprints reuse the number. */
 export async function issueInvoice(checkId: string, bill: BillDocument): Promise<{ check: typeof checks.$inferSelect; document: InvoiceDocument; reused: boolean }> {
@@ -39,6 +43,20 @@ export async function issueInvoice(checkId: string, bill: BillDocument): Promise
   const number = await nextDocumentNo(check.merchantId, "invoice");
   const issuedAt = new Date();
   const document: InvoiceDocument = { ...bill, invoice_no: number, invoice: { number, issued_at: issuedAt.toISOString(), merchant_name: merchant?.name ?? "", outlet_address: outlet?.address ?? null } };
+  // The invoice records the sale; a refund made before it was issued is corrected by a credit note issued with it, in
+  // this transaction, as a refund of an invoiced bill is (review 5, V3). A refund of only a tip changes nothing the
+  // invoice holds, so it gets none.
+  const earlier = await db().select().from(refunds).where(and(eq(refunds.checkId, checkId), isNull(refunds.creditNoteNo))).orderBy(asc(refunds.createdAt), asc(refunds.refundReceiptNo));
+  const notes: { number: string; total: number }[] = [];
+  for (const r of earlier) {
+    if (r.total <= 0) continue;
+    const creditNoteNo = await nextDocumentNo(check.merchantId, "credit_note");
+    const receipt = r.receiptDocument as BillDocument;
+    const creditNote: InvoiceDocument = { ...receipt, kind: "refund_receipt", invoice_no: number, credit_note_no: creditNoteNo, invoice: { ...document.invoice, number: creditNoteNo, issued_at: issuedAt.toISOString() } };
+    await db().update(refunds).set({ creditNoteNo, creditNoteDocument: creditNote }).where(eq(refunds.id, r.id));
+    notes.push({ number: creditNoteNo, total: -r.total });
+  }
+  if (notes.length) document.credit_notes = notes;
   const [updated] = await db().update(checks).set({ invoiceNo: number, invoiceIssuedAt: issuedAt, invoiceDocument: document, updatedAt: issuedAt }).where(eq(checks.id, checkId)).returning();
   return { check: updated!, document, reused: false };
 }
@@ -57,6 +75,7 @@ export function cancellingCreditNote(invoice: InvoiceDocument, creditNoteNo: str
     adjustments: invoice.adjustments.map((a) => ({ ...a, amount: -a.amount })),
     totals: { ...invoice.totals, subtotal: -invoice.totals.subtotal, discount_total: -invoice.totals.discount_total, fee_total: -invoice.totals.fee_total, tax_total: -invoice.totals.tax_total, total: -invoice.totals.total, taxes: invoice.totals.taxes.map((t) => ({ ...t, amount: -t.amount })) },
     payments: invoice.payments?.map((p) => ({ tender: p.tender, amount: -p.amount, rounding_cents: neg(p.rounding_cents), tip: neg(p.tip), charged: neg(p.charged) })),
+    paid_total: neg(invoice.paid_total),
     balance: undefined,
     invoice_no: invoice.invoice.number,
     credit_note_no: creditNoteNo,
@@ -231,7 +250,13 @@ export async function renderInvoicePdf(doc: InvoiceDocument, kind: "TAX INVOICE"
       if (p.change && p.tendered) row("Tendered", p.tendered);
       if (p.change) row("Change", p.change);
     }
-    if (doc.paid_total !== undefined) row("Paid", doc.paid_total, bold);
+    // A credit note gives money back: its closing row says so, signed as its other amounts (review 5, V4).
+    if (doc.paid_total !== undefined) row(kind === "CREDIT NOTE" ? "Refunded" : "Paid", kind === "CREDIT NOTE" ? -Math.abs(doc.paid_total) : doc.paid_total, bold);
+  }
+  // The credit notes issued with this invoice for refunds made before it, so the invoice and its corrections read together.
+  if (doc.credit_notes?.length) {
+    y -= 6;
+    for (const n of doc.credit_notes) row(`Credit note ${n.number}`, n.total);
   }
   if (extra.reason) {
     y -= 10;

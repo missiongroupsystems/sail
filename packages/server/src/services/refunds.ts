@@ -140,6 +140,8 @@ export async function createRefund(input: { refundId: string; checkId: string; r
     adjustments: adjRows.filter((a) => (adjTotals.get(a.id) ?? 0) !== 0).map((a) => ({ name: a.name, amount: -(adjTotals.get(a.id) ?? 0), kind: a.kind as "fee" | "discount" })),
     totals: { ...original.totals, subtotal: -q.totals.base, discount_total: -q.totals.discount, fee_total: -q.totals.fee, tax_total: -q.totals.tax, taxes: q.totals.taxes.map((t) => ({ ...t, amount: -t.amount })), total: -q.totals.total },
     payments: q.tenders.map((t) => ({ tender: t.tender, amount: -t.amount, rounding_cents: t.rounding_cents ? -t.rounding_cents : undefined, tip: t.tip_cents ? -t.tip_cents : undefined, reference: input.reference ?? undefined })),
+    // What this refund gave back in all, when it went to two tenders or more; never the original sale's paid total.
+    paid_total: q.tenders.length > 1 ? -q.tenders.reduce((n, t) => n + t.amount + t.rounding_cents + t.tip_cents, 0) : undefined,
     balance: undefined,
     original_check_no: original.header.order_no + " · " + original.check_label,
     original_date: ref.check.paidAt?.toISOString() ?? ref.check.createdAt.toISOString(),
