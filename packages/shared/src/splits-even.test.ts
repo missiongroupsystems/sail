@@ -160,7 +160,6 @@ function splitAndCheck(lines: Priced[], shares: { num: number; den: number }[][]
     return m;
   };
   const before = orderTax();
-  const netTax = new Map(lines.map((l, li) => [String(li), l.netTax]));
   const slots = (id: string) => {
     const l = lines[Number(id)]!;
     const fee = l.taxes.reduce((n, t) => n + t.amount, 0) - l.netTax;

@@ -1,4 +1,4 @@
-import { allocateByShares, allocateLargestRemainder, sumCents, type Cents, type Share } from "./money.js";
+import { allocateByShares, sumCents, type Cents, type Share } from "./money.js";
 import type { TaxAmount } from "./pricing/schemas.js";
 import { componentTax } from "./pricing/engine.js";
 
