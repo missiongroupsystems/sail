@@ -201,7 +201,8 @@ export function buildBillDocument(data: BillDocument, cols: number): DocLine[] {
       if (p.change !== undefined && p.change !== 0 && p.tendered !== undefined) for (const t of moneyRow("Tendered", p.tendered, cols, fmt)) doc.push(text(t));
       if (p.change !== undefined && p.change !== 0) for (const t of moneyRow("Change", p.change, cols, fmt)) doc.push(text(t));
     }
-    if (data.paid_total !== undefined) for (const t of moneyRow("Paid", data.paid_total, cols, fmt)) doc.push(text(t));
+    // A refund gives money back: its closing row says so (review 5, V4).
+    if (data.paid_total !== undefined) for (const t of moneyRow(data.kind === "refund_receipt" ? "Refunded" : "Paid", data.paid_total, cols, fmt)) doc.push(text(t));
   }
   if (data.balance !== undefined) {
     if (!data.payments || data.payments.length === 0) doc.push(text(rule(cols)));

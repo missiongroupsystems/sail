@@ -141,9 +141,9 @@ export function ZReportView({ outlets, scope, initialOutletId, today, initialDat
         <InlineError error={close.error} />
       </Dialog>
 
-      {/* The day and its state, the line under the title. */}
+      {/* The day and its state, the line under the title; on paper the print head says them once. */}
       {validDate && outletId ? (
-        <p className="mb-4 flex flex-wrap items-center gap-2 text-body text-ink-2">
+        <p className="mb-4 flex flex-wrap items-center gap-2 text-body text-ink-2 print:hidden">
           <span className="tabular">{businessDay(date)}</span>
           {closedToday ? <Pill size="sm" tone="paid">Closed</Pill> : date === current ? <Pill size="sm" tone="seated">Day still open: figures so far</Pill> : null}
         </p>

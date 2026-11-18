@@ -106,7 +106,9 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
   const avoidCash = cashPaid && drawer === "card";
   const shiftId = cashPaid && drawer && drawer !== "card" ? drawer : undefined;
   const lineById = useMemo(() => new Map(order.lines.map((l) => [l.id, l])), [order.lines]);
-  const billLines = useMemo(() => (check ? check.allocations.map((a) => ({ alloc: a, line: lineById.get(a.line_id) ?? null })).filter((x) => x.line && x.line.status !== "voided") : []), [check, lineById]);
+  // In the order's own line order, as the drawer lists them (review 5, V8).
+  const lineIndex = useMemo(() => new Map(order.lines.slice().sort((a, b) => (a.seat_no ?? 0) - (b.seat_no ?? 0) || a.sort - b.sort).map((l, i) => [l.id, i])), [order.lines]);
+  const billLines = useMemo(() => (check ? check.allocations.map((a) => ({ alloc: a, line: lineById.get(a.line_id) ?? null })).filter((x) => x.line && x.line.status !== "voided").sort((a, b) => (lineIndex.get(a.alloc.line_id) ?? 0) - (lineIndex.get(b.alloc.line_id) ?? 0)) : []), [check, lineById, lineIndex]);
   /** "paid $43.16 · $10.00 already refunded": the register's two figures, never their difference. */
   const paidSoFar = (c: CheckSnapshot) => `paid ${money(c.paid_total)}${c.refunded_total ? ` · ${money(c.refunded_total)} already refunded` : ""}`;
 
@@ -204,8 +206,8 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
           <DescriptionList
             layout="grid"
             items={[
-              { term: "Refund receipt", detail: <span className="font-mono">{done.refund.refund_receipt_no}</span> },
-              { term: "Credit note", detail: done.refund.credit_note_no ? <span className="font-mono">{done.refund.credit_note_no}</span> : "Not invoiced" },
+              { term: "Refund receipt", detail: <span className="tabular">{done.refund.refund_receipt_no}</span> },
+              { term: "Credit note", detail: done.refund.credit_note_no ? <span className="tabular">{done.refund.credit_note_no}</span> : "Not invoiced" },
               { term: "Amount", detail: <Money cents={done.refund.totals.total} size="heading" />, numeric: true },
               { term: "Reason", detail: done.refund.reason },
             ]}
@@ -240,7 +242,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
                     <span className="flex items-baseline gap-2">
                       <span className="text-line text-ink">{c.label}</span>
                       <Badge tone={c.status === "paid" ? "paid" : "bill"}>{label(CHECK_STATUS_LABEL, c.status)}</Badge>
-                      {c.invoice_no ? <span className="font-mono text-caption text-ink-2">{c.invoice_no}</span> : null}
+                      {c.invoice_no ? <span className="tabular text-caption text-ink-2">{c.invoice_no}</span> : null}
                     </span>
                     <span className="tabular text-caption text-ink-2">{paidSoFar(c)}</span>
                   </button>
@@ -386,7 +388,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
                     <h3 className="pb-1 text-line text-ink hairline-b">Reversal</h3>
                     <ul className="flex flex-col">
                       {/* A row with no quantity and no price only moves a rounding cent of tax; the tax rows below show it. */}
-                      {quote.data.lines.filter((l) => l.quantity !== 0 || l.base !== 0).map((l) => (
+                      {quote.data.lines.filter((l) => l.quantity !== 0 || l.base !== 0).sort((a, b) => (lineIndex.get(a.line_id) ?? 0) - (lineIndex.get(b.line_id) ?? 0)).map((l) => (
                         <li key={l.line_id} className="flex items-baseline justify-between gap-4 py-1.5 hairline-b">
                           <span className="text-ink">
                             {l.quantity ? <span className="tabular text-ink-2">{l.quantity}× </span> : <span className="text-caption text-ink-2">part of </span>}

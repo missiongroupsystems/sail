@@ -619,7 +619,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
       for (const lineId of b.line_ids) await assertLineUnlocked(lineId);
     }
     await db().insert(orderManualApplications).values({ id: b.application_id, merchantId: o.merchantId, outletId: o.outletId, orderId: id, ruleKey: rule.id, enteredValue: b.entered_value ?? null, lineIds: b.line_ids ?? null, appliedBy: p.type === "staff" ? p.id : null, appliedByName: "name" in p ? p.name : null, approvedBy: approval?.id ?? null, approvedByName: approval?.name ?? null, overrideId: b.override_id ?? null, reason: b.reason ?? null });
-    await recordAudit(p, { action: "adjustments.apply_manual", targetKind: "order", targetId: id, outletId: o.outletId, reason: b.reason ?? null, approver: approval, overrideId: b.override_id ?? null, details: { rule_key: rule.id, rule_name: rule.name, entered_value: b.entered_value ?? null } });
+    await recordAudit(p, { action: "adjustments.apply_manual", targetKind: "order", targetId: id, outletId: o.outletId, reason: b.reason ?? null, approver: approval, overrideId: b.override_id ?? null, details: { rule_key: rule.id, rule_name: rule.name, rule_kind: rule.kind, entered_value: b.entered_value ?? null } });
     return finish(c, p, id, [() => emit(c, p, o, "adjustment.applied", { application_id: b.application_id, rule_key: rule.id, rule_name: rule.name, entered_value: b.entered_value ?? null, line_ids: b.line_ids ?? null }, { reason: b.reason ? { text: b.reason } : null, approval: approval ? { override_id: b.override_id, approver_id: approval.id, approver_name: approval.name ?? undefined } : null })]);
   });
 
@@ -638,7 +638,7 @@ export function orderRoutes(app: OpenAPIHono<AppEnv>) {
     if (!rule) throw AppError.notFound("pricing rule", appRow.ruleKey);
     const approval = await requireRoleOrOverride(p, principalRole(p), (rule.min_role ?? "server") as Role, { action: "adjustments.remove", targetId: id, args: { application_id }, overrideId: b.override_id, overrideAllowed: rule.override_allowed });
     await db().update(orderManualApplications).set({ removedAt: new Date(), removedBy: p.id }).where(eq(orderManualApplications.id, application_id));
-    await recordAudit(p, { action: "adjustments.remove", targetKind: "order", targetId: id, outletId: o.outletId, reason: b.reason ?? null, approver: approval, overrideId: b.override_id ?? null, details: { rule_key: appRow.ruleKey } });
+    await recordAudit(p, { action: "adjustments.remove", targetKind: "order", targetId: id, outletId: o.outletId, reason: b.reason ?? null, approver: approval, overrideId: b.override_id ?? null, details: { rule_key: appRow.ruleKey, rule_kind: rule.kind } });
     return finish(c, p, id, [() => emit(c, p, o, "adjustment.removed", { application_id, rule_key: appRow.ruleKey }, { reason: b.reason ? { text: b.reason } : null, approval: approval ? { override_id: b.override_id, approver_id: approval.id, approver_name: approval.name ?? undefined } : null })]);
   });
 
