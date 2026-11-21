@@ -18,6 +18,7 @@ import { cx } from "../lib/cx";
 import { fieldControl, fieldControlSm, fieldDescription, fieldError, fieldLabel, fieldWrap, type FieldSize } from "./field";
 import { Icon } from "./Icon";
 import { useLockedDisabled } from "./FieldsLocked";
+import { RequiredMark } from "./RequiredMark";
 
 export type SelectItem = {
   id: string;
@@ -74,13 +75,20 @@ export function Select({
   return (
     <AriaSelect
       {...rest}
+      // As on TextField: the form's own check says what is missing, never the browser's bubble.
+      validationBehavior="aria"
       isDisabled={isDisabled}
       selectedKey={selectedKey}
       onSelectionChange={(key: Key | null) => onSelectionChange(key === null ? null : String(key))}
       placeholder={placeholder}
       className={cx(fieldWrap, className)}
     >
-      {label ? <Label className={fieldLabel}>{label}</Label> : null}
+      {label ? (
+        <Label className={fieldLabel}>
+          {label}
+          {rest.isRequired ? <RequiredMark /> : null}
+        </Label>
+      ) : null}
       <Button
         className={cx(
           size === "sm" ? fieldControlSm : fieldControl,

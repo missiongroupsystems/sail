@@ -114,6 +114,38 @@ test.describe("POS", () => {
 test.describe("back office and POS together", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
+  test("A3: the product form marks what is required and says what Kind, Deposit item and Open price mean", async ({ page }) => {
+    test.setTimeout(300_000);
+    await signIn(page);
+    await page.goto(`${WEB}/menu/products`);
+    const sheet = page.getByRole("dialog", { name: "New product" });
+    await expect(async () => {
+      await page.getByRole("button", { name: "Add product" }).first().click({ timeout: 5_000 });
+      await expect(sheet).toBeVisible({ timeout: 5_000 });
+    }).toPass({ timeout: 120_000 });
+
+    await test.step("Name and Base price carry the mark, and nothing else does", async () => {
+      const marked = await sheet.locator("label:has([data-required-mark])").evaluateAll((els) => els.map((el) => el.textContent ?? ""));
+      expect(marked).toEqual(["Name · Required", "Base price · Required"]);
+      // The mark is for the eye; the control says "required" itself, and keeps its label as its name.
+      await expect(sheet.getByRole("textbox", { name: "Name", exact: true })).toHaveAttribute("aria-required", "true");
+      await expect(sheet.getByRole("textbox", { name: "Base price", exact: true })).toHaveAttribute("aria-required", "true");
+    });
+
+    await test.step("the three hints are on the form, not behind a menu", async () => {
+      await expect(sheet.getByText("Component: an item used inside other items, such as a bundle or recipe part. It isn't sold on its own.")).toBeVisible();
+      await expect(sheet.getByText("Charges a returnable-container deposit, set up in Pricing › Rules.")).toBeVisible();
+      await expect(sheet.getByText("Staff enter the price when they add the item.")).toBeVisible();
+    });
+
+    await test.step("saving with neither shows both messages and keeps the sheet", async () => {
+      await sheet.getByRole("button", { name: "Add product" }).click();
+      await expect(sheet.getByText("Enter a name")).toBeVisible();
+      await expect(sheet.getByText("Enter a base price")).toBeVisible();
+      await expect(sheet).toBeVisible();
+    });
+  });
+
   test("A2: a POS station needs a brand; one saved without it says so on the iPad and in Settings, and works once it has one", async ({ page, browser, watch }) => {
     test.setTimeout(420_000);
     const { merchantId, outletId } = devLocal();

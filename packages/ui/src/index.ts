@@ -9,6 +9,7 @@ export { Icon, AgentMark, type IconProps } from "./components/Icon";
 export { SailMark, SailLogo, type SailMarkProps, type SailLogoProps, type SailLogoSize } from "./components/SailLogo";
 export { Button, LinkButton, type ButtonProps, type LinkButtonProps, type ButtonVariant, type ButtonSize } from "./components/Button";
 export { TextField, type TextFieldProps } from "./components/TextField";
+export { RequiredMark } from "./components/RequiredMark";
 export { DateField, type DateFieldProps } from "./components/DateField";
 export type { FieldSize } from "./components/field";
 export { Select, type SelectProps, type SelectItem } from "./components/Select";

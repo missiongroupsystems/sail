@@ -240,7 +240,7 @@ function StationSheet({ state, outletId, brands, defaultBrandId, onClose }: { st
           </p>
         ) : null}
         <SheetSection>
-          <RhfTextField control={form.control} name="name" label="Name" placeholder="Counter 1" autoFocus={!station} />
+          <RhfTextField control={form.control} name="name" label="Name" isRequired placeholder="Counter 1" autoFocus={!station} />
           {station ? null : (
             <RhfSelect
               control={form.control}

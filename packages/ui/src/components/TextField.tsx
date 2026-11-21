@@ -15,6 +15,7 @@ import { cx } from "../lib/cx";
 import { selectOnFocus } from "../lib/select-on-focus";
 import { useLockedDisabled } from "./FieldsLocked";
 import { fieldControl, fieldControlSm, fieldDescription, fieldError, fieldLabel, fieldWrap, type FieldSize } from "./field";
+import { RequiredMark } from "./RequiredMark";
 
 export type TextFieldProps = Omit<AriaTextFieldProps, "className" | "children"> & {
   label?: ReactNode;
@@ -58,7 +59,12 @@ export function TextField({
   const control = cx(size === "sm" ? fieldControlSm : fieldControl, mono && "font-mono", numeric && "tabular", suffix ? "pr-12" : null, "[&::-webkit-search-cancel-button]:hidden", inputClassName);
   return (
     <AriaTextField {...rest} isDisabled={isDisabled} validationBehavior={rest.validationBehavior ?? "aria"} className={cx(fieldWrap, className)}>
-      {label ? <Label className={fieldLabel}>{label}</Label> : null}
+      {label ? (
+        <Label className={fieldLabel}>
+          {label}
+          {rest.isRequired ? <RequiredMark /> : null}
+        </Label>
+      ) : null}
       <div className="relative">
         {multiline ? (
           <TextArea placeholder={placeholder} rows={rows} className={cx(control, "py-2.5 leading-[22px] resize-y")} />

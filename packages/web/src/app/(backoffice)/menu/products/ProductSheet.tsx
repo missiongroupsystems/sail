@@ -172,7 +172,7 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
       <form id="product-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-7">
         <SheetSection title="Details">
           <div className="grid gap-4 sm:grid-cols-[1fr_180px]">
-            <RhfTextField control={form.control} name="name" label="Name" placeholder="Iced tea" autoFocus={!product} description={sameName ? `Another product is already called ${sameName}. Two items of one name are hard to tell apart on the POS.` : undefined} />
+            <RhfTextField control={form.control} name="name" label="Name" isRequired placeholder="Iced tea" autoFocus={!product} description={sameName ? `Another product is already called ${sameName}. Two items of one name are hard to tell apart on the POS.` : undefined} />
             <RhfTextField control={form.control} name="sku" label="SKU" description="Matches rows on import." />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -184,6 +184,7 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
                 { id: "product", label: "Product", description: "Sold on its own." },
                 { id: "component", label: "Component", description: "A modifier option or part; not sold alone." },
               ]}
+              description="Component: an item used inside other items, such as a bundle or recipe part. It isn't sold on its own."
             />
             <RhfTextField control={form.control} name="kitchen_name" label="Kitchen name" description="Printed on kitchen tickets instead of the name." />
           </div>
@@ -204,7 +205,7 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
             <Controller
               control={form.control}
               name="price"
-              render={({ field, fieldState }) => <MoneyField label="Base price" value={field.value} onChange={field.onChange} onBlur={field.onBlur} isInvalid={!!fieldState.error} errorMessage={fieldState.error?.message} />}
+              render={({ field, fieldState }) => <MoneyField label="Base price" isRequired value={field.value} onChange={field.onChange} onBlur={field.onBlur} isInvalid={!!fieldState.error} errorMessage={fieldState.error?.message} />}
             />
             <div className="grid grid-cols-2 gap-3">
               {ORDER_TYPES.map((t) => (
@@ -220,10 +221,10 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
             </div>
           </div>
           <div className="grid gap-x-6 sm:grid-cols-2">
-            <RhfSwitch control={form.control} name="open_price" description="Staff key in the price when they add it.">
+            <RhfSwitch control={form.control} name="open_price" description="Staff enter the price when they add the item.">
               Open price
             </RhfSwitch>
-            <RhfSwitch control={form.control} name="has_deposit" description="A deposit rule (scope: deposit items) applies to this item.">
+            <RhfSwitch control={form.control} name="has_deposit" description="Charges a returnable-container deposit, set up in Pricing › Rules.">
               Deposit item
             </RhfSwitch>
           </div>
