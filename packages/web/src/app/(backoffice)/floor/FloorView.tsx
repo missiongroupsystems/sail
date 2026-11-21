@@ -3,7 +3,7 @@
 import { useConfirm } from "@/components/backoffice/Confirm";
 import { Button, Dialog, EmptyState, FieldsLocked, Icon, InlineError, PageHeader, Select, Switch, TextField, cx, useLocale, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Users } from "lucide-react";
 import { greyPill, greyPillAlert, SectionLabel } from "@/components/office/parts";
 import { serverFieldErrors } from "@/components/office/server-errors";
@@ -32,6 +32,20 @@ function clampTable(t: { x: number; y: number; w: number; h: number }) {
   const w = Math.max(1, Math.min(COLS, t.w));
   const h = Math.max(1, Math.min(ROWS, t.h));
   return { x: Math.max(0, Math.min(COLS - w, t.x)), y: Math.max(0, Math.min(ROWS - h, t.y)), w, h };
+}
+
+type Box = { x: number; y: number; w: number; h: number };
+const overlaps = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/**
+ * Where a new table of w × h goes: the first place on the visible grid that touches no table already there. It looks
+ * along the plan's usual rhythm first (a column and a row of space between tables), then at every cell. A plan with no
+ * room left gets it in the top-left corner, selected, to be dragged or resized.
+ */
+export function freeCell(taken: Box[], w = 2, h = 2): { x: number; y: number } {
+  const free = (x: number, y: number) => x + w <= COLS && y + h <= ROWS && !taken.some((t) => overlaps({ x, y, w, h }, t));
+  for (const [dx, dy] of [[w + 1, h], [1, 1]] as const) for (let y = 0; y + h <= ROWS; y += dy) for (let x = 0; x + w <= COLS; x += dx) if (free(x, y)) return { x, y };
+  return { x: 0, y: 0 };
 }
 
 /** The page's intro says what the signed-in role can do here: an Admin edits the plan, a role below reads it (L1). */
@@ -91,7 +105,9 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
   });
   const patchTable = useMutation<{ data: Table }, ApiError, { id: string; body: TablePatch }>({
     mutationFn: ({ id, body }) => req(api.PATCH("/v1/tables/{id}", { params: { path: { id } }, body })),
-    onMutate: ({ id, body }) => {
+    onMutate: async ({ id, body }) => {
+      // A read still on its way would put the old table back over the change for a moment.
+      await qc.cancelQueries({ queryKey: keys.tables(outletId ?? "") });
       // Lines may be optimistic: the table moves at once; the register's reply settles it.
       qc.setQueryData<Table[]>(keys.tables(outletId ?? ""), (prev) => prev?.map((t) => (t.id === id ? { ...t, ...body, shape: body.shape ?? t.shape } : t)));
     },
@@ -99,11 +115,14 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
   });
   const addTable = useMutation<{ data: Table }, ApiError>({
     mutationFn: () => {
-      const taken = new Set(areaTables.map((t) => `${t.x},${t.y}`));
-      let x = 0,
-        y = 0;
-      outer: for (y = 0; y < ROWS; y += 2) for (x = 0; x < COLS; x += 3) if (!taken.has(`${x},${y}`)) break outer;
-      return req(api.POST("/v1/tables", { body: { outlet_id: outletId!, area_id: area!.id, name: `T${areaTables.length + 1}`, seats: 4, shape: "rect", x, y, w: 2, h: 2 } }));
+      // Clear of every table on the plan, whatever its size and wherever it was dragged (the first free origin on a
+      // fixed lattice put a new table under a larger or moved one), and of the archived ones while they are shown.
+      const { x, y } = freeCell(areaTables);
+      // The next T number no table of the outlet has, so two areas do not both get a T1.
+      const names = new Set((tables.data ?? []).map((t) => t.name.trim().toLowerCase()));
+      let n = areaTables.length + 1;
+      while (names.has(`t${n}`)) n++;
+      return req(api.POST("/v1/tables", { body: { outlet_id: outletId!, area_id: area!.id, name: `T${n}`, seats: 4, shape: "rect", x, y, w: 2, h: 2 } }));
     },
     onSuccess: async (r) => {
       await invalidate();
@@ -139,7 +158,19 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
     setDrag(null);
   };
 
-  useEffect(() => setSelected(null), [area?.id]);
+  // Another area starts with nothing selected, unless the selected table was just moved there: then the plan follows it.
+  const follow = useRef<string | null>(null);
+  useEffect(() => {
+    setSelected(follow.current);
+    follow.current = null;
+  }, [area?.id]);
+  const saveSelected = (t: Table, body: TablePatch) => {
+    if (body.area_id && body.area_id !== t.area_id) {
+      follow.current = t.id;
+      setAreaId(body.area_id);
+    }
+    patchTable.mutate({ id: t.id, body });
+  };
 
   return (
     <>
@@ -274,7 +305,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
               {selectedTable ? selectedTable.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <span className="text-[13px] text-ink-3 tabular">{selectedTable.seats} seats</span> : null}
             </div>
             {selectedTable ? (
-              <TablePanel key={selectedTable.id} table={selectedTable} areas={sortedAreas} onSave={(body) => patchTable.mutate({ id: selectedTable.id, body })} saving={patchTable.isPending} canRotateQr={admin} denied={canEditTable.reason} error={patchTable.variables?.id === selectedTable.id ? patchTable.error : null} />
+              <TablePanel key={selectedTable.id} table={selectedTable} areas={sortedAreas} onSave={(body) => saveSelected(selectedTable, body)} saving={patchTable.isPending} canRotateQr={admin} denied={canEditTable.reason} error={patchTable.variables?.id === selectedTable.id ? patchTable.error : null} />
             ) : (
               <p className="text-[14px] text-ink-2">{canEditTable.ok ? "Select a table to edit its name, seats, shape and size, or to rotate its QR code. Drag it to move it; drag the corner to resize. Arrow keys nudge a focused table." : `Select a table to see its details. ${canEditTable.reason}`}</p>
             )}
@@ -306,57 +337,100 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
   );
 }
 
+/** How long after the last keystroke a typed change is sent, when the field has not been left first. */
+const TYPING_PAUSE_MS = 400;
+
+/**
+ * A table's details. Every change applies as it is made, as a drag on the plan does: a choice (shape, area) at once, a
+ * typed value when the field is left, on Enter, or after a short pause in typing. There is no Save button to forget.
+ * A value that cannot be used (no name, seats that are not a number) says so under its field and is not sent; a value
+ * the register refuses shows the register's reason there.
+ */
 function TablePanel({ table, areas, onSave, saving, canRotateQr, denied, error }: { table: Table; areas: Area[]; onSave: (body: TablePatch) => void; saving: boolean; canRotateQr: boolean; denied: string | null; error: ApiError | null }) {
   const confirm = useConfirm();
   // A refusal that names a field (seats over the limit, a name) shows under that field as well as under the plan.
-  const fieldError = (name: string) => serverFieldErrors(error).find((e) => e.field === name)?.message;
+  const refused = (name: string) => serverFieldErrors(error).find((e) => e.field === name)?.message;
   const [name, setName] = useState(table.name);
   const [seats, setSeats] = useState(String(table.seats));
-  const [shape, setShape] = useState(table.shape);
-  const [areaId, setAreaId] = useState(table.area_id);
   const [geom, setGeom] = useState({ x: String(table.x), y: String(table.y), w: String(table.w), h: String(table.h) });
+  // A drag on the plan, or a position the grid had to pull back inside, shows in the fields.
   useEffect(() => setGeom({ x: String(table.x), y: String(table.y), w: String(table.w), h: String(table.h) }), [table.x, table.y, table.w, table.h]);
-  const int = (s: string) => (/^\d+$/.test(s) ? Number(s) : null);
-  const valid = name.trim() && int(seats) !== null && int(geom.x) !== null && int(geom.y) !== null && int(geom.w) !== null && int(geom.h) !== null;
-
-  const save = () => {
-    if (!valid || denied) return;
-    const g = clampTable({ x: int(geom.x)!, y: int(geom.y)!, w: int(geom.w)!, h: int(geom.h)! });
-    onSave({ name: name.trim(), seats: int(seats)!, shape: shape as "rect" | "round" | "square", area_id: areaId, ...g });
+  const int = (s: string) => (/^\d+$/.test(s.trim()) ? Number(s.trim()) : null);
+  const seatCount = int(seats);
+  const problem = {
+    name: name.trim() ? undefined : "Enter a name",
+    seats: seatCount === null ? "Enter a whole number" : seatCount < 1 || seatCount > 99 ? "From 1 to 99 seats" : undefined,
+    geom: int(geom.x) === null || int(geom.y) === null || !int(geom.w) || !int(geom.h) ? "Position and size are whole numbers; width and height at least 1." : undefined,
   };
+
+  // The pause timer and the unmount both send what is in the fields then, not what was there when they were set up.
+  const latest = useRef({ table, name, seats, geom, problem, onSave, denied });
+  latest.current = { table, name, seats, geom, problem, onSave, denied };
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const send = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    const now = latest.current;
+    if (now.denied !== null) return;
+    const body: TablePatch = {};
+    if (!now.problem.name && now.name.trim() !== now.table.name) body.name = now.name.trim();
+    if (!now.problem.seats && Number(now.seats.trim()) !== now.table.seats) body.seats = Number(now.seats.trim());
+    if (!now.problem.geom) {
+      const g = clampTable({ x: Number(now.geom.x), y: Number(now.geom.y), w: Number(now.geom.w), h: Number(now.geom.h) });
+      if (g.x !== now.table.x || g.y !== now.table.y || g.w !== now.table.w || g.h !== now.table.h) Object.assign(body, g);
+      // A number past the edge of the grid is pulled back inside, and the field shows where the table went.
+      else setGeom({ x: String(g.x), y: String(g.y), w: String(g.w), h: String(g.h) });
+    }
+    if (Object.keys(body).length) now.onSave(body);
+  }, []);
+  const typed = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(send, TYPING_PAUSE_MS);
+  };
+  // Selecting another table mid-pause still sends what was typed.
+  useEffect(() => () => {
+    if (timer.current) send();
+  }, [send]);
 
   return (
     <form
       className="flex flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault();
-        save();
+        send();
       }}
     >
       <FieldsLocked locked={denied !== null}>
-      <TextField label="Name" value={name} onChange={setName} isInvalid={!!fieldError("name")} errorMessage={fieldError("name")} />
+      <TextField label="Name" value={name} onChange={(v) => { setName(v); typed(); }} onBlur={send} isInvalid={!!(problem.name ?? refused("name"))} errorMessage={problem.name ?? refused("name")} />
       <div className="grid grid-cols-2 gap-3">
-        <TextField label="Seats" numeric inputMode="numeric" value={seats} onChange={setSeats} isInvalid={!!fieldError("seats")} errorMessage={fieldError("seats")} />
-        <Select label="Shape" selectedKey={shape} onSelectionChange={(k) => k && setShape(k)} items={SHAPES} />
+        <TextField label="Seats" numeric inputMode="numeric" value={seats} onChange={(v) => { setSeats(v); typed(); }} onBlur={send} isInvalid={!!(problem.seats ?? refused("seats"))} errorMessage={problem.seats ?? refused("seats")} />
+        <Select label="Shape" selectedKey={table.shape} onSelectionChange={(k) => k && k !== table.shape && onSave({ shape: k as "rect" | "round" | "square" })} items={SHAPES} />
       </div>
-      <Select label="Area" selectedKey={areaId} onSelectionChange={(k) => k && setAreaId(k)} items={areas.map((a) => ({ id: a.id, label: a.name }))} />
+      <Select label="Area" selectedKey={table.area_id} onSelectionChange={(k) => k && k !== table.area_id && onSave({ area_id: k })} items={areas.map((a) => ({ id: a.id, label: a.name }))} />
       <div className="grid grid-cols-4 gap-2">
-        <TextField label="X" numeric inputMode="numeric" value={geom.x} onChange={(v) => setGeom({ ...geom, x: v })} />
-        <TextField label="Y" numeric inputMode="numeric" value={geom.y} onChange={(v) => setGeom({ ...geom, y: v })} />
-        <TextField label="W" numeric inputMode="numeric" value={geom.w} onChange={(v) => setGeom({ ...geom, w: v })} />
-        <TextField label="H" numeric inputMode="numeric" value={geom.h} onChange={(v) => setGeom({ ...geom, h: v })} />
+        {(["x", "y", "w", "h"] as const).map((k) => (
+          <TextField key={k} label={k.toUpperCase()} numeric inputMode="numeric" value={geom[k]} onChange={(v) => { setGeom((g) => ({ ...g, [k]: v })); typed(); }} onBlur={send} isInvalid={!!problem.geom && (int(geom[k]) === null || ((k === "w" || k === "h") && !int(geom[k])))} />
+        ))}
       </div>
+      {problem.geom ? (
+        <p role="alert" className="text-caption text-status-alert">
+          {problem.geom}
+        </p>
+      ) : null}
       <p className="text-[12.5px] text-ink-3">
         Grid of {COLS} × {ROWS}. Position and size are in grid units.
       </p>
       </FieldsLocked>
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="submit" variant="primary" isDisabled={!valid || denied !== null} isPending={saving}>
-          Save table
-        </Button>
         <Button variant="secondary" className={table.archived ? greyPill : greyPillAlert} onPress={() => (table.archived ? onSave({ archived: false }) : confirm.ask({ title: `Archive ${table.name}?`, body: "It leaves the floor plan on the POS. Past orders keep it. You can restore it later.", confirmLabel: "Archive table", cancelLabel: "Keep the table", onConfirm: () => onSave({ archived: true }) }))} isDisabled={saving || denied !== null}>
           {table.archived ? "Restore" : "Archive"}
         </Button>
+        {/* In the place Save table had: what happens to a change, and that the last one has gone through. */}
+        {denied === null ? (
+          <p role="status" className="text-[12.5px] text-ink-3">
+            {saving ? "Saving…" : "Changes save as you make them."}
+          </p>
+        ) : null}
         {confirm.dialog}
       </div>
       {denied ? <p className="text-[12.5px] text-ink-3">{denied}</p> : null}

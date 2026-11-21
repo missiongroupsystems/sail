@@ -173,6 +173,87 @@ test.describe("back office and POS together", () => {
     });
   });
 
+  test("A5: a table's shape, seats and name apply as they are changed, with no Save; a new table lands on a free place", async ({ page }) => {
+    test.setTimeout(420_000);
+    const { outletId } = devLocal();
+    type T = { id: string; name: string; area_id: string; seats: number; shape: string; x: number; y: number; w: number; h: number; archived: boolean };
+    const areaName = `Annex ${String(Date.now()).slice(-5)}`;
+    // An area of its own, last on the POS floor, so the demo outlet's tables stay as the other specs expect them.
+    const area = await register<{ data: { id: string } }>("POST", "/v1/areas", { outlet_id: outletId, name: areaName, sort: 60 });
+    const inArea = async () => (await register<{ data: T[] }>("GET", `/v1/tables?outlet_id=${outletId}&area_id=${area.data.id}`)).data;
+    // A crowded corner: a large table over four of the plan's usual places, and a table on the next one.
+    await register("POST", "/v1/tables", { outlet_id: outletId, area_id: area.data.id, name: "Long", seats: 10, x: 0, y: 0, w: 5, h: 3 });
+    await register("POST", "/v1/tables", { outlet_id: outletId, area_id: area.data.id, name: "Next", seats: 2, x: 6, y: 0, w: 2, h: 2 });
+
+    try {
+      await signIn(page);
+      await page.goto(`${WEB}/floor`);
+      const plan = page.getByRole("application", { name: `Floor plan for ${areaName}` });
+      await expect(async () => {
+        await page.getByRole("navigation", { name: "Areas" }).getByRole("button", { name: areaName, exact: true }).click({ timeout: 5_000 });
+        await expect(plan).toBeVisible({ timeout: 5_000 });
+      }).toPass({ timeout: 120_000 });
+      const panel = page.locator("aside");
+
+      let added: T;
+      await test.step("Add table: the third table is on the visible grid, clear of the others, and selected", async () => {
+        await page.getByRole("button", { name: "Add table" }).click();
+        await expect.poll(async () => (await inArea()).length).toBe(3);
+        const all = await inArea();
+        added = all.find((t) => t.name !== "Long" && t.name !== "Next")!;
+        expect(added.x + added.w, "inside the 24 columns").toBeLessThanOrEqual(24);
+        expect(added.y + added.h, "inside the 14 rows").toBeLessThanOrEqual(14);
+        for (const o of all.filter((t) => t.id !== added.id)) {
+          const apart = added.x >= o.x + o.w || o.x >= added.x + added.w || added.y >= o.y + o.h || o.y >= added.y + added.h;
+          expect(apart, `${added.name} at ${added.x},${added.y} is clear of ${o.name}`).toBe(true);
+        }
+        await expect(plan.getByRole("button", { name: new RegExp(`^${added.name}, 4 seats, rect`) })).toHaveAttribute("aria-pressed", "true");
+        await expect(panel.getByRole("textbox", { name: "Name" })).toHaveValue(added.name);
+        await expect(panel.getByRole("button", { name: "Save table" })).toHaveCount(0);
+        await expect(panel.getByText("Changes save as you make them.")).toBeVisible();
+      });
+
+      await test.step("shape applies when chosen; seats when the field is left; a name after a pause in typing", async () => {
+        await panel.getByRole("button", { name: /Shape/ }).click();
+        await page.getByRole("option", { name: "Round" }).click();
+        await expect(plan.getByRole("button", { name: `${added.name}, 4 seats, round` })).toBeVisible();
+        await expect.poll(async () => (await inArea()).find((t) => t.id === added.id)!.shape).toBe("round");
+
+        await panel.getByRole("textbox", { name: "Seats" }).fill("6");
+        await panel.getByRole("textbox", { name: "Seats" }).blur();
+        await expect(plan.getByRole("button", { name: `${added.name}, 6 seats, round` })).toBeVisible();
+
+        // No blur and no Enter: the name goes once the typing stops.
+        await panel.getByRole("textbox", { name: "Name" }).fill("Window");
+        await expect(plan.getByRole("button", { name: "Window, 6 seats, round" })).toBeVisible();
+        await expect(panel.getByRole("heading", { name: "Window" })).toBeVisible();
+        await expect.poll(async () => (await inArea()).find((t) => t.id === added.id)).toMatchObject({ name: "Window", seats: 6, shape: "round" });
+      });
+
+      await test.step("a value that cannot be used says so under its field and is not sent", async () => {
+        await panel.getByRole("textbox", { name: "Name" }).fill("");
+        await expect(panel.getByText("Enter a name")).toBeVisible();
+        await panel.getByRole("textbox", { name: "Seats" }).fill("150");
+        await expect(panel.getByText("From 1 to 99 seats")).toBeVisible();
+        await panel.getByRole("textbox", { name: "Seats" }).blur();
+        // Longer than the typing pause: nothing went to the register.
+        await page.waitForTimeout(1_200);
+        expect((await inArea()).find((t) => t.id === added.id)).toMatchObject({ name: "Window", seats: 6 });
+        await expect(plan.getByRole("button", { name: "Window, 6 seats, round" })).toBeVisible();
+      });
+
+      await test.step("the changes are there after a reload", async () => {
+        await page.reload();
+        await expect(async () => {
+          await page.getByRole("navigation", { name: "Areas" }).getByRole("button", { name: areaName, exact: true }).click({ timeout: 5_000 });
+          await expect(plan.getByRole("button", { name: "Window, 6 seats, round" })).toBeVisible({ timeout: 5_000 });
+        }).toPass({ timeout: 120_000 });
+      });
+    } finally {
+      for (const t of await inArea()) await register("PATCH", `/v1/tables/${t.id}`, { archived: true });
+    }
+  });
+
   test("A2: a POS station needs a brand; one saved without it says so on the iPad and in Settings, and works once it has one", async ({ page, browser, watch }) => {
     test.setTimeout(420_000);
     const { merchantId, outletId } = devLocal();
