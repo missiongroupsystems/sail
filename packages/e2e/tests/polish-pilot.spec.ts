@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { devDatabase, devLocal, expect, pairAndSignIn, register, SG_ADMIN, test, WEB } from "./fixtures";
+import { devDatabase, devLocal, expect, GUEST, pairAndSignIn, register, SG_ADMIN, test, WEB } from "./fixtures";
 
 /**
  * The polish round before the first pilot outlet is set up: what the team hit in the walkthrough of 18 November.
@@ -357,6 +357,71 @@ test.describe("back office and POS together", () => {
     } finally {
       await ipad.close();
       await register("PATCH", `/v1/stations/${station.data.id}`, { archived: true });
+    }
+  });
+
+  test("A7: a table code at an outlet with Scan to order off tells the guest and the staff; once it is on, the same code orders", async ({ page, browser, watch }) => {
+    test.setTimeout(420_000);
+    const { outletId, brandId } = devLocal();
+    const links = await register<{ data: { id: string; outlet_id: string; enabled: boolean }[] }>("GET", `/v1/channel-links?channel=scan_to_order&outlet_id=${outletId}`);
+    const link = links.data.find((l) => l.outlet_id === outletId && l.enabled);
+    if (!link) throw new Error("The demo outlet has no Scan to order channel switched on");
+    const setLink = (enabled: boolean) => register("PATCH", `/v1/channel-links/${link.id}`, { enabled });
+
+    // A seated table and the code printed for it.
+    const floor = await register<{ data: { tables: { id: string; name: string; order: unknown }[] } }>("GET", `/v1/outlets/${outletId}/floor`);
+    const table = floor.data.tables.find((t) => !t.order);
+    if (!table) throw new Error("No free table left in the demo outlet");
+    const orderId = crypto.randomUUID();
+    await register("POST", "/v1/orders", { order_id: orderId, order_type: "dine_in", table_id: table.id, pax: 2, outlet_id: outletId, brand_id: brandId });
+    opened.push(orderId);
+    const url = (await register<{ data: { url: string } }>("POST", `/v1/tables/${table.id}/qr/rotate`, {})).data.url;
+    const address = `${GUEST}/t/${url.split("/t/")[1]!}`;
+
+    const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    watch.attach(phone);
+    try {
+      // The outlet as it was in the walkthrough: tables and printed codes, and no Scan to order channel taking orders.
+      await setLink(false);
+
+      await test.step("the guest is told in plain words, with no blank page and no error code", async () => {
+        watch.allow({ status: 422, url: /\/v1\/guest\/sessions$/, why: "the register refuses a session while Scan to order is off; the page says so" });
+        await phone.goto(address);
+        await expect(phone.getByText("This table isn't taking orders on the phone yet")).toBeVisible({ timeout: 180_000 });
+        await expect(phone.getByText("Please ask the staff.")).toBeVisible();
+        await expect(phone.locator("body")).not.toContainText(/unavailable|422|scan_to_order/);
+        await expect(phone.getByRole("button", { name: /^Laksa,/ })).toHaveCount(0);
+      });
+
+      await test.step("Floor & QR says the codes take no orders yet, by the plan and by the QR sheet, and points to Settings › Channels", async () => {
+        await signIn(page);
+        await page.goto(`${WEB}/floor`);
+        const note = page.getByRole("alert").filter({ hasText: "do not take orders yet" });
+        await expect(note).toContainText("the outlet has no Scan to order channel switched on");
+        await expect(note.getByRole("link", { name: "Set it up in Settings › Channels" })).toHaveAttribute("href", "/settings/channels");
+        await expect(page.getByText("These codes do not take orders yet: see the note below.")).toBeVisible();
+      });
+
+      await setLink(true);
+
+      await test.step("with the channel on, the same code opens the menu and the guest orders", async () => {
+        await phone.goto(address);
+        await phone.getByRole("button", { name: /^Kopi,/ }).click();
+        await phone.getByRole("dialog", { name: "Kopi" }).getByRole("button", { name: /^Add to order/ }).click();
+        await phone.getByRole("button", { name: /^View your order, 1 item/ }).click();
+        await phone.getByRole("button", { name: /^Send/ }).first().click();
+        await expect(phone.getByRole("heading", { name: "Order sent" })).toBeVisible();
+      });
+
+      await test.step("and Floor & QR has no warning any more", async () => {
+        await page.reload();
+        await expect(page.getByRole("application", { name: /Floor plan/ })).toBeVisible();
+        await expect(page.getByRole("alert").filter({ hasText: "do not take orders yet" })).toHaveCount(0);
+        await expect(page.getByText("These codes do not take orders yet: see the note below.")).toHaveCount(0);
+      });
+    } finally {
+      await setLink(true);
+      await phone.close();
     }
   });
 

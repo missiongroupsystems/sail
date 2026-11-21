@@ -178,7 +178,9 @@ export async function createGuestSession(input: { token: string; deviceId: strin
   await enforceLimit(tok.merchantId, `sess:dev:${deviceHash}`, RATE.sessionsPerDevice, "sign-ins from this device");
   await enforceLimit(tok.merchantId, `sess:table:${table.id}`, RATE.sessionsPerTable, "sign-ins at this table");
   const [link] = await db().select().from(channelLinks).where(and(eq(channelLinks.outletId, table.outletId), eq(channelLinks.channel, "scan_to_order"), eq(channelLinks.enabled, true))).limit(1);
-  if (!link) throw new AppError("unavailable", "Ordering from your phone is not available at this outlet", { remedy: "Please order with a member of staff." });
+  // An outlet whose codes were printed before its Scan to order channel was set up (or with it switched off): the guest
+  // is told in plain words, and Floor & QR tells the staff the same (`details.reason` is for clients, not shown).
+  if (!link) throw new AppError("unavailable", "This table isn't taking orders on the phone yet", { remedy: "Please ask the staff.", details: { reason: "scan_to_order_off" } });
   const orderId = await openOrderIdForTable(table.id);
   const expiresAt = new Date(Date.now() + GUEST_SESSION_HOURS * 3600 * 1000);
   const [session] = await db().insert(guestSessions).values({ merchantId: tok.merchantId, outletId: table.outletId, brandId: link.brandId, tableId: table.id, channelLinkId: link.id, orderId, deviceHash, guestName: input.guestName ?? null, expiresAt }).returning();

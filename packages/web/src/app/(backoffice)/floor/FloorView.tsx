@@ -3,6 +3,7 @@
 import { useConfirm } from "@/components/backoffice/Confirm";
 import { Button, Dialog, EmptyState, FieldsLocked, Icon, InlineError, PageHeader, Select, Switch, TextField, cx, useLocale, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Users } from "lucide-react";
 import { greyPill, greyPillAlert, SectionLabel } from "@/components/office/parts";
@@ -88,6 +89,16 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
     enabled: outletId !== null,
     initialData: outletId === initialOutletId ? initialTables : undefined,
   });
+
+  // Printed codes order nothing until the outlet has a Scan to order channel switched on: say so here, where the
+  // codes are printed, not only on the guest's phone.
+  const qrLinks = useQuery({
+    queryKey: ["channel-links", "scan_to_order", outletId ?? ""],
+    queryFn: () => req(api.GET("/v1/channel-links", { params: { query: { channel: "scan_to_order", outlet_id: outletId! } } })).then((r) => r.data),
+    enabled: outletId !== null,
+  });
+  const qrOff = outlet !== null && qrLinks.data !== undefined && !qrLinks.data.some((l) => l.enabled && l.outlet_id === outletId) && (tables.data ?? []).some((t) => !t.archived);
+  const qrOffNote = qrOff ? `The QR codes at ${outlet.name} do not take orders yet: the outlet has no Scan to order channel switched on. A guest who scans one is asked to speak to the staff.` : null;
 
   const sortedAreas = useMemo(() => (areas.data ?? []).slice().sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, locale)), [areas.data, locale]);
   const area = sortedAreas.find((a) => a.id === areaId) ?? sortedAreas[0] ?? null;
@@ -182,7 +193,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
           </Switch>
         </div>
         <div className="flex flex-wrap items-start gap-2">
-          {outlet ? <QrSheetButton outletId={outlet.id} outletName={outlet.name} canRotate={admin} /> : null}
+          {outlet ? <QrSheetButton outletId={outlet.id} outletName={outlet.name} canRotate={admin} warning={qrOffNote ? "These codes do not take orders yet: see the note below." : null} /> : null}
           {canCreate.ok ? (
             <Button size="sm" onPress={() => { setAreaName(""); setAreaDialog({ mode: "create" }); }} isDisabled={!outletId}>
             Add area
@@ -196,6 +207,15 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
         </div>
       </div>
 
+      {qrOffNote ? (
+        <p role="alert" className="mb-4 rounded-panel bg-status-sent-tint px-4 py-3 text-[14px] text-ink">
+          {qrOffNote}{" "}
+          <Link href="/settings/channels" className="text-ink underline underline-offset-4">
+            Set it up in Settings › Channels
+          </Link>
+          .
+        </p>
+      ) : null}
       {outlets.length === 0 ? (
         <EmptyState title="No outlets yet" hint="A floor plan belongs to an outlet. Add an outlet first." />
       ) : sortedAreas.length === 0 ? (

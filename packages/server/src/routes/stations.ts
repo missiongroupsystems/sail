@@ -77,8 +77,9 @@ export function stationRoutes(app: OpenAPIHono<AppEnv>) {
       const match = candidates.find((x) => verifySecret(code, x.codeHash));
       if (!match) {
         // Two answers and no more: a code that was right until it ran out, was replaced or was used, and any other.
-        // Only the last hour's codes are looked at, newest first, so a wrong guess costs a bounded number of checks.
-        const spent = await t.db.select({ codeHash: stationPairingCodes.codeHash }).from(stationPairingCodes).where(gt(stationPairingCodes.createdAt, sql`now() - interval '1 hour'`)).orderBy(desc(stationPairingCodes.createdAt)).limit(20);
+        // Only the ten newest codes of the last half hour are looked at (a code lives ten minutes), so a wrong guess on
+        // this public route costs a small, bounded number of hash checks whatever is sent.
+        const spent = await t.db.select({ codeHash: stationPairingCodes.codeHash }).from(stationPairingCodes).where(gt(stationPairingCodes.createdAt, sql`now() - interval '30 minutes'`)).orderBy(desc(stationPairingCodes.createdAt)).limit(10);
         if (spent.some((x) => verifySecret(code, x.codeHash))) throw pairingCodeSpent();
         throw new AppError("unauthenticated", "Wrong code", { remedy: "Check the 6 digits shown in the back office.", details: { reason: "pairing_code_wrong" } });
       }

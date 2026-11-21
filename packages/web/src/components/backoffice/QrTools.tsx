@@ -13,7 +13,7 @@ import { openPdf } from "./register";
  * "Download QR sheet (PDF)": the cards for the codes on the tables now, as often as needed. Rotating every code is a
  * separate action behind a confirmation, because the cards on the tables stop working and that cannot be undone. Admin.
  */
-export function QrSheetButton({ outletId, outletName, canRotate }: { outletId: string; outletName: string; canRotate: boolean }) {
+export function QrSheetButton({ outletId, outletName, canRotate, warning = null }: { outletId: string; outletName: string; canRotate: boolean; /** Why the printed codes would not work yet; shown by the button, before anything is printed. */ warning?: string | null }) {
   const sheet = useMutation<void, ApiError>({ mutationFn: () => openPdf(`/v1/outlets/${outletId}/qr-sheet.pdf`, `qr-sheet-${outletName.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.pdf`, "POST") });
   const [confirming, setConfirming] = useState(false);
   const rotateAll = useMutation<{ rotated: number }, ApiError>({
@@ -30,6 +30,7 @@ export function QrSheetButton({ outletId, outletName, canRotate }: { outletId: s
           Download QR sheet (PDF)
         </Button>
       </div>
+      {warning ? <p className="text-right text-[12.5px] text-status-alert max-sm:text-left">{warning}</p> : null}
       <p className="text-right text-[12.5px] text-ink-3 max-sm:text-left" role="status">
         {!canRotate ? "Admin only." : rotateAll.data ? `${rotateAll.data.rotated} new codes. Download the sheet and replace the cards on the tables.` : "The sheet prints the codes on the tables now."}
       </p>

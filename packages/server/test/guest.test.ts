@@ -625,4 +625,31 @@ describe("with hold orders off, a phone is admitted to its seating", () => {
     expect(await send(again.body.data.guest_token)).toBe("accepted");
     expect(await send((await scan(after, "phone-gggg-0007")).body.data.guest_token)).toBe("pending");
   });
+
+  it("an outlet with tables and printed codes but no Scan to order channel tells the guest so in plain words, and takes orders once the channel is on (polish A7)", async () => {
+    const area = randomUUID();
+    const table = randomUUID();
+    const t = A.admin.token;
+    await call("POST", "/v1/areas", { token: t, body: { id: area, outlet_id: A.outlet2Id, name: "Annex" } });
+    await call("POST", "/v1/tables", { token: t, body: { id: table, outlet_id: A.outlet2Id, area_id: area, name: "A1" } });
+    const url = (await call<{ data: { url: string } }>("POST", `/v1/tables/${table}/qr/rotate`, { token: t, body: {} })).body.data.url;
+    const scanIt = (device: string) => call<{ data: Session; code?: string; message?: string; remedy?: string; details?: { reason?: string } }>("POST", "/v1/guest/sessions", { body: { token: tokenFrom(url), device_id: device }, idempotencyKey: null });
+
+    const off = await scanIt("phone-annex-0001");
+    expect(off.status).toBe(422);
+    expect(off.body.code).toBe("unavailable");
+    expect(off.body.message).toBe("This table isn't taking orders on the phone yet");
+    expect(off.body.remedy).toBe("Please ask the staff.");
+    expect(off.body.details?.reason).toBe("scan_to_order_off");
+
+    // A channel that exists but is switched off is the same to the guest.
+    const link = randomUUID();
+    expect((await call("POST", "/v1/channel-links", { token: t, body: { id: link, channel: "scan_to_order", outlet_id: A.outlet2Id, brand_id: A.brandId, menu_id: ids.menu, enabled: false } })).status).toBe(201);
+    expect((await scanIt("phone-annex-0002")).body.details?.reason).toBe("scan_to_order_off");
+
+    expect((await call("PATCH", `/v1/channel-links/${link}`, { token: t, body: { enabled: true } })).status).toBe(200);
+    const on = await scanIt("phone-annex-0003");
+    expect(on.status).toBe(201);
+    expect(on.body.data.guest_token).toBeTruthy();
+  });
 });
