@@ -32,7 +32,7 @@ const id = (hint = "Matches rows on re-runs"): ImportField => ({ name: "legacy_i
 
 export const FIELDS: Record<ImportEntity, ImportField[]> = {
   brands: [{ name: "name", required: true }, id(), { name: "accent_color", hint: "Hex colour" }],
-  outlets: [{ name: "name", required: true }, id(), { name: "address" }, { name: "phone" }, { name: "business_registration_no" }, { name: "tax_registration_no" }, { name: "business_day_cutoff", hint: "HH:MM" }],
+  outlets: [{ name: "name", required: true }, { name: "brand_legacy_id", hint: "Needed when there is more than one brand" }, id(), { name: "address" }, { name: "phone" }, { name: "business_registration_no" }, { name: "tax_registration_no" }, { name: "business_day_cutoff", hint: "HH:MM" }],
   categories: [{ name: "name", required: true }, id(), { name: "parent_legacy_id", hint: "Parents must appear first" }, { name: "sort" }],
   products: [
     { name: "name", required: true },

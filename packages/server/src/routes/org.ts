@@ -2,7 +2,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { AmountSchema, currencyExponent, TaxModeSchema, TaxRoundingSchema } from "@sail/shared";
 import { db } from "../db/client.js";
-import { brands, displayDestinations, merchantSettings, merchants, outlets, staffSessions, stationPairingCodes, stations } from "../db/schema/index.js";
+import { brands, channelLinks, displayDestinations, merchantSettings, merchants, orders, outlets, staffSessions, stationPairingCodes, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
@@ -68,6 +68,8 @@ const HoursSchema = z.record(z.string(), z.array(z.tuple([z.string(), z.string()
 export const OutletSchema = z.object({
   id: z.string(),
   name: z.string(),
+  /** The one brand the outlet trades as. Its stations, channels and orders carry the same brand. */
+  brand_id: z.string(),
   address: z.string().nullable(),
   phone: z.string().nullable(),
   business_registration_no: z.string().nullable(),
@@ -81,6 +83,7 @@ export const OutletSchema = z.object({
 const OutletInput = z.object({
   id: z.uuid().optional(),
   name: z.string().trim().min(1),
+  brand_id: z.uuid().describe("The brand this outlet trades as. An outlet has exactly one; it can change only while the outlet has no orders."),
   address: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
   business_registration_no: z.string().nullable().optional(),
@@ -135,6 +138,7 @@ export const toBrand = (b: typeof brands.$inferSelect) => ({ id: b.id, name: b.n
 export const toOutlet = (o: typeof outlets.$inferSelect) => ({
   id: o.id,
   name: o.name,
+  brand_id: o.brandId,
   address: o.address,
   phone: o.phone,
   business_registration_no: o.businessRegistrationNo,
@@ -199,8 +203,14 @@ async function assertDestinations(st: typeof stations.$inferSelect) {
 
 /* ---- Routes -------------------------------------------------------------- */
 
-function posStationNeedsBrand() {
-  return AppError.validation("A POS station needs a brand", { remedy: "Pass brand_id: the brand whose menu the station sells. Only a kitchen display (kind display) has none.", details: { field: "brand_id" } });
+function stationBrandIsOutlets() {
+  return AppError.validation("A station is on its outlet's brand", { remedy: "Leave brand_id out, or send the outlet's brand. To sell another brand, add the station at one of that brand's outlets.", details: { field: "brand_id" } });
+}
+
+/** The brand is one of this merchant's and not archived; any other id fails as an unknown one does. */
+async function merchantBrand(merchantId: string, brandId: string) {
+  const [brand] = await db().select({ id: brands.id }).from(brands).where(and(eq(brands.id, brandId), eq(brands.merchantId, merchantId), isNull(brands.archivedAt))).limit(1);
+  if (!brand) throw AppError.notFound("brand", brandId);
 }
 
 export function orgRoutes(app: OpenAPIHono<AppEnv>) {
@@ -309,10 +319,10 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
   });
 
   /* Outlets */
-  defineOp(app, { op: "outlets.list", method: "get", path: "/v1/outlets", tags: ["organisation"], request: { query: z.object({ include_archived: z.enum(["true", "false"]).optional() }) }, responses: { 200: jsonResponse(listResponse(OutletSchema)), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "outlets.list", method: "get", path: "/v1/outlets", tags: ["organisation"], request: { query: z.object({ include_archived: z.enum(["true", "false"]).optional(), brand_id: z.uuid().optional().describe("Only this brand's outlets.") }) }, responses: { 200: jsonResponse(listResponse(OutletSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const q = c.req.valid("query");
-    const where = q.include_archived === "true" ? eq(outlets.merchantId, p.merchantId) : and(eq(outlets.merchantId, p.merchantId), isNull(outlets.archivedAt));
+    const where = and(eq(outlets.merchantId, p.merchantId), q.include_archived === "true" ? undefined : isNull(outlets.archivedAt), q.brand_id ? eq(outlets.brandId, q.brand_id) : undefined);
     // RLS already limits the rows to the caller's outlet scope.
     const rows = await db().select().from(outlets).where(where).orderBy(asc(outlets.name));
     return c.json({ data: rows.map(toOutlet), next_cursor: null }, 200);
@@ -321,9 +331,10 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "outlets.create", method: "post", path: "/v1/outlets", tags: ["organisation"], request: { body: jsonBody(OutletInput) }, responses: { 201: jsonResponse(mutationResponse(OutletSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const body = c.req.valid("json");
+    await merchantBrand(p.merchantId, body.brand_id);
     const [row] = await db()
       .insert(outlets)
-      .values({ id: body.id, merchantId: p.merchantId, name: body.name, address: body.address ?? null, phone: body.phone ?? null, businessRegistrationNo: body.business_registration_no ?? null, taxRegistrationNo: body.tax_registration_no ?? null, businessDayCutoff: body.business_day_cutoff ?? null, hours: body.hours ?? {}, serviceThemeFrom: body.service_theme_from ?? "18:00", legacyId: body.legacy_id ?? null })
+      .values({ id: body.id, merchantId: p.merchantId, brandId: body.brand_id, name: body.name, address: body.address ?? null, phone: body.phone ?? null, businessRegistrationNo: body.business_registration_no ?? null, taxRegistrationNo: body.tax_registration_no ?? null, businessDayCutoff: body.business_day_cutoff ?? null, hours: body.hours ?? {}, serviceThemeFrom: body.service_theme_from ?? "18:00", legacyId: body.legacy_id ?? null })
       .returning();
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "outlet.created", aggregate: { kind: "outlet", id: row!.id }, operationId: "outlets.create", payload: toOutlet(row!), correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
     await recordAudit(p, { action: "outlets.create", targetKind: "outlet", targetId: row!.id, details: { name: row!.name } });
@@ -335,9 +346,27 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
     const { id } = c.req.valid("param");
     const body = c.req.valid("json");
     if (Object.keys(body).length === 0) throw AppError.validation("Nothing to update");
+    if (body.brand_id !== undefined) {
+      const [current] = await db().select({ brandId: outlets.brandId }).from(outlets).where(and(eq(outlets.id, id), eq(outlets.merchantId, p.merchantId))).limit(1);
+      if (!current) throw AppError.notFound("outlet", id);
+      if (current.brandId !== body.brand_id) {
+        await merchantBrand(p.merchantId, body.brand_id);
+        // Orders keep the brand they were taken under, and so do their reports: an outlet that has traded stays with its brand.
+        const [traded] = await db().select({ id: orders.id }).from(orders).where(eq(orders.outletId, id)).limit(1);
+        if (traded) throw new AppError("state_conflict", "This outlet has orders, so its brand cannot change", { remedy: "Add a new outlet for the other brand, and archive this one when it is no longer used.", details: { reason: "outlet_has_orders", field: "brand_id" } });
+        // A channel sells one of its brand's menus, so it cannot simply follow the outlet to another brand.
+        const [linked] = await db().select({ id: channelLinks.id }).from(channelLinks).where(eq(channelLinks.outletId, id)).limit(1);
+        if (linked) throw new AppError("state_conflict", "This outlet has channels set up for its brand, so its brand cannot change", { remedy: "Add a new outlet for the other brand, and archive this one.", details: { reason: "outlet_has_channels", field: "brand_id" } });
+        // The outlet first, then what is under it: the database keeps a station on its outlet's brand.
+        await db().update(outlets).set({ brandId: body.brand_id }).where(and(eq(outlets.id, id), eq(outlets.merchantId, p.merchantId)));
+        await db().update(stations).set({ brandId: body.brand_id }).where(eq(stations.outletId, id));
+      }
+    }
     const [row] = await db()
       .update(outlets)
       .set({
+        // Reads the row back when only an unchanged brand was sent.
+        ...(body.brand_id !== undefined && { brandId: body.brand_id }),
         ...(body.name !== undefined && { name: body.name }),
         ...(body.address !== undefined && { address: body.address }),
         ...(body.phone !== undefined && { phone: body.phone }),
@@ -370,13 +399,13 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "stations.create", method: "post", path: "/v1/stations", tags: ["organisation"], request: { body: jsonBody(StationInput) }, responses: { 201: jsonResponse(mutationResponse(StationSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const body = c.req.valid("json");
-    const [outlet] = await db().select({ id: outlets.id }).from(outlets).where(eq(outlets.id, body.outlet_id)).limit(1);
+    const [outlet] = await db().select({ id: outlets.id, brandId: outlets.brandId }).from(outlets).where(eq(outlets.id, body.outlet_id)).limit(1);
     if (!outlet) throw AppError.notFound("outlet", body.outlet_id);
-    // A POS station sells one brand's menu: without a brand its iPad cannot open an order. A kitchen display has none.
-    if ((body.kind ?? "pos") === "pos" && !body.brand_id) throw posStationNeedsBrand();
+    // A station is on its outlet's brand, whatever its kind. brand_id may be left out; another brand is refused.
+    if (body.brand_id && body.brand_id !== outlet.brandId) throw stationBrandIsOutlets();
     const [row] = await db()
       .insert(stations)
-      .values({ id: body.id, merchantId: p.merchantId, outletId: body.outlet_id, name: body.name, brandId: body.brand_id ?? null, layoutId: body.layout_id ?? null, payBeforeFiring: body.pay_before_firing ?? false, seatsEnabled: body.seats_enabled ?? false, home: body.home ?? "floor", receiptPrinterId: body.receipt_printer_id ?? null, textSize: body.text_size ?? "standard", kind: body.kind ?? "pos", displayDestinationIds: body.display_destination_ids ?? [] })
+      .values({ id: body.id, merchantId: p.merchantId, outletId: body.outlet_id, name: body.name, brandId: outlet.brandId, layoutId: body.layout_id ?? null, payBeforeFiring: body.pay_before_firing ?? false, seatsEnabled: body.seats_enabled ?? false, home: body.home ?? "floor", receiptPrinterId: body.receipt_printer_id ?? null, textSize: body.text_size ?? "standard", kind: body.kind ?? "pos", displayDestinationIds: body.display_destination_ids ?? [] })
       .returning();
     await assertDestinations(row!);
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: body.outlet_id, type: "station.created", aggregate: { kind: "station", id: row!.id }, operationId: "stations.create", payload: toStation(row!), correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(p.merchantId, body.outlet_id) }, p);
@@ -389,12 +418,11 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
     const { id } = c.req.valid("param");
     const body = c.req.valid("json");
     if (Object.keys(body).length === 0) throw AppError.validation("Nothing to update");
-    // Taking the brand off a POS station is refused. A station saved without one before brands were required can
-    // still be renamed or archived: only a change of its brand has to name one.
-    if (body.brand_id === null) {
-      const [current] = await db().select({ kind: stations.kind }).from(stations).where(and(eq(stations.id, id), eq(stations.merchantId, p.merchantId))).limit(1);
+    // A station's brand is its outlet's: it changes with the outlet (outlets.update), never on its own.
+    if (body.brand_id !== undefined) {
+      const [current] = await db().select({ outletBrand: outlets.brandId }).from(stations).innerJoin(outlets, eq(outlets.id, stations.outletId)).where(and(eq(stations.id, id), eq(stations.merchantId, p.merchantId))).limit(1);
       if (!current) throw AppError.notFound("station", id);
-      if (current.kind === "pos") throw posStationNeedsBrand();
+      if (body.brand_id !== current.outletBrand) throw stationBrandIsOutlets();
     }
     const [row] = await db()
       .update(stations)

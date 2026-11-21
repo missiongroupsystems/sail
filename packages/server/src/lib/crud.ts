@@ -33,6 +33,8 @@ export type CrudConfig<TTable extends PgTable, TApi extends z.ZodTypeAny, TCreat
   fromPatch: (body: z.infer<TPatch>) => Partial<TTable["$inferInsert"]>;
   /** Checks a change against the stored row before it is written (the row as it would be after the patch). */
   checkUpdate?: (merged: TTable["$inferSelect"]) => void;
+  /** Runs before a new row is written, once its outlet is known to be the caller's: may refuse, or fill in values. */
+  prepareCreate?: (values: Record<string, unknown>, p: Principal) => Promise<void>;
   /** Roles: reads default to server, writes default to admin (config.edit). */
   roles?: { read?: Role | null; write?: Role };
   principals?: { read?: PrincipalKind[]; write?: PrincipalKind[] };
@@ -110,6 +112,7 @@ export function defineCrud<TTable extends PgTable, TApi extends z.ZodTypeAny, TC
     const values = cfg.fromCreate(body, p) as Record<string, unknown>;
     const outletId = (values["outletId"] as string | undefined) ?? null;
     if (outletId && !(await outletVisible(p, outletId))) throw AppError.notFound("outlet", outletId);
+    if (cfg.prepareCreate) await cfg.prepareCreate(values, p);
     const [row] = await db()
       .insert(cfg.table as PgTable)
       .values({ ...values, merchantId: p.merchantId } as never)

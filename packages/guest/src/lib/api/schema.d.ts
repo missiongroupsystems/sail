@@ -6287,6 +6287,8 @@ export interface operations {
         parameters: {
             query?: {
                 include_archived?: "true" | "false";
+                /** @description Only this brand's outlets. */
+                brand_id?: string;
             };
             header?: never;
             path?: never;
@@ -6304,6 +6306,7 @@ export interface operations {
                         data: {
                             id: string;
                             name: string;
+                            brand_id: string;
                             address: string | null;
                             phone: string | null;
                             business_registration_no: string | null;
@@ -6441,6 +6444,11 @@ export interface operations {
                     /** Format: uuid */
                     id?: string;
                     name: string;
+                    /**
+                     * Format: uuid
+                     * @description The brand this outlet trades as. An outlet has exactly one; it can change only while the outlet has no orders.
+                     */
+                    brand_id: string;
                     address?: string | null;
                     phone?: string | null;
                     business_registration_no?: string | null;
@@ -6468,6 +6476,7 @@ export interface operations {
                         data: {
                             id: string;
                             name: string;
+                            brand_id: string;
                             address: string | null;
                             phone: string | null;
                             business_registration_no: string | null;
@@ -6612,6 +6621,11 @@ export interface operations {
             content: {
                 "application/json": {
                     name?: string;
+                    /**
+                     * Format: uuid
+                     * @description The brand this outlet trades as. An outlet has exactly one; it can change only while the outlet has no orders.
+                     */
+                    brand_id?: string;
                     address?: string | null;
                     phone?: string | null;
                     business_registration_no?: string | null;
@@ -6640,6 +6654,7 @@ export interface operations {
                         data: {
                             id: string;
                             name: string;
+                            brand_id: string;
                             address: string | null;
                             phone: string | null;
                             business_registration_no: string | null;
@@ -14806,8 +14821,11 @@ export interface operations {
                     channel: "pos" | "scan_to_order";
                     /** Format: uuid */
                     outlet_id: string;
-                    /** Format: uuid */
-                    brand_id: string;
+                    /**
+                     * Format: uuid
+                     * @description The outlet's brand. May be left out; another brand is refused.
+                     */
+                    brand_id?: string;
                     /** Format: uuid */
                     menu_id: string;
                     enabled?: boolean;

@@ -51,7 +51,7 @@ async function tenantTables(): Promise<TableRow[]> {
 
 async function countAs(role: string, merchantId: string, outlets: string, principalId: string, table: string): Promise<number> {
   return db.sql.begin(async (tx) => {
-    await tx`select set_config('app.current_merchant', ${merchantId}, true), set_config('app.current_outlets', ${outlets}, true), set_config('app.current_principal', ${principalId}, true), set_config('app.current_principal_type', 'staff', true)`;
+    await tx`select set_config('app.current_merchant', ${merchantId}, true), set_config('app.current_outlets', ${outlets}, true), set_config('app.current_principal', ${principalId}, true), set_config('app.current_principal_type', 'staff', true), set_config('app.current_brands', '*', true)`;
     await tx.unsafe(`set local role ${role}`);
     const [row] = await tx.unsafe<{ n: number }[]>(`select count(*)::int as n from ${table}`);
     return row!.n;

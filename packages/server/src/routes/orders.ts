@@ -2,7 +2,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { AmountSchema, toE164, ORDER_STATUSES, OrderTypeSchema, PERMISSIONS, PricingRuleSchema, isFreezable, localParts, operation, price, registerOperations, roleAtLeast, validateManualApplication, type OrderType, type OperationSpec, type Role } from "@sail/shared";
 import { db, markDryRun, settleInvariants, tx } from "../db/client.js";
-import { areas, channelLinks, customerGroupMembers, customers, kitchenTickets, orderLines, orderManualApplications, orders, stations, tables, voidReasons } from "../db/schema/index.js";
+import { areas, channelLinks, customerGroupMembers, customers, kitchenTickets, orderLines, orderManualApplications, orders, outlets, stations, tables, voidReasons } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppContext, AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
@@ -93,13 +93,19 @@ async function outletContext(p: Principal, body: { outlet_id?: string; brand_id?
     if (!st) throw AppError.notFound("station", stationId);
     // A station takes orders at its own outlet only: another outlet in the body is refused, not quietly replaced.
     if (body.outlet_id && body.outlet_id !== st.outletId) throw AppError.validation("outlet_id is not this station's outlet", { remedy: "Leave outlet_id out on a station; the order opens at the station's outlet." });
-    const brandId = body.brand_id ?? st.brandId;
-    if (!brandId) throw AppError.validation("The station has no brand; set one in the back office or pass brand_id");
-    return { outletId: st.outletId, brandId, stationId: st.id, station: st };
+    return { outletId: st.outletId, brandId: await outletBrand(st.outletId, body.brand_id), stationId: st.id, station: st };
   }
-  if (!body.outlet_id || !body.brand_id) throw AppError.validation("outlet_id and brand_id are required when not on a station");
+  if (!body.outlet_id) throw AppError.validation("outlet_id is required when not on a station");
   if (!(await outletVisible(p, body.outlet_id))) throw AppError.notFound("outlet", body.outlet_id);
-  return { outletId: body.outlet_id, brandId: body.brand_id, stationId: null, station: null };
+  return { outletId: body.outlet_id, brandId: await outletBrand(body.outlet_id, body.brand_id), stationId: null, station: null };
+}
+
+/** An order is on its outlet's brand. brand_id may be left out; a brand that is not the outlet's is refused, never replaced. */
+async function outletBrand(outletId: string, asked: string | undefined): Promise<string> {
+  const [outlet] = await db().select({ brandId: outlets.brandId }).from(outlets).where(eq(outlets.id, outletId)).limit(1);
+  if (!outlet) throw AppError.notFound("outlet", outletId);
+  if (asked && asked !== outlet.brandId) throw AppError.validation("brand_id is not this outlet's brand", { remedy: "Leave brand_id out; the order opens under the outlet's brand.", details: { field: "brand_id" } });
+  return outlet.brandId;
 }
 
 function validateTypeFields(orderType: OrderType, o: { tableId?: string | null; pax?: number | null; customerRef?: { name?: string; mobile?: string } | null; deliveryAddress?: string | null; readyBy?: Date | null }) {

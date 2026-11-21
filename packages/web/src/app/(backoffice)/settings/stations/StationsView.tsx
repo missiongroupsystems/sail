@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, DataTable, Dialog, EmptyState, InlineError, Select, Sheet, StatusDot, Switch, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
+import { Button, DataTable, Dialog, EmptyState, InlineError, Select, Sheet, StatusDot, Switch, TextField, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -18,28 +18,23 @@ import { keys } from "@/lib/query";
 import { useFreshErrors } from "@/lib/fresh-errors";
 import { useCan } from "@/lib/can";
 
-const NONE = "__none__";
 const HOME_LABEL: Record<string, string> = { floor: "Floor plan", takeaway: "New takeaway order" };
 
 type SheetState = { mode: "create" } | { mode: "edit"; station: Station } | null;
 
-const Schema = z
-  .object({
-    name: z.string().trim().min(1, "Enter a name"),
-    brand_id: z.string(),
-    pay_before_firing: z.boolean(),
-    seats_enabled: z.boolean(),
-    home: z.enum(["floor", "takeaway"]),
-    kind: z.enum(["pos", "display"]),
-    display_destination_ids: z.array(z.string()),
-  })
-  // A POS station sells one brand's menu, so it cannot be saved without one. A kitchen display has no brand.
-  .refine((v) => v.kind === "display" || v.brand_id !== NONE, { path: ["brand_id"], message: "Choose a brand" });
+// A station has no brand of its own to choose: it is on its outlet's brand, shown read-only in the sheet.
+const Schema = z.object({
+  name: z.string().trim().min(1, "Enter a name"),
+  pay_before_firing: z.boolean(),
+  seats_enabled: z.boolean(),
+  home: z.enum(["floor", "takeaway"]),
+  kind: z.enum(["pos", "display"]),
+  display_destination_ids: z.array(z.string()),
+});
 type Values = z.infer<typeof Schema>;
 
-/** A new station starts on the brand in the scope picker, or the merchant's only brand; otherwise the brand is left to choose. */
-function defaults(s: Station | null, brandId: string | null = null): Values {
-  return { name: s?.name ?? "", brand_id: s ? (s.brand_id ?? NONE) : (brandId ?? NONE), pay_before_firing: s?.pay_before_firing ?? false, seats_enabled: s?.seats_enabled ?? true, home: s?.home ?? "floor", kind: s?.kind ?? "pos", display_destination_ids: s?.display_destination_ids ?? [] };
+function defaults(s: Station | null): Values {
+  return { name: s?.name ?? "", pay_before_firing: s?.pay_before_firing ?? false, seats_enabled: s?.seats_enabled ?? true, home: s?.home ?? "floor", kind: s?.kind ?? "pos", display_destination_ids: s?.display_destination_ids ?? [] };
 }
 
 export function StationsView({
@@ -143,19 +138,19 @@ export function StationsView({
       )}
       <InlineError error={stations.error} className="mt-4" />
 
-      {outletId ? <StationSheet state={sheet} outletId={outletId} brands={brands} defaultBrandId={scope.brandId ?? (brands.length === 1 ? brands[0]!.id : null)} onClose={() => setSheet(null)} /> : null}
+      {outletId ? <StationSheet state={sheet} outletId={outletId} brandName={brandName.get(outlets.find((o) => o.id === outletId)?.brand_id ?? "") ?? null} onClose={() => setSheet(null)} /> : null}
     </>
   );
 }
 
-function StationSheet({ state, outletId, brands, defaultBrandId, onClose }: { state: SheetState; outletId: string; brands: Brand[]; defaultBrandId: string | null; onClose: () => void }) {
+function StationSheet({ state, outletId, brandName, onClose }: { state: SheetState; outletId: string; /** The outlet's brand, which every station of the outlet is on. */ brandName: string | null; onClose: () => void }) {
   const qc = useQueryClient();
   const station = state?.mode === "edit" ? state.station : null;
-  const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(station, defaultBrandId) });
+  const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(station) });
   const reset = form.reset;
   useEffect(() => {
-    if (state) reset(defaults(state.mode === "edit" ? state.station : null, defaultBrandId));
-  }, [state, reset, defaultBrandId]);
+    if (state) reset(defaults(state.mode === "edit" ? state.station : null));
+  }, [state, reset]);
 
   const settle = async () => {
     await qc.invalidateQueries({ queryKey: ["stations", outletId] });
@@ -173,7 +168,7 @@ function StationSheet({ state, outletId, brands, defaultBrandId, onClose }: { st
     mutationFn: async (v) => {
       const display = v.kind === "display";
       // A display shows destinations and has no menu or service settings of its own.
-      const body = display ? { name: v.name.trim(), display_destination_ids: v.display_destination_ids } : { name: v.name.trim(), brand_id: v.brand_id, pay_before_firing: v.pay_before_firing, seats_enabled: v.seats_enabled, home: v.home };
+      const body = display ? { name: v.name.trim(), display_destination_ids: v.display_destination_ids } : { name: v.name.trim(), pay_before_firing: v.pay_before_firing, seats_enabled: v.seats_enabled, home: v.home };
       const res = station
         ? await req(api.PATCH("/v1/stations/{id}", { params: { path: { id: station.id } }, body }))
         : await req(api.POST("/v1/stations", { body: { ...body, kind: v.kind, outlet_id: outletId } }));
@@ -231,7 +226,7 @@ function StationSheet({ state, outletId, brands, defaultBrandId, onClose }: { st
       <form id="station-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
         {station && !station.archived && station.kind === "pos" && !station.brand_id ? (
           <p role="alert" className="rounded-panel bg-status-alert-tint px-4 py-3 text-[14px] text-ink">
-            This station has no brand, so its iPad cannot take orders. Choose a brand below and save.
+            This station has no brand, so its iPad cannot take orders. Save it to put it on its outlet's brand.
           </p>
         ) : null}
         {station?.archived ? (
@@ -260,15 +255,8 @@ function StationSheet({ state, outletId, brands, defaultBrandId, onClose }: { st
         ) : (
           <>
             <SheetSection>
-              <RhfSelect
-                control={form.control}
-                name="brand_id"
-                label="Brand"
-                isRequired
-                placeholder="Choose a brand"
-                description={brands.length === 0 ? "No brands yet. Add one in Settings › Brands first." : "The station sells this brand's menu."}
-                items={brands.map((b) => ({ id: b.id, label: b.name }))}
-              />
+              {/* Not a choice: the outlet belongs to one brand, and so does everything under it. */}
+              <TextField label="Brand" value={brandName ?? "—"} isReadOnly description="The outlet's brand. To sell another brand here, add the station at one of that brand's outlets." />
               <RhfSelect
                 control={form.control}
                 name="home"

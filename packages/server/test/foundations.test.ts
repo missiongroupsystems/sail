@@ -52,15 +52,17 @@ describe("health and auth", () => {
   });
   it("a refused write names at most the field, never a constraint, key value or row-level security", async () => {
     const C = await seedMerchant(db.sql, "Charlie");
-    const again = await call("POST", "/v1/outlets", { token: C.admin.token, body: { id: C.outletId, name: "Twice" } });
+    const again = await call("POST", "/v1/outlets", { token: C.admin.token, body: { id: C.outletId, brand_id: C.brandId, name: "Twice" } });
     expect(again.status, JSON.stringify(again.body)).toBe(409);
     expect(again.body).toEqual({ code: "state_conflict", message: "A record with the same unique value already exists", remedy: "Use a different value or update the existing record." });
     const missing = randomUUID();
-    const dangling = await call("POST", "/v1/stations", { token: C.admin.token, body: { outlet_id: C.outletId, brand_id: missing, name: "S" } });
-    expect(dangling.status).toBe(400);
+    // A station printing on a printer that is not there: the database refuses the reference. (A wrong brand no longer
+    // gets that far: the register refuses a brand that is not the outlet's first, in words.)
+    const dangling = await call("POST", "/v1/stations", { token: C.admin.token, body: { outlet_id: C.outletId, receipt_printer_id: missing, name: "S" } });
+    expect(dangling.status, JSON.stringify(dangling.body)).toBe(400);
     expect(JSON.stringify(dangling.body)).not.toMatch(/fkey|same_merchant|constraint|Key \(|rls/);
     expect(JSON.stringify(dangling.body)).not.toContain(missing);
-    expect(dangling.body).toMatchObject({ code: "validation", message: "A referenced record does not exist" });
+    expect(dangling.body).toEqual({ code: "validation", message: "receipt_printer_id does not name a record of this business", remedy: "Check the id, and that it belongs to this business.", details: { field: "receipt_printer_id" } });
   });
   it("resolves a back-office JWT to a staff principal", async () => {
     const r = await call<{ data: { type: string; role: string; merchant_id: string; outlet_scope: string } }>("GET", "/v1/me", { token: A.admin.token });
@@ -100,7 +102,7 @@ describe("tenancy and outlet scoping (RLS)", () => {
 
 describe("permissions from the manifest", () => {
   it("a cashier cannot create an outlet; the error names the required role", async () => {
-    const r = await call<{ code: string; details: { required_role: string; override_allowed: boolean } }>("POST", "/v1/outlets", { token: A.cashier.token, body: { name: "Nope" } });
+    const r = await call<{ code: string; details: { required_role: string; override_allowed: boolean } }>("POST", "/v1/outlets", { token: A.cashier.token, body: { name: "Nope", brand_id: A.brandId } });
     expect(r.status).toBe(403);
     expect(r.body.code).toBe("permission_denied");
     expect(r.body.details.required_role).toBe("admin");
@@ -122,7 +124,7 @@ describe("organisation CRUD writes events and audit entries", () => {
     expect(brand.status).toBe(201);
     expect(brand.body.events[0]!.type).toBe("brand.created");
 
-    const outlet = await call<{ data: { id: string } }>("POST", "/v1/outlets", { token: A.admin.token, body: { name: "Airport", business_registration_no: "201234567A", business_day_cutoff: "05:00", hours: { mon: [["08:00", "22:00"]] } } });
+    const outlet = await call<{ data: { id: string } }>("POST", "/v1/outlets", { token: A.admin.token, body: { name: "Airport", brand_id: brand.body.data.id, business_registration_no: "201234567A", business_day_cutoff: "05:00", hours: { mon: [["08:00", "22:00"]] } } });
     expect(outlet.status).toBe(201);
 
     const station = await call<{ data: { id: string; paired: boolean }; events: { seq: number }[] }>("POST", "/v1/stations", { token: A.admin.token, body: { outlet_id: outlet.body.data.id, brand_id: brand.body.data.id, name: "Counter 1", pay_before_firing: true, home: "takeaway" } });

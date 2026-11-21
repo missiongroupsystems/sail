@@ -3,17 +3,18 @@
 import { useConfirm } from "@/components/backoffice/Confirm";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, InlineError, Sheet, Switch, TextField, FieldsLocked } from "@sail/ui";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { greyPill, SheetSection } from "@/components/office/parts";
 import { applyServerErrors } from "@/components/office/server-errors";
-import { RhfTextField } from "@/components/forms/fields";
+import { RhfSelect, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Outlet, OutletCreate } from "@/lib/api/types";
+import { keys } from "@/lib/query";
 import { useSession } from "@/lib/session-context";
 import { formToHours, hoursToForm, TIME_RE, WEEKDAY_LABEL, WEEKDAYS, type HoursForm } from "@/lib/hours";
 import { useFreshErrors } from "@/lib/fresh-errors";
@@ -34,6 +35,7 @@ const DaySchema = z
 
 const Schema = z.object({
   name: z.string().trim().min(1, "Enter a name"),
+  brand_id: z.string().min(1, "Choose a brand"),
   address: z.string(),
   phone: z.string(),
   business_registration_no: z.string(),
@@ -43,9 +45,11 @@ const Schema = z.object({
 });
 type Values = z.infer<typeof Schema>;
 
-function defaults(outlet: Outlet | null): Values {
+function defaults(outlet: Outlet | null, brandId: string | null = null): Values {
   return {
     name: outlet?.name ?? "",
+    // A new outlet starts on the merchant's only brand; with several, the brand is left to choose.
+    brand_id: outlet?.brand_id ?? brandId ?? "",
     address: outlet?.address ?? "",
     phone: outlet?.phone ?? "",
     business_registration_no: outlet?.business_registration_no ?? "",
@@ -58,6 +62,7 @@ function defaults(outlet: Outlet | null): Values {
 function toBody(v: Values): Omit<OutletCreate, "id"> {
   return {
     name: v.name.trim(),
+    brand_id: v.brand_id,
     address: v.address.trim() || null,
     phone: v.phone.trim() || null,
     business_registration_no: v.business_registration_no.trim() || null,
@@ -73,13 +78,17 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
   const router = useRouter();
   const { business_registration_label, tax_registration_label } = useSession().merchant.settings;
   const outlet = state?.mode === "edit" ? state.outlet : null;
-  const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(outlet) });
+  // An outlet belongs to one brand. The list is the merchant's brands; an outlet on an archived brand still names it.
+  const brands = useQuery({ queryKey: keys.brands(true), queryFn: () => req(api.GET("/v1/brands", { params: { query: { include_archived: "true" } } })).then((r) => r.data), enabled: state !== null });
+  const brandItems = (brands.data ?? []).filter((b) => !b.archived || b.id === outlet?.brand_id).map((b) => ({ id: b.id, label: b.name }));
+  const onlyBrand = brandItems.length === 1 ? brandItems[0]!.id : null;
+  const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(outlet, onlyBrand) });
   useRecheckErrors(form);
 
   const reset = form.reset;
   useEffect(() => {
-    if (state) reset(defaults(state.mode === "edit" ? state.outlet : null));
-  }, [state, reset]);
+    if (state) reset(defaults(state.mode === "edit" ? state.outlet : null, onlyBrand));
+  }, [state, reset, onlyBrand]);
 
   const settle = async () => {
     await qc.invalidateQueries({ queryKey: ["outlets"] });
@@ -143,7 +152,16 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
     >
       <form id="outlet-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
         <SheetSection>
-          <RhfTextField control={form.control} name="name" label="Name" placeholder="Brand · Location" autoFocus={!outlet} />
+          <RhfTextField control={form.control} name="name" label="Name" isRequired placeholder="Brand · Location" autoFocus={!outlet} />
+          <RhfSelect
+            control={form.control}
+            name="brand_id"
+            label="Brand"
+            isRequired
+            placeholder={brands.isPending ? "Loading the brands…" : "Choose a brand"}
+            items={brandItems}
+            description={outlet ? "The outlet's stations, channels and orders are on this brand. It can change only while the outlet has no orders and no channels." : "An outlet trades as one brand. Its stations, channels and orders follow it."}
+          />
           <RhfTextField control={form.control} name="address" label="Address" multiline rows={2} />
           <div className="grid gap-4 sm:grid-cols-2">
             <RhfTextField control={form.control} name="phone" label="Phone" type="tel" inputMode="tel" numeric />

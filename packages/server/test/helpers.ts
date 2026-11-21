@@ -93,8 +93,8 @@ export async function seedMerchant(sql: Sql, name = "Test Merchant", region: { p
   await sql`insert into merchants (id, name) values (${merchantId}, ${name})`;
   const taxClassIds = await sql.begin((tx) => applyPreset(tx, merchantId, REGION_PRESETS[region.preset], region));
   await sql`insert into brands (id, merchant_id, name) values (${brandId}, ${merchantId}, ${name + " Brand"})`;
-  await sql`insert into outlets (id, merchant_id, name) values (${outletId}, ${merchantId}, ${name + " Outlet 1"})`;
-  await sql`insert into outlets (id, merchant_id, name) values (${outlet2Id}, ${merchantId}, ${name + " Outlet 2"})`;
+  await sql`insert into outlets (id, merchant_id, brand_id, name) values (${outletId}, ${merchantId}, ${brandId}, ${name + " Outlet 1"})`;
+  await sql`insert into outlets (id, merchant_id, brand_id, name) values (${outlet2Id}, ${merchantId}, ${brandId}, ${name + " Outlet 2"})`;
   const mk = async (role: Role, label: string, outletIds: string[] = [], pin: string) => {
     const id = randomUUID();
     const sub = localSubject(id);

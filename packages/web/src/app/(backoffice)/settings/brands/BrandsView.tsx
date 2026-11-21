@@ -70,6 +70,14 @@ export function BrandsView({ initialBrands }: { initialBrands: Brand[] }) {
     initialData: initialBrands,
   });
   const rows = brands.data.filter((b) => showArchived || !b.archived);
+  // Each brand's outlets: an outlet belongs to one brand, so the list says where a brand trades.
+  const outlets = useQuery({ queryKey: keys.outlets(false), queryFn: () => req(api.GET("/v1/outlets", { params: { query: {} } })).then((r) => r.data) });
+  const outletsOf = (brandId: string) => (outlets.data ?? []).filter((o) => o.brand_id === brandId).map((o) => o.name);
+  const withOutlets: DataTableColumn<Brand>[] = [
+    columns[0]!,
+    { key: "outlets", header: "Outlets", width: "1.6fr", render: (b) => (outlets.data ? <span className="text-ink-2">{outletsOf(b.id).join(", ") || "No outlets yet"}</span> : <span className="text-ink-3">…</span>) },
+    ...columns.slice(1),
+  ];
 
   return (
     <>
@@ -90,7 +98,7 @@ export function BrandsView({ initialBrands }: { initialBrands: Brand[] }) {
       </div>
       <DataTable
         aria-label="Brands"
-        columns={columns}
+        columns={withOutlets}
         rows={rows}
         rowKey={(b) => b.id}
         defaultSort={{ column: "name", direction: "ascending" }}

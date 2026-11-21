@@ -4349,6 +4349,11 @@
               "true",
               "false"
             ]
+          },
+          "brand_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Only this brand's outlets."
           }
         },
         "required": [],
