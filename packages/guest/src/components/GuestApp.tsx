@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Ban, CheckCheck, Clock, QrCode } from "lucide-react";
 import { useStore } from "zustand";
-import { API_URL, ApiError, createGuestApi, createSession, getMenu, getOrder, sessionLive, submitRound, toApiError } from "@/lib/api";
+import { API_URL, ApiError, createGuestApi, createSession, getMenu, getOrder, submitRound, toApiError } from "@/lib/api";
 import { createBasketStore, type BasketItem } from "@/lib/basket";
 import { brandStyle } from "@/lib/brand";
 import { QueryProvider, keys } from "@/lib/query";
@@ -76,6 +76,8 @@ function GuestAppInner({ token }: { token: string }) {
   const restored = useRef(false);
   /** The session id whose 401 has already been handled; concurrent requests all fail together. */
   const endedSession = useRef<string | null>(null);
+  /** The paid screen is showing (with its session kept). */
+  const paidShown = useRef(false);
   const streamRef = useRef<GuestStream | null>(null);
   const [streamStatus, setStreamStatus] = useState<GuestStreamStatus | null>(null);
 
@@ -127,6 +129,15 @@ function GuestAppInner({ token }: { token: string }) {
   const startSession = useCallback(
     async (force: boolean) => {
       const stored = force ? null : loadSession(token);
+      if (stored?.paid) {
+        // Reloaded on the paid screen: the same screen, at once and without a request the register would refuse (review 5
+        // W1, C 6). The held stream says whether the order is open again (a void, a reopen) and brings the phone back.
+        restored.current = false;
+        endedSession.current = stored.session_id;
+        setSession(stored);
+        setPhase({ kind: "ended", paid: true });
+        return;
+      }
       if (stored) {
         restored.current = true;
         applySession(stored);
@@ -156,13 +167,16 @@ function GuestAppInner({ token }: { token: string }) {
    */
   const onUnauthenticated = useCallback((details?: Record<string, unknown>) => {
     const rotated = details?.reason === "code_rotated";
+    const paid = details?.reason === "order_paid";
     const current = sessionRef.current?.session_id ?? "";
-    if (endedSession.current === current) return;
+    // Handled once per session; only the paid screen can still end differently (the code rotated, the half hour over).
+    if (endedSession.current === current && (paid || !paidShown.current)) return;
     endedSession.current = current;
     // Paid: one screen, live or after a reload, and the session is kept: when staff void the payment or reopen the order,
-    // the phone is back on it with its own rounds.
-    if (details?.reason === "order_paid" && sessionRef.current) {
+    // the phone is back on it with its own rounds. The phone remembers it was paid, so a reload opens on the same screen.
+    if (paid && sessionRef.current) {
       restored.current = false;
+      saveSession(token, { ...sessionRef.current, paid: true });
       setPhase({ kind: "ended", paid: true });
       return;
     }
@@ -178,23 +192,11 @@ function GuestAppInner({ token }: { token: string }) {
   onUnauthenticatedRef.current = onUnauthenticated;
 
   /*
-   * Paid, without a live stream to hear a void or a reopen on (the page was reloaded on the paid screen, or the phone
-   * locked and the stream dropped): when the phone is shown again it asks the register once (review 4 U4).
+   * Paid: the paid screen keeps a held stream open, live or after a reload, and makes it again when a locked phone is
+   * shown again; the register says on it when the order is open again (review 5 W1).
    */
-  const paidSession = phase.kind === "ended" && phase.paid ? session : null;
-  useEffect(() => {
-    if (!paidSession) return;
-    const onVisible = async () => {
-      if (document.visibilityState !== "visible" || streamRef.current?.listening) return;
-      if ((await sessionLive(paidSession.guest_token)) !== "live") return;
-      endedSession.current = null;
-      setPhase({ kind: "ready" });
-      void queryClient.invalidateQueries({ queryKey: keys.order(paidSession.session_id) });
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [paidSession, queryClient]);
-
+  const paidPhase = phase.kind === "ended" && phase.paid === true && session !== null;
+  paidShown.current = paidPhase;
 
   const started = useRef(false);
   useEffect(() => {
@@ -299,8 +301,9 @@ function GuestAppInner({ token }: { token: string }) {
   /* ---- Live updates: the stream when an order exists, polling otherwise. ---- */
   const sessionId = session?.session_id ?? null;
   const hasOrder = Boolean(orderQuery.data?.order);
+  const wantStream = Boolean(sessionId) && (hasOrder || paidPhase);
   useEffect(() => {
-    if (!sessionId || !hasOrder) return;
+    if (!sessionId || !wantStream) return;
     const stream = new GuestStream({
       baseUrl: API_URL,
       getToken: () => sessionRef.current?.guest_token ?? null,
@@ -311,10 +314,14 @@ function GuestAppInner({ token }: { token: string }) {
       // Paid, then open again (a payment voided, the order reopened): back on the order, the same session and rounds.
       onResumed: () => {
         endedSession.current = null;
+        const s = sessionRef.current;
+        if (s) saveSession(token, { ...s, paid: false });
         setPhase({ kind: "ready" });
         void queryClient.invalidateQueries({ queryKey: keys.order(sessionId) });
       },
       pollMs: RECHECK_MS,
+      // Opened on the paid screen (a reload there): it listens only.
+      held: paidShown.current,
     });
     streamRef.current = stream;
     stream.start();
@@ -322,7 +329,7 @@ function GuestAppInner({ token }: { token: string }) {
       stream.stop();
       streamRef.current = null;
     };
-  }, [sessionId, hasOrder, queryClient, onUnauthenticated]);
+  }, [sessionId, wantStream, queryClient, onUnauthenticated, token]);
 
   /* ---- Not ready to order: re-check so the menu opens up when staff seat the table. ---- */
   const canOrder = session?.can_order ?? false;

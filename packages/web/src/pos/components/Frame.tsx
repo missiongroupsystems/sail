@@ -4,6 +4,7 @@ import { Banner, Icon, SailLogo, TopTabs, useLocale } from "@sail/ui";
 import { ChevronLeft, Lock } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button as AriaButton } from "react-aria-components";
+import { useFloor } from "../hooks/queries";
 import { useApi } from "../hooks/useApi";
 import { useNow } from "../lib/device";
 import { lockStation } from "../lib/lock";
@@ -48,11 +49,16 @@ export const BAR_BUTTON =
 export function Frame({ sub, children }: FrameProps) {
   const screen = useNavStore((s) => s.screen);
   const go = useNavStore((s) => s.go);
+  // Away from the floor, its tab counts the QR orders waiting there, so a new one is seen from any screen (review 5 W5).
+  const { station } = usePos();
+  const floor = useFloor(station.outlet_id);
+  const waiting = screen.kind === "floor" ? 0 : (floor.data?.snapshot.tables ?? []).reduce((n, t) => n + (t.order?.pending_rounds ?? 0), 0);
+  const tabs = waiting ? TABS.map((t) => (t.id === "floor" ? { ...t, badge: waiting } : t)) : TABS;
   return (
     <>
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-rule bg-surface pr-3 pl-5">
         <SailLogo size="bar" className="pr-3" />
-        <TopTabs tabs={TABS} selectedId={screen.kind} onSelect={(id) => go({ kind: id as "floor" | "orders" | "shift" })} />
+        <TopTabs tabs={tabs} selectedId={screen.kind} onSelect={(id) => go({ kind: id as "floor" | "orders" | "shift" })} />
         <StationName />
         <div className="ml-auto flex items-center gap-1">
           <span aria-hidden className="mx-1.5 h-6 w-px bg-rule" />

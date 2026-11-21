@@ -123,7 +123,13 @@ test.describe("O1 (A P3): every report downloads as CSV with the screen's figure
     await page.goto(`${WEB}/reports/shifts`);
     await expect(page.getByRole("grid", { name: "Shifts" })).toBeVisible();
     csv = await downloadCsv(page);
-    expect(csv.rows).toContainEqual(["Opened", "Business date", "Shift", "Opened by", "Status", "Float", "Expected", "Counted", "Variance", "Closed"]);
+    expect(csv.rows).toContainEqual(["Opened", "Business date", "Shift", "Opened by", "Status", "Float", "Expected", "Counted", "Variance", "Closed", "Closed by"]);
+    // A closed shift's row: the close time and the closer in their own columns, the time an ISO instant (review 5, V5).
+    const shiftsHead = csv.rows.findIndex((r) => r[0] === "Opened" && r.at(-1) === "Closed by");
+    for (const r of csv.rows.slice(shiftsHead + 1).filter((x) => x[4] === "Closed")) {
+      expect(r[9], r.join(",")).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/);
+      expect(r[10], r.join(",")).not.toMatch(/\d{4}-\d{2}/);
+    }
 
     await page.goto(`${WEB}/reports/print-health`);
     await expect(page.getByRole("grid", { name: "Print health by printer" })).toBeVisible();

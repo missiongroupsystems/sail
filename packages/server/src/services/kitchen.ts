@@ -155,9 +155,11 @@ export type TicketView = Awaited<ReturnType<typeof loadTickets>>[number];
 /** Tickets with their destination and lines, oldest fire first (or the latest bump first); every open ticket unless limited. */
 async function loadTickets(where: SQL[], order: "fired" | "bumped" = "fired", limit?: number) {
   const query = db()
-    .select({ t: kitchenTickets, destinationName: displayDestinations.name })
+    .select({ t: kitchenTickets, destinationName: displayDestinations.name, readyBy: orders.readyBy })
     .from(kitchenTickets)
     .innerJoin(displayDestinations, eq(displayDestinations.id, kitchenTickets.destinationId))
+    // The pickup time the order was taken for, as the POS shows it (review 5 W5).
+    .leftJoin(orders, eq(orders.id, kitchenTickets.orderId))
     .where(and(...where))
     .orderBy(...(order === "fired" ? [asc(kitchenTickets.firedAt), asc(kitchenTickets.id)] : [desc(kitchenTickets.bumpedAt)]));
   const rows = limit ? await query.limit(limit) : await query;
@@ -172,6 +174,7 @@ async function loadTickets(where: SQL[], order: "fired" | "bumped" = "fired", li
     order_type: r.t.orderType,
     table_name: r.t.tableName,
     customer_name: r.t.customerName,
+    ready_by: r.readyBy?.toISOString() ?? null,
     pax: r.t.pax,
     round_no: r.t.roundNo,
     server_name: r.t.serverName,

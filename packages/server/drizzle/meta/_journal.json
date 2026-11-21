@@ -393,6 +393,13 @@
       "when": 1794938329623,
       "tag": "0055_refund_station",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1795024729623,
+      "tag": "0056_refund_late_credit_note",
+      "breakpoints": true
     }
   ]
 }

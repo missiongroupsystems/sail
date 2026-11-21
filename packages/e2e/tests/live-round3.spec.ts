@@ -150,7 +150,7 @@ test("R new 4: a field's error clears when the field it depends on changes", asy
   await page.keyboard.press("Escape");
 });
 
-test("R B-N2: a reopened order says its payment was reversed on the order and the pay screen, until it is paid again", async ({ page }) => {
+test("R B-N2: a reopened order says its payment was reversed on the order (once: not again on the pay screen, review 5 W4)", async ({ page }) => {
   test.setTimeout(300_000);
   const { outletId, brandId } = devLocal();
   const products = await register<{ data: { id: string; name: string }[] }>("GET", "/v1/products?limit=50");
@@ -171,7 +171,8 @@ test("R B-N2: a reopened order says its payment was reversed on the order and th
   await expect(panel.getByRole("note")).toContainText(`Reopened: the payment of`);
   await expect(panel.getByRole("note")).toContainText(`was reversed. Take payment again for the balance.`);
   await page.getByRole("button", { name: /^Pay \$/ }).click();
-  await expect(page.getByRole("region", { name: "Bill" }).getByRole("note")).toContainText("was reversed");
+  await expect(page.getByRole("region", { name: "Bill" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Bill" }).getByRole("note")).toHaveCount(0);
 });
 
 test("S-3: Enter sends a PIN short of six digits, on the lock screen and on the approval sheet, with the normal wrong-PIN message", async ({ page, watch }) => {

@@ -17,6 +17,11 @@ export type GuestStreamOptions = {
   onResumed?: () => void;
   /** How often to refetch while there is no order to stream (15 s). */
   pollMs?: number;
+  /**
+   * The phone is already on its paid screen (reloaded there, review 5 W1): it starts held, so the register's `hello`
+   * (the order is open again) brings it back, and its `ended` (still paid) changes nothing.
+   */
+  held?: boolean;
 };
 
 /** Heartbeats arrive every 20 s; three missed means the connection is gone. */
@@ -43,15 +48,20 @@ export class GuestStream {
   private changeTimer: ReturnType<typeof setTimeout> | null = null;
   private status: GuestStreamStatus | null = null;
   /** Paid: the register said `ended` and kept the stream open; nothing goes out with the token until a change. */
-  private held = false;
+  private held: boolean;
+  /** Stops a held stream once the register's half-hour window for bringing phones back is over. */
+  private heldTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private readonly opts: GuestStreamOptions) {}
+  constructor(private readonly opts: GuestStreamOptions) {
+    this.held = opts.held ?? false;
+  }
 
   start() {
     if (!this.stopped) return;
     this.stopped = false;
     document.addEventListener("visibilitychange", this.onVisibility);
     window.addEventListener("online", this.onOnline);
+    if (this.held) this.holdFor(HELD_MS);
     void this.connect();
   }
 
@@ -60,6 +70,8 @@ export class GuestStream {
     document.removeEventListener("visibilitychange", this.onVisibility);
     window.removeEventListener("online", this.onOnline);
     this.clearTimers();
+    if (this.heldTimer) clearTimeout(this.heldTimer);
+    this.heldTimer = null;
     this.abort?.abort();
     this.abort = null;
   }
@@ -85,11 +97,17 @@ export class GuestStream {
     this.timer = this.staleTimer = this.changeTimer = null;
   }
 
+  /** Held: no refetch, but a dropped connection (a locked phone) is made again at once, so a void is still heard. */
   private onVisibility = () => {
-    if (document.visibilityState !== "visible" || this.stopped || this.held) return;
-    this.change();
+    if (document.visibilityState !== "visible" || this.stopped) return;
+    if (!this.held) this.change();
     if (!this.abort) this.kick();
   };
+
+  private holdFor(ms: number) {
+    if (this.heldTimer) clearTimeout(this.heldTimer);
+    this.heldTimer = setTimeout(() => this.stop(), ms);
+  }
 
   private onOnline = () => {
     if (!this.stopped && !this.abort) this.kick();
@@ -168,8 +186,7 @@ export class GuestStream {
       throw new Error("stream ended");
     } catch {
       if (this.stopped || controller !== this.abort) return;
-      // Paid and the connection dropped: reconnecting would only be refused (the session is ended). Stop quietly.
-      if (this.held) return this.stop();
+      // Paid and the connection dropped: the register takes a held stream back (review 5 W1), so reconnect as always.
       this.abort = null;
       if (this.staleTimer) clearTimeout(this.staleTimer);
       this.setStatus("reconnecting");
@@ -186,12 +203,19 @@ export class GuestStream {
       else if (line.startsWith("data:")) data = line.slice(5).trim();
       // Comment lines (": ping") are heartbeats. Only `ended` and a change's type are read; the order view is the source of truth.
     }
-    if (this.held && (event === "change" || event === "resync") && !changeType(data).startsWith("stock.")) {
-      // Paid, and now the order is open again: the session works.
+    if (this.held && (event === "hello" || ((event === "change" || event === "resync") && !changeType(data).startsWith("stock.")))) {
+      // Paid, and now the order is open again (a change, or a `hello` on a reconnect after it): the session works.
       this.held = false;
+      if (this.heldTimer) clearTimeout(this.heldTimer);
+      this.heldTimer = null;
+      if (event === "hello") this.setStatus("live");
       this.opts.onResumed?.();
       this.change();
       return;
+    }
+    if (this.held && event === "ended" && endReason(data) !== "order_paid") {
+      // Paid, and then ended for good (the table's code rotated, the half hour over): said as any other end.
+      return this.endWith(data);
     }
     if (this.held) return;
     if (event === "hello") {
@@ -208,22 +232,25 @@ export class GuestStream {
       if (this.changeTimer) clearTimeout(this.changeTimer);
       this.changeTimer = null;
       // The register brings a paid table's phones back only within half an hour: past that, stop listening.
-      if (this.timer) clearTimeout(this.timer);
-      this.timer = setTimeout(() => this.stop(), HELD_MS);
+      this.holdFor(HELD_MS);
       this.opts.onUnauthenticated?.({ reason: "order_paid" });
     } else if (event === "ended") {
       // The table session has ended (the order was paid, say): nothing more goes out with its token, not even the
       // refetch an earlier change had queued, which the register would refuse with a 401.
       // Its data carries the reason the register's 401 would ("code_rotated" when the table has a new code).
-      this.stop();
-      let details: Record<string, unknown> | undefined;
-      try {
-        details = (JSON.parse(data) as Record<string, unknown> | null) ?? undefined;
-      } catch {
-        details = undefined;
-      }
-      this.opts.onUnauthenticated?.(details);
+      this.endWith(data);
     }
+  }
+
+  private endWith(data: string) {
+    this.stop();
+    let details: Record<string, unknown> | undefined;
+    try {
+      details = (JSON.parse(data) as Record<string, unknown> | null) ?? undefined;
+    } catch {
+      details = undefined;
+    }
+    this.opts.onUnauthenticated?.(details);
   }
 }
 

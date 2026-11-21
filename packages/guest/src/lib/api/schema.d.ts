@@ -2407,7 +2407,7 @@ export interface paths {
         put?: never;
         /**
          * Record a payment on a bill
-         * @description Applies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. A tip is `tip_cents`, or, on a dry run only, `tip_bps` (a percentage of the amount applied, before tax where tax is added on top of prices, which the dry run turns into `tip_cents`; in cash it is rounded to the cash rounding step); the reply's `payment.due_cents` is what the guest hands over (amount, cash rounding and tip). The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.
+         * @description Applies a tender to the bill's balance. Non-cash amounts cannot exceed the balance. Cash rounding applies only to a cash tender that settles the balance and is returned as rounding_cents; the register computes change due. A tip is `tip_cents`, or, on a dry run only, `tip_bps` (a percentage of the bill's items after discounts, without fees and, where tax is added on top of prices, without tax, in proportion to the amount applied; the dry run turns it into `tip_cents`; in cash it is rounded to the cash rounding step); the reply's `payment.due_cents` is what the guest hands over (amount, cash rounding and tip). The first payment freezes order-level pricing and locks the bill's allocations. When every bill is paid and every item is sent, the order completes. Idempotent by payment_id.
          */
         post: operations["payments.record"];
         delete?: never;
@@ -2685,7 +2685,7 @@ export interface paths {
         };
         /**
          * Z-report
-         * @description Sales, tenders, expected vs counted cash, rounding, voids and covers for an outlet (or station) and business date. Figures come from the register. `voids` are lines voided after they were sent to the kitchen; a line removed before sending, or by cancelling an order with nothing sent, is not a void. `sales.net` is net sales: items after discounts, without tax and fees, less `sales.refunds` (the refunds' net); `sales.fees` excludes tax; `sales.total` is what was collected before refunds (`net + refunds + fees + tax = total`), and `refunds.amount` is the money refunded. While any shift at the outlet is still open, a caller below Manager gets `withheld: "open_shift"` with only the scope, order counts, void and refund counts, and the open drawers' number and floats (a blind count).
+         * @description Sales, tenders, expected vs counted cash, rounding, voids and covers for an outlet (or station) and business date. Figures come from the register. `voids` are lines voided after they were sent to the kitchen; a line removed before sending, or by cancelling an order with nothing sent, is not a void. `sales.net` is net sales: items after discounts, without tax and fees, less `sales.refunds` (the refunds' net); `sales.fees` excludes tax; `sales.total` is what was collected before refunds (`net + refunds + fees + tax = total`), and `refunds.amount` is the money refunded. While a shift in the report's scope is still open (for the whole outlet any shift; for one station its own shift or a whole-outlet drawer), a caller below Manager gets `withheld: "open_shift"` with only the scope, order counts, void and refund counts, and the number and floats of the open drawers in scope (a blind count).
          */
         get: operations["business_days.z_report"];
         put?: never;
@@ -17167,6 +17167,8 @@ export interface operations {
                             };
                             note: string | null;
                             created_by: string | null;
+                            /** @description The name of the staff member who saved this version, when a person did. */
+                            created_by_name: string | null;
                             created_at: string;
                             archived: boolean;
                         }[];
@@ -17319,6 +17321,8 @@ export interface operations {
                             };
                             note: string | null;
                             created_by: string | null;
+                            /** @description The name of the staff member who saved this version, when a person did. */
+                            created_by_name: string | null;
                             created_at: string;
                             archived: boolean;
                         };
@@ -35143,6 +35147,7 @@ export interface operations {
                             order_type: string;
                             table_name: string | null;
                             customer_name: string | null;
+                            ready_by: string | null;
                             pax: number | null;
                             round_no: number;
                             server_name: string | null;
@@ -35178,6 +35183,7 @@ export interface operations {
                             order_type: string;
                             table_name: string | null;
                             customer_name: string | null;
+                            ready_by: string | null;
                             pax: number | null;
                             round_no: number;
                             server_name: string | null;
@@ -35477,6 +35483,7 @@ export interface operations {
                             order_type: string;
                             table_name: string | null;
                             customer_name: string | null;
+                            ready_by: string | null;
                             pax: number | null;
                             round_no: number;
                             server_name: string | null;
@@ -35651,6 +35658,7 @@ export interface operations {
                             order_type: string;
                             table_name: string | null;
                             customer_name: string | null;
+                            ready_by: string | null;
                             pax: number | null;
                             round_no: number;
                             server_name: string | null;
@@ -35825,6 +35833,7 @@ export interface operations {
                             order_type: string;
                             table_name: string | null;
                             customer_name: string | null;
+                            ready_by: string | null;
                             pax: number | null;
                             round_no: number;
                             server_name: string | null;

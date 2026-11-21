@@ -148,13 +148,14 @@ test.describe("iPad landscape 1180×820", () => {
       await page.getByRole("button", { name: /^Pay \$/ }).click();
       const pay = page.getByRole("region", { name: "Payment" });
       const balance = cents(await pay.getByText(/^\$[\d,.]+$/).first().innerText());
-      // Tax is added on top of these prices, so a percentage tip is on the bill before tax (final review M21).
+      // Tax is added on top of these prices, so a percentage tip is on the items before tax (final review M21).
       const open = await register<{ data: { id: string; opened_at: string }[] }>("GET", `/v1/outlets/${outletId}/orders?open_only=true&limit=100`);
       const latest = [...open.data].sort((a, b) => b.opened_at.localeCompare(a.opened_at));
-      const snaps = await Promise.all(latest.map((o) => register<{ data: { lines: { name: string }[]; checks: { balance: number; totals: { total: number; tax_total: number } }[] } }>("GET", `/v1/orders/${o.id}`)));
+      const snaps = await Promise.all(latest.map((o) => register<{ data: { lines: { name: string }[]; checks: { balance: number; totals: { subtotal: number; discount_total: number } }[] } }>("GET", `/v1/orders/${o.id}`)));
       // The order this test just seated: Mee Goreng only, its bill's balance the one on the pay screen.
       const bill = snaps.map((x) => x.data).find((d) => d.lines.length === 1 && d.lines[0]!.name === "Mee Goreng" && d.checks[0]?.balance === balance)!.checks[0]!.totals;
-      const preTax = bill.total - bill.tax_total;
+      // The tip base is the items after discounts: no fee (the service charge) and no tax (review 5, V8).
+      const preTax = bill.subtotal + bill.discount_total; // discount_total is negative
 
       await test.step("cash with 15%: the tip is a whole number of 5-cent steps", async () => {
         await page.getByRole("group", { name: "Payment method" }).getByRole("button", { name: "Cash", exact: true }).click();
@@ -163,7 +164,7 @@ test.describe("iPad landscape 1180×820", () => {
         const status = pay.getByRole("status").filter({ hasText: /Tip\s*\$/ });
         await expect(status).toBeVisible();
         const tip = cents((await status.innerText()).match(/Tip\s*(\$[\d.]+)/)![1]!);
-        // 15% of the bill before tax, rounded half up to the cent, then to the nearest 5 cents.
+        // 15% of the items, rounded half up to the cent, then to the nearest 5 cents.
         expect(tip).toBe(Math.round(Math.round((preTax * 15) / 100) / 5) * 5);
       });
 

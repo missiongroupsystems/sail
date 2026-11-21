@@ -45,6 +45,8 @@ const TicketSchema = z.object({
   order_type: z.string(),
   table_name: z.string().nullable(),
   customer_name: untrusted(z.string().nullable()),
+  /** The time a pickup or delivery order was taken for ("Ready by 9:15 pm"), or null. */
+  ready_by: z.string().nullable(),
   pax: z.number().int().nullable(),
   round_no: z.number().int(),
   server_name: z.string().nullable(),

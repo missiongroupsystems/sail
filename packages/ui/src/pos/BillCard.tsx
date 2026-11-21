@@ -88,7 +88,8 @@ export function BillCard({ label, status, lines, rows, tenders, isTarget, onPres
             l.isSelected && "bg-surface-3 shadow-[inset_0_0_0_1.5px_var(--ink)]",
             l.onPress && "press pos-touch min-h-11 transition-colors duration-[120ms] data-[pressed]:bg-surface-3 data-[hovered]:bg-surface-2 data-[disabled]:text-ink-disabled data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-[-2px] data-[focus-visible]:outline-focus",
           );
-          return l.onPress ? (
+          // Inside a bill that is itself the tap target, a line is part of that target: no button in a button (review 5 W3).
+          return l.onPress && !onPress ? (
             <AriaButton key={l.id} onPress={l.onPress} isDisabled={l.isDisabled} aria-pressed={l.isSelected} className={cls}>
               {inner}
             </AriaButton>
@@ -109,7 +110,6 @@ export function BillCard({ label, status, lines, rows, tenders, isTarget, onPres
           </div>
         ))}
       </dl>
-      {note ? <p className="px-4 pb-2 text-caption text-ink-2">{note}</p> : null}
       {tenders?.length ? (
         <ul className="px-4 pb-2 text-[13px] text-ink-2">
           {tenders.map((t) => (
@@ -120,6 +120,8 @@ export function BillCard({ label, status, lines, rows, tenders, isTarget, onPres
           ))}
         </ul>
       ) : null}
+      {/* Under the paid rows and their tenders, not between them (review 5 W5). */}
+      {note ? <p className="px-4 pb-2 text-caption text-ink-2">{note}</p> : null}
       {actions ? <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-rule-subtle px-2.5 py-2.5">{actions}</footer> : null}
     </>
   );
@@ -130,10 +132,13 @@ export function BillCard({ label, status, lines, rows, tenders, isTarget, onPres
     className,
   );
   if (onPress) {
+    // The whole card is the target: one button laid over it, so a tap on a line, the figures or the actions moves the
+    // picked line here, and no button sits inside another (review 5 W3).
     return (
-      <AriaButton onPress={onPress} isDisabled={isDisabled} aria-label={`${label}, move the selected line here`} className={cx(classes, "press pos-touch outline-none data-[pressed]:scale-[0.99] data-[disabled]:opacity-60 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus")}>
+      <section aria-label={label} className={cx(classes, "relative")}>
         {body}
-      </AriaButton>
+        <AriaButton onPress={onPress} isDisabled={isDisabled} aria-label={`${label}, move the selected line here`} className="press pos-touch absolute inset-0 z-10 rounded-panel outline-none data-[disabled]:opacity-60 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus" />
+      </section>
     );
   }
   return (

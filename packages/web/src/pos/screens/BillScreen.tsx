@@ -95,6 +95,12 @@ export function BillScreen({ orderId }: { orderId: string }) {
   const linesById = useMemo(() => new Map(live.map((l) => [l.id, l])), [live]);
   const paidChecks = useMemo(() => (snap?.checks ?? []).filter((c) => c.locked || c.payments.some((p) => p.status === "recorded") || c.status !== "open"), [snap]);
   const lockReason = paidChecks.length ? `${paidChecks[0]!.label} is paid. Refund it to change the split.` : null;
+  // A bill whose invoice was cancelled by a credit note stays on the order through any re-split (review 5 W2): with more
+  // than one, the order cannot go back to fewer bills than that.
+  const keepAtLeast = (snap?.checks ?? []).filter((c) => c.cancelled_invoices?.length).length;
+  // By seat makes one bill per seat (and one Shared bill for lines without a seat when they are assigned by hand).
+  const seatBills = new Set((snap?.lines ?? []).filter((l) => l.status !== "voided" && l.seat_no != null).map((l) => l.seat_no)).size;
+  const keepReason = keepAtLeast > 1 ? `This order keeps ${keepAtLeast} bills: each had an invoice that was cancelled.` : null;
   const lockedLineIds = useMemo(() => new Set(paidChecks.flatMap((c) => c.allocations.map((a) => a.line_id))), [paidChecks]);
   const canPay = roleAtLeast(staff.role, "cashier");
   /** The bill whose Pay is the screen's one primary: the first one still owing. */
@@ -124,7 +130,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
     let ok: OrderSnapshot | null = null;
     if (next === "one") ok = await actions.unsplit();
     else if (next === "even") {
-      const n = Math.min(20, Math.max(2, snap.pax ?? 2));
+      const n = Math.min(20, Math.max(2, keepAtLeast, snap.pax ?? 2));
       setEvenN(n);
       ok = await actions.splitEven(n);
     } else if (next === "seat") ok = await actions.splitBySeat(shared);
@@ -135,11 +141,8 @@ export function BillScreen({ orderId }: { orderId: string }) {
 
   /** Adds one empty bill; the register keeps it and the current allocation stays as it is. */
   const addBill = async () => {
-    const res = await actions.allocate([], 1);
-    if (res) {
-      const added = res.checks[res.checks.length - 1];
-      notify({ text: `${added?.label ?? "A new bill"} added`, remedy: "Tap a line, then the new bill, to move it there.", tone: "info", orderId }, 5000);
-    }
+    // The new bill appears beside the others; the Lines panel already says what to do next.
+    await actions.allocate([], 1);
   };
 
   const changeEven = (n: number) => {
@@ -155,10 +158,9 @@ export function BillScreen({ orderId }: { orderId: string }) {
 
   const moveTo = async (check: CheckSnapshot) => {
     if (!selectedLine) return;
-    const line = linesById.get(selectedLine);
     setSelectedLine(null);
-    const snapAfter = await actions.allocate([{ line_id: selectedLine, check_ids: [check.id] }]);
-    if (snapAfter && line) notify({ text: `${line.name} moved to ${check.label}`, tone: "info", orderId }, 3000);
+    // The line shows on its new bill at once; a toast would only cover the Lines panel's buttons (review 5 W5).
+    await actions.allocate([{ line_id: selectedLine, check_ids: [check.id] }]);
   };
 
   const shareBetween = async (line: SnapshotLine, checkIds: string[]) => {
@@ -179,10 +181,18 @@ export function BillScreen({ orderId }: { orderId: string }) {
   const modeOptions = (["one", "even", "seat", "item"] as Mode[]).map((m) => ({
     id: m,
     label: MODE_LABEL[m],
-    isDisabled: Boolean(lockReason) && m !== mode,
-    reason: lockReason,
+    isDisabled: (Boolean(lockReason) || ((m === "one" || (m === "seat" && seatBills < keepAtLeast)) && Boolean(keepReason))) && m !== mode,
+    reason: lockReason ?? (m === "one" || m === "seat" ? keepReason : null),
   }));
 
+  /**
+   * With a line picked, a bill that does not hold it is where it can go: a tap anywhere on that bill, on one of its
+   * lines too, moves it there (review 5 W3). A tap on the bill that holds it picks another of its lines; on the picked
+   * line again, it lets go.
+   */
+  // A bill that holds any share of the picked line is its own bill (a shared line has several).
+  const holdsPicked = (check: CheckSnapshot) => Boolean(selectedLine) && check.allocations.some((a) => a.line_id === selectedLine);
+  const isMoveTarget = (check: CheckSnapshot) => Boolean(selectedLine) && !check.locked && !holdsPicked(check);
   const cardLines = (check: CheckSnapshot): BillCardLine[] =>
     [...check.allocations]
       .sort((a, b) => lineOrder(snap, a.line_id) - lineOrder(snap, b.line_id))
@@ -196,8 +206,8 @@ export function BillScreen({ orderId }: { orderId: string }) {
         // The line's share of its menu price, as the receipt prints it; discounts, fees and tax are the rows below.
         amountCents: a.base,
         isSelected: selectedLine === a.line_id,
-        isDisabled: check.locked || lockedLineIds.has(a.line_id),
-        onPress: canPick && !check.locked ? () => setSelectedLine(selectedLine === a.line_id ? null : a.line_id) : undefined,
+        isDisabled: check.locked || (lockedLineIds.has(a.line_id) && !isMoveTarget(check)),
+        onPress: !canPick || check.locked ? undefined : isMoveTarget(check) ? () => void moveTo(check) : () => setSelectedLine(selectedLine === a.line_id ? null : a.line_id),
       }));
 
   const payFor = (check: CheckSnapshot) => {
@@ -265,7 +275,7 @@ export function BillScreen({ orderId }: { orderId: string }) {
         <section className="flex min-w-0 flex-1 flex-col">
           {mode === "even" ? (
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 pt-1">
-              <EvenChips value={evenN ?? snap.checks.length} onChange={changeEven} />
+              <EvenChips value={evenN ?? snap.checks.length} min={Math.max(2, keepAtLeast)} onChange={changeEven} />
               {inFlight ? <span className="text-caption text-ink-2">Checking…</span> : snap.checks[0] ? <span className="text-caption text-ink-2 tabular">{shareSummary(snap.checks.map((c) => c.totals.total), money)}</span> : null}
             </div>
           ) : null}
@@ -292,8 +302,8 @@ export function BillScreen({ orderId }: { orderId: string }) {
                   tenders={check.payments
                     .filter((p) => p.status === "recorded")
                     .flatMap((p) => [{ id: p.id, label: p.tender, cents: p.amount }, ...(p.tip_cents ? [{ id: `${p.id}:tip`, label: `Tip on ${p.tender}`, cents: p.tip_cents }] : [])])}
-                  isTarget={Boolean(selectedLine) && !check.locked}
-                  onPress={selectedLine && !check.locked ? () => void moveTo(check) : undefined}
+                  isTarget={isMoveTarget(check)}
+                  onPress={isMoveTarget(check) ? () => void moveTo(check) : undefined}
                   actions={
                     paid ? (
                       <>
@@ -363,9 +373,9 @@ export function BillScreen({ orderId }: { orderId: string }) {
 }
 
 /** "Even 2 3 4 5 6": the number of bills as chips; past six the next count is one more chip, up to the register's 20. */
-function EvenChips({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+function EvenChips({ value, min, onChange }: { value: number; min: number; onChange: (n: number) => void }) {
   const top = Math.min(20, Math.max(6, value + 1));
-  const counts = Array.from({ length: top - 1 }, (_, i) => i + 2);
+  const counts = Array.from({ length: top - 1 }, (_, i) => i + 2).filter((n) => n >= min);
   return (
     <div role="group" aria-label="Number of bills" className="flex flex-wrap items-center gap-1.5">
       <span className="mr-1 text-body text-ink-2">Even</span>

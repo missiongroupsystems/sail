@@ -162,7 +162,12 @@ export function OrderScreen({ orderId }: { orderId: string }) {
             activeSeat={activeSeat}
             onSeat={(seat) => setActiveSeat(orderId, seat)}
             onLine={(l) => setSheet({ kind: "line", lineId: l.id })}
-            onDiscount={() => setSheet({ kind: "discount" })}
+            // The sheet lists the rules as the register has them now: one made in the back office a moment ago is there,
+            // on every station alike, not only after the five-minute cache runs out (review 5 W5).
+            onDiscount={() => {
+              void rules.refetch();
+              setSheet({ kind: "discount" });
+            }}
             onBill={() => openBill(orderId)}
             onPay={pay}
             onReprintRound={(round) => setSheet({ kind: "reprint", round })}

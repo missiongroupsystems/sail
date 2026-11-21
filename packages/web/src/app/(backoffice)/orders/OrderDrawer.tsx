@@ -268,7 +268,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                     <span className="inline-flex flex-wrap items-baseline gap-2">
                       <span className="text-[14.5px] font-medium text-ink">{c.label}</span>
                       {c.seat_no ? <span className="text-caption text-ink-2">Seat {c.seat_no}</span> : null}
-                      {c.invoice_no ? <span className="font-mono text-caption text-ink-2">Invoice {c.invoice_no}</span> : null}
+                      {c.invoice_no ? <span className="tabular text-caption text-ink-2">Invoice {c.invoice_no}</span> : null}
                     </span>
                     {cancelled && c.status === "open" ? null : (
                       <Badge tone={c.status === "paid" ? "paid" : c.status === "open" ? "neutral" : "bill"} icon={c.status === "paid" ? Check : c.status === "open" ? Circle : RotateCcw}>{label(CHECK_STATUS_LABEL, c.status)}</Badge>
@@ -300,7 +300,7 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                       {c.cancelled_invoices.map((x) => (
                         <li key={x.id} className="flex flex-wrap items-center justify-between gap-x-4 text-caption text-ink-2">
                           <span>
-                            <span className="font-mono">{x.invoice_no}</span> cancelled by <span className="font-mono">{x.credit_note_no}</span> · {dayClock(x.cancelled_at)}
+                            <span className="tabular">{x.invoice_no}</span> cancelled by <span className="tabular">{x.credit_note_no}</span> · {dayClock(x.cancelled_at)}
                           </span>
                           <span className="inline-flex gap-1">
                             <Button variant="quiet" className="min-h-9 px-2.5 text-caption max-sm:min-h-11" onPress={() => cancelledPdf.mutate({ id: x.id, file: `${x.invoice_no}-cancelled`, doc: "invoice" })} isPending={cancelledPdf.isPending && cancelledPdf.variables?.id === x.id && cancelledPdf.variables.doc === "invoice"}>
@@ -419,8 +419,8 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                     <li key={r.id} className="flex flex-col gap-1 px-4 py-3">
                       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                         <span className="inline-flex flex-wrap items-baseline gap-2">
-                          <span className="font-mono text-ink">{r.refund_receipt_no}</span>
-                          {r.credit_note_no ? <span className="font-mono text-caption text-ink-2">Credit note {r.credit_note_no}</span> : null}
+                          <span className="tabular text-ink">{r.refund_receipt_no}</span>
+                          {r.credit_note_no ? <span className="tabular text-caption text-ink-2">Credit note {r.credit_note_no}</span> : null}
                           <Badge>{label(REFUND_KIND_LABEL, r.kind)}</Badge>
                         </span>
                         <Money cents={-r.totals.total} />

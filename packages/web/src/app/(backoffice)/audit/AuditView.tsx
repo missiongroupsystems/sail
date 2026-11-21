@@ -36,16 +36,17 @@ const MONEY_KEY = /(^|_)(amount|total|price|tip|tips|float|change|rounding|cents
 type Filters = { action?: string; actor_id?: string; target_kind?: string; from?: string; to?: string };
 
 /** Keys an owner has no use for: ids and internal keys (the target column already names what changed). */
-const HIDDEN_KEY = /(^|_)(id|ids|key)$|^(order_no|sections_replaced|archived|seeded)$/;
+const HIDDEN_KEY = /(^|_)(id|ids|key)$|^(order_no|sections_replaced|archived|seeded|rule_kind)$/;
 /** Words for the keys whose own name reads poorly. */
-const KEY_WORDS: Record<string, string> = { action: "For", rule_name: "Discount", entered_value: "Value", order_type: "Type", invoice_no: "Invoice", refund_receipt_no: "Receipt", reversed_payments: "Payments reversed", tip_cents: "Tip", rounding_cents: "Rounding", pin_changed: "PIN changed", provider_ref: "Provider reference", takeaway_ref: "Takeaway reference" };
+const KEY_WORDS: Record<string, string> = { action: "For", rule_name: "Rule", entered_value: "Value", order_type: "Type", invoice_no: "Invoice", refund_receipt_no: "Receipt", reversed_payments: "Payments reversed", tip_cents: "Tip", rounding_cents: "Rounding", pin_changed: "PIN changed", provider_ref: "Provider reference", takeaway_ref: "Takeaway reference" };
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * An entry's details in an owner's words (live-test final2 A P-A3): amounts as money, an entered percentage as "15%",
  * no ids or internal keys, true flags as words and false ones left out, the target's own name not repeated.
  */
-export function compact(entry: Pick<AuditEntry, "details" | "target_label" | "value_kind">, money: (cents: number) => string, locale?: string): string {
+export function compact(entry: Pick<AuditEntry, "details" | "target_label" | "value_kind">, money: (cents: number) => string, locale?: string, stamp?: (iso: string) => string): string {
   // Basis points as the viewer's locale writes a percentage ("12.5%", "12,5 %").
   const percent = (bps: number) => new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 2 }).format(bps / 10_000);
   const parts: string[] = [];
@@ -70,6 +71,8 @@ export function compact(entry: Pick<AuditEntry, "details" | "target_label" | "va
     else if (k === "entered_value" && typeof v === "number") shown = entry.value_kind === "percent" ? percent(v) : entry.value_kind === "amount" ? money(v) : String(v);
     else if (typeof v === "number" && Number.isInteger(v) && MONEY_KEY.test(k)) shown = money(v);
     else if (typeof v === "string" && /^[a-z]+(_[a-z]+)+$/.test(v)) shown = v.replace(/_/g, " ");
+    // An instant ("effective_from") in the merchant's time and words, never as the register stores it (review 5, V8).
+    else if (typeof v === "string" && ISO_INSTANT.test(v) && stamp) shown = stamp(v);
     else shown = String(v);
     parts.push(k === "rule_name" ? shown : `${words}: ${shown}`);
   }
@@ -86,6 +89,9 @@ export function actionLabel(a: Pick<AuditEntry, "action" | "target_kind" | "deta
   if (typeof archived === "boolean" && onlyArchive) return `${archived ? "Archived" : "Restored"} ${auditTargetLabel(a.target_kind).toLowerCase()}`;
   // Staff are deactivated, not "changed" (review 3, P4).
   if (a.action === "staff.update" && typeof a.details.active === "boolean") return a.details.active ? "Reactivated staff" : "Deactivated staff";
+  // A fee applied or removed by hand is a fee, not a discount (review 5, V8).
+  if (a.details.rule_kind === "fee" && a.action === "adjustments.apply_manual") return "Applied a fee";
+  if (a.details.rule_kind === "fee" && a.action === "adjustments.remove") return "Removed a fee";
   return auditActionLabel(a.action);
 }
 
@@ -108,11 +114,11 @@ function who(a: AuditEntry, set?: string) {
 }
 
 function Details({ entry: a }: { entry: AuditEntry }) {
-  const { money, locale } = useLocale();
+  const { money, locale, fullStamp } = useLocale();
   return (
     <span className="text-ink-2 break-words">
       {a.reason ? `${a.reason} · ` : ""}
-      {compact(a, (c) => money(c), locale)}
+      {compact(a, (c) => money(c), locale, (iso) => fullStamp(iso))}
     </span>
   );
 }

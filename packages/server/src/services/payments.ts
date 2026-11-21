@@ -86,7 +86,7 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
       applied = balance;
     }
     // A percentage tip in cash is rounded to the smallest cash amount, so the change can be paid.
-    if (input.tipBps != null) tip = roundCash(percentOfCents(tipBasis(applied, check, order.taxMode), input.tipBps), settings.cashRoundingIncrement ?? 1).rounded;
+    if (input.tipBps != null) tip = roundCash(percentOfCents(tipBasis(applied, check), input.tipBps), settings.cashRoundingIncrement ?? 1).rounded;
     if (applied === balance && settings.cashRoundingIncrement && settings.cashRoundingIncrement > 1) {
       rounding = roundCash(balance, settings.cashRoundingIncrement).roundingCents;
     }
@@ -101,7 +101,7 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
       change = tendered - due;
     }
   } else {
-    if (input.tipBps != null) tip = percentOfCents(tipBasis(applied, check, order.taxMode), input.tipBps);
+    if (input.tipBps != null) tip = percentOfCents(tipBasis(applied, check), input.tipBps);
     if (applied > balance) throw AppError.validation(`${tender.name} payments cannot exceed the balance of ${formatCents(balance)}`, { remedy: "Enter the balance or a smaller part payment.", details: { balance, check_id: check.id, check_total: check.total } });
   }
 
@@ -151,14 +151,16 @@ export async function recordPayment(order: typeof orders.$inferSelect, input: Re
 }
 
 /**
- * What a percentage tip is a percentage of. Where tax is added on top of the prices (the US preset), the part of the
- * bill before tax that this payment pays: a part payment tips its own share, the amount applied times the bill's
- * pre-tax total over its total, rounded half up. Where prices include tax, the amount applied, the figure the guest sees.
+ * What a percentage tip is a percentage of: one base everywhere, the bill's items after discounts, as their prices
+ * read (review 5, V8). Fees are left out: a service charge is already paid for service, and a tip on it would tip twice;
+ * and so is tax where it is added on top (the US preset). A part payment tips its own share: the amount applied times
+ * the items' part of the bill over the bill's total, rounded half up. Where prices include tax, the items' prices
+ * include it, as the guest sees them.
  */
-export function tipBasis(applied: number, check: { total: number; taxTotal: number }, taxMode: string): number {
-  if (taxMode !== "exclusive" || check.total <= 0) return applied;
-  const preTax = check.total - check.taxTotal;
-  const num = BigInt(applied) * BigInt(Math.max(0, preTax));
+export function tipBasis(applied: number, check: { total: number; subtotal: number; discountTotal: number }): number {
+  if (check.total <= 0) return applied;
+  const items = Math.min(check.total, check.subtotal + check.discountTotal);
+  const num = BigInt(applied) * BigInt(Math.max(0, items));
   const den = BigInt(check.total);
   const q = num / den;
   return Number((num - q * den) * 2n >= den ? q + 1n : q);

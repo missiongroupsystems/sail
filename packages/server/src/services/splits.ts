@@ -33,8 +33,8 @@ async function liveLines(orderId: string) {
 
 /**
  * Make the order's checks `n` (labels Bill 1..n, optional seat numbers). The existing bills are reused in order, so a
- * voided or reversed payment keeps the bill it was taken on; a bill left over hands its reversed payments and their
- * digital receipts to Bill 1 before it goes. Payments are never deleted.
+ * voided or reversed payment keeps the bill it was taken on; a bill left over hands its reversed payments, their
+ * digital receipts to Bill 1 before it goes (a bill that had an invoice cancelled is always kept). Payments are never deleted.
  */
 async function resetChecks(order: { id: string; merchantId: string; outletId: string }, n: number, seats: (number | null)[] = []): Promise<CheckRow[]> {
   await assertNoLockedChecks(order.id);
@@ -43,9 +43,19 @@ async function resetChecks(order: { id: string; merchantId: string; outletId: st
   // A numbered tax invoice records its bill as it was; re-splitting would change or remove that bill under it.
   const invoiced = existing.find((c) => c.invoiceNo);
   if (invoiced) throw AppError.state(`${invoiced.label} has tax invoice ${invoiced.invoiceNo}`, [], "Keep the bills as they are: the invoice records this split.");
-  // An invoice cancelled when a reopen reversed its bill's payment still records that bill, and so does its credit note.
-  const [cancelled] = existing.length ? await db().select({ checkId: invoiceCancellations.checkId, invoiceNo: invoiceCancellations.invoiceNo, creditNoteNo: invoiceCancellations.creditNoteNo }).from(invoiceCancellations).where(inArray(invoiceCancellations.checkId, existing.map((c) => c.id))).limit(1) : [];
-  if (cancelled) throw AppError.state(`${existing.find((c) => c.id === cancelled.checkId)?.label ?? "A bill"} had tax invoice ${cancelled.invoiceNo}, cancelled by ${cancelled.creditNoteNo}`, [], "Keep the bills as they are: the invoice and its credit note record this split.");
+  // An invoice cancelled by a credit note (a reopen or a void reversed its bill's payment) does not hold the split: both
+  // documents are stored as they were issued and rendered from that copy, never from the bill's lines, and the credit
+  // note already reversed that bill in full (review 5 W2). The cancellation row is append-only and names its bill, so
+  // that bill is kept: it takes the place of a bill without one when the new split has fewer bills.
+  const holders = existing.length ? new Set((await db().select({ checkId: invoiceCancellations.checkId }).from(invoiceCancellations).where(inArray(invoiceCancellations.checkId, existing.map((c) => c.id)))).map((r) => r.checkId)) : new Set<string>();
+  if (holders.size > n) throw AppError.state(`${holders.size} bills had a tax invoice that was cancelled`, [], `Split into ${holders.size} bills or more: a bill whose invoice was cancelled stays on the order.`);
+  for (let i = n; i < existing.length; i++) {
+    if (!holders.has(existing[i]!.id)) continue;
+    const slot = existing.slice(0, n).findLastIndex((c) => !holders.has(c.id));
+    [existing[slot], existing[i]] = [existing[i]!, existing[slot]!];
+    // The bill that gives up its place is going; its number is freed first so the kept bill can take it.
+    await db().update(checks).set({ index: 1000 + existing[i]!.index }).where(eq(checks.id, existing[i]!.id));
+  }
   const rows: CheckRow[] = [];
   for (let i = 1; i <= n; i++) {
     const seatNo = seats[i - 1] ?? null;

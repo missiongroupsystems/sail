@@ -327,6 +327,8 @@ export type CheckSnapshot = {
   balance: number;
   locked: boolean;
   invoice_no: string | null;
+  /** Invoices of this bill cancelled by a credit note (a reopen or a void reversed its payment): the bill stays on a re-split. */
+  cancelled_invoices?: { id: string; invoice_no: string; credit_note_no: string }[];
   /** Set when the bill's tax carries rounding so the bills add up to the order's tax; the printed bill says the same. */
   tax_note?: string | null;
   allocations: CheckAllocation[];

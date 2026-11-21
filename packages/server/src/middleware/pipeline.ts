@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from "hono";
 import { randomUUID } from "node:crypto";
 import { config } from "../config.js";
-import { maybeTx, withTransaction, type RequestTx } from "../db/client.js";
+import { maybeTx, TxDeadlineError, withRequestTransaction, withTransaction, type RequestTx } from "../db/client.js";
 import { AppError } from "../lib/errors.js";
 import { AdmissionGate } from "../lib/gate.js";
 import type { AppEnv } from "../lib/context.js";
@@ -51,7 +51,7 @@ export const requestPipeline: MiddlewareHandler<AppEnv> = async (c, next) => {
 
   // Long-lived streams resolve access in a short transaction, then stream outside it.
   if (SHORT_TX_ROUTES.some((p) => p.test(path))) {
-    const principal = await withTransaction((t) => resolvePrincipal(bearer, t, { activity: false }));
+    const principal = await withTransaction((t) => resolvePrincipal(bearer, t, { activity: false, paidHeld: path === "/v1/guest/stream" }));
     c.set("principal", principal);
     return next();
   }
@@ -65,7 +65,8 @@ export const requestPipeline: MiddlewareHandler<AppEnv> = async (c, next) => {
   const release = nested ? () => {} : await admissionGate().acquire();
   try {
     const started = performance.now();
-    await withTransaction(async (t) => {
+    // A nested replay runs inside the outer request, whose deadline covers it.
+    await (nested ? withTransaction : withRequestTransaction)(async (t) => {
       const principal = await resolvePrincipal(bearer, t, { activity: !READ_METHODS.has(c.req.method) });
       c.set("principal", principal);
       await applyRls(t, principal);
@@ -80,6 +81,10 @@ export const requestPipeline: MiddlewareHandler<AppEnv> = async (c, next) => {
     if (e instanceof RollbackSignal) {
       if (c.get("dryRun")) c.header("x-dry-run", "true");
       return; // response already set; transaction rolled back
+    }
+    if (e instanceof TxDeadlineError) {
+      logger.warn({ requestId, path, ms: e.ms }, "request transaction past its deadline");
+      throw new AppError("overloaded", "The register did not finish this in time", { remedy: "Try again: if it went through, the register answers as it did then." });
     }
     throw e;
   } finally {

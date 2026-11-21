@@ -44,6 +44,8 @@ export function TopTabs({ tabs, selectedId, onSelect }: TopTabsProps) {
           <AriaButton
             key={t.id}
             aria-current={selected ? "page" : undefined}
+            // The count is said as a description, so the tab keeps its one-word name.
+            aria-describedby={t.badge ? `top-tab-${t.id}-count` : undefined}
             onPress={() => onSelect(t.id)}
             className={cx(
               "press pos-touch relative flex min-h-11 items-center gap-2 rounded-chip px-4 text-[15px] outline-none transition-colors duration-[120ms]",
@@ -52,7 +54,8 @@ export function TopTabs({ tabs, selectedId, onSelect }: TopTabsProps) {
             )}
           >
             {t.label}
-            {t.badge ? <span className="flex h-5 min-w-5 items-center justify-center rounded-chip bg-primary px-1.5 text-[11.5px] font-semibold text-on-primary tabular">{t.badge}</span> : null}
+            {t.badge ? <span id={`top-tab-${t.id}-count`} hidden>{`${t.badge} waiting`}</span> : null}
+            {t.badge ? <span aria-hidden className="flex h-5 min-w-5 items-center justify-center rounded-chip bg-primary px-1.5 text-[11.5px] font-semibold text-on-primary tabular">{t.badge}</span> : null}
           </AriaButton>
         );
       })}
