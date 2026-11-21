@@ -18,9 +18,9 @@ test.describe("back office configuration", () => {
 
   test("archiving a station asks first and says its device is signed out; an archived station can be listed and restored", async ({ page }) => {
     test.setTimeout(300_000);
-    const { outletId } = devLocal();
+    const { outletId, brandId } = devLocal();
     const name = `Archive check ${String(Date.now()).slice(-6)}`;
-    await register("POST", "/v1/stations", { name, kind: "pos", outlet_id: outletId, home: "floor", pay_before_firing: false, seats_enabled: false, brand_id: null });
+    await register("POST", "/v1/stations", { name, kind: "pos", outlet_id: outletId, home: "floor", pay_before_firing: false, seats_enabled: false, brand_id: brandId });
     await signIn(page);
     await page.goto(`${WEB}/settings/stations`);
     const sheet = page.getByRole("dialog", { name });

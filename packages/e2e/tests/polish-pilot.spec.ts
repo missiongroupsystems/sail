@@ -1,4 +1,5 @@
-import { devLocal, expect, pairAndSignIn, register, test } from "./fixtures";
+import type { Page } from "@playwright/test";
+import { devDatabase, devLocal, expect, pairAndSignIn, register, SG_ADMIN, test, WEB } from "./fixtures";
 
 /**
  * The polish round before the first pilot outlet is set up: what the team hit in the walkthrough of 18 November.
@@ -12,6 +13,27 @@ const opened: string[] = [];
 test.afterEach(async () => {
   for (const orderId of opened.splice(0)) await register("POST", `/v1/orders/${orderId}/cancel`, { reason: "End-to-end test" }).catch(() => undefined);
 });
+
+/** Sign in to the back office as the seeded Admin; done once Today has rendered, so the next navigation is not cut short. */
+async function signIn(page: Page) {
+  await page.goto(`${WEB}/login`);
+  await expect(async () => {
+    await page.getByLabel("Email").fill(SG_ADMIN);
+    await page.getByLabel("Password").fill(devLocal().admin_password);
+    await page.getByRole("button", { name: "Sign in" }).click({ timeout: 10_000 });
+    await page.waitForURL(`${WEB}/today`, { timeout: 30_000 });
+  }).toPass({ timeout: 300_000 });
+}
+
+/** Open a row's sheet. A click before the dev server's first compile has hydrated the page does nothing: press until it opens. */
+async function openRow(page: Page, name: string) {
+  const sheet = page.getByRole("dialog", { name });
+  await expect(async () => {
+    await page.getByRole("rowheader", { name }).click({ timeout: 5_000 });
+    await expect(sheet).toBeVisible({ timeout: 5_000 });
+  }).toPass({ timeout: 120_000 });
+  return sheet;
+}
 
 test.describe("POS", () => {
   test.use({ viewport: { width: 1180, height: 820 } });
@@ -86,5 +108,74 @@ test.describe("POS", () => {
       await types.getByRole("button", { name: /^Dine-in/ }).click();
       await expect(page.getByRole("button", { name: /^Dine-in .*, Done$/ }).filter({ hasText: `Table ${tableName} · Dine-in` }).first()).toBeVisible();
     });
+  });
+});
+
+test.describe("back office and POS together", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("A2: a POS station needs a brand; one saved without it says so on the iPad and in Settings, and works once it has one", async ({ page, browser, watch }) => {
+    test.setTimeout(420_000);
+    const { merchantId, outletId } = devLocal();
+    const stamp = String(Date.now()).slice(-6);
+    const old = { id: crypto.randomUUID(), name: `Old till ${stamp}` };
+    const display = `Pass screen ${stamp}`;
+    // No register call can save a POS station without a brand any more: the old state goes in as the row itself.
+    const sql = devDatabase();
+    await sql`insert into stations (id, merchant_id, outlet_id, name) values (${old.id}, ${merchantId}, ${outletId}, ${old.name})`;
+    await sql.end();
+
+    const ipad = await browser.newPage({ viewport: { width: 1180, height: 820 } });
+    watch.attach(ipad);
+    try {
+      await test.step("the iPad paired to it shows one message in place of the screens", async () => {
+        await pairAndSignIn(ipad, CASHIER_PIN, "sg", old.id);
+        await expect(ipad.getByRole("heading", { name: "This station has no brand" })).toBeVisible();
+        await expect(ipad.getByRole("main").getByRole("alert")).toHaveText("In the back office, open Settings › Stations and choose one.");
+        await expect(ipad.getByRole("navigation", { name: "Destinations" })).toHaveCount(0);
+      });
+
+      await signIn(page);
+      await page.goto(`${WEB}/settings/stations`);
+
+      await test.step("Settings › Stations marks it; its sheet cannot be saved until a brand is chosen", async () => {
+        await expect(page.getByRole("row", { name: new RegExp(old.name) })).toContainText("No brand · cannot take orders");
+        const sheet = await openRow(page, old.name);
+        await expect(sheet.getByRole("alert").filter({ hasText: "This station has no brand" })).toBeVisible();
+        const brand = sheet.getByRole("button", { name: /Brand/ });
+        await expect(brand).toContainText("Choose a brand");
+        await sheet.getByRole("button", { name: "Save changes" }).click();
+        await expect(sheet.getByText("Choose a brand", { exact: true }).last()).toBeVisible();
+        await expect(sheet).toBeVisible();
+        await brand.click();
+        await expect(page.getByRole("option", { name: /Any brand/ })).toHaveCount(0);
+        await page.getByRole("option").first().click();
+        await sheet.getByRole("button", { name: "Save changes" }).click();
+        await expect(sheet).toBeHidden();
+        await expect(page.getByRole("row", { name: new RegExp(old.name) })).not.toContainText("cannot take orders");
+      });
+
+      await test.step("the iPad follows without a new sign-in", async () => {
+        await expect(ipad.getByRole("navigation", { name: "Destinations" })).toBeVisible({ timeout: 30_000 });
+        await expect(ipad.getByRole("heading", { name: "This station has no brand" })).toHaveCount(0);
+      });
+
+      await test.step("a kitchen display still saves without a brand", async () => {
+        // The closing sheet keeps its own Add station for a moment; the page's button comes first.
+        await page.getByRole("button", { name: "Add station" }).first().click();
+        const sheet = page.getByRole("dialog", { name: "New station" });
+        await sheet.getByLabel("Name").fill(display);
+        await sheet.getByRole("button", { name: /Kind/ }).click();
+        await page.getByRole("option", { name: /Kitchen display/ }).click();
+        await expect(sheet.getByRole("button", { name: /Brand/ })).toHaveCount(0);
+        await sheet.getByRole("button", { name: "Add station" }).click();
+        await expect(sheet).toBeHidden();
+        await expect(page.getByRole("row", { name: new RegExp(display) })).toContainText("Kitchen display");
+      });
+    } finally {
+      await ipad.close();
+      const all = await register<{ data: { id: string; name: string }[] }>("GET", `/v1/outlets/${outletId}/stations`);
+      for (const s of all.data.filter((x) => x.name === old.name || x.name === display)) await register("PATCH", `/v1/stations/${s.id}`, { archived: true });
+    }
   });
 });

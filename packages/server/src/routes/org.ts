@@ -196,6 +196,10 @@ async function assertDestinations(st: typeof stations.$inferSelect) {
 
 /* ---- Routes -------------------------------------------------------------- */
 
+function posStationNeedsBrand() {
+  return AppError.validation("A POS station needs a brand", { remedy: "Pass brand_id: the brand whose menu the station sells. Only a kitchen display (kind display) has none.", details: { field: "brand_id" } });
+}
+
 export function orgRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "merchants.get", method: "get", path: "/v1/merchant", tags: ["organisation"], responses: { 200: jsonResponse(dataResponse(MerchantSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
@@ -365,6 +369,8 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
     const body = c.req.valid("json");
     const [outlet] = await db().select({ id: outlets.id }).from(outlets).where(eq(outlets.id, body.outlet_id)).limit(1);
     if (!outlet) throw AppError.notFound("outlet", body.outlet_id);
+    // A POS station sells one brand's menu: without a brand its iPad cannot open an order. A kitchen display has none.
+    if ((body.kind ?? "pos") === "pos" && !body.brand_id) throw posStationNeedsBrand();
     const [row] = await db()
       .insert(stations)
       .values({ id: body.id, merchantId: p.merchantId, outletId: body.outlet_id, name: body.name, brandId: body.brand_id ?? null, layoutId: body.layout_id ?? null, payBeforeFiring: body.pay_before_firing ?? false, seatsEnabled: body.seats_enabled ?? false, home: body.home ?? "floor", receiptPrinterId: body.receipt_printer_id ?? null, textSize: body.text_size ?? "standard", kind: body.kind ?? "pos", displayDestinationIds: body.display_destination_ids ?? [] })
@@ -380,6 +386,13 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
     const { id } = c.req.valid("param");
     const body = c.req.valid("json");
     if (Object.keys(body).length === 0) throw AppError.validation("Nothing to update");
+    // Taking the brand off a POS station is refused. A station saved without one before brands were required can
+    // still be renamed or archived: only a change of its brand has to name one.
+    if (body.brand_id === null) {
+      const [current] = await db().select({ kind: stations.kind }).from(stations).where(and(eq(stations.id, id), eq(stations.merchantId, p.merchantId))).limit(1);
+      if (!current) throw AppError.notFound("station", id);
+      if (current.kind === "pos") throw posStationNeedsBrand();
+    }
     const [row] = await db()
       .update(stations)
       .set({

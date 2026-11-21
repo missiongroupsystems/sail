@@ -45,7 +45,8 @@ export function RhfSelect<T extends FieldValues>({
         <Select
           {...props}
           name={field.name}
-          selectedKey={(field.value as string | null | undefined) ?? null}
+          // A value that is none of the items (a choice not made yet) shows the placeholder.
+          selectedKey={props.items.some((i) => i.id === field.value) ? (field.value as string) : null}
           onSelectionChange={(key) => field.onChange(key)}
           isInvalid={!!fieldState.error}
           errorMessage={fieldState.error?.message}

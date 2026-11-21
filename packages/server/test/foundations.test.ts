@@ -125,7 +125,7 @@ describe("organisation CRUD writes events and audit entries", () => {
     const outlet = await call<{ data: { id: string } }>("POST", "/v1/outlets", { token: A.admin.token, body: { name: "Airport", business_registration_no: "201234567A", business_day_cutoff: "05:00", hours: { mon: [["08:00", "22:00"]] } } });
     expect(outlet.status).toBe(201);
 
-    const station = await call<{ data: { id: string; paired: boolean }; events: { seq: number }[] }>("POST", "/v1/stations", { token: A.admin.token, body: { outlet_id: outlet.body.data.id, name: "Counter 1", pay_before_firing: true, home: "takeaway" } });
+    const station = await call<{ data: { id: string; paired: boolean }; events: { seq: number }[] }>("POST", "/v1/stations", { token: A.admin.token, body: { outlet_id: outlet.body.data.id, brand_id: brand.body.data.id, name: "Counter 1", pay_before_firing: true, home: "takeaway" } });
     expect(station.status).toBe(201);
     expect(station.body.data.paired).toBe(false);
     expect(station.body.events[0]!.seq).toBe(1); // first outlet-scoped event for the new outlet
@@ -207,7 +207,7 @@ describe("idempotency", () => {
 
 describe("event log and live updates", () => {
   it("assigns a gap-free per-outlet sequence and serves catch-up", async () => {
-    for (let i = 0; i < 3; i++) await call("POST", "/v1/stations", { token: A.admin.token, body: { outlet_id: A.outlet2Id, name: `S${i}` } });
+    for (let i = 0; i < 3; i++) await call("POST", "/v1/stations", { token: A.admin.token, body: { outlet_id: A.outlet2Id, brand_id: A.brandId, name: `S${i}` } });
     const r = await call<{ data: { seq: number; type: string }[]; latest_seq: number; has_more: boolean }>("GET", `/v1/outlets/${A.outlet2Id}/events?after=0`, { token: A.outlet2Cashier.token });
     expect(r.status).toBe(200);
     expect(r.body.data.map((e) => e.seq)).toEqual([1, 2, 3]);
@@ -217,7 +217,7 @@ describe("event log and live updates", () => {
   });
 
   it("filters catch-up by one event type or several", async () => {
-    const st = await call<{ data: { id: string } }>("POST", "/v1/stations", { token: B.admin.token, body: { outlet_id: B.outletId, name: "Filtered" } });
+    const st = await call<{ data: { id: string } }>("POST", "/v1/stations", { token: B.admin.token, body: { outlet_id: B.outletId, brand_id: B.brandId, name: "Filtered" } });
     await call("PATCH", `/v1/stations/${st.body.data.id}`, { token: B.admin.token, body: { name: "Filtered 2" } });
     const all = await call<{ data: { type: string }[] }>("GET", `/v1/outlets/${B.outletId}/events`, { token: B.admin.token });
     const kinds = [...new Set(all.body.data.map((e) => e.type))];
@@ -247,7 +247,7 @@ describe("event log and live updates", () => {
     const res2 = await app.request(`/v1/outlets/${A.outlet2Id}/stream`, { headers: { authorization: `Bearer ${A.admin.token}` } });
     const pending = readSse(res2, 2, 5000);
     await new Promise((r) => setTimeout(r, 100));
-    await call("POST", "/v1/stations", { token: A.admin.token, body: { outlet_id: A.outlet2Id, name: "Streamed" } });
+    await call("POST", "/v1/stations", { token: A.admin.token, body: { outlet_id: A.outlet2Id, brand_id: A.brandId, name: "Streamed" } });
     const got = await pending;
     expect(got.map((e) => e.event)).toEqual(["hello", "change"]);
     expect(got[1]!.data).toMatchObject({ seq: 4, type: "station.created" });
@@ -270,7 +270,7 @@ describe("event log and live updates", () => {
     const deadline = Date.now() + 8000;
     while (listenerConnectCount() <= before && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
     expect(listenerConnectCount()).toBeGreaterThan(before);
-    await call("POST", "/v1/stations", { token: A.admin.token, body: { outlet_id: A.outlet2Id, name: "After resync" } });
+    await call("POST", "/v1/stations", { token: A.admin.token, body: { outlet_id: A.outlet2Id, brand_id: A.brandId, name: "After resync" } });
     const got = await pending;
     expect(got.map((e) => e.event)).toEqual(["hello", "resync", "change"]);
   });

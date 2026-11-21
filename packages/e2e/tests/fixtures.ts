@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test as base, type Locator, type Page, type Response } from "@playwright/test";
+import postgres from "postgres";
 
 export const API = process.env.E2E_API_URL ?? "http://localhost:8080";
 export const WEB = process.env.E2E_WEB_URL ?? "http://localhost:3000";
@@ -165,8 +166,8 @@ export async function keyIn(page: Page, group: string, digits: string) {
 }
 
 /** Pair the POS on this page to a demo merchant's station with a fresh code, then sign in with a PIN. */
-export async function pairAndSignIn(page: Page, pin: string, merchant: "sg" | "eu" = "sg") {
-  const { stationId } = merchant === "eu" ? devLocal().eu : devLocal();
+export async function pairAndSignIn(page: Page, pin: string, merchant: "sg" | "eu" = "sg", station?: string) {
+  const stationId = station ?? (merchant === "eu" ? devLocal().eu : devLocal()).stationId;
   const { data } = await register<{ data: { code: string } }>("POST", `/v1/stations/${stationId}/pairing-code`, {}, merchant === "eu" ? EU_ADMIN : SG_ADMIN);
   await page.goto(`${WEB}/pos`);
   // The first visit compiles the POS bundle in the dev server.
@@ -176,5 +177,15 @@ export async function pairAndSignIn(page: Page, pin: string, merchant: "sg" | "e
   await page.getByRole("button", { name: "Pair this iPad" }).click();
   await expect(page.getByRole("button", { name: "Pair this iPad again" })).toBeVisible();
   await keyIn(page, "PIN keys", pin);
-  await expect(page.getByRole("navigation", { name: "Destinations" })).toBeVisible();
+  // A station with no brand opens on its own message instead of the screens (polish-pilot A2).
+  await expect(page.getByRole("navigation", { name: "Destinations" }).or(page.getByRole("heading", { name: "This station has no brand" }))).toBeVisible();
+}
+
+/**
+ * The development database itself, for a state no register call can make any more (a POS station saved without a
+ * brand before brands were required). `dev:local` writes its address to .dev-local.json. Close it with `.end()`.
+ */
+export function devDatabase() {
+  const { database_url } = JSON.parse(readFileSync(resolve(import.meta.dirname, "../../server/.dev-local.json"), "utf8")) as { database_url: string };
+  return postgres(database_url, { max: 1, onnotice: () => {} });
 }
