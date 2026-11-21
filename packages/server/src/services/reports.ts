@@ -271,7 +271,7 @@ export async function dailySummaryPdf(input: { outletName: string; businessDate:
   row("Net sales", formatCents(z.sales.net), bold);
   row("Collected after refunds", formatCents(z.sales.total_after_refunds), bold);
   for (const t of [...z.tax_due].sort((a, b) => a.bps - b.bps || a.name.localeCompare(b.name))) row(`${t.name} due`, formatCents(t.amount));
-  section("Tenders");
+  section("Payments");
   for (const t of input.z.tenders) row(`${t.tender} (${t.count})`, `${formatCents(t.amount)}${t.rounding ? ` · rounding ${formatCents(t.rounding)}` : ""}`);
   section("Cash");
   row("Float", formatCents(input.z.cash.float));

@@ -46,7 +46,7 @@ const AUDIT_ACTION: Record<string, string> = {
   "proposals.approve": "Approved a proposal", "proposals.reject": "Turned down a proposal", "rounds.accept": "Accepted a QR order", "rounds.reject": "Rejected a QR order",
   "printers.create": "Added a printer", "printers.update": "Changed a printer", "relays.create": "Added a print relay", "relays.update": "Changed a print relay",
   "areas.create": "Added an area", "areas.update": "Changed an area", "tables.create": "Added a table", "tables.update": "Changed a table",
-  "tender_types.create": "Added a payment type", "tender_types.update": "Changed a payment type", "void_reasons.create": "Added a void reason", "void_reasons.update": "Changed a void reason",
+  "tender_types.create": "Added a payment method", "tender_types.update": "Changed a payment method", "void_reasons.create": "Added a void reason", "void_reasons.update": "Changed a void reason",
   "channel_links.create": "Added a channel", "channel_links.update": "Changed a channel", "display_destinations.create": "Added a display route", "display_destinations.update": "Changed a display route",
 };
 /** "categories" → "category", "classes" → "class", "rules" → "rule" (E-N8: not "categorie"). */
@@ -63,7 +63,7 @@ export function auditActionLabel(action: string): string {
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : action;
 }
 /** Target kinds whose words differ from their name: a "report_category" is the menu's category. */
-const AUDIT_TARGET: Record<string, string> = { check: "Bill", payment_provider: "Card payments", tender_type: "Payment type", channel_link: "Channel", display_destination: "Display route", customer_group: "Customer group", layout: "POS layout", catalogue: "Catalogue", report_category: "Category", order_line: "Order line", import_job: "Menu import", availability_rule: "Availability rule", agent_identity: "Assistant", print_job: "Print job", business_day: "Business day" };
+const AUDIT_TARGET: Record<string, string> = { check: "Bill", payment_provider: "Card payments", tender_type: "Payment method", channel_link: "Channel", display_destination: "Display route", customer_group: "Customer group", layout: "POS layout", catalogue: "Catalogue", report_category: "Category", order_line: "Order line", import_job: "Menu import", availability_rule: "Availability rule", agent_identity: "Assistant", print_job: "Print job", business_day: "Business day" };
 /** "pricing_rule" reads "Pricing rule". */
 export function auditTargetLabel(kind: string | null | undefined): string {
   if (!kind) return "—";

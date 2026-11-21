@@ -89,7 +89,7 @@ export function SetupForm({ withPassword }: { withPassword: boolean }) {
           control={form.control}
           name="preset"
           label="Region"
-          description="Sets up tax, tenders and cash for the region."
+          description="Sets up tax, payment methods and cash for the region."
           items={PRESETS.map((p) => ({ id: p.key, label: p.name }))}
         />
         <RhfTextField control={form.control} name="time_zone" label="Time zone" description="An IANA zone, for example Asia/Singapore or Europe/London." />

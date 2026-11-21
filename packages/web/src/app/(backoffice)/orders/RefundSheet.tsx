@@ -309,7 +309,7 @@ export function RefundSheet({ order, checks, initialCheckId, isOpen, onClose }: 
               ) : null}
               {what === "amount" ? (
                 <>
-                  <MoneyField label="Amount to refund" value={amount} onChange={setAmount} description={`${check.label} ${paidSoFar(check)}. The register spreads it across the bill's items and tenders, and refuses more than was paid.`} autoFocus className="max-w-[240px]" />
+                  <MoneyField label="Amount to refund" value={amount} onChange={setAmount} description={`${check.label} ${paidSoFar(check)}. The register spreads it across the bill's items and payments, and refuses more than was paid.`} autoFocus className="max-w-[240px]" />
                   {request ? <InlineError error={quote.error} /> : null}
                 </>
               ) : null}

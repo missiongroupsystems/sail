@@ -72,7 +72,7 @@ test("L1: Manager and Server open a table's details on Floor & QR, read only, an
 
 // Pages with a record sheet behind a row, and the merchant settings form. One test per role, as in live-round3: the
 // four roles in one test needed a fifteen-minute timeout on the development servers.
-const SHEET_PAGES = ["/team", "/menu/products", "/menu/categories", "/menu/modifiers", "/menu/availability", "/pricing/rules", "/pricing/customers", "/printing/printers", "/settings/outlets", "/settings/brands", "/settings/stations", "/settings/tax", "/settings/tenders", "/settings/void-reasons", "/settings/channels"];
+const SHEET_PAGES = ["/team", "/menu/products", "/menu/categories", "/menu/modifiers", "/menu/availability", "/pricing/rules", "/pricing/customers", "/printing/printers", "/settings/outlets", "/settings/brands", "/settings/stations", "/settings/tax", "/settings/payment-methods", "/settings/void-reasons", "/settings/channels"];
 for (const role of ["manager", "finance", "cashier", "server"] as const) {
   test(`L3 (${role}): for a ${role}, a sheet or form whose Save is off has every field off too`, async ({ page, watch }) => {
     test.setTimeout(300_000);

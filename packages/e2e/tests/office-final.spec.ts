@@ -66,20 +66,20 @@ test.describe("O1 (A P3): every report downloads as CSV with the screen's figure
     const { tender } = await paidOrder();
     await signIn(page);
     await page.goto(`${WEB}/reports/sales`);
-    await expect(page.getByRole("grid", { name: "Sales by tender" }).getByRole("rowheader", { name: tender })).toBeVisible();
+    await expect(page.getByRole("grid", { name: "Sales by payment method" }).getByRole("rowheader", { name: tender })).toBeVisible();
     await expect(page).toHaveURL(/from=\d{4}-\d{2}-\d{2}&to=\d{4}-\d{2}-\d{2}/);
     const from = new URL(page.url()).searchParams.get("from")!;
 
     const collected = await page.locator("dl > div", { has: page.locator("dt", { hasText: /^Collected$/ }) }).first().locator("dd").innerText();
-    const tenderAmount = await page.getByRole("grid", { name: "Sales by tender" }).getByRole("row", { name: new RegExp(tender) }).getByRole("gridcell").nth(1).innerText();
+    const tenderAmount = await page.getByRole("grid", { name: "Sales by payment method" }).getByRole("row", { name: new RegExp(tender) }).getByRole("gridcell").nth(1).innerText();
     const { name, rows } = await downloadCsv(page);
     expect(name).toBe(`sales-${from}-${from}.csv`);
     expect(rows[0]).toEqual(["Sales"]);
     expect(rows).toContainEqual(["From", from]);
     expect(rows).toContainEqual(["Currency", "SGD"]);
     expect(rows).toContainEqual(["Collected", plain(collected)]);
-    const header = rows.findIndex((r) => r[0] === "Tender");
-    expect(rows[header]).toEqual(expect.arrayContaining(["Tender", "Payments", "Amount"]));
+    const header = rows.findIndex((r) => r[0] === "Payment method");
+    expect(rows[header]).toEqual(expect.arrayContaining(["Payment method", "Payments", "Amount"]));
     const tenderRow = rows.slice(header + 1).find((r) => r[0] === tender)!;
     expect(tenderRow[rows[header]!.indexOf("Amount")]).toBe(plain(tenderAmount));
     const byDay = rows.findIndex((r) => r[0] === "Business date");
@@ -337,10 +337,10 @@ test.describe("O9 (A P17–P20): small back-office fixes", () => {
     await expect(page.getByText("Adding staff needs an Admin.")).toBeVisible();
   });
 
-  test("Tenders show their order as 1, 2, 3 and how each is taken; Products sort by column with steady widths; the cutoff help reads the right way", async ({ page }) => {
+  test("Payment methods show their order as 1, 2, 3 and how each is taken; Products sort by column with steady widths; the cutoff help reads the right way", async ({ page }) => {
     test.setTimeout(300_000);
     await signIn(page);
-    await page.goto(`${WEB}/settings/tenders`);
+    await page.goto(`${WEB}/settings/payment-methods`);
     const orders = await page.getByRole("grid").getByRole("row").locator("td, th").first().allInnerTexts();
     expect(orders).toBeTruthy();
     const firstCells = await page.getByRole("grid").getByRole("row").evaluateAll((rows) => rows.slice(1).map((r) => r.querySelector("td,th")?.textContent?.trim()));

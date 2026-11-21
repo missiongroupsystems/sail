@@ -34,7 +34,8 @@ type Values = z.infer<typeof Schema>;
 const defaults = (t: TenderType | null): Values => ({ name: t?.name ?? "", is_cash: t?.is_cash ?? false, opens_drawer: t?.opens_drawer ?? false, is_terminal: t?.is_terminal ?? false, requires_approval: t?.requires_approval ?? true, requires_reference: t?.requires_reference ?? false, sort: t ? String(t.sort) : "" });
 
 /** Payment methods (the API says tender). */
-export function TendersView({ initialTenders }: { initialTenders: TenderType[] }) {
+/** Settings › Payment methods. The register and the API call them tender types; people see "payment methods". */
+export function PaymentMethodsView({ initialTenders }: { initialTenders: TenderType[] }) {
   const cashRounding = Boolean(useSession().merchant.settings.cash_rounding_increment);
   const canCreate = useCan("tender_types.create");
   const [showArchived, setShowArchived] = useState(false);
@@ -140,7 +141,7 @@ function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
       footer={
         <>
           {tender && mayEdit.ok ? (
-            <Button variant="secondary" onPress={() => (tender.archived ? archive.mutate(false) : confirm.ask({ title: `Archive ${tender.name}?`, body: "The POS no longer offers it for payment. Payments already taken with it stay on their orders and reports. You can restore it later.", confirmLabel: "Archive tender", cancelLabel: "Keep the tender", onConfirm: () => archive.mutate(true) }))} isPending={archive.isPending} className={`mr-auto ${tender.archived ? greyPill : greyPillAlert}`}>
+            <Button variant="secondary" onPress={() => (tender.archived ? archive.mutate(false) : confirm.ask({ title: `Archive ${tender.name}?`, body: "The POS no longer offers it for payment. Payments already taken with it stay on their orders and reports. You can restore it later.", confirmLabel: "Archive payment method", cancelLabel: "Keep the payment method", onConfirm: () => archive.mutate(true) }))} isPending={archive.isPending} className={`mr-auto ${tender.archived ? greyPill : greyPillAlert}`}>
               {tender.archived ? "Restore" : "Archive"}
             </Button>
           ) : null}

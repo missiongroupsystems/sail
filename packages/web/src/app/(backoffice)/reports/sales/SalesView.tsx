@@ -40,7 +40,7 @@ const dayColumns: DataTableColumn<SalesSummary["by_day"][number]>[] = [
   { key: "net", header: "Net sales", numeric: true, render: (d) => <Money cents={d.net} /> },
 ];
 const tenderColumns: DataTableColumn<SalesSummary["by_tender"][number]>[] = [
-  { key: "tender", header: "Tender", isRowHeader: true, render: (t) => <span className="text-ink">{t.tender}</span> },
+  { key: "tender", header: "Payment method", isRowHeader: true, render: (t) => <span className="text-ink">{t.tender}</span> },
   { key: "count", header: "Payments", numeric: true, render: (t) => t.count },
   { key: "amount", header: "Amount", numeric: true, render: (t) => <Money cents={t.amount} /> },
   { key: "rounding", header: "Rounding", numeric: true, render: (t) => <Money cents={t.rounding} signed /> },
@@ -126,8 +126,8 @@ export function SalesView({ outlets, scope, initialOutletId, today, initialRange
           </Panel>
           )}
           <div className="flex min-w-0 flex-col gap-6">
-            <Panel title="By tender" body="flush">
-              <DataTable aria-label="Sales by tender" flush="inset" columns={tenderColumns.filter((c) => (c.key !== "tips" || tipsEnabled || report.data!.by_tender.some((t) => t.tips)) && (c.key !== "rounding" || report.data!.by_tender.some((t) => t.rounding)))} rows={report.data.by_tender} rowKey={(t) => t.tender} emptyState={<EmptyState variant="centred" title="No payments in this range" />} />
+            <Panel title="By payment method" body="flush">
+              <DataTable aria-label="Sales by payment method" flush="inset" columns={tenderColumns.filter((c) => (c.key !== "tips" || tipsEnabled || report.data!.by_tender.some((t) => t.tips)) && (c.key !== "rounding" || report.data!.by_tender.some((t) => t.rounding)))} rows={report.data.by_tender} rowKey={(t) => t.tender} emptyState={<EmptyState variant="centred" title="No payments in this range" />} />
             </Panel>
             <Panel title="By category" body="flush">
               <DataTable aria-label="Sales by category" flush="inset" columns={categoryColumns} rows={report.data.by_category} rowKey={(c) => c.category_id ?? c.category} emptyState={<EmptyState variant="centred" title="No items in this range" />} />

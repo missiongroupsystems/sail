@@ -21,7 +21,7 @@ export const ENTITY_LABEL: Record<ImportEntity, string> = {
   menu_items: "Menu items",
   areas: "Areas",
   tables: "Tables",
-  tender_types: "Tender types",
+  tender_types: "Payment methods",
   void_reasons: "Void reasons",
   staff: "Staff",
   customers: "Customers",

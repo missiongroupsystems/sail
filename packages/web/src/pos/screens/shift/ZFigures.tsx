@@ -100,7 +100,7 @@ export function ZFigures({ report, title }: { report: { data?: ZReport | ZReport
           )}
 
           <section className={group}>
-            <h3 className={head}>Tenders</h3>
+            <h3 className={head}>Payments</h3>
             <dl>
               {r.tenders.map((t) => rows(tenderRows(t)))}
               {r.tenders.length === 0 ? <p className="py-2 text-body text-ink-2">No payments yet.</p> : null}

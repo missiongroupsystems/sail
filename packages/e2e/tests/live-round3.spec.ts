@@ -85,7 +85,7 @@ test("R new 2: the POS Z-report keeps one basis per block, with the back office'
 
 // One test per role: the four roles walk about 30 pages each, which in one test took the whole ten minutes on the
 // development servers and failed CI by timeout.
-const ROLE_PAGES = ["/today", "/orders", "/floor", "/menu/products", "/menu/categories", "/menu/modifiers", "/menu/menus", "/menu/availability", "/menu/sold-out", "/menu/import", "/pricing/rules", "/pricing/customers", "/printing/printers", "/printing/jobs", "/printing/relays", "/settings/merchant", "/settings/outlets", "/settings/brands", "/settings/stations", "/settings/tax", "/settings/tenders", "/settings/void-reasons", "/settings/channels", "/team"];
+const ROLE_PAGES = ["/today", "/orders", "/floor", "/menu/products", "/menu/categories", "/menu/modifiers", "/menu/menus", "/menu/availability", "/menu/sold-out", "/menu/import", "/pricing/rules", "/pricing/customers", "/printing/printers", "/printing/jobs", "/printing/relays", "/settings/merchant", "/settings/outlets", "/settings/brands", "/settings/stations", "/settings/tax", "/settings/payment-methods", "/settings/void-reasons", "/settings/channels", "/team"];
 for (const role of ["manager", "finance", "cashier", "server"] as const) {
   test(`R new 1, R new 3 (${role}): a ${role} meets no control that ends in a refusal${role === "server" ? ", and a Server's pricing rules finish loading" : ""}`, async ({ page, watch }) => {
     test.setTimeout(300_000);

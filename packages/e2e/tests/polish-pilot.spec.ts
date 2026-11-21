@@ -146,6 +146,33 @@ test.describe("back office and POS together", () => {
     });
   });
 
+  test("A4: Tenders is called Payment methods, and the old address still arrives", async ({ page }) => {
+    test.setTimeout(300_000);
+    await signIn(page);
+
+    await test.step("the old address lands on the new one", async () => {
+      await page.goto(`${WEB}/settings/tenders`);
+      await page.waitForURL(`${WEB}/settings/payment-methods`);
+      await expect(page).toHaveTitle(/Payment methods/);
+      await expect(page.getByRole("grid", { name: "Payment methods" })).toBeVisible();
+    });
+
+    await test.step("the navigation and the page say Payment methods, never Tenders", async () => {
+      await expect(page.getByRole("link", { name: "Payment methods", exact: true })).toHaveAttribute("href", "/settings/payment-methods");
+      await expect(page.getByRole("link", { name: /Tender/i })).toHaveCount(0);
+      await expect(page.locator("body")).not.toContainText(/\bTenders?\b/i);
+    });
+
+    await test.step("the reports say it too", async () => {
+      await page.goto(`${WEB}/reports`);
+      await expect(page.locator("main")).toContainText("payment methods");
+      await expect(page.locator("body")).not.toContainText(/\bTenders?\b/i);
+      await page.goto(`${WEB}/reports/sales`);
+      await expect(page.getByText("By payment method", { exact: true })).toBeVisible();
+      await expect(page.locator("body")).not.toContainText(/\bTenders?\b/i);
+    });
+  });
+
   test("A2: a POS station needs a brand; one saved without it says so on the iPad and in Settings, and works once it has one", async ({ page, browser, watch }) => {
     test.setTimeout(420_000);
     const { merchantId, outletId } = devLocal();
