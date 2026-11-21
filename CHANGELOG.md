@@ -4,6 +4,21 @@ Notable changes to Sail, newest first. Field and operation names are as in `pack
 
 ## Unreleased
 
+### Pilot polish
+What the team hit setting up an outlet from scratch, fixed before the first pilot outlet. No migration.
+- **POS Orders tab.** Open lists every open order of the outlet, tables included (it left out dine-in), with a type filter: All, Dine-in, Takeaway, Pickup, Delivery. The filter applies to Today's closed too.
+- **A POS station needs a brand.** `stations.create` refuses a POS station without `brand_id`, and `stations.update` refuses to take it off (validation, `details.field: "brand_id"`); a kitchen display has none, as before. **Upgrade note:** a POS station saved earlier without a brand keeps working for everything but orders. Settings › Stations marks it ("No brand · cannot take orders") and its iPad shows one message in place of the screens until a brand is chosen; nothing is migrated.
+- **Required fields say so.** `TextField`, `Select` and `MoneyField` in `@sail/ui` show "· Required" beside the label when `isRequired` is set. The product form marks Name and Base price, and says under Kind what a component is and what Deposit item and Open price do.
+- **Tenders are called Payment methods** wherever people read them: the Settings screen and its navigation entry, the Sales report (and its CSV column), the reports index, first-run setup, the import list and Changes; the Z-report's section is Payments on the POS and in print. The screen is at `/settings/payment-methods`, and `/settings/tenders` redirects. The API keeps `tender_types`, `tender` and `tenders`.
+- **Floor & QR: a table's changes apply as they are made.** Shape and area when chosen; name, seats, position and size when the field is left, on Enter, or after a short pause. There is no Save table. A value that cannot be used says so under its field and is not sent. Add table puts the new table on the first place clear of every other table (it could land under a larger or moved one) and gives it the next T number the outlet does not have.
+- **Pairing an iPad.**
+  - The back office keeps the code it showed until the code is used or runs out, so closing a station's sheet and opening it again shows the same code; before, that issued a second code, which ended the first while it was being typed. The panel says it is waiting for the iPad and then "Paired: <device>" by itself. A new code is an explicit Replace code.
+  - `stations.pairing_code` takes `replace: false` and then refuses while a code is live (`state_conflict`, `details.reason: "pairing_code_live"`, with `issued_at` and `expires_at`). Left out, a new code replaces the old one, as before.
+  - `stations.pair` gives two answers and no more: "This code has expired or was replaced" (`details.reason: "pairing_code_expired"`: it ran out, a newer code replaced it, or it was used) and "Wrong code" (`pairing_code_wrong`). Both were "Pairing code not recognised or expired".
+  - Stations carry `paired_at`.
+  - On the iPad the code has a text field of its own, not the PIN pad the next screen uses; it takes a pasted code with spaces or dashes and pairs at the sixth digit. A kitchen display keeps its on-screen keys and takes a paste too.
+- **Scan to order that is not set up.** At an outlet with tables and no Scan to order channel switched on, Floor & QR says the codes take no orders yet, by the plan and by the QR sheet, with a link to Settings › Channels. The guest's phone already said so; its words are now "This table isn't taking orders on the phone yet. Please ask the staff." (`unavailable`, `details.reason: "scan_to_order_off"`).
+
 ### Money
 - A frozen order discount takes at most what a line is now worth: after a payment, cutting or comping a line on an unpaid bill can no longer take it, its tax or its bill below zero.
 - Money fields read back everything they show, in every locale: Arabic-Indic and other native digits are accepted, as are Latin digits; groups must be the locale's. One parser (`parseAmount`) for every field. See [pricing semantics §8](docs/pricing-semantics.md#8-tax-model).
