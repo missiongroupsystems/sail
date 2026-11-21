@@ -1,5 +1,5 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { AmountSchema, PERMISSIONS, RoleSchema, registerOperations, type Role } from "@sail/shared";
 import { db, withTransaction } from "../db/client.js";
 import { auditLog, orderManualApplications, staff, staffSessions, stationPairingCodes, stations } from "../db/schema/index.js";
@@ -19,7 +19,7 @@ import { businessDayInputs, toStation } from "./org.js";
 import { config } from "../config.js";
 
 registerOperations({
-  "stations.pairing_code": { op: "stations.pairing_code", summary: "Issue a one-time pairing code for a station", description: "Admin only. The 6-digit code is shown once and expires in 10 minutes. The iPad enters it in stations.pair.", tier: "T3", minRole: "admin", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: ["station.pairing_code_issued"], mcp: { expose: false, toolsets: [] } },
+  "stations.pairing_code": { op: "stations.pairing_code", summary: "Issue a one-time pairing code for a station", description: "Admin only. The 6-digit code is shown once and expires in 10 minutes. The iPad enters it in stations.pair. A new code replaces any the station still has unused; send `replace: false` to be refused instead (state_conflict, with the live code's `issued_at` and `expires_at`), so a code someone is typing is not ended by accident.", tier: "T3", minRole: "admin", overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["staff"], emits: ["station.pairing_code_issued"], mcp: { expose: false, toolsets: [] } },
   "stations.pair": { op: "stations.pair", summary: "Pair an iPad to a station", description: "Exchanges a one-time pairing code for a long-lived station token. No authentication; the code is single-use. Pairing again replaces the previous token.", tier: "T3", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: [], emits: ["station.paired"], mcp: { expose: false, toolsets: [] } },
   "stations.unpair": { op: "stations.unpair", summary: "Unpair this device from its station", description: "Called by the paired device itself (its station token). Ends the pairing: the token stops working, the PIN sessions on the device end, and the back office shows the station as not paired until it is paired again with a new code.", tier: "T1", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["station"], emits: ["station.unpaired"], mcp: { expose: false, toolsets: [] } },
   "staff_sessions.start": { op: "staff_sessions.start", summary: "Sign in on a station with a PIN", description: "Station token plus 6-digit PIN → a short-lived PIN session token for the staff member. Lockout after repeated failures. The session ends after inactivity.", tier: "T0", minRole: null, overrideAllowed: false, reasonRequired: false, dryRun: false, principals: ["station"], emits: ["staff_session.started"], mcp: { expose: false, toolsets: [] } },
@@ -42,12 +42,23 @@ const GrantRequest = z.discriminatedUnion("action", [
   z.object({ action: z.literal("payments.void"), target_kind: z.literal("payment"), ...grantBase, args: z.object({ amount: AmountSchema.min(1) }) }),
 ]);
 
+/** The code was a real one that can no longer pair: it ran out, a newer code replaced it, it was used, or its station was archived. */
+function pairingCodeSpent() {
+  return new AppError("unauthenticated", "This code has expired or was replaced", { remedy: "Get a new one in the back office: Settings › Stations.", details: { reason: "pairing_code_expired" } });
+}
+
 export function stationRoutes(app: OpenAPIHono<AppEnv>) {
-  defineOp(app, { op: "stations.pairing_code", method: "post", path: "/v1/stations/{id}/pairing-code", tags: ["stations"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({}).passthrough()) }, responses: { 201: jsonResponse(mutationResponse(z.object({ code: secret(z.string()), expires_at: z.string() }))), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "stations.pairing_code", method: "post", path: "/v1/stations/{id}/pairing-code", tags: ["stations"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(z.object({ replace: z.boolean().optional().describe("false: refuse while the station has an unused code that has not expired. Left out or true: the new code replaces it.") }).passthrough()) }, responses: { 201: jsonResponse(mutationResponse(z.object({ code: secret(z.string()), expires_at: z.string() }))), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
+    const { replace } = c.req.valid("json");
     const [st] = await db().select().from(stations).where(and(eq(stations.id, id), eq(stations.merchantId, p.merchantId), isNull(stations.archivedAt))).limit(1);
     if (!st) throw AppError.notFound("station", id);
+    if (replace === false) {
+      // The code is stored hashed and cannot be shown again: the caller is told one is live, and until when.
+      const [live] = await db().select({ createdAt: stationPairingCodes.createdAt, expiresAt: stationPairingCodes.expiresAt }).from(stationPairingCodes).where(and(eq(stationPairingCodes.stationId, id), isNull(stationPairingCodes.usedAt), gt(stationPairingCodes.expiresAt, sql`now()`))).limit(1);
+      if (live) throw new AppError("state_conflict", "This station already has a pairing code that has not been used", { remedy: "Use that code, or send replace: true for a new one. The old code then stops working.", details: { reason: "pairing_code_live", issued_at: live.createdAt.toISOString(), expires_at: live.expiresAt.toISOString() } });
+    }
     const code = randomDigits(6);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
     // A new code replaces any the station still has unused, so only the code shown last can pair it.
@@ -64,7 +75,13 @@ export function stationRoutes(app: OpenAPIHono<AppEnv>) {
     const result = await withTransaction(async (t) => {
       const candidates = await t.db.select().from(stationPairingCodes).where(and(isNull(stationPairingCodes.usedAt), gt(stationPairingCodes.expiresAt, sql`now()`)));
       const match = candidates.find((x) => verifySecret(code, x.codeHash));
-      if (!match) throw new AppError("unauthenticated", "Pairing code not recognised or expired", { remedy: "Ask an Admin for a new code from the station's page in the back office." });
+      if (!match) {
+        // Two answers and no more: a code that was right until it ran out, was replaced or was used, and any other.
+        // Only the last hour's codes are looked at, newest first, so a wrong guess costs a bounded number of checks.
+        const spent = await t.db.select({ codeHash: stationPairingCodes.codeHash }).from(stationPairingCodes).where(gt(stationPairingCodes.createdAt, sql`now() - interval '1 hour'`)).orderBy(desc(stationPairingCodes.createdAt)).limit(20);
+        if (spent.some((x) => verifySecret(code, x.codeHash))) throw pairingCodeSpent();
+        throw new AppError("unauthenticated", "Wrong code", { remedy: "Check the 6 digits shown in the back office.", details: { reason: "pairing_code_wrong" } });
+      }
       if (kind) {
         const [target] = await t.db.select({ kind: stations.kind }).from(stations).where(eq(stations.id, match.stationId)).limit(1);
         if (target && target.kind !== kind) throw AppError.validation(`This code is for a ${target.kind === "display" ? "kitchen display" : "POS"} station`, { remedy: target.kind === "display" ? "Open /kds on the screen and enter the code there." : "Use a code from a kitchen display station, or open /pos on the iPad." });
@@ -74,7 +91,7 @@ export function stationRoutes(app: OpenAPIHono<AppEnv>) {
       // The new token replaces the old device's, and the PIN sessions started on that device end with it (resolve.ts
       // also refuses any session that started before this pairing). clock_timestamp: later than any session already open.
       const [st] = await t.db.update(stations).set({ tokenHash: sha256(token), pairedAt: sql`clock_timestamp()`, deviceLabel: device_label }).where(and(eq(stations.id, match.stationId), isNull(stations.archivedAt))).returning();
-      if (!st) throw new AppError("unauthenticated", "Pairing code not recognised or expired", { remedy: "Ask an Admin for a new code from the station's page in the back office." });
+      if (!st) throw pairingCodeSpent();
       await t.db.update(staffSessions).set({ endedAt: new Date() }).where(and(eq(staffSessions.stationId, st.id), isNull(staffSessions.endedAt)));
       await appendEvent({ merchantId: st!.merchantId, outletId: st!.outletId, type: "station.paired", aggregate: { kind: "station", id: st!.id }, operationId: "stations.pair", payload: { device_label }, actor: { principal_type: "station", principal_id: st!.id, role: null }, correlationId: c.get("correlationId") });
       await t.db.insert(auditLog).values({ merchantId: st!.merchantId, outletId: st!.outletId, actorType: "station", actorId: st!.id, action: "stations.pair", targetKind: "station", targetId: st!.id, details: { device_label } });

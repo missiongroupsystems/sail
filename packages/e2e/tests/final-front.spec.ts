@@ -1,4 +1,4 @@
-import { devLocal, expect, GUEST, keyIn, pairAndSignIn, register, test, WEB } from "./fixtures";
+import { devLocal, enterPairingCode, expect, GUEST, keyIn, pairAndSignIn, register, test, WEB } from "./fixtures";
 
 /** Final review, front of house: the guest's phone, the POS floor and order screens, the kitchen display. */
 
@@ -302,8 +302,7 @@ test("POS: a pairing ended elsewhere goes straight to pairing and says why, once
   const other = await browser.newPage();
   await other.goto(`${WEB}/pos`);
   await expect(other.getByRole("heading", { name: "Pair this iPad to a station" })).toBeVisible({ timeout: 180_000 });
-  await keyIn(other, "PIN keys", data.code);
-  await other.getByRole("button", { name: "Pair this iPad" }).click();
+  await enterPairingCode(other, data.code);
   await expect(other.getByRole("button", { name: "Pair this iPad again" })).toBeVisible();
   await other.close();
   // The next request this iPad makes (the live stream's, or a tap) learns the pairing ended.
@@ -321,8 +320,7 @@ test("POS: a PIN sign-in the register does not answer is bounded and the pad is 
   const { data } = await register<{ data: { code: string } }>("POST", `/v1/stations/${stationId}/pairing-code`, {});
   await page.goto(`${WEB}/pos`);
   await expect(page.getByRole("heading", { name: "Pair this iPad to a station" })).toBeVisible({ timeout: 180_000 });
-  await keyIn(page, "PIN keys", data.code);
-  await page.getByRole("button", { name: "Pair this iPad" }).click();
+  await enterPairingCode(page, data.code);
   await expect(page.getByRole("button", { name: "Pair this iPad again" })).toBeVisible();
   // The sign-in is held back for longer than its bound.
   await page.route(/\/v1\/stations\/sessions$/, async (route) => {

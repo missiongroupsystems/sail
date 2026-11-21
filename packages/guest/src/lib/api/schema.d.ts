@@ -1583,7 +1583,7 @@ export interface paths {
         put?: never;
         /**
          * Issue a one-time pairing code for a station
-         * @description Admin only. The 6-digit code is shown once and expires in 10 minutes. The iPad enters it in stations.pair.
+         * @description Admin only. The 6-digit code is shown once and expires in 10 minutes. The iPad enters it in stations.pair. A new code replaces any the station still has unused; send `replace: false` to be refused instead (state_conflict, with the live code's `issued_at` and `expires_at`), so a code someone is typing is not ended by accident.
          */
         post: operations["stations.pairing_code"];
         delete?: never;
@@ -6806,6 +6806,7 @@ export interface operations {
                             kind: "pos" | "display";
                             display_destination_ids: string[];
                             paired: boolean;
+                            paired_at: string | null;
                             device_label: string | null;
                             archived: boolean;
                         }[];
@@ -6975,6 +6976,7 @@ export interface operations {
                             kind: "pos" | "display";
                             display_destination_ids: string[];
                             paired: boolean;
+                            paired_at: string | null;
                             device_label: string | null;
                             archived: boolean;
                         };
@@ -7148,6 +7150,7 @@ export interface operations {
                             kind: "pos" | "display";
                             display_destination_ids: string[];
                             paired: boolean;
+                            paired_at: string | null;
                             device_label: string | null;
                             archived: boolean;
                         };
@@ -19658,6 +19661,9 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description false: refuse while the station has an unused code that has not expired. Left out or true: the new code replaces it. */
+                    replace?: boolean;
+                } & {
                     [key: string]: unknown;
                 };
             };

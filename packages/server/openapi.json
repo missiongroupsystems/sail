@@ -8746,6 +8746,12 @@
                           "paired": {
                             "type": "boolean"
                           },
+                          "paired_at": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "device_label": {
                             "type": [
                               "string",
@@ -8771,6 +8777,7 @@
                           "kind",
                           "display_destination_ids",
                           "paired",
+                          "paired_at",
                           "device_label",
                           "archived"
                         ]
@@ -9245,6 +9252,12 @@
                         "paired": {
                           "type": "boolean"
                         },
+                        "paired_at": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "device_label": {
                           "type": [
                             "string",
@@ -9270,6 +9283,7 @@
                         "kind",
                         "display_destination_ids",
                         "paired",
+                        "paired_at",
                         "device_label",
                         "archived"
                       ]
@@ -9769,6 +9783,12 @@
                         "paired": {
                           "type": "boolean"
                         },
+                        "paired_at": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "device_label": {
                           "type": [
                             "string",
@@ -9794,6 +9814,7 @@
                         "kind",
                         "display_destination_ids",
                         "paired",
+                        "paired_at",
                         "device_label",
                         "archived"
                       ]
@@ -46918,7 +46939,7 @@
           "stations"
         ],
         "operationId": "stations.pairing_code",
-        "description": "Admin only. The 6-digit code is shown once and expires in 10 minutes. The iPad enters it in stations.pair.",
+        "description": "Admin only. The 6-digit code is shown once and expires in 10 minutes. The iPad enters it in stations.pair. A new code replaces any the station still has unused; send `replace: false` to be refused instead (state_conflict, with the live code's `issued_at` and `expires_at`), so a code someone is typing is not ended by accident.",
         "summary": "Issue a one-time pairing code for a station",
         "x-sail": {
           "op": "stations.pairing_code",
@@ -46956,7 +46977,12 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                  "replace": {
+                    "type": "boolean",
+                    "description": "false: refuse while the station has an unused code that has not expired. Left out or true: the new code replaces it."
+                  }
+                },
                 "additionalProperties": {}
               }
             }

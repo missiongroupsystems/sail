@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, cx, PinPad, SailLogo, TextField } from "@sail/ui";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toApiError, type ApiError } from "@/lib/api";
 import { pairStation } from "../api/register";
 import { NOT_PAIRED, useApi } from "../hooks/useApi";
@@ -19,7 +19,17 @@ export type PairingScreenProps = {
   onPaired?: (token: string, station: Station, label: string) => void;
 };
 
-/** First run: the 6-digit pairing code from the back office and a label for this iPad. */
+/** Only the digits of what was typed or pasted ("123 456", "123-456"), six at most. */
+const digitsOf = (text: string) => text.replace(/\D/g, "").slice(0, 6);
+
+/**
+ * First run: the 6-digit pairing code from the back office and a label for this iPad.
+ *
+ * On the iPad the code goes into a text field of its own, not the PIN pad: the next screen asks for a staff PIN on
+ * that pad, and two six-digit pads one after the other read as one PIN asked twice. The field takes a pasted code,
+ * and pairs by itself at the sixth digit. A kitchen display keeps the on-screen keys (a wall screen may have no
+ * keyboard), and takes a pasted code too.
+ */
 export function PairingScreen({ device = "iPad", hint = "In the back office, open Settings › Stations, choose the station and tap “Pair an iPad”. Enter the 6 digits here.", kind, onPaired }: PairingScreenProps = {}) {
   const api = useApi();
   const setPaired = useStationStore((s) => s.setPaired);
@@ -29,54 +39,139 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
   const [pending, setPending] = useState(false);
   // Why this iPad is here again, when the register ended its pairing.
   const notPaired = useSessionStore((s) => (kind !== "display" && s.lockNote === NOT_PAIRED ? s.lockNote : null));
+  const keys = kind === "display";
 
-  const pair = async () => {
-    if (code.length !== 6 || !label.trim()) return;
+  // One request at a time: the sixth digit and a tap on the button a moment later are one pairing, not two.
+  const busy = useRef(false);
+  const latest = useRef({ label, code });
+  latest.current = { label, code };
+  const pair = async (entered: string = code) => {
+    const name = latest.current.label.trim();
+    if (entered.length !== 6 || !name || busy.current) return;
+    busy.current = true;
     setPending(true);
     setError(null);
     try {
-      const res = await pairStation(api, code, label.trim(), kind);
+      const res = await pairStation(api, entered, name, kind);
       // Pairing ends every PIN session on this station, an old one left on this iPad included: forget it quietly, so the
       // lock screen does not open on "Your session ended" (A and C notes).
       useSessionStore.getState().lock(null);
-      (onPaired ?? setPaired)(res.station_token, res.station, label.trim());
+      (onPaired ?? setPaired)(res.station_token, res.station, name);
     } catch (e) {
-      // The code stays on the pad, so a slip can be corrected rather than typed again.
+      // The code stays in place, so a slip can be corrected rather than typed again.
       setError(toApiError(e));
     } finally {
+      busy.current = false;
       setPending(false);
     }
   };
+  /** A typed or pasted code. With `go`, six digits pair at once (the name is there by default). */
+  const enter = (text: string, go: boolean) => {
+    const next = digitsOf(text);
+    setCode(next);
+    setError(null);
+    if (go && next.length === 6) void pair(next);
+  };
+  const entering = useRef(enter);
+  entering.current = enter;
+  // A code copied from the back office can be pasted anywhere on the screen, not only with the field focused.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if ((e.target as HTMLElement | null)?.closest?.("[data-device-name]")) return;
+      const pasted = digitsOf(e.clipboardData?.getData("text") ?? "");
+      if (!pasted) return;
+      e.preventDefault();
+      entering.current(pasted, true);
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, []);
+  // Digits from a keyboard go to the code when no field has the focus (a tap beside the field), as they did on the pad.
+  useEffect(() => {
+    if (keys) return;
+    const onKey = (e: KeyboardEvent) => {
+      const at = document.activeElement;
+      if (at instanceof HTMLInputElement || at instanceof HTMLTextAreaElement || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (/^\d$/.test(e.key)) entering.current(latest.current.code + e.key, true);
+      else if (e.key === "Backspace") entering.current(latest.current.code.slice(0, -1), false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [keys]);
+
+  // The register's two answers are told apart by their words: an expired or replaced code needs a new one, a wrong one a second look.
+  const problem = error ? [error.message, error.remedy].filter(Boolean).map((t) => t!.replace(/([^.!?])$/, "$1.")).join(" ") : null;
+
+  const intro = (
+    <div>
+      <SailLogo size="card" />
+      <h1 className="mt-5 font-heading text-[26px] leading-tight font-semibold tracking-[-0.02em] text-ink">Pair this {device} to a station</h1>
+      {notPaired ? <p className="mt-2 text-[14.5px] text-ink">{notPaired}</p> : null}
+      <p className="mt-2 text-[14.5px] text-ink-2">{hint}</p>
+    </div>
+  );
+  const name = (
+    <div data-device-name>
+      <TextField label={`Name for this ${device}`} value={label} onChange={setLabel} placeholder="Bar iPad" inputClassName="min-h-14 text-line" maxLength={80} />
+    </div>
+  );
+  // The error once, in one line. How to get a code is the line above.
+  const alert = problem ? (
+    <p role="alert" className="text-body text-status-alert">
+      {problem}
+    </p>
+  ) : null;
+  const button = (
+    <Button variant="primary" size="lg" isDisabled={code.length !== 6 || !label.trim()} isPending={pending} onPress={() => void pair()} className="w-full data-[disabled]:bg-transparent!">
+      Pair this {device}
+    </Button>
+  );
+
+  if (!keys) {
+    return (
+      <main className="flex h-dvh w-full items-center justify-center bg-bg px-8">
+        <form
+          className="flex w-full max-w-[440px] flex-col gap-6"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void pair();
+          }}
+        >
+          {intro}
+          {name}
+          <TextField
+            label="Pairing code from the back office"
+            value={code}
+            onChange={(v) => enter(v, true)}
+            placeholder="6 digits"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            autoFocus
+            isInvalid={Boolean(error)}
+            description="Type it or paste it. Spaces and dashes are left out."
+            inputClassName="min-h-16 text-center font-mono text-[28px] tracking-[0.3em] tabular placeholder:text-[18px] placeholder:tracking-normal"
+          />
+          {alert}
+          {button}
+        </form>
+      </main>
+    );
+  }
 
   return (
     <main className="flex h-dvh w-full items-center justify-center bg-bg px-8">
       <div className="grid w-full max-w-[880px] grid-cols-[1fr_auto] items-center gap-16">
         <section className="flex max-w-[420px] flex-col gap-6">
-          <div>
-            <SailLogo size="card" />
-            <h1 className="mt-5 font-heading text-[26px] leading-tight font-semibold tracking-[-0.02em] text-ink">Pair this {device} to a station</h1>
-            {notPaired ? <p className="mt-2 text-[14.5px] text-ink">{notPaired}</p> : null}
-            <p className="mt-2 text-[14.5px] text-ink-2">{hint}</p>
-          </div>
-          <TextField label={`Name for this ${device}`} value={label} onChange={setLabel} placeholder="Bar iPad" inputClassName="min-h-14 text-line" maxLength={80} />
-          {/* The error once, in one line; the code card turns red. How to get a code is the line above. */}
-          {error ? (
-            <p role="alert" className="text-body text-status-alert">
-              {error.message.replace(/([^.!?])$/, "$1.")}
-            </p>
-          ) : null}
-          <Button variant="primary" size="lg" isDisabled={code.length !== 6 || !label.trim()} isPending={pending} onPress={pair} className="w-full data-[disabled]:bg-transparent!">
-            Pair this {device}
-          </Button>
+          {intro}
+          {name}
+          {alert}
+          {button}
         </section>
         <div className={cx("flex flex-col items-center gap-2 rounded-[20px] border bg-surface px-10 pt-9 pb-10 shadow-e2", error ? "border-status-alert" : "border-transparent")}>
           <p className="text-[14.5px] text-ink-2">Pairing code</p>
           <PinPad
             value={code}
-            onChange={(v) => {
-              setCode(v);
-              setError(null);
-            }}
+            onChange={(v) => enter(v, false)}
             onComplete={() => void 0}
             onEnter={() => void pair()}
             unlockHint={false}

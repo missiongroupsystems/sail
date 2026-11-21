@@ -108,6 +108,8 @@ export const StationSchema = z.object({
   /** The kitchen display destinations a display station shows. */
   display_destination_ids: z.array(z.string()),
   paired: z.boolean(),
+  /** When a device last paired with the station; it stays after an unpair. */
+  paired_at: z.string().nullable(),
   device_label: untrusted(z.string().nullable()),
   archived: z.boolean(),
 });
@@ -157,6 +159,7 @@ export const toStation = (s: typeof stations.$inferSelect) => ({
   kind: s.kind,
   display_destination_ids: s.displayDestinationIds,
   paired: s.tokenHash != null,
+  paired_at: s.pairedAt?.toISOString() ?? null,
   device_label: s.deviceLabel,
   archived: s.archivedAt != null,
 });

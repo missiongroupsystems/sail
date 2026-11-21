@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, keyIn, SETUP_API, SETUP_WEB, signInToken, test } from "./fixtures";
+import { enterPairingCode, expect, keyIn, SETUP_API, SETUP_WEB, signInToken, test } from "./fixtures";
 
 /**
  * First run on an empty database (a second stack: `dev:local` with SAIL_DEV_EMPTY=1 and its own web app), through to
@@ -69,8 +69,7 @@ test("first run: set up the business, sign in, pair the POS and send an order", 
   await test.step("pair the iPad and sign in with the Admin's PIN", async () => {
     await page.goto(`${SETUP_WEB}/pos`);
     await expect(page.getByRole("heading", { name: "Pair this iPad to a station" })).toBeVisible({ timeout: 300_000 });
-    await keyIn(page, "PIN keys", code);
-    await page.getByRole("button", { name: "Pair this iPad" }).click();
+    await enterPairingCode(page, code);
     await expect(page.getByRole("button", { name: "Pair this iPad again" })).toBeVisible();
     await keyIn(page, "PIN keys", PIN);
     await expect(page.getByRole("navigation", { name: "Destinations" })).toBeVisible();

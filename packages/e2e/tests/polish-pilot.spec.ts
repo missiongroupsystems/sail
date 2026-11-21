@@ -254,6 +254,112 @@ test.describe("back office and POS together", () => {
     }
   });
 
+  test("A6: pairing an iPad: the code survives the sheet closing, pastes with spaces, the sheet says Paired by itself, and a replaced code says so", async ({ page, browser, watch }) => {
+    test.setTimeout(480_000);
+    const { outletId, brandId } = devLocal();
+    const name = `Pairing ${String(Date.now()).slice(-6)}`;
+    const station = await register<{ data: { id: string } }>("POST", "/v1/stations", { name, kind: "pos", outlet_id: outletId, brand_id: brandId });
+    const pairingCodes = /\/v1\/stations\/[^/]+\/pairing-code$/;
+    const ipad = await browser.newPage({ viewport: { width: 1180, height: 820 } });
+    watch.attach(ipad);
+    // The code as the back office shows it: one label with its six digits.
+    const shownCode = async (sheet: import("@playwright/test").Locator) => ((await sheet.getByLabel(/^Pairing code \d/).getAttribute("aria-label")) ?? "").replace(/\D/g, "");
+
+    try {
+      await signIn(page);
+      await page.goto(`${WEB}/settings/stations`);
+      let sheet = await openRow(page, name);
+      let code = "";
+
+      await test.step("Pair an iPad shows the code, its countdown and that it is waiting", async () => {
+        await sheet.getByRole("button", { name: "Pair an iPad" }).click();
+        code = await shownCode(sheet);
+        expect(code).toMatch(/^\d{6}$/);
+        await expect(sheet.getByText(/Expires at .+ · \d+:\d\d left · one use only/)).toBeVisible();
+        await expect(sheet.getByRole("status").filter({ hasText: "Waiting for the iPad…" })).toBeVisible();
+        await expect(sheet.getByRole("button", { name: "Replace code" })).toBeVisible();
+        await expect(sheet.getByText("The code above stops working.")).toBeVisible();
+      });
+
+      await test.step("closing the sheet and opening it again shows the same code and asks the register for no other", async () => {
+        let asked = 0;
+        const count = (r: import("@playwright/test").Request) => {
+          if (r.method() === "POST" && pairingCodes.test(r.url())) asked++;
+        };
+        page.on("request", count);
+        await sheet.getByRole("button", { name: "Cancel" }).click();
+        await expect(sheet).toBeHidden();
+        sheet = await openRow(page, name);
+        await expect(sheet.getByRole("status").filter({ hasText: "Waiting for the iPad…" })).toBeVisible();
+        expect(await shownCode(sheet)).toBe(code);
+        page.off("request", count);
+        expect(asked, "pairing codes asked for on reopening").toBe(0);
+      });
+
+      await test.step("the iPad's pairing screen is not the PIN pad", async () => {
+        await ipad.goto(`${WEB}/pos`);
+        await expect(ipad.getByRole("heading", { name: "Pair this iPad to a station" })).toBeVisible({ timeout: 180_000 });
+        await expect(ipad.getByRole("textbox", { name: "Pairing code from the back office" })).toBeVisible();
+        await expect(ipad.getByRole("group", { name: "PIN keys" })).toHaveCount(0);
+      });
+
+      await test.step("a wrong code says Wrong code", async () => {
+        watch.allow({ status: 401, url: /\/v1\/stations\/pair$/, why: "a wrong pairing code, then a replaced one, on purpose" });
+        const wrong = ["135790", "246801"].find((c) => c !== code)!;
+        await ipad.getByRole("textbox", { name: "Pairing code from the back office" }).fill(wrong);
+        await expect(ipad.getByRole("alert").filter({ hasText: "Wrong code." })).toBeVisible();
+        await expect(ipad.getByRole("alert").filter({ hasText: /expired|replaced/ })).toHaveCount(0);
+      });
+
+      await test.step("the code pasted with a space pairs, with no button pressed; the sheet says Paired by itself", async () => {
+        const field = ipad.getByRole("textbox", { name: "Pairing code from the back office" });
+        await field.fill("");
+        await field.focus();
+        const spaced = `${code.slice(0, 3)} ${code.slice(3)}`;
+        await ipad.evaluate((text) => {
+          const data = new DataTransfer();
+          data.setData("text/plain", text);
+          document.activeElement!.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+        }, spaced);
+        await expect(ipad.getByRole("button", { name: "Pair this iPad again" })).toBeVisible();
+        await expect(ipad.getByRole("group", { name: "PIN keys" })).toBeVisible();
+
+        await expect(sheet.getByRole("status").filter({ hasText: "Paired: iPad" })).toBeVisible({ timeout: 20_000 });
+        await expect(sheet.getByLabel(/^Pairing code \d/)).toHaveCount(0);
+        await expect(sheet.getByText("Waiting for the iPad…")).toHaveCount(0);
+      });
+
+      await test.step("after a reload the sheet does not replace a live code unasked: it says one is out, and offers Replace code", async () => {
+        // A code issued elsewhere (here, through the API): this browser was never shown it.
+        const first = (await register<{ data: { code: string } }>("POST", `/v1/stations/${station.data.id}/pairing-code`, {})).data.code;
+        await page.reload();
+        sheet = await openRow(page, name);
+        watch.allow({ status: 409, url: pairingCodes, why: "the register refuses to replace a live code unasked; the sheet turns that into a choice" });
+        await sheet.getByRole("button", { name: "Pair another iPad" }).click();
+        await expect(sheet.getByText(/A code was issued at .+ and expires at .+ A code is shown once, so it cannot be shown again here\./)).toBeVisible();
+        await expect(sheet.getByText("The old code stops working.")).toBeVisible();
+        await expect(sheet.getByLabel(/^Pairing code \d/)).toHaveCount(0);
+
+        await sheet.getByRole("button", { name: "Replace code" }).click();
+        const second = await shownCode(sheet);
+        expect(second).toMatch(/^\d{6}$/);
+
+        // The replaced code on an iPad: its own message, not "Wrong code".
+        if (first !== second) {
+          const other = await browser.newPage({ viewport: { width: 1180, height: 820 } });
+          watch.attach(other);
+          await other.goto(`${WEB}/pos`);
+          await other.getByRole("textbox", { name: "Pairing code from the back office" }).fill(first);
+          await expect(other.getByRole("alert").filter({ hasText: "This code has expired or was replaced. Get a new one in the back office" })).toBeVisible();
+          await other.close();
+        }
+      });
+    } finally {
+      await ipad.close();
+      await register("PATCH", `/v1/stations/${station.data.id}`, { archived: true });
+    }
+  });
+
   test("A2: a POS station needs a brand; one saved without it says so on the iPad and in Settings, and works once it has one", async ({ page, browser, watch }) => {
     test.setTimeout(420_000);
     const { merchantId, outletId } = devLocal();

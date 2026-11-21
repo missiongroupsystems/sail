@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { API, devLocal, expect, GUEST, keyIn, pairAndSignIn, register, SG_ADMIN, signInToken, test, WEB } from "./fixtures";
+import { API, devLocal, enterPairingCode, expect, GUEST, keyIn, pairAndSignIn, register, SG_ADMIN, signInToken, test, WEB } from "./fixtures";
 
 /**
  * The third live test's findings that show on screen (testers S and R, `a5de0c0`). The finding's id is in each test's
@@ -183,8 +183,7 @@ test("S-3: Enter sends a PIN short of six digits, on the lock screen and on the 
   const code = (await register<{ data: { code: string } }>("POST", `/v1/stations/${stationId}/pairing-code`, {})).data.code;
   await page.goto(`${WEB}/pos`);
   await expect(page.getByRole("heading", { name: "Pair this iPad to a station" })).toBeVisible({ timeout: 180_000 });
-  await keyIn(page, "PIN keys", code);
-  await page.getByRole("button", { name: "Pair this iPad" }).click();
+  await enterPairingCode(page, code);
   await expect(page.getByRole("button", { name: "Pair this iPad again" })).toBeVisible();
   // A physical keyboard, as the tester used: four digits, then Enter.
   await page.locator("main").click({ position: { x: 5, y: 5 } });

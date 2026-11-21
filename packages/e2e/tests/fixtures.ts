@@ -165,6 +165,14 @@ export async function keyIn(page: Page, group: string, digits: string) {
   for (const d of digits) await pad.getByRole("button", { name: d, exact: true }).click();
 }
 
+/**
+ * Enter a pairing code on the POS pairing screen. The code has a text field of its own (not the PIN pad the next
+ * screen uses) and pairs at its sixth digit, so there is no button to press (polish-pilot A6).
+ */
+export async function enterPairingCode(page: Page, code: string) {
+  await page.getByRole("textbox", { name: "Pairing code from the back office" }).fill(code);
+}
+
 /** Pair the POS on this page to a demo merchant's station with a fresh code, then sign in with a PIN. */
 export async function pairAndSignIn(page: Page, pin: string, merchant: "sg" | "eu" = "sg", station?: string) {
   const stationId = station ?? (merchant === "eu" ? devLocal().eu : devLocal()).stationId;
@@ -173,8 +181,7 @@ export async function pairAndSignIn(page: Page, pin: string, merchant: "sg" | "e
   // The first visit compiles the POS bundle in the dev server.
   await expect(page.getByRole("heading", { name: "Pair this iPad to a station" })).toBeVisible({ timeout: 180_000 });
   await expect(page.getByText("tap “Pair an iPad”")).toBeVisible();
-  await keyIn(page, "PIN keys", data.code);
-  await page.getByRole("button", { name: "Pair this iPad" }).click();
+  await enterPairingCode(page, data.code);
   await expect(page.getByRole("button", { name: "Pair this iPad again" })).toBeVisible();
   await keyIn(page, "PIN keys", pin);
   // A station with no brand opens on its own message instead of the screens (polish-pilot A2).
