@@ -80,7 +80,11 @@ export function TeamView({ initialStaff, outlets, brands, scope }: { initialStaf
   const outletName = useMemo(() => new Map(outlets.map((o) => [o.id, o.name])), [outlets]);
   const scopedOutlet = outlets.find((o) => o.id === scope.outletId) ?? null;
 
-  const rows = staff.data.filter((s) => (showInactive || s.active) && (!scope.outletId || s.outlet_ids.length === 0 || s.outlet_ids.includes(scope.outletId)));
+  // The brand in scope: people who can work at one of its outlets at least (no outlet limit is every outlet), and
+  // are not limited to other brands. With an outlet chosen, people who can work at that outlet.
+  const brandOutlets = useMemo(() => new Set(outlets.filter((o) => o.brand_id === scope.brandId).map((o) => o.id)), [outlets, scope.brandId]);
+  const inBrand = (s: Staff) => !scope.brandId || ((s.brand_ids.length === 0 || s.brand_ids.includes(scope.brandId)) && (s.outlet_ids.length === 0 || s.outlet_ids.some((id) => brandOutlets.has(id))));
+  const rows = staff.data.filter((s) => (showInactive || s.active) && inBrand(s) && (!scope.outletId || s.outlet_ids.length === 0 || s.outlet_ids.includes(scope.outletId)));
 
   const columns: DataTableColumn<Staff>[] = [
     {

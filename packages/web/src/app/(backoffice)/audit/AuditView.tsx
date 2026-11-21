@@ -10,6 +10,7 @@ import type { AuditEntry, AuditPage, Staff } from "@/lib/api/types";
 import { auditActionLabel, auditTargetLabel } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 import { keys } from "@/lib/query";
+import { useSession } from "@/lib/session-context";
 
 const ANY = "__any__";
 const PAGE = 50;
@@ -151,7 +152,18 @@ const columns: DataTableColumn<AuditEntry>[] = [
       </span>
     ),
   },
-  { key: "action", header: "Action", render: (a) => <span className="text-ink">{actionLabel(a)}</span> },
+  {
+    key: "action",
+    header: "Action",
+    // An entry with no outlet is a change to the whole business (a tax rate, a payment method, a person): it is on
+    // every brand's list, and says so.
+    render: (a) => (
+      <span className="text-ink">
+        {actionLabel(a)}
+        {a.outlet_id == null ? <span className="block text-caption text-ink-3">Whole business</span> : null}
+      </span>
+    ),
+  },
   {
     key: "target",
     header: "Target",
@@ -191,8 +203,11 @@ export function AuditView({ initialPage, staff, initial }: { initialPage: AuditP
   const [fromDate, setFromDate] = useState(initial?.from ?? "");
   const [toDate, setToDate] = useState(initial?.to ?? "");
   useUrlState({ action: filters.action, actor: filters.actor_id, target: filters.target_kind, from: fromDate, to: toDate });
-  const query = useMemo(() => toQuery(filters), [filters]);
-  const unfiltered = Object.keys(query).length === 0;
+  // The list is the brand in scope: entries at its outlets, and the merchant-wide ones. The register filters, page by page.
+  const { scope } = useSession();
+  const filtered = useMemo(() => toQuery(filters), [filters]);
+  const unfiltered = Object.keys(filtered).length === 0;
+  const query = useMemo(() => ({ ...filtered, ...(scope.brandId ? { brand_id: scope.brandId } : {}) }), [filtered, scope.brandId]);
 
   const pages = useInfiniteQuery({
     queryKey: keys.audit(query),

@@ -46,12 +46,13 @@ function defaults(l: ChannelLink | null): Values {
 }
 
 /** Channel links: which menu a brand serves at an outlet on each channel, with the Scan to order behaviours. */
-export function ChannelsView({ initialLinks, outlets, brands, menus }: { initialLinks: ChannelLink[]; outlets: Outlet[]; brands: Brand[]; menus: MenuSummary[] }) {
+export function ChannelsView({ initialLinks, outlets, brands, menus, brandId }: { initialLinks: ChannelLink[]; outlets: Outlet[]; brands: Brand[]; menus: MenuSummary[]; /** The brand in scope: the list is its channels. */ brandId: string | null }) {
   const canCreate = useCan("channel_links.create");
   const [sheet, setSheet] = useState<SheetState>(null);
   const links = useQuery({
-    queryKey: keys.channelLinks,
-    queryFn: () => req(api.GET("/v1/channel-links", { params: { query: { include_archived: "true" } } })).then((r) => r.data),
+    // Keyed by the brand, so another brand in the scope picker shows its own list, not the one read before.
+    queryKey: [...keys.channelLinks, brandId],
+    queryFn: () => req(api.GET("/v1/channel-links", { params: { query: { include_archived: "true", brand_id: brandId ?? undefined } } })).then((r) => r.data),
     initialData: initialLinks,
   });
   const outletName = useMemo(() => new Map(outlets.map((o) => [o.id, o.name])), [outlets]);

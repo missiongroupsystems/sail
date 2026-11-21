@@ -1,7 +1,7 @@
 import { makeLocaleFormat, PageHeader } from "@sail/ui";
 import Link from "next/link";
 import { req } from "@/lib/api";
-import { getScope, orSignIn, requireApi } from "@/lib/api.server";
+import { getScope, orSignIn, requireApi, scopedOutlets } from "@/lib/api.server";
 import { formatRounding } from "@/lib/format";
 import { merchantLocale } from "@/lib/locale";
 import { TodayView } from "./TodayView";
@@ -12,7 +12,7 @@ export const metadata = { title: "Today" };
 export default async function TodayPage() {
   const api = await requireApi();
   const scope = await getScope();
-  const [merchant, outlets] = await orSignIn(Promise.all([req(api.GET("/v1/merchant")), req(api.GET("/v1/outlets"))]));
+  const [merchant, outlets] = await orSignIn(Promise.all([req(api.GET("/v1/merchant")), scopedOutlets().then((data) => ({ data }))]));
   const outletId = outlets.data.find((o) => o.id === scope.outletId)?.id ?? outlets.data[0]?.id ?? null;
   const s = merchant.data.settings;
   const { money, longDate, businessDay } = makeLocaleFormat(merchantLocale(s));

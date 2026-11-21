@@ -1,8 +1,8 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { and, asc, desc, eq, gte, isNull, lte, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { RoleSchema } from "@sail/shared";
 import { db } from "../db/client.js";
-import { auditLog, backofficeLinks, backofficeSessions, staff } from "../db/schema/index.js";
+import { auditLog, backofficeLinks, backofficeSessions, outlets, staff } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted, secret } from "../lib/openapi.js";
@@ -206,6 +206,8 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
           target_id: z.string().optional(),
           /** Everything about one order: entries on the order and on its lines, bills and payments (they name it in their details). */
           order_id: z.uuid().optional(),
+          /** Entries at this brand's outlets, and the merchant-wide ones (no outlet): what the back office lists for the brand in scope. */
+          brand_id: z.uuid().optional(),
           from: z.iso.datetime().optional(),
           to: z.iso.datetime().optional(),
           limit: z.coerce.number().int().min(1).max(500).default(100),
@@ -219,6 +221,7 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
       const q = c.req.valid("query");
       const conds = [eq(auditLog.merchantId, p.merchantId)];
       if (q.actor_id) conds.push(eq(auditLog.actorId, q.actor_id));
+      if (q.brand_id) conds.push(or(isNull(auditLog.outletId), inArray(auditLog.outletId, db().select({ id: outlets.id }).from(outlets).where(eq(outlets.brandId, q.brand_id))))!);
       if (q.action) conds.push(eq(auditLog.action, q.action));
       if (q.target_kind) conds.push(eq(auditLog.targetKind, q.target_kind));
       if (q.target_id) conds.push(eq(auditLog.targetId, q.target_id));

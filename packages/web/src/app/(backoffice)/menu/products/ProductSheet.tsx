@@ -190,7 +190,7 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
           </div>
           <RhfTextField control={form.control} name="description" label="Description" multiline rows={2} description="Shown to guests in Scan to order." />
           <div className="grid gap-4 sm:grid-cols-2">
-            <RhfSelect control={form.control} name="brand_id" label="Brand" items={[{ id: NONE, label: "All brands" }, ...brands.map((b) => ({ id: b.id, label: b.name }))]} />
+            <RhfSelect control={form.control} name="brand_id" label="Brand" items={[{ id: NONE, label: "Shared by all brands" }, ...brands.map((b) => ({ id: b.id, label: b.name }))]} description="A shared product is on every brand's list." />
             <RhfSelect
               control={form.control}
               name="category_id"

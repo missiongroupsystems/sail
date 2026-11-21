@@ -211,3 +211,27 @@ describe("brand scope reaches the outlet and what is under it", () => {
     }
   });
 });
+
+describe("Changes for a brand", () => {
+  it("audit.list with brand_id gives the entries at that brand's outlets and the merchant-wide ones, never another brand's outlets'", async () => {
+    const t = A.admin.token;
+    // One change at each brand's outlet, and one for the whole business.
+    await call("POST", "/v1/stations", { token: t, body: { outlet_id: A.outletId, name: "Audit till A" } });
+    await call("POST", "/v1/stations", { token: t, body: { outlet_id: otherOutlet, name: "Audit till B" } });
+    await call("POST", "/v1/brands", { token: t, body: { name: "Audit brand" } });
+    type Entry = { action: string; outlet_id: string | null; details: { name?: string } | null };
+    const list = async (brand: string) => (await call<{ data: Entry[] }>("GET", `/v1/audit?brand_id=${brand}&limit=500`, { token: t })).body.data;
+    const mine = await list(A.brandId);
+    const theirs = await list(other);
+    const names = (rows: Entry[]) => rows.map((r) => r.details?.name ?? "");
+    expect(names(mine)).toContain("Audit till A");
+    expect(names(mine)).not.toContain("Audit till B");
+    expect(names(theirs)).toContain("Audit till B");
+    expect(names(theirs)).not.toContain("Audit till A");
+    for (const rows of [mine, theirs]) expect(rows.some((r) => r.action === "brands.create" && r.outlet_id === null && r.details?.name === "Audit brand")).toBe(true);
+    expect(mine.every((r) => r.outlet_id === null || r.outlet_id !== otherOutlet)).toBe(true);
+    // Without it, everything is there.
+    const all = (await call<{ data: Entry[] }>("GET", "/v1/audit?limit=500", { token: t })).body.data;
+    expect(names(all)).toEqual(expect.arrayContaining(["Audit till A", "Audit till B"]));
+  });
+});

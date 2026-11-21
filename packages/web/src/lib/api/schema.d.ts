@@ -7766,6 +7766,7 @@ export interface operations {
                 target_kind?: string;
                 target_id?: string;
                 order_id?: string;
+                brand_id?: string;
                 from?: string;
                 to?: string;
                 limit?: number;

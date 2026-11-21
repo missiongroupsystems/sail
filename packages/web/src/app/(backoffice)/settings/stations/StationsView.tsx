@@ -1,13 +1,14 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, DataTable, Dialog, EmptyState, InlineError, Select, Sheet, StatusDot, Switch, TextField, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
+import { Button, DataTable, Dialog, EmptyState, InlineError, Sheet, StatusDot, Switch, TextField, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { greyPill, greyPillAlert, SheetSection, TwoLine } from "@/components/office/parts";
 import { applyServerErrors } from "@/components/office/server-errors";
+import { OutletChoice } from "@/components/backoffice/OutletChoice";
 import { PairingPanel } from "@/components/backoffice/PairingPanel";
 import { RhfCheckboxGroup, RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
@@ -88,28 +89,12 @@ export function StationsView({
     },
   ];
 
-  const scopedOutlet = outlets.find((o) => o.id === scope.outletId) ?? null;
 
   return (
     <>
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-4">
-          {scopedOutlet ? (
-            <p className="min-h-11 py-2.5">
-              <span className="text-ink-2">Outlet </span>
-              <span className="text-ink">{scopedOutlet.name}</span>
-              <span className="text-caption text-ink-2"> · from the scope picker</span>
-            </p>
-          ) : (
-            <Select
-              aria-label="Outlet"
-              variant="toolbar" size="sm"
-              items={outlets.map((o) => ({ id: o.id, label: o.name }))}
-              selectedKey={outletId}
-              onSelectionChange={setOutletId}
-              placeholder="Choose an outlet"
-            />
-          )}
+          <OutletChoice outlets={outlets} scope={scope} outletId={outletId} onChange={setOutletId} />
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
           </Switch>

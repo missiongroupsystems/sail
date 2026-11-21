@@ -11712,6 +11712,15 @@
           {
             "schema": {
               "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "brand_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "format": "date-time"
             },
             "required": false,

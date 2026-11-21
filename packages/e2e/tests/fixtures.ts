@@ -15,12 +15,13 @@ type DemoMerchant = { merchantId: string; brandId: string; outletId: string; sta
  * What `dev:local` bootstrapped (written by packages/server/scripts/dev-local.ts): the Singapore demo merchant at the
  * top level and the EU VAT café (EUR, de-DE) under `eu`, and the card-terminal simulator's address.
  */
-export function devLocal(): DemoMerchant & { admin_password: string; payment_simulator: string; eu: DemoMerchant } {
+export function devLocal(): DemoMerchant & { admin_password: string; payment_simulator: string; eu: DemoMerchant; /** A group with two brands (brand-scope.spec.ts makes the second brand and its outlets). */ twin: DemoMerchant } {
   return JSON.parse(readFileSync(resolve(import.meta.dirname, "../../server/.dev-local.json"), "utf8"));
 }
 
 export const SG_ADMIN = "admin@sail.local";
 export const EU_ADMIN = "admin.eu@sail.local";
+export const TWIN_ADMIN = "admin.twin@sail.local";
 
 /** A register call as a back-office Admin would make it (signed in with email and password), by default the Singapore demo merchant's. */
 export async function register<T>(method: string, path: string, body?: unknown, adminEmail = SG_ADMIN): Promise<T> {
