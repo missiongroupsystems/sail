@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, DataTable, DescriptionList, Dialog, EmptyState, InlineError, Sheet, StatusDot, Switch, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
+import { Button, DataTable, Dialog, FieldText, EmptyState, InlineError, Sheet, StatusDot, Switch, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -238,7 +238,7 @@ function StationSheet({ state, live, outletId, brandName, onClose }: { state: Sh
           <>
             <SheetSection>
               {/* Not a choice: the outlet belongs to one brand, and so does everything under it. */}
-              {brandName ? <DescriptionList layout="grid" items={[{ term: "Brand", detail: brandName }]} /> : null}
+              {brandName ? <FieldText label="Brand">{brandName}</FieldText> : null}
               <RhfSelect
                 control={form.control}
                 name="home"

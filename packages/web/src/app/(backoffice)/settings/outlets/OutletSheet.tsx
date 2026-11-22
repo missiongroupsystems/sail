@@ -2,7 +2,7 @@
 
 import { useConfirm } from "@/components/backoffice/Confirm";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, DescriptionList, InlineError, Sheet, Switch, TextField, FieldsLocked } from "@sail/ui";
+import { Button, FieldText, InlineError, Sheet, Switch, TextField, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -169,7 +169,7 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
         <SheetSection>
           <RhfTextField control={form.control} name="name" label="Name" isRequired placeholder="Brand · Location" autoFocus={!outlet} />
           {brandShown ? (
-            <DescriptionList layout="grid" items={[{ term: "Brand", detail: brandShown }]} />
+            <FieldText label="Brand">{brandShown}</FieldText>
           ) : brandChoice ? (
             <RhfSelect
               control={form.control}

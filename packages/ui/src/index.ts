@@ -31,6 +31,7 @@ export { LocaleProvider, useLocale } from "./lib/locale";
 export { sortTaxes, taxRows, type TaxAmountLike, type TaxRow } from "./lib/tax";
 export { soldOutText } from "./lib/sold-out";
 export { outletOwnName } from "./lib/outlet-name";
+export { FieldText } from "./components/FieldText";
 export { mentionsAllergy, ALLERGY_NOTE_CLASS } from "./lib/allergy";
 export { makeLocaleFormat, localeFromAcceptLanguage, deviceLocale, deviceTimeZone, type LocaleFormat, type LocaleSettings, type MoneyFormatOptions } from "./lib/locale-format";
 export { StatusDot, type StatusDotProps, type Status } from "./components/StatusDot";
