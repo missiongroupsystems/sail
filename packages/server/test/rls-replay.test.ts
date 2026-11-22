@@ -66,6 +66,17 @@ describe("RLS replay", () => {
     expect(bad, `tables without RLS policies: ${bad.join(", ")}`).toEqual([]);
   });
 
+  it("a session with no brand setting sees no outlets: brand scope fails closed", async () => {
+    const n = await db.sql.begin(async (tx) => {
+      await tx`select set_config('app.current_merchant', ${A.merchantId}, true), set_config('app.current_outlets', '*', true), set_config('app.current_principal', ${A.admin.id}, true), set_config('app.current_principal_type', 'staff', true)`;
+      await tx.unsafe("set local role app_authenticated");
+      const [row] = await tx.unsafe<{ n: number }[]>("select count(*)::int as n from outlets");
+      return row!.n;
+    });
+    expect(n).toBe(0);
+    expect(await countAs("app_authenticated", A.merchantId, "*", A.admin.id, "outlets")).toBeGreaterThan(0);
+  });
+
   it("merchants table is scoped by its own id", async () => {
     expect(await countAs("app_authenticated", A.merchantId, "*", A.admin.id, "merchants")).toBe(1);
   });
