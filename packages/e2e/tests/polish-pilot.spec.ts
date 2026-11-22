@@ -135,7 +135,13 @@ test.describe("back office and POS together", () => {
     });
 
     await test.step("the three hints are on the form, not behind a menu", async () => {
-      await expect(sheet.getByText("Component: an item used inside other items, such as a bundle or recipe part. It isn't sold on its own.")).toBeVisible();
+      // The Kind hint describes the kind chosen: Product for a new item, Component once that is picked.
+      await expect(sheet.getByText("Sold on its own. Choose Component for an item used only inside other items, such as a bundle or recipe part.")).toBeVisible();
+      await sheet.getByRole("button", { name: /Kind/ }).click();
+      await page.getByRole("option", { name: /Component/ }).click();
+      await expect(sheet.getByText("An item used inside other items, such as a bundle or recipe part. It isn't sold on its own.")).toBeVisible();
+      await sheet.getByRole("button", { name: /Kind/ }).click();
+      await page.getByRole("option", { name: /^Product/ }).click();
       await expect(sheet.getByText("Charges a returnable-container deposit, set up in Pricing › Rules.")).toBeVisible();
       await expect(sheet.getByText("Staff enter the price when they add the item.")).toBeVisible();
     });

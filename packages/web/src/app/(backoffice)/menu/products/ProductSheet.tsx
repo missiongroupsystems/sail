@@ -100,6 +100,8 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
   // A second product of the same name is allowed but said, rather than saved silently (live-test E-L15).
   const all = useAllProducts({ include_archived: "false" }, state !== null);
   const typedName = (useWatch({ control: form.control, name: "name" }) ?? "").trim();
+  // The hint under Kind is about the kind chosen, with the other one named in a few words.
+  const kind = useWatch({ control: form.control, name: "kind" });
   const sameName = typedName ? ((all.data ?? []).find((p) => p.id !== product?.id && p.name.trim().toLowerCase() === typedName.toLowerCase())?.name ?? null) : null;
   const [warnings, setWarnings] = useState<string[]>([]);
   const reset = form.reset;
@@ -184,7 +186,7 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
                 { id: "product", label: "Product", description: "Sold on its own." },
                 { id: "component", label: "Component", description: "A modifier option or part; not sold alone." },
               ]}
-              description="Component: an item used inside other items, such as a bundle or recipe part. It isn't sold on its own."
+              description={kind === "component" ? "An item used inside other items, such as a bundle or recipe part. It isn't sold on its own." : "Sold on its own. Choose Component for an item used only inside other items, such as a bundle or recipe part."}
             />
             <RhfTextField control={form.control} name="kitchen_name" label="Kitchen name" description="Printed on kitchen tickets instead of the name." />
           </div>
