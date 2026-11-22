@@ -1,7 +1,7 @@
 "use client";
 
 import { ALLERGY_NOTE_CLASS, Button, ConnectionIndicator, cx, deviceLocale, deviceTimeZone, Icon, InlineError, LocaleProvider, mentionsAllergy, Pill, SegmentedControl, useLocale, type ConnectionStatus, type LocaleSettings } from "@sail/ui";
-import { AlertTriangle, Ban, Check, ChefHat, ChevronLeft, ChevronRight, Circle, Flame, Pencil, RotateCcw } from "lucide-react";
+import { AlertTriangle, Ban, Check, ChefHat, ChevronLeft, ChevronRight, Flame, Pencil, RotateCcw } from "lucide-react";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button as AriaButton } from "react-aria-components";
@@ -163,15 +163,10 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
       <header className="flex h-14 shrink-0 items-center gap-x-4 border-b border-rule bg-surface px-5 max-[1180px]:gap-x-3 max-[960px]:gap-x-2 max-[960px]:px-4">
         {/* The left group gives way (its name truncates first, then the group clips); the right group never leaves the screen. */}
         <div className="flex min-w-0 flex-1 items-center gap-x-4 overflow-hidden max-[1180px]:gap-x-3 max-[960px]:gap-x-2">
-        <h1 className="flex shrink-0 items-center gap-2 max-[1180px]:sr-only font-heading text-[18px] font-semibold text-ink">
-          <Icon icon={ChefHat} size={20} />
-          {/* Below a wide screen the heading is for screen readers only: the station's own name beside it has the room (C-11). */}
-          <span className="max-[1180px]:sr-only">Kitchen</span>
-        </h1>
-        {/* The station's name takes the room left over, on up to two lines, and truncates past that (whole on hover). */}
-        <p className="min-w-[4.5rem] flex-1 text-[14px] leading-tight text-ink-2 line-clamp-2" title={station.name}>
+        {/* The station's name is the screen's one name: it takes the room left over, on up to two lines, and truncates past that (whole on hover). */}
+        <h1 className="min-w-[4.5rem] flex-1 font-heading text-[18px] leading-tight font-semibold text-ink line-clamp-2" title={station.name}>
           {station.name}
-        </p>
+        </h1>
         <p className="flex shrink-0 items-center gap-2 text-[14.5px] text-ink">
           <span className="tabular">{open.length === 1 ? "1 ticket" : `${open.length} tickets`}{earlierView ? " from earlier days" : ""}</span>
           {lateCount > 0 ? <Pill tone="alert">{lateCount} late</Pill> : null}
@@ -202,7 +197,8 @@ function Tickets({ station, warn, late }: { station: Station; warn: number; late
         </AriaButton>
         <SegmentedControl aria-label="Theme" options={THEMES} selectedId={mode} onSelect={(id) => setMode(id as ThemeMode)} className="shrink-0 p-0.5" />
         <span className="shrink-0 text-[15px] whitespace-nowrap text-ink tabular">{clock(new Date(now))}</span>
-        <ConnectionIndicator status={status} />
+        {/* Online is the normal state: the indicator shows only when the screen is reconnecting or offline, and stays a live region for screen readers. */}
+        <ConnectionIndicator status={status} className={status === "online" ? "sr-only" : undefined} />
       </header>
       <div className="flex min-h-0 flex-1">
         {/* Tickets run down each column to the foot of the screen and on into the next, oldest first; columns past the edge
@@ -346,8 +342,10 @@ function TicketCard({ ticket: t, now, warn, late, pending, onBump }: { ticket: K
   const title = ticketTitle(t);
   // A round the guest ordered by QR code says so; the name with it is whoever accepted it, not who took the order (final review C Low).
   const fromQr = t.lines.length > 0 && t.lines.every((l) => l.source === "guest");
-  const meta = [t.order_type === "dine_in" ? t.order_no : ORDER_TYPE_LABEL[t.order_type as keyof typeof ORDER_TYPE_LABEL], t.ready_by ? `Ready by ${clock(t.ready_by)}` : null, t.pax ? `${t.pax} ${t.pax === 1 ? "guest" : "guests"}` : null, fromQr ? (t.server_name ? `QR order, accepted by ${t.server_name}` : "QR order") : t.server_name, t.round_no > 1 ? `round ${t.round_no}` : null].filter(Boolean).join(" · ");
-  const state = cancelled ? { label: "Cancelled", tone: "alert" as const, icon: Ban } : voided ? { label: "Voided", tone: "alert" as const, icon: Ban } : t.status === "recalled" ? { label: "Recalled", tone: "seated" as const, icon: RotateCcw } : t.status === "in_progress" ? { label: "In progress", tone: "sent" as const, icon: Flame } : { label: "New", tone: "seated" as const, icon: Circle };
+  // A table's title is its name; the order number is not read in the kitchen, so only other order types show their type.
+  const meta = [t.order_type === "dine_in" ? null : ORDER_TYPE_LABEL[t.order_type as keyof typeof ORDER_TYPE_LABEL], t.ready_by ? `Ready by ${clock(t.ready_by)}` : null, t.pax ? `${t.pax} ${t.pax === 1 ? "guest" : "guests"}` : null, fromQr ? (t.server_name ? `QR order, accepted by ${t.server_name}` : "QR order") : t.server_name, t.round_no > 1 ? `round ${t.round_no}` : null].filter(Boolean).join(" · ");
+  // A pill marks the exception: every ticket arrives new, and its age is in the timer.
+  const state = cancelled ? { label: "Cancelled", tone: "alert" as const, icon: Ban } : voided ? { label: "Voided", tone: "alert" as const, icon: Ban } : t.status === "recalled" ? { label: "Recalled", tone: "seated" as const, icon: RotateCcw } : t.status === "in_progress" ? { label: "In progress", tone: "sent" as const, icon: Flame } : null;
   return (
     <AriaButton
       data-ticket
@@ -389,10 +387,12 @@ function TicketCard({ ticket: t, now, warn, late, pending, onBump }: { ticket: K
         ))}
       </span>
       <span className="flex items-center justify-between gap-2 border-t border-rule px-3 py-2.5">
-        <Pill tone={state.tone} icon={state.icon}>
-          {state.label}
-        </Pill>
-        <span aria-hidden className="flex h-11 min-w-[104px] items-center justify-center rounded-full bg-primary px-5 text-[15px] font-semibold text-on-primary">
+        {state ? (
+          <Pill tone={state.tone} icon={state.icon}>
+            {state.label}
+          </Pill>
+        ) : null}
+        <span aria-hidden className="ml-auto flex h-11 min-w-[104px] items-center justify-center rounded-full bg-primary px-5 text-[15px] font-semibold text-on-primary">
           {clear ? "Clear" : "Bump"}
         </span>
       </span>

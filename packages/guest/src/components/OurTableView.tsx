@@ -1,10 +1,10 @@
 "use client";
 
-import { BrandButton, Icon, InlineError, Pill, useLocale } from "@sail/ui";
+import { BrandButton, Icon, InlineError, Pill, useLocale, type RoundStage } from "@sail/ui";
 import { ReceiptText, Utensils } from "lucide-react";
 import type { ApiError } from "@/lib/api";
 import { lineStatusLabel, lineStatusTone, roundStage, showsPayPrompt } from "@/lib/status";
-import type { GuestLine, GuestSession, OrderView } from "@/lib/types";
+import type { GuestLine, GuestOrder, GuestSession, OrderView } from "@/lib/types";
 import { Dock, PageHeader } from "./Shell";
 import { TotalsPanel } from "./TotalsPanel";
 import { hasBilledLines, hasWaitingRound, LineText, RoundHead, stagePill, WaitingTotal } from "./StatusView";
@@ -23,6 +23,14 @@ export type OurTableViewProps = {
 const pillTone = { sent: "sent", paid: "paid", seated: "seated", "ink-2": "neutral" } as const;
 const yours = <span className="shrink-0 rounded-chip bg-surface-2 px-2 py-0.5 font-sans text-[12px] font-medium text-ink-2">Yours</span>;
 
+/** The round stage a line's own status says, or null for a removed line (which always says so). */
+function lineStage(line: GuestLine, order: GuestOrder | null): RoundStage | null {
+  if (line.status === "held") return "sent";
+  if (line.status === "pending") return "accepted";
+  if (line.status === "fired") return line.kitchen_done || order?.status === "completed" ? "done" : "preparing";
+  return null;
+}
+
 /** "Our table": everything the table has ordered, a card per round with its stage, statuses on each line, this guest's items marked. */
 export function OurTableView({ session, orderView, loading, error, onBack, onCallStaff, onOrderMore }: OurTableViewProps) {
   const { clock } = useLocale();
@@ -33,17 +41,27 @@ export function OurTableView({ session, orderView, loading, error, onBack, onCal
   const staffLines = lines.filter((l) => !inRound.has(l.id));
 
   // "Yours" once per round: on the round's header when the round is this guest's, on a line only where the round is not (D notes).
-  const renderLine = (l: GuestLine, roundIsMine = false) => (
-    <li key={l.id} className="flex flex-col gap-1 py-3">
-      <LineText line={l} struck={l.status === "voided"} />
-      <span className="flex items-center gap-2">
-        <Pill size="sm" tone={pillTone[lineStatusTone(l, order)]}>
-          {lineStatusLabel(l, order)}
-        </Pill>
-        {l.mine && !roundIsMine ? yours : null}
-      </span>
-    </li>
-  );
+  // A line's status pill shows only where it differs from its round's pill (removed, or done before the rest); a line
+  // staff added is in no round, so it always has one.
+  const renderLine = (l: GuestLine, roundIsMine = false, roundStageOf: RoundStage | null = null) => {
+    const pill = roundStageOf == null || lineStage(l, order) !== roundStageOf;
+    const mark = l.mine && !roundIsMine;
+    return (
+      <li key={l.id} className="flex flex-col gap-1 py-3">
+        <LineText line={l} struck={l.status === "voided"} />
+        {pill || mark ? (
+          <span className="flex items-center gap-2">
+            {pill ? (
+              <Pill size="sm" tone={pillTone[lineStatusTone(l, order)]}>
+                {lineStatusLabel(l, order)}
+              </Pill>
+            ) : null}
+            {mark ? yours : null}
+          </span>
+        ) : null}
+      </li>
+    );
+  };
 
   return (
     <>
@@ -82,7 +100,7 @@ export function OurTableView({ session, orderView, loading, error, onBack, onCal
               {stage === "rejected" && r.reject_reason ? <p className="px-4 pb-2 text-[13.5px] text-status-alert wrap-anywhere">Not accepted: {r.reject_reason}</p> : null}
               {rl.length ? (
                 <div className="border-t border-rule-subtle px-4">
-                  <ul className="flex flex-col divide-y divide-rule-subtle">{rl.map((l) => renderLine(l, r.mine))}</ul>
+                  <ul className="flex flex-col divide-y divide-rule-subtle">{rl.map((l) => renderLine(l, r.mine, stage))}</ul>
                   <WaitingTotal round={r} />
                 </div>
               ) : null}

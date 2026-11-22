@@ -69,7 +69,6 @@ export function OrdersScreen() {
             setView(id as "open" | "today");
             if (id === "today") setSeenToday(true);
           }} />
-          {view === "today" ? <span className="text-body text-ink-2">Tap a done order for Refund, Reopen and receipts.</span> : null}
           <span className="flex-1" />
           {/* A station without a brand has no menu to sell from: the orders already open still pay and refund here. */}
           {hasNoBrand(station) ? (
@@ -99,7 +98,8 @@ export function OrdersScreen() {
         <SegmentedControl
           aria-label="Order type"
           className="shrink-0 self-start"
-          options={TYPE_FILTERS.map((t) => ({ id: t, label: t === "all" ? "All" : ORDER_TYPE_LABEL[t], count: query.data ? (t === "all" ? inView.length : inView.filter((o) => o.order_type === t).length) : undefined }))}
+          // A type with no orders in view is left out; the one picked stays, so its empty state can say so.
+          options={TYPE_FILTERS.filter((t) => t === "all" || t === type || !query.data || inView.some((o) => o.order_type === t)).map((t) => ({ id: t, label: t === "all" ? "All" : ORDER_TYPE_LABEL[t], count: query.data ? (t === "all" ? inView.length : inView.filter((o) => o.order_type === t).length) : undefined }))}
           selectedId={type}
           onSelect={(id) => setType(id as "all" | OrderType)}
         />
@@ -122,7 +122,7 @@ export function OrdersScreen() {
             ) : view === "open" ? (
               <EmptyState variant="centred" icon={ShoppingBag} title="No open orders" hint={hasNoBrand(station) ? "Orders opened on a table appear here." : "Orders opened on a table appear here. Tap New order to start a takeaway, pickup or delivery."} />
             ) : (
-              <EmptyState variant="centred" icon={ClipboardList} title="Nothing closed yet today" hint="Paid and cancelled orders from this business day appear here." />
+              <EmptyState variant="centred" icon={ClipboardList} title="Nothing closed yet today" />
             )}
           </div>
         ) : null}

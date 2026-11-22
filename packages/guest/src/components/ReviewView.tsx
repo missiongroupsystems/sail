@@ -185,18 +185,11 @@ export function ReviewView({ session, menu, items, guestName, onGuestName, canOr
               Add more items
             </BrandButton>
             <AriaTextField value={guestName} onChange={onGuestName} maxLength={40} autoComplete="given-name" isDisabled={sending} className="flex flex-col gap-3">
-              <Label className="flex items-baseline justify-between gap-3">
-                <span className="font-display text-[16px] font-semibold tracking-tight text-ink">
-                  Your name<span className="sr-only"> (optional)</span>
-                </span>
-                <span aria-hidden className="text-[13px] text-ink-3">
-                  Optional
-                </span>
-              </Label>
+              <Label className="font-display text-[16px] font-semibold tracking-tight text-ink">Your name (optional)</Label>
               <Text slot="description" className="sr-only">
                 So staff know whose order it is
               </Text>
-              <Input placeholder="So staff know whose order it is" className="h-12 w-full scroll-mb-40 rounded-sheet border border-transparent bg-surface-2 px-4 text-[16px] text-ink outline-none placeholder:text-ink-3 focus:border-rule-strong focus:bg-surface disabled:text-ink-disabled" />
+              <Input className="h-12 w-full scroll-mb-40 rounded-sheet border border-transparent bg-surface-2 px-4 text-[16px] text-ink outline-none placeholder:text-ink-3 focus:border-rule-strong focus:bg-surface disabled:text-ink-disabled" />
             </AriaTextField>
             <p className="text-[13.5px] leading-relaxed text-ink-3">{priceNote(tax)}</p>
           </>

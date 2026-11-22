@@ -127,13 +127,13 @@ test("G1–G3: round 2 stays Preparing after round 1 is bumped; the banner follo
       const o = await register<{ data: { status: string } }>("GET", `/v1/orders/${order.id}`);
       test.info().annotations.push({ type: "order status after round 2", description: o.data.status });
       const latest = phone.getByRole("region", { name: "Latest order" });
-      // The pill and the timeline's current step both say Preparing; "Done" is only the timeline's step still to come.
-      await expect(latest.getByText("Preparing", { exact: true })).toHaveCount(2);
+      // The timeline's current step says Preparing, once (the banner says it in words); "Done" is only the timeline's step still to come.
+      await expect(latest.getByText("Preparing", { exact: true })).toHaveCount(1);
       await expect(latest.getByText("Done", { exact: true })).toHaveCount(1);
       await expect(phone.getByText("The kitchen is preparing it.")).toBeVisible();
       await expect(phone.getByRole("region", { name: "Table total" })).not.toContainText("On the bill so far");
       await shot(phone, out("G1-phone-round2-preparing.png"));
-      await phone.getByRole("button", { name: /^Our table/ }).click();
+      await phone.getByRole("button", { name: /^See the whole table/ }).click();
       await expect(phone.getByRole("heading", { name: "Our table" })).toBeVisible();
       await shot(phone, out("G1-phone-our-table.png"));
     });

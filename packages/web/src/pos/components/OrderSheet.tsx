@@ -173,7 +173,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
         {empty ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
             <Icon icon={Utensils} size={22} className="text-ink-2" />
-            <p className="max-w-[30ch] text-body text-ink-2">No items yet. Tap an item on the left to start this order.</p>
+            <p className="max-w-[30ch] text-body text-ink-2">No items yet</p>
           </div>
         ) : null}
         {pendingRounds.map((r, i) => {
@@ -208,7 +208,7 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
         })}
         {newLines.length ? (
           <>
-            <GroupHeader label="New" detail="not sent yet" />
+            <GroupHeader label="New" />
             {newLines.map((l) => row(l, "new"))}
           </>
         ) : null}
@@ -223,7 +223,8 @@ export function OrderSheet({ order, actions, rules, activeSeat, onSeat, onLine, 
           const ps = printStatusFor(firedAt);
           return (
             <div key={round}>
-              <GroupHeader label={`Sent ${firedAt ? clock(firedAt) : ""}`} detail={`round ${round}${ps === "late" ? " · ⚠ not printed" : ""}`} action={{ label: "Reprint", onPress: () => onReprintRound({ number: round, firedAt }), isDisabled: offline }} />
+              {/* The round number only tells rounds apart, so it shows once there is a second one. */}
+              <GroupHeader label={`Sent ${firedAt ? clock(firedAt) : ""}`} detail={[rounds.length > 1 ? `round ${round}` : null, ps === "late" ? "⚠ not printed" : null].filter(Boolean).join(" · ") || undefined} action={{ label: "Reprint", onPress: () => onReprintRound({ number: round, firedAt }), isDisabled: offline }} />
               {lines.map((l) => row(l, l.status === "voided" ? (l.fired_at ? "voided" : "removed") : "sent", ps))}
             </div>
           );

@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, Checkbox, Money, SegmentedControl, Sheet, Skeleton, taxRows, type BillCardLine, type BillCardRow, type LocaleFormat, useLocale } from "@sail/ui";
+import { Badge, Button, Checkbox, Money, SegmentedControl, Sheet, Skeleton, taxRows, type BillCardLine, type BillCardRow, useLocale } from "@sail/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import type { CheckSnapshot, OrderSnapshot, SnapshotLine } from "../api/types";
@@ -32,12 +32,6 @@ function detectMode(order: OrderSnapshot): Mode {
 }
 
 export const shareText = (share: string) => FRACTIONS[share] ?? (share === "1" ? "" : share);
-
-/** "$13.50 each", or "$13.50 or $13.48 each" when the register's even shares differ by a cent. */
-function shareSummary(totals: number[], money: LocaleFormat["money"]): string {
-  const distinct = [...new Set(totals)].sort((a, b) => b - a);
-  return `${distinct.map((t) => money(t)).join(" or ")} each`;
-}
 
 /** The register's label already names the seat of a by-seat bill ("Bill 1 · Seat 1"). */
 export function billLabel(check: CheckSnapshot): string {
@@ -275,8 +269,8 @@ export function BillScreen({ orderId }: { orderId: string }) {
         <section className="flex min-w-0 flex-1 flex-col">
           {mode === "even" ? (
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 pt-1">
+              {/* Each bill's Pay names its share; the footer says when the register is still working it out. */}
               <EvenChips value={evenN ?? snap.checks.length} min={Math.max(2, keepAtLeast)} onChange={changeEven} />
-              {inFlight ? <span className="text-caption text-ink-2">Checking…</span> : snap.checks[0] ? <span className="text-caption text-ink-2 tabular">{shareSummary(snap.checks.map((c) => c.totals.total), money)}</span> : null}
             </div>
           ) : null}
           {mode === "seat" ? (

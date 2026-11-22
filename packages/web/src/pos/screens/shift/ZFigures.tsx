@@ -64,7 +64,7 @@ export function ZFigures({ report, title }: { report: { data?: ZReport | ZReport
                 {adjustments}
               </section>
               <section className={group}>
-                <h3 className={head}>{`Refunds · ${r.refunds.count}`}</h3>
+                <h3 className={head}>Refunds</h3>
                 <dl>
                   {rows(blocks.refunds)}
                   {blocks.tipsBack && (tipsOn || blocks.tipsBack.amount) ? rows([blocks.tipsBack]) : null}
