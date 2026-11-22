@@ -31,6 +31,7 @@ test("POS: pair, sign in, shift, order, split, cash and card, refund with a mana
 
   await test.step("seat a free table for two", async () => {
     await page.getByRole("button", { name: "Floor", exact: true }).click();
+    await expect(page.getByRole("list", { name: "Table status legend" })).toBeVisible();
     await page.getByRole("button", { name: /^Table \d+, Free/ }).first().click();
     await page.getByRole("button", { name: "2 guests", exact: true }).click();
     await expect(page.getByRole("navigation", { name: "Menu sections" })).toBeVisible();

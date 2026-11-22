@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus, Volume2, VolumeX } from "lucide-react";
-import { Button, Icon, NowRail, QuantityStepper, Sheet, Skeleton, TableShape, type NowItem, useLocale } from "@sail/ui";
+import { Button, Icon, NowRail, QuantityStepper, Sheet, Skeleton, StatusLegend, TableShape, type NowItem, useLocale } from "@sail/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import { idempotencyKey, toApiError } from "@/lib/api";
@@ -47,7 +47,7 @@ function tone(kind: "new" | "alert") {
 
 /**
  * The floor plan: area tabs, tables drawn at their positions with
- * status as colour + icon, pax and elapsed time, and the Now rail
+ * status as colour + icon, pax and elapsed time, the legend, and the Now rail
  * with QR orders, table requests and ready pickups, each with its action inline.
  */
 export function FloorScreen() {
@@ -232,6 +232,7 @@ export function FloorScreen() {
             </Button>
           </div>
           <FloorCanvas tables={tables} now={now} receivedAt={receivedAt} disabled={opening} onTable={(t) => (t.order ? openOrderScreen(t.order.id, "floor") : offline ? notify({ text: "Offline", remedy: "Seating a table needs the register. Reconnecting…", tone: "alert" }) : setSeating(t))} />
+          <StatusLegend className="min-h-8 shrink-0" />
         </section>
         <NowRail
           className="max-[960px]:h-[300px] max-[960px]:w-auto"
