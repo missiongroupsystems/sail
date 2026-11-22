@@ -1,13 +1,15 @@
 "use client";
 
 import { createContext, useContext, type ReactNode } from "react";
-import type { Me, Merchant } from "./api/types";
+import type { Brand, Me, Merchant } from "./api/types";
 import type { Scope } from "./cookies";
 
 export type Session = {
   me: Me;
   merchant: Merchant;
   scope: Scope;
+  /** The brands this person can see; the one in scope names the outlets a page lists. */
+  brands: Brand[];
 };
 
 const SessionContext = createContext<Session | null>(null);

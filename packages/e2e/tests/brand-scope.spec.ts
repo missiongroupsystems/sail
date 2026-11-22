@@ -8,6 +8,8 @@ import { devLocal, expect, register, test, TWIN_ADMIN, WEB } from "./fixtures";
  */
 type Twin = { brands: { A: string; B: string }; outlets: Record<"A1" | "A2" | "B1" | "B2", { id: string; name: string; paid: number; ref: string }> };
 const NAMES = { A: "Harbour Noodles", B: "Quay Coffee", A1: "Harbour Noodles · Pier", A2: "Harbour Noodles · Market", B1: "Quay Coffee · Dock", B2: "Quay Coffee · Arcade" } as const;
+/** An outlet's own name: what its chip shows once its brand is in scope. */
+const ownName = (key: "A1" | "A2" | "B1" | "B2") => NAMES[key].slice(NAMES[key[0] as "A" | "B"].length + 3);
 const twin = <T>(method: string, path: string, body?: unknown) => register<T>(method, path, body, TWIN_ADMIN);
 const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
@@ -128,20 +130,20 @@ test.describe("brand scope", () => {
     await test.step("the choice is there after a reload, and the page's outlet row is the brand's, with the chosen one marked", async () => {
       await page.goto(`${WEB}/floor`);
       await expect(picker).toHaveAccessibleName(`Scope: Twin Group ▸ ${NAMES.B} ▸ ${NAMES.B1}`);
-      await expect(outletsRow(page).getByRole("button")).toHaveText([NAMES.B2, NAMES.B1]);
-      await expect(outletsRow(page).getByRole("button", { name: NAMES.B1 })).toHaveAttribute("aria-current", "true");
+      await expect(outletsRow(page).getByRole("button")).toHaveText([ownName("B2"), ownName("B1")]);
+      await expect(outletsRow(page).getByRole("button", { name: ownName("B1") })).toHaveAttribute("aria-current", "true");
       await expect(page.getByRole("application", { name: "Floor plan for Room B1" })).toBeVisible();
     });
 
     await test.step("choosing in the row is the same choice: the picker follows, and the next page too", async () => {
       await expect(async () => {
-        await outletsRow(page).getByRole("button", { name: NAMES.B2 }).click({ timeout: 5_000 });
+        await outletsRow(page).getByRole("button", { name: ownName("B2") }).click({ timeout: 5_000 });
         await expect(page.getByRole("application", { name: "Floor plan for Room B2" })).toBeVisible({ timeout: 5_000 });
       }).toPass({ timeout: 120_000 });
       // The row remembers the choice as the picker does; the picker shows it once the page has read it back.
       await expect(picker).toHaveAccessibleName(`Scope: Twin Group ▸ ${NAMES.B} ▸ ${NAMES.B2}`);
       await page.goto(`${WEB}/printing/printers`);
-      await expect(outletsRow(page).getByRole("button", { name: NAMES.B2 })).toHaveAttribute("aria-current", "true");
+      await expect(outletsRow(page).getByRole("button", { name: ownName("B2") })).toHaveAttribute("aria-current", "true");
     });
 
     await test.step("a remembered brand that is not there (archived, or not this merchant's) falls back the same way", async () => {
@@ -149,7 +151,7 @@ test.describe("brand scope", () => {
       await context.addCookies([{ ...cookie, value: JSON.stringify({ brandId: crypto.randomUUID(), outletId: g.outlets.B1.id }) }]);
       await page.goto(`${WEB}/floor`);
       await expect(picker).toHaveAccessibleName(`Scope: Twin Group ▸ ${NAMES.A} ▸ All outlets`);
-      await expect(outletsRow(page).getByRole("button")).toHaveText([NAMES.A2, NAMES.A1]);
+      await expect(outletsRow(page).getByRole("button")).toHaveText([ownName("A2"), ownName("A1")]);
     });
   });
 
@@ -168,7 +170,7 @@ test.describe("brand scope", () => {
           const others = [...theirs, ...mine.filter((k) => k !== key)].map((k) => g.outlets[k]);
 
           await page.goto(`${WEB}/orders?range=all`);
-          await expect(outletsRow(page).getByRole("button")).toHaveText(mine.map((k) => NAMES[k]).sort((a, b) => a.localeCompare(b)));
+          await expect(outletsRow(page).getByRole("button")).toHaveText(mine.map((k) => ownName(k)).sort((a, b) => a.localeCompare(b)));
           await expect(page.getByRole("main")).toContainText(own.ref, { timeout: 60_000 });
           for (const o of others) await expect(page.getByRole("main")).not.toContainText(o.ref);
 
