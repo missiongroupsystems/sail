@@ -143,7 +143,9 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, sail, pg_temp AS $$
 DECLARE
   outlet_brand uuid;
 BEGIN
-  SELECT brand_id INTO outlet_brand FROM outlets WHERE id = NEW.outlet_id;
+  -- With a key share lock: a change of the outlet's brand being made (outlets.update locks the outlet) commits first,
+  -- and this row is then checked against the new brand.
+  SELECT brand_id INTO outlet_brand FROM outlets WHERE id = NEW.outlet_id FOR KEY SHARE;
   IF outlet_brand IS NULL THEN
     RETURN NEW;
   END IF;

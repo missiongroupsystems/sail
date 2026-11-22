@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import "../src/modules.js";
 import { buildApp, type App } from "../src/app.js";
@@ -89,6 +90,93 @@ describe("an outlet has one brand", () => {
     expect(withOrders.body.details).toMatchObject({ reason: "outlet_has_orders", field: "brand_id" });
     // Its other details still change.
     expect((await call("PATCH", `/v1/outlets/${traded}`, { token: t, body: { name: "Traded, renamed" } })).status).toBe(200);
+  });
+});
+
+describe("an outlet's brand lock sees every brand and holds under concurrent orders", () => {
+  let n = 0;
+  const rawOrder = (sql: postgres.Sql, outletId: string, brandId: string, linkId: string) =>
+    sql`insert into orders (id, merchant_id, outlet_id, brand_id, channel_link_id, channel, order_type, order_no, business_date, tax_mode, tax_rounding, tax_rates)
+      values (${randomUUID()}, ${A.merchantId}, ${outletId}, ${brandId}, ${linkId}, 'pos', 'takeaway', ${`LOCK-${++n}`}, '2026-11-20', 'exclusive', 'per_line', '[]'::jsonb)`;
+  const aLink = async () => (await db.sql<{ id: string }[]>`insert into channel_links (merchant_id, channel, outlet_id, brand_id, menu_id, enabled) values (${A.merchantId}, 'scan_to_order', ${A.outletId}, ${A.brandId}, ${menu}, false) on conflict do nothing returning id`)[0]?.id ?? (await db.sql<{ id: string }[]>`select id from channel_links where outlet_id = ${A.outletId} and brand_id = ${A.brandId} limit 1`)[0]!.id;
+
+  it("an order of a brand the caller cannot see still holds the outlet on its brand", async () => {
+    const t = A.admin.token;
+    const third = randomUUID();
+    const outlet = randomUUID();
+    expect((await call("POST", "/v1/brands", { token: t, body: { id: third, name: "Third brand" } })).status).toBe(201);
+    expect((await call("POST", "/v1/outlets", { token: t, body: { id: outlet, brand_id: A.brandId, name: "Legacy order outlet" } })).status).toBe(201);
+    // An order from before the rule, of the other brand: written with the triggers off, as 0057 left such orders.
+    const legacy = postgres(db.url, { max: 1, onnotice: () => {} });
+    try {
+      await legacy.begin(async (q) => {
+        await q`set local session_replication_role = replica`;
+        await rawOrder(q, outlet, other, await aLink());
+      });
+    } finally {
+      await legacy.end({ timeout: 5 });
+    }
+    await db.sql`update staff set brand_ids = ${db.sql.array([A.brandId, third])}::uuid[] where id = ${A.admin.id}`;
+    try {
+      const r = await call<Refusal>("PATCH", `/v1/outlets/${outlet}`, { token: t, body: { brand_id: third } });
+      expect(r.status, JSON.stringify(r.body)).toBe(409);
+      expect(r.body.details).toMatchObject({ reason: "outlet_has_orders" });
+    } finally {
+      await db.sql`update staff set brand_ids = '{}' where id = ${A.admin.id}`;
+    }
+    expect((await db.sql<{ brand_id: string }[]>`select brand_id from outlets where id = ${outlet}`)[0]!.brand_id).toBe(A.brandId);
+  });
+
+  it("an order being opened while the brand changes either holds the outlet or is refused, never left on the old brand", async () => {
+    const t = A.admin.token;
+    const link = await aLink();
+    // 1. The order is written first and commits while the change waits: the change is refused.
+    const first = randomUUID();
+    expect((await call("POST", "/v1/outlets", { token: t, body: { id: first, brand_id: A.brandId, name: "Race, order first" } })).status).toBe(201);
+    const orderer = postgres(db.url, { max: 1, onnotice: () => {} });
+    try {
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      const opened = orderer.begin(async (q) => {
+        await rawOrder(q, first, A.brandId, link);
+        await held;
+      });
+      await new Promise((r) => setTimeout(r, 200));
+      const change = call<Refusal>("PATCH", `/v1/outlets/${first}`, { token: t, body: { brand_id: other } });
+      await new Promise((r) => setTimeout(r, 300));
+      release();
+      await opened;
+      const r = await change;
+      expect(r.status, JSON.stringify(r.body)).toBe(409);
+      expect(r.body.details).toMatchObject({ reason: "outlet_has_orders" });
+    } finally {
+      await orderer.end({ timeout: 5 });
+    }
+
+    // 2. The change holds the outlet first and commits while the order waits: the order is refused.
+    const second = randomUUID();
+    expect((await call("POST", "/v1/outlets", { token: t, body: { id: second, brand_id: A.brandId, name: "Race, change first" } })).status).toBe(201);
+    const mover = postgres(db.url, { max: 1, onnotice: () => {} });
+    const late = postgres(db.url, { max: 1, onnotice: () => {} });
+    try {
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      const moved = mover.begin(async (q) => {
+        await q`select id from outlets where id = ${second} for update`;
+        await q`update outlets set brand_id = ${other} where id = ${second}`;
+        await held;
+      });
+      await new Promise((r) => setTimeout(r, 200));
+      const order = rawOrder(late, second, A.brandId, link).then(() => null, (e: Error) => e);
+      await new Promise((r) => setTimeout(r, 300));
+      release();
+      await moved;
+      expect((await order)?.message).toMatch(/belongs to brand/);
+    } finally {
+      await mover.end({ timeout: 5 });
+      await late.end({ timeout: 5 });
+    }
+    expect((await db.sql<{ n: number }[]>`select count(*)::int as n from orders where outlet_id = ${second}`)[0]!.n).toBe(0);
   });
 });
 

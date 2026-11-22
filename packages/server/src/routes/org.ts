@@ -379,15 +379,20 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
     const body = c.req.valid("json");
     if (Object.keys(body).length === 0) throw AppError.validation("Nothing to update");
     if (body.brand_id !== undefined) {
-      const [current] = await db().select({ brandId: outlets.brandId }).from(outlets).where(and(eq(outlets.id, id), eq(outlets.merchantId, p.merchantId))).limit(1);
+      // Locked: an order, station or channel being written at this outlet commits first (and is seen below) or waits and
+      // finds the new brand (the brand trigger reads the outlet with a key share lock).
+      const [current] = await db().select({ brandId: outlets.brandId }).from(outlets).where(and(eq(outlets.id, id), eq(outlets.merchantId, p.merchantId))).limit(1).for("update");
       if (!current) throw AppError.notFound("outlet", id);
       if (current.brandId !== body.brand_id) {
         await merchantBrand(p.merchantId, body.brand_id);
-        // Orders keep the brand they were taken under, and so do their reports: an outlet that has traded stays with its brand.
-        const [traded] = await db().select({ id: orders.id }).from(orders).where(eq(orders.outletId, id)).limit(1);
+        // Both checks see every brand's rows: an order or channel of a brand the caller cannot see holds the outlet too.
+        const [traded, linked] = await withEveryOutlet(async () => [
+          // Orders keep the brand they were taken under, and so do their reports: an outlet that has traded stays with its brand.
+          (await db().select({ id: orders.id }).from(orders).where(eq(orders.outletId, id)).limit(1))[0],
+          // A channel sells one of its brand's menus, so it cannot simply follow the outlet to another brand.
+          (await db().select({ id: channelLinks.id }).from(channelLinks).where(eq(channelLinks.outletId, id)).limit(1))[0],
+        ]);
         if (traded) throw new AppError("state_conflict", "This outlet has orders, so its brand cannot change", { remedy: "Add a new outlet for the other brand, and archive this one when it is no longer used.", details: { reason: "outlet_has_orders", field: "brand_id" } });
-        // A channel sells one of its brand's menus, so it cannot simply follow the outlet to another brand.
-        const [linked] = await db().select({ id: channelLinks.id }).from(channelLinks).where(eq(channelLinks.outletId, id)).limit(1);
         if (linked) throw new AppError("state_conflict", "This outlet has channels set up for its brand, so its brand cannot change", { remedy: "Add a new outlet for the other brand, and archive this one.", details: { reason: "outlet_has_channels", field: "brand_id" } });
         // The outlet first, then what is under it: the database keeps a station on its outlet's brand.
         await db().update(outlets).set({ brandId: body.brand_id }).where(and(eq(outlets.id, id), eq(outlets.merchantId, p.merchantId)));
