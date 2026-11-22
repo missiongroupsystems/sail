@@ -6,7 +6,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 import { label, ORDER_TYPE_LABEL } from "@/components/backoffice/labels";
-import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
+import { choosableOutlets, OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
 import { isLate, JobRowActions, RerouteDialog, useJobMutations } from "@/components/backoffice/PrintJobActions";
 import { boKeys, can, formatElapsed, plural, REQUEST_TYPE_LABEL, type FloorSnapshot, type GuestRound, type PrintJob, type ServiceRequest, type Shift, type ZReport, type ZReportWithheld, isWithheld, shiftLabel } from "@/components/backoffice/register";
 import { RelayStatus } from "@/components/backoffice/RelayPairingPanel";
@@ -99,9 +99,11 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
   return (
     <>
       {/* The page is live: no clock or refresh note, and a failed fetch says so below. */}
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <OutletChoice outlets={outlets} scope={scope} outletId={outletId} onChange={setOutletId} />
-      </div>
+      {choosableOutlets(outlets, outletId).length > 1 ? (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <OutletChoice outlets={outlets} scope={scope} outletId={outletId} onChange={setOutletId} />
+        </div>
+      ) : null}
 
       {outlets.length === 0 ? (
         <EmptyState

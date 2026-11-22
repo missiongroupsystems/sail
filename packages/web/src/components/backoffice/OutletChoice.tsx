@@ -14,23 +14,21 @@ export function useOutletChoice(outlets: Outlet[], scope: Scope, initial: string
   return { outletId: scoped?.id ?? outletId, setOutletId, scoped };
 }
 
+/** The outlets a page's outlet row offers: the live ones, and the chosen one even when archived. */
+export function choosableOutlets(outlets: Outlet[], outletId: string | null) {
+  return outlets.filter((o) => !o.archived || o.id === outletId);
+}
+
 /**
  * The outlets of the brand in scope, as one row at the top of a page that works per outlet, with the chosen one
  * marked. It is the scope picker's outlet choice laid out flat: choosing here changes the page at once and is
- * remembered the same way, so the picker and every other page follow. A long row scrolls sideways. One outlet is
- * named, not offered as a choice.
+ * remembered the same way, so the picker and every other page follow. A long row scrolls sideways. With one outlet
+ * or none there is nothing to choose, and it renders nothing: the page's own empty state covers none.
  */
 export function OutletChoice({ outlets, scope, outletId, onChange }: { outlets: Outlet[]; scope: Scope; outletId: string | null; onChange: (id: string | null) => void }) {
   const router = useRouter();
-  const live = outlets.filter((o) => !o.archived || o.id === outletId);
-  if (live.length < 2) {
-    return (
-      <p className="min-h-11 py-2.5">
-        <span className="text-ink-2">Outlet </span>
-        <span className="text-ink">{live[0]?.name ?? "none yet"}</span>
-      </p>
-    );
-  }
+  const live = choosableOutlets(outlets, outletId);
+  if (live.length < 2) return null;
   const choose = (id: string) => {
     onChange(id);
     if (id === scope.outletId) return;
