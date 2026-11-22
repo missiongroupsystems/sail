@@ -282,7 +282,10 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "brands.list", method: "get", path: "/v1/brands", tags: ["organisation"], request: { query: z.object({ include_archived: z.enum(["true", "false"]).optional() }) }, responses: { 200: jsonResponse(listResponse(BrandSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const q = c.req.valid("query");
-    const where = q.include_archived === "true" ? eq(brands.merchantId, p.merchantId) : and(eq(brands.merchantId, p.merchantId), isNull(brands.archivedAt));
+    // Someone limited to some brands is offered those brands only: the scope picker, the forms and the lists never
+    // name a brand they cannot use.
+    const scope = brandScopeFor(p);
+    const where = and(eq(brands.merchantId, p.merchantId), q.include_archived === "true" ? undefined : isNull(brands.archivedAt), scope === "*" ? undefined : inArray(brands.id, scope.split(",")));
     const rows = await db().select().from(brands).where(where).orderBy(asc(brands.name));
     return c.json({ data: rows.map(toBrand), next_cursor: null }, 200);
   });

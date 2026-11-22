@@ -313,7 +313,7 @@ export interface paths {
         };
         /**
          * List brands
-         * @description Brands of the caller's merchant.
+         * @description Brands of the caller's merchant; for someone limited to some brands, those brands only.
          */
         get: operations["brands.list"];
         put?: never;

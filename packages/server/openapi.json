@@ -5858,7 +5858,7 @@
           "organisation"
         ],
         "operationId": "brands.list",
-        "description": "Brands of the caller's merchant.",
+        "description": "Brands of the caller's merchant; for someone limited to some brands, those brands only.",
         "summary": "List brands",
         "x-sail": {
           "op": "brands.list",

@@ -216,6 +216,21 @@ describe("brand scope reaches the outlet and what is under it", () => {
     }
   });
 
+  it("someone limited to a brand is offered that brand only, archived ones included", async () => {
+    await db.sql`update staff set brand_ids = ${db.sql.array([other])}::uuid[] where id = ${A.manager.id}`;
+    try {
+      for (const q of ["", "?include_archived=true"]) {
+        const r = await call<{ data: { id: string }[] }>("GET", `/v1/brands${q}`, { token: A.manager.token });
+        expect(r.status).toBe(200);
+        expect(r.body.data.map((b) => b.id)).toEqual([other]);
+      }
+    } finally {
+      await db.sql`update staff set brand_ids = '{}' where id = ${A.manager.id}`;
+    }
+    const all = await call<{ data: { id: string }[] }>("GET", "/v1/brands", { token: A.manager.token });
+    expect(all.body.data.map((b) => b.id)).toEqual(expect.arrayContaining([A.brandId, other]));
+  });
+
   it("limited to a brand and to an outlet of another brand, a person sees no outlet at all, never every outlet", async () => {
     await db.sql`update staff set brand_ids = ${db.sql.array([other])}::uuid[], outlet_ids = ${db.sql.array([A.outletId])}::uuid[] where id = ${A.cashier.id}`;
     try {
