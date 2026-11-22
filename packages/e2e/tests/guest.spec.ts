@@ -50,7 +50,7 @@ test("guest: a QR order from the table arrives on the POS, is accepted, and show
 
   await test.step("the phone shows the round accepted, its lines under the round and marked as the guest's", async () => {
     await expect(phone.getByRole("list", { name: "Order progress" })).toBeVisible();
-    await phone.getByRole("button", { name: /^Our table/ }).click();
+    await phone.getByRole("button", { name: /^See the whole table/ }).click();
     const round = phone.getByRole("region", { name: /^Order sent / });
     await expect(round).toContainText("Laksa (Prawn)");
     await expect(round).toContainText("Kopi");

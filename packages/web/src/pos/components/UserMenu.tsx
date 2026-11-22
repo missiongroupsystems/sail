@@ -9,7 +9,7 @@ import { useNavStore } from "../state/nav";
 import { useSessionStore } from "../state/session";
 import { useThemeStore } from "../state/ui";
 
-/** Name and role in the top bar: Switch user, theme, Sign out. */
+/** Name in the top bar, role in its menu: Switch user, theme, Sign out. */
 export function UserMenu() {
   const api = useApi();
   const staff = useSessionStore((s) => s.staff);
@@ -41,10 +41,7 @@ export function UserMenu() {
   return (
     <MenuTrigger>
       <Button variant="quiet" size="md" aria-label={`${staff.name}, ${ROLE_LABEL[staff.role] ?? staff.role}. Open user menu`} className="min-h-12! gap-1.5! pr-2! pl-3!">
-        <span className="flex flex-col items-end leading-tight">
-          <span className="text-[14px] font-medium text-ink">{staff.name}</span>
-          <span className="text-[12px] font-normal text-ink-3">{ROLE_LABEL[staff.role] ?? staff.role}</span>
-        </span>
+        <span className="text-[14px] font-medium text-ink">{staff.name}</span>
         <Icon icon={ChevronDown} size={16} className="text-ink-2" />
       </Button>
       <Menu minWidth={260} onAction={onAction}>

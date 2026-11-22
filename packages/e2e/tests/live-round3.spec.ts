@@ -76,7 +76,9 @@ test("R new 2: the POS Z-report keeps one basis per block, with the back office'
   await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Shift", exact: true }).click();
   const figures = page.getByRole("region", { name: "Z-report · figures so far" });
   await expect(figures.getByRole("heading", { name: "Sales", exact: true })).toBeVisible();
-  await expect(figures.getByRole("heading", { name: /^Refunds · \d+$/ })).toBeVisible();
+  // The block's count is in its Refunded row, not again in the heading.
+  await expect(figures.getByRole("heading", { name: "Refunds", exact: true })).toBeVisible();
+  await expect(figures.getByText(/^Refunded \(\d+ refunds?\)$/)).toBeVisible();
   await expect(figures.getByRole("heading", { name: "After refunds", exact: true })).toBeVisible();
   for (const label of ["Net before refunds", "Collected", "Net refunded", "Net sales", "Collected after refunds"]) await expect(figures.getByText(label, { exact: true })).toBeVisible();
   // Net sales sits in the after-refunds block only, never beside the before-refunds Collected.

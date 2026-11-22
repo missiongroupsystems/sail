@@ -60,7 +60,7 @@ export function DayPanel({ className, layout = "panel" }: { className?: string; 
     : !canCloseDay
       ? "Closing the business day needs a Manager."
       : shiftsOpen > 0
-        ? `Close the business day once every shift is closed (${shiftsOpen === 1 ? "1 shift is" : `${shiftsOpen} shifts are`} open). The register snapshots the Z-report.`
+        ? `Close every shift first (${shiftsOpen} open).`
         : "Close the business day once every shift is closed. The register snapshots the Z-report.";
   // Secondary: the screen's one primary is the shift's own action (Open shift or Close shift).
   const button = (

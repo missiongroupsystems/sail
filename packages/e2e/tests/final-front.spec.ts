@@ -58,7 +58,7 @@ test("guest: the register's totals before sending, and the tax note from the fir
   await test.step("after sending, the table shows the same amounts for those lines", async () => {
     await phone.getByRole("button", { name: /^Send 3 items/ }).click();
     await expect(phone.getByRole("heading", { name: "Order sent" })).toBeVisible();
-    await phone.getByRole("button", { name: /^Our table/ }).click();
+    await phone.getByRole("button", { name: /^See the whole table/ }).click();
     const round = phone.getByRole("region", { name: /^Order sent / });
     await expect(round).toContainText("$36.00");
     await expect(round).toContainText("$1.80");

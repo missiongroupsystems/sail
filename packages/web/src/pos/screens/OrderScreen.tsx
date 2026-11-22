@@ -64,7 +64,8 @@ export function OrderScreen({ orderId }: { orderId: string }) {
   const meta = snap
     ? [
         snap.pax ? `${snap.pax} ${snap.pax === 1 ? "guest" : "guests"}` : null,
-        ORDER_TYPE_LABEL[snap.order_type],
+        // A table already says dine-in; a takeaway, pickup or delivery keeps its type.
+        snap.order_type === "dine_in" ? null : ORDER_TYPE_LABEL[snap.order_type],
         snap.customer_ref?.name ?? null,
         closed ? `Done ${snap.completed_at ? clock(snap.completed_at) : ""}` : snap.ready_by ? `ready by ${clock(snap.ready_by)}` : formatElapsed((now - new Date(snap.opened_at).getTime()) / 1000),
       ]

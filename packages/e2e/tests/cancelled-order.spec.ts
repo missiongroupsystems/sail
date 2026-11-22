@@ -55,7 +55,7 @@ test("a QR round rejected on the order it opened: the phone asks for no payment,
       await phone.reload();
       await expect(phone.getByRole("heading", { name: "Order not accepted" })).toBeVisible();
       await expect(phone.getByText("Pay at the counter or ask your server for the bill.")).toHaveCount(0);
-      await phone.getByRole("button", { name: /^Our table/ }).click();
+      await phone.getByRole("button", { name: /^See the whole table/ }).click();
       await expect(phone.getByText("Pay at the counter or ask your server for the bill.")).toHaveCount(0);
       await shot(phone, test.info().outputPath("phone-our-table.png"));
     });

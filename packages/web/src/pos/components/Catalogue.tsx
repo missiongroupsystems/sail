@@ -159,11 +159,8 @@ function ModifierSheet({ product, orderType, onClose, onAdd }: { product: Compil
         </>
       }
     >
-      {/* The item's section and its price before choices (the "Mains · $16.00" row). */}
-      <div className="mb-5 flex items-baseline justify-between gap-3">
-        <span className="text-body text-ink-2">{menu.menu.sections.find((sec) => sec.items.some((i) => i.product_id === product.id))?.name ?? ""}</span>
-        <span className="font-heading text-[17px] font-semibold text-ink tabular">{money(priceFor(product, orderType))}</span>
-      </div>
+      {/* The item's price before choices; its section is the one it was picked from. */}
+      <p className="mb-5 font-heading text-[17px] font-semibold text-ink tabular">{money(priceFor(product, orderType))}</p>
       <ModifierPicker menu={menu} product={product} selection={selection} onChange={setSelection} />
       <section className="mt-6" aria-label="Notes for the kitchen">
         <h3 className="mb-2 text-[16px] font-medium text-ink">Notes</h3>

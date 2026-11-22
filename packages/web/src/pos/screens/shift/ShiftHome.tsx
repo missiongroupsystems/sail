@@ -317,7 +317,7 @@ export function ShiftHome({ onShowReport, onCounting }: { onShowReport: () => vo
         title="Open shift"
         sub={
           <>
-            No shift is open on this station. Open one with the float in the drawer; cash taken here is then counted against it.
+            Count the float in the drawer to open.
             {lastClosed ? ` Last close: ${money(lastClosed.float_cents)} float${lastClosed.closed_at ? `, ${clock(lastClosed.closed_at)}` : ""}.` : ""}
           </>
         }
@@ -355,13 +355,8 @@ export function ShiftHome({ onShowReport, onCounting }: { onShowReport: () => vo
       }
     >
       <dl>
+        {/* Expected cash and the variance come after the blind count at the close. */}
         <Row label="Opening float" cents={mine.float_cents} />
-        <div className="flex min-h-10 items-center justify-between gap-3">
-          {/* The register works out expected cash for this shift at the close, after the blind count. */}
-          <dt className="text-body text-ink-2">Expected and variance</dt>
-          <dd className="text-body text-ink-2">after the count</dd>
-        </div>
-        {mine.float_counts ? <p className="pt-1 text-caption text-ink-2">Float counted by denomination at open.</p> : null}
       </dl>
     </Card>
   );

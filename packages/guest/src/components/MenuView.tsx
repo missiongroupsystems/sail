@@ -6,7 +6,7 @@ import { Button as AriaButton, Input, SearchField } from "react-aria-components"
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BasketItem } from "@/lib/basket";
 import type { CompiledMenu, CompiledProduct, CompiledSection, GuestSession, OrderView } from "@/lib/types";
-import { roundStage, showsPayPrompt } from "@/lib/status";
+import { roundStage } from "@/lib/status";
 import { stagePill } from "./StatusView";
 import { priceNote } from "./priceNote";
 import type { Quote } from "./useQuote";
@@ -150,7 +150,6 @@ export function MenuView({ session, menu, canOrder, basketItems, basketQuote, or
       <div className="flex min-w-0 items-center gap-3">
         {menu.brand.logo_url ? <img src={menu.brand.logo_url} alt="" className="size-11 shrink-0 rounded-tile object-contain" /> : null}
         <div className="min-w-0">
-          <p className="truncate text-[13px] font-medium text-ink-3">{session.outlet.name}</p>
           <h1 tabIndex={-1} className="truncate font-display text-[26px] leading-tight font-semibold tracking-tight text-ink outline-none">
             {menu.brand.name}
           </h1>
@@ -255,10 +254,8 @@ export function MenuView({ session, menu, canOrder, basketItems, basketQuote, or
             ))}
           </section>
         ))}
-        <div className="mx-4 mt-8 flex flex-col gap-1 rounded-sheet bg-surface-2 px-4 py-3.5 text-[13.5px] leading-relaxed text-ink-2">
-          <p>{priceNote(orderView?.tax)}</p>
-          {showsPayPrompt(orderView) ? <p>Pay at the counter or ask your server for the bill.</p> : null}
-        </div>
+        {/* How paying works is said on the order status and Our table, once there is something to pay for. */}
+        <p className="mx-4 mt-8 rounded-sheet bg-surface-2 px-4 py-3.5 text-[13.5px] leading-relaxed text-ink-2">{priceNote(orderView?.tax)}</p>
       </main>
 
       {canOrder && basketCount > 0 ? <BasketBar count={basketCount} quote={basketQuote} onPress={onReview} /> : null}

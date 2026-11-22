@@ -44,8 +44,6 @@ export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupE
   const [showErrorFor, setShowErrorFor] = useState<string | null>(null);
 
   const groups = topGroups(menu, product);
-  // The menu section the item sits in ("Noodles"), under its name.
-  const category = menu.menu.sections.find((sec) => sec.items.some((i) => i.product_id === product.id))?.name ?? null;
   const unmet = unmetRequirement(menu, product, selection);
   const maxQty = product.cap_remaining != null ? Math.max(1, Math.min(MAX_QTY, product.cap_remaining)) : MAX_QTY;
 
@@ -131,14 +129,7 @@ export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupE
       isOpen={isOpen}
       onOpenChange={onOpenChange}
       title={product.name}
-      description={
-        category || product.description ? (
-          <span className="flex flex-col gap-1">
-            {category ? <span className="text-ink-3">{category}</span> : null}
-            {product.description ? <span className="wrap-anywhere">{product.description}</span> : null}
-          </span>
-        ) : undefined
-      }
+      description={product.description ? <span className="wrap-anywhere">{product.description}</span> : undefined}
       className={groups.length ? "h-[92dvh]" : undefined}
       footer={
         <div className="flex items-center gap-3">
@@ -160,10 +151,7 @@ export function ItemSheet({ isOpen, onOpenChange, menu, product, editing, groupE
       }
     >
       <div className="flex flex-col gap-6">
-        <div className="flex items-baseline gap-2 text-[15px] text-ink-2">
-          <Money cents={product.price} size="heading" className="font-heading text-[18px] font-semibold text-ink" />
-          <span>each</span>
-        </div>
+        <Money cents={product.price} size="heading" className="font-heading text-[18px] font-semibold text-ink" />
         {groups.map((g) => renderGroup(g))}
         <AriaTextField value={notes} onChange={setNotes} maxLength={200} className="flex flex-col gap-2">
           <Label className="flex items-baseline justify-between gap-3">
