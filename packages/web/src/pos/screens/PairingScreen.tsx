@@ -116,12 +116,13 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
       <TextField label={`Name for this ${device}`} value={label} onChange={setLabel} placeholder="Bar iPad" inputClassName="min-h-14 text-line" maxLength={80} />
     </div>
   );
-  // The error once, in one line. How to get a code is the line above.
-  const alert = problem ? (
-    <p role="alert" className="text-body text-status-alert">
+  // The error once. How to get a code is the line above. Its two lines are kept free while there is none, so the block,
+  // centred on the screen, does not move the field under a finger when an error appears or changes length.
+  const alert = (
+    <p role="alert" className="min-h-[2lh] text-body text-status-alert">
       {problem}
     </p>
-  ) : null;
+  );
   const button = (
     <Button variant="primary" size="lg" isDisabled={code.length !== 6 || !label.trim()} isPending={pending} onPress={() => void pair()} className="w-full data-[disabled]:bg-transparent!">
       Pair this {device}
