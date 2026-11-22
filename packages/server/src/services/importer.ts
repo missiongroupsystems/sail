@@ -182,7 +182,19 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               const lid = get(row, "legacy_id") || get(row, "name");
               const name = get(row, "name");
               if (!name) throw new Error("name is required");
-              const { id } = await upsert("outlets", lid, { name, address: get(row, "address") || null, phone: get(row, "phone") || null, business_registration_no: get(row, "business_registration_no") || null, tax_registration_no: get(row, "tax_registration_no") || null, business_day_cutoff: get(row, "business_day_cutoff") || null });
+              // An outlet belongs to one brand: the row's, the file's default, or the merchant's only brand. An outlet
+              // that is already there keeps its brand: an import does not move an outlet to another brand.
+              const brandKey = get(row, "brand_legacy_id") || mapping.options?.brand_legacy_id || "";
+              const named = brandKey ? refOrName("brands", brandKey, "brand") : null;
+              const [there] = await sql.unsafe<{ brand_id: string }[]>(`select brand_id from outlets where merchant_id = $1 and legacy_id = $2 limit 1`, [merchantId, lid]);
+              if (there && named && named !== there.brand_id) throw new Error("an outlet's brand cannot be changed by an import: change it in Settings > Outlets");
+              let brandId = there?.brand_id ?? named;
+              if (!brandId) {
+                const live = await sql.unsafe<{ id: string }[]>(`select id from brands where merchant_id = $1 and archived_at is null`, [merchantId]);
+                if (live.length !== 1) throw new Error(live.length === 0 ? "brand_legacy_id is required: the merchant has no brand yet (import brands first)" : "brand_legacy_id is required: the merchant has more than one brand");
+                brandId = live[0]!.id;
+              }
+              const { id } = await upsert("outlets", lid, { brand_id: brandId, name, address: get(row, "address") || null, phone: get(row, "phone") || null, business_registration_no: get(row, "business_registration_no") || null, tax_registration_no: get(row, "tax_registration_no") || null, business_day_cutoff: get(row, "business_day_cutoff") || null });
               legacy.outlets!.set(lid, id);
               break;
             }

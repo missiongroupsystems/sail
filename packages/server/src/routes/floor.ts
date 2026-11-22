@@ -3,7 +3,7 @@ import { and, asc, eq, isNull, type SQL } from "drizzle-orm";
 import { AccessLevelSchema, ChannelTypeSchema, registerOperations } from "@sail/shared";
 import { db, tx } from "../db/client.js";
 import { paymentProvider } from "../payments/provider.js";
-import { areas, channelLinks, posLayouts, tables, tenderTypes, voidReasons, type LayoutPage, type LayoutTile } from "../db/schema/index.js";
+import { areas, channelLinks, outlets, posLayouts, tables, tenderTypes, voidReasons, type LayoutPage, type LayoutTile } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z } from "../lib/openapi.js";
@@ -131,7 +131,7 @@ export function floorRoutes(app: OpenAPIHono<AppEnv>) {
   });
 
   const LinkSchema = z.object({ id: z.string(), channel: ChannelTypeSchema, outlet_id: z.string(), brand_id: z.string(), menu_id: z.string(), enabled: z.boolean(), hold_orders: z.boolean(), open_on_first_scan: z.boolean(), service_requests: z.array(z.string()), service_request_printer_id: z.string().nullable() });
-  const LinkCreate = z.object({ id: z.uuid().optional(), channel: ChannelTypeSchema, outlet_id: z.uuid(), brand_id: z.uuid(), menu_id: z.uuid(), enabled: z.boolean().optional(), hold_orders: z.boolean().optional(), open_on_first_scan: z.boolean().optional(), service_requests: z.array(z.string().min(1)).max(5).optional(), service_request_printer_id: z.uuid().nullable().optional() });
+  const LinkCreate = z.object({ id: z.uuid().optional(), channel: ChannelTypeSchema, outlet_id: z.uuid(), brand_id: z.uuid().optional().describe("The outlet's brand. May be left out; another brand is refused."), menu_id: z.uuid(), enabled: z.boolean().optional(), hold_orders: z.boolean().optional(), open_on_first_scan: z.boolean().optional(), service_requests: z.array(z.string().min(1)).max(5).optional(), service_request_printer_id: z.uuid().nullable().optional() });
   defineCrud(app, {
     group: "channel_links",
     path: "/v1/channel-links",
@@ -146,6 +146,13 @@ export function floorRoutes(app: OpenAPIHono<AppEnv>) {
     // A paired station reads its POS link before anyone signs in, to warm the menu on the lock screen.
     roles: { read: null },
     principals: { read: ["staff", "station", "agent"] },
+    // A channel is on its outlet's brand: the brand may be left out, and another brand is refused.
+    prepareCreate: async (values) => {
+      const [outlet] = await db().select({ brandId: outlets.brandId }).from(outlets).where(eq(outlets.id, values["outletId"] as string)).limit(1);
+      if (!outlet) throw AppError.notFound("outlet", values["outletId"] as string);
+      if (values["brandId"] && values["brandId"] !== outlet.brandId) throw AppError.validation("A channel is on its outlet's brand", { remedy: "Leave brand_id out, or send the outlet's brand. To sell another brand, set the channel up at one of that brand's outlets.", details: { field: "brand_id" } });
+      values["brandId"] = outlet.brandId;
+    },
     listQuery: z.object({ channel: ChannelTypeSchema.optional(), brand_id: z.uuid().optional() }),
     listWhere: (q) => {
       const c: SQL[] = [];
@@ -154,7 +161,7 @@ export function floorRoutes(app: OpenAPIHono<AppEnv>) {
       return c;
     },
     toApi: (r) => ({ id: r.id, channel: r.channel, outlet_id: r.outletId, brand_id: r.brandId, menu_id: r.menuId, enabled: r.enabled, hold_orders: r.holdOrders, open_on_first_scan: r.openOnFirstScan, service_requests: r.serviceRequests, service_request_printer_id: r.serviceRequestPrinterId }),
-    fromCreate: (b) => ({ id: b.id, merchantId: "", channel: b.channel, outletId: b.outlet_id, brandId: b.brand_id, menuId: b.menu_id, enabled: b.enabled ?? true, holdOrders: b.hold_orders ?? true, openOnFirstScan: b.open_on_first_scan ?? false, serviceRequests: b.service_requests ?? [], serviceRequestPrinterId: b.service_request_printer_id ?? null }),
+    fromCreate: (b) => ({ id: b.id, merchantId: "", channel: b.channel, outletId: b.outlet_id, brandId: b.brand_id ?? "", menuId: b.menu_id, enabled: b.enabled ?? true, holdOrders: b.hold_orders ?? true, openOnFirstScan: b.open_on_first_scan ?? false, serviceRequests: b.service_requests ?? [], serviceRequestPrinterId: b.service_request_printer_id ?? null }),
     fromPatch: (b) => compact({ menuId: b.menu_id, enabled: b.enabled, holdOrders: b.hold_orders, openOnFirstScan: b.open_on_first_scan, serviceRequests: b.service_requests, serviceRequestPrinterId: b.service_request_printer_id }),
   });
 

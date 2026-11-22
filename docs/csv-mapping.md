@@ -16,7 +16,7 @@ Values: prices are in the merchant's currency with its own decimals and `.` as t
 | Entity | Required | Optional | Matched by |
 |-|-|-|-|
 | `brands` | `name` | `legacy_id`, `accent_color` (hex) | `legacy_id`, else `name` |
-| `outlets` | `name` | `legacy_id`, `address`, `phone`, `business_registration_no`, `tax_registration_no`, `business_day_cutoff` (HH:MM) | `legacy_id`, else `name` |
+| `outlets` | `name`; `brand_legacy_id` when the merchant has more than one brand | `legacy_id`, `brand_legacy_id` (a legacy id, Sail id or name; without it the outlet takes the merchant's only brand; an outlet already there keeps its brand), `address`, `phone`, `business_registration_no`, `tax_registration_no`, `business_day_cutoff` (HH:MM) | `legacy_id`, else `name` |
 | `categories` | `name` | `legacy_id`, `parent_legacy_id` (parents must appear first), `sort` | `legacy_id`, else `name` |
 | `products` | `name`, `price`, and `sku`, `legacy_id` or `sail_id` | `kind` (`product`/`component`), `description`, `category_legacy_id`, `brand_legacy_id`, `tags`, `has_deposit`, `tax_class` (a tax class name; blank is the merchant's default), `open_price`, `kitchen_name`, `archived`, `price_dine_in`, `price_takeaway`, `price_pickup`, `price_delivery` (a blank cell in a mapped column removes that order type's price) | `sail_id` if it is one of the merchant's products, else `legacy_id` if given, else `sku` |
 | `modifier_groups` | `name` | `legacy_id`, `min_select`, `max_select`, `max_per_modifier` | `legacy_id`, else `name` |

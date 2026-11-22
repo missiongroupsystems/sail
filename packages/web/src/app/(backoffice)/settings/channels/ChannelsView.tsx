@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, DataTable, EmptyState, InlineError, Sheet, TagsField, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
+import { Button, DataTable, EmptyState, InlineError, Sheet, TagsField, TextField, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
@@ -46,12 +46,13 @@ function defaults(l: ChannelLink | null): Values {
 }
 
 /** Channel links: which menu a brand serves at an outlet on each channel, with the Scan to order behaviours. */
-export function ChannelsView({ initialLinks, outlets, brands, menus }: { initialLinks: ChannelLink[]; outlets: Outlet[]; brands: Brand[]; menus: MenuSummary[] }) {
+export function ChannelsView({ initialLinks, outlets, brands, menus, brandId }: { initialLinks: ChannelLink[]; outlets: Outlet[]; brands: Brand[]; menus: MenuSummary[]; /** The brand in scope: the list is its channels. */ brandId: string | null }) {
   const canCreate = useCan("channel_links.create");
   const [sheet, setSheet] = useState<SheetState>(null);
   const links = useQuery({
-    queryKey: keys.channelLinks,
-    queryFn: () => req(api.GET("/v1/channel-links", { params: { query: { include_archived: "true" } } })).then((r) => r.data),
+    // Keyed by the brand, so another brand in the scope picker shows its own list, not the one read before.
+    queryKey: [...keys.channelLinks, brandId],
+    queryFn: () => req(api.GET("/v1/channel-links", { params: { query: { include_archived: "true", brand_id: brandId ?? undefined } } })).then((r) => r.data),
     initialData: initialLinks,
   });
   const outletName = useMemo(() => new Map(outlets.map((o) => [o.id, o.name])), [outlets]);
@@ -118,6 +119,17 @@ function LinkSheet({ state, outlets, brands, menus, onClose }: { state: SheetSta
   useEffect(() => {
     if (state) reset(defaults(state.mode === "edit" ? state.link : null));
   }, [state, reset]);
+  // A channel is on its outlet's brand: choosing the outlet sets it, and the menus offered are that brand's.
+  const outletId = useWatch({ control: form.control, name: "outlet_id" });
+  const outletBrand = outlets.find((o) => o.id === outletId)?.brand_id ?? "";
+  const setValue = form.setValue;
+  useEffect(() => {
+    if (!link && form.getValues("brand_id") !== outletBrand) {
+      setValue("brand_id", outletBrand);
+      // A menu chosen for another outlet's brand is not one of this brand's.
+      setValue("menu_id", "");
+    }
+  }, [link, outletBrand, setValue, form]);
   const brandId = useWatch({ control: form.control, name: "brand_id" });
   const channel = useWatch({ control: form.control, name: "channel" });
   const enabled = useWatch({ control: form.control, name: "enabled" });
@@ -170,7 +182,7 @@ function LinkSheet({ state, outlets, brands, menus, onClose }: { state: SheetSta
           />
           <div className="grid gap-4 sm:grid-cols-2">
             <RhfSelect control={form.control} name="outlet_id" label="Outlet" isDisabled={!!link} items={outlets.map((o) => ({ id: o.id, label: o.name }))} placeholder="Choose an outlet" />
-            <RhfSelect control={form.control} name="brand_id" label="Brand" isDisabled={!!link} items={brands.map((b) => ({ id: b.id, label: b.name }))} placeholder="Choose a brand" />
+            <TextField label="Brand" value={brands.find((b) => b.id === brandId)?.name ?? "—"} isReadOnly description={brandId ? "The outlet's brand." : "Set by the outlet."} />
           </div>
           <RhfSelect control={form.control} name="menu_id" label="Menu" items={brandMenus.map((m) => ({ id: m.id, label: m.name }))} placeholder={brandId ? (brandMenus.length ? "Choose a menu" : "This brand has no menus yet") : "Choose a brand first"} isDisabled={!brandId || brandMenus.length === 0} />
           <RhfSwitch control={form.control} name="enabled" description={enabled ? undefined : "Disabled links stop serving the menu without being deleted."}>

@@ -7,7 +7,7 @@ import { useHydrated } from "../lib/use-hydrated";
 import { Icon } from "./Icon";
 import { Select } from "./Select";
 
-export type ScopeOption = { id: string; name: string; archived?: boolean };
+export type ScopeOption = { id: string; name: string; archived?: boolean; /** On an outlet: the one brand it belongs to. */ brandId?: string };
 export type ScopeValue = { brandId: string | null; outletId: string | null };
 
 export type ScopePickerProps = {
@@ -24,14 +24,17 @@ export type ScopePickerProps = {
 export const ALL = "__all__";
 
 /**
- * Merchant ▸ Brand ▸ Outlet. Every back-office page respects the
- * selection. The merchant is fixed by the sign-in; brand and outlet narrow it.
+ * Merchant ▸ Brand ▸ Outlet. Every back-office page respects the selection. The merchant is fixed by the sign-in.
+ * One brand is always chosen (there is no "All brands"), and the outlets offered are that brand's: one of them, or
+ * all of them. Choosing another brand goes back to all of its outlets.
  */
 export function ScopePicker({ merchantName, brands, outlets, value, onChange, collapsed, className }: ScopePickerProps) {
   const brand = brands.find((b) => b.id === value.brandId) ?? null;
-  const outlet = outlets.find((o) => o.id === value.outletId) ?? null;
-  const brandLabel = brand?.name ?? "All brands";
+  const ofBrand = outlets.filter((o) => !brand || o.brandId === undefined || o.brandId === brand.id);
+  const outlet = ofBrand.find((o) => o.id === value.outletId) ?? null;
+  const brandLabel = brand?.name ?? "No brand yet";
   const outletLabel = outlet?.name ?? "All outlets";
+  const allOutlets = brand ? `All outlets of ${brand.name}` : "All outlets";
   const summary = `${merchantName} ▸ ${brandLabel} ▸ ${outletLabel}`;
   const hydrated = useHydrated();
 
@@ -74,14 +77,16 @@ export function ScopePicker({ merchantName, brands, outlets, value, onChange, co
           </div>
           <Select
             label="Brand"
-            items={[{ id: ALL, label: "All brands" }, ...brands.filter((b) => !b.archived || b.id === value.brandId).map((b) => ({ id: b.id, label: b.name }))]}
-            selectedKey={value.brandId ?? ALL}
-            onSelectionChange={(key) => onChange({ ...value, brandId: key === ALL || key === null ? null : key })}
+            items={brands.filter((b) => !b.archived || b.id === value.brandId).map((b) => ({ id: b.id, label: b.name }))}
+            selectedKey={value.brandId}
+            placeholder="No brand yet"
+            // Another brand has other outlets: the outlet goes back to all of the new brand's.
+            onSelectionChange={(key) => key !== null && key !== value.brandId && onChange({ brandId: key, outletId: null })}
           />
           <Select
             label="Outlet"
-            items={[{ id: ALL, label: "All outlets" }, ...outlets.filter((o) => !o.archived || o.id === value.outletId).map((o) => ({ id: o.id, label: o.name }))]}
-            selectedKey={value.outletId ?? ALL}
+            items={[{ id: ALL, label: allOutlets }, ...ofBrand.filter((o) => !o.archived || o.id === value.outletId).map((o) => ({ id: o.id, label: o.name }))]}
+            selectedKey={outlet?.id ?? ALL}
             onSelectionChange={(key) => onChange({ ...value, outletId: key === ALL || key === null ? null : key })}
           />
         </AriaDialog>

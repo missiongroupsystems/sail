@@ -73,6 +73,10 @@ export const outlets = pgTable(
       .notNull()
       .references(() => merchants.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    /** The one brand this outlet trades as. Its stations, channels and orders carry the same brand. */
+    brandId: uuid("brand_id")
+      .notNull()
+      .references(() => brands.id),
     address: text("address"),
     phone: text("phone"),
     /** Company or business registration number printed on documents, after the merchant's label. */
@@ -89,7 +93,7 @@ export const outlets = pgTable(
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("outlets_merchant_idx").on(t.merchantId)],
+  (t) => [index("outlets_merchant_idx").on(t.merchantId), index("outlets_merchant_brand_idx").on(t.merchantId, t.brandId)],
 );
 
 export const stationHomeEnum = pgEnum("station_home", ["floor", "takeaway"]);

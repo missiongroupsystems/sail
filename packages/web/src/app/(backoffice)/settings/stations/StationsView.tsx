@@ -1,13 +1,14 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, DataTable, Dialog, EmptyState, InlineError, Select, Sheet, StatusDot, Switch, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
+import { Button, DataTable, Dialog, EmptyState, InlineError, Sheet, StatusDot, Switch, TextField, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { greyPill, greyPillAlert, SheetSection } from "@/components/office/parts";
 import { applyServerErrors } from "@/components/office/server-errors";
+import { OutletChoice } from "@/components/backoffice/OutletChoice";
 import { PairingPanel } from "@/components/backoffice/PairingPanel";
 import { RhfCheckboxGroup, RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
@@ -18,28 +19,23 @@ import { keys } from "@/lib/query";
 import { useFreshErrors } from "@/lib/fresh-errors";
 import { useCan } from "@/lib/can";
 
-const NONE = "__none__";
 const HOME_LABEL: Record<string, string> = { floor: "Floor plan", takeaway: "New takeaway order" };
 
 type SheetState = { mode: "create" } | { mode: "edit"; station: Station } | null;
 
-const Schema = z
-  .object({
-    name: z.string().trim().min(1, "Enter a name"),
-    brand_id: z.string(),
-    pay_before_firing: z.boolean(),
-    seats_enabled: z.boolean(),
-    home: z.enum(["floor", "takeaway"]),
-    kind: z.enum(["pos", "display"]),
-    display_destination_ids: z.array(z.string()),
-  })
-  // A POS station sells one brand's menu, so it cannot be saved without one. A kitchen display has no brand.
-  .refine((v) => v.kind === "display" || v.brand_id !== NONE, { path: ["brand_id"], message: "Choose a brand" });
+// A station has no brand of its own to choose: it is on its outlet's brand, shown read-only in the sheet.
+const Schema = z.object({
+  name: z.string().trim().min(1, "Enter a name"),
+  pay_before_firing: z.boolean(),
+  seats_enabled: z.boolean(),
+  home: z.enum(["floor", "takeaway"]),
+  kind: z.enum(["pos", "display"]),
+  display_destination_ids: z.array(z.string()),
+});
 type Values = z.infer<typeof Schema>;
 
-/** A new station starts on the brand in the scope picker, or the merchant's only brand; otherwise the brand is left to choose. */
-function defaults(s: Station | null, brandId: string | null = null): Values {
-  return { name: s?.name ?? "", brand_id: s ? (s.brand_id ?? NONE) : (brandId ?? NONE), pay_before_firing: s?.pay_before_firing ?? false, seats_enabled: s?.seats_enabled ?? true, home: s?.home ?? "floor", kind: s?.kind ?? "pos", display_destination_ids: s?.display_destination_ids ?? [] };
+function defaults(s: Station | null): Values {
+  return { name: s?.name ?? "", pay_before_firing: s?.pay_before_firing ?? false, seats_enabled: s?.seats_enabled ?? true, home: s?.home ?? "floor", kind: s?.kind ?? "pos", display_destination_ids: s?.display_destination_ids ?? [] };
 }
 
 export function StationsView({
@@ -80,7 +76,7 @@ export function StationsView({
           {s.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : null}
         </span>
       ) },
-    { key: "brand_id", header: "Brand", sortable: true, sortValue: (s) => (s.brand_id ? brandName.get(s.brand_id) : ""), render: (s) => (s.brand_id ? <span className="text-ink-2">{brandName.get(s.brand_id) ?? "Unknown brand"}</span> : s.kind === "display" ? <span className="text-ink-2">—</span> : <StatusDot status="alert" label="No brand · cannot take orders" />) },
+    { key: "brand_id", header: "Brand", sortable: true, sortValue: (s) => (s.brand_id ? brandName.get(s.brand_id) : ""), render: (s) => <span className="text-ink-2">{s.brand_id ? (brandName.get(s.brand_id) ?? "Unknown brand") : "—"}</span> },
     { key: "pay_before_firing", header: "Pay before sending", sortable: true, render: (s) => (s.pay_before_firing ? "Yes" : "—") },
     { key: "seats_enabled", header: "Seats", sortable: true, render: (s) => (s.seats_enabled ? "On" : "Off") },
     { key: "home", header: "Home screen", sortable: true, render: (s) => (s.kind === "display" ? (s.display_destination_ids.length ? "Kitchen display (/kds)" : <StatusDot status="alert" label="Kitchen display · shows nothing until a destination is ticked" />) : (HOME_LABEL[s.home] ?? s.home)) },
@@ -92,28 +88,12 @@ export function StationsView({
     },
   ];
 
-  const scopedOutlet = outlets.find((o) => o.id === scope.outletId) ?? null;
 
   return (
     <>
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-4">
-          {scopedOutlet ? (
-            <p className="min-h-11 py-2.5">
-              <span className="text-ink-2">Outlet </span>
-              <span className="text-ink">{scopedOutlet.name}</span>
-              <span className="text-caption text-ink-2"> · from the scope picker</span>
-            </p>
-          ) : (
-            <Select
-              aria-label="Outlet"
-              variant="toolbar" size="sm"
-              items={outlets.map((o) => ({ id: o.id, label: o.name }))}
-              selectedKey={outletId}
-              onSelectionChange={setOutletId}
-              placeholder="Choose an outlet"
-            />
-          )}
+          <OutletChoice outlets={outlets} scope={scope} outletId={outletId} onChange={setOutletId} />
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
           </Switch>
@@ -142,22 +122,22 @@ export function StationsView({
       )}
       <InlineError error={stations.error} className="mt-4" />
 
-      {outletId ? <StationSheet state={sheet} live={sheet?.mode === "edit" ? stations.data?.find((s) => s.id === sheet.station.id) : undefined} outletId={outletId} brands={brands} defaultBrandId={scope.brandId ?? (brands.length === 1 ? brands[0]!.id : null)} onClose={() => setSheet(null)} /> : null}
+      {outletId ? <StationSheet state={sheet} live={sheet?.mode === "edit" ? stations.data?.find((s) => s.id === sheet.station.id) : undefined} outletId={outletId} brandName={brandName.get(outlets.find((o) => o.id === outletId)?.brand_id ?? "") ?? null} onClose={() => setSheet(null)} /> : null}
     </>
   );
 }
 
-function StationSheet({ state, live, outletId, brands, defaultBrandId, onClose }: { state: SheetState; live: Station | undefined; outletId: string; brands: Brand[]; defaultBrandId: string | null; onClose: () => void }) {
+function StationSheet({ state, live, outletId, brandName, onClose }: { state: SheetState; live: Station | undefined; outletId: string; /** The outlet's brand, which every station of the outlet is on. */ brandName: string | null; onClose: () => void }) {
   const qc = useQueryClient();
   const station = state?.mode === "edit" ? state.station : null;
   // The subtitle follows the stations list, which the pairing panel refreshes while a code is out, so it says Paired
   // once the iPad pairs. The form keeps the station it was opened with.
   const now = live ?? station;
-  const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(station, defaultBrandId) });
+  const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(station) });
   const reset = form.reset;
   useEffect(() => {
-    if (state) reset(defaults(state.mode === "edit" ? state.station : null, defaultBrandId));
-  }, [state, reset, defaultBrandId]);
+    if (state) reset(defaults(state.mode === "edit" ? state.station : null));
+  }, [state, reset]);
 
   const settle = async () => {
     await qc.invalidateQueries({ queryKey: ["stations", outletId] });
@@ -176,7 +156,7 @@ function StationSheet({ state, live, outletId, brands, defaultBrandId, onClose }
     mutationFn: async (v) => {
       const display = v.kind === "display";
       // A display shows destinations and has no menu or service settings of its own.
-      const body = display ? { name: v.name.trim(), display_destination_ids: v.display_destination_ids } : { name: v.name.trim(), brand_id: v.brand_id, pay_before_firing: v.pay_before_firing, seats_enabled: v.seats_enabled, home: v.home };
+      const body = display ? { name: v.name.trim(), display_destination_ids: v.display_destination_ids } : { name: v.name.trim(), pay_before_firing: v.pay_before_firing, seats_enabled: v.seats_enabled, home: v.home };
       const res = station
         ? await req(api.PATCH("/v1/stations/{id}", { params: { path: { id: station.id } }, body }))
         : await req(api.POST("/v1/stations", { body: { ...body, kind: v.kind, outlet_id: outletId } }));
@@ -231,11 +211,6 @@ function StationSheet({ state, live, outletId, brands, defaultBrandId, onClose }
       }
     >
       <form id="station-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
-        {station && !station.archived && station.kind === "pos" && !station.brand_id ? (
-          <p role="alert" className="rounded-panel bg-status-alert-tint px-4 py-3 text-[14px] text-ink">
-            This station has no brand, so its iPad cannot take orders. Choose a brand below and save.
-          </p>
-        ) : null}
         {station?.archived ? (
           <p className="rounded-panel bg-surface-2 px-4 py-3 text-[14px] text-ink-2">
             Archived: no device can use it. Restoring brings it back unpaired, so pair the {station.kind === "display" ? "screen" : "iPad"} again afterwards.
@@ -262,15 +237,8 @@ function StationSheet({ state, live, outletId, brands, defaultBrandId, onClose }
         ) : (
           <>
             <SheetSection>
-              <RhfSelect
-                control={form.control}
-                name="brand_id"
-                label="Brand"
-                isRequired
-                placeholder="Choose a brand"
-                description={brands.length === 0 ? "No brands yet. Add one in Settings › Brands first." : undefined}
-                items={brands.map((b) => ({ id: b.id, label: b.name }))}
-              />
+              {/* Not a choice: the outlet belongs to one brand, and so does everything under it. */}
+              <TextField label="Brand" value={brandName ?? "—"} isReadOnly description="The outlet's brand. To sell another brand here, add the station at one of that brand's outlets." />
               <RhfSelect
                 control={form.control}
                 name="home"

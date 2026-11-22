@@ -367,6 +367,10 @@
             "type": "string",
             "format": "uuid"
           },
+          "brand_id": {
+            "type": "string",
+            "format": "uuid"
+          },
           "from": {
             "type": "string",
             "format": "date-time"
@@ -4349,6 +4353,11 @@
               "true",
               "false"
             ]
+          },
+          "brand_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Only this brand's outlets."
           }
         },
         "required": [],

@@ -1,6 +1,5 @@
 import { PageHeader } from "@sail/ui";
-import { req } from "@/lib/api";
-import { getScope, orSignIn, requireApi } from "@/lib/api.server";
+import { getScope, orSignIn, requireApi, scopedOutlets } from "@/lib/api.server";
 import { dateParam, param, reportOutlet, type PageSearchParams } from "@/lib/url-params";
 import { OrdersView } from "./OrdersView";
 
@@ -8,9 +7,9 @@ export const metadata = { title: "Orders" };
 
 export default async function OrdersPage({ searchParams }: { searchParams: PageSearchParams }) {
   const params = await searchParams;
-  const api = await requireApi();
+  await requireApi();
   const scope = await getScope();
-  const outlets = await orSignIn(req(api.GET("/v1/outlets")));
+  const outlets = await orSignIn(scopedOutlets().then((data) => ({ data })));
   const outletId = reportOutlet(outlets.data, scope.outletId, params);
   const order = param(params, "order");
   return (

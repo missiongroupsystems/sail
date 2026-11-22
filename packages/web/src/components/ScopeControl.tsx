@@ -13,17 +13,20 @@ export function ScopeControl({ merchantName, brands, outlets, scope }: { merchan
 
   const change = async (next: ScopeValue) => {
     setValue(next);
-    await fetch("/api/prefs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scope: next }) });
+    // keepalive: the choice is still remembered when the next click leaves the page before the reply.
+    await fetch("/api/prefs", { method: "POST", keepalive: true, headers: { "content-type": "application/json" }, body: JSON.stringify({ scope: next }) });
     router.refresh();
   };
 
+  // The picker offers the chosen brand's outlets only: each outlet says which brand it belongs to.
+  const options = outlets.map((o) => ({ id: o.id, name: o.name, archived: o.archived, brandId: o.brand_id }));
   return (
     <>
       <div className="max-[1099px]:hidden">
-        <ScopePicker merchantName={merchantName} brands={brands} outlets={outlets} value={value} onChange={change} />
+        <ScopePicker merchantName={merchantName} brands={brands} outlets={options} value={value} onChange={change} />
       </div>
       <div className="min-[1100px]:hidden">
-        <ScopePicker merchantName={merchantName} brands={brands} outlets={outlets} value={value} onChange={change} collapsed />
+        <ScopePicker merchantName={merchantName} brands={brands} outlets={options} value={value} onChange={change} collapsed />
       </div>
     </>
   );

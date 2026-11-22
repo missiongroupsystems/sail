@@ -25,7 +25,7 @@ pnpm --filter @sail/web dev            # back office and POS on :3000 (second te
 pnpm --filter @sail/guest dev          # guest app on :3001 (optional, third terminal)
 ```
 
-Open http://localhost:3000 and sign in with `admin@sail.local` (a Singapore demo merchant, GST and SGD) or `admin.eu@sail.local` (a café on the generic EU VAT preset: inclusive VAT at 20% and 10%, EUR). Both use the password `sail-demo-password` and the PIN `123456`.
+Open http://localhost:3000 and sign in with `admin@sail.local` (a Singapore demo merchant, GST and SGD) or `admin.eu@sail.local` (a café on the generic EU VAT preset: inclusive VAT at 20% and 10%, EUR). `admin.twin@sail.local` is a bare group for trying two brands: add a second brand and outlets for each in Settings. All use the password `sail-demo-password` and the PIN `123456`.
 
 On a database with no merchant yet, the back office opens on first-run setup instead: your business, a region preset, the first outlet and your Admin login. [Self-hosting](docs/self-hosting.md#sign-in) covers setup, inviting staff and the external identity provider option.
 

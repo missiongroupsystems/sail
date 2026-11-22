@@ -4,6 +4,19 @@ Notable changes to Sail, newest first. Field and operation names are as in `pack
 
 ## Unreleased
 
+### One brand per outlet, and one brand in view
+- **Upgrade note:** migration 0057 gives every outlet one brand (`outlets.brand_id`, required). It decides each outlet's brand from the outlet's channel links, else its stations, else the brand most of its orders carry, else the merchant's only brand. When the rows that decide name two brands, or nothing decides (an outlet with nothing under it at a merchant with several brands), **the migration stops and names the outlets**; nothing is changed and it can be run again. Before upgrading a merchant with more than one brand, leave each outlet with the stations and channel links of one brand only (an outlet that trades as two brands becomes two outlets). An archived outlet with nothing under it takes the merchant's oldest brand. Every station is then put on its outlet's brand. Orders from before keep the brand they had.
+- `outlets.create` requires `brand_id`; `outlets.update` changes it only while the outlet has no orders and no channels (`state_conflict`, `details.reason` `outlet_has_orders` or `outlet_has_channels`), and the outlet's stations go with it; `outlets.list` takes `brand_id`; outlets carry `brand_id`.
+- A station, a channel link and a new order are on their outlet's brand. `brand_id` may be left out of `stations.create`, `channel_links.create` and `orders.open`; a brand that is not the outlet's is refused (validation, `details.field: "brand_id"`). A station's brand no longer changes on its own, and a kitchen display is on the outlet's brand too. This replaces the required brand of a POS station from the pilot polish round. The same rule is a trigger in the database.
+- Brand scope reaches the outlet: a person or agent limited to some brands sees only those brands' outlets, and nothing under another brand's outlet. `audit.list` takes `brand_id` (entries at that brand's outlets, and the merchant-wide ones).
+- Import: an `outlets` file takes `brand_legacy_id`; without it a new outlet takes the merchant's only brand, and the row is rejected when there are several.
+- **Back office.** The scope picker always has one brand chosen: the last one used, or the merchant's only brand, or the first by name. There is no "All brands". It offers that brand's outlets ("All outlets of <brand>", then each). Pages that work per outlet show the brand's outlets as a row at the top, the chosen one marked; choosing there is the same choice as in the picker.
+  - The brand's own: Products (with the products every brand shares, marked "Shared"), Menus, Channels, Stations.
+  - The brand's outlets: Today, Orders, Floor & QR, Sold out, Printing, the reports, Team (people who can work at one of the brand's outlets) and Changes (the brand's outlets and the whole business).
+  - Shared by all brands, and marked so when the merchant has more than one: Tax, Payment methods, Void reasons, Merchant, Customers, Categories, Modifier groups, Availability, Pricing rules and the Simulator.
+- The outlet form has a required Brand; Settings › Outlets shows it and Settings › Brands lists each brand's outlets. The station and channel forms show the outlet's brand, read only.
+- `dev:local` seeds a third merchant, Twin Group (`admin.twin@sail.local`), for trying two brands.
+
 ### Pilot polish
 What the team hit setting up an outlet from scratch, fixed before the first pilot outlet. No migration.
 - **POS Orders tab.** Open lists every open order of the outlet, tables included (it left out dine-in), with a type filter: All, Dine-in, Takeaway, Pickup, Delivery. The filter applies to Today's closed too.

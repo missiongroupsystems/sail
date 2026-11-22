@@ -101,7 +101,7 @@ export async function createMerchant(tx: TransactionSql, input: BootstrapInput):
   const taxClassIds = await applyPreset(tx, merchantId, preset, input);
   await seedPresetRulesAndTenders(tx, merchantId, preset, taxClassIds);
   await tx`insert into brands (id, merchant_id, name, accent_color) values (${brandId}, ${merchantId}, ${input.brandName ?? input.merchantName}, null)`;
-  await tx`insert into outlets (id, merchant_id, name, hours) values (${outletId}, ${merchantId}, ${input.outletName ?? "Main outlet"}, ${tx.json({ mon: [["11:00", "22:00"]], tue: [["11:00", "22:00"]], wed: [["11:00", "22:00"]], thu: [["11:00", "22:00"]], fri: [["11:00", "23:00"]], sat: [["11:00", "23:00"]], sun: [["11:00", "22:00"]] })})`;
+  await tx`insert into outlets (id, merchant_id, brand_id, name, hours) values (${outletId}, ${merchantId}, ${brandId}, ${input.outletName ?? "Main outlet"}, ${tx.json({ mon: [["11:00", "22:00"]], tue: [["11:00", "22:00"]], wed: [["11:00", "22:00"]], thu: [["11:00", "22:00"]], fri: [["11:00", "23:00"]], sat: [["11:00", "23:00"]], sun: [["11:00", "22:00"]] })})`;
   await tx`insert into stations (id, merchant_id, outlet_id, brand_id, name, seats_enabled) values (${stationId}, ${merchantId}, ${outletId}, ${brandId}, 'Station 1', true)`;
   await tx`insert into staff (id, merchant_id, name, initials, email, role, pin_hash, pin_lookup) values (${adminStaffId}, ${merchantId}, ${input.admin.name}, ${initials(input.admin.name)}, ${input.admin.email}, 'admin', ${input.admin.pin ? hashSecret(input.admin.pin) : null}, ${input.admin.pin ? pinLookup(merchantId, input.admin.pin) : null})`;
   const admin = { id: adminStaffId, merchantId };

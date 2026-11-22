@@ -131,7 +131,7 @@ export function ProductsView({ initialPage, categories, brands, scope }: { initi
     },
     { key: "sku", header: "SKU", sortable: true, width: 130, render: (p) => <span className="text-ink-2 tabular break-words">{p.sku ?? "—"}</span> },
     { key: "category_id", header: "Category", sortable: true, width: "1fr", sortValue: (p) => (p.category_id ? catLabel.get(p.category_id) ?? "" : ""), render: (p) => <Quiet>{p.category_id ? catLabel.get(p.category_id) ?? "—" : "—"}</Quiet> },
-    // One brand would read "All brands" on every row: the column shows only when there is a brand to tell apart.
+    // One brand would read "Shared" on every row: the column shows only when there is a brand to tell apart.
     ...(brands.length > 1
       ? [
           {
@@ -141,7 +141,7 @@ export function ProductsView({ initialPage, categories, brands, scope }: { initi
             sortable: true,
             width: 150,
             sortValue: (p: Product) => (p.brand_id ? brandName.get(p.brand_id) ?? "" : ""),
-            render: (p: Product) => <Quiet className="whitespace-nowrap">{p.brand_id ? brandName.get(p.brand_id) ?? "—" : "All brands"}</Quiet>,
+            render: (p: Product) => <Quiet className="whitespace-nowrap">{p.brand_id ? brandName.get(p.brand_id) ?? "—" : "Shared"}</Quiet>,
           } satisfies DataTableColumn<Product>,
         ]
       : []),
@@ -178,16 +178,7 @@ export function ProductsView({ initialPage, categories, brands, scope }: { initi
     <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <TextField size="sm" aria-label="Search products" type="search" value={q} onChange={setQ} placeholder="Search name or SKU" className="w-full sm:w-[150px] xl:w-[180px]" />
-        {/* A merchant with one brand has nothing to filter by brand; leaving it out keeps the actions on the row at 1024px. */}
-        {brands.length > 1 ? (
-        <Select
-          aria-label="Brand"
-          variant="toolbar" size="sm"
-          selectedKey={brandId ?? ANY}
-          onSelectionChange={(k) => setBrandId(k === ANY ? null : k)}
-          items={[{ id: ANY, label: "All brands" }, ...brands.map((b) => ({ id: b.id, label: b.name }))]}
-        />
-        ) : null}
+        {/* No brand filter here: the list is the brand in the scope picker, with the products every brand shares. */}
         <Select
           aria-label="Category"
           variant="toolbar" size="sm"

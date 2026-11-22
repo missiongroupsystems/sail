@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test as base, type Locator, type Page, type Response } from "@playwright/test";
-import postgres from "postgres";
 
 export const API = process.env.E2E_API_URL ?? "http://localhost:8080";
 export const WEB = process.env.E2E_WEB_URL ?? "http://localhost:3000";
@@ -16,12 +15,13 @@ type DemoMerchant = { merchantId: string; brandId: string; outletId: string; sta
  * What `dev:local` bootstrapped (written by packages/server/scripts/dev-local.ts): the Singapore demo merchant at the
  * top level and the EU VAT café (EUR, de-DE) under `eu`, and the card-terminal simulator's address.
  */
-export function devLocal(): DemoMerchant & { admin_password: string; payment_simulator: string; eu: DemoMerchant } {
+export function devLocal(): DemoMerchant & { admin_password: string; payment_simulator: string; eu: DemoMerchant; /** A group with two brands (brand-scope.spec.ts makes the second brand and its outlets). */ twin: DemoMerchant } {
   return JSON.parse(readFileSync(resolve(import.meta.dirname, "../../server/.dev-local.json"), "utf8"));
 }
 
 export const SG_ADMIN = "admin@sail.local";
 export const EU_ADMIN = "admin.eu@sail.local";
+export const TWIN_ADMIN = "admin.twin@sail.local";
 
 /** A register call as a back-office Admin would make it (signed in with email and password), by default the Singapore demo merchant's. */
 export async function register<T>(method: string, path: string, body?: unknown, adminEmail = SG_ADMIN): Promise<T> {
@@ -174,11 +174,8 @@ export async function enterPairingCode(page: Page, code: string) {
   await page.getByRole("button", { name: "Pair this iPad", exact: true }).click();
 }
 
-/**
- * Pair the POS on this page to a demo merchant's station with a fresh code, then sign in with a PIN. `noBrand`: the
- * station was saved without a brand, so it opens on that message in place of the floor (polish-pilot A2 only).
- */
-export async function pairAndSignIn(page: Page, pin: string, merchant: "sg" | "eu" = "sg", station?: string, opts: { noBrand?: boolean } = {}) {
+/** Pair the POS on this page to a demo merchant's station with a fresh code, then sign in with a PIN. */
+export async function pairAndSignIn(page: Page, pin: string, merchant: "sg" | "eu" = "sg", station?: string) {
   const stationId = station ?? (merchant === "eu" ? devLocal().eu : devLocal()).stationId;
   const { data } = await register<{ data: { code: string } }>("POST", `/v1/stations/${stationId}/pairing-code`, {}, merchant === "eu" ? EU_ADMIN : SG_ADMIN);
   await page.goto(`${WEB}/pos`);
@@ -189,14 +186,4 @@ export async function pairAndSignIn(page: Page, pin: string, merchant: "sg" | "e
   await expect(page.getByRole("button", { name: "Pair this iPad again" })).toBeVisible();
   await keyIn(page, "PIN keys", pin);
   await expect(page.getByRole("navigation", { name: "Destinations" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "This station has no brand" })).toHaveCount(opts.noBrand ? 1 : 0);
-}
-
-/**
- * The development database itself, for a state no register call can make any more (a POS station saved without a
- * brand before brands were required). `dev:local` writes its address to .dev-local.json. Close it with `.end()`.
- */
-export function devDatabase() {
-  const { database_url } = JSON.parse(readFileSync(resolve(import.meta.dirname, "../../server/.dev-local.json"), "utf8")) as { database_url: string };
-  return postgres(database_url, { max: 1, onnotice: () => {} });
 }

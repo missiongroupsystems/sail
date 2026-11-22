@@ -7186,6 +7186,17 @@
             "required": false,
             "name": "include_archived",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Only this brand's outlets."
+            },
+            "required": false,
+            "description": "Only this brand's outlets.",
+            "name": "brand_id",
+            "in": "query"
           }
         ],
         "responses": {
@@ -7205,6 +7216,9 @@
                             "type": "string"
                           },
                           "name": {
+                            "type": "string"
+                          },
+                          "brand_id": {
                             "type": "string"
                           },
                           "address": {
@@ -7273,6 +7287,7 @@
                         "required": [
                           "id",
                           "name",
+                          "brand_id",
                           "address",
                           "phone",
                           "business_registration_no",
@@ -7613,6 +7628,11 @@
                     "type": "string",
                     "minLength": 1
                   },
+                  "brand_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "The brand this outlet trades as. An outlet has exactly one; it can change only while the outlet has no orders."
+                  },
                   "address": {
                     "type": [
                       "string",
@@ -7676,7 +7696,8 @@
                   }
                 },
                 "required": [
-                  "name"
+                  "name",
+                  "brand_id"
                 ]
               }
             }
@@ -7697,6 +7718,9 @@
                           "type": "string"
                         },
                         "name": {
+                          "type": "string"
+                        },
+                        "brand_id": {
                           "type": "string"
                         },
                         "address": {
@@ -7765,6 +7789,7 @@
                       "required": [
                         "id",
                         "name",
+                        "brand_id",
                         "address",
                         "phone",
                         "business_registration_no",
@@ -8144,6 +8169,11 @@
                     "type": "string",
                     "minLength": 1
                   },
+                  "brand_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "The brand this outlet trades as. An outlet has exactly one; it can change only while the outlet has no orders."
+                  },
                   "address": {
                     "type": [
                       "string",
@@ -8230,6 +8260,9 @@
                         "name": {
                           "type": "string"
                         },
+                        "brand_id": {
+                          "type": "string"
+                        },
                         "address": {
                           "type": [
                             "string",
@@ -8296,6 +8329,7 @@
                       "required": [
                         "id",
                         "name",
+                        "brand_id",
                         "address",
                         "phone",
                         "business_registration_no",
@@ -11673,6 +11707,15 @@
             },
             "required": false,
             "name": "order_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "brand_id",
             "in": "query"
           },
           {
@@ -32278,7 +32321,8 @@
                   },
                   "brand_id": {
                     "type": "string",
-                    "format": "uuid"
+                    "format": "uuid",
+                    "description": "The outlet's brand. May be left out; another brand is refused."
                   },
                   "menu_id": {
                     "type": "string",
@@ -32312,7 +32356,6 @@
                 "required": [
                   "channel",
                   "outlet_id",
-                  "brand_id",
                   "menu_id"
                 ]
               }

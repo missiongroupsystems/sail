@@ -14,8 +14,9 @@ import { OutletSheet, type OutletSheetState } from "./OutletSheet";
 import { useCan } from "@/lib/can";
 
 /** Registration columns are headed with the merchant's own labels. */
-const outletColumns = (labels: { business: string; tax: string }): DataTableColumn<Outlet>[] => [
+const outletColumns = (labels: { business: string; tax: string }, brandName: Map<string, string>): DataTableColumn<Outlet>[] => [
   { key: "name", header: "Name", sortable: true, isRowHeader: true, width: "1.4fr", render: (o) => <TwoLine primary={o.archived ? <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">{o.name}<Pill size="sm" tone="neutral">Archived</Pill></span> : o.name} /> },
+  { key: "brand_id", header: "Brand", sortable: true, sortValue: (o) => brandName.get(o.brand_id) ?? "", render: (o) => <span className="text-ink-2">{brandName.get(o.brand_id) ?? "—"}</span> },
   { key: "address", header: "Address", render: (o) => <Quiet>{o.address ?? "—"}</Quiet> },
   { key: "phone", header: "Phone", render: (o) => (o.phone ? <span className="tabular">{o.phone}</span> : <Quiet>—</Quiet>) },
   { key: "business_registration_no", header: labels.business, render: (o) => (o.business_registration_no ? <span className="tabular break-words">{o.business_registration_no}</span> : <Quiet>—</Quiet>) },
@@ -27,7 +28,8 @@ const outletColumns = (labels: { business: string; tax: string }): DataTableColu
 export function OutletsView({ initialOutlets }: { initialOutlets: Outlet[] }) {
   const canCreate = useCan("outlets.create");
   const { business_registration_label, tax_registration_label } = useSession().merchant.settings;
-  const columns = outletColumns({ business: business_registration_label, tax: tax_registration_label });
+  const brands = useQuery({ queryKey: keys.brands(true), queryFn: () => req(api.GET("/v1/brands", { params: { query: { include_archived: "true" } } })).then((r) => r.data) });
+  const columns = outletColumns({ business: business_registration_label, tax: tax_registration_label }, new Map((brands.data ?? []).map((b) => [b.id, b.name])));
   const [showArchived, setShowArchived] = useState(false);
   const [sheet, setSheet] = useState<OutletSheetState>(null);
 
