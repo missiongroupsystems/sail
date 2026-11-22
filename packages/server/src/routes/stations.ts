@@ -73,29 +73,39 @@ export function stationRoutes(app: OpenAPIHono<AppEnv>) {
 
   defineOp(app, { op: "stations.pair", method: "post", path: "/v1/stations/pair", tags: ["stations"], request: { body: jsonBody(z.object({ code: secret(z.string().regex(/^\d{6}$/)), device_label: untrusted(z.string().min(1).max(80)), kind: z.enum(["pos", "display"]).optional().describe("The kind of station this device expects (the kitchen display sends display). Another kind is refused before the code is used, so the station's current device stays paired.") })) }, responses: { 200: jsonResponse(dataResponse(z.object({ station_token: secret(z.string()), station: z.record(z.string(), z.unknown()) }))), ...errorResponses } }, async (c) => {
     const { code, device_label, kind } = c.req.valid("json");
-    // Public route: runs its own transaction as the connection owner (no principal yet).
+    // Public route, outside the admission gate: it runs its own short transactions as the connection owner (no
+    // principal yet), and the hashing, about 30 ms a code, is done between them, on the thread pool, holding no
+    // connection.
+    const candidates = await withTransaction((t) => t.db.select({ id: stationPairingCodes.id, stationId: stationPairingCodes.stationId, merchantId: stationPairingCodes.merchantId, codeHash: stationPairingCodes.codeHash }).from(stationPairingCodes).where(and(isNull(stationPairingCodes.usedAt), gt(stationPairingCodes.expiresAt, sql`now()`))));
+    const match = await (async () => {
+      for (const x of candidates) if (await verifySecretAsync(code, x.codeHash)) return x;
+      return undefined;
+    })();
+    if (!match) {
+      // Two answers and no more: a code that was right until it ran out, was replaced or was used, and any other.
+      // Only the three codes, of any merchant, that stopped working most recently and within the last ten minutes are
+      // checked; live codes were checked above and are not hashed again. A wrong guess on this public route so costs
+      // one hash per live code plus at most three. The price: the three are shared by every merchant on the server, so
+      // once three other codes have stopped working since (another merchant's, or Replace code pressed three times), a
+      // code that ran out or was replaced answers "Wrong code".
+      const stoppedAt = sql`coalesce(${stationPairingCodes.usedAt}, ${stationPairingCodes.expiresAt})`;
+      const spent = await withTransaction((t) => t.db.select({ codeHash: stationPairingCodes.codeHash }).from(stationPairingCodes).where(sql`${stoppedAt} <= now() and ${stoppedAt} > now() - interval '10 minutes'`).orderBy(desc(stoppedAt)).limit(3));
+      for (const x of spent) if (await verifySecretAsync(code, x.codeHash)) throw pairingCodeSpent();
+      throw new AppError("unauthenticated", "Wrong code", { remedy: "Check the 6 digits shown in the back office.", details: { reason: "pairing_code_wrong" } });
+    }
     const result = await withTransaction(async (t) => {
-      const candidates = await t.db.select().from(stationPairingCodes).where(and(isNull(stationPairingCodes.usedAt), gt(stationPairingCodes.expiresAt, sql`now()`)));
-      const match = candidates.find((x) => verifySecret(code, x.codeHash));
-      if (!match) {
-        // Two answers and no more: a code that was right until it ran out, was replaced or was used, and any other.
-        // Only the three codes, of any merchant, that stopped working most recently and within the last ten minutes are
-        // checked; live codes were checked above and are not hashed again. A wrong guess on this public route so costs
-        // one hash per live code plus at most three, about 30 ms each; those three run on the thread pool, not the event loop.
-        const stoppedAt = sql`coalesce(${stationPairingCodes.usedAt}, ${stationPairingCodes.expiresAt})`;
-        const spent = await t.db.select({ codeHash: stationPairingCodes.codeHash }).from(stationPairingCodes).where(sql`${stoppedAt} <= now() and ${stoppedAt} > now() - interval '10 minutes'`).orderBy(desc(stoppedAt)).limit(3);
-        for (const x of spent) if (await verifySecretAsync(code, x.codeHash)) throw pairingCodeSpent();
-        throw new AppError("unauthenticated", "Wrong code", { remedy: "Check the 6 digits shown in the back office.", details: { reason: "pairing_code_wrong" } });
-      }
-      if (kind) {
-        const [target] = await t.db.select({ kind: stations.kind }).from(stations).where(eq(stations.id, match.stationId)).limit(1);
-        if (target && target.kind !== kind) throw AppError.validation(`This code is for a ${target.kind === "display" ? "kitchen display" : "POS"} station`, { remedy: target.kind === "display" ? "Open /kds on the screen and enter the code there." : "Use a code from a kitchen display station, or open /pos on the iPad." });
-      }
+      // The station first, then its code, in the order stations.pairing_code and archiving take them, so a Replace code
+      // at the same moment waits rather than deadlocks.
+      const [target] = await t.db.select({ kind: stations.kind }).from(stations).where(and(eq(stations.id, match.stationId), isNull(stations.archivedAt))).limit(1).for("update");
+      if (!target) throw pairingCodeSpent();
+      if (kind && target.kind !== kind) throw AppError.validation(`This code is for a ${target.kind === "display" ? "kitchen display" : "POS"} station`, { remedy: target.kind === "display" ? "Open /kds on the screen and enter the code there." : "Use a code from a kitchen display station, or open /pos on the iPad." });
+      // Still live now, under the lock: a code replaced, used by another device or run out since it was read cannot pair.
+      const used = await t.db.update(stationPairingCodes).set({ usedAt: new Date() }).where(and(eq(stationPairingCodes.id, match.id), isNull(stationPairingCodes.usedAt), gt(stationPairingCodes.expiresAt, sql`now()`))).returning({ id: stationPairingCodes.id });
+      if (used.length === 0) throw pairingCodeSpent();
       const token = await signSailToken({ typ: "station", merchant_id: match.merchantId, station_id: match.stationId }, null);
-      await t.db.update(stationPairingCodes).set({ usedAt: new Date() }).where(eq(stationPairingCodes.id, match.id));
       // The new token replaces the old device's, and the PIN sessions started on that device end with it (resolve.ts
       // also refuses any session that started before this pairing). clock_timestamp: later than any session already open.
-      const [st] = await t.db.update(stations).set({ tokenHash: sha256(token), pairedAt: sql`clock_timestamp()`, deviceLabel: device_label }).where(and(eq(stations.id, match.stationId), isNull(stations.archivedAt))).returning();
+      const [st] = await t.db.update(stations).set({ tokenHash: sha256(token), pairedAt: sql`clock_timestamp()`, deviceLabel: device_label }).where(eq(stations.id, match.stationId)).returning();
       if (!st) throw pairingCodeSpent();
       await t.db.update(staffSessions).set({ endedAt: new Date() }).where(and(eq(staffSessions.stationId, st.id), isNull(staffSessions.endedAt)));
       await appendEvent({ merchantId: st!.merchantId, outletId: st!.outletId, type: "station.paired", aggregate: { kind: "station", id: st!.id }, operationId: "stations.pair", payload: { device_label }, actor: { principal_type: "station", principal_id: st!.id, role: null }, correlationId: c.get("correlationId") });

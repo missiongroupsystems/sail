@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import "../src/modules.js";
 import { buildApp, type App } from "../src/app.js";
@@ -99,6 +99,28 @@ describe("entering a pairing code", () => {
     const used = await pair(b.body.data.code);
     expect(used.status).toBe(401);
     expect(used.body.details?.reason).toBe("pairing_code_expired");
+  });
+
+  it("two devices with one code at once: exactly one pairs, the other is told the code was used, and the token works", async () => {
+    for (let i = 0; i < 5; i++) {
+      const a = await issue();
+      const both = await Promise.all([pair(a.body.data.code), pair(a.body.data.code)]);
+      expect(both.map((r) => r.status).sort()).toEqual([200, 401]);
+      expect(both.find((r) => r.status === 401)!.body.details?.reason).toBe("pairing_code_expired");
+      const [st] = await db.sql<{ token_hash: string }[]>`select token_hash from stations where id = ${station}`;
+      expect(st!.token_hash).toBe(createHash("sha256").update(both.find((r) => r.status === 200)!.body.data.station_token).digest("hex"));
+    }
+  });
+
+  it("a code replaced while it is being entered: never a server error, and only the new code pairs after", async () => {
+    for (let i = 0; i < 5; i++) {
+      const a = await issue();
+      const [replaced, paired] = await Promise.all([issue({ replace: true }), pair(a.body.data.code)]);
+      expect(replaced.status).toBe(201);
+      expect([200, 401]).toContain(paired.status);
+      expect((await pair(a.body.data.code)).status).toBe(401);
+      expect((await pair(replaced.body.data.code)).status).toBe(200);
+    }
   });
 
   it("a code that ran out says expired or replaced", async () => {

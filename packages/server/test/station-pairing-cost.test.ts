@@ -25,7 +25,7 @@ import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./
 /**
  * stations.pair is public, so what a wrong guess costs is set by the server, not the caller: one hash per live code,
  * and at most three more for the "expired or was replaced" answer, none of them a live code again and none holding the
- * event loop (each is about 30 ms of scrypt).
+ * event loop (each is about 30 ms of scrypt), live codes included.
  */
 let db: TestDb;
 let app: App;
@@ -67,7 +67,7 @@ describe("a wrong pairing code", () => {
     expect(liveChecks.map((c) => c.hash).sort()).toEqual([...live].sort());
     expect(spentChecks.length).toBeGreaterThan(0);
     expect(spentChecks.length).toBeLessThanOrEqual(3);
-    expect(spentChecks.every((c) => !c.sync)).toBe(true);
+    expect(checked.every((c) => !c.sync)).toBe(true);
   });
 
   it("still says expired or replaced for the code replaced last", async () => {
