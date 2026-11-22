@@ -25,8 +25,8 @@ describe("ScopePicker trigger", () => {
     expect(trigger([harbour, { id: "x", name: "Old", archived: true }], [pier, market], { brandId: "a", outletId: null }).text).toBe("All outlets");
     expect(trigger([harbour], [pier, market], { brandId: "a", outletId: "a2" })).toEqual({ text: "Market", name: "Scope: Twin Group ▸ Harbour Noodles ▸ Harbour Noodles · Market" });
   });
-  it("several brands: the brand and the outlet's own name", () => {
+  it("several brands: the brand, and the outlet's own name once one is chosen", () => {
     expect(trigger([harbour, quay], [pier, market, dock], { brandId: "b", outletId: "b1" })).toEqual({ text: "Quay Coffee · Dock", name: "Scope: Twin Group ▸ Quay Coffee ▸ Quay Coffee · Dock" });
-    expect(trigger([harbour, quay], [pier, market, dock], { brandId: "a", outletId: null }).text).toBe("Harbour Noodles · All outlets");
+    expect(trigger([harbour, quay], [pier, market, dock], { brandId: "a", outletId: null })).toEqual({ text: "Harbour Noodles", name: "Scope: Twin Group ▸ Harbour Noodles ▸ All outlets" });
   });
 });

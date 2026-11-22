@@ -38,11 +38,11 @@ export function ScopePicker({ merchantName, brands, outlets, value, onChange, co
   const allOutlets = brand ? `All outlets of ${brand.name}` : "All outlets";
   const summary = `${merchantName} ▸ ${brandLabel} ▸ ${outletLabel}`;
   // The trigger names only what narrows the view, so it fits: one brand with one outlet is just the brand; one brand
-  // with several is the outlet part; several brands are the brand and the outlet's own name.
+  // with several is the outlet part; several brands are the brand, and the outlet's own name once one is chosen.
   const liveBrands = brands.filter((b) => !b.archived);
   const liveOutlets = ofBrand.filter((o) => !o.archived);
   const ownOutlet = outlet ? outletOwnName(outlet.name, brand?.name) : "All outlets";
-  const trigger = liveBrands.length > 1 ? `${brandLabel} · ${ownOutlet}` : liveOutlets.length > 1 ? ownOutlet : brandLabel;
+  const trigger = liveBrands.length > 1 ? (outlet ? `${brandLabel} · ${ownOutlet}` : brandLabel) : liveOutlets.length > 1 ? ownOutlet : brandLabel;
   const hydrated = useHydrated();
 
   return (
