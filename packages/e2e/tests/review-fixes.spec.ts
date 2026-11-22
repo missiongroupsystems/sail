@@ -136,7 +136,7 @@ test.describe("iPad pairing", () => {
       });
 
       await test.step("the kitchen display still pairs on its keys", async () => {
-        const stations = await register<{ data: { id: string; kind: string; outlet_id: string; archived: boolean }[] }>("GET", "/v1/stations");
+        const stations = await register<{ data: { id: string; kind: string; outlet_id: string; archived: boolean }[] }>("GET", `/v1/outlets/${outletId}/stations`);
         const display = stations.data.find((s) => s.kind === "display" && s.outlet_id === outletId && !s.archived)!;
         const kds = await browser.newPage({ viewport: { width: 1280, height: 800 } });
         watch.attach(kds);
