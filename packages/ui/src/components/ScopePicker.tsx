@@ -3,6 +3,7 @@
 import { ChevronDown, Store } from "lucide-react";
 import { Dialog as AriaDialog, DialogTrigger, Popover, Button as AriaButton } from "react-aria-components";
 import { cx } from "../lib/cx";
+import { outletOwnName } from "../lib/outlet-name";
 import { useHydrated } from "../lib/use-hydrated";
 import { Icon } from "./Icon";
 import { Select } from "./Select";
@@ -36,6 +37,12 @@ export function ScopePicker({ merchantName, brands, outlets, value, onChange, co
   const outletLabel = outlet?.name ?? "All outlets";
   const allOutlets = brand ? `All outlets of ${brand.name}` : "All outlets";
   const summary = `${merchantName} ▸ ${brandLabel} ▸ ${outletLabel}`;
+  // The trigger names only what narrows the view, so it fits: one brand with one outlet is just the brand; one brand
+  // with several is the outlet part; several brands are the brand and the outlet's own name.
+  const liveBrands = brands.filter((b) => !b.archived);
+  const liveOutlets = ofBrand.filter((o) => !o.archived);
+  const ownOutlet = outlet ? outletOwnName(outlet.name, brand?.name) : "All outlets";
+  const trigger = liveBrands.length > 1 ? `${brandLabel} · ${ownOutlet}` : liveOutlets.length > 1 ? ownOutlet : brandLabel;
   const hydrated = useHydrated();
 
   return (
@@ -56,11 +63,8 @@ export function ScopePicker({ merchantName, brands, outlets, value, onChange, co
           <Icon icon={Store} size={18} className="text-ink" />
         ) : (
           <>
-            {/* The merchant is fixed by the sign-in, so the trigger names only what narrows it; the popover and the
-                accessible name still carry the merchant. */}
-            <span className="min-w-0 flex-1 truncate text-[14px] leading-5 font-medium text-ink">
-              {brandLabel} · {outletLabel}
-            </span>
+            {/* The merchant is fixed by the sign-in; the popover and the accessible name carry the full scope. */}
+            <span className="min-w-0 flex-1 truncate text-[14px] leading-5 font-medium text-ink">{trigger}</span>
             <Icon icon={ChevronDown} size={16} className="shrink-0 text-ink-3" />
           </>
         )}
