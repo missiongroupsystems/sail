@@ -1,14 +1,15 @@
+import { randomUUID } from "node:crypto";
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { AmountSchema, currencyExponent, TaxModeSchema, TaxRoundingSchema } from "@sail/shared";
-import { db } from "../db/client.js";
+import { db, tx } from "../db/client.js";
 import { brands, channelLinks, displayDestinations, merchantSettings, merchants, orders, outlets, staffSessions, stationPairingCodes, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
-import { outletVisible } from "../auth/principal.js";
+import { brandScopeFor, outletScopeFor, outletVisible } from "../auth/principal.js";
 import { isCashRoundingIncrement, isValidLocale, isValidTimeZone, validDenominations } from "../lib/locale.js";
 
 /* ---- Schemas ----------------------------------------------------------- */
@@ -332,9 +333,18 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
     const p = c.get("principal");
     const body = c.req.valid("json");
     await merchantBrand(p.merchantId, body.brand_id);
+    const id = body.id ?? randomUUID();
+    // Someone limited to some brands has, as outlet scope, those brands' outlets as they were when the request began.
+    // Unless they are also limited to some outlets, an outlet they add of one of their brands joins that scope, so the
+    // insert can read its own row back. An outlet of another brand is refused.
+    const brandScope = brandScopeFor(p);
+    if (brandScope !== "*") {
+      if (!brandScope.split(",").includes(body.brand_id)) throw new AppError("permission_denied", "You work for other brands than this one", { remedy: "Add the outlet under one of your brands, or ask someone who works for every brand.", details: { field: "brand_id" } });
+      if (outletScopeFor(p) === "*") await tx()`select set_config('app.current_outlets', current_setting('app.current_outlets', true) || ',' || ${id}, true)`;
+    }
     const [row] = await db()
       .insert(outlets)
-      .values({ id: body.id, merchantId: p.merchantId, brandId: body.brand_id, name: body.name, address: body.address ?? null, phone: body.phone ?? null, businessRegistrationNo: body.business_registration_no ?? null, taxRegistrationNo: body.tax_registration_no ?? null, businessDayCutoff: body.business_day_cutoff ?? null, hours: body.hours ?? {}, serviceThemeFrom: body.service_theme_from ?? "18:00", legacyId: body.legacy_id ?? null })
+      .values({ id, merchantId: p.merchantId, brandId: body.brand_id, name: body.name, address: body.address ?? null, phone: body.phone ?? null, businessRegistrationNo: body.business_registration_no ?? null, taxRegistrationNo: body.tax_registration_no ?? null, businessDayCutoff: body.business_day_cutoff ?? null, hours: body.hours ?? {}, serviceThemeFrom: body.service_theme_from ?? "18:00", legacyId: body.legacy_id ?? null })
       .returning();
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "outlet.created", aggregate: { kind: "outlet", id: row!.id }, operationId: "outlets.create", payload: toOutlet(row!), correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
     await recordAudit(p, { action: "outlets.create", targetKind: "outlet", targetId: row!.id, details: { name: row!.name } });

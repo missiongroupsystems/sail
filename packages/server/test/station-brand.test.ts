@@ -199,6 +199,23 @@ describe("brand scope reaches the outlet and what is under it", () => {
     expect(all.body.data.map((o) => o.id)).toContain(otherOutlet);
   });
 
+  it("an Admin limited to a brand adds an outlet of that brand, and is refused one of another brand", async () => {
+    await db.sql`update staff set brand_ids = ${db.sql.array([A.brandId])}::uuid[] where id = ${A.admin.id}`;
+    try {
+      const added = await call<{ data: { id: string; brand_id: string } }>("POST", "/v1/outlets", { token: A.admin.token, body: { brand_id: A.brandId, name: "Limited Admin's new outlet" } });
+      expect(added.status, JSON.stringify(added.body)).toBe(201);
+      expect(added.body.data.brand_id).toBe(A.brandId);
+      // It is theirs from the next request on.
+      expect((await call("GET", `/v1/outlets/${added.body.data.id}/stations`, { token: A.admin.token })).status).toBe(200);
+      const refused = await call<Refusal>("POST", "/v1/outlets", { token: A.admin.token, body: { brand_id: other, name: "Limited Admin's other brand" } });
+      expect(refused.status).toBe(403);
+      expect(refused.body.details).toMatchObject({ field: "brand_id" });
+      expect((await db.sql<{ n: number }[]>`select count(*)::int as n from outlets where name = 'Limited Admin''s other brand'`)[0]!.n).toBe(0);
+    } finally {
+      await db.sql`update staff set brand_ids = '{}' where id = ${A.admin.id}`;
+    }
+  });
+
   it("limited to a brand and to an outlet of another brand, a person sees no outlet at all, never every outlet", async () => {
     await db.sql`update staff set brand_ids = ${db.sql.array([other])}::uuid[], outlet_ids = ${db.sql.array([A.outletId])}::uuid[] where id = ${A.cashier.id}`;
     try {
