@@ -104,6 +104,8 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
       key: "name",
       header: "Rule",
       isRowHeader: true,
+      // The Fees and Discounts tables share one set of column widths, so their columns line up.
+      width: "30%",
       // The rows run in priority order, so the priority itself is left to the sheet; a status pill shows only when the
       // rule is not simply active, and a version waiting to take over is said under the name (E-N11).
       render: (r) => {
@@ -131,6 +133,7 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
     {
       key: "value",
       header: "Value",
+      width: "20%",
       // Left-aligned with the other words: a value is "25%" or "$5.00 per order", not a column of figures.
       className: "tabular whitespace-nowrap",
       render: (r) =>
@@ -142,10 +145,11 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
           </span>
         ),
     },
-    { key: "scope", header: "Applies to", render: (r) => <span className="text-ink-2">{describeScope(r.body, categories)}</span> },
+    { key: "scope", header: "Applies to", width: "18%", render: (r) => <span className="text-ink-2">{describeScope(r.body, categories)}</span> },
     {
       key: "application",
       header: "How",
+      width: "17%",
       render: (r) => (r.body.application === "auto" ? <span className="text-ink-2">Automatic</span> : <span className="text-ink-2">Manual · {label(ROLE_LABEL, r.body.min_role)}+</span>),
     },
     { key: "report_class", header: "Reports as", hideBelow: "xl", render: (r) => <span className="text-ink-2">{label(REPORT_CLASS_LABEL, r.body.report_class)}</span> },
@@ -208,6 +212,7 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
                   columns={columns}
                   rows={list}
                   rowKey={(r) => r.rule_key}
+                  steadyColumns
                   onRowAction={(r) => setSheet({ mode: "edit", row: r })}
                   rowClassName={(r) => (r.current.status === "archived" ? "text-ink-2" : undefined)}
                 />
