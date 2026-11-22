@@ -4,7 +4,7 @@ import { useConfirm } from "@/components/backoffice/Confirm";
 import { Button, Dialog, EmptyState, FieldsLocked, Icon, InlineError, PageHeader, Select, Switch, TextField, cx, useLocale, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Users } from "lucide-react";
 import { greyPill, greyPillAlert, SectionLabel } from "@/components/office/parts";
 import { serverFieldErrors } from "@/components/office/server-errors";
@@ -98,6 +98,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
     enabled: outletId !== null,
   });
   const qrOff = outlet !== null && qrLinks.data !== undefined && !qrLinks.data.some((l) => l.enabled && l.outlet_id === outletId) && (tables.data ?? []).some((t) => !t.archived);
+  const qrOffNoteId = useId();
   const qrOffNote = qrOff ? `The QR codes at ${outlet.name} do not take orders yet: the outlet has no Scan to order channel switched on. A guest who scans one is asked to speak to the staff.` : null;
 
   const sortedAreas = useMemo(() => (areas.data ?? []).slice().sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, locale)), [areas.data, locale]);
@@ -221,7 +222,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
           </Switch>
         </div>
         <div className="flex flex-wrap items-start gap-2">
-          {outlet ? <QrSheetButton outletId={outlet.id} outletName={outlet.name} canRotate={admin} warning={qrOffNote ? "These codes do not take orders yet: see the note below." : null} /> : null}
+          {outlet ? <QrSheetButton outletId={outlet.id} outletName={outlet.name} canRotate={admin} describedBy={qrOffNote ? qrOffNoteId : undefined} /> : null}
           {canCreate.ok ? (
             <Button size="sm" onPress={() => { setAreaName(""); setAreaDialog({ mode: "create" }); }} isDisabled={!outletId}>
             Add area
@@ -236,7 +237,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
       </div>
 
       {qrOffNote ? (
-        <p role="alert" className="mb-4 rounded-panel bg-status-sent-tint px-4 py-3 text-[14px] text-ink">
+        <p id={qrOffNoteId} role="alert" className="mb-4 rounded-panel bg-status-sent-tint px-4 py-3 text-[14px] text-ink">
           {qrOffNote}{" "}
           <Link href="/settings/channels" className="text-ink underline underline-offset-4">
             Set it up in Settings › Channels

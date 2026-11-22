@@ -461,7 +461,9 @@ test.describe("back office and POS together", () => {
         const note = page.getByRole("alert").filter({ hasText: "do not take orders yet" });
         await expect(note).toContainText("the outlet has no Scan to order channel switched on");
         await expect(note.getByRole("link", { name: "Set it up in Settings › Channels" })).toHaveAttribute("href", "/settings/channels");
-        await expect(page.getByText("These codes do not take orders yet: see the note below.")).toBeVisible();
+        // Said once, in the note: the QR sheet button is described by it rather than repeating it in red.
+        await expect(page.getByText("These codes do not take orders yet: see the note below.")).toHaveCount(0);
+        await expect(page.getByRole("button", { name: "Download QR sheet (PDF)" })).toHaveAccessibleDescription(/do not take orders yet/);
       });
 
       await setLink(true);
