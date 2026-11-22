@@ -356,6 +356,8 @@ test("S6: the kitchen display's clock and online state fit at 1024 with both pag
         expect(words).toEqual([true, true]);
         // The clock is the bar's last word while online (the connection shows only when it is not), and it stays on screen.
         await expect(header.getByText(/^\d{1,2}:\d{2}/)).toBeInViewport();
+        // The connection is still announced: a live status that says online, kept for screen readers.
+        await expect(header.getByRole("status")).toHaveText(/online/);
         await ctx.close();
       });
     }
