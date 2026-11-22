@@ -23,7 +23,6 @@ import { OrdersScreen } from "../screens/OrdersScreen";
 import { PayScreen } from "../screens/PayScreen";
 import { ShiftScreen } from "../screens/ShiftScreen";
 import { IdleOverlay } from "./IdleOverlay";
-import { hasNoBrand, NoBrandScreen } from "./NoBrand";
 import { NoticeHost } from "./NoticeHost";
 import { OverrideSheet } from "./OverrideSheet";
 import { PosProvider, type PosContextValue } from "./PosContext";
@@ -72,13 +71,13 @@ function SignedInShell() {
   const stationNames = useMemo(() => new Map((stations.data ?? []).map((s) => [s.id, s.name])), [stations.data]);
   const tablesById = useMemo(() => new Map((floor.data?.snapshot.tables ?? []).map((t) => [t.id, t])), [floor.data]);
 
-  // A station saved without a brand cannot open an order. Once the back office gives it one, the stations list
-  // (refreshed by the outlet's stream, or by Check again) brings it here without a new sign-in.
-  const noBrand = hasNoBrand(station);
+  // A station is on its outlet's brand (an iPad paired before that rule may still hold a station without one, and an
+  // outlet with no orders can change brand). The stations list, refreshed by the outlet's stream, brings the brand here
+  // without a new sign-in.
   const fresh = stations.data?.find((s) => s.id === station.id);
   useEffect(() => {
-    if (noBrand && fresh?.brand_id) useStationStore.getState().updateStation({ ...station, brand_id: fresh.brand_id });
-  }, [noBrand, fresh?.brand_id, station]);
+    if (fresh?.brand_id && fresh.brand_id !== station.brand_id) useStationStore.getState().updateStation({ ...station, brand_id: fresh.brand_id });
+  }, [fresh?.brand_id, station]);
 
   useOutletStream(station.outlet_id, true, stationNames);
   useThemeScheduler(outlet.data?.service_theme_from);
@@ -89,7 +88,7 @@ function SignedInShell() {
   // A counter station opens on a new takeaway order, once per sign-in.
   const homed = useRef(false);
   useEffect(() => {
-    if (homed.current || station.home !== "takeaway" || screen.kind !== "floor" || noBrand) return;
+    if (homed.current || station.home !== "takeaway" || screen.kind !== "floor") return;
     homed.current = true;
     void (async () => {
       try {
@@ -104,7 +103,7 @@ function SignedInShell() {
         useNavStore.getState().go({ kind: "orders" });
       }
     })();
-  }, [api, applySnapshot, screen.kind, station.home, noBrand]);
+  }, [api, applySnapshot, screen.kind, station.home]);
 
   const value: PosContextValue = useMemo(
     () => ({
@@ -124,9 +123,7 @@ function SignedInShell() {
   return (
     <PosProvider value={value}>
       <div className="flex h-dvh w-full flex-col overflow-hidden bg-bg text-ink">
-        {/* Without a brand only the floor, where tables are seated, gives way to the message: Orders and Shift still work, with
-            the orders already open (pay, refund) and the drawer (cash, Z-report, closing the shift). */}
-        {screen.kind === "floor" && noBrand ? <NoBrandScreen checking={stations.isFetching} onCheck={() => void stations.refetch()} onLock={() => void lockStation(api, null)} /> : screen.kind === "floor" ? <FloorScreen /> : screen.kind === "orders" ? <OrdersScreen /> : screen.kind === "shift" ? <ShiftScreen /> : screen.kind === "bill" ? <BillScreen orderId={screen.orderId} /> : screen.kind === "pay" ? <PayScreen key={screen.checkId} orderId={screen.orderId} checkId={screen.checkId} /> : <OrderScreen orderId={screen.orderId} />}
+        {screen.kind === "floor" ? <FloorScreen /> : screen.kind === "orders" ? <OrdersScreen /> : screen.kind === "shift" ? <ShiftScreen /> : screen.kind === "bill" ? <BillScreen orderId={screen.orderId} /> : screen.kind === "pay" ? <PayScreen key={screen.checkId} orderId={screen.orderId} checkId={screen.checkId} /> : <OrderScreen orderId={screen.orderId} />}
       </div>
       <NoticeHost />
       <OverrideSheet />

@@ -8,7 +8,6 @@ import { idempotencyKey, toApiError } from "@/lib/api";
 import { markReady, openOrder, type OpenOrderInput } from "../api/register";
 import type { OrderSnapshot, OrderType } from "../api/types";
 import { Frame } from "../components/Frame";
-import { hasNoBrand, NO_BRAND_HINT, NO_BRAND_TITLE } from "../components/NoBrand";
 import { usePos } from "../components/PosContext";
 import { useApplySnapshot, useOpenOrders, useTodaysOrders } from "../hooks/queries";
 import { useApi } from "../hooks/useApi";
@@ -70,12 +69,6 @@ export function OrdersScreen() {
             if (id === "today") setSeenToday(true);
           }} />
           <span className="flex-1" />
-          {/* A station without a brand has no menu to sell from: the orders already open still pay and refund here. */}
-          {hasNoBrand(station) ? (
-            <p role="note" className="max-w-[360px] text-right text-body text-ink-2">
-              {NO_BRAND_TITLE}. {NO_BRAND_HINT}
-            </p>
-          ) : (
           <MenuTrigger>
             <Button variant="primary" size="lg" isDisabled={offline}>
               {offline ? (
@@ -93,7 +86,6 @@ export function OrdersScreen() {
               <MenuItem id="delivery">Delivery</MenuItem>
             </Menu>
           </MenuTrigger>
-          )}
         </div>
         <SegmentedControl
           aria-label="Order type"
@@ -120,7 +112,7 @@ export function OrdersScreen() {
             {type !== "all" && inView.length > 0 ? (
               <EmptyState variant="centred" icon={view === "open" ? ShoppingBag : ClipboardList} title={view === "open" ? `No open ${ORDER_TYPE_LABEL[type].toLowerCase()} orders` : `No ${ORDER_TYPE_LABEL[type].toLowerCase()} orders closed yet today`} hint="Tap All to see every order." />
             ) : view === "open" ? (
-              <EmptyState variant="centred" icon={ShoppingBag} title="No open orders" hint={hasNoBrand(station) ? "Orders opened on a table appear here." : "Orders opened on a table appear here. Tap New order to start a takeaway, pickup or delivery."} />
+              <EmptyState variant="centred" icon={ShoppingBag} title="No open orders" hint="Orders opened on a table appear here. Tap New order to start a takeaway, pickup or delivery." />
             ) : (
               <EmptyState variant="centred" icon={ClipboardList} title="Nothing closed yet today" />
             )}
