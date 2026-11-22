@@ -76,8 +76,9 @@ test("M1, M3: a line voided after it was sent reads Voided on the POS, one taken
   await expect(drawer.getByText("Removed: Customer changed mind")).toBeVisible();
   await expect(drawer.getByText("Shown on the kitchen display").first()).toBeVisible();
   await expect(drawer.getByText("Kitchen ticket printed")).toHaveCount(0);
-  await expect(drawer.getByText("Nothing printed for this order: its tickets went to the kitchen display.")).toBeVisible();
-  await drawer.getByText("Nothing printed for this order: its tickets went to the kitchen display.").scrollIntoViewIfNeeded();
+  // Nothing printed, so the drawer has no Tickets section at all (the events above say where the tickets went).
+  await expect(drawer.getByRole("heading", { name: "Tickets", exact: true })).toHaveCount(0);
+  await drawer.getByText("Shown on the kitchen display").first().scrollIntoViewIfNeeded();
   await shot(page, "test-results/m3-drawer-tickets-events.png");
 });
 
