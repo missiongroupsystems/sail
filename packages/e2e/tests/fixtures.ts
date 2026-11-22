@@ -173,8 +173,11 @@ export async function enterPairingCode(page: Page, code: string) {
   await page.getByRole("textbox", { name: "Pairing code from the back office" }).fill(code);
 }
 
-/** Pair the POS on this page to a demo merchant's station with a fresh code, then sign in with a PIN. */
-export async function pairAndSignIn(page: Page, pin: string, merchant: "sg" | "eu" = "sg", station?: string) {
+/**
+ * Pair the POS on this page to a demo merchant's station with a fresh code, then sign in with a PIN. `noBrand`: the
+ * station was saved without a brand, so it opens on that message in place of the floor (polish-pilot A2 only).
+ */
+export async function pairAndSignIn(page: Page, pin: string, merchant: "sg" | "eu" = "sg", station?: string, opts: { noBrand?: boolean } = {}) {
   const stationId = station ?? (merchant === "eu" ? devLocal().eu : devLocal()).stationId;
   const { data } = await register<{ data: { code: string } }>("POST", `/v1/stations/${stationId}/pairing-code`, {}, merchant === "eu" ? EU_ADMIN : SG_ADMIN);
   await page.goto(`${WEB}/pos`);
@@ -184,8 +187,8 @@ export async function pairAndSignIn(page: Page, pin: string, merchant: "sg" | "e
   await enterPairingCode(page, data.code);
   await expect(page.getByRole("button", { name: "Pair this iPad again" })).toBeVisible();
   await keyIn(page, "PIN keys", pin);
-  // A station with no brand opens on its own message instead of the screens (polish-pilot A2).
-  await expect(page.getByRole("navigation", { name: "Destinations" }).or(page.getByRole("heading", { name: "This station has no brand" }))).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Destinations" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "This station has no brand" })).toHaveCount(opts.noBrand ? 1 : 0);
 }
 
 /**

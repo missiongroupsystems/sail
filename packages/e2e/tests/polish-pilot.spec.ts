@@ -490,11 +490,22 @@ test.describe("back office and POS together", () => {
     const ipad = await browser.newPage({ viewport: { width: 1180, height: 820 } });
     watch.attach(ipad);
     try {
-      await test.step("the iPad paired to it shows one message in place of the screens", async () => {
-        await pairAndSignIn(ipad, CASHIER_PIN, "sg", old.id);
+      await test.step("the iPad paired to it shows the message in place of the floor; Orders and Shift still open", async () => {
+        await pairAndSignIn(ipad, CASHIER_PIN, "sg", old.id, { noBrand: true });
         await expect(ipad.getByRole("heading", { name: "This station has no brand" })).toBeVisible();
-        await expect(ipad.getByRole("main").getByRole("alert")).toHaveText("In the back office, open Settings › Stations and choose one.");
-        await expect(ipad.getByRole("navigation", { name: "Destinations" })).toHaveCount(0);
+        await expect(ipad.getByRole("main").getByRole("alert").filter({ hasText: "Settings › Stations" })).toHaveText("In the back office, open Settings › Stations and choose one.");
+        const tabs = ipad.getByRole("navigation", { name: "Destinations" });
+        // Orders: the open orders are there to pay or refund; only New order gives way to the message.
+        await tabs.getByRole("button", { name: "Orders", exact: true }).click();
+        await expect(ipad.getByRole("group", { name: "Which orders" })).toBeVisible();
+        await expect(ipad.getByRole("note")).toHaveText("This station has no brand. In the back office, open Settings › Stations and choose one.");
+        await expect(ipad.getByRole("button", { name: /New order/ })).toHaveCount(0);
+        // Shift: the drawer, the Z-report and closing the shift do not need a brand.
+        await tabs.getByRole("button", { name: "Shift", exact: true }).click();
+        await expect(ipad.getByRole("heading", { name: "This station has no brand" })).toHaveCount(0);
+        await expect(ipad.getByRole("note")).toHaveCount(0);
+        await tabs.getByRole("button", { name: "Floor", exact: true }).click();
+        await expect(ipad.getByRole("heading", { name: "This station has no brand" })).toBeVisible();
       });
 
       await signIn(page);
