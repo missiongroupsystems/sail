@@ -1,18 +1,18 @@
 import type { Locator, Page, Request } from "@playwright/test";
-import { API, devDatabase, devLocal, expect, GUEST, keyIn, pairAndSignIn, register, SG_ADMIN, test, WEB } from "./fixtures";
+import { API, devLocal, expect, GUEST, keyIn, pairAndSignIn, register, SG_ADMIN, test, TWIN_ADMIN, WEB } from "./fixtures";
 
 /**
  * The review fixes after the pilot polish (pairing on the button or Enter, the Stations sheet's code and status, the
- * floor's queued changes, Ready on a table's order, a station without a brand), checked in a browser as staff use them.
+ * floor's queued changes, Ready on a table's order, the red border of a required Select), checked in a browser as staff use them.
  * Runs in Chromium and in WebKit, the iPad's engine.
  */
 
 const CASHIER_PIN = "333333";
 
-async function signIn(page: Page) {
+async function signIn(page: Page, email = SG_ADMIN) {
   await page.goto(`${WEB}/login`);
   await expect(async () => {
-    await page.getByLabel("Email").fill(SG_ADMIN);
+    await page.getByLabel("Email").fill(email);
     await page.getByLabel("Password").fill(devLocal().admin_password);
     await page.getByRole("button", { name: "Sign in" }).click({ timeout: 10_000 });
     await page.waitForURL(`${WEB}/today`, { timeout: 30_000 });
@@ -318,36 +318,34 @@ test.describe("back office", () => {
     }
   });
 
-  test("Stations sheet: Save with no brand gives the Brand select a red border, in Day and Service", async ({ page }) => {
+  // The Select that first lacked the red border was a station's Brand. A station's brand is its outlet's now, shown read
+  // only, so the required Select that can be left empty is the new outlet's Brand, at a merchant with two brands.
+  test("Outlet sheet: Save with no brand gives the Brand select a red border, in Day and Service", async ({ page }) => {
     test.setTimeout(240_000);
-    const { merchantId, outletId } = devLocal();
-    const old = { id: crypto.randomUUID(), name: `Brandless ${String(Date.now()).slice(-6)}` };
-    const sql = devDatabase();
-    await sql`insert into stations (id, merchant_id, outlet_id, name) values (${old.id}, ${merchantId}, ${outletId}, ${old.name})`;
-    await sql.end();
-    try {
-      await signIn(page);
-      await page.goto(`${WEB}/settings/stations`);
-      const sheet = await openRow(page, old.name);
-      await sheet.getByRole("button", { name: "Save changes" }).click();
-      await expect(sheet.getByText("Choose a brand", { exact: true }).last()).toBeVisible();
-      const brand = sheet.getByRole("button", { name: /Brand/ });
-      for (const theme of ["day", "service"] as const) {
-        await page.evaluate((t) => (t === "service" ? (document.documentElement.dataset.theme = "service") : delete document.documentElement.dataset.theme), theme);
-        await page.waitForTimeout(400);
-        const { border, red } = await brand.evaluate((el) => {
-          const s = document.createElement("span");
-          s.style.color = "var(--status-alert)";
-          document.body.appendChild(s);
-          const red = getComputedStyle(s).color;
-          s.remove();
-          return { border: getComputedStyle(el).borderTopColor, red };
-        });
-        expect(border, `${theme}: the Brand select's border`).toBe(red);
-        await page.screenshot({ path: `test-results/brandless-select-${theme}.png` });
-      }
-    } finally {
-      await register("PATCH", `/v1/stations/${old.id}`, { archived: true }).catch(() => undefined);
+    const brands = (await register<{ data: { id: string; name: string; archived: boolean }[] }>("GET", "/v1/brands", undefined, TWIN_ADMIN)).data;
+    // A second brand, so the form has none to start on (brand-scope.spec.ts makes the same one).
+    if (brands.filter((b) => !b.archived).length < 2) await register("POST", "/v1/brands", { name: "Quay Coffee" }, TWIN_ADMIN);
+    await signIn(page, TWIN_ADMIN);
+    await page.goto(`${WEB}/settings/outlets`);
+    await page.getByRole("button", { name: "Add outlet" }).first().click();
+    const sheet = page.getByRole("dialog", { name: "New outlet" });
+    await sheet.getByLabel("Name").fill(`Brandless ${String(Date.now()).slice(-6)}`);
+    await sheet.getByRole("button", { name: "Add outlet" }).click();
+    await expect(sheet.getByText("Choose a brand", { exact: true }).last()).toBeVisible();
+    const brand = sheet.getByRole("button", { name: /Brand/ });
+    for (const theme of ["day", "service"] as const) {
+      await page.evaluate((t) => (t === "service" ? (document.documentElement.dataset.theme = "service") : delete document.documentElement.dataset.theme), theme);
+      await page.waitForTimeout(400);
+      const { border, red } = await brand.evaluate((el) => {
+        const s = document.createElement("span");
+        s.style.color = "var(--status-alert)";
+        document.body.appendChild(s);
+        const red = getComputedStyle(s).color;
+        s.remove();
+        return { border: getComputedStyle(el).borderTopColor, red };
+      });
+      expect(border, `${theme}: the Brand select's border`).toBe(red);
+      await page.screenshot({ path: `test-results/brandless-select-${theme}.png` });
     }
   });
 });
@@ -355,12 +353,11 @@ test.describe("back office", () => {
 test.describe("POS", () => {
   test.use({ viewport: { width: 1180, height: 820 } });
 
-  test("Orders: a sent dine-in order has no Ready, a pickup has; a station without a brand opens Shift and Orders, and its empty Orders list does not point at New order", async ({ page, browser, watch }) => {
+  test("Orders: a sent dine-in order has no Ready, a pickup has", async ({ page }) => {
     test.setTimeout(360_000);
-    const { merchantId, outletId, brandId } = devLocal();
+    const { outletId, brandId } = devLocal();
     const opened: string[] = [];
     const stamp = String(Date.now()).slice(-6);
-    const old = { id: crypto.randomUUID(), name: `No brand ${stamp}` };
     try {
       await test.step("Ready: not on a sent table order, on a sent pickup", async () => {
         const floor = await register<{ data: { tables: { id: string; name: string; order: unknown }[] } }>("GET", `/v1/outlets/${outletId}/floor`);
@@ -383,38 +380,8 @@ test.describe("POS", () => {
         await expect(dineIn.getByRole("button", { name: "Ready", exact: true })).toHaveCount(0);
         await expect(pickup.getByRole("button", { name: "Ready", exact: true })).toBeVisible();
       });
-
-      await test.step("a station without a brand: Shift and Orders open; the empty Orders list does not mention New order", async () => {
-        for (const id of opened.splice(0)) await register("POST", `/v1/orders/${id}/cancel`, { reason: "End-to-end test" }).catch(() => undefined);
-        const sql = devDatabase();
-        await sql`insert into stations (id, merchant_id, outlet_id, name) values (${old.id}, ${merchantId}, ${outletId}, ${old.name})`;
-        await sql.end();
-        const ipad = await browser.newPage({ viewport: { width: 1180, height: 820 } });
-        watch.attach(ipad);
-        try {
-          await pairAndSignIn(ipad, CASHIER_PIN, "sg", old.id, { noBrand: true });
-          const tabs = ipad.getByRole("navigation", { name: "Destinations" });
-          await tabs.getByRole("button", { name: "Shift", exact: true }).click();
-          await expect(ipad.getByRole("heading", { name: "This station has no brand" })).toHaveCount(0);
-          await expect(ipad.getByRole("heading", { name: /^(Open shift|Shift open)$/ })).toBeVisible();
-          await tabs.getByRole("button", { name: "Orders", exact: true }).click();
-          await expect(ipad.getByRole("group", { name: "Which orders" })).toBeVisible();
-          // Today's closed on a fresh station is an empty list; neither it nor Open points at New order.
-          const main = ipad.getByRole("main");
-          // The empty list has rendered (not a loading screen) before its words are checked.
-          await expect(main.getByText("No open orders").or(main.getByRole("button", { name: /^(Dine-in|Takeaway|Pickup|Delivery) / }).first())).toBeVisible();
-          await expect(main).not.toContainText("New order");
-          await ipad.getByRole("group", { name: "Which orders" }).getByRole("button", { name: /^Today's closed/ }).click();
-          await expect(main.getByText("Nothing closed yet today").or(main.getByRole("button", { name: /^(Dine-in|Takeaway|Pickup|Delivery) / }).first())).toBeVisible();
-          await expect(main).not.toContainText("New order");
-          await ipad.screenshot({ path: "test-results/brandless-orders.png" });
-        } finally {
-          await ipad.close();
-        }
-      });
     } finally {
       for (const id of opened) await register("POST", `/v1/orders/${id}/cancel`, { reason: "End-to-end test" }).catch(() => undefined);
-      await register("PATCH", `/v1/stations/${old.id}`, { archived: true }).catch(() => undefined);
     }
   });
 });
