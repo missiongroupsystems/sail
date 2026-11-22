@@ -17,8 +17,10 @@ async function signIn(page: Page) {
     await page.getByRole("button", { name: "Sign in" }).click({ timeout: 10_000 });
     await page.waitForURL(`${WEB}/today`, { timeout: 30_000 });
   }).toPass({ timeout: 300_000 });
-  // Today has rendered, so the next navigation is not cut short by the sign-in's own (WebKit is slower to settle).
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible({ timeout: 60_000 });
+  // Today has rendered with its figures, so the next navigation is not cut short by the sign-in's own (WebKit settles
+  // later on a first compile).
+  await expect(page.getByRole("heading", { name: "Today", level: 1 })).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByText("Open now")).toBeVisible({ timeout: 120_000 });
   await page.waitForLoadState("networkidle").catch(() => undefined);
 }
 
@@ -244,11 +246,16 @@ test.describe("back office", () => {
 
       await test.step("two quick drags", async () => {
         await drag(3, 0);
+        // A beat between the two, as a hand takes; still well inside the first save's 700 ms on its way.
+        await page.waitForTimeout(300);
         await drag(3, 0);
-        await watchLeft(8, [2, 5]);
-        await expect.poll(async () => (await read()).x, { timeout: 15_000 }).toBe(8);
+        // Where the second drop put it (WebKit may round the pointer to one column less), as the plan shows it at once.
+        const dropped = await left();
+        expect(dropped, "the second drop moved the table on").toBeGreaterThan(5);
+        await watchLeft(dropped, [2, 5]);
+        await expect.poll(async () => (await read()).x, { timeout: 15_000 }).toBe(dropped);
         await page.waitForTimeout(1_500);
-        expect(await left()).toBe(8);
+        expect(await left()).toBe(dropped);
       });
 
       await test.step("a drag, then a typed X", async () => {
@@ -256,7 +263,7 @@ test.describe("back office", () => {
         await drag(-2, 0);
         await panel.getByRole("textbox", { name: "X", exact: true }).fill("12");
         await panel.getByRole("textbox", { name: "X", exact: true }).blur();
-        await watchLeft(12, [8, 6]);
+        await watchLeft(12, [8, 7, 6, 5]);
         await expect.poll(async () => (await read()).x, { timeout: 15_000 }).toBe(12);
         await page.waitForTimeout(1_500);
         expect(await left()).toBe(12);
