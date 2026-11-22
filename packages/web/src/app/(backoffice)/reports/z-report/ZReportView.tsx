@@ -145,7 +145,7 @@ export function ZReportView({ outlets, scope, initialOutletId, today, initialDat
       {/* The day's state under the filters (the day itself is in the date field); on paper the print head says it. */}
       {validDate && outletId && (closedToday || date === current) ? (
         <p className="mb-4 flex flex-wrap items-center gap-2 print:hidden">
-          {closedToday ? <Pill size="sm" tone="paid">Closed</Pill> : <Pill size="sm" tone="seated">Day open</Pill>}
+          {closedToday ? <Pill size="sm" tone="paid">Closed</Pill> : <Pill size="sm" tone="seated">Open: figures so far</Pill>}
         </p>
       ) : null}
       {outlets.length === 0 ? <EmptyState title="No outlets yet" hint="A Z-report belongs to an outlet." /> : null}
