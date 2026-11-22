@@ -95,7 +95,7 @@ describe("an outlet has one brand", () => {
 
 describe("an outlet's brand lock sees every brand and holds under concurrent orders", () => {
   let n = 0;
-  const rawOrder = (sql: postgres.Sql, outletId: string, brandId: string, linkId: string) =>
+  const rawOrder = (sql: postgres.Sql | postgres.TransactionSql, outletId: string, brandId: string, linkId: string) =>
     sql`insert into orders (id, merchant_id, outlet_id, brand_id, channel_link_id, channel, order_type, order_no, business_date, tax_mode, tax_rounding, tax_rates)
       values (${randomUUID()}, ${A.merchantId}, ${outletId}, ${brandId}, ${linkId}, 'pos', 'takeaway', ${`LOCK-${++n}`}, '2026-11-20', 'exclusive', 'per_line', '[]'::jsonb)`;
   const aLink = async () => (await db.sql<{ id: string }[]>`insert into channel_links (merchant_id, channel, outlet_id, brand_id, menu_id, enabled) values (${A.merchantId}, 'scan_to_order', ${A.outletId}, ${A.brandId}, ${menu}, false) on conflict do nothing returning id`)[0]?.id ?? (await db.sql<{ id: string }[]>`select id from channel_links where outlet_id = ${A.outletId} and brand_id = ${A.brandId} limit 1`)[0]!.id;
@@ -198,11 +198,13 @@ describe("a station is on its outlet's brand", () => {
     expect(made.body.details?.field).toBe("brand_id");
 
     const st = await call<{ data: Station }>("POST", "/v1/stations", { token: A.admin.token, body: { outlet_id: A.outletId, name: "Counter" } });
-    for (const brand_id of [other, null]) {
-      const changed = await call<Refusal>("PATCH", `/v1/stations/${st.body.data.id}`, { token: A.admin.token, body: { brand_id } });
-      expect(changed.status, String(brand_id)).toBe(400);
-      expect(changed.body.details?.field).toBe("brand_id");
-    }
+    const changed = await call<Refusal>("PATCH", `/v1/stations/${st.body.data.id}`, { token: A.admin.token, body: { brand_id: other } });
+    expect(changed.status).toBe(400);
+    expect(changed.body.details?.field).toBe("brand_id");
+    // A null brand is taken as left out, as an older back office sends it for a kitchen display: the rest saves.
+    const blank = await call<{ data: Station & { name: string } }>("PATCH", `/v1/stations/${st.body.data.id}`, { token: A.admin.token, body: { brand_id: null, name: "Counter 1" } });
+    expect(blank.status, JSON.stringify(blank.body)).toBe(200);
+    expect(blank.body.data).toMatchObject({ brand_id: A.brandId, name: "Counter 1" });
     // Sending the outlet's own brand is not a change, and other fields save as before.
     const same = await call<{ data: Station & { name: string } }>("PATCH", `/v1/stations/${st.body.data.id}`, { token: A.admin.token, body: { brand_id: A.brandId, name: "Counter 2" } });
     expect(same.status).toBe(200);

@@ -453,7 +453,10 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "stations.update", method: "patch", path: "/v1/stations/{id}", tags: ["organisation"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(StationPatch) }, responses: { 200: jsonResponse(mutationResponse(StationSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
-    const body = c.req.valid("json");
+    const sent = c.req.valid("json");
+    // A null brand is taken as left out: an older back office sends it for a kitchen display, whose brand is now its outlet's.
+    const body: Omit<typeof sent, "brand_id"> & { brand_id?: string } = { ...sent, brand_id: sent.brand_id ?? undefined };
+    if (body.brand_id === undefined) delete body.brand_id;
     if (Object.keys(body).length === 0) throw AppError.validation("Nothing to update");
     // A station's brand is its outlet's: it changes with the outlet (outlets.update), never on its own.
     if (body.brand_id !== undefined) {
