@@ -62,7 +62,6 @@ export function BrandChoice({ brands, scope, brandId, onChange, allowAll }: { br
       <p className="min-h-11 py-2.5">
         <span className="text-ink-2">Brand </span>
         <span className="text-ink">{scoped.name}</span>
-        <span className="text-caption text-ink-2"> · from the scope picker</span>
       </p>
     );
   }

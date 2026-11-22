@@ -9,7 +9,7 @@ export async function SharedByAllBrands() {
   const { brands } = await scopeLists().catch(() => ({ brands: [] as { archived?: boolean }[] }));
   if (brands.filter((b) => !b.archived).length < 2) return null;
   return (
-    <p role="note" className="mb-4 inline-flex min-h-8 items-center rounded-chip bg-surface-2 px-3 text-[13px] text-ink-2">
+    <p role="note" className="mb-4 text-[13px] text-ink-2">
       Shared by all brands
     </p>
   );
