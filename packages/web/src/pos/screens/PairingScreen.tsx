@@ -86,7 +86,7 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
     return () => document.removeEventListener("paste", onPaste);
   }, []);
   // Digits from a keyboard go to the code when no field has the focus (a tap beside the field), as they did on the pad,
-  // and Enter pairs.
+  // and Enter pairs. In a field, or on the button, Enter submits the form instead.
   useEffect(() => {
     if (keys) return;
     const onKey = (e: KeyboardEvent) => {
@@ -94,7 +94,7 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
       if (at instanceof HTMLInputElement || at instanceof HTMLTextAreaElement || e.metaKey || e.ctrlKey || e.altKey) return;
       if (/^\d$/.test(e.key)) entering.current.enter(latest.current.code + e.key);
       else if (e.key === "Backspace") entering.current.enter(latest.current.code.slice(0, -1));
-      else if (e.key === "Enter") void entering.current.pair();
+      else if (e.key === "Enter" && !(at instanceof HTMLButtonElement)) void entering.current.pair();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -124,7 +124,8 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
     </p>
   );
   const button = (
-    <Button variant="primary" size="lg" isDisabled={code.length !== 6 || !label.trim()} isPending={pending} onPress={() => void pair()} className="w-full data-[disabled]:bg-transparent!">
+    // On the iPad it is the form's submit button, so Enter in the code or the name field pairs; the display has no form.
+    <Button variant="primary" size="lg" type={keys ? "button" : "submit"} isDisabled={code.length !== 6 || !label.trim()} isPending={pending} onPress={keys ? () => void pair() : undefined} className="w-full data-[disabled]:bg-transparent!">
       Pair this {device}
     </Button>
   );
