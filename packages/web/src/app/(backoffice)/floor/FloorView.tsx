@@ -114,14 +114,42 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
       setAreaDialog(null);
     },
   });
-  const patchTable = useMutation<{ data: Table }, ApiError, { id: string; body: TablePatch }>({
+  // A refused change stays on show for its table until those fields save, or the panel is back to the register's
+  // values; a later save of something else does not clear it.
+  const [refusals, setRefusals] = useState<Record<string, { error: ApiError; fields: string[] }>>({});
+  const settleRefusal = useCallback((id: string, fields: string[]) => {
+    setRefusals((all) => {
+      const left = all[id]?.fields.filter((f) => !fields.includes(f));
+      if (!left) return all;
+      const next = { ...all };
+      if (left.length) next[id] = { ...all[id]!, fields: left };
+      else delete next[id];
+      return next;
+    });
+  }, []);
+  const patchTable = useMutation<{ data: Table }, ApiError, { id: string; body: TablePatch }, { before: Table | undefined }>({
+    // One change at a time, in the order made: typing and dragging send several, and a later one must not land first.
+    // (A scope is set per hook, not per call, so this queues every table's changes, which are small.)
+    scope: { id: "floor-table-patch" },
     mutationFn: ({ id, body }) => req(api.PATCH("/v1/tables/{id}", { params: { path: { id } }, body })),
     onMutate: async ({ id, body }) => {
       // A read still on its way would put the old table back over the change for a moment.
       await qc.cancelQueries({ queryKey: keys.tables(outletId ?? "") });
+      const before = qc.getQueryData<Table[]>(keys.tables(outletId ?? ""))?.find((t) => t.id === id);
       // Lines may be optimistic: the table moves at once; the register's reply settles it.
       qc.setQueryData<Table[]>(keys.tables(outletId ?? ""), (prev) => prev?.map((t) => (t.id === id ? { ...t, ...body, shape: body.shape ?? t.shape } : t)));
+      return { before };
     },
+    onError: (error, { id, body }, ctx) => {
+      const fields = Object.keys(body);
+      // The refused fields go back to what they were, so the panel can tell its unsaved text from the register's.
+      const before = ctx?.before;
+      if (before) qc.setQueryData<Table[]>(keys.tables(outletId ?? ""), (prev) => prev?.map((t) => (t.id === id ? { ...t, ...Object.fromEntries(fields.map((f) => [f, before[f as keyof Table]])) } : t)));
+      setRefusals((all) => ({ ...all, [id]: { error, fields: [...new Set([...(all[id]?.fields ?? []), ...fields])] } }));
+    },
+    // A refused choice (shape, area, archived) shows the register's value again at once, so the table's next save that
+    // goes through ends it; a refused typed value is ended only by a save of that field.
+    onSuccess: (_, { id, body }) => settleRefusal(id, [...Object.keys(body), "shape", "area_id", "archived"]),
     onSettled: () => qc.invalidateQueries({ queryKey: keys.tables(outletId ?? "") }),
   });
   const addTable = useMutation<{ data: Table }, ApiError>({
@@ -325,7 +353,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
               {selectedTable ? selectedTable.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <span className="text-[13px] text-ink-3 tabular">{selectedTable.seats} seats</span> : null}
             </div>
             {selectedTable ? (
-              <TablePanel key={selectedTable.id} table={selectedTable} areas={sortedAreas} onSave={(body) => saveSelected(selectedTable, body)} saving={patchTable.isPending} canRotateQr={admin} denied={canEditTable.reason} error={patchTable.variables?.id === selectedTable.id ? patchTable.error : null} />
+              <TablePanel key={selectedTable.id} table={selectedTable} areas={sortedAreas} onSave={(body) => saveSelected(selectedTable, body)} saving={patchTable.isPending} canRotateQr={admin} denied={canEditTable.reason} refusal={refusals[selectedTable.id] ?? null} onSynced={(fields) => settleRefusal(selectedTable.id, fields)} />
             ) : (
               <p className="text-[14px] text-ink-2">{canEditTable.ok ? "Select a table to edit its name, seats, shape and size, or to rotate its QR code. Drag it to move it; drag the corner to resize. Arrow keys nudge a focused table." : `Select a table to see its details. ${canEditTable.reason}`}</p>
             )}
@@ -366,8 +394,9 @@ const TYPING_PAUSE_MS = 400;
  * A value that cannot be used (no name, seats that are not a number) says so under its field and is not sent; a value
  * the register refuses shows the register's reason there.
  */
-function TablePanel({ table, areas, onSave, saving, canRotateQr, denied, error }: { table: Table; areas: Area[]; onSave: (body: TablePatch) => void; saving: boolean; canRotateQr: boolean; denied: string | null; error: ApiError | null }) {
+function TablePanel({ table, areas, onSave, saving, canRotateQr, denied, refusal, onSynced }: { table: Table; areas: Area[]; onSave: (body: TablePatch) => void; saving: boolean; canRotateQr: boolean; denied: string | null; refusal: { error: ApiError; fields: string[] } | null; onSynced: (fields: string[]) => void }) {
   const confirm = useConfirm();
+  const error = refusal?.error ?? null;
   // A refusal that names a field (seats over the limit, a name) shows under that field as well as under the plan.
   const refused = (name: string) => serverFieldErrors(error).find((e) => e.field === name)?.message;
   const [name, setName] = useState(table.name);
@@ -382,6 +411,14 @@ function TablePanel({ table, areas, onSave, saving, canRotateQr, denied, error }
     seats: seatCount === null ? "Enter a whole number" : seatCount < 1 || seatCount > 99 ? "From 1 to 99 seats" : undefined,
     geom: int(geom.x) === null || int(geom.y) === null || !int(geom.w) || !int(geom.h) ? "Position and size are whole numbers; width and height at least 1." : undefined,
   };
+
+  // A refused field whose text is the register's value again (typed back, or the table moved back) has nothing left unsaved.
+  const shown: Record<string, string> = { name: name.trim(), seats: seats.trim(), ...geom };
+  const synced = refusal?.fields.filter((f) => f in shown && shown[f] === String(table[f as keyof Table])) ?? [];
+  const syncedKey = synced.join();
+  useEffect(() => {
+    if (!saving && syncedKey) onSynced(syncedKey.split(","));
+  }, [saving, syncedKey, onSynced]);
 
   // The pause timer and the unmount both send what is in the fields then, not what was there when they were set up.
   const latest = useRef({ table, name, seats, geom, problem, onSave, denied });
@@ -448,11 +485,17 @@ function TablePanel({ table, areas, onSave, saving, canRotateQr, denied, error }
         {/* In the place Save table had: what happens to a change, and that the last one has gone through. */}
         {denied === null ? (
           <p role="status" className="text-[12.5px] text-ink-3">
-            {saving ? "Saving…" : "Changes save as you make them."}
+            {saving ? "Saving…" : error ? "Not saved yet." : "Changes save as you make them."}
           </p>
         ) : null}
         {confirm.dialog}
       </div>
+      {error && !saving ? (
+        <p role="alert" className="text-caption text-status-alert">
+          {error.message}
+          {error.remedy ? ` ${error.remedy}` : ""}
+        </p>
+      ) : null}
       {denied ? <p className="text-[12.5px] text-ink-3">{denied}</p> : null}
       <section className="flex flex-col gap-2.5 border-t border-rule-subtle pt-4">
         <SectionLabel>QR code</SectionLabel>

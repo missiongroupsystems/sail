@@ -230,6 +230,55 @@ test.describe("back office and POS together", () => {
         await expect.poll(async () => (await inArea()).find((t) => t.id === added.id)).toMatchObject({ name: "Window", seats: 6, shape: "round" });
       });
 
+      await test.step("a refused name stays on show while another change is made, and changes are sent one at a time", async () => {
+        // The register refuses the name "Refused", and the plan's re-read is held back, so a later change is made
+        // while the panel still shows the refused text (a later save of the seats alone once wiped the refusal).
+        let holdReads = true;
+        const inFlight: number[] = [];
+        let overlapped = false;
+        await page.route(/\/v1\/tables(\?.*)?$/, async (route) => {
+          if (route.request().method() === "GET" && holdReads) await new Promise((r) => setTimeout(r, 3_000));
+          await route.continue().catch(() => undefined);
+        });
+        await page.route(new RegExp(`/v1/tables/${added.id}$`), async (route) => {
+          if (route.request().method() !== "PATCH") return route.continue();
+          inFlight.push(1);
+          if (inFlight.length > 1) overlapped = true;
+          try {
+            if ((route.request().postDataJSON() as { name?: string }).name === "Refused") {
+              return await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ code: "validation_failed", message: "That name is refused", remedy: "Choose another name." }) });
+            }
+            await new Promise((r) => setTimeout(r, 300));
+            return await route.continue();
+          } finally {
+            inFlight.pop();
+          }
+        });
+        await panel.getByRole("textbox", { name: "Name" }).fill("Refused");
+        await expect(panel.getByText("That name is refused Choose another name.")).toBeVisible();
+        await panel.getByRole("textbox", { name: "Seats" }).fill("5");
+        await panel.getByRole("textbox", { name: "Seats" }).blur();
+        await page.waitForTimeout(1_500);
+        await expect(panel.getByText("That name is refused Choose another name.")).toBeVisible();
+        await expect(panel.getByText("Changes save as you make them.")).toHaveCount(0);
+        expect((await inArea()).find((t) => t.id === added.id)).toMatchObject({ name: "Window", seats: 6 });
+
+        // Back to the saved name: nothing is left unsaved, so the refusal goes; then two quick changes land in order.
+        holdReads = false;
+        await panel.getByRole("textbox", { name: "Name" }).fill("Window");
+        await expect(panel.getByText("That name is refused Choose another name.")).toHaveCount(0);
+        await panel.getByRole("textbox", { name: "Seats" }).fill("7");
+        await panel.getByRole("textbox", { name: "Seats" }).blur();
+        await panel.getByRole("textbox", { name: "Seats" }).fill("6");
+        await panel.getByRole("textbox", { name: "Seats" }).blur();
+        await expect.poll(async () => (await inArea()).find((t) => t.id === added.id)!.seats).toBe(6);
+        await page.waitForTimeout(1_000);
+        expect((await inArea()).find((t) => t.id === added.id)!.seats).toBe(6);
+        expect(overlapped, "no two saves of the table were in flight at once").toBe(false);
+        await expect(panel.getByText("Changes save as you make them.")).toBeVisible();
+        await page.unrouteAll({ behavior: "ignoreErrors" });
+      });
+
       await test.step("a value that cannot be used says so under its field and is not sent", async () => {
         await panel.getByRole("textbox", { name: "Name" }).fill("");
         await expect(panel.getByText("Enter a name")).toBeVisible();
