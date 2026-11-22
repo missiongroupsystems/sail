@@ -1,10 +1,10 @@
 "use client";
 
 import { BellRing, Printer, QrCode } from "lucide-react";
-import { BusinessDay, Badge, Button, Dialog, EmptyState, InlineError, Money, Panel, Stat, StatusDot, taxRows, TextField, useLocale } from "@sail/ui";
+import { Badge, Button, Dialog, EmptyState, InlineError, Money, Panel, Stat, StatusDot, taxRows, TextField, useLocale } from "@sail/ui";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { label, ORDER_TYPE_LABEL } from "@/components/backoffice/labels";
 import { OutletChoice, useOutletChoice } from "@/components/backoffice/OutletChoice";
 import { isLate, JobRowActions, RerouteDialog, useJobMutations } from "@/components/backoffice/PrintJobActions";
@@ -98,13 +98,9 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
 
   return (
     <>
+      {/* The page is live: no clock or refresh note, and a failed fetch says so below. */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <OutletChoice outlets={outlets} scope={scope} outletId={outletId} onChange={setOutletId} />
-        {floor.data ? (
-          <p className="text-caption text-ink-2 tabular">
-            As of {clock(floor.data.as_of)} · refreshes every 15 s
-          </p>
-        ) : null}
       </div>
 
       {outlets.length === 0 ? (
@@ -132,8 +128,8 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
       {outlet ? (
         <StatTiles className="mb-6">
           <StatTile label="Net sales after refunds" value={zMoney ? <Money cents={zMoney.sales.net} size="title" /> : "—"} caption={z.data && !zMoney ? "Shows once shifts are closed" : undefined} />
-          <StatTile label="Orders completed" value={z.data ? z.data.orders.count : "—"} caption={z.data ? <>business day <BusinessDay value={z.data.scope.business_date} /></> : undefined} />
-          <StatTile label="Covers" value={z.data ? z.data.orders.covers : "—"} caption={z.data?.orders.open_count ? `${z.data.orders.open_count} ${z.data.orders.open_count === 1 ? "order" : "orders"} still open` : undefined} />
+          <StatTile label="Orders completed" value={z.data ? z.data.orders.count : "—"} />
+          <StatTile label="Covers" value={z.data ? z.data.orders.covers : "—"} />
           <StatTile label="Open now" value={floor.data ? floor.data.open_orders : "—"} />
         </StatTiles>
       ) : null}
@@ -141,7 +137,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
       {outlet ? (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
           <div className="flex flex-col gap-6">
-            <Panel title="Service" body="flush" aside={floor.data ? `${plural(floor.data.open_orders, "open order")} · ${seated.length} of ${floor.data.tables.length} tables seated` : "loading"}>
+            <Panel title="Service" body="flush" aside={floor.data ? `${seated.length} of ${floor.data.tables.length} seated` : "loading"}>
               {floor.data ? (
                 seated.length === 0 && floor.data.other_orders.length === 0 ? (
                   <EmptyState variant="quiet" className="px-5 py-4" title="No open orders" hint="Tables and takeaway orders appear here as stations open them." />
@@ -151,7 +147,8 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                       .slice()
                       .sort((a, b) => (b.requests_waiting - a.requests_waiting) || ((b.order?.pending_rounds ?? 0) - (a.order?.pending_rounds ?? 0)) || ((b.order?.elapsed_seconds ?? 0) - (a.order?.elapsed_seconds ?? 0)))
                       .map((t) => (
-                        <li key={t.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-5 py-3">
+                        <li key={t.id}>
+                          <RowLink href={t.order ? `/orders?order=${t.order.id}` : null}>
                           <span className="inline-flex flex-wrap items-baseline gap-2">
                             <span className="text-line text-ink">{t.name}</span>
                             <StatusDot status={t.status === "bill_requested" ? "bill" : t.status === "sent" ? "sent" : t.status === "paid" ? "paid" : "seated"} label={t.status === "bill_requested" ? "Bill requested" : t.status === "sent" ? "Sent" : t.status === "paid" ? "Paid" : "Seated"} muted />
@@ -160,13 +157,14 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                             {t.requests_waiting ? <Badge tone="alert">{plural(t.requests_waiting, "request")}</Badge> : null}
                           </span>
                           <span className="tabular text-ink-2">
-                            {t.order ? <><span className="text-caption tabular">{t.order.order_no}</span> · open {formatElapsed(t.order.elapsed_seconds)} · </> : null}
-                            {t.order ? <Money cents={t.order.total} /> : null}
+                            {t.order ? <><Money cents={t.order.total} /> · {formatElapsed(t.order.elapsed_seconds)}</> : null}
                           </span>
+                          </RowLink>
                         </li>
                       ))}
                     {floor.data.other_orders.map((o) => (
-                      <li key={o.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-5 py-3">
+                      <li key={o.id}>
+                        <RowLink href={`/orders?order=${o.id}`}>
                         <span className="inline-flex flex-wrap items-baseline gap-2">
                           <span className="text-line text-ink">{label(ORDER_TYPE_LABEL, o.order_type)}</span>
                           <span className="text-ink-2">{o.customer_ref?.name || o.customer_ref?.mobile || ""}</span>
@@ -175,21 +173,16 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                         <span className="tabular text-ink-2">
                           <span className="text-caption tabular">{o.order_no}</span> · <Money cents={o.total} />
                         </span>
+                        </RowLink>
                       </li>
                     ))}
                   </ul>
                 )
               ) : null}
-              <p className="border-t border-rule-subtle px-5 py-3 text-caption text-ink-2">
-                <Link href="/orders" className="text-ink underline underline-offset-4 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
-                  Open Orders
-                </Link>{" "}
-                for the detail drawer.
-              </p>
             </Panel>
 
             <Panel title="QR orders waiting" body="flush" aside={rounds.data ? `${rounds.data.length}` : "loading"}>
-              {rounds.data && rounds.data.length === 0 ? <EmptyState variant="centred" icon={QrCode} className="py-8" title="Nothing waiting" hint="Rounds guests submit from their phones land here until a person accepts them." /> : null}
+              {rounds.data && rounds.data.length === 0 ? <EmptyState variant="centred" icon={QrCode} className="py-8" title="No QR orders waiting" /> : null}
               <ul className="flex flex-col divide-y divide-rule-subtle">
                 {(rounds.data ?? []).map((r) => (
                   <li key={r.id} className="flex flex-col gap-1 px-5 py-3">
@@ -221,7 +214,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
             </Panel>
 
             <Panel title="Table requests" body="flush" aside={requests.data ? `${requests.data.length}` : "loading"}>
-              {requests.data && requests.data.length === 0 ? <EmptyState variant="centred" icon={BellRing} className="py-8" title="Nothing waiting" hint="Call-staff and bill requests from guests' phones land here." /> : null}
+              {requests.data && requests.data.length === 0 ? <EmptyState variant="centred" icon={BellRing} className="py-8" title="No table requests" /> : null}
               <ul className="flex flex-col divide-y divide-rule-subtle">
                 {(requests.data ?? []).map((r) => (
                   <li key={r.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-5 py-3">
@@ -259,7 +252,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                   )
                 }
               >
-              {late.data && lateJobs.length === 0 ? <EmptyState variant="centred" icon={Printer} className="py-8" title="Nothing waiting" hint={relays.data && relays.data.filter((r) => !r.archived).length === 0 ? "No relay at this outlet, so nothing prints." : "Every ticket printed within 10 seconds."} /> : null}
+              {late.data && lateJobs.length === 0 ? <EmptyState variant="centred" icon={Printer} className="py-8" title="Nothing waiting" hint={relays.data && relays.data.filter((r) => !r.archived).length === 0 ? undefined : "Every ticket printed within 10 seconds."} /> : null}
               <ul className="flex flex-col divide-y divide-rule-subtle">
                 {lateJobs.map((j: PrintJob) => (
                   <li key={j.id} className="flex flex-col gap-1 px-5 py-3">
@@ -314,7 +307,17 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
               {offline.length ? <p className="border-t border-rule-subtle px-5 py-3 text-caption text-ink-2">Check the print box is powered and on the network. Tickets stay queued until it returns.</p> : null}
             </Panel>
 
-            <Panel title="Open shifts" body="flush" aside={shifts.data ? `${shifts.data.length}` : "loading"}>
+            <Panel
+              title={
+                canReports ? (
+                  <Link href="/reports/shifts" className="underline-offset-4 hover:underline max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
+                    Open shifts
+                  </Link>
+                ) : (
+                  "Open shifts"
+                )
+              }
+              body="flush" aside={shifts.data ? `${shifts.data.length}` : "loading"}>
               {shifts.data && shifts.data.length === 0 ? <EmptyState variant="quiet" className="px-5 py-4" title="No open shift" hint="Stations open a shift with a counted float." /> : null}
               <ul className="flex flex-col divide-y divide-rule-subtle">
                 {(shifts.data ?? []).map((s) => (
@@ -329,18 +332,10 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                   </li>
                 ))}
               </ul>
-              {canReports ? (
-                <p className="border-t border-rule-subtle px-5 py-3 text-caption text-ink-2">
-                  <Link href="/reports/shifts" className="text-ink underline underline-offset-4 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
-                    Shifts
-                  </Link>{" "}
-                  has the closed ones with expected, counted and variance.
-                </p>
-              ) : null}
             </Panel>
 
             {canZ ? (
-            <Panel title="Today so far" body="flush" aside={z.data ? <>business day <BusinessDay value={z.data.scope.business_date} /></> : "loading"}>
+            <Panel title="Today so far" body="flush" aside={z.data ? undefined : "loading"}>
               {z.data && !zMoney ? (
                 <p className="px-5 py-4 text-body text-ink-2">The money figures show once every open shift is closed, so the drawer count stays blind.</p>
               ) : null}
@@ -365,10 +360,9 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
                     {zMoney.tenders.length === 0 ? <li className="text-caption text-ink-2">No payments yet.</li> : null}
                   </ul>
                   {canReports ? (
-                    <p className="text-caption text-ink-2">
-                      Register figures.{" "}
+                    <p className="text-caption">
                       <Link href="/reports/z-report" className="text-ink underline underline-offset-4 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
-                        Full Z-report
+                        Z-report
                       </Link>
                     </p>
                   ) : null}
@@ -417,5 +411,17 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
         />
       ) : null}
     </>
+  );
+}
+
+/** A Service row that opens its order in Orders; a row with no order is the same row without the link. */
+function RowLink({ href, children }: { href: string | null; children: ReactNode }) {
+  const row = "flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-5 py-3";
+  return href ? (
+    <Link href={href} className={`${row} outline-none hover:bg-surface-2 focus-visible:bg-surface-2`}>
+      {children}
+    </Link>
+  ) : (
+    <div className={row}>{children}</div>
   );
 }

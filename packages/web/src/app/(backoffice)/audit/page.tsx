@@ -14,7 +14,7 @@ export default async function AuditPage({ searchParams }: { searchParams: PageSe
   );
   return (
     <>
-      <PageHeader title="Changes" description="The audit log: who changed what, on which target, when, and who approved it." />
+      <PageHeader title="Changes" />
       <AuditView
         initialPage={first}
         staff={staff.data}

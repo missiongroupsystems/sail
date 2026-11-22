@@ -13,7 +13,7 @@ export default async function TeamPage() {
   );
   return (
     <>
-      <PageHeader title="Team" description="Staff, their roles and where they can work. PINs are set here and never shown." />
+      <PageHeader title="Team" />
       <TeamView initialStaff={staff.data} outlets={outlets.data} brands={brands.data} scope={scope} />
     </>
   );

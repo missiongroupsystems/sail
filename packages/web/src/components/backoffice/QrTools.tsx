@@ -31,7 +31,7 @@ export function QrSheetButton({ outletId, outletName, canRotate, describedBy }: 
         </Button>
       </div>
       <p className="text-right text-[12.5px] text-ink-3 max-sm:text-left" role="status">
-        {!canRotate ? "Admin only." : rotateAll.data ? `${rotateAll.data.rotated} new codes. Download the sheet and replace the cards on the tables.` : "The sheet prints the codes on the tables now."}
+        {!canRotate ? "Admin only." : rotateAll.data ? `${rotateAll.data.rotated} new codes. Download the sheet and replace the cards on the tables.` : null}
       </p>
       <InlineError error={sheet.error} />
       <Dialog

@@ -95,8 +95,8 @@ export function actionLabel(a: Pick<AuditEntry, "action" | "target_kind" | "deta
   return auditActionLabel(a.action);
 }
 
-/** Targets whose label already says what they are ("P-0007 · Bill 1", "Table 7"). */
-const SELF_NAMED = new Set(["order", "check", "payment", "order_line", "table"]);
+/** Targets whose label already says what they are ("P-0007 · Bill 1", "Table 7", a person's name). */
+const SELF_NAMED = new Set(["order", "check", "payment", "order_line", "table", "staff"]);
 
 /** The initials set on each staff record, so the audit's chips match Team and the side rail (E-N13). */
 const StaffInitials = createContext<Map<string, string>>(new Map());
@@ -141,11 +141,10 @@ const columns: DataTableColumn<AuditEntry>[] = [
       <span className="flex min-w-0 items-center gap-2">
         <Who entry={a} />
         {/* A station or relay without a name is said once, by its chip. */}
-        {/* The name on one line, the role in grey after it, so a row is one line high. */}
+        {/* The name on one line; the role at the time is in its tooltip, not repeated on every row. */}
         {a.actor_name || !["station", "relay", "agent", "guest"].includes(a.actor_type) ? (
           <span className="min-w-0 truncate whitespace-nowrap text-ink" title={[a.actor_name, a.actor_role].filter(Boolean).join(" · ")}>
             {a.actor_name ?? a.actor_type}
-            {a.actor_role ? <span className="text-ink-2"> · {a.actor_role}</span> : null}
           </span>
         ) : null}
       </span>
@@ -258,7 +257,7 @@ export function AuditView({ initialPage, staff, initial }: { initialPage: AuditP
         ) : null}
         <span className="text-[13px] text-ink-2 tabular">
           {rows.length} {rows.length === 1 ? "entry" : "entries"}
-          {pages.hasNextPage ? " shown" : rows.length ? " · that is everything" : ""}
+          {pages.hasNextPage ? " shown" : ""}
         </span>
       </div>
     </StaffInitials.Provider>

@@ -224,7 +224,7 @@ export function PrintersView({ outlets, scope, initialOutletId, initialPrinters,
           defaultSort={{ column: "name", direction: "ascending" }}
           onRowAction={(p) => setSheet({ mode: "edit", printer: p })}
           rowClassName={(p) => (p.archived ? "text-ink-2" : undefined)}
-          emptyState={<EmptyState variant="centred" title="No printers at this outlet" hint={admin ? "Select Add printer. Give it a fixed IP on the outlet LAN, port 9100." : "An Admin adds printers."} />}
+          emptyState={<EmptyState variant="centred" title="No printers at this outlet" hint={admin ? undefined : "An Admin adds printers."} />}
         />
         </>
       )}
@@ -248,16 +248,16 @@ function NotPrinted({ outletId }: { outletId: string }) {
     refetchInterval: 30_000,
   });
   const n = failed.data?.length ?? 0;
+  // Shown only when something has not printed: a section saying all is well is noise.
+  if (n === 0) return null;
   return (
     <section aria-labelledby="printing-not-printed" className="mt-8">
       <SectionHead as="h2" id="printing-not-printed" title="Not printed" className="mb-1" />
       <p className="text-body text-ink-2" role="status">
-        {!failed.data ? "Checking…" : n === 0 ? "Every ticket the register sent has printed or is on its way." : `${plural(n, "ticket has", "tickets have")} not printed. `}
-        {n > 0 ? (
-          <Link href="/printing/jobs" className="text-ink underline underline-offset-4">
-            See them in Print jobs
-          </Link>
-        ) : null}
+        {`${plural(n, "ticket has", "tickets have")} not printed. `}
+        <Link href="/printing/jobs" className="text-ink underline underline-offset-4">
+          See them in Print jobs
+        </Link>
       </p>
     </section>
   );

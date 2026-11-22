@@ -87,18 +87,17 @@ export function TaxClassesView({ initialClasses, outlets }: { initialClasses: Ta
               Default
             </Pill>
           ) : null}
+          {c.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : null}
         </span>
       ),
     },
     { key: "rate", header: "Rate", render: (c) => componentsText(defaultRate(c)?.components ?? []) },
     { key: "rates", header: "Outlet and order-type rates", numeric: true, render: (c) => c.rates.length - 1 || "—" },
-    { key: "archived", header: "Status", sortable: true, sortValue: (c) => (c.archived ? 1 : 0), render: (c) => (c.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <Pill size="sm" tone="paid">Active</Pill>) },
   ];
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[14px] text-ink-2">What products and fees are taxed at. A product without a class uses the default.</p>
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
         <div className="flex flex-wrap items-center gap-4">
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
@@ -189,7 +188,7 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
       isDismissable={!busy}
       width="lg"
       title={taxClass ? taxClass.name : "New tax class"}
-      description={taxClass ? (taxClass.archived ? "Archived" : taxClass.is_default ? "The default class: products without a class use it." : "Rename it, change its rates, or make it the default.") : "A class with its default rate. Add outlet or order-type rates after."}
+      description={taxClass ? (taxClass.archived ? "Archived" : undefined) : "A class with its default rate. Add outlet or order-type rates after."}
       footer={
         <>
           {taxClass && mayEdit.ok ? (
@@ -221,7 +220,7 @@ function TaxClassSheet({ isOpen, taxClass, outlets, onClose }: { isOpen: boolean
               <SheetSection title="Default rate" hint="Applies at every outlet and order type. No components means exempt.">
                 <Controller control={form.control} name="components" render={({ field }) => <ComponentsEditor value={field.value} onChange={field.onChange} errors={form.formState.errors.components} />} />
               </SheetSection>
-              <RhfSwitch control={form.control} name="is_default" description="Products without a class use the default.">
+              <RhfSwitch control={form.control} name="is_default">
                 Make this the default class
               </RhfSwitch>
             </>

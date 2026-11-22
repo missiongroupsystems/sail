@@ -134,15 +134,16 @@ test.describe("back office and POS together", () => {
       await expect(sheet.getByRole("textbox", { name: "Base price", exact: true })).toHaveAttribute("aria-required", "true");
     });
 
-    await test.step("the three hints are on the form, not behind a menu", async () => {
-      // The Kind hint describes the kind chosen: Product for a new item, Component once that is picked.
-      await expect(sheet.getByText("Sold on its own. Choose Component for an item used only inside other items, such as a bundle or recipe part.")).toBeVisible();
+    await test.step("what a Component is shows where it is chosen, and the money hints stay on the form", async () => {
+      // The Kind meaning lives in the option: the list says what a Component is; the closed field shows the choice only.
       await sheet.getByRole("button", { name: /Kind/ }).click();
+      await expect(page.getByRole("option", { name: /Component/ })).toContainText("Used inside other items, not sold alone");
       await page.getByRole("option", { name: /Component/ }).click();
-      await expect(sheet.getByText("An item used inside other items, such as a bundle or recipe part. It isn't sold on its own.")).toBeVisible();
+      await expect(sheet.getByRole("button", { name: /Kind/ })).toContainText("Component");
+      await expect(sheet.getByText("Used inside other items, not sold alone")).toHaveCount(0);
       await sheet.getByRole("button", { name: /Kind/ }).click();
       await page.getByRole("option", { name: /^Product/ }).click();
-      await expect(sheet.getByText("Charges a returnable-container deposit, set up in Pricing › Rules.")).toBeVisible();
+      await expect(sheet.getByText("Adds the container deposit from Pricing.")).toBeVisible();
       await expect(sheet.getByText("Staff enter the price when they add the item.")).toBeVisible();
     });
 
@@ -218,7 +219,7 @@ test.describe("back office and POS together", () => {
         await expect(plan.getByRole("button", { name: new RegExp(`^${added.name}, 4 seats, rect`) })).toHaveAttribute("aria-pressed", "true");
         await expect(panel.getByRole("textbox", { name: "Name" })).toHaveValue(added.name);
         await expect(panel.getByRole("button", { name: "Save table" })).toHaveCount(0);
-        await expect(panel.getByText("Changes save as you make them.")).toBeVisible();
+        await expect(panel.getByText("Saved", { exact: true })).toBeVisible();
       });
 
       await test.step("shape applies when chosen; seats when the field is left; a name after a pause in typing", async () => {
@@ -272,7 +273,7 @@ test.describe("back office and POS together", () => {
         // Back to the saved name: nothing is left unsaved, so the refusal goes.
         await panel.getByRole("textbox", { name: "Name" }).fill("Window");
         await expect(refusal).toHaveCount(0);
-        await expect(panel.getByText("Changes save as you make them.")).toBeVisible();
+        await expect(panel.getByText("Saved", { exact: true })).toBeVisible();
 
         // Two quick changes: sent one after the other, and the last one stays.
         await panel.getByRole("textbox", { name: "Seats" }).fill("7");

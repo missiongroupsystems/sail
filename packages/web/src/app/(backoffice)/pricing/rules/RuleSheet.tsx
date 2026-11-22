@@ -135,10 +135,12 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
             <Badge tone={row.current.status === "active" ? "paid" : row.current.status === "scheduled" ? "sent" : row.current.status === "archived" ? "alert" : "neutral"}>
               {STATUS_LABEL[row.current.status]} · v{row.current.version}
             </Badge>
-            {row.body.seeded ? <Badge>Seeded</Badge> : null}
-            <Button variant="quiet" className="min-h-8 max-sm:min-h-11 px-2 text-caption" onPress={() => setShowVersions((v) => !v)}>
-              {showVersions ? "Hide" : "Show"} {row.versions.length} {row.versions.length === 1 ? "version" : "versions"}
-            </Button>
+            {/* One version has no history to show: the toggle appears once there is a second. */}
+            {row.versions.length > 1 ? (
+              <Button variant="quiet" className="min-h-8 max-sm:min-h-11 px-2 text-caption" onPress={() => setShowVersions((v) => !v)}>
+                {showVersions ? "Hide" : "Show"} {row.versions.length} versions
+              </Button>
+            ) : null}
           </span>
         ) : (
           "Every change saves as a new version. Orders already priced keep their snapshot."
@@ -205,8 +207,8 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
           <FormSection>
             {/* The key is set once, when the rule is made; an existing rule shows its name alone (final2 A P-A8). */}
             <div className={row ? "grid gap-4" : "grid gap-4 sm:grid-cols-[1fr_220px]"}>
-              <RhfTextField control={form.control} name="name" label="Name" placeholder={kind === "fee" ? "Service charge" : "Staff meal"} description="Shown on bills and receipts." autoFocus={!row} />
-              {row ? null : <RhfTextField control={form.control} name="rule_key" label="Key" mono description="Stable id across versions." />}
+              <RhfTextField control={form.control} name="name" label="Name" placeholder={kind === "fee" ? "Service charge" : "Staff meal"} autoFocus={!row} />
+              {row ? null : <RhfTextField control={form.control} name="rule_key" label="Key" mono />}
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <RhfSelect
@@ -223,7 +225,6 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
                 control={form.control}
                 name="report_class"
                 label="Reports as"
-                description="How it appears in sales reports."
                 items={REPORT_CLASSES.map((c) => ({ id: c, label: REPORT_CLASS_LABEL[c]! }))}
               />
             </div>
@@ -266,17 +267,17 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
                   name="level"
                   label="Applied at"
                   isDisabled={calc !== "percent"}
-                  description={calc === "percent" ? "Line: each eligible line. Order: the eligible subtotal, spread across lines." : "Set by the calculation."}
+                  description={calc === "percent" ? undefined : "Set by the calculation."}
                   items={[
-                    { id: "line", label: "Each line" },
-                    { id: "order", label: "The whole order" },
+                    { id: "line", label: "Each line", description: "Each eligible line." },
+                    { id: "order", label: "The whole order", description: "The eligible subtotal, spread across lines." },
                   ]}
                 />
               ) : null}
               <Controller
                 control={form.control}
                 name="cap"
-                render={({ field, fieldState }) => <MoneyField label="Cap per order" value={field.value} onChange={field.onChange} onBlur={field.onBlur} placeholder="No cap" description="The most this rule can add or take off one order." isInvalid={!!fieldState.error} errorMessage={fieldState.error?.message} />}
+                render={({ field, fieldState }) => <MoneyField label="Cap per order" value={field.value} onChange={field.onChange} onBlur={field.onBlur} placeholder="No cap" isInvalid={!!fieldState.error} errorMessage={fieldState.error?.message} />}
               />
             </div>
             {kind === "fee" ? (
@@ -292,7 +293,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
             ) : null}
           </FormSection>
 
-          <FormSection variant="label" title="Applies to" hint="Which lines the rule looks at. Exclusions win over the scope.">
+          <FormSection variant="label" title="Applies to" hint="Exclusions win over the scope.">
             <RhfSelect
               control={form.control}
               name="scope_type"
@@ -320,7 +321,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
             </details>
           </FormSection>
 
-          <FormSection variant="label" title="Conditions" hint="All ticked conditions must hold. Leave a group unticked to not check it.">
+          <FormSection variant="label" title="Conditions" hint="All ticked conditions must hold.">
             <div className="grid gap-6 sm:grid-cols-2">
               <RhfCheckboxGroup control={form.control} name="cond_order_types" label="Order types" options={ORDER_TYPES.map((t) => ({ id: t, label: ORDER_TYPE_LABEL[t]! }))} />
               <RhfCheckboxGroup control={form.control} name="cond_channels" label="Channels" options={CHANNELS.map((c) => ({ id: c, label: CHANNEL_LABEL[c]! }))} />
@@ -349,10 +350,20 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
             </div>
           </FormSection>
 
-          {/* Stacking is about discounts: a fee's form leaves it out (live-test E-L21). */}
-          <FormSection variant="label" title="Order of evaluation" hint={kind === "fee" ? "Lower priority runs first." : "Lower priority runs first. An exclusive discount stops later discounts on the lines it touched."}>
+          <FormSection variant="label" title="How it is applied">
+            <RhfSelect
+              control={form.control}
+              name="application"
+              label="Application"
+              items={[
+                { id: "auto", label: "Automatic", description: "Applied by the register whenever the conditions hold." },
+                { id: "manual", label: "Manual", description: "Staff apply it to an order, with the controls below." },
+              ]}
+              className="sm:max-w-[360px]"
+            />
+            {/* Stacking is about discounts: a fee's form leaves it out (live-test E-L21). */}
             <div className="grid gap-4 sm:grid-cols-2">
-              <RhfTextField control={form.control} name="priority" label="Priority" numeric inputMode="numeric" />
+              <RhfTextField control={form.control} name="priority" label="Priority (lower runs first)" numeric inputMode="numeric" />
               {kind === "fee" ? null : (
                 <RhfSelect
                   control={form.control}
@@ -365,19 +376,6 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
                 />
               )}
             </div>
-          </FormSection>
-
-          <FormSection variant="label" title="How it is applied">
-            <RhfSelect
-              control={form.control}
-              name="application"
-              label="Application"
-              items={[
-                { id: "auto", label: "Automatic", description: "Applied by the register whenever the conditions hold." },
-                { id: "manual", label: "Manual", description: "Staff apply it to an order, with the controls below." },
-              ]}
-              className="sm:max-w-[360px]"
-            />
             {application === "manual" ? (
               <>
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -399,7 +397,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
             ) : null}
           </FormSection>
 
-          <FormSection variant="label" title="Effective" hint="When this version starts applying to new orders.">
+          <FormSection variant="label" title="Effective">
             <div className="grid gap-4 sm:grid-cols-2">
               <RhfSelect
                 control={form.control}
@@ -412,7 +410,7 @@ export function RuleSheet({ state, onClose, outlets, brands, categories, groups,
               />
               {effective === "at" ? <RhfTextField control={form.control} name="effective_at" label="Scheduled for" type="datetime-local" numeric /> : null}
             </div>
-            <RhfTextField control={form.control} name="note" label="Note" placeholder="Why this version exists" description="Kept with the version." />
+            <RhfTextField control={form.control} name="note" label="Note" placeholder="Why this version exists" />
           </FormSection>
 
           {mayEdit.reason ? <p className="text-body text-ink-2">{mayEdit.reason}</p> : null}

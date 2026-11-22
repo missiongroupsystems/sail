@@ -51,13 +51,10 @@ export function freeCell(taken: Box[], w = 2, h = 2): { x: number; y: number } {
   return { x: 0, y: 0 };
 }
 
-/** The page's intro says what the signed-in role can do here: an Admin edits the plan, a role below reads it (L1). */
+/** The page's intro is only for a role below Admin, to say why the plan does not move for them (L1); the editor's own panel teaches the gestures. */
 export function FloorIntro() {
   const canEdit = useCan("tables.update").ok;
-  const description = canEdit
-    ? "Areas and tables per outlet. Drag a table to move it; select it to edit. Download the QR sheet for the tables, or rotate one table's code."
-    : "Areas and tables per outlet. Select a table to see its name, seats and shape. The QR codes and their sheet need an Admin.";
-  return <PageHeader title="Floor & QR" description={description} />;
+  return <PageHeader title="Floor & QR" description={canEdit ? undefined : "Select a table to see its name, seats and shape. The QR codes and their sheet need an Admin."} />;
 }
 
 /** Floor plan editor (FloorCanvas / TableShape, editor variant). Grid units are what the API stores. */
@@ -363,12 +360,13 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
           <aside className="flex flex-col gap-4 self-start rounded-panel border border-rule bg-surface p-4">
             <div className="flex items-start justify-between gap-3">
               <h2 className="min-w-0 font-heading text-[17px] leading-[1.3] font-semibold text-ink [overflow-wrap:anywhere]">{selectedTable ? selectedTable.name : "Table"}</h2>
-              {selectedTable ? selectedTable.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <span className="text-[13px] text-ink-3 tabular">{selectedTable.seats} seats</span> : null}
+              {/* The seats are a field just below; the head marks only an archived table. */}
+              {selectedTable?.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : null}
             </div>
             {selectedTable ? (
               <TablePanel key={selectedTable.id} table={selectedTable} areas={sortedAreas} onSave={(body) => saveSelected(selectedTable, body)} saving={patchTable.isPending} canRotateQr={admin} denied={canEditTable.reason} refusal={refusals[selectedTable.id] ?? null} onSynced={(fields) => settleRefusal(selectedTable.id, fields)} />
             ) : (
-              <p className="text-[14px] text-ink-2">{canEditTable.ok ? "Select a table to edit its name, seats, shape and size, or to rotate its QR code. Drag it to move it; drag the corner to resize. Arrow keys nudge a focused table." : `Select a table to see its details. ${canEditTable.reason}`}</p>
+              <p className="text-[14px] text-ink-2">{canEditTable.ok ? "Select a table to edit it. Drag to move, drag a corner to resize; arrow keys nudge a focused table." : `Select a table to see its details. ${canEditTable.reason}`}</p>
             )}
           </aside>
         </div>
@@ -487,9 +485,6 @@ function TablePanel({ table, areas, onSave, saving, canRotateQr, denied, refusal
           {problem.geom}
         </p>
       ) : null}
-      <p className="text-[12.5px] text-ink-3">
-        Grid of {COLS} × {ROWS}. Position and size are in grid units.
-      </p>
       </FieldsLocked>
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="secondary" className={table.archived ? greyPill : greyPillAlert} onPress={() => (table.archived ? onSave({ archived: false }) : confirm.ask({ title: `Archive ${table.name}?`, body: "It leaves the floor plan on the POS. Past orders keep it. You can restore it later.", confirmLabel: "Archive table", cancelLabel: "Keep the table", onConfirm: () => onSave({ archived: true }) }))} isDisabled={saving || denied !== null}>
@@ -498,7 +493,7 @@ function TablePanel({ table, areas, onSave, saving, canRotateQr, denied, refusal
         {/* In the place Save table had: what happens to a change, and that the last one has gone through. */}
         {denied === null ? (
           <p role="status" className="text-[12.5px] text-ink-3">
-            {saving ? "Saving…" : error ? "Not saved yet." : "Changes save as you make them."}
+            {saving ? "Saving…" : error ? "Not saved yet." : "Saved"}
           </p>
         ) : null}
         {confirm.dialog}

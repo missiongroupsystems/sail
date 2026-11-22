@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, Circle, RotateCcw } from "lucide-react";
-import { BusinessDay, Badge, Button, DescriptionList, Dialog, Group, InlineError, Money, Sheet, SheetSection, Skeleton, taxRows, TextField, useLocale, ValueRows, kindTone } from "@sail/ui";
+import { BusinessDay, Badge, Button, DescriptionList, Dialog, Group, InlineError, Money, Sheet, SheetSection, Skeleton, taxRows, TextField, useLocale, ValueRows } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useBusinessDate } from "@/lib/business-date";
@@ -22,11 +22,12 @@ import { auditActionLabel, eventLabel } from "@/lib/format";
 const REFUND_KIND_LABEL: Record<string, string> = { full: "Whole bill", lines: "Some items", amount: "An amount" };
 
 /**
- * How many times the order went to the kitchen (`round_count` counts sends, from the POS or an accepted QR round). A QR
- * round that was turned down never went, so an order whose only round was rejected reads "not sent to the kitchen".
+ * How many times the order went to the kitchen (`round_count` counts sends, from the POS or an accepted QR round), said
+ * only when it is not the usual once. A QR round that was turned down never went, so an order whose only round was
+ * rejected reads "not sent to the kitchen".
  */
-function kitchenSends(n: number): string {
-  return n === 0 ? "not sent to the kitchen" : n === 1 ? "sent to the kitchen once" : `sent to the kitchen ${n} times`;
+function kitchenSends(n: number): string | null {
+  return n === 0 ? "not sent to the kitchen" : n === 1 ? null : `sent to the kitchen ${n} times`;
 }
 
 /**
@@ -35,7 +36,7 @@ function kitchenSends(n: number): string {
  * their role allows; the register enforces every one of them again.
  */
 export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId: string | null; outletId: string | null; tableName: (id: string | null) => string; onClose: () => void }) {
-  const { dayClock, fullStamp, money } = useLocale();
+  const { dayClock, fullStamp, money, isoDate } = useLocale();
   const { me } = useSession();
   const qc = useQueryClient();
   const readOnly = me.role === "server" || !me.role;
@@ -87,6 +88,8 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
   });
 
   const o = order.data;
+  // A reprice is the register's bookkeeping between the events a person did; it is left out of the list.
+  const shownEvents = useMemo(() => events.data?.filter((e) => e.type !== "order.repriced"), [events.data]);
   const lines = useMemo(() => (o?.lines ?? []).slice().sort((a, b) => (a.seat_no ?? 0) - (b.seat_no ?? 0) || a.sort - b.sort), [o]);
   const checks = useMemo(() => ((o?.checks ?? []) as CheckSnapshot[]).slice().sort((a, b) => a.index - b.index), [o]);
   const refundable = useMemo(() => refundableChecks(checks), [checks]);
@@ -183,10 +186,26 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
       description={
         o ? (
           <>
-            {[label(ORDER_TYPE_LABEL, o.order_type), whoFor(o, tableName) === "—" ? (o.pax ? `${o.pax} ${o.pax === 1 ? "guest" : "guests"}` : "") : `${o.order_type === "dine_in" ? "Table " : ""}${whoFor(o, tableName)}${o.pax ? ` · ${o.pax} ${o.pax === 1 ? "guest" : "guests"}` : ""}`, label(CHANNEL_LABEL, o.channel), `opened ${dayClock(o.opened_at)}`, o.opened_by.name].filter(Boolean).join(" · ")}
-            <span className="block text-caption text-ink-3">
-              Business day <BusinessDay value={o.business_date} /> · {o.pricing_status === "frozen" ? "prices frozen at first payment" : "live pricing"} · {kitchenSends(o.round_count)}
-            </span>
+            {/* A table says dine-in, and the POS is the usual channel: each is named only when it is not implied. */}
+            {[
+              o.order_type === "dine_in" && whoFor(o, tableName) !== "—" ? "" : label(ORDER_TYPE_LABEL, o.order_type),
+              whoFor(o, tableName) === "—" ? (o.pax ? `${o.pax} ${o.pax === 1 ? "guest" : "guests"}` : "") : `${o.order_type === "dine_in" ? "Table " : ""}${whoFor(o, tableName)}${o.pax ? ` · ${o.pax} ${o.pax === 1 ? "guest" : "guests"}` : ""}`,
+              o.channel === "pos" ? "" : label(CHANNEL_LABEL, o.channel),
+              o.opened_by.name,
+              dayClock(o.opened_at),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+            {/* The second line only for the unusual: a business day that is not the day it opened (after midnight),
+                prices frozen by a payment, or a kitchen count other than once. */}
+            {((parts) =>
+              parts.length ? <span className="block text-caption text-ink-3">{parts.map((p, i) => <span key={i}>{i ? " · " : ""}{p}</span>)}</span> : null)(
+              [
+                o.business_date !== isoDate(new Date(o.opened_at)) ? <>Business day <BusinessDay value={o.business_date} /></> : null,
+                o.pricing_status === "frozen" ? "prices frozen at first payment" : null,
+                kitchenSends(o.round_count),
+              ].filter((x) => x !== null),
+            )}
           </>
         ) : undefined
       }
@@ -314,12 +333,13 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                       ))}
                     </ul>
                   ) : null}
+                  {/* A bill nothing was paid on is its total: the Unpaid pill says the rest, so no Paid $0.00 and Balance rows. */}
                   <ValueRows
                     className="px-4 py-3"
                     rows={[
-                      { label: "Paid", value: <Money cents={c.paid_total} /> },
+                      ...(c.paid_total === 0 && !c.refunded_total && c.payments.length === 0 ? [] : [{ label: "Paid", value: <Money cents={c.paid_total} /> }]),
                       ...(c.refunded_total ? [{ label: "Refunded", value: <Money cents={-c.refunded_total} /> }] : []),
-                      ...(c.balance ? [{ label: "Balance", value: <Money cents={c.balance} /> }] : []),
+                      ...(c.balance && c.balance !== c.totals.total ? [{ label: "Balance", value: <Money cents={c.balance} /> }] : []),
                       { label: <span className="font-heading text-[15px] font-semibold">Total</span>, value: <Money cents={c.totals.total} size="heading" />, strong: true },
                     ]}
                   />
@@ -360,9 +380,12 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                         <span className="min-w-0 flex-1 text-[14.5px] text-ink">
                           {l.name}
                           {l.seat_no ? <span className="ml-2 text-caption text-ink-2 no-underline">Seat {l.seat_no}</span> : null}
-                          <Badge className="ml-2" tone={l.status === "fired" ? "sent" : l.status === "voided" ? "alert" : l.status === "held" ? "bill" : "neutral"}>
-                            {l.status === "voided" && !l.fired_at ? "Removed" : label(LINE_STATUS_LABEL, l.status)}
-                          </Badge>
+                          {/* Sent is the usual state of a line here: the pill is for one not sent, held or voided. */}
+                          {l.status === "fired" ? null : (
+                            <Badge className="ml-2" tone={l.status === "voided" ? "alert" : l.status === "held" ? "bill" : "neutral"}>
+                              {l.status === "voided" && !l.fired_at ? "Removed" : label(LINE_STATUS_LABEL, l.status)}
+                            </Badge>
+                          )}
                         </span>
                         <span className="inline-flex flex-col items-end">
                           <Money cents={l.amounts.base} />
@@ -372,10 +395,12 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                       {l.modifiers.length ? <p className="pl-11 text-caption text-ink-2">{l.modifiers.map((m) => `${m.quantity > 1 ? `${m.quantity}× ` : ""}${m.name}`).join(", ")}</p> : null}
                       {l.notes ? <p className="pl-11 text-caption text-ink-2">“{l.notes}”</p> : null}
                       {l.void_reason ? <p className="pl-11 text-caption text-status-alert no-underline">{l.fired_at ? "Voided" : "Removed"}: {l.void_reason}</p> : null}
-                      <p className="pl-11 text-caption text-ink-2 tabular">
-                        {l.unit_price ? <Money cents={l.unit_amount ?? l.unit_price} size="caption" /> : "open price"} each{l.fired_at ? ` · sent ${dayClock(l.fired_at)}` : ""}
-                        {l.added_by ? ` · ${l.added_by}` : ""}
-                      </p>
+                      {/* The unit price only where the amount is not it already; who sent it and when is in Events. */}
+                      {l.quantity > 1 || !l.unit_price ? (
+                        <p className="pl-11 text-caption text-ink-2 tabular">
+                          {l.unit_price ? <><Money cents={l.unit_amount ?? l.unit_price} size="caption" /> each</> : "open price"}
+                        </p>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
@@ -392,14 +417,17 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
                   {o.adjustments.map((a) => (
                     <li key={a.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-3">
                       <span className="text-ink">{a.name}</span>
-                      <Badge tone={kindTone(a.kind)}>{a.kind}</Badge>
+                      {/* The sign says fee or discount; the rule's version is the register's, not a fact to act on. */}
                       <span className="text-caption text-ink-2">
-                        v{a.rule_version}
-                        {a.capped ? " · capped" : ""}
-                        {a.frozen ? " · frozen" : ""}
-                        {/* People by name, from the manual application: the adjustment itself holds their staff ids (live-test C-5). */}
-                        {((m) => `${m?.applied_by ? ` · by ${m.applied_by}` : ""}${m?.approved_by ? ` · approved by ${m.approved_by}` : ""}`)(o.manual_applications.find((m) => m.id === a.manual_application_id) )}
-                        {a.reason ? ` · ${a.reason}` : ""}
+                        {[
+                          a.capped ? "capped" : "",
+                          a.frozen ? "frozen" : "",
+                          // People by name, from the manual application: the adjustment itself holds their staff ids (live-test C-5).
+                          ...((m) => [m?.applied_by ? `by ${m.applied_by}` : "", m?.approved_by ? `approved by ${m.approved_by}` : ""])(o.manual_applications.find((m) => m.id === a.manual_application_id)),
+                          a.reason ?? "",
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </span>
                       <Money cents={a.total} signed className="ml-auto" />
                     </li>
@@ -409,9 +437,10 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
             )}
           </SheetSection>
 
-          <SheetSection label="Refunds" aside={<span className="text-caption text-ink-3 tabular">{refunds.data ? `${refunds.data.length}` : "loading"}</span>}>
-            <InlineError error={refunds.error} />
-            {refunds.data && refunds.data.length === 0 ? <p className="text-ink-2">No refunds on this order.</p> : null}
+          {/* Refunds and Tickets show only when there is one: an empty section said "none" in a full sentence. */}
+          <InlineError error={refunds.error} />
+          {(refunds.data ?? []).length ? (
+          <SheetSection label="Refunds" aside={<span className="text-caption text-ink-3 tabular">{refunds.data!.length}</span>}>
             {(refunds.data ?? []).length ? (
               <Group>
                 <ul className="flex flex-col divide-y divide-rule-subtle">
@@ -448,15 +477,12 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
               </Group>
             ) : null}
           </SheetSection>
+          ) : null}
 
-          <SheetSection label="Tickets" aside={<span className="text-caption text-ink-3 tabular">{jobs.data ? `${jobs.data.length}` : "loading"}</span>}>
-            <InlineError error={jobs.error} />
-            {jobs.data && jobs.data.length === 0 ? (
-              <p className="text-ink-2">
-                {/* A ticket a kitchen display showed is no print job: the Events list says where it went (M3). */}
-                {(events.data ?? []).some((e) => e.type === "kitchen_ticket.created") ? "Nothing printed for this order: its tickets went to the kitchen display." : "Nothing printed for this order yet."}
-              </p>
-            ) : null}
+          {/* A ticket a kitchen display showed is no print job: the Events list says where it went (M3). */}
+          <InlineError error={jobs.error} />
+          {(jobs.data ?? []).length ? (
+          <SheetSection label="Tickets" aside={<span className="text-caption text-ink-3 tabular">{jobs.data!.length}</span>}>
             {(jobs.data ?? []).length ? (
               <Group>
                 <ul className="flex flex-col divide-y divide-rule-subtle">
@@ -479,15 +505,16 @@ export function OrderDrawer({ orderId, outletId, tableName, onClose }: { orderId
               </Group>
             ) : null}
           </SheetSection>
+          ) : null}
 
-          <SheetSection label="Events" aside={<span className="text-caption text-ink-3 tabular">{events.data ? `${events.data.length}` : "loading"}</span>}>
+          <SheetSection label="Events" aside={<span className="text-caption text-ink-3 tabular">{shownEvents ? `${shownEvents.length}` : "loading"}</span>}>
             {events.isPending ? <Skeleton lines={3} /> : null}
             <InlineError error={events.error} />
-            {events.data && events.data.length === 0 ? <p className="text-ink-2">No events for this order in the outlet log.</p> : null}
-            {(events.data ?? []).length ? (
+            {shownEvents && shownEvents.length === 0 ? <p className="text-ink-2">No events for this order in the outlet log.</p> : null}
+            {(shownEvents ?? []).length ? (
               <Group>
                 <ol className="flex flex-col divide-y divide-rule-subtle">
-                  {(events.data ?? []).map((e) => (
+                  {(shownEvents ?? []).map((e) => (
                     <li key={e.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2.5">
                       <span className="tabular whitespace-nowrap text-ink-2" title={fullStamp(e.occurred_at)}>
                         {dayClock(e.occurred_at)}

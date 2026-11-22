@@ -94,8 +94,7 @@ export function CategoriesView({ initialCategories }: { initialCategories: Categ
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[14px] text-ink-2">Two levels: a category and its sub-categories. Pricing scopes on a category include its sub-categories.</p>
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
         <div className="flex flex-wrap items-center gap-4">
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
@@ -171,7 +170,7 @@ function CategorySheet({ state, parents, parentIds, onClose }: { state: SheetSta
       onOpenChange={(open) => !open && onClose()}
       isDismissable={!busy}
       title={category ? category.name : "New category"}
-      description={category ? (category.archived ? "Archived" : "Rename or move the category.") : "Categories group products for reports and pricing scopes."}
+      description={category?.archived ? "Archived" : undefined}
       footer={
         <>
           {category && mayEdit.ok ? (
@@ -196,8 +195,7 @@ function CategorySheet({ state, parents, parentIds, onClose }: { state: SheetSta
               control={form.control}
               name="parent_id"
               label="Parent"
-              description="Leave as top level, or place it under a category."
-              items={[{ id: ROOT, label: "Top level" }, ...parents.filter((p) => p.id !== category?.id).map((p) => ({ id: p.id, label: p.name }))]}
+              items={[{ id: ROOT, label: "None (top level)" }, ...parents.filter((p) => p.id !== category?.id).map((p) => ({ id: p.id, label: p.name }))]}
             />
           ) : null}
         </SheetSection>

@@ -2,7 +2,7 @@
 
 import { useConfirm } from "@/components/backoffice/Confirm";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, DataTable, EmptyState, InlineError, Sheet, Switch, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
+import { Button, DataTable, EmptyState, InlineError, Sheet, Switch, type DataTableColumn, Pill, FieldsLocked, useLocale } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -11,6 +11,7 @@ import { greyPill, greyPillAlert, SheetSection, TwoLine } from "@/components/off
 import { applyServerErrors } from "@/components/office/server-errors";
 import { RhfSwitch, RhfTextField } from "@/components/forms/fields";
 import { useSession } from "@/lib/session-context";
+import { formatRounding } from "@/lib/format";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { TenderType } from "@/lib/api/types";
@@ -53,23 +54,33 @@ export function PaymentMethodsView({ initialTenders }: { initialTenders: TenderT
       .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name))
       .map((t, i) => [t.id, i + 1] as const),
   );
-  const how = (t: TenderType) => ((t as { provider?: string | null }).provider ? "Sent to the card terminal" : t.is_terminal ? "Card terminal, keyed in" : t.is_cash ? "Cash" : "Recorded by hand");
   const columns: DataTableColumn<TenderType>[] = [
     { key: "sort", header: "Order", numeric: true, sortable: true, width: 80, render: (t) => position.get(t.id) ?? "—" },
-    // Each method says how it is taken, so "Card" and "Card (terminal)" read as two different things (A P19).
-    { key: "name", header: "Payment method", isRowHeader: true, sortable: true, width: "2fr", render: (t) => <TwoLine primary={t.name} meta={how(t)} /> },
+    // How each is taken is in the Cash and Card terminal columns, so "Card" and "Card (terminal)" read as two different
+    // things (A P19) without a second line restating them. A pill only for an archived method.
+    {
+      key: "name",
+      header: "Payment method",
+      isRowHeader: true,
+      sortable: true,
+      width: "2fr",
+      render: (t) => (
+        <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 font-medium text-ink">
+          {t.name}
+          {t.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : null}
+        </span>
+      ),
+    },
     // Rounding is named only while the merchant has it on (review 2, N11).
     { key: "is_cash", header: "Cash", render: (t) => (t.is_cash ? (cashRounding ? "Yes · rounding applies" : "Yes") : "—") },
     { key: "opens_drawer", header: "Opens drawer", render: (t) => (t.opens_drawer ? "Yes" : "—") },
     // A provider-linked method names its provider and terminal (live-test E-L10); a by-hand terminal is keyed in.
     { key: "is_terminal", header: "Card terminal", render: (t) => ((t as { provider?: string | null }).provider ? <TwoLine primary={`Sent to ${(t as { provider?: string | null }).provider}`} meta={(t as { terminal_id?: string | null }).terminal_id ? `Terminal ${(t as { terminal_id?: string | null }).terminal_id}` : undefined} /> : t.is_terminal ? "Yes · amount shown to key in" : "—") },
-    { key: "archived", header: "Status", sortable: true, sortValue: (t) => (t.archived ? 1 : 0), render: (t) => (t.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <Pill size="sm" tone="paid">Active</Pill>) },
   ];
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[14px] text-ink-2">Payment methods offered at the register, in the order they appear.</p>
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
         <div className="flex flex-wrap items-center gap-4">
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
@@ -97,7 +108,8 @@ export function PaymentMethodsView({ initialTenders }: { initialTenders: TenderT
 }
 
 function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort: number; onClose: () => void }) {
-  const cashRounding = Boolean(useSession().merchant.settings.cash_rounding_increment);
+  const rounding = useSession().merchant.settings.cash_rounding_increment;
+  const { money } = useLocale();
   const confirm = useConfirm();
   const qc = useQueryClient();
   const tender = state?.mode === "edit" ? state.tender : null;
@@ -168,16 +180,16 @@ function TenderSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
           </SheetSection>
         ) : null}
         <SheetSection title="Behaviour">
-          <RhfSwitch control={form.control} name="is_cash" description={cashRounding ? "Cash rounding applies and change is calculated." : "Change is calculated."}>
+          <RhfSwitch control={form.control} name="is_cash" description={rounding ? `Rounded to ${formatRounding(rounding, money)}; change is worked out.` : "Change is worked out."}>
             Cash
           </RhfSwitch>
-          <RhfSwitch control={form.control} name="opens_drawer" description="The receipt printer kicks the cash drawer on payment.">
+          <RhfSwitch control={form.control} name="opens_drawer">
             Opens the drawer
           </RhfSwitch>
-          <RhfSwitch control={form.control} name="is_terminal" description="The amount is shown large for keying into a card terminal.">
+          <RhfSwitch control={form.control} name="is_terminal">
             Card terminal
           </RhfSwitch>
-          <RhfSwitch control={form.control} name="requires_approval" description="A Cashier needs a Manager's PIN to take a payment this way. On by default for methods that are neither cash nor a card terminal, such as a house account.">
+          <RhfSwitch control={form.control} name="requires_approval" description="A Cashier needs a Manager's PIN to take a payment this way.">
             Needs a manager's approval
           </RhfSwitch>
           <RhfSwitch control={form.control} name="requires_reference" description="The payment is refused without a reference, such as an account, a room or a voucher number.">

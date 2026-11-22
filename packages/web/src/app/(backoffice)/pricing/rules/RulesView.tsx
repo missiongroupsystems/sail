@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button, DataTable, EmptyState, Icon, InlineError, Money, type DataTableColumn, useLocale, kindTone } from "@sail/ui";
+import { Badge, Button, DataTable, EmptyState, Icon, InlineError, Money, SectionHeading, type DataTableColumn, useLocale } from "@sail/ui";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Info } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -44,10 +44,11 @@ export function describeValue(b: RuleBody): string {
   return b.calc === "fixed_per_unit" ? "per unit" : "per order";
 }
 
+/** A listed rule is active unless it says otherwise: the pill marks the exception only. */
 function statusBadge(v: PricingRuleVersion) {
   switch (v.status) {
     case "active":
-      return <Badge tone="paid">Active</Badge>;
+      return null;
     case "scheduled":
       return <Badge tone="sent">Scheduled</Badge>;
     case "superseded":
@@ -103,17 +104,30 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
       key: "name",
       header: "Rule",
       isRowHeader: true,
-      render: (r) => (
-        <span className="flex flex-col leading-5">
-          <span className="text-ink">{r.body.name}</span>
-          <span className="text-[12.5px] leading-4 text-ink-2">
-            {/* The rule's key is the register's id ("seed:manager-comp"), not a word an owner uses (final2 A P-A8). */}
-            Priority {r.body.priority}
+      // The rows run in priority order, so the priority itself is left to the sheet; a status pill shows only when the
+      // rule is not simply active, and a version waiting to take over is said under the name (E-N11).
+      render: (r) => {
+        const later = r.versions.filter((v) => v.status === "scheduled" && v.version > r.current.version);
+        return (
+          <span className="flex flex-col items-start gap-0.5 leading-5">
+            <span className="inline-flex flex-wrap items-center gap-2">
+              <span className="text-ink">{r.body.name}</span>
+              {statusBadge(r.current)}
+            </span>
+            {r.current.status === "scheduled" ? (
+              <span className="text-[12.5px] leading-4 whitespace-nowrap text-ink-2 tabular" title={stamp(r.current.effective_from)}>
+                from {businessDay(isoDate(new Date(r.current.effective_from)))}
+              </span>
+            ) : null}
+            {later.map((v) => (
+              <span key={v.version} className="text-[12.5px] leading-4 whitespace-nowrap text-status-sent tabular" title={stamp(v.effective_from)}>
+                v{v.version} scheduled from {businessDay(isoDate(new Date(v.effective_from)))}
+              </span>
+            ))}
           </span>
-        </span>
-      ),
+        );
+      },
     },
-    { key: "kind", header: "Kind", render: (r) => <Badge tone={kindTone(r.body.kind)}>{r.body.kind === "fee" ? "Fee" : "Discount"}</Badge> },
     {
       key: "value",
       header: "Value",
@@ -135,29 +149,6 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
       render: (r) => (r.body.application === "auto" ? <span className="text-ink-2">Automatic</span> : <span className="text-ink-2">Manual · {label(ROLE_LABEL, r.body.min_role)}+</span>),
     },
     { key: "report_class", header: "Reports as", hideBelow: "xl", render: (r) => <span className="text-ink-2">{label(REPORT_CLASS_LABEL, r.body.report_class)}</span> },
-    {
-      key: "status",
-      header: "Status",
-      render: (r) => (
-        <span className="inline-flex flex-col items-start gap-0.5">
-          {statusBadge(r.current)}
-          {/* The day with its year on one line; the time is in the tooltip. */}
-          <span className="text-[12.5px] leading-4 whitespace-nowrap text-ink-2 tabular" title={stamp(r.current.effective_from)}>
-            v{r.current.version} · {r.current.status === "scheduled" ? "from " : ""}
-            {/* A database seeded before the fix holds the epoch for "from the start"; it is not a date anyone set. */}
-            {new Date(r.current.effective_from).getTime() <= 0 ? "from the start" : businessDay(isoDate(new Date(r.current.effective_from)))}
-          </span>
-          {/* A later version waiting to take over is shown on the rule's row, not hidden behind the active one (E-N11). */}
-          {r.versions
-            .filter((v) => v.status === "scheduled" && v.version > r.current.version)
-            .map((v) => (
-              <span key={v.version} className="text-[12.5px] leading-4 whitespace-nowrap text-status-sent tabular" title={stamp(v.effective_from)}>
-                v{v.version} scheduled from {businessDay(isoDate(new Date(v.effective_from)))}
-              </span>
-            ))}
-        </span>
-      ),
-    },
   ];
 
   const warnings = validation.data ?? [];
@@ -194,15 +185,37 @@ export function RulesView({ initialVersions, outlets, brands, categories, groups
       {/* A Server may read the rules but not run the checks: the panel is left out rather than waiting on a query that never runs (R new 3). */}
       {canValidate ? <ValidationPanel blocking={blocking} advisory={advisory} rows={rows} isPending={validation.isPending} error={validation.error} onOpen={(key) => { const r = rows.find((x) => x.rule_key === key); if (r) setSheet({ mode: "edit", row: r }); }}/> : null}
 
-      <DataTable
-        aria-label="Pricing rules"
-        columns={columns}
-        rows={rows}
-        rowKey={(r) => r.rule_key}
-        onRowAction={(r) => setSheet({ mode: "edit", row: r })}
-        rowClassName={(r) => (r.current.status === "archived" ? "text-ink-2" : undefined)}
-        emptyState={<EmptyState variant="centred" title="No pricing rules" hint="Select Add fee or Add discount. A service charge or a deposit usually comes first." />}
-      />
+      {/* Fees and discounts are two lists under their own headings, so no row needs a kind pill. */}
+      {rows.length === 0 ? (
+        <DataTable
+          aria-label="Pricing rules"
+          columns={columns}
+          rows={rows}
+          rowKey={(r) => r.rule_key}
+          emptyState={<EmptyState variant="centred" title="No pricing rules" hint="Select Add fee or Add discount. A service charge or a deposit usually comes first." />}
+        />
+      ) : (
+        <div className="flex flex-col gap-8">
+          {(["fee", "discount"] as const).map((kind) => {
+            const list = rows.filter((r) => r.body.kind === kind);
+            if (list.length === 0) return null;
+            const title = kind === "fee" ? "Fees" : "Discounts";
+            return (
+              <section key={kind} className="flex flex-col gap-3">
+                <SectionHeading title={title} />
+                <DataTable
+                  aria-label={title}
+                  columns={columns}
+                  rows={list}
+                  rowKey={(r) => r.rule_key}
+                  onRowAction={(r) => setSheet({ mode: "edit", row: r })}
+                  rowClassName={(r) => (r.current.status === "archived" ? "text-ink-2" : undefined)}
+                />
+              </section>
+            );
+          })}
+        </div>
+      )}
       <InlineError error={versions.error} className="mt-4" />
 
       <RuleSheet state={sheet} onClose={() => setSheet(null)} outlets={outlets} brands={brands} categories={categories} groups={groups} allRules={groupVersions(versions.data, locale)} />
@@ -216,31 +229,27 @@ function ValidationPanel({ blocking, advisory, rows, isPending, error, onOpen }:
   if (isPending) return <p className="mb-4 text-caption text-ink-2">Checking the active rule set…</p>;
   if (error) return <InlineError error={error} className="mb-4" />;
   const total = blocking.length + advisory.length;
+  // A clean rule set needs no box saying so: the panel appears only with something to fix.
+  if (total === 0) return null;
   return (
     <div className="mb-6 rounded-[14px] border border-rule bg-surface">
       <div className="flex flex-wrap items-center gap-3 px-5 py-2.5">
-        <span className="text-[12px] font-medium tracking-[0.04em] text-ink-3 uppercase">Checks</span>
-        {total === 0 ? (
-          <span className="text-ink">No issues in the active rule set</span>
-        ) : (
-          <>
-            {blocking.length ? (
-              <span className="inline-flex items-center gap-1 text-status-alert">
-                <Icon icon={AlertTriangle} size={16} /> {blocking.length} blocking
-              </span>
-            ) : null}
-            {advisory.length ? (
-              <span className="inline-flex items-center gap-1 text-ink-2">
-                <Icon icon={Info} size={16} /> {advisory.length} advisory
-              </span>
-            ) : null}
-            <Button variant="quiet" className="ml-auto" onPress={() => setOpen((v) => !v)}>
-              {open ? "Hide" : "Show"}
-            </Button>
-          </>
-        )}
+        <span className="text-[13px] font-medium text-ink-2">Checks</span>
+        {blocking.length ? (
+          <span className="inline-flex items-center gap-1 text-status-alert">
+            <Icon icon={AlertTriangle} size={16} /> {blocking.length} blocking
+          </span>
+        ) : null}
+        {advisory.length ? (
+          <span className="inline-flex items-center gap-1 text-ink-2">
+            <Icon icon={Info} size={16} /> {advisory.length} advisory
+          </span>
+        ) : null}
+        <Button variant="quiet" className="ml-auto" onPress={() => setOpen((v) => !v)}>
+          {open ? "Hide" : "Show"}
+        </Button>
       </div>
-      {open && total ? (
+      {open ? (
         <ul className="flex flex-col border-t border-rule-subtle">
           {[...blocking, ...advisory].map((w, i) => (
             // The message takes the row; the rule buttons go under it when the row is narrow, never squeezing it to a word a line (F-N1).

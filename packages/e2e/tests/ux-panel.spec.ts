@@ -371,12 +371,12 @@ test.describe("back office 1440×900", () => {
     const opened = await register<{ data: { order_no: string } }>("POST", "/v1/orders", { order_id: crypto.randomUUID(), order_type: "takeaway", outlet_id: outletId, brand_id: brandId });
     await signInBackOffice(page, watch);
     await goTo(page, "/reports/z-report");
-    await page.getByRole("button", { name: /^Close business day .*…$/ }).click();
+    await page.getByRole("button", { name: /^Close business day…$/ }).click();
     const confirm = page.getByRole("alertdialog", { name: /^Close business day/ });
     await expect(confirm.getByText(/orders? (is|are) still open/)).toBeVisible();
     await expect(confirm).toContainText(opened.data.order_no);
     await confirm.getByRole("button", { name: "Keep the day open" }).click();
     await expect(confirm).toBeHidden();
-    await expect(page.getByRole("button", { name: /^Close business day .*…$/ })).toBeEnabled();
+    await expect(page.getByRole("button", { name: /^Close business day…$/ })).toBeEnabled();
   });
 });

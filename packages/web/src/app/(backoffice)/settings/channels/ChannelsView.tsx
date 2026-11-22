@@ -59,10 +59,12 @@ export function ChannelsView({ initialLinks, outlets, brands, menus }: { initial
   const menuName = useMemo(() => new Map(menus.map((m) => [m.id, m.name])), [menus]);
 
   const columns: DataTableColumn<ChannelLink>[] = [
+    // The channel is a value in plain words; a pill only for a link that is switched off.
     { key: "channel", header: "Channel", isRowHeader: true, sortable: true, render: (l) => (
-        <Pill size="sm" tone={l.channel === "pos" ? "neutral" : "seated"}>
+        <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 text-ink">
           {CHANNEL_LABEL[l.channel]}
-        </Pill>
+          {l.enabled ? null : <Pill size="sm" tone="neutral">Off</Pill>}
+        </span>
       ),
     },
     { key: "outlet", header: "Outlet", sortable: true, sortValue: (l) => outletName.get(l.outlet_id), render: (l) => <TwoLine primary={outletName.get(l.outlet_id) ?? "—"} /> },
@@ -81,13 +83,11 @@ export function ChannelsView({ initialLinks, outlets, brands, menus }: { initial
           <span className="text-ink-2">—</span>
         ),
     },
-    { key: "enabled", header: "Status", sortable: true, render: (l) => (l.enabled ? <Pill size="sm" tone="paid">Enabled</Pill> : <Pill size="sm" tone="neutral">Disabled</Pill>) },
   ];
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[14px] text-ink-2">A channel link says which menu a brand serves at an outlet, on the POS or through Scan to order.</p>
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
         {canCreate.ok ? (
           <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
           Add channel link
@@ -120,6 +120,7 @@ function LinkSheet({ state, outlets, brands, menus, onClose }: { state: SheetSta
   }, [state, reset]);
   const brandId = useWatch({ control: form.control, name: "brand_id" });
   const channel = useWatch({ control: form.control, name: "channel" });
+  const enabled = useWatch({ control: form.control, name: "enabled" });
   const brandMenus = menus.filter((m) => m.brand_id === brandId && !m.archived);
 
   const settle = async () => {
@@ -143,7 +144,7 @@ function LinkSheet({ state, outlets, brands, menus, onClose }: { state: SheetSta
       onOpenChange={(open) => !open && onClose()}
       isDismissable={!save.isPending}
       title={link ? `${CHANNEL_LABEL[link.channel]} link` : "New channel link"}
-      description={link ? "Channel, outlet and brand are fixed; change the menu and behaviours." : "One link per channel, outlet and brand."}
+      description={link ? undefined : "One link per channel, outlet and brand."}
       footer={
         <>
           <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={save.isPending}>
@@ -172,12 +173,12 @@ function LinkSheet({ state, outlets, brands, menus, onClose }: { state: SheetSta
             <RhfSelect control={form.control} name="brand_id" label="Brand" isDisabled={!!link} items={brands.map((b) => ({ id: b.id, label: b.name }))} placeholder="Choose a brand" />
           </div>
           <RhfSelect control={form.control} name="menu_id" label="Menu" items={brandMenus.map((m) => ({ id: m.id, label: m.name }))} placeholder={brandId ? (brandMenus.length ? "Choose a menu" : "This brand has no menus yet") : "Choose a brand first"} isDisabled={!brandId || brandMenus.length === 0} />
-          <RhfSwitch control={form.control} name="enabled" description="Disabled links stop serving the menu without being deleted.">
+          <RhfSwitch control={form.control} name="enabled" description={enabled ? undefined : "Disabled links stop serving the menu without being deleted."}>
             Enabled
           </RhfSwitch>
         </SheetSection>
         {channel === "scan_to_order" ? (
-          <SheetSection title="Scan to order" hint="How guest orders behave at this outlet.">
+          <SheetSection title="Scan to order">
             <RhfSwitch control={form.control} name="hold_orders" description="Guest orders wait for a staff member to send them, instead of going straight to the kitchen.">
               Hold orders for staff
             </RhfSwitch>
@@ -190,11 +191,11 @@ function LinkSheet({ state, outlets, brands, menus, onClose }: { state: SheetSta
               render={({ field, fieldState }) => (
                 <TagsField
                   label="Table request labels"
-                  description="Up to 5. Guests tap one to call staff: Water, Cutlery, Bill."
+                  description="Up to 5."
                   value={field.value}
                   onChange={(v) => field.onChange(v.slice(0, 5))}
                   normalise={false}
-                  placeholder="Add a label and press Enter"
+                  placeholder="Water, Cutlery, Bill"
                   isInvalid={!!fieldState.error}
                   errorMessage={fieldState.error?.message}
                 />

@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { greyPill, greyPillAlert, SheetSection, TwoLine } from "@/components/office/parts";
+import { greyPill, greyPillAlert, SheetSection } from "@/components/office/parts";
 import { applyServerErrors } from "@/components/office/server-errors";
 import { PairingPanel } from "@/components/backoffice/PairingPanel";
 import { RhfCheckboxGroup, RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
@@ -73,7 +73,13 @@ export function StationsView({
   const rows = (stations.data ?? []).filter((s) => (showArchived || !s.archived) && (!scope.brandId || !s.brand_id || s.brand_id === scope.brandId));
 
   const columns: DataTableColumn<Station>[] = [
-    { key: "name", header: "Name", sortable: true, isRowHeader: true, width: "1.4fr", render: (s) => <TwoLine primary={s.name} meta={s.kind === "display" ? "Kitchen display" : "POS station"} /> },
+    { key: "name", header: "Name", sortable: true, isRowHeader: true, width: "1.4fr", render: (s) => (
+        // The Home screen column says POS or kitchen display; a pill only for an archived station.
+        <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 font-medium text-ink [overflow-wrap:anywhere]">
+          {s.name}
+          {s.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : null}
+        </span>
+      ) },
     { key: "brand_id", header: "Brand", sortable: true, sortValue: (s) => (s.brand_id ? brandName.get(s.brand_id) : ""), render: (s) => (s.brand_id ? <span className="text-ink-2">{brandName.get(s.brand_id) ?? "Unknown brand"}</span> : s.kind === "display" ? <span className="text-ink-2">—</span> : <StatusDot status="alert" label="No brand · cannot take orders" />) },
     { key: "pay_before_firing", header: "Pay before sending", sortable: true, render: (s) => (s.pay_before_firing ? "Yes" : "—") },
     { key: "seats_enabled", header: "Seats", sortable: true, render: (s) => (s.seats_enabled ? "On" : "Off") },
@@ -83,13 +89,6 @@ export function StationsView({
       header: "Pairing",
       sortable: true,
       render: (s) => (s.paired ? <StatusDot status="paid" label={s.device_label ? `Paired · ${s.device_label}` : "Paired"} /> : <Pill size="sm" tone="neutral">Not paired</Pill>),
-    },
-    {
-      key: "archived",
-      header: "Status",
-      sortable: true,
-      sortValue: (s) => (s.archived ? 1 : 0),
-      render: (s) => (s.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <Pill size="sm" tone="paid">Active</Pill>),
     },
   ];
 
@@ -166,6 +165,7 @@ function StationSheet({ state, live, outletId, brands, defaultBrandId, onClose }
   };
 
   const kind = form.watch("kind");
+  const destinationIds = form.watch("display_destination_ids");
   const destinations = useQuery({
     queryKey: ["display-destinations", outletId],
     queryFn: () => req(api.GET("/v1/display-destinations", { params: { query: { outlet_id: outletId } } })).then((r) => r.data),
@@ -204,6 +204,7 @@ function StationSheet({ state, live, outletId, brands, defaultBrandId, onClose }
       onOpenChange={(open) => !open && onClose()}
       isDismissable={!busy}
       title={station ? station.name : "New station"}
+      // The pairing status stays here: the Pairing panel below says only the moment a device pairs.
       description={
         now ? (
           now.paired ? (
@@ -211,9 +212,7 @@ function StationSheet({ state, live, outletId, brands, defaultBrandId, onClose }
           ) : (
             <StatusDot status="neutral" label="Not paired" muted />
           )
-        ) : (
-          "A station is one iPad at the counter or on the floor, or a kitchen display."
-        )
+        ) : undefined
       }
       footer={
         <>
@@ -257,8 +256,8 @@ function StationSheet({ state, live, outletId, brands, defaultBrandId, onClose }
           )}
         </SheetSection>
         {kind === "display" ? (
-          <SheetSection title="Kitchen display" hint="The display shows the tickets routed to these destinations. Set their routing in Printing › Printers.">
-            <RhfCheckboxGroup control={form.control} name="display_destination_ids" label="Destinations" options={(destinations.data ?? []).map((d) => ({ id: d.id, label: d.name }))} emptyHint={destinations.isPending ? "Loading the destinations…" : "No display destinations at this outlet yet. Add one in Printing › Printers."} description="Tick at least one: a kitchen display with none shows no tickets." />
+          <SheetSection title="Kitchen display">
+            <RhfCheckboxGroup control={form.control} name="display_destination_ids" label="Destinations" options={(destinations.data ?? []).map((d) => ({ id: d.id, label: d.name }))} emptyHint={destinations.isPending ? "Loading the destinations…" : "No display destinations at this outlet yet. Add one in Printing › Printers."} description={destinationIds.length === 0 ? "Tick at least one: a kitchen display with none shows no tickets." : undefined} />
           </SheetSection>
         ) : (
           <>
@@ -269,14 +268,13 @@ function StationSheet({ state, live, outletId, brands, defaultBrandId, onClose }
                 label="Brand"
                 isRequired
                 placeholder="Choose a brand"
-                description={brands.length === 0 ? "No brands yet. Add one in Settings › Brands first." : "The station sells this brand's menu."}
+                description={brands.length === 0 ? "No brands yet. Add one in Settings › Brands first." : undefined}
                 items={brands.map((b) => ({ id: b.id, label: b.name }))}
               />
               <RhfSelect
                 control={form.control}
                 name="home"
                 label="Home screen"
-                description="Where the station opens after sign-in."
                 items={[
                   { id: "floor", label: "Floor plan", description: "Dine-in stations." },
                   { id: "takeaway", label: "New takeaway order", description: "Counter stations." },
@@ -287,14 +285,15 @@ function StationSheet({ state, live, outletId, brands, defaultBrandId, onClose }
               <RhfSwitch control={form.control} name="pay_before_firing" description="An order sent from this station, of any type, goes to the kitchen only once it is paid in full. QR orders from guests’ phones are not held. For counters and kiosks.">
                 Pay before sending
               </RhfSwitch>
-              <RhfSwitch control={form.control} name="seats_enabled" description="Shows the seat strip so lines can be assigned to guests.">
+              <RhfSwitch control={form.control} name="seats_enabled">
                 Seats
               </RhfSwitch>
             </SheetSection>
           </>
         )}
+        {/* How pairing works is said with the code, once one is issued. */}
         {station ? (
-          <SheetSection title="Pairing" hint={station.kind === "display" ? "A screen becomes this display by opening /kds and entering a one-time code. The code expires in 10 minutes." : "An iPad becomes this station by entering a one-time code. The code expires in 10 minutes."}>
+          <SheetSection title="Pairing">
             <PairingPanel station={station} />
           </SheetSection>
         ) : null}

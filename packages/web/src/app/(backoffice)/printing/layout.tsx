@@ -10,7 +10,6 @@ export default function PrintingLayout({ children }: { children: ReactNode }) {
     <>
       <PageHeader
         title="Printing"
-        description="Printers and their routing rules, the relay boxes that drive them, and every ticket the register has queued."
         tabs={<SubNav tabs={PRINTING_TABS} label="Printing sections" />}
       />
       {children}

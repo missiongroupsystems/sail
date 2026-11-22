@@ -71,7 +71,7 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
   const confirm = useConfirm();
   const qc = useQueryClient();
   const router = useRouter();
-  const { business_registration_label, tax_registration_label } = useSession().merchant.settings;
+  const { business_registration_label, tax_registration_label, business_day_cutoff } = useSession().merchant.settings;
   const outlet = state?.mode === "edit" ? state.outlet : null;
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(outlet) });
   useRecheckErrors(form);
@@ -117,7 +117,7 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
       onOpenChange={(open) => !open && onClose()}
       isDismissable={!busy}
       title={outlet ? outlet.name : "New outlet"}
-      description={outlet ? (outlet.archived ? "Archived" : "Edit the outlet's details and hours.") : "An outlet is a place with its own stations, printers and hours."}
+      description={outlet?.archived ? "Archived" : undefined}
       width="lg"
       footer={
         <>
@@ -149,8 +149,8 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
             <RhfTextField control={form.control} name="phone" label="Phone" type="tel" inputMode="tel" numeric />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <RhfTextField control={form.control} name="business_registration_no" label={business_registration_label} description="Shown on receipts and invoices." />
-            <RhfTextField control={form.control} name="tax_registration_no" label={tax_registration_label} description="Shown on receipts and invoices." />
+            <RhfTextField control={form.control} name="business_registration_no" label={business_registration_label} />
+            <RhfTextField control={form.control} name="tax_registration_no" label={tax_registration_label} />
           </div>
           <RhfTextField
             control={form.control}
@@ -158,12 +158,13 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
             label="Business day ends at"
             type="time"
             numeric
-            description="Sales before this time count towards the day before. Leave empty to use the merchant's."
+            // A time field shows no placeholder, so the inherited value is said here; what the cutoff means is on Merchant.
+            description={`Empty uses the merchant's ${business_day_cutoff}.`}
             className="sm:max-w-[240px]"
           />
         </SheetSection>
 
-        <SheetSection title="Hours" hint="One opening range per day. Closed days have no range.">
+        <SheetSection title="Hours">
           <div className="flex flex-col">
             {WEEKDAYS.map((day) => (
               <Controller

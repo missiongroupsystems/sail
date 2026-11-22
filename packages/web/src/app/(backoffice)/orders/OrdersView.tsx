@@ -46,6 +46,9 @@ export function statusIcon(status: string): LucideIcon | undefined {
 
 type StatusTab = "all" | "open" | "completed" | "cancelled";
 
+/** The most orders one list asks the register for. */
+const LIMIT = 200;
+
 function useDebounced(value: string, ms = 250): string {
   const [v, setV] = useState(value);
   useEffect(() => {
@@ -91,7 +94,7 @@ export function OrdersView({ outlets, scope, initialOutletId, initial }: { outle
   const orders = useQuery({
     queryKey: keys.orders(outletId ?? "", filters),
     queryFn: () =>
-      req(api.GET("/v1/outlets/{id}/orders", { params: { path: { id: outletId! }, query: { ...filters, order_type: filters.order_type as (typeof ORDER_TYPES)[number] | undefined, limit: 200 } } })).then((r) => r.data as unknown as OrderSnapshot[]),
+      req(api.GET("/v1/outlets/{id}/orders", { params: { path: { id: outletId! }, query: { ...filters, order_type: filters.order_type as (typeof ORDER_TYPES)[number] | undefined, limit: LIMIT } } })).then((r) => r.data as unknown as OrderSnapshot[]),
     enabled: outletId !== null && (range !== "today" || today !== null),
     placeholderData: keepPreviousData,
     refetchInterval: range === "today" ? 15_000 : false,
@@ -137,7 +140,6 @@ export function OrdersView({ outlets, scope, initialOutletId, initial }: { outle
     <>
       {outlets.length > 0 ? (
         <StatTiles className="mb-6">
-          <StatTile label="Orders shown" value={orders.data ? shown.length : "—"} caption={range === "today" ? "today, with the filters below" : "with the filters below"} />
           <StatTile label="Open" value={orders.data ? openCount : "—"} />
           <StatTile label="Completed" value={orders.data ? completedCount : "—"} />
           <StatTile label="Covers" value={orders.data ? covers : "—"} />
@@ -182,10 +184,8 @@ export function OrdersView({ outlets, scope, initialOutletId, initial }: { outle
         />
       )}
       <InlineError error={orders.error} className="mt-4" />
-      <p className="mt-4 text-caption text-ink-2 tabular">
-        {shown.length} {shown.length === 1 ? "order" : "orders"}
-        {range === "today" ? " · refreshes every 15 s" : " · up to 200 shown"}
-      </p>
+      {/* The count is on the status tab; the cap is said only when the list reaches it. */}
+      {shown.length >= LIMIT ? <p className="mt-4 text-caption text-ink-2 tabular">Up to {LIMIT} shown</p> : null}
 
       <OrderDrawer orderId={openId} outletId={outletId} tableName={tableName} onClose={() => setOpenId(null)} />
     </>

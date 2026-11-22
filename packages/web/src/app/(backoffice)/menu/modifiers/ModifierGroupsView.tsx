@@ -8,7 +8,7 @@ import { ArrowDown, ArrowUp, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
-import { greyPill, greyPillAlert, Quiet, SheetSection, TwoLine } from "@/components/office/parts";
+import { greyPill, greyPillAlert, Quiet, SheetSection } from "@/components/office/parts";
 import { applyServerErrors } from "@/components/office/server-errors";
 import { ProductSearch } from "@/components/backoffice/ProductSearch";
 import { Warnings } from "@/components/backoffice/Warnings";
@@ -89,12 +89,17 @@ export function ModifierGroupsView({ initialGroups }: { initialGroups: ModifierG
   const rows = groups.data.filter((g) => showArchived || !g.archived);
 
   const columns: DataTableColumn<ModifierGroup>[] = [
-    { key: "name", header: "Name", sortable: true, isRowHeader: true, width: "2fr", render: (g) => <TwoLine primary={g.name} meta={g.options.some((o) => o.child_group_id) ? "Has nested groups" : undefined} /> },
+    { key: "name", header: "Name", sortable: true, isRowHeader: true, width: "2fr", render: (g) => (
+        // Nesting has its own column; a pill only for an archived group.
+        <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 font-medium text-ink [overflow-wrap:anywhere]">
+          {g.name}
+          {g.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : null}
+        </span>
+      ) },
     { key: "rule", header: "Rule", render: (g) => <Quiet>{rule(g)}</Quiet> },
     { key: "max_per_modifier", header: "Max per option", numeric: true, render: (g) => g.max_per_modifier },
     { key: "options", header: "Options", numeric: true, sortable: true, sortValue: (g) => g.options.length, render: (g) => g.options.length },
     { key: "nested", header: "Nested", render: (g) => (g.options.some((o) => o.child_group_id) ? "Yes" : "—") },
-    { key: "archived", header: "Status", sortable: true, sortValue: (g) => (g.archived ? 1 : 0), render: (g) => (g.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <Pill size="sm" tone="paid">Active</Pill>) },
   ];
 
   return (
@@ -175,7 +180,6 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
       isDismissable={!busy}
       width="lg"
       title={group ? group.name : "New modifier group"}
-      description={group ? rule(group) : "Options a guest chooses when adding an item: sizes, sides, milk, spice level."}
       footer={
         <>
           {group && mayEdit.ok ? (
@@ -196,13 +200,13 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
         <SheetSection>
           <RhfTextField control={form.control} name="name" label="Name" placeholder="Milk" autoFocus={!group} />
           <div className="grid gap-4 sm:grid-cols-3">
-            <RhfTextField control={form.control} name="min_select" label="Minimum choices" numeric inputMode="numeric" description="0 makes the group optional." />
+            <RhfTextField control={form.control} name="min_select" label="Minimum choices (0 = optional)" numeric inputMode="numeric" />
             <RhfTextField control={form.control} name="max_select" label="Maximum choices" numeric inputMode="numeric" placeholder="No limit" />
-            <RhfTextField control={form.control} name="max_per_modifier" label="Max per option" numeric inputMode="numeric" description="How many times one option can be chosen." />
+            <RhfTextField control={form.control} name="max_per_modifier" label="Max per option" numeric inputMode="numeric" />
           </div>
         </SheetSection>
 
-        <SheetSection flat title="Options" hint="Each option is a product (usually a component). The override replaces the product's price when chosen here.">
+        <SheetSection flat title="Options">
           <Controller
             control={form.control}
             name="options"
@@ -240,7 +244,8 @@ function GroupSheet({ state, groups, onClose }: { state: SheetState; groups: Mod
                               <tr key={`${o.product_id}-${i}`} className="border-b border-rule-subtle align-middle last:border-b-0">
                                 <td className="py-2 pr-2 pl-3">
                                   <span className="font-medium text-ink break-words">{productName(byId, o.product_id)}</span>
-                                  {p ? (
+                                  {/* The product's own price, when there is one to fall back on. */}
+                                  {p && p.price !== 0 ? (
                                     <span className="block text-[12px] text-ink-3">
                                       Product price <Money cents={p.price} />
                                     </span>

@@ -10,7 +10,6 @@ export default function MenuLayout({ children }: { children: ReactNode }) {
     <>
       <PageHeader
         title="Menu"
-        description="Products, modifiers, menus and sections, availability and sold-out items."
         tabs={<SubNav tabs={MENU_TABS} label="Menu sections" />}
         actions={
           <LinkButton size="sm" href="/api/v1/exports/products.csv" download="products.csv">

@@ -98,7 +98,6 @@ export function RelaysView({ outlets, scope, initialOutletId, initialRelays, ini
         </section>
       )}
       <InlineError error={relays.error} className="mt-4" />
-      <p className="mt-3 text-caption text-ink-2">A relay silent for 2 minutes shows Offline. Refreshes every 15 s.</p>
 
       <Dialog
         isOpen={creating}

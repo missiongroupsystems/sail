@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 /**
  * Page-level building blocks for the Menu, Floor & QR, Team, Settings and Audit pages, so their lists, sheets and
- * dialogs read as one grammar: a two-line table cell, an upper-case section label over a bordered group, and the
+ * dialogs read as one grammar: a two-line table cell, a sentence-case section label over a bordered group, and the
  * grey secondary pill used beside a sheet's primary action.
  */
 
@@ -36,10 +36,10 @@ export function Quiet({ children, className }: { children: ReactNode; className?
   return <span className={cx("text-ink-2 [overflow-wrap:anywhere]", className)}>{children}</span>;
 }
 
-/** The upper-case label over a group in a sheet or a page: 12px, semibold, tertiary ink. */
+/** The label over a group in a sheet or a page: 13px, sentence case, secondary ink. Quiet type, not a tag. */
 export function SectionLabel({ children, className, as: Tag = "h3", id }: { children: ReactNode; className?: string; as?: "h2" | "h3"; id?: string }) {
   return (
-    <Tag id={id} className={cx("text-[12px] leading-4 font-medium tracking-[0.04em] text-ink-3 uppercase", className)}>
+    <Tag id={id} className={cx("text-[13px] leading-[1.4] font-medium text-ink-2", className)}>
       {children}
     </Tag>
   );

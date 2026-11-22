@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@sail/ui";
 import { req } from "@/lib/api";
 import { api } from "@/lib/api.browser";
-import { Quiet, TwoLine } from "@/components/office/parts";
+import { Quiet } from "@/components/office/parts";
 import type { Brand, Category, Product, ProductPage } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
 import { keys } from "@/lib/query";
@@ -112,22 +112,39 @@ export function ProductsView({ initialPage, categories, brands, scope }: { initi
       isRowHeader: true,
       sortable: true,
       width: "2fr",
-      render: (p) => <TwoLine primary={p.name} meta={p.kitchen_name && p.kitchen_name !== p.name ? `Kitchen: ${p.kitchen_name}` : undefined} />,
-    },
-    { key: "sku", header: "SKU", sortable: true, width: 130, render: (p) => <span className="text-ink-2 tabular break-words">{p.sku ?? "—"}</span> },
-    {
-      key: "kind",
-      header: "Kind",
-      sortable: true,
-      width: 120,
+      // A pill marks the exception only: a Component among products, an archived row when archived ones are shown.
       render: (p) => (
-        <Pill size="sm" tone={p.kind === "component" ? "seated" : "neutral"}>
-          {p.kind === "component" ? "Component" : "Product"}
-        </Pill>
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="min-w-0 font-medium text-ink [overflow-wrap:anywhere]">{p.name}</span>
+          {p.kind === "component" ? (
+            <Pill size="sm" tone="seated">
+              Component
+            </Pill>
+          ) : null}
+          {p.archived ? (
+            <Pill size="sm" tone="neutral">
+              Archived
+            </Pill>
+          ) : null}
+        </span>
       ),
     },
+    { key: "sku", header: "SKU", sortable: true, width: 130, render: (p) => <span className="text-ink-2 tabular break-words">{p.sku ?? "—"}</span> },
     { key: "category_id", header: "Category", sortable: true, width: "1fr", sortValue: (p) => (p.category_id ? catLabel.get(p.category_id) ?? "" : ""), render: (p) => <Quiet>{p.category_id ? catLabel.get(p.category_id) ?? "—" : "—"}</Quiet> },
-    { key: "brand_id", header: "Brand", hideBelow: "xl", sortable: true, width: 150, sortValue: (p) => (p.brand_id ? brandName.get(p.brand_id) ?? "" : ""), render: (p) => <Quiet className="whitespace-nowrap">{p.brand_id ? brandName.get(p.brand_id) ?? "—" : "All brands"}</Quiet> },
+    // One brand would read "All brands" on every row: the column shows only when there is a brand to tell apart.
+    ...(brands.length > 1
+      ? [
+          {
+            key: "brand_id",
+            header: "Brand",
+            hideBelow: "xl",
+            sortable: true,
+            width: 150,
+            sortValue: (p: Product) => (p.brand_id ? brandName.get(p.brand_id) ?? "" : ""),
+            render: (p: Product) => <Quiet className="whitespace-nowrap">{p.brand_id ? brandName.get(p.brand_id) ?? "—" : "All brands"}</Quiet>,
+          } satisfies DataTableColumn<Product>,
+        ]
+      : []),
     {
       key: "tags",
       header: "Tags",
@@ -154,22 +171,6 @@ export function ProductsView({ initialPage, categories, brands, scope }: { initi
           {Object.keys(p.prices_by_order_type).length ? <span className="text-[12px] text-ink-3">+{Object.keys(p.prices_by_order_type).length} by order type</span> : null}
         </span>
       ),
-    },
-    {
-      key: "archived",
-      header: "Status",
-      sortable: true,
-      width: 110,
-      render: (p) =>
-        p.archived ? (
-          <Pill size="sm" tone="neutral">
-            Archived
-          </Pill>
-        ) : (
-          <Pill size="sm" tone="paid">
-            Active
-          </Pill>
-        ),
     },
   ];
 

@@ -100,7 +100,10 @@ export function Select({
       >
         {/* Off, the placeholder and the chevron take the disabled ink like the value does: a placeholder in ink-3 read
             darker than the disabled fields around it ("Attach a modifier group…" on a read-only product sheet). */}
-        <SelectValue className={cx("truncate", isDisabled ? "text-ink-disabled" : "data-[placeholder]:text-ink-3")} />
+        {/* The closed trigger shows the chosen label only: an option's description helps while choosing, not after. */}
+        <SelectValue className={cx("truncate", isDisabled ? "text-ink-disabled" : "data-[placeholder]:text-ink-3")}>
+          {({ isPlaceholder, selectedText, defaultChildren }) => (isPlaceholder ? defaultChildren : selectedText)}
+        </SelectValue>
         <Icon icon={ChevronDown} size={16} className={isDisabled ? "text-ink-disabled" : "text-ink-3"} />
       </Button>
       {description ? (

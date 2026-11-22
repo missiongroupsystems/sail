@@ -53,11 +53,10 @@ export function ScopePicker({ merchantName, brands, outlets, value, onChange, co
           <Icon icon={Store} size={18} className="text-ink" />
         ) : (
           <>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[11.5px] leading-4 text-ink-3">{merchantName}</span>
-              <span className="block truncate text-[14px] leading-5 font-medium text-ink">
-                {brandLabel} · {outletLabel}
-              </span>
+            {/* The merchant is fixed by the sign-in, so the trigger names only what narrows it; the popover and the
+                accessible name still carry the merchant. */}
+            <span className="min-w-0 flex-1 truncate text-[14px] leading-5 font-medium text-ink">
+              {brandLabel} · {outletLabel}
             </span>
             <Icon icon={ChevronDown} size={16} className="shrink-0 text-ink-3" />
           </>

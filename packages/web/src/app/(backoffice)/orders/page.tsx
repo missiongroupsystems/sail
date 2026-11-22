@@ -15,7 +15,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: PageS
   const order = param(params, "order");
   return (
     <>
-      <PageHeader title="Orders" description="Today's orders and every order. Open one for its lines, bills, refunds, tickets, events and audit trail. Servers read; Managers refund and reopen." />
+      <PageHeader title="Orders" />
       <OrdersView outlets={outlets.data} scope={scope} initialOutletId={outletId} initial={{ orderId: order && /^[0-9a-f-]{36}$/i.test(order) ? order : null, range: param(params, "range") === "all" ? "all" : null, date: dateParam(params, "date") }} />
     </>
   );

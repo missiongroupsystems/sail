@@ -266,7 +266,6 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
   if (menu.isPending) return <Skeleton lines={6} />;
   if (menu.error) return <InlineError error={menu.error} />;
 
-  const itemCount = sections.reduce((n, s) => n + s.items.length, 0);
 
   return (
     <div className="flex flex-col gap-6">
@@ -300,9 +299,6 @@ function MenuEditor({ summary }: { summary: MenuSummary }) {
                   ) : null}
                   {summary.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : null}
                 </div>
-                <p className="text-[13px] text-ink-3 tabular">
-                  {tops.length} {tops.length === 1 ? "section" : "sections"} · {itemCount} {itemCount === 1 ? "item" : "items"}
-                </p>
               </div>
             </>
           )}
@@ -540,9 +536,7 @@ function SectionBlock({
             })}
           </ol>
         </SortableContext>
-      ) : (
-        <p className="mx-1 rounded-field border border-dashed border-rule-dashed px-3 py-2.5 text-[13px] text-ink-3">No products in this section yet.</p>
-      )}
+      ) : null}
 
       {adding ? <ProductSearch autoFocus exclude={section.items} elsewhere={placedIn} onPick={(p) => onAddItem(p.id)} className="w-full max-w-[520px]" /> : null}
       {children}

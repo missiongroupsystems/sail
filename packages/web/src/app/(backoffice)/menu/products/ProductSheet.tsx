@@ -2,7 +2,7 @@
 
 import { useConfirm } from "@/components/backoffice/Confirm";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, InlineError, MoneyField, Select, Sheet, TagsField, useLocale, FieldsLocked } from "@sail/ui";
+import { Button, InlineError, MoneyField, Select, Sheet, TagsField, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, X } from "lucide-react";
 import { Icon } from "@sail/ui";
@@ -93,15 +93,12 @@ function toBody(v: Values): Omit<ProductCreate, "id"> {
 
 export function ProductSheet({ state, onClose, categories, brands }: { state: ProductSheetState; onClose: () => void; categories: Category[]; brands: Brand[] }) {
   const confirm = useConfirm();
-  const { stamp } = useLocale();
   const qc = useQueryClient();
   const product = state?.mode === "edit" ? state.product : null;
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(product) });
   // A second product of the same name is allowed but said, rather than saved silently (live-test E-L15).
   const all = useAllProducts({ include_archived: "false" }, state !== null);
   const typedName = (useWatch({ control: form.control, name: "name" }) ?? "").trim();
-  // The hint under Kind is about the kind chosen, with the other one named in a few words.
-  const kind = useWatch({ control: form.control, name: "kind" });
   const sameName = typedName ? ((all.data ?? []).find((p) => p.id !== product?.id && p.name.trim().toLowerCase() === typedName.toLowerCase())?.name ?? null) : null;
   const [warnings, setWarnings] = useState<string[]>([]);
   const reset = form.reset;
@@ -154,7 +151,7 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
       onOpenChange={(open) => !open && onClose()}
       isDismissable={!busy}
       title={product ? product.name : "New product"}
-      description={product ? (product.archived ? "Archived. Restore it to sell it again." : `Updated ${stamp(product.updated_at)}`) : "A product is anything that can be sold or added as a modifier."}
+      description={product?.archived ? "Archived. Restore it to sell it again." : undefined}
       footer={
         <>
           {product && mayEdit.ok ? (
@@ -175,7 +172,7 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
         <SheetSection title="Details">
           <div className="grid gap-4 sm:grid-cols-[1fr_180px]">
             <RhfTextField control={form.control} name="name" label="Name" isRequired placeholder="Iced tea" autoFocus={!product} description={sameName ? `Another product is already called ${sameName}. Two items of one name are hard to tell apart on the POS.` : undefined} />
-            <RhfTextField control={form.control} name="sku" label="SKU" description="Matches rows on import." />
+            <RhfTextField control={form.control} name="sku" label="SKU" />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <RhfSelect
@@ -183,14 +180,13 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
               name="kind"
               label="Kind"
               items={[
-                { id: "product", label: "Product", description: "Sold on its own." },
-                { id: "component", label: "Component", description: "A modifier option or part; not sold alone." },
+                { id: "product", label: "Product" },
+                { id: "component", label: "Component", description: "Used inside other items, not sold alone." },
               ]}
-              description={kind === "component" ? "An item used inside other items, such as a bundle or recipe part. It isn't sold on its own." : "Sold on its own. Choose Component for an item used only inside other items, such as a bundle or recipe part."}
             />
-            <RhfTextField control={form.control} name="kitchen_name" label="Kitchen name" description="Printed on kitchen tickets instead of the name." />
+            <RhfTextField control={form.control} name="kitchen_name" label="Kitchen name" placeholder="Same as name" />
           </div>
-          <RhfTextField control={form.control} name="description" label="Description" multiline rows={2} description="Shown to guests in Scan to order." />
+          <RhfTextField control={form.control} name="description" label="Description for guests" multiline rows={2} />
           <div className="grid gap-4 sm:grid-cols-2">
             <RhfSelect control={form.control} name="brand_id" label="Brand" items={[{ id: NONE, label: "All brands" }, ...brands.map((b) => ({ id: b.id, label: b.name }))]} />
             <RhfSelect
@@ -202,7 +198,7 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
           </div>
         </SheetSection>
 
-        <SheetSection title="Prices" hint="The base price applies unless an order type has its own. Open-price items ask for the amount at the register.">
+        <SheetSection title="Prices">
           <div className="grid gap-4">
             <Controller
               control={form.control}
@@ -226,7 +222,7 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
             <RhfSwitch control={form.control} name="open_price" description="Staff enter the price when they add the item.">
               Open price
             </RhfSwitch>
-            <RhfSwitch control={form.control} name="has_deposit" description="Charges a returnable-container deposit, set up in Pricing › Rules.">
+            <RhfSwitch control={form.control} name="has_deposit" description="Adds the container deposit from Pricing.">
               Deposit item
             </RhfSwitch>
           </div>
@@ -237,17 +233,16 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
             control={form.control}
             name="tax_class_id"
             label="Tax class"
-            items={[{ id: NONE, label: defaultClass ? `Merchant default (${defaultClass.name})` : "Merchant default", description: "Follows the default class if it changes." }, ...taxClassItems(taxClasses.data ?? [], product?.tax_class_id ?? null)]}
-            description="Sets the tax rates this item is charged at."
+            items={[{ id: NONE, label: defaultClass ? `Default (${defaultClass.name})` : "Default" }, ...taxClassItems(taxClasses.data ?? [], product?.tax_class_id ?? null)]}
             className="sm:max-w-[360px]"
           />
         </SheetSection>
 
-        <SheetSection title="Tags" hint="Tags drive pricing scopes and menu filters.">
+        <SheetSection title="Tags">
           <Controller control={form.control} name="tags" render={({ field }) => <TagsField aria-label="Tags" value={field.value} onChange={field.onChange} />} />
         </SheetSection>
 
-        <SheetSection flat title="Modifier groups" hint="Shown in this order when the item is added. Required groups come first on the POS.">
+        <SheetSection flat title="Modifier groups">
           <Controller
             control={form.control}
             name="modifier_group_ids"
@@ -262,7 +257,6 @@ export function ProductSheet({ state, onClose, categories, brands }: { state: Pr
               };
               return (
                 <div className="flex flex-col gap-3">
-                  {ids.length === 0 ? <p className="rounded-panel border border-dashed border-rule-dashed px-4 py-3 text-[13px] text-ink-3">No modifier groups attached.</p> : null}
                   {ids.length > 0 ? <ol className="flex flex-col rounded-panel border border-rule">
                     {ids.map((id, i) => (
                       <li key={id} className="flex items-center gap-2 border-b border-rule-subtle py-1 pr-2 pl-4 last:border-b-0">

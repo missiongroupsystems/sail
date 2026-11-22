@@ -30,4 +30,21 @@ describe("Select", () => {
     expect(trigger(brand({ isInvalid: true }))).toContain('data-invalid="true"');
     expect(trigger(brand({}))).not.toContain("data-invalid");
   });
+
+  it("the closed trigger shows the chosen option's label, not its description, which belongs to the open list", () => {
+    const html = renderToStaticMarkup(
+      <Select
+        label="Kind"
+        items={[
+          { id: "product", label: "Product", description: "Sold on its own" },
+          { id: "component", label: "Component", description: "Used inside other items, not sold alone" },
+        ]}
+        selectedKey="component"
+        onSelectionChange={() => {}}
+      />,
+    );
+    const button = html.slice(html.indexOf("<button"), html.indexOf("</button>"));
+    expect(button).toContain("Component");
+    expect(button).not.toContain("Used inside other items");
+  });
 });

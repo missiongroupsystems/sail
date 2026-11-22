@@ -345,7 +345,10 @@ test.describe("O9 (A P17–P20): small back-office fixes", () => {
     expect(orders).toBeTruthy();
     const firstCells = await page.getByRole("grid").getByRole("row").evaluateAll((rows) => rows.slice(1).map((r) => r.querySelector("td,th")?.textContent?.trim()));
     expect(firstCells.slice(0, 3)).toEqual(["1", "2", "3"]);
-    await expect(page.getByRole("grid")).toContainText("Recorded by hand");
+    // How each is taken is in its row's columns: "Card" is keyed in, "Card (terminal)" goes to the provider (A P19).
+    const grid0 = page.getByRole("grid");
+    await expect(grid0.getByRole("row").filter({ has: page.getByRole("rowheader", { name: "Card", exact: true }) })).toContainText("amount shown to key in");
+    await expect(grid0.getByRole("row").filter({ hasText: "Card (terminal)" })).toContainText("Sent to");
 
     await page.goto(`${WEB}/menu/products`);
     const grid = page.getByRole("grid", { name: "Products" });

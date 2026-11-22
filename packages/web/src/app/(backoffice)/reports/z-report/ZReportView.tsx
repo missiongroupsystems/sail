@@ -88,7 +88,8 @@ export function ZReportView({ outlets, scope, initialOutletId, today, initialDat
         <ReportExport title="Z-report" scope={exportScope} fileName={`z-report-${date}${stationId ? `-${fileSlug(stationName(stationId))}` : ""}`} target={figures} isDisabled={!report.data || report.isPlaceholderData} />
         <div className="flex max-w-full flex-col items-end gap-1 max-sm:flex-1 max-sm:items-stretch">
           <Button size="sm" variant="primary" onPress={() => setConfirming(true)} isDisabled={!canClose || !outletId || !validDate || stationId !== null || closedToday || notStarted} className="max-w-full whitespace-normal">
-            {closedToday ? `Business day ${businessDay(date)} closed` : `Close business day ${businessDay(date)}…`}
+            {/* The day is in the date field beside it. */}
+            {closedToday ? "Business day closed" : "Close business day…"}
           </Button>
           <p className="text-caption text-ink-2">{!canClose ? rolesFor("business_days.close") : notStarted ? "That business day has not started yet" : stationId ? "Choose All stations to close the day" : "Snapshots this Z-report once every shift is closed"}</p>
         </div>
@@ -141,11 +142,10 @@ export function ZReportView({ outlets, scope, initialOutletId, today, initialDat
         <InlineError error={close.error} />
       </Dialog>
 
-      {/* The day and its state, the line under the title; on paper the print head says them once. */}
-      {validDate && outletId ? (
-        <p className="mb-4 flex flex-wrap items-center gap-2 text-body text-ink-2 print:hidden">
-          <span className="tabular">{businessDay(date)}</span>
-          {closedToday ? <Pill size="sm" tone="paid">Closed</Pill> : date === current ? <Pill size="sm" tone="seated">Day still open: figures so far</Pill> : null}
+      {/* The day's state under the filters (the day itself is in the date field); on paper the print head says it. */}
+      {validDate && outletId && (closedToday || date === current) ? (
+        <p className="mb-4 flex flex-wrap items-center gap-2 print:hidden">
+          {closedToday ? <Pill size="sm" tone="paid">Closed</Pill> : <Pill size="sm" tone="seated">Day open</Pill>}
         </p>
       ) : null}
       {outlets.length === 0 ? <EmptyState title="No outlets yet" hint="A Z-report belongs to an outlet." /> : null}
