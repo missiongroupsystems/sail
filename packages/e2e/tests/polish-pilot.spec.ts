@@ -182,8 +182,9 @@ test.describe("back office and POS together", () => {
     });
   });
 
-  test("A5: a table's shape, seats and name apply as they are changed, with no Save; a new table lands on a free place", async ({ page }) => {
+  test("A5: a table's shape, seats and name apply as they are changed, with no Save; a new table lands on a free place", async ({ page, watch }) => {
     test.setTimeout(420_000);
+    watch.allow({ status: 422, url: /\/v1\/tables\/[^/]+$/, why: "the refused-name step answers 422 itself, on purpose" });
     const { outletId } = devLocal();
     type T = { id: string; name: string; area_id: string; seats: number; shape: string; x: number; y: number; w: number; h: number; archived: boolean };
     const areaName = `Annex ${String(Date.now()).slice(-5)}`;

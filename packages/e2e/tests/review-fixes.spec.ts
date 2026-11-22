@@ -194,8 +194,9 @@ test.describe("back office", () => {
     }
   });
 
-  test("Floor & QR: two quick drags, or a drag then a typed X, never put the table back; a refused name says Not saved yet until typed back", async ({ page }) => {
+  test("Floor & QR: two quick drags, or a drag then a typed X, never put the table back; a refused name says Not saved yet until typed back", async ({ page, watch }) => {
     test.setTimeout(300_000);
+    watch.allow({ status: 422, url: /\/v1\/tables\/[^/]+$/, why: "the refused-name step answers 422 itself, on purpose" });
     const { outletId } = devLocal();
     type T = { id: string; name: string; x: number; y: number; w: number; h: number };
     const areaName = `Drag ${String(Date.now()).slice(-5)}`;
