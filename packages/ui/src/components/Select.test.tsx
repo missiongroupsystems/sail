@@ -26,4 +26,8 @@ describe("Select", () => {
     expect(triggerName(brand({}))).not.toContain("Required");
   });
 
+  it("an invalid Select marks its trigger invalid, so it takes the red border of the other fields", () => {
+    expect(trigger(brand({ isInvalid: true }))).toContain('data-invalid="true"');
+    expect(trigger(brand({}))).not.toContain("data-invalid");
+  });
 });

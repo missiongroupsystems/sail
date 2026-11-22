@@ -89,7 +89,9 @@ export function Select({
           {rest.isRequired ? <RequiredMark announced /> : null}
         </Label>
       ) : null}
+      {/* The trigger takes the Select's invalid state, so it wears the same red border as an invalid text field. */}
       <Button
+        data-invalid={rest.isInvalid || undefined}
         className={cx(
           size === "sm" ? fieldControlSm : fieldControl,
           "flex items-center justify-between gap-2 text-left press data-[pressed]:scale-[0.99] aria-expanded:bg-surface-3",
