@@ -120,7 +120,7 @@ export function OrdersScreen() {
             {type !== "all" && inView.length > 0 ? (
               <EmptyState variant="centred" icon={view === "open" ? ShoppingBag : ClipboardList} title={view === "open" ? `No open ${ORDER_TYPE_LABEL[type].toLowerCase()} orders` : `No ${ORDER_TYPE_LABEL[type].toLowerCase()} orders closed yet today`} hint="Tap All to see every order." />
             ) : view === "open" ? (
-              <EmptyState variant="centred" icon={ShoppingBag} title="No open orders" hint="Orders opened on a table appear here. Tap New order to start a takeaway, pickup or delivery." />
+              <EmptyState variant="centred" icon={ShoppingBag} title="No open orders" hint={hasNoBrand(station) ? "Orders opened on a table appear here." : "Orders opened on a table appear here. Tap New order to start a takeaway, pickup or delivery."} />
             ) : (
               <EmptyState variant="centred" icon={ClipboardList} title="Nothing closed yet today" hint="Paid and cancelled orders from this business day appear here." />
             )}
