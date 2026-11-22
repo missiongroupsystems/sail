@@ -206,7 +206,7 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
           target_id: z.string().optional(),
           /** Everything about one order: entries on the order and on its lines, bills and payments (they name it in their details). */
           order_id: z.uuid().optional(),
-          /** Entries at this brand's outlets, and the merchant-wide ones (no outlet): what the back office lists for the brand in scope. */
+          /** Entries at this brand's outlets, and the merchant-wide ones (no outlet) except edits to another brand's product, menu, channel, station or layout: what the back office lists for the brand in scope. */
           brand_id: z.uuid().optional(),
           from: z.iso.datetime().optional(),
           to: z.iso.datetime().optional(),
@@ -221,7 +221,18 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
       const q = c.req.valid("query");
       const conds = [eq(auditLog.merchantId, p.merchantId)];
       if (q.actor_id) conds.push(eq(auditLog.actorId, q.actor_id));
-      if (q.brand_id) conds.push(or(isNull(auditLog.outletId), inArray(auditLog.outletId, db().select({ id: outlets.id }).from(outlets).where(eq(outlets.brandId, q.brand_id))))!);
+      if (q.brand_id) {
+        // An entry with no outlet is the whole business's, unless what it changed belongs to one brand (a product, menu,
+        // channel, station or layout of another brand): that one is left out, as are the entries at another brand's outlets.
+        const brand = q.brand_id;
+        const ofAnotherBrand = sql`(
+          (${auditLog.targetKind} = 'product' and exists (select 1 from products x where x.id::text = ${auditLog.targetId} and x.brand_id <> ${brand}))
+          or (${auditLog.targetKind} = 'menu' and exists (select 1 from menus x where x.id::text = ${auditLog.targetId} and x.brand_id <> ${brand}))
+          or (${auditLog.targetKind} = 'channel_link' and exists (select 1 from channel_links x where x.id::text = ${auditLog.targetId} and x.brand_id <> ${brand}))
+          or (${auditLog.targetKind} = 'station' and exists (select 1 from stations x where x.id::text = ${auditLog.targetId} and x.brand_id <> ${brand}))
+          or (${auditLog.targetKind} = 'layout' and exists (select 1 from pos_layouts x where x.id::text = ${auditLog.targetId} and x.brand_id <> ${brand})))`;
+        conds.push(or(and(isNull(auditLog.outletId), sql`not ${ofAnotherBrand}`), inArray(auditLog.outletId, db().select({ id: outlets.id }).from(outlets).where(eq(outlets.brandId, brand))))!);
+      }
       if (q.action) conds.push(eq(auditLog.action, q.action));
       if (q.target_kind) conds.push(eq(auditLog.targetKind, q.target_kind));
       if (q.target_id) conds.push(eq(auditLog.targetId, q.target_id));

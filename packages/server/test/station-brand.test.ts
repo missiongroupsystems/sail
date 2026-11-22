@@ -280,6 +280,16 @@ describe("Changes for a brand", () => {
     await call("POST", "/v1/stations", { token: t, body: { outlet_id: A.outletId, name: "Audit till A" } });
     await call("POST", "/v1/stations", { token: t, body: { outlet_id: otherOutlet, name: "Audit till B" } });
     await call("POST", "/v1/brands", { token: t, body: { name: "Audit brand" } });
+    for (const [path, body] of [
+      ["/v1/menus", { brand_id: A.brandId, name: "Audit menu A", sections: [] }],
+      ["/v1/menus", { brand_id: other, name: "Audit menu B", sections: [] }],
+      ["/v1/products", { brand_id: other, name: "Audit product B", price: 100 }],
+      ["/v1/products", { name: "Audit shared product", price: 100 }],
+      ["/v1/layouts", { brand_id: other, name: "Audit layout B" }],
+    ] as const) {
+      const r = await call("POST", path, { token: t, body });
+      expect(r.status, `${path} ${JSON.stringify(r.body)}`).toBe(201);
+    }
     type Entry = { action: string; outlet_id: string | null; details: { name?: string } | null };
     const list = async (brand: string) => (await call<{ data: Entry[] }>("GET", `/v1/audit?brand_id=${brand}&limit=500`, { token: t })).body.data;
     const mine = await list(A.brandId);
@@ -290,6 +300,11 @@ describe("Changes for a brand", () => {
     expect(names(theirs)).toContain("Audit till B");
     expect(names(theirs)).not.toContain("Audit till A");
     for (const rows of [mine, theirs]) expect(rows.some((r) => r.action === "brands.create" && r.outlet_id === null && r.details?.name === "Audit brand")).toBe(true);
+    // A brand's own menu, product or layout edit has no outlet; it shows for that brand only. A shared product shows for both.
+    expect(names(theirs)).toEqual(expect.arrayContaining(["Audit menu B", "Audit product B", "Audit layout B", "Audit shared product"]));
+    expect(names(mine)).toEqual(expect.arrayContaining(["Audit menu A", "Audit shared product"]));
+    for (const n of ["Audit menu B", "Audit product B", "Audit layout B"]) expect(names(mine)).not.toContain(n);
+    expect(names(theirs)).not.toContain("Audit menu A");
     expect(mine.every((r) => r.outlet_id === null || r.outlet_id !== otherOutlet)).toBe(true);
     // Without it, everything is there.
     const all = (await call<{ data: Entry[] }>("GET", "/v1/audit?limit=500", { token: t })).body.data;
