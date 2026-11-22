@@ -19,6 +19,8 @@ import { keys } from "@/lib/query";
 import { useSession } from "@/lib/session-context";
 import { useCan } from "@/lib/can";
 
+/** Every table change shares this key, so the last one to settle can be told apart from those still queued. */
+const PATCH_TABLE = ["floor-table-patch"];
 const COLS = 24;
 const ROWS = 14;
 const SHAPES = [
@@ -128,7 +130,14 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
       return next;
     });
   }, []);
-  const patchTable = useMutation<{ data: Table }, ApiError, { id: string; body: TablePatch }, { before: Table | undefined }>({
+  // What the register last accepted for each table: a refused change goes back to this, not to the cache before it,
+  // which may hold an earlier change that was itself refused or is still on its way.
+  const accepted = useRef(new Map<string, Table>());
+  useEffect(() => {
+    if (qc.isMutating({ mutationKey: PATCH_TABLE }) === 0) for (const t of tables.data ?? []) accepted.current.set(t.id, t);
+  }, [tables.data, qc]);
+  const patchTable = useMutation<{ data: Table }, ApiError, { id: string; body: TablePatch }>({
+    mutationKey: PATCH_TABLE,
     // One change at a time, in the order made: typing and dragging send several, and a later one must not land first.
     // (A scope is set per hook, not per call, so this queues every table's changes, which are small.)
     scope: { id: "floor-table-patch" },
@@ -136,22 +145,25 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
     onMutate: async ({ id, body }) => {
       // A read still on its way would put the old table back over the change for a moment.
       await qc.cancelQueries({ queryKey: keys.tables(outletId ?? "") });
-      const before = qc.getQueryData<Table[]>(keys.tables(outletId ?? ""))?.find((t) => t.id === id);
       // Lines may be optimistic: the table moves at once; the register's reply settles it.
       qc.setQueryData<Table[]>(keys.tables(outletId ?? ""), (prev) => prev?.map((t) => (t.id === id ? { ...t, ...body, shape: body.shape ?? t.shape } : t)));
-      return { before };
     },
-    onError: (error, { id, body }, ctx) => {
+    onError: (error, { id, body }) => {
       const fields = Object.keys(body);
-      // The refused fields go back to what they were, so the panel can tell its unsaved text from the register's.
-      const before = ctx?.before;
+      // The refused fields go back to the register's values, so the panel can tell its unsaved text from them.
+      const before = accepted.current.get(id);
       if (before) qc.setQueryData<Table[]>(keys.tables(outletId ?? ""), (prev) => prev?.map((t) => (t.id === id ? { ...t, ...Object.fromEntries(fields.map((f) => [f, before[f as keyof Table]])) } : t)));
       setRefusals((all) => ({ ...all, [id]: { error, fields: [...new Set([...(all[id]?.fields ?? []), ...fields])] } }));
     },
     // A refused choice (shape, area, archived) shows the register's value again at once, so the table's next save that
     // goes through ends it; a refused typed value is ended only by a save of that field.
-    onSuccess: (_, { id, body }) => settleRefusal(id, [...Object.keys(body), "shape", "area_id", "archived"]),
-    onSettled: () => qc.invalidateQueries({ queryKey: keys.tables(outletId ?? "") }),
+    onSuccess: (r, { id, body }) => {
+      accepted.current.set(r.data.id, r.data);
+      settleRefusal(id, [...Object.keys(body), "shape", "area_id", "archived"]);
+    },
+    // Read the plan again once the last queued change has settled: a read between two changes put the table back where
+    // the first left it, and rewrote the panel's position fields, until the second landed. This one still counts here.
+    onSettled: () => (qc.isMutating({ mutationKey: PATCH_TABLE }) === 1 ? qc.invalidateQueries({ queryKey: keys.tables(outletId ?? "") }) : undefined),
   });
   const addTable = useMutation<{ data: Table }, ApiError>({
     mutationFn: () => {
