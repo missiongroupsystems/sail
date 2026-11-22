@@ -73,16 +73,16 @@ async function outlet(sql: Sql, merchantId: string, name: string, archived = fal
   await sql`insert into outlets (id, merchant_id, name, archived_at) values (${outletId}, ${merchantId}, ${name}, ${archived ? new Date() : null})`;
   return outletId;
 }
-async function station(sql: Sql, merchantId: string, outletId: string, brandId: string | null, kind: "pos" | "display" = "pos") {
+async function station(sql: Sql, merchantId: string, outletId: string, brandId: string | null, kind: "pos" | "display" = "pos", archived = false) {
   const stationId = id();
-  await sql`insert into stations (id, merchant_id, outlet_id, brand_id, name, kind) values (${stationId}, ${merchantId}, ${outletId}, ${brandId}, 'Till', ${kind})`;
+  await sql`insert into stations (id, merchant_id, outlet_id, brand_id, name, kind, archived_at) values (${stationId}, ${merchantId}, ${outletId}, ${brandId}, 'Till', ${kind}, ${archived ? new Date() : null})`;
   return stationId;
 }
-async function link(sql: Sql, merchantId: string, outletId: string, brandId: string, channel: "pos" | "scan_to_order" = "pos") {
+async function link(sql: Sql, merchantId: string, outletId: string, brandId: string, channel: "pos" | "scan_to_order" = "pos", enabled = true) {
   const menuId = id();
   await sql`insert into menus (id, merchant_id, brand_id, name) values (${menuId}, ${merchantId}, ${brandId}, 'Menu')`;
   const linkId = id();
-  await sql`insert into channel_links (id, merchant_id, channel, outlet_id, brand_id, menu_id) values (${linkId}, ${merchantId}, ${channel}, ${outletId}, ${brandId}, ${menuId})`;
+  await sql`insert into channel_links (id, merchant_id, channel, outlet_id, brand_id, menu_id, enabled) values (${linkId}, ${merchantId}, ${channel}, ${outletId}, ${brandId}, ${menuId}, ${enabled})`;
   return linkId;
 }
 let orderNo = 0;
@@ -154,7 +154,7 @@ describe("migration 0057: every outlet gets its one brand", () => {
       expect((await sql<{ n: number }[]>`select count(*)::int as n from orders where outlet_id = ${byLinks} and brand_id = ${Noodles}`)[0]!.n).toBe(3);
       // The migration says how many outlets each rule decided.
       const said = notices.find((n) => n.startsWith("outlet brands:")) ?? "";
-      for (const part of ["1 by its channel links", "1 by its stations", "1 by its orders", "2 by the merchant's only brand", "1 by archived and empty: the merchant's oldest brand"]) expect(said).toContain(part);
+      for (const part of ["1 by its enabled channel links", "1 by its stations", "1 by its orders", "2 by the merchant's only brand", "1 by archived, and nothing live decides: the merchant's oldest brand"]) expect(said).toContain(part);
 
       // The column is required, and the rules hold from here on.
       await expect(sql`insert into outlets (id, merchant_id, name) values (${id()}, ${m}, 'No brand')`).rejects.toThrow(/brand_id/);
@@ -164,6 +164,88 @@ describe("migration 0057: every outlet gets its one brand", () => {
       await expect(order(sql, m, byOrders, Noodles, coffeeLink)).rejects.toThrow(/belongs to brand/);
       const filled = await station(sql, m, byOrders, null);
       expect((await sql<{ brand_id: string }[]>`select brand_id from stations where id = ${filled}`)[0]!.brand_id).toBe(Coffee);
+    } finally {
+      await sql.end({ timeout: 5 });
+    }
+  }, 120_000);
+
+  it("decides from live rows only, and an archived outlet never stops it: the cases of the upgrade review", async () => {
+    const { url, sql } = await oldDatabase();
+    try {
+      const group = await merchant(sql, "Sample Group", ["Kitchen", "Second"]);
+      const { Kitchen: A, Second: B } = group.brands as { Kitchen: string; Second: string };
+      const m = group.merchantId;
+      // Main: links, orders and a station of A, a display without a brand, and a POS station of B.
+      const main = await outlet(sql, m, "Main");
+      const mainLink = await link(sql, m, main, A, "pos");
+      await link(sql, m, main, A, "scan_to_order");
+      await order(sql, m, main, A, mainLink, 3);
+      await station(sql, m, main, A);
+      const mainDisplay = await station(sql, m, main, null, "display");
+      const oddB = await station(sql, m, main, B);
+      // S: stations only, a POS station of B and a display without a brand.
+      const caseS = await outlet(sql, m, "Case S");
+      await station(sql, m, caseS, B);
+      const displayS = await station(sql, m, caseS, null, "display");
+      // R: archived and empty.
+      const caseR = await outlet(sql, m, "Case R", true);
+      // O: orders of B only, through a link kept at Main.
+      const caseO = await outlet(sql, m, "Case O");
+      await order(sql, m, caseO, B, mainLink, 2);
+      // L, archived: enabled links of two brands.
+      const caseL = await outlet(sql, m, "Case L archived", true);
+      await link(sql, m, caseL, A, "pos");
+      await link(sql, m, caseL, B, "pos");
+      // An archived outlet with live stations of two brands, and one whose only link decides.
+      const archivedStations = await outlet(sql, m, "Archived two tills", true);
+      await station(sql, m, archivedStations, A);
+      await station(sql, m, archivedStations, B);
+      const archivedLinked = await outlet(sql, m, "Archived with B's link", true);
+      await link(sql, m, archivedLinked, B, "pos");
+      // A disabled link of B does not decide against an enabled one of A.
+      const disabled = await outlet(sql, m, "Disabled B link");
+      await link(sql, m, disabled, A, "pos");
+      await link(sql, m, disabled, B, "scan_to_order", false);
+      // Only disabled links: the live station decides.
+      const allOff = await outlet(sql, m, "Links off, station of B");
+      await link(sql, m, allOff, A, "pos", false);
+      await station(sql, m, allOff, B);
+      // An archived station of A does not stand against a live one of B.
+      const oldTill = await outlet(sql, m, "Archived till of A");
+      await station(sql, m, oldTill, A, "pos", true);
+      await station(sql, m, oldTill, B);
+      // A one-brand merchant with everything.
+      const kanal = await merchant(sql, "Kanal Gruppe", ["Cafe Kanal"]);
+      const cafe = await outlet(sql, kanal.merchantId, "Cafe Kanal");
+      const cafeLink = await link(sql, kanal.merchantId, cafe, kanal.brands["Cafe Kanal"]!);
+      await station(sql, kanal.merchantId, cafe, kanal.brands["Cafe Kanal"]!);
+      await order(sql, kanal.merchantId, cafe, kanal.brands["Cafe Kanal"]!, cafeLink, 2);
+
+      await runMigrations(url);
+
+      const expected: [string, string][] = [
+        [main, A],
+        [caseS, B],
+        [caseR, A],
+        [caseO, B],
+        [caseL, A],
+        [archivedStations, A],
+        [archivedLinked, B],
+        [disabled, A],
+        [allOff, B],
+        [oldTill, B],
+        [cafe, kanal.brands["Cafe Kanal"]!],
+      ];
+      for (const [o, brand] of expected) expect(await brandOf(sql, o), o).toBe(brand);
+      // Every station, archived ones too, is on its outlet's brand; a display takes its outlet's.
+      const off = await sql<{ n: number }[]>`select count(*)::int as n from stations s join outlets o on o.id = s.outlet_id where s.brand_id is distinct from o.brand_id`;
+      expect(off[0]!.n).toBe(0);
+      const byId = async (sid: string) => (await sql<{ brand_id: string }[]>`select brand_id from stations where id = ${sid}`)[0]!.brand_id;
+      expect(await byId(mainDisplay)).toBe(A);
+      expect(await byId(oddB)).toBe(A);
+      expect(await byId(displayS)).toBe(B);
+      // Orders keep their brand.
+      expect((await sql<{ n: number }[]>`select count(*)::int as n from orders where outlet_id = ${caseO} and brand_id = ${B}`)[0]!.n).toBe(2);
     } finally {
       await sql.end({ timeout: 5 });
     }
@@ -179,7 +261,7 @@ describe("migration 0057: every outlet gets its one brand", () => {
         await link(sql, m, o, brands["B"]!, "scan_to_order");
         await outlet(sql, m, "Fine one").then((fine) => station(sql, m, fine, brands["A"]!));
       },
-      /Two menus \(outlet [0-9a-f-]+, merchant [0-9a-f-]+\): its channel links name 2 brands/,
+      /Two menus \(outlet [0-9a-f-]+, merchant Clash\): its enabled channel links name 2 brands/,
     ],
     [
       "stations of two brands and no channel link",
@@ -189,7 +271,7 @@ describe("migration 0057: every outlet gets its one brand", () => {
         await station(sql, m, o, brands["A"]!);
         await station(sql, m, o, brands["B"]!);
       },
-      /Two tills \(.+\): its stations name 2 brands/,
+      /Two tills \(.+\): its stations that are not archived name 2 brands/,
     ],
     [
       "orders level between two brands",
@@ -208,7 +290,36 @@ describe("migration 0057: every outlet gets its one brand", () => {
         const { merchantId: m } = await merchant(sql, "Clash", ["A", "B"]);
         await outlet(sql, m, "Bare");
       },
-      /Bare \(.+\): it has no channel link, station or order, and the merchant has 2 brands/,
+      /Bare \(.+\): it has no enabled channel link, no live station with a brand and no order, and the merchant has 2 brands/,
+    ],
+    [
+      "a live outlet whose only station is a kitchen display without a brand",
+      async (sql: Sql) => {
+        const { merchantId: m } = await merchant(sql, "Clash", ["A", "B"]);
+        await station(sql, m, await outlet(sql, m, "Display only"), null, "display");
+      },
+      /Display only \(.+\): it has no enabled channel link, no live station with a brand and no order, and the merchant has 2 brands/,
+    ],
+    [
+      "enabled channel links of two brands, with a station of one",
+      async (sql: Sql) => {
+        const { merchantId: m, brands } = await merchant(sql, "Clash", ["A", "B"]);
+        const o = await outlet(sql, m, "Both live");
+        await link(sql, m, o, brands["A"]!, "pos");
+        await link(sql, m, o, brands["B"]!, "pos");
+        await station(sql, m, o, brands["A"]!);
+      },
+      /Both live \(.+\): its enabled channel links name 2 brands/,
+    ],
+    [
+      "a live outlet whose channel links are all disabled and that has nothing else",
+      async (sql: Sql) => {
+        const { merchantId: m, brands } = await merchant(sql, "Clash", ["A", "B"]);
+        const o = await outlet(sql, m, "All off");
+        await link(sql, m, o, brands["A"]!, "pos", false);
+        await station(sql, m, o, brands["B"]!, "pos", true);
+      },
+      /All off \(.+\): it has no enabled channel link, no live station with a brand and no order/,
     ],
   ] as const) {
     it(`stops and names the outlet: ${what}`, async () => {
@@ -220,9 +331,11 @@ describe("migration 0057: every outlet gets its one brand", () => {
           (e: unknown) => e as { message: string; cause?: { message?: string; hint?: string } },
         );
         expect(refused, "the migration stopped").not.toBeNull();
-        const text = `${refused!.message}\n${refused!.cause?.message ?? ""}`;
-        expect(text).toMatch(/these outlets cannot be given theirs/);
+        // The reason, the outlets and what to do are in the message itself, not only in drizzle's cause.
+        const text = refused!.message;
+        expect(text).toMatch(/^An outlet belongs to one brand from this version on, and these outlets cannot be given theirs/);
         expect(text).toMatch(message);
+        expect(text).toMatch(/HINT: On the version still running, for each outlet named: in Settings > Channels, disable the channels/);
         // Nothing was half done: the column is not there, and the migration can run again once the outlet is put right.
         const [col] = await sql`select 1 from information_schema.columns where table_name = 'outlets' and column_name = 'brand_id'`;
         expect(col).toBeUndefined();

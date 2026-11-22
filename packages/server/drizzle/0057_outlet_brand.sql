@@ -5,14 +5,17 @@
 -- 1. The column, empty at first so that existing outlets can be given their brand.
 ALTER TABLE "outlets" ADD COLUMN "brand_id" uuid;
 --> statement-breakpoint
--- 2. Each outlet's brand, from what the outlet already has, in this order:
---      a. the brand of its channel links;
---      b. else the brand of its stations;
+-- 2. Each outlet's brand, from the live rows the outlet already has, in this order:
+--      a. the brand of its enabled channel links;
+--      b. else the brand of its stations that are not archived (a station or kitchen display without a brand counts as
+--         nothing);
 --      c. else the brand most of its orders carry;
 --      d. else the merchant's only brand (its only brand that is not archived, when there are archived ones).
---    When the rows that decide name two brands (links or stations of two brands, or two brands level on orders), or
---    nothing decides, the migration stops and names the outlets: it never guesses. The one exception is an archived
---    outlet with nothing under it, which nobody trades from: it takes the merchant's oldest brand.
+--    An archived outlet never stops the migration: when its rows do not decide one brand, it takes the merchant's
+--    oldest brand (the oldest one not archived, if there is one). A live outlet whose deciding rows name two brands
+--    (enabled links, or live stations, of two brands, or two brands level on orders), or that has nothing to decide by
+--    at a merchant with several brands, stops the migration, which names each outlet and changes nothing.
+--    Disabled channel links and archived stations do not decide.
 DO $$
 DECLARE
   problems text;
@@ -20,9 +23,9 @@ DECLARE
 BEGIN
   CREATE TEMP TABLE outlet_brand_choice ON COMMIT DROP AS
   WITH link AS (
-    SELECT outlet_id, count(DISTINCT brand_id) AS brands, min(brand_id::text)::uuid AS brand_id FROM channel_links GROUP BY outlet_id
+    SELECT outlet_id, count(DISTINCT brand_id) AS brands, min(brand_id::text)::uuid AS brand_id FROM channel_links WHERE enabled GROUP BY outlet_id
   ), station AS (
-    SELECT outlet_id, count(DISTINCT brand_id) AS brands, min(brand_id::text)::uuid AS brand_id FROM stations WHERE brand_id IS NOT NULL GROUP BY outlet_id
+    SELECT outlet_id, count(DISTINCT brand_id) AS brands, min(brand_id::text)::uuid AS brand_id FROM stations WHERE brand_id IS NOT NULL AND archived_at IS NULL GROUP BY outlet_id
   ), order_counts AS (
     SELECT outlet_id, brand_id, count(*) AS n FROM orders GROUP BY outlet_id, brand_id
   ), order_top AS (
@@ -36,42 +39,46 @@ BEGIN
       (array_agg(id ORDER BY created_at, id))[1] AS oldest,
       (array_agg(id ORDER BY created_at, id) FILTER (WHERE archived_at IS NULL))[1] AS oldest_live
     FROM brands GROUP BY merchant_id
+  ), rule AS (
+    SELECT o.id AS outlet_id, o.merchant_id, o.name, o.archived_at IS NOT NULL AS archived, mb.brands AS merchant_brands,
+      coalesce(mb.oldest_live, mb.oldest) AS oldest,
+      CASE
+        WHEN link.brands IS NOT NULL THEN 'its enabled channel links'
+        WHEN station.brands IS NOT NULL THEN 'its stations'
+        WHEN order_top.brands IS NOT NULL THEN 'its orders'
+        WHEN mb.live = 1 OR mb.brands = 1 THEN 'the merchant''s only brand'
+      END AS decided_by,
+      CASE
+        WHEN link.brands IS NOT NULL THEN CASE WHEN link.brands = 1 THEN link.brand_id END
+        WHEN station.brands IS NOT NULL THEN CASE WHEN station.brands = 1 THEN station.brand_id END
+        WHEN order_top.brands IS NOT NULL THEN CASE WHEN order_top.brands = 1 THEN order_top.brand_id END
+        WHEN mb.live = 1 THEN mb.oldest_live
+        WHEN mb.brands = 1 THEN mb.oldest
+      END AS brand_id,
+      CASE
+        WHEN mb.brands IS NULL THEN 'the merchant has no brand'
+        WHEN link.brands > 1 THEN 'its enabled channel links name ' || link.brands || ' brands'
+        WHEN link.brands IS NULL AND station.brands > 1 THEN 'its stations that are not archived name ' || station.brands || ' brands'
+        WHEN link.brands IS NULL AND station.brands IS NULL AND order_top.brands > 1 THEN 'its orders are level between ' || order_top.brands || ' brands'
+        ELSE 'it has no enabled channel link, no live station with a brand and no order, and the merchant has ' || CASE WHEN mb.live > 1 THEN mb.live || ' brands' ELSE mb.brands || ' brands, all archived' END
+      END AS why_not
+    FROM outlets o
+    LEFT JOIN link ON link.outlet_id = o.id
+    LEFT JOIN station ON station.outlet_id = o.id
+    LEFT JOIN order_top ON order_top.outlet_id = o.id
+    LEFT JOIN merchant_brand mb ON mb.merchant_id = o.merchant_id
   )
-  SELECT o.id AS outlet_id, o.merchant_id, o.name,
-    CASE
-      WHEN link.brands IS NOT NULL THEN 'its channel links'
-      WHEN station.brands IS NOT NULL THEN 'its stations'
-      WHEN order_top.brands IS NOT NULL THEN 'its orders'
-      WHEN mb.live = 1 OR mb.brands = 1 THEN 'the merchant''s only brand'
-      WHEN o.archived_at IS NOT NULL AND mb.brands > 0 THEN 'archived and empty: the merchant''s oldest brand'
-      ELSE 'nothing'
-    END AS decided_by,
-    CASE
-      WHEN link.brands IS NOT NULL THEN CASE WHEN link.brands = 1 THEN link.brand_id END
-      WHEN station.brands IS NOT NULL THEN CASE WHEN station.brands = 1 THEN station.brand_id END
-      WHEN order_top.brands IS NOT NULL THEN CASE WHEN order_top.brands = 1 THEN order_top.brand_id END
-      WHEN mb.live = 1 THEN mb.oldest_live
-      WHEN mb.brands = 1 THEN mb.oldest
-      WHEN o.archived_at IS NOT NULL THEN mb.oldest
-    END AS brand_id,
-    CASE
-      WHEN link.brands > 1 THEN 'its channel links name ' || link.brands || ' brands'
-      WHEN link.brands IS NULL AND station.brands > 1 THEN 'its stations name ' || station.brands || ' brands'
-      WHEN link.brands IS NULL AND station.brands IS NULL AND order_top.brands > 1 THEN 'its orders are level between ' || order_top.brands || ' brands'
-      WHEN mb.brands IS NULL THEN 'the merchant has no brand'
-      ELSE 'it has no channel link, station or order, and the merchant has ' || mb.brands || ' brands'
-    END AS why_not
-  FROM outlets o
-  LEFT JOIN link ON link.outlet_id = o.id
-  LEFT JOIN station ON station.outlet_id = o.id
-  LEFT JOIN order_top ON order_top.outlet_id = o.id
-  LEFT JOIN merchant_brand mb ON mb.merchant_id = o.merchant_id;
+  SELECT outlet_id, merchant_id, name,
+    CASE WHEN brand_id IS NULL AND archived AND oldest IS NOT NULL THEN 'archived, and nothing live decides: the merchant''s oldest brand' ELSE decided_by END AS decided_by,
+    CASE WHEN brand_id IS NULL AND archived THEN oldest ELSE brand_id END AS brand_id,
+    why_not
+  FROM rule;
 
-  SELECT string_agg(format('  %s (outlet %s, merchant %s): %s', name, outlet_id, merchant_id, why_not), E'\n' ORDER BY merchant_id, name)
-    INTO problems FROM outlet_brand_choice WHERE brand_id IS NULL;
+  SELECT string_agg(format('  %s (outlet %s, merchant %s): %s', c.name, c.outlet_id, m.name, c.why_not), E'\n' ORDER BY m.name, c.name, c.outlet_id)
+    INTO problems FROM outlet_brand_choice c JOIN merchants m ON m.id = c.merchant_id WHERE c.brand_id IS NULL;
   IF problems IS NOT NULL THEN
     RAISE EXCEPTION E'An outlet belongs to one brand from this version on, and these outlets cannot be given theirs:\n%', problems
-      USING HINT = 'On the version still running, leave each of these outlets with the stations and channel links of one brand only (move or archive the others, or archive an outlet nobody uses), then migrate again. An outlet that really trades as two brands is two outlets now.';
+      USING HINT = 'On the version still running, for each outlet named: in Settings > Channels, disable the channels of every brand but one; in Settings > Stations, give each station that brand or archive it; or, if nobody trades there, archive the outlet in Settings > Outlets. An outlet with nothing to decide by needs an enabled channel or a station of its brand (or archive it). Then migrate again. An outlet that really trades as two brands is two outlets now.';
   END IF;
 
   UPDATE outlets o SET brand_id = c.brand_id FROM outlet_brand_choice c WHERE c.outlet_id = o.id;
