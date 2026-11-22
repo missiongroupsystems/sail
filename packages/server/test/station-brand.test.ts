@@ -165,6 +165,35 @@ describe("a channel and a new order are on their outlet's brand", () => {
   });
 });
 
+describe("archiving a brand", () => {
+  it("is refused while the brand has outlets that are not archived, even ones the caller cannot see; allowed once they are archived", async () => {
+    const t = A.admin.token;
+    const brand = randomUUID();
+    const outlet = randomUUID();
+    expect((await call("POST", "/v1/brands", { token: t, body: { id: brand, name: "Closing brand" } })).status).toBe(201);
+    expect((await call("POST", "/v1/outlets", { token: t, body: { id: outlet, brand_id: brand, name: "Closing outlet" } })).status).toBe(201);
+    const refused = await call<Refusal>("PATCH", `/v1/brands/${brand}`, { token: t, body: { archived: true } });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("state_conflict");
+    expect(refused.body.remedy).toBe("Archive or move its outlets first.");
+    expect(refused.body.details).toMatchObject({ reason: "brand_has_outlets" });
+    // An Admin limited to another outlet does not see it, and is refused all the same.
+    await db.sql`update staff set outlet_ids = ${db.sql.array([A.outletId])}::uuid[] where id = ${A.admin.id}`;
+    try {
+      expect((await call("PATCH", `/v1/brands/${brand}`, { token: t, body: { archived: true } })).status).toBe(409);
+    } finally {
+      await db.sql`update staff set outlet_ids = '{}' where id = ${A.admin.id}`;
+    }
+    expect((await db.sql<{ archived: boolean }[]>`select archived_at is not null as archived from brands where id = ${brand}`)[0]!.archived).toBe(false);
+    // Renaming is not refused, and once its outlets are archived the brand can be too.
+    expect((await call("PATCH", `/v1/brands/${brand}`, { token: t, body: { name: "Closed brand" } })).status).toBe(200);
+    expect((await call("PATCH", `/v1/outlets/${outlet}`, { token: t, body: { archived: true } })).status).toBe(200);
+    const archived = await call<{ data: { archived: boolean } }>("PATCH", `/v1/brands/${brand}`, { token: t, body: { archived: true } });
+    expect(archived.status, JSON.stringify(archived.body)).toBe(200);
+    expect(archived.body.data.archived).toBe(true);
+  });
+});
+
 describe("brand scope reaches the outlet and what is under it", () => {
   it("someone limited to one brand sees that brand's outlets only, and nothing under another brand's", async () => {
     const t = A.admin.token;

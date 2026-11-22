@@ -343,7 +343,7 @@ export interface paths {
         head?: never;
         /**
          * Update a brand
-         * @description Renames a brand or changes its accent colour; archive by setting archived.
+         * @description Renames a brand or changes its accent colour; archive by setting archived (refused while the brand has outlets that are not archived).
          */
         patch: operations["brands.update"];
         trace?: never;

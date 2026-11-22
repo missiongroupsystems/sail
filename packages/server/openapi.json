@@ -6694,7 +6694,7 @@
           "organisation"
         ],
         "operationId": "brands.update",
-        "description": "Renames a brand or changes its accent colour; archive by setting archived.",
+        "description": "Renames a brand or changes its accent colour; archive by setting archived (refused while the brand has outlets that are not archived).",
         "summary": "Update a brand",
         "x-sail": {
           "op": "brands.update",

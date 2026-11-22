@@ -209,6 +209,20 @@ function stationBrandIsOutlets() {
 }
 
 /** The brand is one of this merchant's and not archived; any other id fails as an unknown one does. */
+/**
+ * Runs a check with every outlet and every brand of the merchant in view, whatever the caller's scope, as the checks
+ * before closing a shift do: a rule about the whole merchant must not pass because the caller cannot see a row.
+ */
+async function withEveryOutlet<T>(check: () => Promise<T>): Promise<T> {
+  const [was] = await tx()<{ outlets: string; brands: string }[]>`select current_setting('app.current_outlets', true) as outlets, current_setting('app.current_brands', true) as brands`;
+  await tx()`select set_config('app.current_outlets', '*', true), set_config('app.current_brands', '*', true)`;
+  try {
+    return await check();
+  } finally {
+    await tx()`select set_config('app.current_outlets', ${was?.outlets ?? ""}, true), set_config('app.current_brands', ${was?.brands ?? ""}, true)`;
+  }
+}
+
 async function merchantBrand(merchantId: string, brandId: string) {
   const [brand] = await db().select({ id: brands.id }).from(brands).where(and(eq(brands.id, brandId), eq(brands.merchantId, merchantId), isNull(brands.archivedAt))).limit(1);
   if (!brand) throw AppError.notFound("brand", brandId);
@@ -304,6 +318,11 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
     const { id } = c.req.valid("param");
     const body = c.req.valid("json");
     if (Object.keys(body).length === 0) throw AppError.validation("Nothing to update");
+    // An archived brand leaves the back office's scope, so its outlets would trade on with nobody able to see them.
+    if (body.archived === true) {
+      const live = await withEveryOutlet(() => db().select({ id: outlets.id }).from(outlets).where(and(eq(outlets.merchantId, p.merchantId), eq(outlets.brandId, id), isNull(outlets.archivedAt))).limit(1));
+      if (live.length > 0) throw new AppError("state_conflict", "This brand still has outlets, so it cannot be archived", { remedy: "Archive or move its outlets first.", details: { reason: "brand_has_outlets", field: "archived" } });
+    }
     const [row] = await db()
       .update(brands)
       .set({
