@@ -523,14 +523,13 @@ test.describe("back office and POS together", () => {
       await signIn(page);
       await page.goto(`${WEB}/settings/stations`);
 
-      await test.step("the station's sheet shows the outlet's brand, read only, with no brand to choose", async () => {
+      await test.step("the station is on the outlet's brand, and its sheet offers no brand to choose", async () => {
         await expect(page.getByRole("row", { name: new RegExp(till) })).toContainText(brandName);
         const sheet = await openRow(page, till);
-        const brand = sheet.getByRole("textbox", { name: "Brand" });
-        await expect(brand).toHaveValue(brandName);
-        await expect(brand).toHaveAttribute("readonly", "");
-        await expect(sheet.getByText("The outlet's brand.", { exact: false })).toBeVisible();
+        await expect(sheet.getByRole("textbox", { name: "Name", exact: true })).toHaveValue(till);
+        // One brand: the sheet leaves Brand out, and nothing in it can set or change one.
         await expect(sheet.getByRole("button", { name: /Brand/ })).toHaveCount(0);
+        await expect(sheet.getByRole("textbox", { name: /Brand/ })).toHaveCount(0);
         await sheet.getByRole("button", { name: "Cancel" }).click();
         await expect(sheet).toBeHidden();
       });
