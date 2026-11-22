@@ -183,6 +183,15 @@ describe("migration 0057: every outlet gets its one brand", () => {
       await station(sql, m, main, A);
       const mainDisplay = await station(sql, m, main, null, "display");
       const oddB = await station(sql, m, main, B);
+      // Its POS layout is B's, and so is the layout of a station of A at the same outlet.
+      const layoutB = id();
+      await sql`insert into pos_layouts (id, merchant_id, brand_id, name) values (${layoutB}, ${m}, ${B}, 'B tiles')`;
+      const layoutA = id();
+      await sql`insert into pos_layouts (id, merchant_id, brand_id, name) values (${layoutA}, ${m}, ${A}, 'A tiles')`;
+      const tillA = await station(sql, m, main, A);
+      await sql`update stations set layout_id = ${layoutB} where id in ${sql([oddB, tillA])}`;
+      const keepsLayout = await station(sql, m, main, A);
+      await sql`update stations set layout_id = ${layoutA} where id = ${keepsLayout}`;
       // S: stations only, a POS station of B and a display without a brand.
       const caseS = await outlet(sql, m, "Case S");
       await station(sql, m, caseS, B);
@@ -221,7 +230,23 @@ describe("migration 0057: every outlet gets its one brand", () => {
       await station(sql, kanal.merchantId, cafe, kanal.brands["Cafe Kanal"]!);
       await order(sql, kanal.merchantId, cafe, kanal.brands["Cafe Kanal"]!, cafeLink, 2);
 
-      await runMigrations(url);
+      const notices: string[] = [];
+      const forward = postgres(url, { max: 1, prepare: false, onnotice: (n) => notices.push(String(n.message)) });
+      try {
+        await migrate(drizzle(forward), { migrationsFolder: migrationsFolder() });
+      } finally {
+        await forward.end({ timeout: 5 });
+      }
+
+      // A station moved to another brand is named, with where it was and where it went; so is a layout cleared.
+      expect(notices).toContain(`station brand: Main (outlet ${main}), station Till (${oddB}): Second -> Kitchen`);
+      expect(notices).toContain(`station brand: Main (outlet ${main}), station Till (${mainDisplay}): no brand -> Kitchen`);
+      expect(notices).toContain(`station layout cleared: Main (outlet ${main}), station Till (${oddB}): layout B tiles is of brand Second`);
+      expect(notices).toContain(`station layout cleared: Main (outlet ${main}), station Till (${tillA}): layout B tiles is of brand Second`);
+      expect(notices.join("\n")).not.toContain(keepsLayout);
+      expect(notices.some((n) => n.startsWith("channel link of another brand: Disabled B link") && n.endsWith("(disabled), left as it is"))).toBe(true);
+      const layouts = await sql<{ id: string; layout_id: string | null }[]>`select id, layout_id from stations where id in ${sql([oddB, tillA, keepsLayout])}`;
+      expect(Object.fromEntries(layouts.map((r) => [r.id, r.layout_id]))).toEqual({ [oddB]: null, [tillA]: null, [keepsLayout]: layoutA });
 
       const expected: [string, string][] = [
         [main, A],

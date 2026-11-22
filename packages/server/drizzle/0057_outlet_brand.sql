@@ -87,9 +87,41 @@ BEGIN
   RAISE NOTICE 'outlet brands: %', coalesce(summary, 'no outlets');
 END $$;
 --> statement-breakpoint
--- 3. Every station takes its outlet's brand: a station left without one, a kitchen display, and a station whose
---    brand was not the one its outlet's channel links decided.
-UPDATE stations s SET brand_id = o.brand_id FROM outlets o WHERE o.id = s.outlet_id AND s.brand_id IS DISTINCT FROM o.brand_id;
+-- 3. Every station takes its outlet's brand: a station left without one, a kitchen display, and a station (archived
+--    ones too) of another brand than the one its outlet was given. Each station whose brand changes is named in a
+--    NOTICE (outlet, station, from, to). A station whose POS layout is of another brand than its new one loses the
+--    layout, also named: its POS then lays out the brand's menu until a layout of the brand is chosen. A channel link
+--    left on another brand than its outlet's (a disabled one, or one at an archived outlet) is named and left as it is.
+DO $$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN
+    SELECT o.name AS outlet, o.id AS outlet_id, s.name AS station, s.id AS station_id, coalesce(fb.name, 'no brand') AS from_brand, tb.name AS to_brand
+    FROM stations s JOIN outlets o ON o.id = s.outlet_id JOIN brands tb ON tb.id = o.brand_id LEFT JOIN brands fb ON fb.id = s.brand_id
+    WHERE s.brand_id IS DISTINCT FROM o.brand_id ORDER BY o.name, s.name, s.id
+  LOOP
+    RAISE NOTICE 'station brand: % (outlet %), station % (%): % -> %', r.outlet, r.outlet_id, r.station, r.station_id, r.from_brand, r.to_brand;
+  END LOOP;
+  UPDATE stations s SET brand_id = o.brand_id FROM outlets o WHERE o.id = s.outlet_id AND s.brand_id IS DISTINCT FROM o.brand_id;
+
+  FOR r IN
+    SELECT o.name AS outlet, o.id AS outlet_id, s.name AS station, s.id AS station_id, l.name AS layout, lb.name AS layout_brand
+    FROM stations s JOIN outlets o ON o.id = s.outlet_id JOIN pos_layouts l ON l.id = s.layout_id JOIN brands lb ON lb.id = l.brand_id
+    WHERE l.brand_id IS DISTINCT FROM s.brand_id ORDER BY o.name, s.name, s.id
+  LOOP
+    RAISE NOTICE 'station layout cleared: % (outlet %), station % (%): layout % is of brand %', r.outlet, r.outlet_id, r.station, r.station_id, r.layout, r.layout_brand;
+  END LOOP;
+  UPDATE stations s SET layout_id = NULL FROM pos_layouts l WHERE l.id = s.layout_id AND l.brand_id IS DISTINCT FROM s.brand_id;
+
+  FOR r IN
+    SELECT o.name AS outlet, o.id AS outlet_id, c.channel, c.id AS link_id, c.enabled, b.name AS brand
+    FROM channel_links c JOIN outlets o ON o.id = c.outlet_id JOIN brands b ON b.id = c.brand_id
+    WHERE c.brand_id IS DISTINCT FROM o.brand_id ORDER BY o.name, c.channel, c.id
+  LOOP
+    RAISE NOTICE 'channel link of another brand: % (outlet %), % link % of brand % (%), left as it is', r.outlet, r.outlet_id, r.channel, r.link_id, r.brand, CASE WHEN r.enabled THEN 'enabled, at an archived outlet' ELSE 'disabled' END;
+  END LOOP;
+END $$;
 --> statement-breakpoint
 ALTER TABLE "outlets" ALTER COLUMN "brand_id" SET NOT NULL;
 --> statement-breakpoint
