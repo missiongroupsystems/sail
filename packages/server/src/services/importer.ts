@@ -188,6 +188,11 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               const named = brandKey ? refOrName("brands", brandKey, "brand") : null;
               const [there] = await sql.unsafe<{ brand_id: string }[]>(`select brand_id from outlets where merchant_id = $1 and legacy_id = $2 limit 1`, [merchantId, lid]);
               if (there && named && named !== there.brand_id) throw new Error("an outlet's brand cannot be changed by an import: change it in Settings > Outlets");
+              // A new outlet goes on a brand that trades: the register refuses an archived one too.
+              if (!there && named) {
+                const [brand] = await sql.unsafe<{ archived: boolean }[]>(`select archived_at is not null as archived from brands where id = $1 and merchant_id = $2`, [named, merchantId]);
+                if (brand?.archived) throw new Error(`brand ${brandKey} is archived: restore it in Settings > Brands, or name another brand`);
+              }
               let brandId = there?.brand_id ?? named;
               if (!brandId) {
                 const live = await sql.unsafe<{ id: string }[]>(`select id from brands where merchant_id = $1 and archived_at is null`, [merchantId]);
