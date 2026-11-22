@@ -1,5 +1,6 @@
 import { createRemoteJWKSet, jwtVerify, SignJWT, type JWTPayload } from "jose";
-import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, scrypt, scryptSync, timingSafeEqual } from "node:crypto";
+import { promisify } from "node:util";
 import { config } from "../config.js";
 import { AppError } from "../lib/errors.js";
 
@@ -121,6 +122,18 @@ export function verifySecret(value: string, stored: string | null | undefined): 
   const [scheme, salt, hash] = stored.split("$");
   if (scheme !== "scrypt" || !salt || !hash) return false;
   const candidate = scryptSync(value, salt, 32);
+  const expected = Buffer.from(hash, "hex");
+  return candidate.length === expected.length && timingSafeEqual(candidate, expected);
+}
+
+const scryptAsync = promisify(scrypt) as (value: string, salt: string, keylen: number) => Promise<Buffer>;
+
+/** verifySecret on the thread pool: the event loop is not held while the hash runs. */
+export async function verifySecretAsync(value: string, stored: string | null | undefined): Promise<boolean> {
+  if (!stored) return false;
+  const [scheme, salt, hash] = stored.split("$");
+  if (scheme !== "scrypt" || !salt || !hash) return false;
+  const candidate = await scryptAsync(value, salt, 32);
   const expected = Buffer.from(hash, "hex");
   return candidate.length === expected.length && timingSafeEqual(candidate, expected);
 }

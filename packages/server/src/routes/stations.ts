@@ -8,7 +8,7 @@ import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, mutationResponse, z, untrusted, secret } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
-import { hashSecret, pinLookup, randomDigits, randomToken, sha256, signSailToken, verifySecret } from "../auth/tokens.js";
+import { hashSecret, pinLookup, randomDigits, randomToken, sha256, signSailToken, verifySecret, verifySecretAsync } from "../auth/tokens.js";
 import { grantOverride } from "../services/overrides.js";
 import { paymentRole } from "../services/payments.js";
 import { activeRules, ruleOrLastVersion } from "../services/pricing-rules.js";
@@ -77,10 +77,12 @@ export function stationRoutes(app: OpenAPIHono<AppEnv>) {
       const match = candidates.find((x) => verifySecret(code, x.codeHash));
       if (!match) {
         // Two answers and no more: a code that was right until it ran out, was replaced or was used, and any other.
-        // Only the ten newest codes of the last half hour are looked at (a code lives ten minutes), so a wrong guess on
-        // this public route costs a small, bounded number of hash checks whatever is sent.
-        const spent = await t.db.select({ codeHash: stationPairingCodes.codeHash }).from(stationPairingCodes).where(gt(stationPairingCodes.createdAt, sql`now() - interval '30 minutes'`)).orderBy(desc(stationPairingCodes.createdAt)).limit(10);
-        if (spent.some((x) => verifySecret(code, x.codeHash))) throw pairingCodeSpent();
+        // Only the three codes, of any merchant, that stopped working most recently and within the last ten minutes are
+        // checked; live codes were checked above and are not hashed again. A wrong guess on this public route so costs
+        // one hash per live code plus at most three, about 30 ms each; those three run on the thread pool, not the event loop.
+        const stoppedAt = sql`coalesce(${stationPairingCodes.usedAt}, ${stationPairingCodes.expiresAt})`;
+        const spent = await t.db.select({ codeHash: stationPairingCodes.codeHash }).from(stationPairingCodes).where(sql`${stoppedAt} <= now() and ${stoppedAt} > now() - interval '10 minutes'`).orderBy(desc(stoppedAt)).limit(3);
+        for (const x of spent) if (await verifySecretAsync(code, x.codeHash)) throw pairingCodeSpent();
         throw new AppError("unauthenticated", "Wrong code", { remedy: "Check the 6 digits shown in the back office.", details: { reason: "pairing_code_wrong" } });
       }
       if (kind) {

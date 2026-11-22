@@ -90,7 +90,8 @@ describe("entering a pairing code", () => {
 
   it("a code that ran out says expired or replaced", async () => {
     const a = await issue();
-    await db.sql`update station_pairing_codes set expires_at = now() - interval '1 second' where station_id = ${station} and used_at is null`;
+    // Runs out now, so it is the code that stopped working last: only the latest three are looked at.
+    await db.sql`update station_pairing_codes set expires_at = now() where station_id = ${station} and used_at is null and expires_at > now()`;
     const late = await pair(a.body.data.code);
     expect(late.status).toBe(401);
     expect(late.body.details?.reason).toBe("pairing_code_expired");
