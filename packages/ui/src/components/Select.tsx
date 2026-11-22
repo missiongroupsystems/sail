@@ -86,7 +86,7 @@ export function Select({
       {label ? (
         <Label className={fieldLabel}>
           {label}
-          {rest.isRequired ? <RequiredMark /> : null}
+          {rest.isRequired ? <RequiredMark announced /> : null}
         </Label>
       ) : null}
       <Button
