@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, InlineError, StatusDot, useLocale } from "@sail/ui";
+import { Button, InlineError, useLocale } from "@sail/ui";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { keys } from "@/lib/query";
 import { useEffect, useState } from "react";
@@ -92,7 +92,7 @@ export function PairingPanel({ station: opened }: { station: Station }) {
 
   return (
     <div className="flex flex-col gap-4">
-      {station.paired ? <StatusDot status="paid" label={station.device_label ? `Paired · ${station.device_label}` : "Paired"} /> : <StatusDot status="neutral" label="Not paired" muted />}
+      {/* Whether the station is paired is the sheet's subtitle, which follows the same list; here, only the moment it pairs. */}
       {pairedAs ? (
         <p role="status" className="rounded-tile bg-status-paid-tint px-4 py-3 text-body text-ink">
           Paired: {pairedAs}

@@ -143,14 +143,17 @@ export function StationsView({
       )}
       <InlineError error={stations.error} className="mt-4" />
 
-      {outletId ? <StationSheet state={sheet} outletId={outletId} brands={brands} defaultBrandId={scope.brandId ?? (brands.length === 1 ? brands[0]!.id : null)} onClose={() => setSheet(null)} /> : null}
+      {outletId ? <StationSheet state={sheet} live={sheet?.mode === "edit" ? stations.data?.find((s) => s.id === sheet.station.id) : undefined} outletId={outletId} brands={brands} defaultBrandId={scope.brandId ?? (brands.length === 1 ? brands[0]!.id : null)} onClose={() => setSheet(null)} /> : null}
     </>
   );
 }
 
-function StationSheet({ state, outletId, brands, defaultBrandId, onClose }: { state: SheetState; outletId: string; brands: Brand[]; defaultBrandId: string | null; onClose: () => void }) {
+function StationSheet({ state, live, outletId, brands, defaultBrandId, onClose }: { state: SheetState; live: Station | undefined; outletId: string; brands: Brand[]; defaultBrandId: string | null; onClose: () => void }) {
   const qc = useQueryClient();
   const station = state?.mode === "edit" ? state.station : null;
+  // The subtitle follows the stations list, which the pairing panel refreshes while a code is out, so it says Paired
+  // once the iPad pairs. The form keeps the station it was opened with.
+  const now = live ?? station;
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(station, defaultBrandId) });
   const reset = form.reset;
   useEffect(() => {
@@ -202,11 +205,11 @@ function StationSheet({ state, outletId, brands, defaultBrandId, onClose }: { st
       isDismissable={!busy}
       title={station ? station.name : "New station"}
       description={
-        station ? (
-          station.paired ? (
-            <StatusDot status="paid" label={station.device_label ? `Paired · ${station.device_label}` : "Paired"} />
+        now ? (
+          now.paired ? (
+            <StatusDot status="paid" label={now.device_label ? `Paired · ${now.device_label}` : "Paired"} />
           ) : (
-            <StatusDot status="neutral" label="Not paired. Issue a pairing code below." muted />
+            <StatusDot status="neutral" label="Not paired" muted />
           )
         ) : (
           "A station is one iPad at the counter or on the floor, or a kitchen display."

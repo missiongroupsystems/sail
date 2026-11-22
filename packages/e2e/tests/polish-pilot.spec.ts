@@ -383,6 +383,9 @@ test.describe("back office and POS together", () => {
         await expect(ipad.getByRole("group", { name: "PIN keys" })).toBeVisible();
 
         await expect(sheet.getByRole("status").filter({ hasText: "Paired: Bar iPad" })).toBeVisible({ timeout: 20_000 });
+        // The subtitle follows: Paired, once, with the device's name.
+        await expect(sheet.getByText("Paired · Bar iPad", { exact: true })).toHaveCount(1);
+        await expect(sheet.getByText(/Not paired/)).toHaveCount(0);
         await expect(sheet.getByLabel(/^Pairing code \d/)).toHaveCount(0);
         await expect(sheet.getByText("Waiting for the iPad…")).toHaveCount(0);
       });
