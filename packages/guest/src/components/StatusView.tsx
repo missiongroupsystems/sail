@@ -86,9 +86,14 @@ export function StatusView({ session, orderView, loading, error, lastRoundId, st
 
         {highlighted ? (
           <section aria-label="Latest order" className="flex flex-col rounded-sheet border border-rule bg-surface">
-            {/* The banner says when it was sent and the timeline where it is: the card carries no head of its own to say it again. */}
-            {removed(highlighted) ? null : <RoundTimeline stage={roundStage(highlighted, order)} rejectReason={highlighted.reject_reason} holdOrders={session.hold_orders} className="px-4 py-3" />}
-            <div className={cx("px-4", !removed(highlighted) && "border-t border-rule-subtle")}>
+            {/* The banner says when it was sent and the timeline where it is: the card carries no head of its own to say it again.
+                A round staff removed has neither, so its head and Removed pill say so. */}
+            {removed(highlighted) ? (
+              <RoundHead title="Your order" at={`Sent ${clock(highlighted.submitted_at)}`} pill={removedPill} />
+            ) : (
+              <RoundTimeline stage={roundStage(highlighted, order)} rejectReason={highlighted.reject_reason} holdOrders={session.hold_orders} className="px-4 py-3" />
+            )}
+            <div className="border-t border-rule-subtle px-4">
               <RoundLines round={highlighted} lines={linesOf(highlighted)} />
             </div>
           </section>
