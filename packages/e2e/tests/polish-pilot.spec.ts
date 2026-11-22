@@ -358,11 +358,12 @@ test.describe("back office and POS together", () => {
         watch.allow({ status: 401, url: /\/v1\/stations\/pair$/, why: "a wrong pairing code, then a replaced one, on purpose" });
         const wrong = ["135790", "246801"].find((c) => c !== code)!;
         await ipad.getByRole("textbox", { name: "Pairing code from the back office" }).fill(wrong);
+        await ipad.keyboard.press("Enter");
         await expect(ipad.getByRole("alert").filter({ hasText: "Wrong code." })).toBeVisible();
         await expect(ipad.getByRole("alert").filter({ hasText: /expired|replaced/ })).toHaveCount(0);
       });
 
-      await test.step("the code pasted with a space pairs, with no button pressed; the sheet says Paired by itself", async () => {
+      await test.step("the code pasted with a space waits for the iPad's name, then pairs on the button; the sheet says Paired by itself", async () => {
         const field = ipad.getByRole("textbox", { name: "Pairing code from the back office" });
         await field.fill("");
         await field.focus();
@@ -372,10 +373,16 @@ test.describe("back office and POS together", () => {
           data.setData("text/plain", text);
           document.activeElement!.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
         }, spaced);
+        await expect(field).toHaveValue(code);
+        // Six digits do not pair by themselves: the iPad is named first.
+        await ipad.waitForTimeout(1_000);
+        await expect(ipad.getByRole("heading", { name: "Pair this iPad to a station" })).toBeVisible();
+        await ipad.getByRole("textbox", { name: "Name for this iPad" }).fill("Bar iPad");
+        await ipad.getByRole("button", { name: "Pair this iPad", exact: true }).click();
         await expect(ipad.getByRole("button", { name: "Pair this iPad again" })).toBeVisible();
         await expect(ipad.getByRole("group", { name: "PIN keys" })).toBeVisible();
 
-        await expect(sheet.getByRole("status").filter({ hasText: "Paired: iPad" })).toBeVisible({ timeout: 20_000 });
+        await expect(sheet.getByRole("status").filter({ hasText: "Paired: Bar iPad" })).toBeVisible({ timeout: 20_000 });
         await expect(sheet.getByLabel(/^Pairing code \d/)).toHaveCount(0);
         await expect(sheet.getByText("Waiting for the iPad…")).toHaveCount(0);
       });
@@ -401,6 +408,7 @@ test.describe("back office and POS together", () => {
           watch.attach(other);
           await other.goto(`${WEB}/pos`);
           await other.getByRole("textbox", { name: "Pairing code from the back office" }).fill(first);
+          await other.keyboard.press("Enter");
           await expect(other.getByRole("alert").filter({ hasText: "This code has expired or was replaced. Get a new one in the back office" })).toBeVisible();
           await other.close();
         }

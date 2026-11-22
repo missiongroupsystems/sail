@@ -54,10 +54,11 @@ test("A-R1-1, A and C notes: pairing types from a keyboard, opens on a clean loc
   const code = (await register<{ data: { code: string } }>("POST", `/v1/stations/${stationId}/pairing-code`, {})).data.code;
   await page.goto(`${WEB}/pos`);
   await expect(page.getByRole("heading", { name: "Pair this iPad to a station" })).toBeVisible({ timeout: 180_000 });
-  // The code has a field of its own now and pairs at its sixth digit (polish-pilot A6): no Enter. Digits typed with
-  // the focus off the field still reach it.
+  // The code has a field of its own now (polish-pilot A6). Digits typed with the focus off the field still reach it,
+  // and Enter pairs.
   await page.locator("main").click({ position: { x: 5, y: 5 } });
   await page.keyboard.type(code);
+  await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: "Pair this iPad again" })).toBeVisible();
   await expect(page.getByText("Your session ended")).toHaveCount(0);
   const paired = async () => (await register<{ data: { id: string; paired: boolean }[] }>("GET", `/v1/outlets/${outletId}/stations`)).data.find((s) => s.id === stationId)!.paired;

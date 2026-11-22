@@ -26,9 +26,10 @@ const digitsOf = (text: string) => text.replace(/\D/g, "").slice(0, 6);
  * First run: the 6-digit pairing code from the back office and a label for this iPad.
  *
  * On the iPad the code goes into a text field of its own, not the PIN pad: the next screen asks for a staff PIN on
- * that pad, and two six-digit pads one after the other read as one PIN asked twice. The field takes a pasted code,
- * and pairs by itself at the sixth digit. A kitchen display keeps the on-screen keys (a wall screen may have no
- * keyboard), and takes a pasted code too.
+ * that pad, and two six-digit pads one after the other read as one PIN asked twice. The field takes a pasted code.
+ * Pairing waits for the button or Enter, so the device is named first: at the sixth digit it would pair under the
+ * default name. A kitchen display keeps the on-screen keys (a wall screen may have no keyboard), and takes a pasted
+ * code too.
  */
 export function PairingScreen({ device = "iPad", hint = "In the back office, open Settings › Stations, choose the station and tap “Pair an iPad”. Enter the 6 digits here.", kind, onPaired }: PairingScreenProps = {}) {
   const api = useApi();
@@ -41,7 +42,7 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
   const notPaired = useSessionStore((s) => (kind !== "display" && s.lockNote === NOT_PAIRED ? s.lockNote : null));
   const keys = kind === "display";
 
-  // One request at a time: the sixth digit and a tap on the button a moment later are one pairing, not two.
+  // One request at a time: Enter and a tap on the button a moment later are one pairing, not two.
   const busy = useRef(false);
   const latest = useRef({ label, code });
   latest.current = { label, code };
@@ -65,15 +66,13 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
       setPending(false);
     }
   };
-  /** A typed or pasted code. With `go`, six digits pair at once (the name is there by default). */
-  const enter = (text: string, go: boolean) => {
-    const next = digitsOf(text);
-    setCode(next);
+  /** A typed or pasted code; it pairs on the button or Enter. */
+  const enter = (text: string) => {
+    setCode(digitsOf(text));
     setError(null);
-    if (go && next.length === 6) void pair(next);
   };
-  const entering = useRef(enter);
-  entering.current = enter;
+  const entering = useRef({ enter, pair });
+  entering.current = { enter, pair };
   // A code copied from the back office can be pasted anywhere on the screen, not only with the field focused.
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -81,19 +80,21 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
       const pasted = digitsOf(e.clipboardData?.getData("text") ?? "");
       if (!pasted) return;
       e.preventDefault();
-      entering.current(pasted, true);
+      entering.current.enter(pasted);
     };
     document.addEventListener("paste", onPaste);
     return () => document.removeEventListener("paste", onPaste);
   }, []);
-  // Digits from a keyboard go to the code when no field has the focus (a tap beside the field), as they did on the pad.
+  // Digits from a keyboard go to the code when no field has the focus (a tap beside the field), as they did on the pad,
+  // and Enter pairs.
   useEffect(() => {
     if (keys) return;
     const onKey = (e: KeyboardEvent) => {
       const at = document.activeElement;
       if (at instanceof HTMLInputElement || at instanceof HTMLTextAreaElement || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (/^\d$/.test(e.key)) entering.current(latest.current.code + e.key, true);
-      else if (e.key === "Backspace") entering.current(latest.current.code.slice(0, -1), false);
+      if (/^\d$/.test(e.key)) entering.current.enter(latest.current.code + e.key);
+      else if (e.key === "Backspace") entering.current.enter(latest.current.code.slice(0, -1));
+      else if (e.key === "Enter") void entering.current.pair();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -142,7 +143,7 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
           <TextField
             label="Pairing code from the back office"
             value={code}
-            onChange={(v) => enter(v, true)}
+            onChange={enter}
             placeholder="6 digits"
             inputMode="numeric"
             autoComplete="one-time-code"
@@ -171,7 +172,7 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
           <p className="text-[14.5px] text-ink-2">Pairing code</p>
           <PinPad
             value={code}
-            onChange={(v) => enter(v, false)}
+            onChange={enter}
             onComplete={() => void 0}
             onEnter={() => void pair()}
             unlockHint={false}

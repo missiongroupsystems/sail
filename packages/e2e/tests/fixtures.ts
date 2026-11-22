@@ -166,11 +166,12 @@ export async function keyIn(page: Page, group: string, digits: string) {
 }
 
 /**
- * Enter a pairing code on the POS pairing screen. The code has a text field of its own (not the PIN pad the next
- * screen uses) and pairs at its sixth digit, so there is no button to press (polish-pilot A6).
+ * Enter a pairing code on the POS pairing screen and pair. The code has a text field of its own (not the PIN pad the
+ * next screen uses); it pairs on the button, so the iPad can be named first (polish-pilot A6).
  */
 export async function enterPairingCode(page: Page, code: string) {
   await page.getByRole("textbox", { name: "Pairing code from the back office" }).fill(code);
+  await page.getByRole("button", { name: "Pair this iPad", exact: true }).click();
 }
 
 /**

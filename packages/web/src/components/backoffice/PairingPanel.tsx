@@ -35,7 +35,7 @@ const shown = new Map<string, Shown>();
 const stillLive = (c: { expires_at: string } | null | undefined): boolean => Boolean(c && new Date(c.expires_at).getTime() > Date.now());
 
 /** A live code issued elsewhere (another tab, before a reload): the register stores it hashed, so only its times are known. */
-type Unseen = { issued_at: string; expires_at: string };
+type Unseen = { issued_at: string; expires_at: string; pairedAtBefore: string | null };
 
 /** "Pair an iPad" ("Pair a screen" for a kitchen display): a one-time 6-digit code, shown large with its expiry, and the address to open. */
 export function PairingPanel({ station: opened }: { station: Station }) {
@@ -60,26 +60,29 @@ export function PairingPanel({ station: opened }: { station: Station }) {
     onError: (e) => {
       // Not a failure: the station has a live code this browser was not shown. Say so, and offer to replace it.
       const d = e.details as { reason?: string; issued_at?: string; expires_at?: string } | undefined;
-      if (e.code === "state_conflict" && d?.reason === "pairing_code_live" && d.issued_at && d.expires_at) setUnseen({ issued_at: d.issued_at, expires_at: d.expires_at });
+      if (e.code === "state_conflict" && d?.reason === "pairing_code_live" && d.issued_at && d.expires_at) setUnseen({ issued_at: d.issued_at, expires_at: d.expires_at, pairedAtBefore: station.paired_at });
     },
   });
   const left = useCountdown(code?.expires_at ?? unseen?.expires_at ?? null);
   const expired = left === "0:00";
-  // While a code is live the register is asked every 3 s, so the sheet says "Paired" as soon as the device pairs (E-N10).
+  // While a code is live the register is asked every 3 s, so the sheet says "Paired" as soon as the device pairs (E-N10),
+  // a code issued elsewhere included.
+  const pending = code ?? unseen;
   const live = useQuery({
     queryKey: keys.stations(opened.outlet_id),
     queryFn: () => req(api.GET("/v1/outlets/{id}/stations", { params: { path: { id: opened.outlet_id }, query: { include_archived: "true" } } })).then((r) => r.data),
-    enabled: Boolean(code) && !expired,
+    enabled: Boolean(pending) && !expired,
     refetchInterval: 3000,
   });
   const station = live.data?.find((s) => s.id === opened.id) ?? opened;
   // The code is spent once a device has paired since it was issued: the panel says which device, and forgets the code.
-  const pairedNow = Boolean(code) && station.paired && station.paired_at !== code!.pairedAtBefore;
+  const pairedNow = Boolean(pending) && station.paired && station.paired_at !== pending!.pairedAtBefore;
   useEffect(() => {
     if (!pairedNow) return;
     shown.delete(opened.id);
     setPairedAs(station.device_label ?? device);
     setCode(null);
+    setUnseen(null);
   }, [pairedNow, opened.id, station.device_label, device]);
   useEffect(() => {
     if (expired) shown.delete(opened.id);
