@@ -29,7 +29,7 @@ export type LineRowProps = {
   flash?: boolean;
   /** Slide in on first render (new line). */
   entering?: boolean;
-  /** Print status of a sent line: ✓ printed, ◷ waiting, ⚠ not printed. Omit for the plain "sent" mark. */
+  /** Print status of a sent line: ✓ printed, ◷ waiting, ⚠ not printed. Omit for none: the group header already says sent. */
   printStatus?: "printed" | "waiting" | "late" | null;
   /** A sent line the kitchen display has bumped: "ready" in place of the print status. */
   ready?: boolean;
@@ -84,10 +84,6 @@ export function LineRow({ quantity, name, modifiers = [], notes, seat, amountCen
         {print ? (
           <span className={cx("mt-0.5 flex items-center justify-end gap-1 text-caption font-medium", print.cls)}>
             <Icon icon={print.icon} size={14} /> {print.text}
-          </span>
-        ) : status === "sent" ? (
-          <span className="mt-0.5 flex items-center justify-end gap-1 text-caption font-medium text-ink-3">
-            <Icon icon={Check} size={14} /> sent
           </span>
         ) : null}
       </span>
