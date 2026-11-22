@@ -219,7 +219,8 @@ test.describe("back office and POS together", () => {
         await expect(plan.getByRole("button", { name: new RegExp(`^${added.name}, 4 seats, rect`) })).toHaveAttribute("aria-pressed", "true");
         await expect(panel.getByRole("textbox", { name: "Name" })).toHaveValue(added.name);
         await expect(panel.getByRole("button", { name: "Save table" })).toHaveCount(0);
-        await expect(panel.getByText("Saved", { exact: true })).toBeVisible();
+        // Just selected, nothing saved yet: no status line until the first change.
+        await expect(panel.getByText(/^(Saved|Saving…|Not saved yet\.)$/)).toHaveCount(0);
       });
 
       await test.step("shape applies when chosen; seats when the field is left; a name after a pause in typing", async () => {
@@ -227,6 +228,8 @@ test.describe("back office and POS together", () => {
         await page.getByRole("option", { name: "Round" }).click();
         await expect(plan.getByRole("button", { name: `${added.name}, 4 seats, round` })).toBeVisible();
         await expect.poll(async () => (await inArea()).find((t) => t.id === added.id)!.shape).toBe("round");
+        // The first change brings the status line.
+        await expect(panel.getByText("Saved", { exact: true })).toBeVisible();
 
         await panel.getByRole("textbox", { name: "Seats" }).fill("6");
         await panel.getByRole("textbox", { name: "Seats" }).blur();

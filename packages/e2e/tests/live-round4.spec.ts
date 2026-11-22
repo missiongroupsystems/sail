@@ -68,8 +68,9 @@ test("L1: Manager and Server open a table's details on Floor & QR, read only, an
   await page.goto(`${WEB}/floor`);
   await expect(page.getByText(/Select a table to edit it\. Drag to move/)).toBeVisible();
   await page.getByRole("application", { name: /Floor plan/ }).getByRole("button").first().click();
-  await expect(page.locator("aside").getByText("Saved", { exact: true })).toBeVisible();
   await expect(page.locator("aside").getByRole("textbox", { name: "Name" })).toBeEnabled();
+  // Nothing has been saved yet, so the panel has no status line until a change goes through.
+  await expect(page.locator("aside").getByText("Saved", { exact: true })).toHaveCount(0);
 });
 
 // Pages with a record sheet behind a row, and the merchant settings form. One test per role, as in live-round3: the
