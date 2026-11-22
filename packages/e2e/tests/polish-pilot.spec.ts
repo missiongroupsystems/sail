@@ -238,43 +238,43 @@ test.describe("back office and POS together", () => {
         await expect.poll(async () => (await inArea()).find((t) => t.id === added.id)).toMatchObject({ name: "Window", seats: 6, shape: "round" });
       });
 
-      await test.step("a refused name stays on show while another change is made, and changes are sent one at a time", async () => {
-        // The register refuses the name "Refused", and the plan's re-read is held back, so a later change is made
-        // while the panel still shows the refused text (a later save of the seats alone once wiped the refusal).
-        let holdReads = true;
-        const inFlight: number[] = [];
+      await test.step("a refused name stays on show after another change saves, and changes are sent one at a time", async () => {
+        // The register refuses the name "Refused" (as it would a name it cannot take) and takes everything else. The later
+        // change is a shape, sent on its own, and it goes through: once, that save wiped the refusal while the panel
+        // still showed the refused name. Leaving the name field to pick the shape sends the name again, refused again.
+        let inFlight = 0;
         let overlapped = false;
-        await page.route(/\/v1\/tables(\?.*)?$/, async (route) => {
-          if (route.request().method() === "GET" && holdReads) await new Promise((r) => setTimeout(r, 3_000));
-          await route.continue().catch(() => undefined);
-        });
         await page.route(new RegExp(`/v1/tables/${added.id}$`), async (route) => {
           if (route.request().method() !== "PATCH") return route.continue();
-          inFlight.push(1);
-          if (inFlight.length > 1) overlapped = true;
+          inFlight++;
+          if (inFlight > 1) overlapped = true;
           try {
-            if ((route.request().postDataJSON() as { name?: string }).name === "Refused") {
-              return await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ code: "validation_failed", message: "That name is refused", remedy: "Choose another name." }) });
-            }
+            if ((route.request().postDataJSON() as { name?: string }).name === "Refused") return await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ code: "validation_failed", message: "That name is refused", remedy: "Choose another name." }) });
             await new Promise((r) => setTimeout(r, 300));
             return await route.continue();
           } finally {
-            inFlight.pop();
+            inFlight--;
           }
         });
+        const refusal = panel.getByText("That name is refused Choose another name.");
         await panel.getByRole("textbox", { name: "Name" }).fill("Refused");
-        await expect(panel.getByText("That name is refused Choose another name.")).toBeVisible();
-        await panel.getByRole("textbox", { name: "Seats" }).fill("5");
-        await panel.getByRole("textbox", { name: "Seats" }).blur();
-        await page.waitForTimeout(1_500);
-        await expect(panel.getByText("That name is refused Choose another name.")).toBeVisible();
-        await expect(panel.getByText("Changes save as you make them.")).toHaveCount(0);
-        expect((await inArea()).find((t) => t.id === added.id)).toMatchObject({ name: "Window", seats: 6 });
+        await expect(refusal).toBeVisible();
 
-        // Back to the saved name: nothing is left unsaved, so the refusal goes; then two quick changes land in order.
-        holdReads = false;
+        await panel.getByRole("button", { name: /Shape/ }).click();
+        await page.getByRole("option", { name: "Square" }).click();
+        await expect.poll(async () => (await inArea()).find((t) => t.id === added.id)!.shape).toBe("square");
+        // Settled, not saving: the panel still says the name is not saved, and why.
+        await expect(panel.getByText("Not saved yet.")).toBeVisible();
+        await expect(refusal).toBeVisible();
+        await expect(panel.getByRole("textbox", { name: "Name" })).toHaveValue("Refused");
+        expect((await inArea()).find((t) => t.id === added.id)).toMatchObject({ name: "Window", shape: "square" });
+
+        // Back to the saved name: nothing is left unsaved, so the refusal goes.
         await panel.getByRole("textbox", { name: "Name" }).fill("Window");
-        await expect(panel.getByText("That name is refused Choose another name.")).toHaveCount(0);
+        await expect(refusal).toHaveCount(0);
+        await expect(panel.getByText("Changes save as you make them.")).toBeVisible();
+
+        // Two quick changes: sent one after the other, and the last one stays.
         await panel.getByRole("textbox", { name: "Seats" }).fill("7");
         await panel.getByRole("textbox", { name: "Seats" }).blur();
         await panel.getByRole("textbox", { name: "Seats" }).fill("6");
@@ -283,8 +283,12 @@ test.describe("back office and POS together", () => {
         await page.waitForTimeout(1_000);
         expect((await inArea()).find((t) => t.id === added.id)!.seats).toBe(6);
         expect(overlapped, "no two saves of the table were in flight at once").toBe(false);
-        await expect(panel.getByText("Changes save as you make them.")).toBeVisible();
         await page.unrouteAll({ behavior: "ignoreErrors" });
+
+        // The shape goes back to round, as the later steps expect.
+        await panel.getByRole("button", { name: /Shape/ }).click();
+        await page.getByRole("option", { name: "Round" }).click();
+        await expect.poll(async () => (await inArea()).find((t) => t.id === added.id)!.shape).toBe("round");
       });
 
       await test.step("a value that cannot be used says so under its field and is not sent", async () => {
