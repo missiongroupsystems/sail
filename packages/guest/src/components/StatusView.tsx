@@ -89,7 +89,7 @@ export function StatusView({ session, orderView, loading, error, lastRoundId, st
             {/* The banner says when it was sent and the timeline where it is: the card carries no head of its own to say it again.
                 A round staff removed has neither, so its head and Removed pill say so. */}
             {removed(highlighted) ? (
-              <RoundHead title="Your order" at={`Sent ${clock(highlighted.submitted_at)}`} pill={removedPill} />
+              <RoundHead title={highlighted.guest_name ?? "Your order"} at={`Sent ${clock(highlighted.submitted_at)}`} pill={removedPill} />
             ) : (
               <RoundTimeline stage={roundStage(highlighted, order)} rejectReason={highlighted.reject_reason} holdOrders={session.hold_orders} className="px-4 py-3" />
             )}

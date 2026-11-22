@@ -1,5 +1,5 @@
 import type { Locator, Page, Request } from "@playwright/test";
-import { API, devDatabase, devLocal, expect, keyIn, pairAndSignIn, register, SG_ADMIN, test, WEB } from "./fixtures";
+import { API, devDatabase, devLocal, expect, GUEST, keyIn, pairAndSignIn, register, SG_ADMIN, test, WEB } from "./fixtures";
 
 /**
  * The review fixes after the pilot polish (pairing on the button or Enter, the Stations sheet's code and status, the
@@ -241,15 +241,14 @@ test.describe("back office", () => {
         expect(from, `the table reaches ${want}: ${seen.join(" ")}`).toBeGreaterThanOrEqual(0);
         for (const s of seen.slice(from)) expect(never, `jumped back: ${seen.join(" ")}`).not.toContain(s);
       };
-      const at = (x: number) => x;
 
       await test.step("two quick drags", async () => {
         await drag(3, 0);
         await drag(3, 0);
-        await watchLeft(at(8), [at(2), at(5)]);
+        await watchLeft(8, [2, 5]);
         await expect.poll(async () => (await read()).x, { timeout: 15_000 }).toBe(8);
         await page.waitForTimeout(1_500);
-        expect(await left()).toBe(at(8));
+        expect(await left()).toBe(8);
       });
 
       await test.step("a drag, then a typed X", async () => {
@@ -257,10 +256,10 @@ test.describe("back office", () => {
         await drag(-2, 0);
         await panel.getByRole("textbox", { name: "X", exact: true }).fill("12");
         await panel.getByRole("textbox", { name: "X", exact: true }).blur();
-        await watchLeft(at(12), [at(8), at(6)]);
+        await watchLeft(12, [8, 6]);
         await expect.poll(async () => (await read()).x, { timeout: 15_000 }).toBe(12);
         await page.waitForTimeout(1_500);
-        expect(await left()).toBe(at(12));
+        expect(await left()).toBe(12);
         await expect(panel.getByRole("textbox", { name: "X", exact: true })).toHaveValue("12");
       });
 
@@ -402,8 +401,11 @@ test.describe("POS", () => {
           await expect(ipad.getByRole("group", { name: "Which orders" })).toBeVisible();
           // Today's closed on a fresh station is an empty list; neither it nor Open points at New order.
           const main = ipad.getByRole("main");
+          // The empty list has rendered (not a loading screen) before its words are checked.
+          await expect(main.getByText("No open orders").or(main.getByRole("button", { name: /^(Dine-in|Takeaway|Pickup|Delivery) / }).first())).toBeVisible();
           await expect(main).not.toContainText("New order");
           await ipad.getByRole("group", { name: "Which orders" }).getByRole("button", { name: /^Today's closed/ }).click();
+          await expect(main.getByText("Nothing closed yet today").or(main.getByRole("button", { name: /^(Dine-in|Takeaway|Pickup|Delivery) / }).first())).toBeVisible();
           await expect(main).not.toContainText("New order");
           await ipad.screenshot({ path: "test-results/brandless-orders.png" });
         } finally {
@@ -413,6 +415,39 @@ test.describe("POS", () => {
     } finally {
       for (const id of opened) await register("POST", `/v1/orders/${id}/cancel`, { reason: "End-to-end test" }).catch(() => undefined);
       await register("PATCH", `/v1/stations/${old.id}`, { archived: true }).catch(() => undefined);
+    }
+  });
+});
+
+test.describe("guest phone", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("a round whose every item staff removed keeps its head and Removed pill on the status screen", async ({ page }) => {
+    test.setTimeout(240_000);
+    const { outletId, brandId } = devLocal();
+    const floor = await register<{ data: { tables: { id: string; name: string; order: unknown }[] } }>("GET", `/v1/outlets/${outletId}/floor`);
+    const table = floor.data.tables.find((t) => !t.order)!;
+    const orderId = crypto.randomUUID();
+    await register("POST", "/v1/orders", { order_id: orderId, order_type: "dine_in", table_id: table.id, pax: 1, outlet_id: outletId, brand_id: brandId });
+    try {
+      const qr = await register<{ data: { url: string } }>("POST", `/v1/tables/${table.id}/qr/rotate`, {});
+      await page.goto(`${GUEST}/t/${qr.data.url.split("/t/")[1]!}`);
+      await page.getByRole("button", { name: /^Kopi,/ }).click({ timeout: 180_000 });
+      await page.getByRole("dialog", { name: "Kopi" }).getByRole("button", { name: /^Add to order/ }).click();
+      await page.getByRole("button", { name: /^View your order, 1 item/ }).click();
+      await page.getByRole("button", { name: /^Send/ }).first().click();
+      await expect(page.getByRole("heading", { name: "Order sent" })).toBeVisible();
+      const rounds = await register<{ data: { id: string; order_id: string }[] }>("GET", `/v1/outlets/${outletId}/rounds?status=pending`);
+      for (const r of rounds.data.filter((x) => x.order_id === orderId)) await register("POST", `/v1/rounds/${r.id}/accept`, {});
+      const order = await register<{ data: { lines: { id: string; status: string }[] } }>("GET", `/v1/orders/${orderId}`);
+      for (const l of order.data.lines.filter((x) => x.status !== "voided")) await register("POST", `/v1/orders/${orderId}/lines/${l.id}/void`, { reason_text: "Out of stock" });
+      const latest = page.getByRole("region", { name: "Latest order" });
+      await expect(latest.getByText("Staff removed this item.")).toBeVisible({ timeout: 30_000 });
+      await expect(latest.getByText("Removed", { exact: true })).toBeVisible();
+      await expect(latest.getByText(/^Sent \d/)).toBeVisible();
+      await page.screenshot({ path: "test-results/guest-removed-round.png" });
+    } finally {
+      await register("POST", `/v1/orders/${orderId}/cancel`, { reason: "End-to-end test" }).catch(() => undefined);
     }
   });
 });

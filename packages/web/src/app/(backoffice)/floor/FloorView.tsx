@@ -139,12 +139,8 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
     // (A scope is set per hook, not per call, so this queues every table's changes, which are small.)
     scope: { id: "floor-table-patch" },
     mutationFn: ({ id, body }) => req(api.PATCH("/v1/tables/{id}", { params: { path: { id } }, body })),
-    onMutate: async ({ id, body }) => {
-      // A read still on its way would put the old table back over the change for a moment.
-      await qc.cancelQueries({ queryKey: keys.tables(outletId ?? "") });
-      // Lines may be optimistic: the table moves at once; the register's reply settles it.
-      qc.setQueryData<Table[]>(keys.tables(outletId ?? ""), (prev) => prev?.map((t) => (t.id === id ? { ...t, ...body, shape: body.shape ?? t.shape } : t)));
-    },
+    // A read still on its way would put the old table back over the change for a moment.
+    onMutate: () => qc.cancelQueries({ queryKey: keys.tables(outletId ?? "") }),
     onError: (error, { id, body }) => {
       const fields = Object.keys(body);
       // The refused fields go back to the register's values, so the panel can tell its unsaved text from them.
@@ -162,6 +158,16 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
     // the first left it, and rewrote the panel's position fields, until the second landed. This one still counts here.
     onSettled: () => (qc.isMutating({ mutationKey: PATCH_TABLE }) === 1 ? qc.invalidateQueries({ queryKey: keys.tables(outletId ?? "") }) : undefined),
   });
+  /**
+   * A table change: the plan shows it at once, then it queues for the register. A queued mutation runs its onMutate only
+   * when the one before it settles, so the move is shown here, as it is made: a second drag while the first is still on
+   * its way no longer puts the table back where the first left it until the second starts.
+   */
+  const changeTable = (id: string, body: TablePatch) => {
+    void qc.cancelQueries({ queryKey: keys.tables(outletId ?? "") });
+    qc.setQueryData<Table[]>(keys.tables(outletId ?? ""), (prev) => prev?.map((t) => (t.id === id ? { ...t, ...body, shape: body.shape ?? t.shape } : t)));
+    patchTable.mutate({ id, body });
+  };
   const addTable = useMutation<{ data: Table }, ApiError>({
     mutationFn: () => {
       // Clear of every table on the plan, whatever its size and wherever it was dragged (the first free origin on a
@@ -203,7 +209,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
   const endDrag = () => {
     if (!drag) return;
     const { origin, current } = drag;
-    if (origin.x !== current.x || origin.y !== current.y || origin.w !== current.w || origin.h !== current.h) patchTable.mutate({ id: drag.id, body: current });
+    if (origin.x !== current.x || origin.y !== current.y || origin.w !== current.w || origin.h !== current.h) changeTable(drag.id, current);
     setDrag(null);
   };
 
@@ -218,7 +224,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
       follow.current = t.id;
       setAreaId(body.area_id);
     }
-    patchTable.mutate({ id: t.id, body });
+    changeTable(t.id, body);
   };
 
   return (
@@ -319,7 +325,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
                       const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
                       if (d && !t.archived && canEditTable.ok) {
                         e.preventDefault();
-                        patchTable.mutate({ id: t.id, body: clampTable({ x: t.x + d[0]!, y: t.y + d[1]!, w: t.w, h: t.h }) });
+                        changeTable(t.id, clampTable({ x: t.x + d[0]!, y: t.y + d[1]!, w: t.w, h: t.h }));
                       }
                     }}
                     className={cx(
@@ -364,7 +370,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
               {selectedTable?.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : null}
             </div>
             {selectedTable ? (
-              <TablePanel key={selectedTable.id} table={selectedTable} areas={sortedAreas} onSave={(body) => saveSelected(selectedTable, body)} saving={patchTable.isPending} canRotateQr={admin} denied={canEditTable.reason} refusal={refusals[selectedTable.id] ?? null} onSynced={(fields) => settleRefusal(selectedTable.id, fields)} />
+              <TablePanel key={selectedTable.id} table={selectedTable} areas={sortedAreas} onSave={(body) => saveSelected(selectedTable, body)} saving={patchTable.isPending && patchTable.variables?.id === selectedTable.id} canRotateQr={admin} denied={canEditTable.reason} refusal={refusals[selectedTable.id] ?? null} onSynced={(fields) => settleRefusal(selectedTable.id, fields)} />
             ) : (
               <p className="text-[14px] text-ink-2">{canEditTable.ok ? "Select a table to edit it. Drag to move, drag a corner to resize; arrow keys nudge a focused table." : `Select a table to see its details. ${canEditTable.reason}`}</p>
             )}
@@ -494,9 +500,10 @@ function TablePanel({ table, areas, onSave, saving, canRotateQr, denied, refusal
           {table.archived ? "Restore" : "Archive"}
         </Button>
         {/* In the place Save table had: what happens to a change, and that the last one has gone through. */}
-        {denied === null && (saved || saving || error) ? (
+        {/* The live region stays mounted (so its first words are announced); it says something once there is a save to report. */}
+        {denied === null ? (
           <p role="status" className="text-[12.5px] text-ink-3">
-            {saving ? "Saving…" : error ? "Not saved yet." : "Saved"}
+            {saving ? "Saving…" : error ? "Not saved yet." : saved ? "Saved" : null}
           </p>
         ) : null}
         {confirm.dialog}
