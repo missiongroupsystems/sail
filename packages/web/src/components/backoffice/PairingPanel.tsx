@@ -3,7 +3,7 @@
 import { Button, InlineError, useLocale } from "@sail/ui";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { keys } from "@/lib/query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { PairingCode, Station } from "@/lib/api/types";
@@ -88,6 +88,12 @@ export function PairingPanel({ station: opened }: { station: Station }) {
     if (expired) shown.delete(opened.id);
   }, [expired, opened.id]);
   const waiting = code && !expired && !pairedNow;
+  // A new code is brought into view: at the foot of the sheet it sat half under the footer.
+  const codeBox = useRef<HTMLDivElement>(null);
+  const shownCode = waiting ? code.code : null;
+  useEffect(() => {
+    if (shownCode) codeBox.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [shownCode]);
   const conflict = issue.error?.code === "state_conflict" && unseen !== null;
 
   return (
@@ -99,7 +105,7 @@ export function PairingPanel({ station: opened }: { station: Station }) {
         </p>
       ) : null}
       {waiting ? (
-        <div className="flex flex-col items-start gap-2 rounded-tile bg-surface-2 px-5 py-4">
+        <div ref={codeBox} className="flex flex-col items-start gap-2 rounded-tile bg-surface-2 px-5 py-4">
           <p className="text-caption text-ink-2">
             On the {device}, open <span className="font-mono text-ink">{address}</span> and enter this code
           </p>
