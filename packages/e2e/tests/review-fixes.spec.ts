@@ -360,14 +360,15 @@ test.describe("POS", () => {
     test.setTimeout(360_000);
     const { merchantId, outletId, brandId } = devLocal();
     const opened: string[] = [];
-    const old = { id: crypto.randomUUID(), name: `No brand ${String(Date.now()).slice(-6)}` };
+    const stamp = String(Date.now()).slice(-6);
+    const old = { id: crypto.randomUUID(), name: `No brand ${stamp}` };
     try {
       await test.step("Ready: not on a sent table order, on a sent pickup", async () => {
         const floor = await register<{ data: { tables: { id: string; name: string; order: unknown }[] } }>("GET", `/v1/outlets/${outletId}/floor`);
         const table = floor.data.tables.find((t) => !t.order)!;
         const products = await register<{ data: { id: string; name: string }[] }>("GET", "/v1/products?limit=100");
         const kopi = products.data.find((p) => p.name === "Kopi")!;
-        for (const body of [{ order_type: "dine_in", table_id: table.id, pax: 2 }, { order_type: "pickup", customer_ref: { name: "Ready check" } }]) {
+        for (const body of [{ order_type: "dine_in", table_id: table.id, pax: 2 }, { order_type: "pickup", customer_ref: { name: `Ready check ${stamp}` } }]) {
           const id = crypto.randomUUID();
           await register("POST", "/v1/orders", { order_id: id, outlet_id: outletId, brand_id: brandId, ...body });
           opened.push(id);
@@ -377,7 +378,7 @@ test.describe("POS", () => {
         await pairAndSignIn(page, CASHIER_PIN);
         await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Orders", exact: true }).click();
         const dineIn = page.getByRole("listitem").filter({ has: page.getByRole("button", { name: /^Dine-in / }).filter({ hasText: `Table ${table.name} · Dine-in` }) });
-        const pickup = page.getByRole("listitem").filter({ has: page.getByRole("button", { name: /^Pickup .*Ready check/ }) });
+        const pickup = page.getByRole("listitem").filter({ has: page.getByRole("button", { name: new RegExp(`^Pickup .*Ready check ${stamp}`) }) });
         await expect(dineIn).toHaveCount(1);
         await expect(pickup).toHaveCount(1);
         await expect(dineIn.getByRole("button", { name: "Ready", exact: true })).toHaveCount(0);
