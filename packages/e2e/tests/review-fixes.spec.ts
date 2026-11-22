@@ -17,6 +17,9 @@ async function signIn(page: Page) {
     await page.getByRole("button", { name: "Sign in" }).click({ timeout: 10_000 });
     await page.waitForURL(`${WEB}/today`, { timeout: 30_000 });
   }).toPass({ timeout: 300_000 });
+  // Today has rendered, so the next navigation is not cut short by the sign-in's own (WebKit is slower to settle).
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible({ timeout: 60_000 });
+  await page.waitForLoadState("networkidle").catch(() => undefined);
 }
 
 async function openRow(page: Page, name: string) {
