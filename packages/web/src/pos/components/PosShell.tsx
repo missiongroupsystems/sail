@@ -23,6 +23,7 @@ import { OrdersScreen } from "../screens/OrdersScreen";
 import { PayScreen } from "../screens/PayScreen";
 import { ShiftScreen } from "../screens/ShiftScreen";
 import { IdleOverlay } from "./IdleOverlay";
+import { hasNoBrand, NoBrandScreen } from "./NoBrand";
 import { NoticeHost } from "./NoticeHost";
 import { OverrideSheet } from "./OverrideSheet";
 import { PosProvider, type PosContextValue } from "./PosContext";
@@ -73,7 +74,7 @@ function SignedInShell() {
 
   // A station saved without a brand cannot open an order. Once the back office gives it one, the stations list
   // (refreshed by the outlet's stream, or by Check again) brings it here without a new sign-in.
-  const noBrand = station.kind === "pos" && !station.brand_id;
+  const noBrand = hasNoBrand(station);
   const fresh = stations.data?.find((s) => s.id === station.id);
   useEffect(() => {
     if (noBrand && fresh?.brand_id) useStationStore.getState().updateStation({ ...station, brand_id: fresh.brand_id });
@@ -123,33 +124,13 @@ function SignedInShell() {
   return (
     <PosProvider value={value}>
       <div className="flex h-dvh w-full flex-col overflow-hidden bg-bg text-ink">
-        {noBrand ? <NoBrandScreen checking={stations.isFetching} onCheck={() => void stations.refetch()} onLock={() => void lockStation(api, null)} /> : screen.kind === "floor" ? <FloorScreen /> : screen.kind === "orders" ? <OrdersScreen /> : screen.kind === "shift" ? <ShiftScreen /> : screen.kind === "bill" ? <BillScreen orderId={screen.orderId} /> : screen.kind === "pay" ? <PayScreen key={screen.checkId} orderId={screen.orderId} checkId={screen.checkId} /> : <OrderScreen orderId={screen.orderId} />}
+        {/* Without a brand only the floor, where tables are seated, gives way to the message: Orders and Shift still work, with
+            the orders already open (pay, refund) and the drawer (cash, Z-report, closing the shift). */}
+        {screen.kind === "floor" && noBrand ? <NoBrandScreen checking={stations.isFetching} onCheck={() => void stations.refetch()} onLock={() => void lockStation(api, null)} /> : screen.kind === "floor" ? <FloorScreen /> : screen.kind === "orders" ? <OrdersScreen /> : screen.kind === "shift" ? <ShiftScreen /> : screen.kind === "bill" ? <BillScreen orderId={screen.orderId} /> : screen.kind === "pay" ? <PayScreen key={screen.checkId} orderId={screen.orderId} checkId={screen.checkId} /> : <OrderScreen orderId={screen.orderId} />}
       </div>
       <NoticeHost />
       <OverrideSheet />
       {idle.warning ? <IdleOverlay secondsLeft={idle.secondsLeft} onTouch={idle.touch} /> : null}
     </PosProvider>
-  );
-}
-
-/** A POS station with no brand has no menu and cannot open an order: one message that says where to fix it, in place of the screens. */
-function NoBrandScreen({ checking, onCheck, onLock }: { checking: boolean; onCheck: () => void; onLock: () => void }) {
-  return (
-    <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 px-8 text-center">
-      <div className="flex max-w-[520px] flex-col gap-2">
-        <h1 className="font-heading text-[26px] leading-tight font-semibold tracking-[-0.02em] text-ink">This station has no brand</h1>
-        <p role="alert" className="text-[14.5px] text-ink-2">
-          In the back office, open Settings › Stations and choose one.
-        </p>
-      </div>
-      <div className="flex gap-3">
-        <Button variant="secondary" size="lg" onPress={onLock}>
-          Lock
-        </Button>
-        <Button variant="primary" size="lg" isPending={checking} onPress={onCheck}>
-          Check again
-        </Button>
-      </div>
-    </main>
   );
 }

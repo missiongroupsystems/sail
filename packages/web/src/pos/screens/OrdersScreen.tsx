@@ -8,6 +8,7 @@ import { idempotencyKey, toApiError } from "@/lib/api";
 import { markReady, openOrder, type OpenOrderInput } from "../api/register";
 import type { OrderSnapshot, OrderType } from "../api/types";
 import { Frame } from "../components/Frame";
+import { hasNoBrand, NO_BRAND_HINT, NO_BRAND_TITLE } from "../components/NoBrand";
 import { usePos } from "../components/PosContext";
 import { useApplySnapshot, useOpenOrders, useTodaysOrders } from "../hooks/queries";
 import { useApi } from "../hooks/useApi";
@@ -70,6 +71,12 @@ export function OrdersScreen() {
           }} />
           {view === "today" ? <span className="text-body text-ink-2">Tap a done order for Refund, Reopen and receipts.</span> : null}
           <span className="flex-1" />
+          {/* A station without a brand has no menu to sell from: the orders already open still pay and refund here. */}
+          {hasNoBrand(station) ? (
+            <p role="note" className="max-w-[360px] text-right text-body text-ink-2">
+              {NO_BRAND_TITLE}. {NO_BRAND_HINT}
+            </p>
+          ) : (
           <MenuTrigger>
             <Button variant="primary" size="lg" isDisabled={offline}>
               {offline ? (
@@ -87,6 +94,7 @@ export function OrdersScreen() {
               <MenuItem id="delivery">Delivery</MenuItem>
             </Menu>
           </MenuTrigger>
+          )}
         </div>
         <SegmentedControl
           aria-label="Order type"
