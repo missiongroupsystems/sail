@@ -149,7 +149,7 @@ export function OrdersScreen() {
                   </span>
                   <Money cents={o.status === "completed" ? o.paid_total : o.totals.total} size="line" className="w-24 shrink-0 text-right" />
                 </AriaButton>
-                {o.status === "fired" ? (
+                {o.status === "fired" && o.order_type !== "dine_in" ? (
                   <Button size="lg" variant="secondary" isDisabled={offline || busy === o.id} isPending={busy === o.id} onPress={() => void ready(o)} className="min-h-16 w-[92px]">
                     {offline ? "Offline" : "Ready"}
                   </Button>
