@@ -57,6 +57,19 @@ describe("issuing a pairing code", () => {
     expect(r.body.data.code).toMatch(/^\d{6}$/);
   });
 
+  it("two replace: false requests at once: exactly one issues a code, the other is refused and the code still pairs", async () => {
+    // Several stations, so an unlocked check-then-insert would let both through on at least one of them.
+    for (let i = 0; i < 5; i++) {
+      const id = randomUUID();
+      await call("POST", "/v1/stations", { token: A.admin.token, body: { id, outlet_id: A.outletId, brand_id: A.brandId, name: `Race ${i}` } });
+      const both = await Promise.all([0, 1].map(() => call<Issued & Refusal>("POST", `/v1/stations/${id}/pairing-code`, { token: A.admin.token, body: { replace: false } })));
+      expect(both.map((r) => r.status).sort()).toEqual([201, 409]);
+      const issued = both.find((r) => r.status === 201)!;
+      expect(both.find((r) => r.status === 409)!.body.details?.expires_at).toBe(issued.body.data.expires_at);
+      expect((await pair(issued.body.data.code)).status).toBe(200);
+    }
+  });
+
   it("left out, or true, a new code replaces the live one, as before", async () => {
     const a = await issue();
     const b = await issue({ replace: true });

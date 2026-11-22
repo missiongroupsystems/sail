@@ -52,7 +52,9 @@ export function stationRoutes(app: OpenAPIHono<AppEnv>) {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
     const { replace } = c.req.valid("json");
-    const [st] = await db().select().from(stations).where(and(eq(stations.id, id), eq(stations.merchantId, p.merchantId), isNull(stations.archivedAt))).limit(1);
+    // The request's transaction holds the station row until it commits, so two requests at once check, expire and
+    // issue one after the other: with replace: false the second is refused, and either way one code is left live.
+    const [st] = await db().select().from(stations).where(and(eq(stations.id, id), eq(stations.merchantId, p.merchantId), isNull(stations.archivedAt))).limit(1).for("update");
     if (!st) throw AppError.notFound("station", id);
     if (replace === false) {
       // The code is stored hashed and cannot be shown again: the caller is told one is live, and until when.
