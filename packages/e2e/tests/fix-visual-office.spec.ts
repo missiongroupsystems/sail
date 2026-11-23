@@ -134,6 +134,16 @@ test.describe("two-brand back office", () => {
     const brandA = devLocal().twin.brandId;
     const outlets = (await twin<{ data: { id: string; name: string; brand_id: string }[] }>("GET", "/v1/outlets")).data.filter((o) => o.brand_id === brandA);
     test.skip(outlets.length < 2, "brand-scope.spec.ts gives the first brand two outlets");
+    // An order needs the outlet's POS menu. brand-scope.spec.ts makes it; found again here, or made the same way, so
+    // this spec also runs on a database brand-scope has not touched.
+    const products = (await twin<{ data: { id: string; name: string }[] }>("GET", "/v1/products?limit=200")).data;
+    const laksa = products.find((p) => p.name === "Twin laksa")?.id ?? (await twin<{ data: { id: string } }>("POST", "/v1/products", { name: "Twin laksa", price: 1100, brand_id: brandA })).data.id;
+    const menus = (await twin<{ data: { id: string; name: string }[] }>("GET", "/v1/menus")).data;
+    const menuId = menus.find((m) => m.name === "Twin noodle menu")?.id ?? (await twin<{ data: { id: string } }>("POST", "/v1/menus", { name: "Twin noodle menu", brand_id: brandA, sections: [{ name: "All", items: [{ product_id: laksa }] }] })).data.id;
+    for (const o of outlets.slice(0, 2)) {
+      const links = (await twin<{ data: { outlet_id: string }[] }>("GET", `/v1/channel-links?channel=pos&outlet_id=${o.id}`)).data;
+      if (!links.some((l) => l.outlet_id === o.id)) await twin("POST", "/v1/channel-links", { channel: "pos", outlet_id: o.id, menu_id: menuId });
+    }
     // One order at each of two outlets, so the list has one to name for each.
     for (const o of outlets.slice(0, 2)) await twin("POST", "/v1/orders", { order_id: crypto.randomUUID(), order_type: "takeaway", takeaway_ref: `Audit ${String(Date.now()).slice(-5)}`, outlet_id: o.id });
     await signIn(page, TWIN_ADMIN);
