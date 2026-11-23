@@ -294,6 +294,8 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "brands.create", method: "post", path: "/v1/brands", tags: ["organisation"], request: { body: jsonBody(BrandInput) }, responses: { 201: jsonResponse(mutationResponse(BrandSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const body = c.req.valid("json");
+    // Someone limited to some brands could not see or use a brand they add (it is outside their scope): refused.
+    if (brandScopeFor(p) !== "*") throw new AppError("permission_denied", "You work for some brands only, so you cannot add one", { remedy: "Ask someone who works for every brand to add it, and to give you that brand too." });
     const [row] = await db().insert(brands).values({ id: body.id, merchantId: p.merchantId, name: body.name, accentColor: body.accent_color ?? null, displayFont: body.display_font ?? null, logoUrl: body.logo_url ?? null, legacyId: body.legacy_id ?? null }).returning();
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "brand.created", aggregate: { kind: "brand", id: row!.id }, operationId: "brands.create", payload: toBrand(row!), correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
     await recordAudit(p, { action: "brands.create", targetKind: "brand", targetId: row!.id, details: { name: row!.name } });
@@ -305,6 +307,9 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
     const { id } = c.req.valid("param");
     const body = c.req.valid("json");
     if (Object.keys(body).length === 0) throw AppError.validation("Nothing to update");
+    // A brand outside the caller's scope is not theirs to change, and is not listed to them: it answers as a missing one.
+    const scope = brandScopeFor(p);
+    if (scope !== "*" && !scope.split(",").includes(id)) throw AppError.notFound("brand", id);
     // An archived brand leaves the back office's scope, so its outlets would trade on with nobody able to see them.
     if (body.archived === true) {
       const live = await withEveryOutlet(() => db().select({ id: outlets.id }).from(outlets).where(and(eq(outlets.merchantId, p.merchantId), eq(outlets.brandId, id), isNull(outlets.archivedAt))).limit(1));

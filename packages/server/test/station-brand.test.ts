@@ -383,6 +383,30 @@ describe("brand scope reaches the outlet and what is under it", () => {
     expect(all.body.data.map((b) => b.id)).toEqual(expect.arrayContaining([A.brandId, other]));
   });
 
+  it("an Admin limited to a brand changes that brand only, and cannot add a brand they could not use", async () => {
+    const t = A.admin.token;
+    const spare = randomUUID();
+    expect((await call("POST", "/v1/brands", { token: t, body: { id: spare, name: "Spare brand" } })).status).toBe(201);
+    await db.sql`update staff set brand_ids = ${db.sql.array([A.brandId])}::uuid[] where id = ${A.admin.id}`;
+    try {
+      for (const body of [{ name: "Renamed from outside" }, { archived: true }]) {
+        const r = await call<Refusal>("PATCH", `/v1/brands/${spare}`, { token: t, body });
+        expect(r.status, JSON.stringify(r.body)).toBe(404);
+      }
+      const [b] = await db.sql<{ name: string; archived_at: Date | null }[]>`select name, archived_at from brands where id = ${spare}`;
+      expect(b).toEqual({ name: "Spare brand", archived_at: null });
+      expect((await call("PATCH", `/v1/brands/${A.brandId}`, { token: t, body: { accent_color: "#336699" } })).status).toBe(200);
+      const add = await call<Refusal>("POST", "/v1/brands", { token: t, body: { name: "Added by a limited Admin" } });
+      expect(add.status).toBe(403);
+      expect(add.body.remedy).toMatch(/every brand/);
+      expect((await db.sql`select 1 from brands where name = 'Added by a limited Admin'`).length).toBe(0);
+    } finally {
+      await db.sql`update staff set brand_ids = '{}'::uuid[] where id = ${A.admin.id}`;
+    }
+    // Someone who works for every brand still can.
+    expect((await call("PATCH", `/v1/brands/${spare}`, { token: t, body: { name: "Spare brand, renamed" } })).status).toBe(200);
+  });
+
   it("limited to a brand and to an outlet of another brand, a person sees no outlet at all, never every outlet", async () => {
     await db.sql`update staff set brand_ids = ${db.sql.array([other])}::uuid[], outlet_ids = ${db.sql.array([A.outletId])}::uuid[] where id = ${A.cashier.id}`;
     try {
