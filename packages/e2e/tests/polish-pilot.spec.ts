@@ -74,6 +74,8 @@ test.describe("POS", () => {
     await test.step("Orders → Open lists the table's order; All is chosen", async () => {
       await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Orders", exact: true }).click();
       await expect(types.getByRole("button", { name: /^All/ })).toHaveAttribute("aria-pressed", "true");
+      // The five types are always offered, Delivery too with no delivery order open.
+      await expect(types.getByRole("button")).toHaveText([/^All/, /^Dine-in/, /^Takeaway/, /^Pickup/, /^Delivery/]);
       await expect(dineIn).toBeVisible();
       // Sent, but a table's order is not made ready from this list: Ready is for orders collected or delivered.
       await expect(page.getByRole("listitem").filter({ has: dineIn }).getByRole("button", { name: "Ready", exact: true })).toHaveCount(0);
