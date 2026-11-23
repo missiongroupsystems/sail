@@ -3,6 +3,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { AmountSchema, currencyExponent, TaxModeSchema, TaxRoundingSchema } from "@sail/shared";
 import { db, tx } from "../db/client.js";
+import { withEveryOutlet } from "../db/every-outlet.js";
 import { brands, channelLinks, displayDestinations, merchantSettings, merchants, orders, outlets, staffSessions, stationPairingCodes, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
@@ -209,20 +210,6 @@ function stationBrandIsOutlets() {
 }
 
 /** The brand is one of this merchant's and not archived; any other id fails as an unknown one does. */
-/**
- * Runs a check with every outlet and every brand of the merchant in view, whatever the caller's scope, as the checks
- * before closing a shift do: a rule about the whole merchant must not pass because the caller cannot see a row.
- */
-async function withEveryOutlet<T>(check: () => Promise<T>): Promise<T> {
-  const [was] = await tx()<{ outlets: string; brands: string }[]>`select current_setting('app.current_outlets', true) as outlets, current_setting('app.current_brands', true) as brands`;
-  await tx()`select set_config('app.current_outlets', '*', true), set_config('app.current_brands', '*', true)`;
-  try {
-    return await check();
-  } finally {
-    await tx()`select set_config('app.current_outlets', ${was?.outlets ?? ""}, true), set_config('app.current_brands', ${was?.brands ?? ""}, true)`;
-  }
-}
-
 async function merchantBrand(merchantId: string, brandId: string) {
   const [brand] = await db().select({ id: brands.id }).from(brands).where(and(eq(brands.id, brandId), eq(brands.merchantId, merchantId), isNull(brands.archivedAt))).limit(1);
   if (!brand) throw AppError.notFound("brand", brandId);

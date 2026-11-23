@@ -2,6 +2,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { RoleSchema } from "@sail/shared";
 import { db } from "../db/client.js";
+import { withEveryOutlet } from "../db/every-outlet.js";
 import { auditLog, backofficeLinks, backofficeSessions, outlets, staff } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
@@ -206,7 +207,7 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
           target_id: z.string().optional(),
           /** Everything about one order: entries on the order and on its lines, bills and payments (they name it in their details). */
           order_id: z.uuid().optional(),
-          /** Entries at this brand's outlets, and the merchant-wide ones (no outlet) except edits to another brand's product, menu, channel, station or layout: what the back office lists for the brand in scope. */
+          /** Entries at this brand's outlets, and the merchant-wide ones (no outlet) except edits to another brand's outlet, product, menu, channel, station or layout: what the back office lists for the brand in scope. */
           brand_id: z.uuid().optional(),
           from: z.iso.datetime().optional(),
           to: z.iso.datetime().optional(),
@@ -220,18 +221,24 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
       const p = c.get("principal");
       const q = c.req.valid("query");
       const conds = [eq(auditLog.merchantId, p.merchantId)];
+      let everyBrand = false;
       if (q.actor_id) conds.push(eq(auditLog.actorId, q.actor_id));
       if (q.brand_id) {
-        // An entry with no outlet is the whole business's, unless what it changed belongs to one brand (a product, menu,
-        // channel, station or layout of another brand): that one is left out, as are the entries at another brand's outlets.
+        // An entry with no outlet is the whole business's, unless what it changed belongs to one brand (an outlet, product,
+        // menu, channel, station or layout of another brand): that one is left out, as are the entries at another brand's
+        // outlets. Whose a target is gets decided with every brand in view (below): someone limited to one brand cannot
+        // see another brand's rows, and must not get that brand's edits back because of it.
         const brand = q.brand_id;
+        const brandOutlets = (await db().select({ id: outlets.id }).from(outlets).where(eq(outlets.brandId, brand))).map((o) => o.id);
         const ofAnotherBrand = sql`(
-          (${auditLog.targetKind} = 'product' and exists (select 1 from products x where x.id::text = ${auditLog.targetId} and x.brand_id <> ${brand}))
+          (${auditLog.targetKind} = 'outlet' and exists (select 1 from outlets x where x.id::text = ${auditLog.targetId} and x.brand_id <> ${brand}))
+          or (${auditLog.targetKind} = 'product' and exists (select 1 from products x where x.id::text = ${auditLog.targetId} and x.brand_id <> ${brand}))
           or (${auditLog.targetKind} = 'menu' and exists (select 1 from menus x where x.id::text = ${auditLog.targetId} and x.brand_id <> ${brand}))
           or (${auditLog.targetKind} = 'channel_link' and exists (select 1 from channel_links x where x.id::text = ${auditLog.targetId} and x.brand_id <> ${brand}))
           or (${auditLog.targetKind} = 'station' and exists (select 1 from stations x where x.id::text = ${auditLog.targetId} and x.brand_id <> ${brand}))
           or (${auditLog.targetKind} = 'layout' and exists (select 1 from pos_layouts x where x.id::text = ${auditLog.targetId} and x.brand_id <> ${brand})))`;
-        conds.push(or(and(isNull(auditLog.outletId), sql`not ${ofAnotherBrand}`), inArray(auditLog.outletId, db().select({ id: outlets.id }).from(outlets).where(eq(outlets.brandId, brand))))!);
+        conds.push(brandOutlets.length > 0 ? or(and(isNull(auditLog.outletId), sql`not ${ofAnotherBrand}`), inArray(auditLog.outletId, brandOutlets))! : and(isNull(auditLog.outletId), sql`not ${ofAnotherBrand}`)!);
+        everyBrand = true;
       }
       if (q.action) conds.push(eq(auditLog.action, q.action));
       if (q.target_kind) conds.push(eq(auditLog.targetKind, q.target_kind));
@@ -240,12 +247,10 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
       if (q.from) conds.push(gte(auditLog.occurredAt, new Date(q.from)));
       if (q.to) conds.push(lte(auditLog.occurredAt, new Date(q.to)));
       if (q.cursor) conds.push(sql`${auditLog.occurredAt} < ${new Date(q.cursor)}`);
-      const rows = await db()
-        .select()
-        .from(auditLog)
-        .where(and(...conds))
-        .orderBy(desc(auditLog.occurredAt))
-        .limit(q.limit + 1);
+      const read = () => db().select().from(auditLog).where(and(...conds)).orderBy(desc(auditLog.occurredAt)).limit(q.limit + 1);
+      // The audit log itself is the merchant's (tenant policy only): seeing every brand changes which targets are known
+      // to be another brand's, not which entries can be read.
+      const rows = everyBrand ? await withEveryOutlet(read) : await read();
       const page = rows.slice(0, q.limit);
       const next = rows.length > q.limit ? page[page.length - 1]!.occurredAt.toISOString() : null;
       const labels = await auditLabels(p.merchantId, page);

@@ -400,4 +400,39 @@ describe("Changes for a brand", () => {
     const all = (await call<{ data: Entry[] }>("GET", "/v1/audit?limit=500", { token: t })).body.data;
     expect(names(all)).toEqual(expect.arrayContaining(["Audit till A", "Audit till B"]));
   });
+
+  it("is the same for someone limited to the brand, who cannot see the other brand's rows, and leaves out another brand's outlet edits", async () => {
+    const t = A.admin.token;
+    for (const [path, body] of [
+      ["/v1/outlets", { brand_id: A.brandId, name: "Scoped outlet A" }],
+      ["/v1/outlets", { brand_id: other, name: "Scoped outlet B" }],
+      ["/v1/stations", { outlet_id: A.outletId, name: "Scoped till A" }],
+      ["/v1/stations", { outlet_id: otherOutlet, name: "Scoped till B" }],
+      ["/v1/menus", { brand_id: A.brandId, name: "Scoped menu A", sections: [] }],
+      ["/v1/menus", { brand_id: other, name: "Scoped menu B", sections: [] }],
+      ["/v1/products", { brand_id: other, name: "Scoped product B", price: 100 }],
+      ["/v1/products", { name: "Scoped shared product", price: 100 }],
+      ["/v1/layouts", { brand_id: other, name: "Scoped layout B" }],
+      ["/v1/brands", { name: "Scoped brand" }],
+    ] as const) {
+      const r = await call("POST", path, { token: t, body });
+      expect(r.status, `${path} ${JSON.stringify(r.body)}`).toBe(201);
+    }
+    type Entry = { details: { name?: string } | null };
+    const names = async () => (await call<{ data: Entry[] }>("GET", `/v1/audit?brand_id=${A.brandId}&limit=500`, { token: A.manager.token })).body.data.map((r) => r.details?.name ?? "");
+    const own = ["Scoped outlet A", "Scoped till A", "Scoped menu A", "Scoped shared product", "Scoped brand"];
+    const theirs = ["Scoped outlet B", "Scoped till B", "Scoped menu B", "Scoped product B", "Scoped layout B", "Second brand's outlet"];
+    const unlimited = await names();
+    await db.sql`update staff set brand_ids = ${db.sql.array([A.brandId])}::uuid[] where id = ${A.manager.id}`;
+    try {
+      const limited = await names();
+      for (const seen of [unlimited, limited]) {
+        expect(seen).toEqual(expect.arrayContaining(own));
+        for (const n of theirs) expect(seen).not.toContain(n);
+      }
+      expect(limited).toEqual(unlimited);
+    } finally {
+      await db.sql`update staff set brand_ids = '{}'::uuid[] where id = ${A.manager.id}`;
+    }
+  });
 });
