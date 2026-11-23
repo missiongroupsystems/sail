@@ -371,14 +371,17 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
     const body = c.req.valid("json");
     if (Object.keys(body).length === 0) throw AppError.validation("Nothing to update");
     if (body.archived === false) {
-      // An archived outlet may still hold an enabled channel of another brand (the upgrade to one brand per outlet left
+      // An outlet comes back on a brand that is not archived. An archived outlet may still hold an enabled channel of another brand (the upgrade to one brand per outlet left
       // those at archived outlets as they were). Trading again with it would sell that brand's menu here.
-      const stray = await withEveryOutlet(async () => {
+      const [stray, brandArchived] = await withEveryOutlet(async () => {
         const [o] = await db().select({ brandId: outlets.brandId, archivedAt: outlets.archivedAt }).from(outlets).where(and(eq(outlets.id, id), eq(outlets.merchantId, p.merchantId))).limit(1);
-        if (!o?.archivedAt) return undefined;
+        if (!o?.archivedAt) return [undefined, false] as const;
         const brandId = body.brand_id ?? o.brandId;
-        return (await db().select({ id: channelLinks.id }).from(channelLinks).where(and(eq(channelLinks.outletId, id), eq(channelLinks.enabled, true), ne(channelLinks.brandId, brandId))).limit(1))[0];
+        const [b] = await db().select({ archivedAt: brands.archivedAt }).from(brands).where(eq(brands.id, brandId)).limit(1);
+        return [(await db().select({ id: channelLinks.id }).from(channelLinks).where(and(eq(channelLinks.outletId, id), eq(channelLinks.enabled, true), ne(channelLinks.brandId, brandId))).limit(1))[0], b?.archivedAt != null] as const;
       });
+      // An outlet of an archived brand would trade on outside everyone's brand scope.
+      if (brandArchived) throw new AppError("state_conflict", "This outlet's brand is archived, so the outlet cannot be restored", { remedy: "Restore the brand first in Settings › Brands, or restore the outlet onto another brand.", details: { reason: "brand_archived", field: "archived" } });
       if (stray) throw new AppError("state_conflict", "This outlet has an enabled channel of another brand, so it cannot be restored", { remedy: "Disable the other brand's channels at this outlet in Settings › Channels, then restore it.", details: { reason: "outlet_has_channels_of_another_brand", field: "archived" } });
     }
     if (body.brand_id !== undefined) {

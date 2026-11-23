@@ -289,6 +289,23 @@ describe("a channel and a new order are on their outlet's brand", () => {
 });
 
 describe("archiving a brand", () => {
+  it("an outlet of an archived brand is not restored until the brand is", async () => {
+    const t = A.admin.token;
+    const brand = randomUUID();
+    const outlet = randomUUID();
+    expect((await call("POST", "/v1/brands", { token: t, body: { id: brand, name: "Resting brand" } })).status).toBe(201);
+    expect((await call("POST", "/v1/outlets", { token: t, body: { id: outlet, brand_id: brand, name: "Resting outlet" } })).status).toBe(201);
+    expect((await call("PATCH", `/v1/outlets/${outlet}`, { token: t, body: { archived: true } })).status).toBe(200);
+    expect((await call("PATCH", `/v1/brands/${brand}`, { token: t, body: { archived: true } })).status).toBe(200);
+    const refused = await call<Refusal>("PATCH", `/v1/outlets/${outlet}`, { token: t, body: { archived: false } });
+    expect(refused.status, JSON.stringify(refused.body)).toBe(409);
+    expect(refused.body.details?.reason).toBe("brand_archived");
+    expect(refused.body.remedy).toMatch(/Restore the brand first/);
+    expect((await db.sql<{ archived: boolean }[]>`select archived_at is not null as archived from outlets where id = ${outlet}`)[0]!.archived).toBe(true);
+    expect((await call("PATCH", `/v1/brands/${brand}`, { token: t, body: { archived: false } })).status).toBe(200);
+    expect((await call("PATCH", `/v1/outlets/${outlet}`, { token: t, body: { archived: false } })).status).toBe(200);
+  });
+
   it("is refused while the brand has outlets that are not archived, even ones the caller cannot see; allowed once they are archived", async () => {
     const t = A.admin.token;
     const brand = randomUUID();
