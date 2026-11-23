@@ -340,7 +340,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
                     style={{ left: `calc(${(pos.x / COLS) * 100}% + 3px)`, top: `calc(${(pos.y / ROWS) * 100}% + 3px)`, width: `calc(${(pos.w / COLS) * 100}% - 6px)`, height: `calc(${(pos.h / ROWS) * 100}% - 6px)` }}
                   >
                     <span className={cx("flex min-w-0 flex-col gap-1 overflow-hidden leading-none", t.shape === "round" && "items-center")}>
-                      <span className="truncate font-heading text-[clamp(10px,1.4vw,20px)] font-semibold">{t.name}</span>
+                      <span className="truncate font-heading text-[clamp(9px,1vw,20px)] font-semibold">{t.name}</span>
                       <span className="inline-flex items-center gap-1 text-[12px] font-medium text-ink-3 tabular max-sm:hidden">
                         <Icon icon={Users} size={12} />
                         {t.seats}

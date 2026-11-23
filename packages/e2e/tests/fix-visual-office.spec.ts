@@ -106,4 +106,24 @@ test.describe("two-brand back office", () => {
       expect(["Harbour Noodles · Market", "Market"]).toContain(text);
     }
   });
+
+  test("Floor & QR: a five-character table name reads whole on a default 2x2 tile", async ({ page }) => {
+    test.setTimeout(300_000);
+    const brandA = devLocal().twin.brandId;
+    const outlets = (await twin<{ data: { id: string; name: string }[] }>("GET", "/v1/outlets")).data;
+    const market = outlets.find((o) => o.name === "Harbour Noodles · Market")?.id ?? (await twin<{ data: { id: string } }>("POST", "/v1/outlets", { name: "Harbour Noodles · Market", brand_id: brandA })).data.id;
+    // The room and table brand-scope.spec.ts gives this outlet.
+    const areas = (await twin<{ data: { id: string; name: string }[] }>("GET", `/v1/areas?outlet_id=${market}`)).data;
+    if (!areas.some((a) => a.name === "Room A2")) {
+      const area = await twin<{ data: { id: string } }>("POST", "/v1/areas", { outlet_id: market, name: "Room A2" });
+      await twin("POST", "/v1/tables", { outlet_id: market, area_id: area.data.id, name: "A2-T1", x: 0, y: 0, w: 2, h: 2 });
+    }
+    await signIn(page, TWIN_ADMIN);
+    await page.request.post(`${WEB}/api/prefs`, { data: { scope: { brandId: brandA, outletId: market } } });
+    await page.goto(`${WEB}/floor`);
+    await page.getByRole("button", { name: "Room A2", exact: true }).click();
+    const name = page.locator("span.font-heading", { hasText: "A2-T1" }).first();
+    await expect(name).toBeVisible();
+    expect(await name.evaluate((el) => el.scrollWidth <= el.clientWidth), "A2-T1 is cut off").toBe(true);
+  });
 });
