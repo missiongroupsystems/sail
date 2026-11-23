@@ -367,6 +367,7 @@ test.describe("back office and POS together", () => {
         await ipad.goto(`${WEB}/pos`);
         await expect(ipad.getByRole("heading", { name: "Pair this iPad to a station" })).toBeVisible({ timeout: 180_000 });
         await expect(ipad.getByRole("textbox", { name: "Pairing code from the back office" })).toBeVisible();
+        await expect(ipad.getByRole("textbox", { name: "Pairing code from the back office" })).toHaveAccessibleDescription("Type it or paste it. Spaces and dashes are left out.");
         await expect(ipad.getByRole("group", { name: "PIN keys" })).toHaveCount(0);
       });
 
