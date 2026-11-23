@@ -77,22 +77,23 @@ export function ZReportView({ outlets, scope, initialOutletId, today, initialDat
 
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3 print:hidden">
+      {/* Filters and actions share the top line, as on Sales and Items; the caption hangs below the actions. */}
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3 print:hidden">
         <div className="flex flex-wrap items-end gap-3">
           <OutletChoice outlets={outlets} scope={scope} outletId={outletId} onChange={setOutletId} />
           <DateField aria-label="Business date" value={date} onChange={setDate} placeholder="Choose a day" className="w-[200px]" />
           {/* Tills only: a kitchen display takes no payments, so it has no Z-report of its own (final2 A P-A8). */}
           <Select aria-label="Station" variant="toolbar" size="sm" selectedKey={stationId ?? ALL} onSelectionChange={(k) => setStationId(k === ALL ? null : k)} items={[{ id: ALL, label: "All stations" }, ...(stations.data ?? []).filter((s) => (!s.archived && s.kind !== "display") || s.id === stationId).map((s) => ({ id: s.id, label: s.name }))]} />
         </div>
-        <div className="flex max-w-full items-start gap-2 max-sm:w-full">
-        <ReportExport title="Z-report" scope={exportScope} fileName={`z-report-${date}${stationId ? `-${fileSlug(stationName(stationId))}` : ""}`} target={figures} isDisabled={!report.data || report.isPlaceholderData} />
-        <div className="flex max-w-full flex-col items-end gap-1 max-sm:flex-1 max-sm:items-stretch">
+        <div className="flex max-w-full flex-col items-end gap-1 max-sm:w-full max-sm:items-stretch">
+          <div className="flex max-w-full items-center justify-end gap-2">
+            <ReportExport title="Z-report" scope={exportScope} fileName={`z-report-${date}${stationId ? `-${fileSlug(stationName(stationId))}` : ""}`} target={figures} isDisabled={!report.data || report.isPlaceholderData} />
           <Button size="sm" variant="primary" onPress={() => setConfirming(true)} isDisabled={!canClose || !outletId || !validDate || stationId !== null || closedToday || notStarted} className="max-w-full whitespace-normal">
             {/* The day is in the date field beside it. */}
             {closedToday ? "Business day closed" : "Close business day…"}
           </Button>
-          <p className="text-caption text-ink-2">{!canClose ? rolesFor("business_days.close") : notStarted ? "That business day has not started yet" : stationId ? "Choose All stations to close the day" : "Snapshots this Z-report once every shift is closed"}</p>
         </div>
+          <p className="text-caption text-ink-2">{!canClose ? rolesFor("business_days.close") : notStarted ? "That business day has not started yet" : stationId ? "Choose All stations to close the day" : "Snapshots this Z-report once every shift is closed"}</p>
         </div>
       </div>
 
