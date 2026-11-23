@@ -2,6 +2,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, eq, isNull, type SQL } from "drizzle-orm";
 import { AccessLevelSchema, ChannelTypeSchema, registerOperations } from "@sail/shared";
 import { db, tx } from "../db/client.js";
+import { withEveryOutlet } from "../db/every-outlet.js";
 import { paymentProvider } from "../payments/provider.js";
 import { areas, channelLinks, outlets, posLayouts, tables, tenderTypes, voidReasons, type LayoutPage, type LayoutTile } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
@@ -152,6 +153,18 @@ export function floorRoutes(app: OpenAPIHono<AppEnv>) {
       if (!outlet) throw AppError.notFound("outlet", values["outletId"] as string);
       if (values["brandId"] && values["brandId"] !== outlet.brandId) throw AppError.validation("A channel is on its outlet's brand", { remedy: "Leave brand_id out, or send the outlet's brand. To sell another brand, set the channel up at one of that brand's outlets.", details: { field: "brand_id" } });
       values["brandId"] = outlet.brandId;
+    },
+    // A link left on another brand than its outlet's (the upgrade to one brand per outlet names and keeps disabled ones)
+    // may be edited while it is off, but not switched on: it would sell another brand's menu there. The outlet is read
+    // with every brand in view, as the brand is the outlet's whoever asks.
+    checkUpdate: async (r) => {
+      if (!r.enabled) return;
+      const [outlet] = await withEveryOutlet(() => db().select({ brandId: outlets.brandId }).from(outlets).where(eq(outlets.id, r.outletId)).limit(1));
+      if (outlet && outlet.brandId !== r.brandId)
+        throw new AppError("state_conflict", "This channel is of another brand than its outlet, so it cannot be switched on", {
+          remedy: "Leave it off. To sell this brand here, add a channel for the outlet's own brand; to sell the other brand, set the channel up at one of that brand's outlets.",
+          details: { reason: "link_of_another_brand", field: "enabled" },
+        });
     },
     listQuery: z.object({ channel: ChannelTypeSchema.optional(), brand_id: z.uuid().optional() }),
     listWhere: (q) => {

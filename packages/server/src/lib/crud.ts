@@ -31,8 +31,8 @@ export type CrudConfig<TTable extends PgTable, TApi extends z.ZodTypeAny, TCreat
   toApi: (row: TTable["$inferSelect"]) => z.infer<TApi>;
   fromCreate: (body: z.infer<TCreate>, principal: Principal) => TTable["$inferInsert"];
   fromPatch: (body: z.infer<TPatch>) => Partial<TTable["$inferInsert"]>;
-  /** Checks a change against the stored row before it is written (the row as it would be after the patch). */
-  checkUpdate?: (merged: TTable["$inferSelect"]) => void;
+  /** Checks a change against the stored row before it is written (the row as it would be after the patch); may refuse. */
+  checkUpdate?: (merged: TTable["$inferSelect"]) => void | Promise<void>;
   /** Runs before a new row is written, once its outlet is known to be the caller's: may refuse, or fill in values. */
   prepareCreate?: (values: Record<string, unknown>, p: Principal) => Promise<void>;
   /** Roles: reads default to server, writes default to admin (config.edit). */
@@ -133,7 +133,7 @@ export function defineCrud<TTable extends PgTable, TApi extends z.ZodTypeAny, TC
     if (Object.keys(set).length === 0) throw AppError.validation("Nothing to update");
     if (cfg.checkUpdate) {
       const [stored] = await db().select().from(cfg.table as PgTable).where(and(eq(cfg.columns.id, id), eq(cfg.columns.merchantId, p.merchantId))).limit(1);
-      if (stored) cfg.checkUpdate({ ...(stored as TTable["$inferSelect"]), ...set } as TTable["$inferSelect"]);
+      if (stored) await cfg.checkUpdate({ ...(stored as TTable["$inferSelect"]), ...set } as TTable["$inferSelect"]);
     }
     const [row] = await db()
       .update(cfg.table as PgTable)

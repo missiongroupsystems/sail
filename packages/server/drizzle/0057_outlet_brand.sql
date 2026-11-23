@@ -137,6 +137,7 @@ CREATE POLICY outlets_brand_scope ON outlets AS RESTRICTIVE FOR ALL TO app_authe
 --> statement-breakpoint
 -- 6. A station, a channel link and a new order carry their outlet's brand. A station written without a brand takes
 --    it; a row that names another brand is refused, whoever writes it (the register checks first and says so in words).
+--    A channel link is checked when it is switched on too.
 --    Orders are checked when they are opened only: orders from before this version keep the brand they had.
 CREATE OR REPLACE FUNCTION sail.check_outlet_brand() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, sail, pg_temp AS $$
@@ -149,6 +150,13 @@ BEGIN
   IF outlet_brand IS NULL THEN
     RETURN NEW;
   END IF;
+  -- A channel link of another brand that step 3 left (a disabled one) may stay, and be edited, while it is off; it is
+  -- refused when it is switched on, as it would sell another brand's menu at this outlet.
+  IF TG_OP = 'UPDATE' AND TG_TABLE_NAME = 'channel_links' THEN
+    IF NOT NEW.enabled AND NEW.brand_id IS NOT DISTINCT FROM OLD.brand_id AND NEW.outlet_id IS NOT DISTINCT FROM OLD.outlet_id THEN
+      RETURN NEW;
+    END IF;
+  END IF;
   IF NEW.brand_id IS NULL AND TG_TABLE_NAME = 'stations' THEN
     NEW.brand_id := outlet_brand;
   ELSIF NEW.brand_id IS DISTINCT FROM outlet_brand THEN
@@ -160,6 +168,6 @@ END $$;
 --> statement-breakpoint
 CREATE TRIGGER stations_outlet_brand BEFORE INSERT OR UPDATE OF brand_id, outlet_id ON stations FOR EACH ROW EXECUTE FUNCTION sail.check_outlet_brand();
 --> statement-breakpoint
-CREATE TRIGGER channel_links_outlet_brand BEFORE INSERT OR UPDATE OF brand_id, outlet_id ON channel_links FOR EACH ROW EXECUTE FUNCTION sail.check_outlet_brand();
+CREATE TRIGGER channel_links_outlet_brand BEFORE INSERT OR UPDATE OF brand_id, outlet_id, enabled ON channel_links FOR EACH ROW EXECUTE FUNCTION sail.check_outlet_brand();
 --> statement-breakpoint
 CREATE TRIGGER orders_outlet_brand BEFORE INSERT ON orders FOR EACH ROW EXECUTE FUNCTION sail.check_outlet_brand();

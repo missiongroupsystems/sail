@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { AmountSchema, currencyExponent, TaxModeSchema, TaxRoundingSchema } from "@sail/shared";
 import { db, tx } from "../db/client.js";
 import { withEveryOutlet } from "../db/every-outlet.js";
@@ -365,6 +365,17 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
     const { id } = c.req.valid("param");
     const body = c.req.valid("json");
     if (Object.keys(body).length === 0) throw AppError.validation("Nothing to update");
+    if (body.archived === false) {
+      // An archived outlet may still hold an enabled channel of another brand (the upgrade to one brand per outlet left
+      // those at archived outlets as they were). Trading again with it would sell that brand's menu here.
+      const stray = await withEveryOutlet(async () => {
+        const [o] = await db().select({ brandId: outlets.brandId, archivedAt: outlets.archivedAt }).from(outlets).where(and(eq(outlets.id, id), eq(outlets.merchantId, p.merchantId))).limit(1);
+        if (!o?.archivedAt) return undefined;
+        const brandId = body.brand_id ?? o.brandId;
+        return (await db().select({ id: channelLinks.id }).from(channelLinks).where(and(eq(channelLinks.outletId, id), eq(channelLinks.enabled, true), ne(channelLinks.brandId, brandId))).limit(1))[0];
+      });
+      if (stray) throw new AppError("state_conflict", "This outlet has an enabled channel of another brand, so it cannot be restored", { remedy: "Disable the other brand's channels at this outlet in Settings › Channels, then restore it.", details: { reason: "outlet_has_channels_of_another_brand", field: "archived" } });
+    }
     if (body.brand_id !== undefined) {
       // Locked: an order, station or channel being written at this outlet commits first (and is seen below) or waits and
       // finds the new brand (the brand trigger reads the outlet with a key share lock).

@@ -214,7 +214,7 @@ describe("migration 0057: every outlet gets its one brand", () => {
       // A disabled link of B does not decide against an enabled one of A.
       const disabled = await outlet(sql, m, "Disabled B link");
       await link(sql, m, disabled, A, "pos");
-      await link(sql, m, disabled, B, "scan_to_order", false);
+      const strayOff = await link(sql, m, disabled, B, "scan_to_order", false);
       // Only disabled links: the live station decides.
       const allOff = await outlet(sql, m, "Links off, station of B");
       await link(sql, m, allOff, A, "pos", false);
@@ -245,6 +245,9 @@ describe("migration 0057: every outlet gets its one brand", () => {
       expect(notices).toContain(`station layout cleared: Main (outlet ${main}), station Till (${tillA}): layout B tiles is of brand Second`);
       expect(notices.join("\n")).not.toContain(keepsLayout);
       expect(notices.some((n) => n.startsWith("channel link of another brand: Disabled B link") && n.endsWith("(disabled), left as it is"))).toBe(true);
+      // That link may stay and be edited while it is off; switching it on is refused.
+      await sql`update channel_links set hold_orders = false where id = ${strayOff}`;
+      await expect(sql`update channel_links set enabled = true where id = ${strayOff}`).rejects.toThrow(/belongs to brand/);
       const layouts = await sql<{ id: string; layout_id: string | null }[]>`select id, layout_id from stations where id in ${sql([oddB, tillA, keepsLayout])}`;
       expect(Object.fromEntries(layouts.map((r) => [r.id, r.layout_id]))).toEqual({ [oddB]: null, [tillA]: null, [keepsLayout]: layoutA });
 

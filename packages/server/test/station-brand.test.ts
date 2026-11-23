@@ -234,6 +234,39 @@ describe("a channel and a new order are on their outlet's brand", () => {
     await expect(db.sql`insert into channel_links (merchant_id, channel, outlet_id, brand_id, menu_id) values (${A.merchantId}, 'scan_to_order', ${A.outletId}, ${other}, ${menu})`).rejects.toThrow(/belongs to brand/);
   });
 
+  it("a link of another brand that the upgrade left, switched off, stays off: not switched on, and its archived outlet not restored with it on", async () => {
+    const t = A.admin.token;
+    const menuB = randomUUID();
+    expect((await call("POST", "/v1/menus", { token: t, body: { id: menuB, brand_id: other, name: "Stray menu B", sections: [] } })).status).toBe(201);
+    const closed = randomUUID();
+    expect((await call("POST", "/v1/outlets", { token: t, body: { id: closed, brand_id: A.brandId, name: "Closed outlet" } })).status).toBe(201);
+    expect((await call("PATCH", `/v1/outlets/${closed}`, { token: t, body: { archived: true } })).status).toBe(200);
+    // What 0057 leaves: a disabled link of the other brand at a live outlet, an enabled one at an archived outlet
+    // (written as before 0057, with the triggers off).
+    const off = randomUUID();
+    const on = randomUUID();
+    await db.sql.begin(async (q) => {
+      await q`set local session_replication_role = replica`;
+      await q`insert into channel_links (id, merchant_id, channel, outlet_id, brand_id, menu_id, enabled) values (${off}, ${A.merchantId}, 'scan_to_order', ${A.outletId}, ${other}, ${menuB}, false)`;
+      await q`insert into channel_links (id, merchant_id, channel, outlet_id, brand_id, menu_id, enabled) values (${on}, ${A.merchantId}, 'scan_to_order', ${closed}, ${other}, ${menuB}, true)`;
+    });
+    const enable = await call<Refusal>("PATCH", `/v1/channel-links/${off}`, { token: t, body: { enabled: true } });
+    expect(enable.status, JSON.stringify(enable.body)).toBe(409);
+    expect(enable.body.code).toBe("state_conflict");
+    expect(enable.body.details?.reason).toBe("link_of_another_brand");
+    expect(enable.body.remedy).toMatch(/Leave it off/);
+    // While it is off it may be edited, and the database refuses switching it on whoever writes.
+    expect((await call("PATCH", `/v1/channel-links/${off}`, { token: t, body: { hold_orders: false } })).status).toBe(200);
+    await expect(db.sql`update channel_links set enabled = true where id = ${off}`).rejects.toThrow(/belongs to brand/);
+    await db.sql`update channel_links set enabled = false, hold_orders = true where id = ${off}`;
+    // The archived outlet comes back only once the other brand's channel there is off.
+    const restore = await call<Refusal>("PATCH", `/v1/outlets/${closed}`, { token: t, body: { archived: false } });
+    expect(restore.status, JSON.stringify(restore.body)).toBe(409);
+    expect(restore.body.details?.reason).toBe("outlet_has_channels_of_another_brand");
+    expect((await call("PATCH", `/v1/channel-links/${on}`, { token: t, body: { enabled: false } })).status).toBe(200);
+    expect((await call("PATCH", `/v1/outlets/${closed}`, { token: t, body: { archived: false } })).status).toBe(200);
+  });
+
   it("an order opens under the outlet's brand, from the back office and from a station, and is refused with another", async () => {
     const office = await call<{ data: { id: string; brand_id: string } }>("POST", "/v1/orders", { token: A.admin.token, body: { order_id: randomUUID(), order_type: "takeaway", outlet_id: A.outletId } });
     expect(office.status, JSON.stringify(office.body)).toBe(201);
