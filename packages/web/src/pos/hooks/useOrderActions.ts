@@ -396,8 +396,9 @@ export function useOrderActions(orderId: string) {
     const request = (async () => {
       try {
         const res = await run((expected) => reg.fireOrder(api, orderId, {}, { expectedVersion: expected }));
-        // Undoing an add once it is sent is a kitchen void, a Manager's: below that the Undo is not offered (C-5).
-        if (res && !roleAtLeast(role, "manager")) useUiStore.getState().clearUndo();
+        // Once the lines are with the kitchen, taking one back is a void with a reason, from the line: an Undo left on screen
+        // voided a sent line as "Undo", with no reason asked, for a Manager (final visual review 2).
+        if (res) useUiStore.getState().clearUndo();
         if (res) notify({ text: "Sent to the kitchen", tone: "success", orderId }, 3000);
         return res;
       } catch (e) {
@@ -409,7 +410,7 @@ export function useOrderActions(orderId: string) {
     })();
     sending.set(orderId, request);
     return request;
-  }, [api, fail, notify, orderId, role, run]);
+  }, [api, fail, notify, orderId, run]);
 
   const holdAllNew = useCallback(async () => {
     const s = snapshot();
