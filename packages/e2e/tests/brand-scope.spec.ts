@@ -189,6 +189,13 @@ test.describe("brand scope", () => {
       await expect(scope.getByRole("button", { name: /Outlet/ })).toContainText(`All outlets of ${NAMES.A}`);
       await page.keyboard.press("Escape");
     });
+
+    await test.step("Menus has nothing to choose for the brand: the brand in scope is its brand, with no label or control", async () => {
+      await page.goto(`${WEB}/menu/menus`);
+      await expect(page.getByRole("button", { name: "Menu" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Brand" })).toHaveCount(0);
+      await expect(page.getByRole("main").getByText(/^Brand\b/)).toHaveCount(0);
+    });
   });
 
   test("B4: with a brand chosen, Orders, Floor, Printing and the Sales report show that brand's outlets and figures, and Products its own and the shared ones", async ({ page }) => {

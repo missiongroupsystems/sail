@@ -58,22 +58,19 @@ export function OutletChoice({ outlets, scope, outletId, onChange }: { outlets: 
   );
 }
 
+/**
+ * The brand a page works on. With a brand in scope (there always is one once the merchant has a brand), or with one
+ * brand, there is nothing to choose and it renders nothing: the scope picker already names the brand.
+ */
 export function BrandChoice({ brands, scope, brandId, onChange, allowAll }: { brands: Brand[]; scope: Scope; brandId: string | null; onChange: (id: string | null) => void; allowAll?: boolean }) {
-  const scoped = brands.find((b) => b.id === scope.brandId) ?? null;
-  if (scoped) {
-    return (
-      <p className="min-h-11 py-2.5">
-        <span className="text-ink-2">Brand </span>
-        <span className="text-ink">{scoped.name}</span>
-      </p>
-    );
-  }
+  const choosable = brands.filter((b) => !b.archived || b.id === brandId);
+  if (brands.some((b) => b.id === scope.brandId) || choosable.length < 2) return null;
   const ALL = "__all__";
   return (
     <Select
       aria-label="Brand"
       variant="toolbar" size="sm"
-      items={[...(allowAll ? [{ id: ALL, label: "All brands" }] : []), ...brands.filter((b) => !b.archived || b.id === brandId).map((b) => ({ id: b.id, label: b.name }))]}
+      items={[...(allowAll ? [{ id: ALL, label: "All brands" }] : []), ...choosable.map((b) => ({ id: b.id, label: b.name }))]}
       selectedKey={brandId ?? (allowAll ? ALL : null)}
       onSelectionChange={(k) => onChange(k === ALL ? null : k)}
       placeholder="Choose a brand"
