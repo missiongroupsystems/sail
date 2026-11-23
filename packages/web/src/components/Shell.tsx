@@ -28,6 +28,8 @@ export type ShellProps = {
   brands: Brand[];
   outlets: Outlet[];
   scope: Scope;
+  /** The scope came from a link's outlet of another brand; it is remembered as if chosen. */
+  followed?: boolean;
   theme: Theme;
   children: ReactNode;
 };
@@ -48,7 +50,7 @@ function Wordmark() {
  * The back-office frame: a 240px rail on the sunken grey (wordmark, scope, sections, then Open the
  * POS and the user menu at its foot) beside a white content sheet. No top bar.
  */
-export function Shell({ me, merchant, brands, outlets, scope, theme, children }: ShellProps) {
+export function Shell({ me, merchant, brands, outlets, scope, followed, theme, children }: ShellProps) {
   const pathname = usePathname();
   return (
     <ShownOutletProvider>
@@ -62,7 +64,7 @@ export function Shell({ me, merchant, brands, outlets, scope, theme, children }:
           header={
             <>
               <Wordmark />
-              <ScopeControl merchantName={merchant.name} brands={brands} outlets={outlets} scope={scope} />
+              <ScopeControl merchantName={merchant.name} brands={brands} outlets={outlets} scope={scope} followed={followed} />
             </>
           }
           footer={

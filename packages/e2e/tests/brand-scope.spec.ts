@@ -198,6 +198,35 @@ test.describe("brand scope", () => {
     });
   });
 
+  test("B6: a link to another brand's outlet follows it and its brand; an outlet the person cannot see is ignored", async ({ page }) => {
+    test.setTimeout(300_000);
+    const g = await group();
+    await signIn(page);
+    const picker = page.getByRole("button", { name: /^Scope: / });
+
+    await test.step("a Sales link to Dock while Harbour Noodles is in scope shows Dock, under Quay Coffee", async () => {
+      await scopeTo(page, g.brands.A, null);
+      await page.goto(`${WEB}/reports/sales?outlet=${g.outlets.B1.id}`);
+      await expect(picker).toHaveAccessibleName(`Scope: Twin Group ▸ ${NAMES.B} ▸ ${NAMES.B1}`);
+      await expect(outletsRow(page).getByRole("button", { name: ownName("B1") })).toHaveAttribute("aria-current", "true");
+      await expect(page.getByRole("main")).toContainText(money(g.outlets.B1.paid), { timeout: 60_000 });
+    });
+
+    await test.step("the next page stays with that brand and outlet", async () => {
+      await expect(async () => {
+        await page.goto(`${WEB}/menu/products`);
+        await expect(picker).toHaveAccessibleName(`Scope: Twin Group ▸ ${NAMES.B} ▸ ${NAMES.B1}`, { timeout: 5_000 });
+      }).toPass({ timeout: 60_000 });
+    });
+
+    await test.step("an outlet that is not one the person can see changes nothing", async () => {
+      await scopeTo(page, g.brands.A, null);
+      await page.goto(`${WEB}/reports/sales?outlet=${crypto.randomUUID()}`);
+      await expect(picker).toHaveAccessibleName(`Scope: Twin Group ▸ ${NAMES.A} ▸ ${NAMES.A2}`);
+      await expect(outletsRow(page).getByRole("button", { name: ownName("A2") })).toHaveAttribute("aria-current", "true");
+    });
+  });
+
   test("B4: with a brand chosen, Orders, Floor, Printing and the Sales report show that brand's outlets and figures, and Products its own and the shared ones", async ({ page }) => {
     test.setTimeout(600_000);
     const g = await group();

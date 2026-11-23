@@ -1,8 +1,8 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { cache } from "react";
 import { forbidden, redirect } from "next/navigation";
 import { ApiError, createApi, req, type ApiClient } from "./api";
-import { parseScope, parseTheme, resolveScope, SCOPE_COOKIE, SESSION_COOKIE, THEME_COOKIE, type Scope, type Theme } from "./cookies";
+import { followLink, LINK_OUTLET_HEADER, parseScope, parseTheme, resolveScope, SCOPE_COOKIE, SESSION_COOKIE, THEME_COOKIE, type Scope, type Theme } from "./cookies";
 import { roleAtLeast, type Role } from "@sail/shared";
 
 /** Server side only: the register's address. The browser goes through /api/v1 instead. */
@@ -30,16 +30,23 @@ export const scopeLists = cache(async () => {
  * browser remembered is checked against the register, so an archived brand or another brand's outlet never sticks.
  */
 export async function getScope(): Promise<Scope> {
-  const jar = await cookies();
+  return (await linkedScope()).scope;
+}
+
+/** The scope, and whether a link's `?outlet=` moved it to another brand (`followLink`): the frame then remembers it. */
+export const linkedScope = cache(async (): Promise<{ scope: Scope; followed: boolean }> => {
+  const [jar, sent] = await Promise.all([cookies(), headers()]);
   const remembered = parseScope(jar.get(SCOPE_COOKIE)?.value);
   try {
     const { brands, outlets } = await scopeLists();
-    return resolveScope(remembered, brands, outlets);
+    const scope = resolveScope(remembered, brands, outlets);
+    const linked = followLink(scope, sent.get(LINK_OUTLET_HEADER), brands, outlets);
+    return { scope: linked, followed: linked !== scope };
   } catch {
     // Not signed in, or the register is away: the page's own calls say so.
-    return remembered;
+    return { scope: remembered, followed: false };
   }
-}
+});
 
 /** The outlets of the brand in scope: what an outlet picker offers and what "All outlets" covers on a page. */
 export async function scopedOutlets() {

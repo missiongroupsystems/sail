@@ -7,11 +7,15 @@ import type { Brand, Outlet } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
 import { useShownOutlet } from "./ShownOutlet";
 
-export function ScopeControl({ merchantName, brands, outlets, scope }: { merchantName: string; brands: Brand[]; outlets: Outlet[]; scope: Scope }) {
+export function ScopeControl({ merchantName, brands, outlets, scope, followed }: { merchantName: string; brands: Brand[]; outlets: Outlet[]; scope: Scope; followed?: boolean }) {
   const router = useRouter();
   const [value, setValue] = useState<ScopeValue>(scope);
   const shownOutletId = useShownOutlet();
   useEffect(() => setValue(scope), [scope]);
+  // A link took the page to another brand's outlet: remember it, so the next page stays with that brand.
+  useEffect(() => {
+    if (followed) void fetch("/api/prefs", { method: "POST", keepalive: true, headers: { "content-type": "application/json" }, body: JSON.stringify({ scope }) });
+  }, [followed, scope]);
 
   const change = async (next: ScopeValue) => {
     setValue(next);

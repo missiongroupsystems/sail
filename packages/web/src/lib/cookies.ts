@@ -49,3 +49,16 @@ export const PREFS_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
 
 /** A request header the middleware sets to the page's path (read by the refusal page). */
 export const PATH_HEADER = "x-sail-path";
+/** A request header the middleware sets to a link's `?outlet=` (read by `getScope`). */
+export const LINK_OUTLET_HEADER = "x-sail-link-outlet";
+
+/**
+ * A link that names an outlet of a brand other than the one in scope (a shared report, say) takes the scope to that
+ * outlet and its brand, when the person can see the outlet and its brand is live. Otherwise the scope stands and the
+ * link's outlet is ignored. An outlet of the brand already in scope is left to the page, as before.
+ */
+export function followLink(scope: Scope, linkOutletId: string | null, brands: { id: string; archived?: boolean }[], outlets: { id: string; brand_id: string; archived?: boolean }[]): Scope {
+  const outlet = outlets.find((o) => o.id === linkOutletId && !o.archived);
+  if (!outlet || outlet.brand_id === scope.brandId || !brands.some((b) => b.id === outlet.brand_id && !b.archived)) return scope;
+  return { brandId: outlet.brand_id, outletId: outlet.id };
+}

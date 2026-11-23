@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { EMPTY_SCOPE, resolveScope } from "./cookies";
+import { EMPTY_SCOPE, followLink, resolveScope } from "./cookies";
 
 const alpha = { id: "b-alpha", name: "Alpha" };
 const zest = { id: "b-zest", name: "Zest" };
@@ -37,4 +37,17 @@ test("a merchant with no outlet yet still has its brand in scope", () => {
 test("no live brand in reach: an empty scope", () => {
   assert.deepEqual(resolveScope(EMPTY_SCOPE, [], [zestDock]), EMPTY_SCOPE);
   assert.deepEqual(resolveScope(EMPTY_SCOPE, [old], []), EMPTY_SCOPE);
+});
+
+test("a link to an outlet of another brand takes the scope to that outlet and its brand", () => {
+  assert.deepEqual(followLink({ brandId: alpha.id, outletId: null }, zestPier.id, [alpha, zest], [alphaMain, zestDock, zestPier]), { brandId: zest.id, outletId: zestPier.id });
+});
+
+test("a link's outlet the person cannot see, archived, on an archived brand, or of the brand in scope leaves the scope as it is", () => {
+  const scope = { brandId: alpha.id, outletId: null };
+  assert.equal(followLink(scope, null, [alpha, zest], [alphaMain, zestDock]), scope);
+  assert.equal(followLink(scope, "o-unseen", [alpha, zest], [alphaMain, zestDock]), scope);
+  assert.equal(followLink(scope, "o-gone", [alpha, zest], [alphaMain, { id: "o-gone", brand_id: zest.id, archived: true }]), scope);
+  assert.equal(followLink(scope, "o-x", [alpha, old], [alphaMain, { id: "o-x", brand_id: old.id }]), scope);
+  assert.equal(followLink(scope, alphaMain.id, [alpha, zest], [alphaMain, zestDock]), scope);
 });

@@ -1,6 +1,6 @@
 import { LocaleProvider } from "@sail/ui";
 import type { ReactNode } from "react";
-import { getScope, getTheme, orSignIn, requireApi, scopeLists } from "@/lib/api.server";
+import { getTheme, linkedScope, orSignIn, requireApi, scopeLists } from "@/lib/api.server";
 import { req } from "@/lib/api";
 import { merchantLocale } from "@/lib/locale";
 import { QueryProvider } from "@/lib/query";
@@ -16,13 +16,13 @@ export default async function BackofficeLayout({ children }: { children: ReactNo
   const [me, merchant, { brands, outlets }] = await orSignIn(
     Promise.all([req(api.GET("/v1/me")), req(api.GET("/v1/merchant")), scopeLists()]),
   );
-  const [scope, theme] = await Promise.all([getScope(), getTheme()]);
+  const [{ scope, followed }, theme] = await Promise.all([linkedScope(), getTheme()]);
 
   return (
     <QueryProvider>
       <SessionProvider value={{ me: me.data, merchant: merchant.data, scope, brands }}>
         <LocaleProvider settings={merchantLocale(merchant.data.settings)}>
-          <Shell me={me.data} merchant={merchant.data} brands={brands} outlets={outlets} scope={scope} theme={theme}>
+          <Shell me={me.data} merchant={merchant.data} brands={brands} outlets={outlets} scope={scope} followed={followed} theme={theme}>
             {children}
           </Shell>
         </LocaleProvider>
