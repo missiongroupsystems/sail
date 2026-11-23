@@ -90,7 +90,8 @@ export function OrdersScreen() {
         <SegmentedControl
           aria-label="Order type"
           className="shrink-0 self-start"
-          options={TYPE_FILTERS.map((t) => ({ id: t, label: t === "all" ? "All" : ORDER_TYPE_LABEL[t], count: query.data ? (t === "all" ? inView.length : inView.filter((o) => o.order_type === t).length) : undefined }))}
+          // A type with no orders in view is left out; the one picked stays, so its empty state can say so.
+          options={TYPE_FILTERS.filter((t) => t === "all" || t === type || !query.data || inView.some((o) => o.order_type === t)).map((t) => ({ id: t, label: t === "all" ? "All" : ORDER_TYPE_LABEL[t], count: query.data ? (t === "all" ? inView.length : inView.filter((o) => o.order_type === t).length) : undefined }))}
           selectedId={type}
           onSelect={(id) => setType(id as "all" | OrderType)}
         />
