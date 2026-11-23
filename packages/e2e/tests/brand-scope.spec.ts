@@ -112,8 +112,9 @@ test.describe("brand scope", () => {
 
       await scope.getByRole("button", { name: /Outlet/ }).click();
       await expect(page.getByRole("option")).toHaveText([`All outlets of ${NAMES.A}`, NAMES.A2, NAMES.A1]);
-      await pick(page, NAMES.A2);
-      await expect(picker).toHaveAccessibleName(`Scope: Twin Group ▸ ${NAMES.A} ▸ ${NAMES.A2}`);
+      // Market is the outlet Today shows, so the field already reads it: choose the other one.
+      await pick(page, NAMES.A1);
+      await expect(picker).toHaveAccessibleName(`Scope: Twin Group ▸ ${NAMES.A} ▸ ${NAMES.A1}`);
     });
 
     await test.step("another brand lists its own outlets and goes back to all of them", async () => {
@@ -192,7 +193,7 @@ test.describe("brand scope", () => {
 
     await test.step("Menus has nothing to choose for the brand: the brand in scope is its brand, with no label or control", async () => {
       await page.goto(`${WEB}/menu/menus`);
-      await expect(page.getByRole("button", { name: "Menu" })).toBeVisible();
+      await expect(page.getByRole("main").getByRole("button", { name: /Menu$/ })).toBeVisible();
       await expect(page.getByRole("button", { name: "Brand" })).toHaveCount(0);
       await expect(page.getByRole("main").getByText(/^Brand\b/)).toHaveCount(0);
     });
