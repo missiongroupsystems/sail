@@ -126,4 +126,22 @@ test.describe("two-brand back office", () => {
     await expect(name).toBeVisible();
     expect(await name.evaluate((el) => el.scrollWidth <= el.clientWidth), "A2-T1 is cut off").toBe(true);
   });
+
+  test("Changes: with a brand's outlets in scope, an order names its outlet; with one outlet chosen it does not", async ({ page }) => {
+    test.setTimeout(300_000);
+    const brandA = devLocal().twin.brandId;
+    const outlets = (await twin<{ data: { id: string; name: string; brand_id: string }[] }>("GET", "/v1/outlets")).data.filter((o) => o.brand_id === brandA);
+    test.skip(outlets.length < 2, "brand-scope.spec.ts gives the first brand two outlets");
+    // One order at each of two outlets, so the list has one to name for each.
+    for (const o of outlets.slice(0, 2)) await twin("POST", "/v1/orders", { order_id: crypto.randomUUID(), order_type: "takeaway", takeaway_ref: `Audit ${String(Date.now()).slice(-5)}`, outlet_id: o.id });
+    await signIn(page, TWIN_ADMIN);
+    await page.request.post(`${WEB}/api/prefs`, { data: { scope: { brandId: brandA, outletId: null } } });
+    await page.goto(`${WEB}/audit?target=order`);
+    const own = (name: string) => name.split(" · ").pop()!;
+    for (const o of outlets.slice(0, 2)) await expect(page.getByRole("gridcell", { name: new RegExp(`^P-\\d+ · ${own(o.name)}$`) }).first()).toBeVisible();
+    await page.request.post(`${WEB}/api/prefs`, { data: { scope: { brandId: brandA, outletId: outlets[0]!.id } } });
+    await page.goto(`${WEB}/audit?target=order`);
+    await expect(page.getByRole("gridcell", { name: /^P-\d+$/ }).first()).toBeVisible();
+    await expect(page.getByRole("gridcell", { name: /^P-\d+ · / })).toHaveCount(0);
+  });
 });
