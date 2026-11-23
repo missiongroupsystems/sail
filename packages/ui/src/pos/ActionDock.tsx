@@ -36,15 +36,16 @@ export type ActionDockProps = {
 
 /**
  * The action dock: always the bottom 72pt, one row, the primary action bottom right. In a narrow order column
- * the secondaries keep their icons and their names go to screen readers only, so the row never wraps.
+ * the secondaries show icons only and their names go to screen readers; a crowded row keeps the names and drops the icons.
  */
 export function ActionDock({ primary, secondaries = [], offline, className }: ActionDockProps) {
-  // A crowded row (three secondaries, or an approval chip to carry) shows the secondaries as icons whatever the width;
-  // a narrow column (under 360px) does so always. Their names stay for screen readers, and the row still wraps as a
-  // last resort, so the primary action is never cut off.
+  // A crowded row (three secondaries, or an approval chip to carry) drops the secondaries' icons and keeps their names, so
+  // Hold reads as Hold in every state of the order (final visual review 1). Only a narrow column (under 360px) shows icons
+  // alone, with the names kept for screen readers; the row still wraps as a last resort, so the primary is never cut off.
   const crowded = secondaries.length >= 3 || [primary, ...secondaries].some((a) => a.needsApproval && !(offline && a.mutates !== false));
   // Two secondaries keep their names in the 1024-wide order column (about 330px of dock); only a narrower one drops them (B notes).
-  const iconOnly = crowded ? "sr-only" : secondaries.length <= 2 ? "@max-[300px]:sr-only" : "@max-[360px]:sr-only";
+  const iconOnly = secondaries.length <= 2 && !crowded ? "@max-[300px]:sr-only" : "@max-[360px]:sr-only";
+  const iconClass = (variant: "primary" | "secondary") => cx("opacity-80", crowded && variant === "secondary" && "hidden @max-[360px]:block");
   const render = (a: DockAction, variant: "primary" | "secondary") => {
     const blocked = offline && a.mutates !== false;
     return (
@@ -56,14 +57,14 @@ export function ActionDock({ primary, secondaries = [], offline, className }: Ac
         isDisabled={a.isDisabled || blocked}
         isPending={a.isPending}
         aria-label={blocked ? `${a.ariaLabel ?? a.label} (offline)` : a.ariaLabel}
-        className={cx("min-h-14 shrink-0 text-center", variant === "primary" ? "ml-auto min-w-fit flex-1 px-5 text-[17px]" : "bg-surface-2! px-3.5 data-[hovered]:bg-surface-3! data-[pressed]:bg-surface-3! data-[disabled]:bg-surface-2! @max-[360px]:px-3", crowded && variant === "secondary" && a.icon && "px-3")}
+        className={cx("min-h-14 shrink-0 text-center", variant === "primary" ? "ml-auto min-w-fit flex-1 px-5 text-[17px]" : "bg-surface-2! px-3.5 data-[hovered]:bg-surface-3! data-[pressed]:bg-surface-3! data-[disabled]:bg-surface-2! @max-[360px]:px-3", crowded && variant === "secondary" && "px-3")}
       >
         {/* The label keeps to one line ("Pay $40.47"); when the dock is too narrow the button moves to its own row instead.
             The approval badge sits under the label, inside the pill, rather than wrapping against its edge. */}
         <span className="flex items-center gap-2 whitespace-nowrap">
           {/* Offline, each control keeps its own name and is simply off; the one offline state is the frame's banner
               (final review B-P14). */}
-          {a.icon ? <Icon icon={a.icon} size={18} className="opacity-80" /> : null}
+          {a.icon ? <Icon icon={a.icon} size={18} className={iconClass(variant)} /> : null}
           <span className={variant === "secondary" && a.icon ? iconOnly : undefined}>{a.label}</span>
           {a.trailingIcon ? <Icon icon={a.trailingIcon} size={18} /> : null}
         </span>
