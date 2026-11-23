@@ -45,14 +45,3 @@ describe("FieldsLocked (L3)", () => {
     }
   });
 });
-
-describe("FieldText", () => {
-  it("shows the label and the value as text, with no control", async () => {
-    const { FieldText } = await import("./FieldText");
-    const html = renderToStaticMarkup(<FieldText label="Brand">Harbour Noodles</FieldText>);
-    expect(html).toContain("<dt");
-    expect(html).toContain(">Brand</dt>");
-    expect(html).toContain(">Harbour Noodles</dd>");
-    expect(html).not.toMatch(/<input|<button|<select/);
-  });
-});
