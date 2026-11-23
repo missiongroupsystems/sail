@@ -5,7 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, FieldText, InlineError, Sheet, Switch, TextField, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { greyPill, greyPillAlert, SheetSection } from "@/components/office/parts";
@@ -17,7 +17,7 @@ import type { Outlet, OutletCreate } from "@/lib/api/types";
 import { keepShownOutlet } from "@/lib/cookies";
 import { keys } from "@/lib/query";
 import { useSession } from "@/lib/session-context";
-import { formToHours, hoursToForm, TIME_RE, WEEKDAY_LABEL, WEEKDAYS, type HoursForm } from "@/lib/hours";
+import { formToHours, hoursToForm, newOutletHours, TIME_RE, WEEKDAY_LABEL, WEEKDAYS, type HoursForm } from "@/lib/hours";
 import { useFreshErrors } from "@/lib/fresh-errors";
 import { useCan } from "@/lib/can";
 import { useRecheckErrors } from "@/lib/recheck-errors";
@@ -46,7 +46,7 @@ const Schema = z.object({
 });
 type Values = z.infer<typeof Schema>;
 
-function defaults(outlet: Outlet | null, brandId: string | null = null): Values {
+function defaults(outlet: Outlet | null, brandId: string | null = null, startHours?: HoursForm): Values {
   return {
     name: outlet?.name ?? "",
     // A new outlet starts on the merchant's only brand; with several, the brand is left to choose.
@@ -56,7 +56,7 @@ function defaults(outlet: Outlet | null, brandId: string | null = null): Values 
     business_registration_no: outlet?.business_registration_no ?? "",
     tax_registration_no: outlet?.tax_registration_no ?? "",
     business_day_cutoff: outlet?.business_day_cutoff ?? "",
-    hours: outlet ? hoursToForm(outlet.hours) : hoursToForm(undefined),
+    hours: outlet ? hoursToForm(outlet.hours) : (startHours ?? hoursToForm(undefined)),
   };
 }
 
@@ -99,13 +99,16 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
     },
   });
   const brandShown = outlet && brandChoice && !brandLocked.isError && brandLocked.data !== false ? (brands.data?.find((b) => b.id === outlet.brand_id)?.name ?? null) : null;
-  const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(outlet, onlyBrand) });
+  // A new outlet opens when the merchant's outlets do, not closed all week.
+  const known = qc.getQueryData<Outlet[]>(keys.outlets(true));
+  const startHours = useMemo(() => newOutletHours(known ?? [], onlyBrand ?? session.scope.brandId), [known, onlyBrand, session.scope.brandId]);
+  const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(outlet, onlyBrand, startHours) });
   useRecheckErrors(form);
 
   const reset = form.reset;
   useEffect(() => {
-    if (state) reset(defaults(state.mode === "edit" ? state.outlet : null, onlyBrand));
-  }, [state, reset, onlyBrand]);
+    if (state) reset(defaults(state.mode === "edit" ? state.outlet : null, onlyBrand, startHours));
+  }, [state, reset, onlyBrand, startHours]);
 
   const settle = async () => {
     await qc.invalidateQueries({ queryKey: ["outlets"] });

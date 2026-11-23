@@ -64,7 +64,9 @@ test.describe("one-brand back office", () => {
       await sheet.getByLabel("Name").fill(name);
       await sheet.getByRole("button", { name: "Add outlet" }).click();
       await expect(sheet).toBeHidden();
+      // It opens when the café's outlet does, not closed all week.
       await expect(page.getByRole("row", { name: new RegExp(name) })).toBeVisible();
+      await expect(page.getByRole("row", { name: new RegExp(name) })).not.toContainText("Closed");
 
       for (const path of ["/settings/stations", "/today"]) {
         await page.goto(`${WEB}${path}`);

@@ -31,6 +31,17 @@ export function hoursToForm(hours: OutletHoursRead | undefined): HoursForm {
   return out;
 }
 
+/**
+ * The hours a new outlet starts from: those of the merchant's first live outlet that opens at all (one of the brand's
+ * when it has one), or every day open at the usual times when there is none. Never closed all week.
+ */
+export function newOutletHours(outlets: { brand_id: string; archived?: boolean; hours: OutletHoursRead }[], brandId: string | null): HoursForm {
+  const opens = (o: (typeof outlets)[number]) => !o.archived && WEEKDAYS.some((d) => (o.hours?.[d] ?? []).length > 0);
+  const like = outlets.find((o) => o.brand_id === brandId && opens(o)) ?? outlets.find(opens);
+  if (like) return hoursToForm(like.hours);
+  return Object.fromEntries(WEEKDAYS.map((d) => [d, { ...DEFAULT_DAY, open: true }])) as HoursForm;
+}
+
 export function formToHours(form: HoursForm): OutletHours {
   const out: OutletHours = {};
   for (const day of WEEKDAYS) {
