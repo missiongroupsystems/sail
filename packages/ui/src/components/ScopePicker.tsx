@@ -45,7 +45,8 @@ export function ScopePicker({ merchantName, brands, outlets, value, shownOutletI
   const liveBrands = brands.filter((b) => !b.archived);
   const liveOutlets = ofBrand.filter((o) => !o.archived);
   const ownOutlet = outlet ? outletOwnName(outlet.name, brand?.name) : "All outlets";
-  const trigger = liveBrands.length > 1 ? (outlet ? `${brandLabel} · ${ownOutlet}` : brandLabel) : liveOutlets.length > 1 ? ownOutlet : brandLabel;
+  // Two parts ("Brand · Outlet"): the brand gives way first, so the outlet stays readable.
+  const [lead, tail] = liveBrands.length > 1 ? (outlet ? [brandLabel, `· ${ownOutlet}`] : [brandLabel, ""]) : [liveOutlets.length > 1 ? ownOutlet : brandLabel, ""];
   const hydrated = useHydrated();
 
   return (
@@ -55,7 +56,7 @@ export function ScopePicker({ merchantName, brands, outlets, value, shownOutletI
         // Server-rendered, the button has no handler yet: it says so until then, so an early press is not taken and lost.
         aria-disabled={hydrated ? undefined : true}
         className={cx(
-          "press aria-disabled:pointer-events-none flex w-full min-h-11 items-center gap-2 rounded-[10px] bg-surface px-3 py-2 text-left shadow-[inset_0_0_0_1px_var(--line)] outline-none transition-shadow duration-[120ms]",
+          "press aria-disabled:pointer-events-none flex w-full min-h-11 items-center gap-1.5 rounded-[10px] bg-surface px-2.5 py-2 text-left shadow-[inset_0_0_0_1px_var(--line)] outline-none transition-shadow duration-[120ms]",
           "data-[hovered]:shadow-[inset_0_0_0_1px_var(--line-strong)] data-[pressed]:bg-surface-2",
           "data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus",
           collapsed && "justify-center px-0",
@@ -67,8 +68,11 @@ export function ScopePicker({ merchantName, brands, outlets, value, shownOutletI
         ) : (
           <>
             {/* The merchant is fixed by the sign-in; the popover and the accessible name carry the full scope. */}
-            <span className="min-w-0 flex-1 truncate text-[14px] leading-5 font-medium text-ink">{trigger}</span>
-            <Icon icon={ChevronDown} size={16} className="shrink-0 text-ink-3" />
+            <span className="flex min-w-0 flex-1 gap-0.75 text-[14px] leading-5 font-medium text-ink">
+              <span className="min-w-0 truncate">{lead}</span>
+              {tail ? <span className="max-w-[75%] shrink-0 truncate">{tail}</span> : null}
+            </span>
+            <Icon icon={ChevronDown} size={14} className="shrink-0 text-ink-3" />
           </>
         )}
       </AriaButton>
