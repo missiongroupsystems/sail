@@ -2,6 +2,7 @@ import { ApiError, req } from "@/lib/api";
 import { getScope, orSignIn, requireApi, requireRole } from "@/lib/api.server";
 import type { PricingRuleVersion } from "@/lib/api/types";
 import { SimulatorView } from "./SimulatorView";
+import { SharedByAllBrands } from "@/components/backoffice/SharedByAllBrands";
 
 export const metadata = { title: "Pricing simulator" };
 
@@ -22,5 +23,10 @@ export default async function SimulatorPage() {
     else throw e;
   }
 
-  return <SimulatorView outlets={outlets.data} brands={brands.data} groups={groups.data} activeRules={activeRules} rulesError={rulesError} scope={scope} merchantTaxMode={merchant.data.settings.tax_mode} />;
+  return (
+    <>
+      <SharedByAllBrands />
+      <SimulatorView outlets={outlets.data} brands={brands.data} groups={groups.data} activeRules={activeRules} rulesError={rulesError} scope={scope} merchantTaxMode={merchant.data.settings.tax_mode} />
+    </>
+  );
 }

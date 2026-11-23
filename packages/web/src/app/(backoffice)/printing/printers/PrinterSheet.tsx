@@ -105,6 +105,9 @@ export function PrinterSheet({ state, outletId, printers, stations, canEdit, onC
   }, [state, reset]);
 
   const role = form.watch("role");
+  const stationId = form.watch("station_id");
+  const isDefaultKitchen = form.watch("is_default_kitchen");
+  const supportsStatus = form.watch("supports_status");
   const backups = printers.filter((p) => p.id !== printer?.id && !p.archived && p.role === role);
 
   const settle = async (w: string[]) => {
@@ -143,7 +146,7 @@ export function PrinterSheet({ state, outletId, printers, stations, canEdit, onC
       isDismissable={!busy}
       width="lg"
       title={printer ? printer.name : "New printer"}
-      description={printer ? <span className="font-mono">{printer.ip}:{printer.port}</span> : "An ESC/POS printer on the outlet LAN, reached by the relay over TCP port 9100."}
+      description={printer ? <span className="font-mono">{printer.ip}:{printer.port}</span> : undefined}
       footer={
         <>
           {printer && canEdit ? (
@@ -195,21 +198,22 @@ export function PrinterSheet({ state, outletId, printers, stations, canEdit, onC
               control={form.control}
               name="station_id"
               label="Station"
-              description={role === "kitchen" ? "A station-bound kitchen printer only takes items fired from that station (a bar printer at the bar station)." : "The station whose receipts print here. Set it on the station too."}
+              // What binding to a station does, said once one is picked.
+              description={stationId === NONE ? undefined : role === "kitchen" ? "A station-bound kitchen printer only takes items fired from that station (a bar printer at the bar station)." : "The station whose receipts print here. Set it on the station too."}
               items={[{ id: NONE, label: "Any station", description: "Serves the whole outlet." }, ...stations.filter((s) => !s.archived).map((s) => ({ id: s.id, label: s.name }))]}
             />
           </FormSection>
 
           {role === "kitchen" ? (
-            <FormSection variant="label" title="Routing" hint="An item goes to every kitchen printer whose include tags it carries. Items that match no printer go to the default kitchen printer.">
+            <FormSection variant="label" title="Routing" hint="Items go to every printer whose tags they carry; the rest go to the default printer. Unticked means all.">
               <Controller
                 control={form.control}
                 name="include_tags"
-                render={({ field }) => <TagsField label="Include tags" value={field.value} onChange={field.onChange} placeholder="kitchen, grill, bar…" description="Empty means every item (unless this is the default printer, which then takes only the leftovers)." isDisabled={!canEdit} />}
+                render={({ field }) => <TagsField label="Include tags" value={field.value} onChange={field.onChange} placeholder={isDefaultKitchen ? "Items no other printer takes" : "All items"} isDisabled={!canEdit} />}
               />
-              <Controller control={form.control} name="exclude_tags" render={({ field }) => <TagsField label="Exclude tags" value={field.value} onChange={field.onChange} placeholder="drinks…" description="Items with any of these tags skip this printer." isDisabled={!canEdit} />} />
-              <RhfCheckboxGroup control={form.control} name="order_types" label="Order types" description="Leave all unticked for every type." columns={2} options={ORDER_TYPES.map((t) => ({ id: t, label: ORDER_TYPE_LABEL[t]! }))} />
-              <RhfCheckboxGroup control={form.control} name="sources" label="Sources" description="Leave both unticked for every source." columns={2} options={(["pos", "guest"] as const).map((s) => ({ id: s, label: SOURCE_LABEL[s]! }))} />
+              <Controller control={form.control} name="exclude_tags" render={({ field }) => <TagsField label="Exclude tags" value={field.value} onChange={field.onChange} placeholder="drinks…" isDisabled={!canEdit} />} />
+              <RhfCheckboxGroup control={form.control} name="order_types" label="Order types" columns={2} options={ORDER_TYPES.map((t) => ({ id: t, label: ORDER_TYPE_LABEL[t]! }))} />
+              <RhfCheckboxGroup control={form.control} name="sources" label="Sources" columns={2} options={(["pos", "guest"] as const).map((s) => ({ id: s, label: SOURCE_LABEL[s]! }))} />
               <RhfSwitch control={form.control} name="is_default_kitchen" description="Receives items that match no other printer. One per outlet.">
                 Default kitchen printer
               </RhfSwitch>
@@ -218,20 +222,19 @@ export function PrinterSheet({ state, outletId, printers, stations, canEdit, onC
 
           <FormSection variant="label" title="Output">
             <div className="grid gap-3 sm:grid-cols-2">
-              <RhfTextField control={form.control} name="copies" label="Copies" numeric inputMode="numeric" description="Each copy is its own job." />
+              <RhfTextField control={form.control} name="copies" label="Copies" numeric inputMode="numeric" />
               <RhfSelect
                 control={form.control}
                 name="backup_printer_id"
-                label="Backup printer"
-                description={`Where waiting tickets go when this printer fails. ${role === "kitchen" ? "Kitchen" : "Receipt"} printers only.`}
+                label="Backup printer if this fails"
                 items={[{ id: NONE, label: "No backup" }, ...backups.map((p) => ({ id: p.id, label: p.name, description: `${p.ip}:${p.port}` }))]}
               />
             </div>
-            <RhfSwitch control={form.control} name="supports_status" description="Turn off for printers that do not answer the DLE EOT query; the relay then prints without checking paper and cover.">
+            <RhfSwitch control={form.control} name="supports_status" description={supportsStatus ? undefined : "For printers that do not answer the DLE EOT query; the relay then prints without checking paper and cover."}>
               Supports status
             </RhfSwitch>
-            <RhfSwitch control={form.control} name="code_page_cjk" description="Chinese, Japanese and Korean item names in the printer's CJK code page.">
-              CJK code page
+            <RhfSwitch control={form.control} name="code_page_cjk">
+              Print Chinese, Japanese, Korean names
             </RhfSwitch>
             <RhfSwitch control={form.control} name="cut">
               Cut after each ticket

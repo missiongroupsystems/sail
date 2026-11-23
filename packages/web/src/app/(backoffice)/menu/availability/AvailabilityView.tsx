@@ -92,8 +92,7 @@ export function AvailabilityView({ initialRules, outlets, menus }: { initialRule
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[14px] text-ink-2">A rule limits when something can be ordered. Without a rule, an item is always available where its menu is live.</p>
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
         {canCreate.ok ? (
           <Button size="sm" variant="primary" onPress={() => setSheet({ mode: "create" })}>
           Add availability rule
@@ -106,7 +105,7 @@ export function AvailabilityView({ initialRules, outlets, menus }: { initialRule
         rows={rules.data}
         rowKey={(r) => r.id}
         onRowAction={(r) => setSheet({ mode: "edit", rule: r })}
-        emptyState={<EmptyState variant="centred" title="No availability rules" hint="Everything on a live menu is available at all times. Select Add availability rule for breakfast-only items and the like." />}
+        emptyState={<EmptyState variant="centred" title="No availability rules" hint="Everything on a live menu is always available." />}
       />
       <InlineError error={rules.error} className="mt-4" />
       <RuleSheet state={sheet} outlets={outlets} sections={sections} byId={byId} onClose={() => setSheet(null)} />
@@ -246,15 +245,16 @@ function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetSt
         )}
         </SheetSection>
 
-        <SheetSection title="Where">
-        <CheckboxGroup label="Outlets" description="Leave every outlet unticked to apply the rule everywhere." value={form.outlet_ids} onChange={(v) => set("outlet_ids", v)} columns={2}>
+        {/* One line per group says what unticked means, instead of the same rule under each checkbox list. */}
+        <SheetSection title="Where" hint="Leave unticked for all.">
+        <CheckboxGroup label="Outlets" value={form.outlet_ids} onChange={(v) => set("outlet_ids", v)} columns={2}>
           {outlets.map((o) => (
             <Checkbox key={o.id} value={o.id}>
               {o.name}
             </Checkbox>
           ))}
         </CheckboxGroup>
-        <CheckboxGroup label="Channels" description="Unticked means both." value={form.channels} onChange={(v) => set("channels", v)} columns={2}>
+        <CheckboxGroup label="Channels" value={form.channels} onChange={(v) => set("channels", v)} columns={2}>
           {CHANNELS.map((c) => (
             <Checkbox key={c} value={c}>
               {CHANNEL_LABEL[c]}
@@ -262,8 +262,8 @@ function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetSt
           ))}
         </CheckboxGroup>
         </SheetSection>
-        <SheetSection title="When">
-        <CheckboxGroup label="Days" description="Unticked means every day." value={form.days} onChange={(v) => set("days", v)} columns={2}>
+        <SheetSection title="When" hint="Leave unticked for all; empty times run from opening to closing.">
+        <CheckboxGroup label="Days" value={form.days} onChange={(v) => set("days", v)} columns={2}>
           {WEEKDAYS.map((d) => (
             <Checkbox key={d.id} value={String(d.id)}>
               {d.label}
@@ -271,8 +271,8 @@ function RuleSheet({ state, outlets, sections, byId, onClose }: { state: SheetSt
           ))}
         </CheckboxGroup>
         <div className="grid gap-4 sm:grid-cols-2">
-          <TextField label="From" type="time" numeric value={form.start_time} onChange={(v) => set("start_time", v)} description="Empty means from opening." />
-          <TextField label="Until" type="time" numeric value={form.end_time} onChange={(v) => set("end_time", v)} description="Empty means until closing. Earlier than From runs past midnight." />
+          <TextField label="From" type="time" numeric value={form.start_time} onChange={(v) => set("start_time", v)} />
+          <TextField label="Until" type="time" numeric value={form.end_time} onChange={(v) => set("end_time", v)} description={form.start_time && form.end_time && form.end_time < form.start_time ? "Runs past midnight." : undefined} />
         </div>
         </SheetSection>
         <Warnings warnings={warnings} />

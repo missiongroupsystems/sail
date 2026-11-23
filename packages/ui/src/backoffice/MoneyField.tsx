@@ -7,6 +7,7 @@ import { selectOnFocus } from "../lib/select-on-focus";
 import { fieldControl, fieldDescription, fieldError, fieldLabel, fieldWrap } from "../components/field";
 import { useLocale } from "../lib/locale";
 import { useLockedDisabled } from "../components/FieldsLocked";
+import { RequiredMark } from "../components/RequiredMark";
 
 export type MoneyFieldProps = {
   label?: ReactNode;
@@ -87,7 +88,12 @@ export function MoneyField({
       validationBehavior="aria"
       className={cx(fieldWrap, className)}
     >
-      {label ? <Label className={fieldLabel}>{label}</Label> : null}
+      {label ? (
+        <Label className={fieldLabel}>
+          {label}
+          {rest.isRequired ? <RequiredMark /> : null}
+        </Label>
+      ) : null}
       <div className="relative">
         <span aria-hidden className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-body text-ink-3">
           {symbol}

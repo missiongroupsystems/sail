@@ -167,14 +167,13 @@ export function ImportView({ initialJobs }: { initialJobs: ImportJobSummary[] })
           <h2 className="flex items-center gap-2 font-heading text-[16px] leading-[1.35] font-semibold text-ink">
             <Icon icon={Upload} size={16} className="text-ink-3" /> New import
           </h2>
-          <span className="text-[13px] text-ink-3">Legacy POS importer · CSV</span>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <input ref={fileInput} type="file" accept=".csv,text/csv" multiple hidden onChange={(e) => void addFiles(e.target.files)} />
           <Button onPress={() => fileInput.current?.click()}>
             <Icon icon={Upload} size={16} /> Choose CSV files
           </Button>
-          <span className="min-w-0 flex-1 basis-[240px] text-[13px] text-ink-2">One file per entity. Files are matched by legacy ID (or SKU, or mobile), so re-running is safe.</span>
+          <span className="min-w-0 flex-1 basis-[240px] text-[13px] text-ink-2">Re-running is safe.</span>
         </div>
         <InlineError error={readError} />
 
@@ -271,7 +270,7 @@ export function ImportView({ initialJobs }: { initialJobs: ImportJobSummary[] })
       <section className="flex min-w-0 flex-col gap-3">
         <div className="flex items-baseline justify-between gap-3">
           <SectionLabel as="h2">History</SectionLabel>
-          <span className="text-[12.5px] text-ink-3 tabular">{`${jobs.data.length} ${jobs.data.length === 1 ? "job" : "jobs"}`}</span>
+          {jobs.data.length ? <span className="text-[12.5px] text-ink-3 tabular">{`${jobs.data.length} ${jobs.data.length === 1 ? "job" : "jobs"}`}</span> : null}
         </div>
         <DataTable
           aria-label="Import jobs"

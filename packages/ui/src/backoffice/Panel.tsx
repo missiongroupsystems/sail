@@ -67,19 +67,19 @@ export function ValueRows({ rows, className }: ValueRowsProps) {
 }
 
 export type SheetSectionProps = {
-  /** A short noun, drawn small and upper case: "Totals", "Bills". */
+  /** A short noun in sentence case: "Totals", "Bills". */
   label: ReactNode;
   aside?: ReactNode;
   children: ReactNode;
   className?: string;
 };
 
-/** A labelled block inside a sheet or drawer: a 12px upper-case label in tertiary ink over its content. Space blocks with the parent's gap. */
+/** A labelled block inside a sheet or drawer: a 13px sentence-case label in secondary ink over its content. Space blocks with the parent's gap. */
 export function SheetSection({ label, aside, children, className }: SheetSectionProps) {
   return (
     <section className={cx("flex flex-col gap-2", className)}>
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-[12px] leading-4 font-medium tracking-[0.04em] text-ink-3 uppercase">{label}</h3>
+        <h3 className="text-[13px] leading-[1.4] font-medium text-ink-2">{label}</h3>
         {aside != null ? <div className="flex items-center gap-2">{aside}</div> : null}
       </div>
       {children}

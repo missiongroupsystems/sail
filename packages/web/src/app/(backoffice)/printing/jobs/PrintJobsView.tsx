@@ -132,13 +132,12 @@ export function PrintJobsView({ outlets, scope, initialOutletId, initialPrinters
           rowKey={(j) => j.id}
           isLoading={jobs.isPending}
           className={jobs.isPlaceholderData ? "opacity-60" : undefined}
-          emptyState={<EmptyState variant="centred" icon={PrinterIcon} title={lateOnly ? "Nothing late" : "No print jobs"} hint={lateOnly ? "Every ticket printed within 10 seconds." : "Tickets appear here as orders are sent to the kitchen."} />}
+          emptyState={<EmptyState variant="centred" icon={PrinterIcon} title={lateOnly ? "Nothing late" : "No print jobs"} hint={lateOnly ? "Every ticket printed within 10 seconds." : undefined} />}
         />
       )}
       <InlineError error={jobs.error} className="mt-4" />
-      <p className="mt-3 text-caption text-ink-2 tabular">
-        {plural(rows.length, "job")} · up to 200 shown · refreshes every 15 s
-      </p>
+      {/* The cap is said only when the list reaches it; the list refreshes by itself. */}
+      {rows.length >= 200 ? <p className="mt-3 text-caption text-ink-2 tabular">Up to 200 shown</p> : null}
 
       {rerouteAll ? (
         <RerouteDialog

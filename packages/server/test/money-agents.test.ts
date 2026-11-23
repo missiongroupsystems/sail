@@ -192,19 +192,20 @@ describe("a brand-scoped agent's report figures", () => {
   it("cover its brand only, and still reconcile: net + refunds + fees + tax = total, and the tenders to the sales", async () => {
     const outlet = w.m.outlet2Id;
     const other = randomUUID();
-    const menu2 = randomUUID();
     const must = async (method: string, path: string, body: unknown) => {
       const r = await call(method, path, { token: w.m.admin.token, body });
       if (r.status >= 300) throw new Error(`${path} ${r.status} ${JSON.stringify(r.body)}`);
       return r.body as { data: Snap };
     };
     await must("POST", "/v1/brands", { id: other, name: "Second brand" });
-    await must("POST", "/v1/menus", { id: menu2, brand_id: other, name: "M2", sections: [{ name: "All", items: [{ product_id: w.ids.laksa }, { product_id: w.ids.wine }] }] });
-    await must("POST", "/v1/channel-links", { channel: "pos", outlet_id: outlet, brand_id: w.m.brandId, menu_id: w.ids.menu });
-    await must("POST", "/v1/channel-links", { channel: "pos", outlet_id: outlet, brand_id: other, menu_id: menu2 });
+    await must("POST", "/v1/channel-links", { channel: "pos", outlet_id: outlet, menu_id: w.ids.menu });
     await must("POST", "/v1/shifts", { outlet_id: outlet, station_id: null, float_cents: 0 });
+    // An outlet belongs to one brand since migration 0057, so no order can be opened under another. Orders from before
+    // it keep the brand they had: the second brand's sale is such an order, put on its brand as that data is.
+    expect((await call("POST", "/v1/orders", { token: w.m.admin.token, body: { order_id: randomUUID(), order_type: "takeaway", outlet_id: outlet, brand_id: other } })).status).toBe(400);
     const sale = async (brand: string, product: string, tender: string) => {
-      const o = await must("POST", "/v1/orders", { order_id: randomUUID(), order_type: "takeaway", takeaway_ref: "B", outlet_id: outlet, brand_id: brand });
+      const o = await must("POST", "/v1/orders", { order_id: randomUUID(), order_type: "takeaway", takeaway_ref: "B", outlet_id: outlet });
+      if (brand !== w.m.brandId) await db.sql`update orders set brand_id = ${brand} where id = ${(o.data as unknown as { id: string }).id}`;
       const s = (await must("POST", `/v1/orders/${o.data.id}/lines`, { lines: [{ line_id: randomUUID(), product_id: product, quantity: 1 }] })).data;
       await must("POST", `/v1/orders/${s.id}/fire`, {});
       await must("POST", `/v1/checks/${s.checks[0]!.id}/payments`, { payment_id: randomUUID(), tender_type_id: tender, amount: s.balance, tendered: s.balance });
@@ -236,24 +237,26 @@ describe("a brand-scoped agent's report figures", () => {
   });
 });
 
-describe("a brand-scoped manager at an outlet two brands share", () => {
+describe("a brand-scoped manager at an outlet with another brand's orders from before outlets had one brand", () => {
   it("cannot close the shared drawer or the business day on one brand's figures, nor with the other brand's order still open", async () => {
     const outlet = randomUUID();
     const other = randomUUID();
-    const menu2 = randomUUID();
     const must = async (method: string, path: string, body: unknown, token = w.m.admin.token) => {
       const r = await call(method, path, { token, body });
       if (r.status >= 300) throw new Error(`${path} ${r.status} ${JSON.stringify(r.body)}`);
       return r.body as { data: Snap & { id: string } };
     };
-    await must("POST", "/v1/outlets", { id: outlet, name: "Food hall" });
+    await must("POST", "/v1/outlets", { id: outlet, brand_id: w.m.brandId, name: "Food hall" });
     await must("POST", "/v1/brands", { id: other, name: "Hall brand" });
-    await must("POST", "/v1/menus", { id: menu2, brand_id: other, name: "M2", sections: [{ name: "All", items: [{ product_id: w.ids.wine }] }] });
-    await must("POST", "/v1/channel-links", { channel: "pos", outlet_id: outlet, brand_id: w.m.brandId, menu_id: w.ids.menu });
-    await must("POST", "/v1/channel-links", { channel: "pos", outlet_id: outlet, brand_id: other, menu_id: menu2 });
+    await must("POST", "/v1/channel-links", { channel: "pos", outlet_id: outlet, menu_id: w.ids.menu });
+    // A second brand cannot be set up at the outlet any more (0057): its channel is refused.
+    expect((await call("POST", "/v1/channel-links", { token: w.m.admin.token, body: { channel: "scan_to_order", outlet_id: outlet, brand_id: other, menu_id: w.ids.menu } })).status).toBe(400);
     const shift = await must("POST", "/v1/shifts", { outlet_id: outlet, station_id: null, float_cents: 0 });
+    // The other brand's orders are orders from before the migration, which keep their brand: opened as the outlet's, then
+    // put on the brand they had. The drawer and the day still count them, whoever closes.
     const order = async (brand: string, product: string) => {
-      const o = await must("POST", "/v1/orders", { order_id: randomUUID(), order_type: "takeaway", takeaway_ref: "H", outlet_id: outlet, brand_id: brand });
+      const o = await must("POST", "/v1/orders", { order_id: randomUUID(), order_type: "takeaway", takeaway_ref: "H", outlet_id: outlet });
+      if (brand !== w.m.brandId) await db.sql`update orders set brand_id = ${brand} where id = ${o.data.id}`;
       const s = (await must("POST", `/v1/orders/${o.data.id}/lines`, { lines: [{ line_id: randomUUID(), product_id: product, quantity: 1 }] })).data;
       await must("POST", `/v1/orders/${s.id}/fire`, {});
       return s;

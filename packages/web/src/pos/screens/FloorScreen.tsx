@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { Plus, Volume2, VolumeX } from "lucide-react";
 import { Button, Icon, NowRail, QuantityStepper, Sheet, Skeleton, StatusLegend, TableShape, type NowItem, useLocale } from "@sail/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
@@ -212,7 +212,7 @@ export function FloorScreen() {
                     }
                   >
                     {a.name}
-                    <span className="text-[12.5px] text-ink-3 tabular">{busy}</span>
+                    {busy ? <span className="text-[12.5px] text-ink-3 tabular">{busy}</span> : null}
                   </AriaButton>
                 );
               })}
@@ -249,7 +249,8 @@ export function FloorScreen() {
               aria-pressed={sound}
               className="text-ink-2"
             >
-              {sound ? "Sound on · tap to turn off" : "Sound off · tap to turn on"}
+              <Icon icon={sound ? Volume2 : VolumeX} size={18} />
+              {sound ? "Sound on" : "Sound off"}
             </Button>
           }
         />

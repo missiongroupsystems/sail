@@ -36,27 +36,24 @@ function Swatch({ hex }: { hex: string | null }) {
   );
 }
 
-function AccentStatus({ hex }: { hex: string | null }) {
-  if (!hex) return <span className="text-ink-2">—</span>;
-  const check = checkAccent(hex);
-  if (!check) return <span className="text-ink-2">—</span>;
-  return check.passes ? (
-    <StatusDot status="paid" label={`${formatRatio(check.ratio)} · ${check.textOn} text`} />
-  ) : (
-    <StatusDot status="alert" label={`${formatRatio(check.ratio)} · below 4.5:1`} />
-  );
+/** Button text contrast, said only when the accent fails it: a passing accent needs no line. */
+function AccentProblem({ hex }: { hex: string | null }) {
+  const check = hex ? checkAccent(hex) : null;
+  if (!check || check.passes) return null;
+  return <StatusDot status="alert" label={`Button text ${formatRatio(check.ratio)} · below 4.5:1`} />;
 }
 
 const columns: DataTableColumn<Brand>[] = [
-  { key: "name", header: "Name", sortable: true, isRowHeader: true, width: "1.4fr", render: (b) => <TwoLine primary={b.name} /> },
-  { key: "accent_color", header: "Accent", render: (b) => <Swatch hex={b.accent_color} /> },
-  { key: "contrast", header: "Button text contrast", render: (b) => <AccentStatus hex={b.accent_color} /> },
+  { key: "name", header: "Name", sortable: true, isRowHeader: true, width: "1.4fr", render: (b) => <TwoLine primary={b.archived ? <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">{b.name}<Pill size="sm" tone="neutral">Archived</Pill></span> : b.name} /> },
   {
-    key: "archived",
-    header: "Status",
-    sortable: true,
-    sortValue: (b) => (b.archived ? 1 : 0),
-    render: (b) => (b.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <Pill size="sm" tone="paid">Active</Pill>),
+    key: "accent_color",
+    header: "Accent",
+    render: (b) => (
+      <span className="inline-flex flex-wrap items-center gap-x-4 gap-y-1">
+        <Swatch hex={b.accent_color} />
+        <AccentProblem hex={b.accent_color} />
+      </span>
+    ),
   },
 ];
 
@@ -70,12 +67,20 @@ export function BrandsView({ initialBrands }: { initialBrands: Brand[] }) {
     initialData: initialBrands,
   });
   const rows = brands.data.filter((b) => showArchived || !b.archived);
+  // Each brand's outlets: an outlet belongs to one brand, so the list says where a brand trades.
+  const outlets = useQuery({ queryKey: keys.outlets(false), queryFn: () => req(api.GET("/v1/outlets", { params: { query: {} } })).then((r) => r.data) });
+  const outletsOf = (brandId: string) => (outlets.data ?? []).filter((o) => o.brand_id === brandId).map((o) => o.name);
+  const withOutlets: DataTableColumn<Brand>[] = [
+    columns[0]!,
+    { key: "outlets", header: "Outlets", width: "1.6fr", render: (b) => (outlets.data ? <span className="text-ink-2">{outletsOf(b.id).join(", ") || "No outlets yet"}</span> : <span className="text-ink-3">…</span>) },
+    ...columns.slice(1),
+  ];
 
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-[14px] text-ink-2">
-          {rows.length} {rows.length === 1 ? "brand" : "brands"}. Brands tint identity (name, accent, tiles); Sail's controls stay the same everywhere.
+          {rows.length} {rows.length === 1 ? "brand" : "brands"}
         </p>
         <div className="flex flex-wrap items-center gap-4">
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
@@ -90,7 +95,7 @@ export function BrandsView({ initialBrands }: { initialBrands: Brand[] }) {
       </div>
       <DataTable
         aria-label="Brands"
-        columns={columns}
+        columns={withOutlets}
         rows={rows}
         rowKey={(b) => b.id}
         defaultSort={{ column: "name", direction: "ascending" }}
@@ -173,7 +178,7 @@ function BrandSheet({ state, onClose }: { state: SheetState; onClose: () => void
         <SheetSection>
           <RhfTextField control={form.control} name="name" label="Name" placeholder="Brand name" autoFocus={!brand} />
           <div className="flex items-end gap-3">
-            <RhfTextField control={form.control} name="accent_color" label="Accent colour" placeholder="#B4235E" mono className="flex-1" description="Leave empty to use Sail's default." />
+            <RhfTextField control={form.control} name="accent_color" label="Accent colour" placeholder="Sail default" mono className="flex-1" />
             <label className="relative flex size-11 shrink-0 cursor-default items-center justify-center rounded-full hairline" style={{ background: HEX_RE.test(accent) ? accent : "var(--surface-2)" }}>
               <span className="sr-only">Pick accent colour</span>
               <input

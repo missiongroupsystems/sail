@@ -1,6 +1,6 @@
 "use client";
 
-import { BusinessDay, Badge, kindTone, Money, Panel, reconciliationRows, refundBlocks, showsCardNet, taxRows, tenderRows, useLocale, ValueRows, type ReportRow } from "@sail/ui";
+import { BusinessDay, Money, Panel, reconciliationRows, refundBlocks, showsCardNet, taxRows, tenderRows, useLocale, ValueRows, type ReportRow } from "@sail/ui";
 import { useSession } from "@/lib/session-context";
 import { label, ORDER_TYPE_LABEL, REPORT_CLASS_LABEL } from "./labels";
 import { plural, type ZReport } from "./register";
@@ -41,7 +41,7 @@ export function ZReportBody({ report, stationName }: { report: ZReport; stationN
           ]}
         />
       </Panel>
-      <Panel title="Refunds" aside={plural(r.refunds.count, "refund")}>
+      <Panel title="Refunds" aside={r.refunds.count ? plural(r.refunds.count, "refund") : undefined}>
         <ValueRows rows={blockRows(blocks.refunds)} />
         {blocks.tipsBack ? <ValueRows className="mt-1.5 border-t border-rule-subtle pt-1.5" rows={blockRows([blocks.tipsBack])} /> : null}
       </Panel>
@@ -85,7 +85,8 @@ export function ZReportBody({ report, stationName }: { report: ZReport; stationN
                 {r.adjustments.map((a) => (
                   <li key={`${a.rule_key}-${a.name}`} className="flex flex-wrap items-baseline justify-between gap-x-4 px-5 py-2.5">
                     <span className="text-ink">
-                      {a.name} <Badge tone={kindTone(a.kind)}>{a.kind}</Badge>
+                      {/* The amount's sign says fee or discount. */}
+                      {a.name}
                       <span className="text-caption text-ink-2">
                         {" "}
                         · {label(REPORT_CLASS_LABEL, a.report_class)} · {plural(a.count, "order")}
@@ -149,7 +150,8 @@ export function ZReportBody({ report, stationName }: { report: ZReport; stationN
         </div>
       </div>
 
-      <p className="text-caption text-ink-2 tabular">
+      {/* On screen the filters above say all this; on paper it is the report's footer. */}
+      <p className="hidden text-caption text-ink-2 tabular print:block">
         Business day <BusinessDay value={r.scope.business_date} />
         {r.scope.station_id ? ` · ${stationName ? stationName(r.scope.station_id) : "one station"}` : " · all stations"} · generated {stamp(r.generated_at)}
       </p>

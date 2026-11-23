@@ -65,7 +65,7 @@ export function ShiftsView({ outlets, scope, initialOutletId, initialStatus, ini
     { key: "float_cents", header: "Float", numeric: true, sortable: true, render: (s) => <Money cents={s.float_cents} /> },
     { key: "expected_cash_cents", header: "Expected", numeric: true, sortable: true, render: (s) => (s.expected_cash_cents === null ? <span className="text-ink-2">—</span> : <Money cents={s.expected_cash_cents} />) },
     { key: "counted_cash_cents", header: "Counted", numeric: true, sortable: true, render: (s) => (s.counted_cash_cents === null ? <span className="text-ink-2">—</span> : <Money cents={s.counted_cash_cents} />) },
-    { key: "variance_cents", header: "Variance", numeric: true, sortable: true, render: variance },
+    { key: "variance_cents", header: <span title="Counted minus expected, from the register">Variance</span>, numeric: true, sortable: true, render: variance },
     // Two lines on screen, two columns in the CSV (Closed, Closed by), as Opened and Opened by.
     { key: "closed_at", header: <span data-export-columns="Closed|Closed by">Closed</span>, sortable: true, render: (s) => (s.closed_at ? <span className="flex flex-col leading-5"><time data-export-part dateTime={localIso(s.closed_at, timeZone)} className="tabular whitespace-nowrap text-ink-2" title={dayClock(s.closed_at)}>{clock(s.closed_at)}</time>{s.closed_by ? <span data-export-part className="text-[12.5px] leading-4 text-ink-3">{s.closed_by}</span> : null}</span> : <span className="text-ink-2">—</span>) },
   ];
@@ -110,7 +110,8 @@ export function ShiftsView({ outlets, scope, initialOutletId, initialStatus, ini
         </div>
       )}
       <InlineError error={shifts.error} className="mt-4" />
-      <p className="mt-3 text-caption text-ink-2 print:hidden">Up to 200 shifts, newest first. Variance is counted minus expected, from the register.</p>
+      {/* The register sends up to 200 shifts, newest first: said only when the list reaches that. */}
+      {(shifts.data ?? []).length >= 200 ? <p className="mt-3 text-caption text-ink-2 print:hidden">Up to 200 shifts, newest first.</p> : null}
 
       <Sheet isOpen={open !== null} onOpenChange={(o) => !o && setOpenId(null)} width="lg" title={open ? open.name ?? stationName(open.station_id) : "Shift"} description={open ? `${open.status === "open" ? "Open" : "Closed"} · business day ${open.business_date} · opened ${dayClock(open.opened_at)}${open.opened_by ? ` by ${open.opened_by}` : ""}` : undefined}>
         {open ? (

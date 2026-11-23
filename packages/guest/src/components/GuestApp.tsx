@@ -10,7 +10,6 @@ import { createBasketStore, type BasketItem } from "@/lib/basket";
 import { brandStyle } from "@/lib/brand";
 import { QueryProvider, keys } from "@/lib/query";
 import { offendingKey, type SendError } from "@/lib/send-errors";
-import { showsPayPrompt } from "@/lib/status";
 import { clearSession, deviceId, loadSession, saveSession } from "@/lib/storage";
 import { GuestStream, type GuestStreamStatus } from "@/lib/stream";
 import type { CompiledMenu, GuestSession, OrderView, RoundResult } from "@/lib/types";
@@ -452,7 +451,7 @@ function GuestAppInner({ token }: { token: string }) {
   if (phase.kind === "ended" && phase.paid) {
     // Ended because the table's bill was paid: a thank-you, not a timeout.
     return (
-      <Notice place={placeRef.current} icon={CheckCheck} title="Your bill is paid." body="Thank you for coming. To order again, scan the QR code on the table.">
+      <Notice place={placeRef.current} icon={CheckCheck} title="Your bill is paid." body="Thank you for coming.">
         {/* The same action as Start again on the other ended screens, at the same weight (review 3, S8). */}
         <BrandButton variant="accent" onPress={startAgain}>
           Order again
@@ -587,7 +586,7 @@ function GuestAppInner({ token }: { token: string }) {
             }}
           />
         ) : null}
-        <CallStaffSheet isOpen={staffSheet} onOpenChange={setStaffSheet} api={api} requests={session.service_requests} guestName={basket.guestName} onSent={setRequestSent} payPrompt={showsPayPrompt(orderView)} />
+        <CallStaffSheet isOpen={staffSheet} onOpenChange={setStaffSheet} api={api} requests={session.service_requests} guestName={basket.guestName} onSent={setRequestSent} />
         {/* After the sheet closes, the page still says the request went (it confirmed under its row while open). */}
         {requestSent && !staffSheet ? (
           <p role="status" className="fixed inset-x-4 bottom-24 z-40 mx-auto max-w-[480px] rounded-panel bg-(--toast) px-4 py-3 text-[15px] font-medium text-(--on-toast) shadow-float">

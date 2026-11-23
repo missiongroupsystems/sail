@@ -54,6 +54,8 @@ test("A-R1-1, A and C notes: pairing types from a keyboard, opens on a clean loc
   const code = (await register<{ data: { code: string } }>("POST", `/v1/stations/${stationId}/pairing-code`, {})).data.code;
   await page.goto(`${WEB}/pos`);
   await expect(page.getByRole("heading", { name: "Pair this iPad to a station" })).toBeVisible({ timeout: 180_000 });
+  // The code has a field of its own now (polish-pilot A6). Digits typed with the focus off the field still reach it,
+  // and Enter pairs.
   await page.locator("main").click({ position: { x: 5, y: 5 } });
   await page.keyboard.type(code);
   await page.keyboard.press("Enter");
@@ -65,10 +67,10 @@ test("A-R1-1, A and C notes: pairing types from a keyboard, opens on a clean loc
   await page.getByRole("button", { name: "Unpair this iPad" }).click();
   await expect(page.getByRole("heading", { name: "Pair this iPad to a station" })).toBeVisible();
   expect(await paired()).toBe(false);
-  // Paired again, the PIN goes in from the keyboard too.
+  // Paired again, the PIN goes in from the keyboard too. Six digits do not pair by themselves: Enter does.
   const again = (await register<{ data: { code: string } }>("POST", `/v1/stations/${stationId}/pairing-code`, {})).data.code;
   await page.keyboard.type(again);
-  await page.getByRole("button", { name: "Pair this iPad" }).click();
+  await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: "Pair this iPad again" })).toBeVisible();
   await page.keyboard.type(CASHIER_PIN);
   await expect(page.getByRole("navigation", { name: "Destinations" })).toBeVisible();

@@ -15,12 +15,13 @@ type DemoMerchant = { merchantId: string; brandId: string; outletId: string; sta
  * What `dev:local` bootstrapped (written by packages/server/scripts/dev-local.ts): the Singapore demo merchant at the
  * top level and the EU VAT café (EUR, de-DE) under `eu`, and the card-terminal simulator's address.
  */
-export function devLocal(): DemoMerchant & { admin_password: string; payment_simulator: string; eu: DemoMerchant } {
+export function devLocal(): DemoMerchant & { admin_password: string; payment_simulator: string; eu: DemoMerchant; /** A group with two brands (brand-scope.spec.ts makes the second brand and its outlets). */ twin: DemoMerchant } {
   return JSON.parse(readFileSync(resolve(import.meta.dirname, "../../server/.dev-local.json"), "utf8"));
 }
 
 export const SG_ADMIN = "admin@sail.local";
 export const EU_ADMIN = "admin.eu@sail.local";
+export const TWIN_ADMIN = "admin.twin@sail.local";
 
 /** A register call as a back-office Admin would make it (signed in with email and password), by default the Singapore demo merchant's. */
 export async function register<T>(method: string, path: string, body?: unknown, adminEmail = SG_ADMIN): Promise<T> {
@@ -141,6 +142,20 @@ export async function textContrast(page: Page, selector: string): Promise<{ rati
 }
 
 /**
+ * After a back-office sign-in: wait until Today has rendered with its figures and its requests are done, then leave
+ * it for a blank page. On a dev server, a page left open reloads itself when the next route compiles (Fast Refresh
+ * "had to perform a full reload"), and in WebKit that reload of Today cut the next goto short or left its hot-update
+ * fetch to fail in the console. The app itself navigates once: a production build never bounced back to Today (0 of
+ * 40 sign-ins in WebKit).
+ */
+export async function leaveToday(page: Page) {
+  await expect(page.getByRole("heading", { name: "Today", level: 1 })).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByText("Open now")).toBeVisible({ timeout: 120_000 });
+  await page.waitForLoadState("networkidle").catch(() => undefined);
+  await page.goto("about:blank");
+}
+
+/**
  * On the close-shift checklist, leave every open item for the next shift once the register has answered each of its
  * reads (until then the primary button says "Checking the register…"). Each Leave open is found afresh, and each click
  * waits for its button to go: a left item loses its button, so a list of the buttons taken up front points past the end.
@@ -164,16 +179,24 @@ export async function keyIn(page: Page, group: string, digits: string) {
   for (const d of digits) await pad.getByRole("button", { name: d, exact: true }).click();
 }
 
+/**
+ * Enter a pairing code on the POS pairing screen and pair. The code has a text field of its own (not the PIN pad the
+ * next screen uses); it pairs on the button, so the iPad can be named first (polish-pilot A6).
+ */
+export async function enterPairingCode(page: Page, code: string) {
+  await page.getByRole("textbox", { name: "Pairing code from the back office" }).fill(code);
+  await page.getByRole("button", { name: "Pair this iPad", exact: true }).click();
+}
+
 /** Pair the POS on this page to a demo merchant's station with a fresh code, then sign in with a PIN. */
-export async function pairAndSignIn(page: Page, pin: string, merchant: "sg" | "eu" = "sg") {
-  const { stationId } = merchant === "eu" ? devLocal().eu : devLocal();
+export async function pairAndSignIn(page: Page, pin: string, merchant: "sg" | "eu" = "sg", station?: string) {
+  const stationId = station ?? (merchant === "eu" ? devLocal().eu : devLocal()).stationId;
   const { data } = await register<{ data: { code: string } }>("POST", `/v1/stations/${stationId}/pairing-code`, {}, merchant === "eu" ? EU_ADMIN : SG_ADMIN);
   await page.goto(`${WEB}/pos`);
   // The first visit compiles the POS bundle in the dev server.
   await expect(page.getByRole("heading", { name: "Pair this iPad to a station" })).toBeVisible({ timeout: 180_000 });
   await expect(page.getByText("tap “Pair an iPad”")).toBeVisible();
-  await keyIn(page, "PIN keys", data.code);
-  await page.getByRole("button", { name: "Pair this iPad" }).click();
+  await enterPairingCode(page, data.code);
   await expect(page.getByRole("button", { name: "Pair this iPad again" })).toBeVisible();
   await keyIn(page, "PIN keys", pin);
   await expect(page.getByRole("navigation", { name: "Destinations" })).toBeVisible();

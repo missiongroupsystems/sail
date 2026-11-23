@@ -313,7 +313,7 @@ export interface paths {
         };
         /**
          * List brands
-         * @description Brands of the caller's merchant.
+         * @description Brands of the caller's merchant; for someone limited to some brands, those brands only.
          */
         get: operations["brands.list"];
         put?: never;
@@ -343,7 +343,7 @@ export interface paths {
         head?: never;
         /**
          * Update a brand
-         * @description Renames a brand or changes its accent colour; archive by setting archived.
+         * @description Renames a brand or changes its accent colour; archive by setting archived (refused while the brand has outlets that are not archived).
          */
         patch: operations["brands.update"];
         trace?: never;
@@ -1583,7 +1583,7 @@ export interface paths {
         put?: never;
         /**
          * Issue a one-time pairing code for a station
-         * @description Admin only. The 6-digit code is shown once and expires in 10 minutes. The iPad enters it in stations.pair.
+         * @description Admin only. The 6-digit code is shown once and expires in 10 minutes. The iPad enters it in stations.pair. A new code replaces any the station still has unused; send `replace: false` to be refused instead (state_conflict, with the live code's `issued_at` and `expires_at`), so a code someone is typing is not ended by accident.
          */
         post: operations["stations.pairing_code"];
         delete?: never;
@@ -6287,6 +6287,8 @@ export interface operations {
         parameters: {
             query?: {
                 include_archived?: "true" | "false";
+                /** @description Only this brand's outlets. */
+                brand_id?: string;
             };
             header?: never;
             path?: never;
@@ -6304,6 +6306,7 @@ export interface operations {
                         data: {
                             id: string;
                             name: string;
+                            brand_id: string;
                             address: string | null;
                             phone: string | null;
                             business_registration_no: string | null;
@@ -6441,6 +6444,11 @@ export interface operations {
                     /** Format: uuid */
                     id?: string;
                     name: string;
+                    /**
+                     * Format: uuid
+                     * @description The brand this outlet trades as. An outlet has exactly one; it can change only while the outlet has no orders.
+                     */
+                    brand_id: string;
                     address?: string | null;
                     phone?: string | null;
                     business_registration_no?: string | null;
@@ -6468,6 +6476,7 @@ export interface operations {
                         data: {
                             id: string;
                             name: string;
+                            brand_id: string;
                             address: string | null;
                             phone: string | null;
                             business_registration_no: string | null;
@@ -6612,6 +6621,11 @@ export interface operations {
             content: {
                 "application/json": {
                     name?: string;
+                    /**
+                     * Format: uuid
+                     * @description The brand this outlet trades as. An outlet has exactly one; it can change only while the outlet has no orders.
+                     */
+                    brand_id?: string;
                     address?: string | null;
                     phone?: string | null;
                     business_registration_no?: string | null;
@@ -6640,6 +6654,7 @@ export interface operations {
                         data: {
                             id: string;
                             name: string;
+                            brand_id: string;
                             address: string | null;
                             phone: string | null;
                             business_registration_no: string | null;
@@ -6806,6 +6821,7 @@ export interface operations {
                             kind: "pos" | "display";
                             display_destination_ids: string[];
                             paired: boolean;
+                            paired_at: string | null;
                             device_label: string | null;
                             archived: boolean;
                         }[];
@@ -6975,6 +6991,7 @@ export interface operations {
                             kind: "pos" | "display";
                             display_destination_ids: string[];
                             paired: boolean;
+                            paired_at: string | null;
                             device_label: string | null;
                             archived: boolean;
                         };
@@ -7148,6 +7165,7 @@ export interface operations {
                             kind: "pos" | "display";
                             display_destination_ids: string[];
                             paired: boolean;
+                            paired_at: string | null;
                             device_label: string | null;
                             archived: boolean;
                         };
@@ -7748,6 +7766,7 @@ export interface operations {
                 target_kind?: string;
                 target_id?: string;
                 order_id?: string;
+                brand_id?: string;
                 from?: string;
                 to?: string;
                 limit?: number;
@@ -14803,8 +14822,11 @@ export interface operations {
                     channel: "pos" | "scan_to_order";
                     /** Format: uuid */
                     outlet_id: string;
-                    /** Format: uuid */
-                    brand_id: string;
+                    /**
+                     * Format: uuid
+                     * @description The outlet's brand. May be left out; another brand is refused.
+                     */
+                    brand_id?: string;
                     /** Format: uuid */
                     menu_id: string;
                     enabled?: boolean;
@@ -19658,6 +19680,9 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description false: refuse while the station has an unused code that has not expired. Left out or true: the new code replaces it. */
+                    replace?: boolean;
+                } & {
                     [key: string]: unknown;
                 };
             };

@@ -50,7 +50,7 @@ export function AccessSection({ staff, emailUnsaved }: { staff: Staff; emailUnsa
   };
 
   return (
-    <SheetSection title="Back-office access" hint={local ? "People sign in with their email and a password they set from a link you give them." : "People sign in through your organisation's identity provider."}>
+    <SheetSection title="Back-office access" hint={a && a.status !== "none" ? undefined : local ? "People sign in with their email and a password they set from a link you give them." : "People sign in through your organisation's identity provider."}>
       {a ? (
         <p className="text-[14px] text-ink-2">
           {a.status === "active"

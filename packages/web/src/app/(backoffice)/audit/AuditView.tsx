@@ -1,15 +1,16 @@
 "use client";
 
 import { ScrollText } from "lucide-react";
-import { AttributionChip, Button, DataTable, EmptyState, InlineError, initialsOf, Select, type DataTableColumn, useLocale, DateField } from "@sail/ui";
+import { AttributionChip, Button, DataTable, EmptyState, InlineError, initialsOf, outletOwnName, Select, type DataTableColumn, useLocale, DateField } from "@sail/ui";
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 import { createContext, useContext, useMemo, useState } from "react";
 import { req } from "@/lib/api";
 import { api } from "@/lib/api.browser";
-import type { AuditEntry, AuditPage, Staff } from "@/lib/api/types";
+import type { AuditEntry, AuditPage, Outlet, Staff } from "@/lib/api/types";
 import { auditActionLabel, auditTargetLabel } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 import { keys } from "@/lib/query";
+import { useSession } from "@/lib/session-context";
 
 const ANY = "__any__";
 const PAGE = 50;
@@ -95,11 +96,20 @@ export function actionLabel(a: Pick<AuditEntry, "action" | "target_kind" | "deta
   return auditActionLabel(a.action);
 }
 
-/** Targets whose label already says what they are ("P-0007 · Bill 1", "Table 7"). */
-const SELF_NAMED = new Set(["order", "check", "payment", "order_line", "table"]);
+/** Targets whose label already says what they are ("P-0007 · Bill 1", "Table 7", a person's name). */
+const SELF_NAMED = new Set(["order", "check", "payment", "order_line", "table", "staff"]);
 
 /** The initials set on each staff record, so the audit's chips match Team and the side rail (E-N13). */
 const StaffInitials = createContext<Map<string, string>>(new Map());
+/** Each outlet's own name, when the list covers more than one outlet: order numbers and channels repeat outlet by outlet. */
+const TargetOutlets = createContext<Map<string, string>>(new Map());
+const BY_OUTLET = new Set(["order", "channel_link"]);
+
+/** "P-0001 · Market" and "Channel · Market" where the outlet tells two rows apart; the target alone otherwise. */
+function OutletOf({ entry: a }: { entry: AuditEntry }) {
+  const name = useContext(TargetOutlets).get(a.outlet_id ?? "");
+  return name && BY_OUTLET.has(a.target_kind) ? <span className="text-ink-2"> · {name}</span> : null;
+}
 
 function Who({ entry: a }: { entry: AuditEntry }) {
   const initials = useContext(StaffInitials);
@@ -141,17 +151,20 @@ const columns: DataTableColumn<AuditEntry>[] = [
       <span className="flex min-w-0 items-center gap-2">
         <Who entry={a} />
         {/* A station or relay without a name is said once, by its chip. */}
-        {/* The name on one line, the role in grey after it, so a row is one line high. */}
+        {/* The name on one line; the role at the time is in its tooltip, not repeated on every row. */}
         {a.actor_name || !["station", "relay", "agent", "guest"].includes(a.actor_type) ? (
           <span className="min-w-0 truncate whitespace-nowrap text-ink" title={[a.actor_name, a.actor_role].filter(Boolean).join(" · ")}>
             {a.actor_name ?? a.actor_type}
-            {a.actor_role ? <span className="text-ink-2"> · {a.actor_role}</span> : null}
           </span>
         ) : null}
       </span>
     ),
   },
-  { key: "action", header: "Action", render: (a) => <span className="text-ink">{actionLabel(a)}</span> },
+  {
+    key: "action",
+    header: "Action",
+    render: (a) => <span className="text-ink">{actionLabel(a)}</span>,
+  },
   {
     key: "target",
     header: "Target",
@@ -160,11 +173,15 @@ const columns: DataTableColumn<AuditEntry>[] = [
       <span className="block min-w-0 break-words">
         {/* "Station 2" names its kind already: never "Station Station 2". */}
         {a.target_label && (SELF_NAMED.has(a.target_kind) || a.target_label.toLowerCase().startsWith(`${auditTargetLabel(a.target_kind).toLowerCase()} `)) ? (
-          <span className="text-ink tabular">{a.target_label}</span>
+          <>
+            <span className="text-ink tabular">{a.target_label}</span>
+            <OutletOf entry={a} />
+          </>
         ) : (
           <>
             <span className={a.target_label ? "text-ink-2" : "text-ink"}>{auditTargetLabel(a.target_kind)}</span>
             {a.target_label ? <span className="text-ink"> {a.target_label}</span> : null}
+            <OutletOf entry={a} />
           </>
         )}
       </span>
@@ -185,14 +202,22 @@ const dayEnd = (d: string) => (d ? new Date(`${d}T23:59:59.999`).toISOString() :
 
 export type AuditInitial = { action: string | null; actor: string | null; target: string | null; from: string | null; to: string | null };
 
-export function AuditView({ initialPage, staff, initial }: { initialPage: AuditPage; staff: Staff[]; initial?: AuditInitial }) {
+export function AuditView({ initialPage, staff, outlets, initial }: { initialPage: AuditPage; staff: Staff[]; /** The outlets the list covers: the brand in scope's, or the one chosen. */ outlets: Outlet[]; initial?: AuditInitial }) {
   // The filters live in the address, as on the other pages, so a refresh or a shared link keeps them.
   const [filters, setFilters] = useState<Filters>(() => ({ action: initial?.action ?? undefined, actor_id: initial?.actor ?? undefined, target_kind: initial?.target ?? undefined, from: dayStart(initial?.from ?? ""), to: dayEnd(initial?.to ?? "") }));
   const [fromDate, setFromDate] = useState(initial?.from ?? "");
   const [toDate, setToDate] = useState(initial?.to ?? "");
   useUrlState({ action: filters.action, actor: filters.actor_id, target: filters.target_kind, from: fromDate, to: toDate });
-  const query = useMemo(() => toQuery(filters), [filters]);
-  const unfiltered = Object.keys(query).length === 0;
+  // The list is the brand in scope: entries at its outlets, and the merchant-wide ones. The register filters, page by page.
+  const { scope, brands } = useSession();
+  const brandName = brands.find((b) => b.id === scope.brandId)?.name;
+  const outletNames = useMemo(() => {
+    const covered = scope.outletId ? outlets.filter((o) => o.id === scope.outletId) : outlets;
+    return new Map(covered.length > 1 ? covered.map((o) => [o.id, outletOwnName(o.name, brandName)]) : []);
+  }, [outlets, scope.outletId, brandName]);
+  const filtered = useMemo(() => toQuery(filters), [filters]);
+  const unfiltered = Object.keys(filtered).length === 0;
+  const query = useMemo(() => ({ ...filtered, ...(scope.brandId ? { brand_id: scope.brandId } : {}) }), [filtered, scope.brandId]);
 
   const pages = useInfiniteQuery({
     queryKey: keys.audit(query),
@@ -220,6 +245,7 @@ export function AuditView({ initialPage, staff, initial }: { initialPage: AuditP
   const initials = useMemo(() => new Map(staff.filter((m) => m.initials).map((m) => [m.id, m.initials!])), [staff]);
   return (
     <StaffInitials.Provider value={initials}>
+    <TargetOutlets.Provider value={outletNames}>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Select aria-label="Action" variant="toolbar" size="sm" selectedKey={filters.action ?? ANY} onSelectionChange={set("action")} items={[{ id: ANY, label: "Any action" }, ...ACTIONS.map((a) => ({ id: a, label: auditActionLabel(a) }))]} />
         <Select
@@ -258,9 +284,10 @@ export function AuditView({ initialPage, staff, initial }: { initialPage: AuditP
         ) : null}
         <span className="text-[13px] text-ink-2 tabular">
           {rows.length} {rows.length === 1 ? "entry" : "entries"}
-          {pages.hasNextPage ? " shown" : rows.length ? " · that is everything" : ""}
+          {pages.hasNextPage ? " shown" : ""}
         </span>
       </div>
+    </TargetOutlets.Provider>
     </StaffInitials.Provider>
   );
 }

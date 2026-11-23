@@ -2,20 +2,22 @@
 
 import { useConfirm } from "@/components/backoffice/Confirm";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, InlineError, Sheet, Switch, TextField, FieldsLocked } from "@sail/ui";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button, FieldText, InlineError, Sheet, Switch, TextField, FieldsLocked } from "@sail/ui";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
-import { greyPill, SheetSection } from "@/components/office/parts";
+import { greyPill, greyPillAlert, SheetSection } from "@/components/office/parts";
 import { applyServerErrors } from "@/components/office/server-errors";
-import { RhfTextField } from "@/components/forms/fields";
+import { RhfSelect, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Outlet, OutletCreate } from "@/lib/api/types";
+import { keepShownOutlet } from "@/lib/cookies";
+import { keys } from "@/lib/query";
 import { useSession } from "@/lib/session-context";
-import { formToHours, hoursToForm, TIME_RE, WEEKDAY_LABEL, WEEKDAYS, type HoursForm } from "@/lib/hours";
+import { formToHours, hoursToForm, newOutletHours, TIME_RE, WEEKDAY_LABEL, WEEKDAYS, type HoursForm } from "@/lib/hours";
 import { useFreshErrors } from "@/lib/fresh-errors";
 import { useCan } from "@/lib/can";
 import { useRecheckErrors } from "@/lib/recheck-errors";
@@ -34,6 +36,7 @@ const DaySchema = z
 
 const Schema = z.object({
   name: z.string().trim().min(1, "Enter a name"),
+  brand_id: z.string().min(1, "Choose a brand"),
   address: z.string(),
   phone: z.string(),
   business_registration_no: z.string(),
@@ -43,21 +46,24 @@ const Schema = z.object({
 });
 type Values = z.infer<typeof Schema>;
 
-function defaults(outlet: Outlet | null): Values {
+function defaults(outlet: Outlet | null, brandId: string | null = null, startHours?: HoursForm): Values {
   return {
     name: outlet?.name ?? "",
+    // A new outlet starts on the merchant's only brand; with several, the brand is left to choose.
+    brand_id: outlet?.brand_id ?? brandId ?? "",
     address: outlet?.address ?? "",
     phone: outlet?.phone ?? "",
     business_registration_no: outlet?.business_registration_no ?? "",
     tax_registration_no: outlet?.tax_registration_no ?? "",
     business_day_cutoff: outlet?.business_day_cutoff ?? "",
-    hours: outlet ? hoursToForm(outlet.hours) : hoursToForm(undefined),
+    hours: outlet ? hoursToForm(outlet.hours) : (startHours ?? hoursToForm(undefined)),
   };
 }
 
 function toBody(v: Values): Omit<OutletCreate, "id"> {
   return {
     name: v.name.trim(),
+    brand_id: v.brand_id,
     address: v.address.trim() || null,
     phone: v.phone.trim() || null,
     business_registration_no: v.business_registration_no.trim() || null,
@@ -71,15 +77,38 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
   const confirm = useConfirm();
   const qc = useQueryClient();
   const router = useRouter();
-  const { business_registration_label, tax_registration_label } = useSession().merchant.settings;
+  const session = useSession();
+  const { business_registration_label, tax_registration_label, business_day_cutoff } = session.merchant.settings;
   const outlet = state?.mode === "edit" ? state.outlet : null;
-  const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(outlet) });
+  // An outlet belongs to one brand. The list is the merchant's brands; an outlet on an archived brand still names it.
+  const brands = useQuery({ queryKey: keys.brands(true), queryFn: () => req(api.GET("/v1/brands", { params: { query: { include_archived: "true" } } })).then((r) => r.data), enabled: state !== null });
+  const brandItems = (brands.data ?? []).filter((b) => !b.archived || b.id === outlet?.brand_id).map((b) => ({ id: b.id, label: b.name }));
+  const onlyBrand = brandItems.length === 1 ? brandItems[0]!.id : null;
+  // With one brand there is nothing to choose. An outlet that has orders or channels keeps its brand (the register
+  // refuses a change), so its brand is shown, not offered; until that is known it is shown too.
+  const brandChoice = brands.isError || brandItems.length > 1;
+  const brandLocked = useQuery({
+    queryKey: ["outlets", outlet?.id, "brand-locked"],
+    enabled: state !== null && !!outlet && brandChoice,
+    queryFn: async () => {
+      const [orders, links] = await Promise.all([
+        req(api.GET("/v1/outlets/{id}/orders", { params: { path: { id: outlet!.id }, query: { limit: 1 } } })),
+        req(api.GET("/v1/channel-links", { params: { query: { outlet_id: outlet!.id, include_archived: "true" } } })),
+      ]);
+      return orders.data.length > 0 || links.data.length > 0;
+    },
+  });
+  const brandShown = outlet && brandChoice && !brandLocked.isError && brandLocked.data !== false ? (brands.data?.find((b) => b.id === outlet.brand_id)?.name ?? null) : null;
+  // A new outlet opens when the merchant's outlets do, not closed all week.
+  const known = qc.getQueryData<Outlet[]>(keys.outlets(true));
+  const startHours = useMemo(() => newOutletHours(known ?? [], onlyBrand ?? session.scope.brandId), [known, onlyBrand, session.scope.brandId]);
+  const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(outlet, onlyBrand, startHours) });
   useRecheckErrors(form);
 
   const reset = form.reset;
   useEffect(() => {
-    if (state) reset(defaults(state.mode === "edit" ? state.outlet : null));
-  }, [state, reset]);
+    if (state) reset(defaults(state.mode === "edit" ? state.outlet : null, onlyBrand, startHours));
+  }, [state, reset, onlyBrand, startHours]);
 
   const settle = async () => {
     await qc.invalidateQueries({ queryKey: ["outlets"] });
@@ -95,7 +124,12 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
         : await req(api.POST("/v1/outlets", { body }));
       return res.data;
     },
-    onSuccess: settle,
+    onSuccess: async (saved) => {
+      // A new outlet does not take over the per-outlet pages: they stay on the outlet they were showing.
+      const keep = outlet ? null : keepShownOutlet(session.scope, qc.getQueryData<Outlet[]>(keys.outlets(true)) ?? [], saved);
+      if (keep) await fetch("/api/prefs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scope: keep }) }).catch(() => undefined);
+      await settle();
+    },
     // A refusal that names a field shows under it; the message also stays at the foot of the form.
     onError: (e) => applyServerErrors(form.setError, e, Object.keys(form.getValues())),
   });
@@ -117,19 +151,19 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
       onOpenChange={(open) => !open && onClose()}
       isDismissable={!busy}
       title={outlet ? outlet.name : "New outlet"}
-      description={outlet ? (outlet.archived ? "Archived" : "Edit the outlet's details and hours.") : "An outlet is a place with its own stations, printers and hours."}
+      description={outlet?.archived ? "Archived" : undefined}
       width="lg"
       footer={
         <>
           {outlet && mayEdit.ok ? (
             <Button
-              variant={outlet.archived ? "secondary" : "destructive"}
+              variant="secondary"
               onPress={() => (outlet.archived ? archive.mutate(false) : confirm.ask({ title: `Archive ${outlet.name}?`, body: "It leaves the outlet lists in the back office and on the POS. Past orders and reports keep it. You can restore it later.", confirmLabel: "Archive outlet", cancelLabel: "Keep the outlet", onConfirm: () => archive.mutate(true) }))}
               isPending={archive.isPending}
               isDisabled={save.isPending}
-              className="mr-auto"
+              className={`mr-auto ${outlet.archived ? greyPill : greyPillAlert}`}
             >
-              {outlet.archived ? "Restore outlet" : "Archive outlet"}
+              {outlet.archived ? "Restore outlet" : "Archive outlet…"}
             </Button>
           ) : null}
           <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={busy}>
@@ -143,14 +177,27 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
     >
       <form id="outlet-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
         <SheetSection>
-          <RhfTextField control={form.control} name="name" label="Name" placeholder="Brand · Location" autoFocus={!outlet} />
+          <RhfTextField control={form.control} name="name" label="Name" isRequired placeholder="Brand · Location" autoFocus={!outlet} />
+          {brandShown ? (
+            <FieldText label="Brand">{brandShown}</FieldText>
+          ) : brandChoice ? (
+            <RhfSelect
+              control={form.control}
+              name="brand_id"
+              label="Brand"
+              isRequired
+              placeholder="Choose a brand"
+              items={brandItems}
+              description={outlet ? "The outlet's stations, channels and orders are on this brand. It can change only while the outlet has no orders and no channels." : "An outlet trades as one brand. Its stations, channels and orders follow it."}
+            />
+          ) : null}
           <RhfTextField control={form.control} name="address" label="Address" multiline rows={2} />
           <div className="grid gap-4 sm:grid-cols-2">
             <RhfTextField control={form.control} name="phone" label="Phone" type="tel" inputMode="tel" numeric />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <RhfTextField control={form.control} name="business_registration_no" label={business_registration_label} description="Shown on receipts and invoices." />
-            <RhfTextField control={form.control} name="tax_registration_no" label={tax_registration_label} description="Shown on receipts and invoices." />
+            <RhfTextField control={form.control} name="business_registration_no" label={business_registration_label} />
+            <RhfTextField control={form.control} name="tax_registration_no" label={tax_registration_label} />
           </div>
           <RhfTextField
             control={form.control}
@@ -158,12 +205,13 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
             label="Business day ends at"
             type="time"
             numeric
-            description="Sales before this time count towards the day before. Leave empty to use the merchant's."
+            // A time field shows no placeholder, so the inherited value is said here; what the cutoff means is on Merchant.
+            description={`Empty uses the merchant's ${business_day_cutoff}.`}
             className="sm:max-w-[240px]"
           />
         </SheetSection>
 
-        <SheetSection title="Hours" hint="One opening range per day. Closed days have no range.">
+        <SheetSection title="Hours">
           <div className="flex flex-col">
             {WEEKDAYS.map((day) => (
               <Controller

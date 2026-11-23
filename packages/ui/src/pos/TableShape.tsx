@@ -81,9 +81,8 @@ export function TableShape({ name, shape, status, pax, elapsed, needsYou, highli
               </span>
             ) : null}
           </span>
-          {free ? (
-            <span className="text-caption text-ink-3">Free</span>
-          ) : (
+          {/* A free table is the plain table: only an occupied one carries a status. */}
+          {free ? null : (
             <span className="flex items-center justify-between gap-2">
               <span className="inline-flex h-6 min-w-0 items-center gap-1 rounded-chip bg-surface px-2 text-[12px] font-medium" style={{ color: meta.colour }}>
                 <Icon icon={meta.icon} size={12} className="shrink-0" />
@@ -103,9 +102,7 @@ export function TableShape({ name, shape, status, pax, elapsed, needsYou, highli
               {pax ? <span className="tabular">{pax}</span> : null}
               {elapsed ? <span className="tabular">· {elapsed}</span> : null}
             </span>
-          ) : (
-            <span className="text-caption text-ink-3">Free</span>
-          )}
+          ) : null}
         </>
       )}
       {needsYou ? (

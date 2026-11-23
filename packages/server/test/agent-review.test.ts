@@ -472,12 +472,27 @@ describe("review follow-ups: brand scope reaches rows that hang off an order", (
     const o = await openTakeaway(w.pins.server);
     await addLine(w.pins.server, o.body.data.id, { product_id: w.ids.wine });
     await call("POST", `/v1/orders/${o.body.data.id}/fire`, { token: w.pins.server, body: {} });
+    // An outlet belongs to one brand (migration 0057), so an agent of another brand does not reach the outlet at all:
+    // it is told the outlet is not there, where it used to get the outlet's events without this order.
     const tok = await session((await identity({ role: "manager", toolsets: ["pos.read", "watch", "kitchen"], risk_ceiling: "T1", brand_ids: [b3] })).credential);
     const ev = await call<{ data: unknown[] }>("GET", `/v1/outlets/${w.m.outletId}/events?after=0`, { token: tok });
-    expect(ev.status, JSON.stringify(ev.body).slice(0, 200)).toBe(200);
+    expect(ev.status, JSON.stringify(ev.body).slice(0, 200)).toBe(404);
     expect(JSON.stringify(ev.body)).not.toContain(o.body.data.id);
     const jobs = await call("GET", `/v1/outlets/${w.m.outletId}/print-jobs?order_id=${o.body.data.id}`, { token: tok });
     expect(JSON.stringify(jobs.body)).not.toContain(o.body.data.id);
+
+    // Brand scope still reaches the rows that hang off an order where the outlet is in scope: an order from before
+    // the migration keeps the brand it had, and an agent of the outlet's own brand sees none of it.
+    const old = await openTakeaway(w.pins.server);
+    await addLine(w.pins.server, old.body.data.id, { product_id: w.ids.wine });
+    await call("POST", `/v1/orders/${old.body.data.id}/fire`, { token: w.pins.server, body: {} });
+    await db.sql`update orders set brand_id = ${b3} where id = ${old.body.data.id}`;
+    const mine = await session((await identity({ role: "manager", toolsets: ["pos.read", "watch", "kitchen"], risk_ceiling: "T1", brand_ids: [w.m.brandId] })).credential);
+    const own = await call<{ data: unknown[] }>("GET", `/v1/outlets/${w.m.outletId}/events?after=0`, { token: mine });
+    expect(own.status, JSON.stringify(own.body).slice(0, 200)).toBe(200);
+    expect(JSON.stringify(own.body)).toContain(o.body.data.id);
+    expect(JSON.stringify(own.body)).not.toContain(old.body.data.id);
+    expect(JSON.stringify((await call("GET", `/v1/outlets/${w.m.outletId}/print-jobs?order_id=${old.body.data.id}`, { token: mine })).body)).not.toContain(old.body.data.id);
     // Unscoped, the same agent sees them.
     const all = await session((await identity({ role: "manager", toolsets: ["pos.read", "watch"], risk_ceiling: "T1" })).credential);
     expect(JSON.stringify((await call("GET", `/v1/outlets/${w.m.outletId}/events?after=0`, { token: all })).body)).toContain(o.body.data.id);

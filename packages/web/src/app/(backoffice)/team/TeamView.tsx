@@ -80,7 +80,11 @@ export function TeamView({ initialStaff, outlets, brands, scope }: { initialStaf
   const outletName = useMemo(() => new Map(outlets.map((o) => [o.id, o.name])), [outlets]);
   const scopedOutlet = outlets.find((o) => o.id === scope.outletId) ?? null;
 
-  const rows = staff.data.filter((s) => (showInactive || s.active) && (!scope.outletId || s.outlet_ids.length === 0 || s.outlet_ids.includes(scope.outletId)));
+  // The brand in scope: people who can work at one of its outlets at least (no outlet limit is every outlet), and
+  // are not limited to other brands. With an outlet chosen, people who can work at that outlet.
+  const brandOutlets = useMemo(() => new Set(outlets.filter((o) => o.brand_id === scope.brandId).map((o) => o.id)), [outlets, scope.brandId]);
+  const inBrand = (s: Staff) => !scope.brandId || ((s.brand_ids.length === 0 || s.brand_ids.includes(scope.brandId)) && (s.outlet_ids.length === 0 || s.outlet_ids.some((id) => brandOutlets.has(id))));
+  const rows = staff.data.filter((s) => (showInactive || s.active) && inBrand(s) && (!scope.outletId || s.outlet_ids.length === 0 || s.outlet_ids.includes(scope.outletId)));
 
   const columns: DataTableColumn<Staff>[] = [
     {
@@ -94,16 +98,22 @@ export function TeamView({ initialStaff, outlets, brands, scope }: { initialStaf
           <span aria-hidden className="flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-[12px] font-semibold text-ink">
             {s.initials ?? initialsOf(s.name)}
           </span>
-          <TwoLine primary={s.name} meta={s.email ?? undefined} />
+          {/* The email under the name is the back-office login; a pill only for what is missing or off. */}
+          <TwoLine
+            primary={
+              <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+                {s.name}
+                {s.has_pin ? null : <Pill size="sm" tone="neutral">No PIN</Pill>}
+                {s.active ? null : <Pill size="sm" tone="neutral">Inactive</Pill>}
+              </span>
+            }
+            meta={s.email ?? undefined}
+          />
         </span>
       ),
     },
-    { key: "role", header: "Role", sortable: true, sortValue: (s) => ROLES.indexOf(s.role), render: (s) => (
-        <Pill size="sm" tone={s.role === "admin" ? "seated" : "neutral"}>
-          {ROLE_LABEL[s.role]}
-        </Pill>
-      ),
-    },
+    // A role is a value, not a status: plain words, not a column of pills.
+    { key: "role", header: "Role", sortable: true, sortValue: (s) => ROLES.indexOf(s.role), render: (s) => <span className="text-ink-2">{ROLE_LABEL[s.role]}</span> },
     {
       key: "outlets",
       header: "Outlets",
@@ -113,9 +123,6 @@ export function TeamView({ initialStaff, outlets, brands, scope }: { initialStaf
         </span>
       ),
     },
-    { key: "has_pin", header: "PIN", sortable: true, render: (s) => (s.has_pin ? "Set" : <span className="text-ink-2">None</span>) },
-    { key: "has_login", header: "Back-office login", sortable: true, render: (s) => (s.has_login ? "Yes" : <span className="text-ink-2">—</span>) },
-    { key: "active", header: "Status", sortable: true, render: (s) => (s.active ? <Pill size="sm" tone="paid">Active</Pill> : <Pill size="sm" tone="neutral">Inactive</Pill>) },
   ];
 
   return (
@@ -149,13 +156,12 @@ export function TeamView({ initialStaff, outlets, brands, scope }: { initialStaf
         rowClassName={(s) => (s.active ? undefined : "text-ink-2")}
         emptyState={<EmptyState variant="centred" title="Nobody here yet" hint="Select Add staff member to invite the first person." />}
       />
-      <StaffSheet state={sheet} live={sheet?.mode === "edit" ? staff.data.find((s) => s.id === sheet.staff.id) : undefined} outlets={outlets} brands={brands} onClose={() => setSheet(null)} />
+      <StaffSheet state={sheet} outlets={outlets} brands={brands} onClose={() => setSheet(null)} />
     </>
   );
 }
 
-/** `live` is the person as the list now has them, so the header follows a revoke or an invite made in the sheet. */
-function StaffSheet({ state, live, outlets, brands, onClose }: { state: SheetState; live?: Staff; outlets: Outlet[]; brands: Brand[]; onClose: () => void }) {
+function StaffSheet({ state, outlets, brands, onClose }: { state: SheetState; outlets: Outlet[]; brands: Brand[]; onClose: () => void }) {
   const qc = useQueryClient();
   const { me } = useSession();
   const staff = state?.mode === "edit" ? state.staff : null;
@@ -169,6 +175,8 @@ function StaffSheet({ state, live, outlets, brands, onClose }: { state: SheetSta
   const pinAction = form.watch("pin_action");
   const name = form.watch("name");
   const email = form.watch("email");
+  const outletIds = form.watch("outlet_ids");
+  const brandIds = form.watch("brand_ids");
 
   const save = useMutation<Staff, ApiError, Values>({
     mutationFn: async (v) => {
@@ -206,7 +214,7 @@ function StaffSheet({ state, live, outlets, brands, onClose }: { state: SheetSta
       onOpenChange={(open) => !open && onClose()}
       isDismissable={!save.isPending}
       title={staff ? staff.name : "New staff member"}
-      description={staff ? `${ROLE_LABEL[staff.role]}${(live ?? staff).has_login ? " · has a back-office login" : ""}` : "Give them a role, the outlets they work at and, for the POS, a PIN."}
+      description={staff ? undefined : "Give them a role, the outlets they work at and, for the POS, a PIN."}
       footer={
         <>
           <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={save.isPending}>
@@ -222,18 +230,19 @@ function StaffSheet({ state, live, outlets, brands, onClose }: { state: SheetSta
         <SheetSection>
           <div className="grid gap-4 sm:grid-cols-[1fr_120px]">
             <RhfTextField control={form.control} name="name" label="Name" autoFocus={!staff} />
-            <RhfTextField control={form.control} name="initials" label="Initials" placeholder={initialsOf(name, "")} maxLength={3} description="On chips and receipts." />
+            <RhfTextField control={form.control} name="initials" label="Initials" placeholder={initialsOf(name, "")} maxLength={3} />
           </div>
-          <RhfTextField control={form.control} name="email" label="Email" type="email" inputMode="email" description="Needed for a back-office login. Leave empty for POS-only staff." />
+          <RhfTextField control={form.control} name="email" label="Email (for back-office login)" type="email" inputMode="email" />
           <RhfSelect control={form.control} name="role" label="Role" items={ROLES.map((r) => ({ id: r, label: ROLE_LABEL[r], description: ROLE_HINT[r] }))} />
         </SheetSection>
 
-        <SheetSection title="Where they work" hint="Nothing ticked means every outlet, or every brand.">
-          <RhfCheckboxGroup control={form.control} name="outlet_ids" label="Outlets" columns={2} options={outlets.map((o) => ({ id: o.id, label: o.name }))} emptyHint="No outlets yet; this person will have access to all of them." />
-          <RhfCheckboxGroup control={form.control} name="brand_ids" label="Brands" columns={2} options={brands.map((b) => ({ id: b.id, label: b.name }))} emptyHint="No brands yet." />
+        {/* Nothing ticked is every outlet (or brand): the group says so when it is the case, not as a rule up front. */}
+        <SheetSection title="Where they work">
+          <RhfCheckboxGroup control={form.control} name="outlet_ids" label="Outlets" description={outletIds.length === 0 && outlets.length ? "All outlets" : undefined} columns={2} options={outlets.map((o) => ({ id: o.id, label: o.name }))} emptyHint="No outlets yet; this person will have access to all of them." />
+          <RhfCheckboxGroup control={form.control} name="brand_ids" label="Brands" description={brandIds.length === 0 && brands.length ? "All brands" : undefined} columns={2} options={brands.map((b) => ({ id: b.id, label: b.name }))} emptyHint="No brands yet." />
         </SheetSection>
 
-        <SheetSection title="POS PIN" hint="Six digits. It is stored hashed and never shown again.">
+        <SheetSection title="POS PIN" hint={pinAction === "set" ? "Six digits. It is stored hashed and never shown again." : undefined}>
           {staff ? (
             <div className="flex flex-wrap items-center gap-2">
               <span className="mr-2 text-[14px] text-ink-2">{staff.has_pin ? "A PIN is set." : "No PIN yet."}</span>

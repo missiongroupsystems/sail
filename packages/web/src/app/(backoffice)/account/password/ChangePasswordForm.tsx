@@ -31,7 +31,7 @@ export function ChangePasswordForm() {
     <form noValidate onSubmit={form.handleSubmit((v) => change.mutate(v))} className="flex max-w-[460px] flex-col gap-4 rounded-[16px] border border-rule bg-surface px-6 py-7 sm:px-7">
       <FormSection>
         <RhfTextField control={form.control} name="current" label="Current password" type="password" autoComplete="current-password" />
-        <RhfTextField control={form.control} name="password" label="New password" type="password" autoComplete="new-password" description="At least 12 characters." />
+        <RhfTextField control={form.control} name="password" label="New password" type="password" autoComplete="new-password" />
         <RhfTextField control={form.control} name="confirm" label="Type it again" type="password" autoComplete="new-password" />
       </FormSection>
       {change.isSuccess ? <p role="status" className="text-ink">Password changed.{change.data.sessions_ended ? ` ${change.data.sessions_ended} other session${change.data.sessions_ended === 1 ? "" : "s"} ended.` : ""}</p> : null}

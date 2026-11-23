@@ -11,7 +11,7 @@ export default async function ReportsLayout({ children }: { children: ReactNode 
   await requireRole("manager");
   return (
     <>
-      <PageHeader title="Reports" description="The Z-report, sales, items, shifts and print health, from the register's figures." tabs={<div className="print:hidden"><SubNav tabs={REPORTS_TABS} label="Report sections" /></div>} />
+      <PageHeader title="Reports" tabs={<div className="print:hidden"><SubNav tabs={REPORTS_TABS} label="Report sections" /></div>} />
       {children}
     </>
   );

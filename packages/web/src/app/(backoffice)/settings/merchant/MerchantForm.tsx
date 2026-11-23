@@ -154,7 +154,7 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
       </SheetSection>
 
       <SheetSection title="Money and language" hint={`Amounts are in ${merchant.data.settings.currency}, which cannot change once set.`}>
-        <RhfTextField control={form.control} name="locale" label="Locale" description="Formats money, dates and times, for example en-GB or de-DE." className="sm:max-w-[240px]" />
+        <RhfTextField control={form.control} name="locale" label="Locale" placeholder="en-GB" className="sm:max-w-[240px]" />
       </SheetSection>
 
       <SheetSection title="Cash and day">
@@ -164,9 +164,8 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
           name="cash_denominations"
           render={({ field, fieldState }) => (
             <TagsField
-              label="Notes and coins"
-              description="For the cash counter at the register. Type an amount and press Enter."
-              placeholder="Add an amount"
+              label="Notes and coins at the register"
+              placeholder="Type an amount, Enter"
               normalise={false}
               value={field.value.map(moneyText)}
               onChange={(texts) => {
@@ -191,7 +190,7 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
           description="Closing a shift with the drawer more than this over or short asks for a reason."
           className="sm:max-w-[240px]"
         />
-        <RhfSwitch control={form.control} name="tips_enabled" description="The pay screen offers a tip as an amount or a percentage, for cash and card. Tips show on the receipt and in the Z-report.">
+        <RhfSwitch control={form.control} name="tips_enabled" description="Offered on the pay screen; shown on receipts and the Z-report.">
           Offer tips on the POS
         </RhfSwitch>
         <RhfTextField
@@ -205,12 +204,13 @@ export function MerchantForm({ initialMerchant }: { initialMerchant: Merchant })
         />
       </SheetSection>
 
-      <SheetSection title="Receipts">
+      {/* One line for the pair of labels, rather than the same sentence under each. */}
+      <SheetSection title="Receipts" hint="The labels print before each outlet's registration numbers.">
         <div className="grid gap-4 sm:grid-cols-2">
-          <RhfTextField control={form.control} name="business_registration_label" label="Business registration label" description="Printed before each outlet's business registration number." />
-          <RhfTextField control={form.control} name="tax_registration_label" label="Tax registration label" description="Printed before each outlet's tax registration number." />
+          <RhfTextField control={form.control} name="business_registration_label" label="Business registration label" />
+          <RhfTextField control={form.control} name="tax_registration_label" label="Tax registration label" />
         </div>
-        <RhfTextField control={form.control} name="receipt_footer" label="Receipt footer" multiline rows={3} description="Printed under every receipt. Leave empty for none." />
+        <RhfTextField control={form.control} name="receipt_footer" label="Receipt footer" multiline rows={3} />
       </SheetSection>
 
       <InlineError error={save.error} />

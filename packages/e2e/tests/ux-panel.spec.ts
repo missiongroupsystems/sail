@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { API, devLocal, expect, GUEST, pairAndSignIn, register, SG_ADMIN, test, WEB } from "./fixtures";
+import { API, devLocal, expect, GUEST, leaveToday, pairAndSignIn, register, SG_ADMIN, test, WEB } from "./fixtures";
 
 /**
  * The findings of the hands-on usability review, each held to what a person sees: tips on the pay screen, line prices
@@ -58,7 +58,7 @@ async function signInBackOffice(page: Page, watch: { allowConsole: (r: RegExp) =
     await page.getByRole("button", { name: "Sign in" }).click({ timeout: 10_000 });
     await page.waitForURL(`${WEB}/today`, { timeout: 30_000 });
   }).toPass({ timeout: 300_000 });
-  await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
+  await leaveToday(page);
 }
 
 /** A first visit can be cut short by the dev server reloading Today after its first compile: go until it sticks. */
@@ -371,12 +371,12 @@ test.describe("back office 1440×900", () => {
     const opened = await register<{ data: { order_no: string } }>("POST", "/v1/orders", { order_id: crypto.randomUUID(), order_type: "takeaway", outlet_id: outletId, brand_id: brandId });
     await signInBackOffice(page, watch);
     await goTo(page, "/reports/z-report");
-    await page.getByRole("button", { name: /^Close business day .*…$/ }).click();
+    await page.getByRole("button", { name: /^Close business day…$/ }).click();
     const confirm = page.getByRole("alertdialog", { name: /^Close business day/ });
     await expect(confirm.getByText(/orders? (is|are) still open/)).toBeVisible();
     await expect(confirm).toContainText(opened.data.order_no);
     await confirm.getByRole("button", { name: "Keep the day open" }).click();
     await expect(confirm).toBeHidden();
-    await expect(page.getByRole("button", { name: /^Close business day .*…$/ })).toBeEnabled();
+    await expect(page.getByRole("button", { name: /^Close business day…$/ })).toBeEnabled();
   });
 });

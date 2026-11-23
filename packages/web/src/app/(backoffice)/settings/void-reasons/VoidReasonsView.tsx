@@ -36,14 +36,13 @@ export function VoidReasonsView({ initialReasons }: { initialReasons: VoidReason
   const rows = reasons.data.filter((r) => showArchived || !r.archived);
   const columns: DataTableColumn<VoidReason>[] = [
     { key: "sort", header: "Order", numeric: true, sortable: true, width: 80, render: (r) => r.sort },
-    { key: "name", header: "Reason", isRowHeader: true, sortable: true, width: "2fr", render: (r) => <TwoLine primary={r.name} /> },
+    { key: "name", header: "Reason", isRowHeader: true, sortable: true, width: "2fr", render: (r) => <TwoLine primary={r.archived ? <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">{r.name}<Pill size="sm" tone="neutral">Archived</Pill></span> : r.name} /> },
     { key: "for_refunds", header: "Also for refunds", render: (r) => (r.for_refunds ? "Yes" : "—") },
-    { key: "archived", header: "Status", sortable: true, sortValue: (r) => (r.archived ? 1 : 0), render: (r) => (r.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <Pill size="sm" tone="paid">Active</Pill>) },
   ];
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[14px] text-ink-2">Shown when staff void a sent item; “Other” with a typed reason is always available.</p>
+        <p className="text-[14px] text-ink-2">“Other” with a typed reason is always available.</p>
         <div className="flex flex-wrap items-center gap-4">
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
@@ -128,7 +127,7 @@ function ReasonSheet({ state, nextSort, onClose }: { state: SheetState; nextSort
             <RhfTextField control={form.control} name="name" label="Reason" placeholder="Wrong item" autoFocus={!reason} />
             <RhfTextField control={form.control} name="sort" label="Order" numeric inputMode="numeric" placeholder={String(nextSort)} />
           </div>
-          <RhfSwitch control={form.control} name="for_refunds" description="Offered in the refund flow as well as for voids.">
+          <RhfSwitch control={form.control} name="for_refunds">
             Also a refund reason
           </RhfSwitch>
         </SheetSection>

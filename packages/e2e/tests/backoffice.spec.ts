@@ -44,7 +44,7 @@ const PAGES = [
   "/settings/brands",
   "/settings/stations",
   "/settings/channels",
-  "/settings/tenders",
+  "/settings/payment-methods",
   "/settings/tax",
   "/settings/void-reasons",
   "/settings/merchant",

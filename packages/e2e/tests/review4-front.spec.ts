@@ -489,7 +489,7 @@ test("U6: after Open shift the card shows the opened shift from the register's r
     await expect(page.getByRole("heading", { name: "Shift open" })).toBeVisible({ timeout: 5_000 });
     await page.waitForTimeout(7_000);
     await expect(page.getByRole("heading", { name: "Shift open" })).toBeVisible();
-    await expect(page.getByText("No shift is open on this station")).toHaveCount(0);
+    await expect(page.getByText("Count the float in the drawer to open")).toHaveCount(0);
     await bothThemes(page, "U6-shift-open");
     refuse = false;
   } finally {

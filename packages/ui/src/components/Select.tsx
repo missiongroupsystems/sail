@@ -18,6 +18,7 @@ import { cx } from "../lib/cx";
 import { fieldControl, fieldControlSm, fieldDescription, fieldError, fieldLabel, fieldWrap, type FieldSize } from "./field";
 import { Icon } from "./Icon";
 import { useLockedDisabled } from "./FieldsLocked";
+import { RequiredMark } from "./RequiredMark";
 
 export type SelectItem = {
   id: string;
@@ -74,14 +75,23 @@ export function Select({
   return (
     <AriaSelect
       {...rest}
+      // As on TextField: the form's own check says what is missing, never the browser's bubble.
+      validationBehavior="aria"
       isDisabled={isDisabled}
       selectedKey={selectedKey}
       onSelectionChange={(key: Key | null) => onSelectionChange(key === null ? null : String(key))}
       placeholder={placeholder}
       className={cx(fieldWrap, className)}
     >
-      {label ? <Label className={fieldLabel}>{label}</Label> : null}
+      {label ? (
+        <Label className={fieldLabel}>
+          {label}
+          {rest.isRequired ? <RequiredMark announced /> : null}
+        </Label>
+      ) : null}
+      {/* The trigger takes the Select's invalid state, so it wears the same red border as an invalid text field. */}
       <Button
+        data-invalid={rest.isInvalid || undefined}
         className={cx(
           size === "sm" ? fieldControlSm : fieldControl,
           "flex items-center justify-between gap-2 text-left press data-[pressed]:scale-[0.99] aria-expanded:bg-surface-3",
@@ -90,7 +100,10 @@ export function Select({
       >
         {/* Off, the placeholder and the chevron take the disabled ink like the value does: a placeholder in ink-3 read
             darker than the disabled fields around it ("Attach a modifier group…" on a read-only product sheet). */}
-        <SelectValue className={cx("truncate", isDisabled ? "text-ink-disabled" : "data-[placeholder]:text-ink-3")} />
+        {/* The closed trigger shows the chosen label only: an option's description helps while choosing, not after. */}
+        <SelectValue className={cx("truncate", isDisabled ? "text-ink-disabled" : "data-[placeholder]:text-ink-3")}>
+          {({ isPlaceholder, selectedText, defaultChildren }) => (isPlaceholder ? defaultChildren : selectedText)}
+        </SelectValue>
         <Icon icon={ChevronDown} size={16} className={isDisabled ? "text-ink-disabled" : "text-ink-3"} />
       </Button>
       {description ? (

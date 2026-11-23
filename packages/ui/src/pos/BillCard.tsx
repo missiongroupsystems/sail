@@ -39,7 +39,7 @@ export type BillCardProps = {
   isDisabled?: boolean;
   /** Overrides the status word on a paid bill: "Tip still to give back: $2.00". */
   statusLabel?: string | null;
-  /** An open bill with a payment on it already: its chip says "Part paid", not "Unpaid". */
+  /** An open bill with a payment on it already: it gets a "Part paid" chip (an untouched bill has none). */
   partPaid?: boolean;
   /** [Pre-bill] [Pay] on unpaid bills; [Get invoice] [Refund] on paid ones. */
   actions?: ReactNode;
@@ -63,11 +63,12 @@ export function BillCard({ label, status, lines, rows, tenders, isTarget, onPres
           </span>
         ) : isTarget ? (
           <span className="shrink-0 text-caption font-medium text-status-seated">Tap to move here</span>
-        ) : (
+        ) : partPaid ? (
+          // Every bill starts unpaid: the chip marks one with a payment on it already.
           <span className="inline-flex h-[22px] shrink-0 items-center gap-1 rounded-chip bg-surface-2 px-2 text-[11.5px] font-medium text-ink-2">
-            <span aria-hidden className="inline-block size-2.5 rounded-full border border-current" /> {partPaid ? "Part paid" : "Unpaid"}
+            <span aria-hidden className="inline-block size-2.5 rounded-full border border-current" /> Part paid
           </span>
-        )}
+        ) : null}
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-1">
         {lines.length === 0 ? <p className="px-2 py-3 text-[14.5px] text-ink-3">Nothing on this bill yet.</p> : null}

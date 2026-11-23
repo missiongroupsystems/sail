@@ -2,8 +2,8 @@ import { Icon } from "@sail/ui";
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 const REPORTS = [
-  { href: "/reports/z-report", title: "Z-report", detail: "Sales, tenders, cash, voids and refunds for an outlet, date and station. Close the business day from here." },
-  { href: "/reports/sales", title: "Sales", detail: "Totals, days, tenders and categories for an outlet over a range of business dates." },
+  { href: "/reports/z-report", title: "Z-report", detail: "Sales, payments, cash, voids and refunds for an outlet, date and station. Close the business day from here." },
+  { href: "/reports/sales", title: "Sales", detail: "Totals, days, payment methods and categories for an outlet over a range of business dates." },
   { href: "/reports/items", title: "Items", detail: "What sold, by item, category or staff member, with each one's share of net sales." },
   { href: "/reports/shifts", title: "Shifts", detail: "Open and closed shifts with expected, counted and variance, and each shift's stored summary." },
   { href: "/reports/print-health", title: "Print health", detail: "Jobs, failures, reroutes, reprints and late tickets by printer, with time to print." },

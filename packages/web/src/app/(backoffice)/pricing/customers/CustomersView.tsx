@@ -73,7 +73,13 @@ export function CustomersView({ initialGroups, initialCustomers }: { initialGrou
   const groupName = useMemo(() => new Map(groups.data.map((g) => [g.id, g.name])), [groups.data]);
 
   const columns: DataTableColumn<Customer>[] = [
-    { key: "name", header: "Name", isRowHeader: true, sortable: true, render: (c) => <span className="text-ink">{c.name}</span> },
+    { key: "name", header: "Name", isRowHeader: true, sortable: true, render: (c) => (
+        // A pill only for an archived customer: every other listed row is active.
+        <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 text-ink">
+          {c.name}
+          {c.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : null}
+        </span>
+      ) },
     { key: "mobile", header: "Mobile", render: (c) => <span className="tabular">{c.mobile ?? "—"}</span> },
     { key: "email", header: "Email", render: (c) => <span className="text-ink-2">{c.email ?? "—"}</span> },
     { key: "marketing_consent", header: "Marketing", render: (c) => (c.marketing_consent ? <StatusDot status="paid" label="Consented" /> : <StatusDot status="neutral" label="No consent" muted />) },
@@ -88,7 +94,6 @@ export function CustomersView({ initialGroups, initialCustomers }: { initialGrou
         </span>
       ),
     },
-    { key: "archived", header: "Status", render: (c) => (c.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <Pill size="sm" tone="paid">Active</Pill>) },
   ];
 
   return (
@@ -114,9 +119,12 @@ export function CustomersView({ initialGroups, initialCustomers }: { initialGrou
           emptyState={<EmptyState variant="centred" icon={Users} title={dq ? "No customers match" : "No customers yet"} hint={dq ? "Try the mobile number without spaces, or part of the name." : "Customers are created from pickup and delivery orders, by import, or here."} />}
         />
         <InlineError error={customers.error} className="mt-4" />
-        <p className="mt-3 text-caption text-ink-2 tabular">
-          {(customers.data ?? []).length} shown{groupId ? ` in ${groupName.get(groupId)}` : ""} · up to 50 per search
-        </p>
+        {/* The cap is said only when a search reaches it. */}
+        {(customers.data ?? []).length >= 50 ? (
+          <p className="mt-3 text-caption text-ink-2 tabular">
+            {(customers.data ?? []).length} shown{groupId ? ` in ${groupName.get(groupId)}` : ""} · up to 50 per search
+          </p>
+        ) : null}
       </section>
 
       <Panel

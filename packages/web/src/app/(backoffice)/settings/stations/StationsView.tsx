@@ -1,13 +1,15 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, DataTable, Dialog, EmptyState, InlineError, Select, Sheet, StatusDot, Switch, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
+import { Button, DataTable, Dialog, FieldText, EmptyState, InlineError, Sheet, StatusDot, Switch, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { greyPill, greyPillAlert, SheetSection, TwoLine } from "@/components/office/parts";
+import { greyPill, greyPillAlert, SheetSection } from "@/components/office/parts";
 import { applyServerErrors } from "@/components/office/server-errors";
+import { OutletChoice } from "@/components/backoffice/OutletChoice";
+import { useShowOutlet } from "@/components/ShownOutlet";
 import { PairingPanel } from "@/components/backoffice/PairingPanel";
 import { RhfCheckboxGroup, RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
@@ -18,14 +20,13 @@ import { keys } from "@/lib/query";
 import { useFreshErrors } from "@/lib/fresh-errors";
 import { useCan } from "@/lib/can";
 
-const NONE = "__none__";
 const HOME_LABEL: Record<string, string> = { floor: "Floor plan", takeaway: "New takeaway order" };
 
 type SheetState = { mode: "create" } | { mode: "edit"; station: Station } | null;
 
+// A station has no brand of its own to choose: it is on its outlet's brand, shown read-only in the sheet.
 const Schema = z.object({
   name: z.string().trim().min(1, "Enter a name"),
-  brand_id: z.string(),
   pay_before_firing: z.boolean(),
   seats_enabled: z.boolean(),
   home: z.enum(["floor", "takeaway"]),
@@ -35,7 +36,7 @@ const Schema = z.object({
 type Values = z.infer<typeof Schema>;
 
 function defaults(s: Station | null): Values {
-  return { name: s?.name ?? "", brand_id: s?.brand_id ?? NONE, pay_before_firing: s?.pay_before_firing ?? false, seats_enabled: s?.seats_enabled ?? true, home: s?.home ?? "floor", kind: s?.kind ?? "pos", display_destination_ids: s?.display_destination_ids ?? [] };
+  return { name: s?.name ?? "", pay_before_firing: s?.pay_before_firing ?? false, seats_enabled: s?.seats_enabled ?? true, home: s?.home ?? "floor", kind: s?.kind ?? "pos", display_destination_ids: s?.display_destination_ids ?? [] };
 }
 
 export function StationsView({
@@ -53,6 +54,7 @@ export function StationsView({
 }) {
   const canCreate = useCan("stations.create");
   const [outletId, setOutletId] = useState<string | null>(initialOutletId);
+  useShowOutlet(outletId);
   const [showArchived, setShowArchived] = useState(false);
   const [sheet, setSheet] = useState<SheetState>(null);
   useEffect(() => setOutletId(initialOutletId), [initialOutletId]);
@@ -69,8 +71,15 @@ export function StationsView({
   const rows = (stations.data ?? []).filter((s) => (showArchived || !s.archived) && (!scope.brandId || !s.brand_id || s.brand_id === scope.brandId));
 
   const columns: DataTableColumn<Station>[] = [
-    { key: "name", header: "Name", sortable: true, isRowHeader: true, width: "1.4fr", render: (s) => <TwoLine primary={s.name} meta={s.kind === "display" ? "Kitchen display" : "POS station"} /> },
-    { key: "brand_id", header: "Brand", sortable: true, sortValue: (s) => (s.brand_id ? brandName.get(s.brand_id) : ""), render: (s) => <span className="text-ink-2">{s.brand_id ? brandName.get(s.brand_id) ?? "Unknown brand" : "Any brand"}</span> },
+    { key: "name", header: "Name", sortable: true, isRowHeader: true, width: "1.4fr", render: (s) => (
+        // The Home screen column says POS or kitchen display; a pill only for an archived station.
+        <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 font-medium text-ink [overflow-wrap:anywhere]">
+          {s.name}
+          {s.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : null}
+        </span>
+      ) },
+    // One brand would repeat on every row: the column shows only when there is a brand to tell apart.
+    ...(brands.length > 1 ? [{ key: "brand_id", header: "Brand", sortable: true, sortValue: (s: Station) => (s.brand_id ? brandName.get(s.brand_id) : ""), render: (s: Station) => <span className="text-ink-2">{s.brand_id ? (brandName.get(s.brand_id) ?? "Unknown brand") : "—"}</span> } satisfies DataTableColumn<Station>] : []),
     { key: "pay_before_firing", header: "Pay before sending", sortable: true, render: (s) => (s.pay_before_firing ? "Yes" : "—") },
     { key: "seats_enabled", header: "Seats", sortable: true, render: (s) => (s.seats_enabled ? "On" : "Off") },
     { key: "home", header: "Home screen", sortable: true, render: (s) => (s.kind === "display" ? (s.display_destination_ids.length ? "Kitchen display (/kds)" : <StatusDot status="alert" label="Kitchen display · shows nothing until a destination is ticked" />) : (HOME_LABEL[s.home] ?? s.home)) },
@@ -80,37 +89,14 @@ export function StationsView({
       sortable: true,
       render: (s) => (s.paired ? <StatusDot status="paid" label={s.device_label ? `Paired · ${s.device_label}` : "Paired"} /> : <Pill size="sm" tone="neutral">Not paired</Pill>),
     },
-    {
-      key: "archived",
-      header: "Status",
-      sortable: true,
-      sortValue: (s) => (s.archived ? 1 : 0),
-      render: (s) => (s.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <Pill size="sm" tone="paid">Active</Pill>),
-    },
   ];
 
-  const scopedOutlet = outlets.find((o) => o.id === scope.outletId) ?? null;
 
   return (
     <>
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-4">
-          {scopedOutlet ? (
-            <p className="min-h-11 py-2.5">
-              <span className="text-ink-2">Outlet </span>
-              <span className="text-ink">{scopedOutlet.name}</span>
-              <span className="text-caption text-ink-2"> · from the scope picker</span>
-            </p>
-          ) : (
-            <Select
-              aria-label="Outlet"
-              variant="toolbar" size="sm"
-              items={outlets.map((o) => ({ id: o.id, label: o.name }))}
-              selectedKey={outletId}
-              onSelectionChange={setOutletId}
-              placeholder="Choose an outlet"
-            />
-          )}
+          <OutletChoice outlets={outlets} scope={scope} outletId={outletId} onChange={setOutletId} />
           <Switch isSelected={showArchived} onChange={setShowArchived} className="min-h-11 py-0">
             Show archived
           </Switch>
@@ -139,14 +125,17 @@ export function StationsView({
       )}
       <InlineError error={stations.error} className="mt-4" />
 
-      {outletId ? <StationSheet state={sheet} outletId={outletId} brands={brands} onClose={() => setSheet(null)} /> : null}
+      {outletId ? <StationSheet state={sheet} live={sheet?.mode === "edit" ? stations.data?.find((s) => s.id === sheet.station.id) : undefined} outletId={outletId} brandName={brands.filter((b) => !b.archived).length > 1 ? (brandName.get(outlets.find((o) => o.id === outletId)?.brand_id ?? "") ?? null) : null} onClose={() => setSheet(null)} /> : null}
     </>
   );
 }
 
-function StationSheet({ state, outletId, brands, onClose }: { state: SheetState; outletId: string; brands: Brand[]; onClose: () => void }) {
+function StationSheet({ state, live, outletId, brandName, onClose }: { state: SheetState; live: Station | undefined; outletId: string; /** The outlet's brand, which every station of the outlet is on; null when the merchant has one brand. */ brandName: string | null; onClose: () => void }) {
   const qc = useQueryClient();
   const station = state?.mode === "edit" ? state.station : null;
+  // The subtitle follows the stations list, which the pairing panel refreshes while a code is out, so it says Paired
+  // once the iPad pairs. The form keeps the station it was opened with.
+  const now = live ?? station;
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(station) });
   const reset = form.reset;
   useEffect(() => {
@@ -159,6 +148,7 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
   };
 
   const kind = form.watch("kind");
+  const destinationIds = form.watch("display_destination_ids");
   const destinations = useQuery({
     queryKey: ["display-destinations", outletId],
     queryFn: () => req(api.GET("/v1/display-destinations", { params: { query: { outlet_id: outletId } } })).then((r) => r.data),
@@ -169,7 +159,7 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
     mutationFn: async (v) => {
       const display = v.kind === "display";
       // A display shows destinations and has no menu or service settings of its own.
-      const body = display ? { name: v.name.trim(), display_destination_ids: v.display_destination_ids } : { name: v.name.trim(), brand_id: v.brand_id === NONE ? null : v.brand_id, pay_before_firing: v.pay_before_firing, seats_enabled: v.seats_enabled, home: v.home };
+      const body = display ? { name: v.name.trim(), display_destination_ids: v.display_destination_ids } : { name: v.name.trim(), pay_before_firing: v.pay_before_firing, seats_enabled: v.seats_enabled, home: v.home };
       const res = station
         ? await req(api.PATCH("/v1/stations/{id}", { params: { path: { id: station.id } }, body }))
         : await req(api.POST("/v1/stations", { body: { ...body, kind: v.kind, outlet_id: outletId } }));
@@ -197,16 +187,15 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
       onOpenChange={(open) => !open && onClose()}
       isDismissable={!busy}
       title={station ? station.name : "New station"}
+      // The pairing status stays here: the Pairing panel below says only the moment a device pairs.
       description={
-        station ? (
-          station.paired ? (
-            <StatusDot status="paid" label={station.device_label ? `Paired · ${station.device_label}` : "Paired"} />
+        now ? (
+          now.paired ? (
+            <StatusDot status="paid" label={now.device_label ? `Paired · ${now.device_label}` : "Paired"} />
           ) : (
-            <StatusDot status="neutral" label="Not paired. Issue a pairing code below." muted />
+            <StatusDot status="neutral" label="Not paired" muted />
           )
-        ) : (
-          "A station is one iPad at the counter or on the floor, or a kitchen display."
-        )
+        ) : undefined
       }
       footer={
         <>
@@ -231,7 +220,7 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
           </p>
         ) : null}
         <SheetSection>
-          <RhfTextField control={form.control} name="name" label="Name" placeholder="Counter 1" autoFocus={!station} />
+          <RhfTextField control={form.control} name="name" label="Name" isRequired placeholder="Counter 1" autoFocus={!station} />
           {station ? null : (
             <RhfSelect
               control={form.control}
@@ -245,23 +234,18 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
           )}
         </SheetSection>
         {kind === "display" ? (
-          <SheetSection title="Kitchen display" hint="The display shows the tickets routed to these destinations. Set their routing in Printing › Printers.">
-            <RhfCheckboxGroup control={form.control} name="display_destination_ids" label="Destinations" options={(destinations.data ?? []).map((d) => ({ id: d.id, label: d.name }))} emptyHint={destinations.isPending ? "Loading the destinations…" : "No display destinations at this outlet yet. Add one in Printing › Printers."} description="Tick at least one: a kitchen display with none shows no tickets." />
+          <SheetSection title="Kitchen display">
+            <RhfCheckboxGroup control={form.control} name="display_destination_ids" label="Destinations" options={(destinations.data ?? []).map((d) => ({ id: d.id, label: d.name }))} emptyHint={destinations.isPending ? "Loading the destinations…" : "No display destinations at this outlet yet. Add one in Printing › Printers."} description={destinationIds.length === 0 ? "Tick at least one: a kitchen display with none shows no tickets." : undefined} />
           </SheetSection>
         ) : (
           <>
             <SheetSection>
-              <RhfSelect
-                control={form.control}
-                name="brand_id"
-                label="Brand"
-                items={[{ id: NONE, label: "Any brand", description: "The station uses the outlet's menu as configured." }, ...brands.map((b) => ({ id: b.id, label: b.name }))]}
-              />
+              {/* Not a choice: the outlet belongs to one brand, and so does everything under it. */}
+              {brandName ? <FieldText label="Brand">{brandName}</FieldText> : null}
               <RhfSelect
                 control={form.control}
                 name="home"
                 label="Home screen"
-                description="Where the station opens after sign-in."
                 items={[
                   { id: "floor", label: "Floor plan", description: "Dine-in stations." },
                   { id: "takeaway", label: "New takeaway order", description: "Counter stations." },
@@ -272,14 +256,15 @@ function StationSheet({ state, outletId, brands, onClose }: { state: SheetState;
               <RhfSwitch control={form.control} name="pay_before_firing" description="An order sent from this station, of any type, goes to the kitchen only once it is paid in full. QR orders from guests’ phones are not held. For counters and kiosks.">
                 Pay before sending
               </RhfSwitch>
-              <RhfSwitch control={form.control} name="seats_enabled" description="Shows the seat strip so lines can be assigned to guests.">
+              <RhfSwitch control={form.control} name="seats_enabled">
                 Seats
               </RhfSwitch>
             </SheetSection>
           </>
         )}
+        {/* How pairing works is said with the code, once one is issued. */}
         {station ? (
-          <SheetSection title="Pairing" hint={station.kind === "display" ? "A screen becomes this display by opening /kds and entering a one-time code. The code expires in 10 minutes." : "An iPad becomes this station by entering a one-time code. The code expires in 10 minutes."}>
+          <SheetSection title="Pairing">
             <PairingPanel station={station} />
           </SheetSection>
         ) : null}

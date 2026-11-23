@@ -167,6 +167,22 @@ describe("legacy importer", () => {
 });
 
 describe("money review: importer amounts", () => {
+  it("a new outlet is not put on an archived brand", async () => {
+    const C = await seedMerchant(db.sql, "Charlie");
+    const closed = await call<{ data: { id: string } }>("POST", "/v1/brands", { token: C.admin.token, body: { name: "Closed brand", legacy_id: "OLD" } });
+    expect(closed.status).toBe(201);
+    expect((await call("PATCH", `/v1/brands/${closed.body.data.id}`, { token: C.admin.token, body: { archived: true } })).status).toBe(200);
+    const m = { files: [{ name: "outlets.csv", entity: "outlets", columns: { legacy_id: "Outlet ID", name: "Outlet Name", brand_legacy_id: "Brand" } }] };
+    const f = { "outlets.csv": "Outlet ID,Outlet Name,Brand\nO-OLD,On the closed brand,OLD\n" };
+    const r = await call<{ data: Job }>("POST", "/v1/imports", { token: C.admin.token, body: { mapping: m, files: f, dry_run: false } });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    await runQueuedImports();
+    const job = await call<{ data: Job }>("GET", `/v1/imports/${r.body.data.id}`, { token: C.admin.token });
+    expect(job.body.data.report!.entities.outlets!.rejected.map((x) => x.reason)).toEqual(["brand OLD is archived: restore it in Settings > Brands, or name another brand"]);
+    const [n] = await db.sql<{ n: number }[]>`select count(*)::int as n from outlets where name = 'On the closed brand'`;
+    expect(n!.n).toBe(0);
+  });
+
   it("a modifier price override that is not an amount refuses the row instead of silently using the product's price", async () => {
     const B = await seedMerchant(db.sql, "Bravo");
     const f = {

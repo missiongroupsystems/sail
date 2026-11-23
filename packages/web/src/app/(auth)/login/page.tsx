@@ -39,7 +39,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="font-heading text-[24px] leading-[1.25] font-semibold tracking-[-0.02em] text-ink">Back office</h1>
-        <p className="mt-2 text-[14px] leading-5 text-ink-2">{params.expired ? "Your session ended. Sign in again to continue." : "Use the email on your staff record."}</p>
+        {/* Only an ended session needs a line here; the Email field says what to type. */}
+        {params.expired ? <p className="mt-2 text-[14px] leading-5 text-ink-2">Your session ended. Sign in again to continue.</p> : null}
       </div>
       <LoginForm mode={mode} nextPath={safeNext(params.next)} />
     </div>

@@ -1,14 +1,16 @@
+import { randomUUID } from "node:crypto";
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { AmountSchema, currencyExponent, TaxModeSchema, TaxRoundingSchema } from "@sail/shared";
-import { db } from "../db/client.js";
-import { brands, displayDestinations, merchantSettings, merchants, outlets, staffSessions, stationPairingCodes, stations } from "../db/schema/index.js";
+import { db, tx } from "../db/client.js";
+import { withEveryOutlet } from "../db/every-outlet.js";
+import { brands, channelLinks, displayDestinations, merchantSettings, merchants, orders, outlets, staffSessions, stationPairingCodes, stations } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { dataResponse, defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted } from "../lib/openapi.js";
 import { appendEvent } from "../lib/events.js";
 import { recordAudit } from "../lib/audit.js";
-import { outletVisible } from "../auth/principal.js";
+import { brandScopeFor, outletScopeFor, outletVisible } from "../auth/principal.js";
 import { isCashRoundingIncrement, isValidLocale, isValidTimeZone, validDenominations } from "../lib/locale.js";
 
 /* ---- Schemas ----------------------------------------------------------- */
@@ -68,6 +70,8 @@ const HoursSchema = z.record(z.string(), z.array(z.tuple([z.string(), z.string()
 export const OutletSchema = z.object({
   id: z.string(),
   name: z.string(),
+  /** The one brand the outlet trades as. Its stations, channels and orders carry the same brand. */
+  brand_id: z.string(),
   address: z.string().nullable(),
   phone: z.string().nullable(),
   business_registration_no: z.string().nullable(),
@@ -81,6 +85,7 @@ export const OutletSchema = z.object({
 const OutletInput = z.object({
   id: z.uuid().optional(),
   name: z.string().trim().min(1),
+  brand_id: z.uuid().describe("The brand this outlet trades as. An outlet has exactly one; it can change only while the outlet has no orders."),
   address: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
   business_registration_no: z.string().nullable().optional(),
@@ -108,6 +113,8 @@ export const StationSchema = z.object({
   /** The kitchen display destinations a display station shows. */
   display_destination_ids: z.array(z.string()),
   paired: z.boolean(),
+  /** When a device last paired with the station; it stays after an unpair. */
+  paired_at: z.string().nullable(),
   device_label: untrusted(z.string().nullable()),
   archived: z.boolean(),
 });
@@ -133,6 +140,7 @@ export const toBrand = (b: typeof brands.$inferSelect) => ({ id: b.id, name: b.n
 export const toOutlet = (o: typeof outlets.$inferSelect) => ({
   id: o.id,
   name: o.name,
+  brand_id: o.brandId,
   address: o.address,
   phone: o.phone,
   business_registration_no: o.businessRegistrationNo,
@@ -157,6 +165,7 @@ export const toStation = (s: typeof stations.$inferSelect) => ({
   kind: s.kind,
   display_destination_ids: s.displayDestinationIds,
   paired: s.tokenHash != null,
+  paired_at: s.pairedAt?.toISOString() ?? null,
   device_label: s.deviceLabel,
   archived: s.archivedAt != null,
 });
@@ -195,6 +204,24 @@ async function assertDestinations(st: typeof stations.$inferSelect) {
 }
 
 /* ---- Routes -------------------------------------------------------------- */
+
+function stationBrandIsOutlets() {
+  return AppError.validation("A station is on its outlet's brand", { remedy: "Leave brand_id out, or send the outlet's brand. To sell another brand, add the station at one of that brand's outlets.", details: { field: "brand_id" } });
+}
+
+/** Locks an outlet's stations, then the outlet, and reads its brand again. */
+async function lockOutletWithStations(merchantId: string, outletId: string) {
+  await db().select({ id: stations.id }).from(stations).where(eq(stations.outletId, outletId)).orderBy(asc(stations.id)).for("update");
+  const [locked] = await db().select({ brandId: outlets.brandId }).from(outlets).where(and(eq(outlets.id, outletId), eq(outlets.merchantId, merchantId))).limit(1).for("update");
+  if (!locked) throw AppError.notFound("outlet", outletId);
+  return locked;
+}
+
+/** The brand is one of this merchant's and not archived; any other id fails as an unknown one does. */
+async function merchantBrand(merchantId: string, brandId: string) {
+  const [brand] = await db().select({ id: brands.id }).from(brands).where(and(eq(brands.id, brandId), eq(brands.merchantId, merchantId), isNull(brands.archivedAt))).limit(1);
+  if (!brand) throw AppError.notFound("brand", brandId);
+}
 
 export function orgRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "merchants.get", method: "get", path: "/v1/merchant", tags: ["organisation"], responses: { 200: jsonResponse(dataResponse(MerchantSchema)), ...errorResponses } }, async (c) => {
@@ -264,7 +291,10 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "brands.list", method: "get", path: "/v1/brands", tags: ["organisation"], request: { query: z.object({ include_archived: z.enum(["true", "false"]).optional() }) }, responses: { 200: jsonResponse(listResponse(BrandSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const q = c.req.valid("query");
-    const where = q.include_archived === "true" ? eq(brands.merchantId, p.merchantId) : and(eq(brands.merchantId, p.merchantId), isNull(brands.archivedAt));
+    // Someone limited to some brands is offered those brands only: the scope picker, the forms and the lists never
+    // name a brand they cannot use.
+    const scope = brandScopeFor(p);
+    const where = and(eq(brands.merchantId, p.merchantId), q.include_archived === "true" ? undefined : isNull(brands.archivedAt), scope === "*" ? undefined : inArray(brands.id, scope.split(",")));
     const rows = await db().select().from(brands).where(where).orderBy(asc(brands.name));
     return c.json({ data: rows.map(toBrand), next_cursor: null }, 200);
   });
@@ -272,6 +302,8 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "brands.create", method: "post", path: "/v1/brands", tags: ["organisation"], request: { body: jsonBody(BrandInput) }, responses: { 201: jsonResponse(mutationResponse(BrandSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const body = c.req.valid("json");
+    // Someone limited to some brands could not see or use a brand they add (it is outside their scope): refused.
+    if (brandScopeFor(p) !== "*") throw new AppError("permission_denied", "You work for some brands only, so you cannot add one", { remedy: "Ask someone who works for every brand to add it, and to give you that brand too." });
     const [row] = await db().insert(brands).values({ id: body.id, merchantId: p.merchantId, name: body.name, accentColor: body.accent_color ?? null, displayFont: body.display_font ?? null, logoUrl: body.logo_url ?? null, legacyId: body.legacy_id ?? null }).returning();
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "brand.created", aggregate: { kind: "brand", id: row!.id }, operationId: "brands.create", payload: toBrand(row!), correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
     await recordAudit(p, { action: "brands.create", targetKind: "brand", targetId: row!.id, details: { name: row!.name } });
@@ -283,6 +315,14 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
     const { id } = c.req.valid("param");
     const body = c.req.valid("json");
     if (Object.keys(body).length === 0) throw AppError.validation("Nothing to update");
+    // A brand outside the caller's scope is not theirs to change, and is not listed to them: it answers as a missing one.
+    const scope = brandScopeFor(p);
+    if (scope !== "*" && !scope.split(",").includes(id)) throw AppError.notFound("brand", id);
+    // An archived brand leaves the back office's scope, so its outlets would trade on with nobody able to see them.
+    if (body.archived === true) {
+      const live = await withEveryOutlet(() => db().select({ id: outlets.id }).from(outlets).where(and(eq(outlets.merchantId, p.merchantId), eq(outlets.brandId, id), isNull(outlets.archivedAt))).limit(1));
+      if (live.length > 0) throw new AppError("state_conflict", "This brand still has outlets, so it cannot be archived", { remedy: "Archive or move its outlets first.", details: { reason: "brand_has_outlets", field: "archived" } });
+    }
     const [row] = await db()
       .update(brands)
       .set({
@@ -302,10 +342,10 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
   });
 
   /* Outlets */
-  defineOp(app, { op: "outlets.list", method: "get", path: "/v1/outlets", tags: ["organisation"], request: { query: z.object({ include_archived: z.enum(["true", "false"]).optional() }) }, responses: { 200: jsonResponse(listResponse(OutletSchema)), ...errorResponses } }, async (c) => {
+  defineOp(app, { op: "outlets.list", method: "get", path: "/v1/outlets", tags: ["organisation"], request: { query: z.object({ include_archived: z.enum(["true", "false"]).optional(), brand_id: z.uuid().optional().describe("Only this brand's outlets.") }) }, responses: { 200: jsonResponse(listResponse(OutletSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const q = c.req.valid("query");
-    const where = q.include_archived === "true" ? eq(outlets.merchantId, p.merchantId) : and(eq(outlets.merchantId, p.merchantId), isNull(outlets.archivedAt));
+    const where = and(eq(outlets.merchantId, p.merchantId), q.include_archived === "true" ? undefined : isNull(outlets.archivedAt), q.brand_id ? eq(outlets.brandId, q.brand_id) : undefined);
     // RLS already limits the rows to the caller's outlet scope.
     const rows = await db().select().from(outlets).where(where).orderBy(asc(outlets.name));
     return c.json({ data: rows.map(toOutlet), next_cursor: null }, 200);
@@ -314,9 +354,19 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "outlets.create", method: "post", path: "/v1/outlets", tags: ["organisation"], request: { body: jsonBody(OutletInput) }, responses: { 201: jsonResponse(mutationResponse(OutletSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const body = c.req.valid("json");
+    await merchantBrand(p.merchantId, body.brand_id);
+    const id = body.id ?? randomUUID();
+    // Someone limited to some brands has, as outlet scope, those brands' outlets as they were when the request began.
+    // Unless they are also limited to some outlets, an outlet they add of one of their brands joins that scope, so the
+    // insert can read its own row back. An outlet of another brand is refused.
+    const brandScope = brandScopeFor(p);
+    if (brandScope !== "*") {
+      if (!brandScope.split(",").includes(body.brand_id)) throw new AppError("permission_denied", "You work for other brands than this one", { remedy: "Add the outlet under one of your brands, or ask someone who works for every brand.", details: { field: "brand_id" } });
+      if (outletScopeFor(p) === "*") await tx()`select set_config('app.current_outlets', current_setting('app.current_outlets', true) || ',' || ${id}, true)`;
+    }
     const [row] = await db()
       .insert(outlets)
-      .values({ id: body.id, merchantId: p.merchantId, name: body.name, address: body.address ?? null, phone: body.phone ?? null, businessRegistrationNo: body.business_registration_no ?? null, taxRegistrationNo: body.tax_registration_no ?? null, businessDayCutoff: body.business_day_cutoff ?? null, hours: body.hours ?? {}, serviceThemeFrom: body.service_theme_from ?? "18:00", legacyId: body.legacy_id ?? null })
+      .values({ id, merchantId: p.merchantId, brandId: body.brand_id, name: body.name, address: body.address ?? null, phone: body.phone ?? null, businessRegistrationNo: body.business_registration_no ?? null, taxRegistrationNo: body.tax_registration_no ?? null, businessDayCutoff: body.business_day_cutoff ?? null, hours: body.hours ?? {}, serviceThemeFrom: body.service_theme_from ?? "18:00", legacyId: body.legacy_id ?? null })
       .returning();
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: null, type: "outlet.created", aggregate: { kind: "outlet", id: row!.id }, operationId: "outlets.create", payload: toOutlet(row!), correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey") }, p);
     await recordAudit(p, { action: "outlets.create", targetKind: "outlet", targetId: row!.id, details: { name: row!.name } });
@@ -328,9 +378,49 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
     const { id } = c.req.valid("param");
     const body = c.req.valid("json");
     if (Object.keys(body).length === 0) throw AppError.validation("Nothing to update");
+    if (body.archived === false) {
+      // An outlet comes back on a brand that is not archived. An archived outlet may still hold an enabled channel of another brand (the upgrade to one brand per outlet left
+      // those at archived outlets as they were). Trading again with it would sell that brand's menu here.
+      const [stray, brandArchived] = await withEveryOutlet(async () => {
+        const [o] = await db().select({ brandId: outlets.brandId, archivedAt: outlets.archivedAt }).from(outlets).where(and(eq(outlets.id, id), eq(outlets.merchantId, p.merchantId))).limit(1);
+        if (!o?.archivedAt) return [undefined, false] as const;
+        const brandId = body.brand_id ?? o.brandId;
+        const [b] = await db().select({ archivedAt: brands.archivedAt }).from(brands).where(eq(brands.id, brandId)).limit(1);
+        return [(await db().select({ id: channelLinks.id }).from(channelLinks).where(and(eq(channelLinks.outletId, id), eq(channelLinks.enabled, true), ne(channelLinks.brandId, brandId))).limit(1))[0], b?.archivedAt != null] as const;
+      });
+      // An outlet of an archived brand would trade on outside everyone's brand scope.
+      if (brandArchived) throw new AppError("state_conflict", "This outlet's brand is archived, so the outlet cannot be restored", { remedy: "Restore the brand first in Settings › Brands, or restore the outlet onto another brand.", details: { reason: "brand_archived", field: "archived" } });
+      if (stray) throw new AppError("state_conflict", "This outlet has an enabled channel of another brand, so it cannot be restored", { remedy: "Disable the other brand's channels at this outlet in Settings › Channels, then restore it.", details: { reason: "outlet_has_channels_of_another_brand", field: "archived" } });
+    }
+    if (body.brand_id !== undefined) {
+      const [seen] = await db().select({ brandId: outlets.brandId }).from(outlets).where(and(eq(outlets.id, id), eq(outlets.merchantId, p.merchantId))).limit(1);
+      if (!seen) throw AppError.notFound("outlet", id);
+      // Locked only for a real change: an order, station or channel being written at this outlet commits first (and is
+      // seen below) or waits and finds the new brand (the brand trigger reads the outlet with a key share lock). The
+      // outlet's stations are locked before the outlet, in the order a station's own request takes them (its station,
+      // then the outlet), so the two wait for each other instead of deadlocking.
+      const current = seen.brandId === body.brand_id ? seen : await lockOutletWithStations(p.merchantId, id);
+      if (current.brandId !== body.brand_id) {
+        await merchantBrand(p.merchantId, body.brand_id);
+        // Both checks see every brand's rows: an order or channel of a brand the caller cannot see holds the outlet too.
+        const [traded, linked] = await withEveryOutlet(async () => [
+          // Orders keep the brand they were taken under, and so do their reports: an outlet that has traded stays with its brand.
+          (await db().select({ id: orders.id }).from(orders).where(eq(orders.outletId, id)).limit(1))[0],
+          // A channel sells one of its brand's menus, so it cannot simply follow the outlet to another brand.
+          (await db().select({ id: channelLinks.id }).from(channelLinks).where(eq(channelLinks.outletId, id)).limit(1))[0],
+        ]);
+        if (traded) throw new AppError("state_conflict", "This outlet has orders, so its brand cannot change", { remedy: "Add a new outlet for the other brand, and archive this one when it is no longer used.", details: { reason: "outlet_has_orders", field: "brand_id" } });
+        if (linked) throw new AppError("state_conflict", "This outlet has channels set up for its brand, so its brand cannot change", { remedy: "Add a new outlet for the other brand, and archive this one.", details: { reason: "outlet_has_channels", field: "brand_id" } });
+        // The outlet first, then what is under it: the database keeps a station on its outlet's brand.
+        await db().update(outlets).set({ brandId: body.brand_id }).where(and(eq(outlets.id, id), eq(outlets.merchantId, p.merchantId)));
+        await db().update(stations).set({ brandId: body.brand_id }).where(eq(stations.outletId, id));
+      }
+    }
     const [row] = await db()
       .update(outlets)
       .set({
+        // Reads the row back when only an unchanged brand was sent.
+        ...(body.brand_id !== undefined && { brandId: body.brand_id }),
         ...(body.name !== undefined && { name: body.name }),
         ...(body.address !== undefined && { address: body.address }),
         ...(body.phone !== undefined && { phone: body.phone }),
@@ -363,11 +453,13 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "stations.create", method: "post", path: "/v1/stations", tags: ["organisation"], request: { body: jsonBody(StationInput) }, responses: { 201: jsonResponse(mutationResponse(StationSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const body = c.req.valid("json");
-    const [outlet] = await db().select({ id: outlets.id }).from(outlets).where(eq(outlets.id, body.outlet_id)).limit(1);
+    const [outlet] = await db().select({ id: outlets.id, brandId: outlets.brandId }).from(outlets).where(eq(outlets.id, body.outlet_id)).limit(1);
     if (!outlet) throw AppError.notFound("outlet", body.outlet_id);
+    // A station is on its outlet's brand, whatever its kind. brand_id may be left out; another brand is refused.
+    if (body.brand_id && body.brand_id !== outlet.brandId) throw stationBrandIsOutlets();
     const [row] = await db()
       .insert(stations)
-      .values({ id: body.id, merchantId: p.merchantId, outletId: body.outlet_id, name: body.name, brandId: body.brand_id ?? null, layoutId: body.layout_id ?? null, payBeforeFiring: body.pay_before_firing ?? false, seatsEnabled: body.seats_enabled ?? false, home: body.home ?? "floor", receiptPrinterId: body.receipt_printer_id ?? null, textSize: body.text_size ?? "standard", kind: body.kind ?? "pos", displayDestinationIds: body.display_destination_ids ?? [] })
+      .values({ id: body.id, merchantId: p.merchantId, outletId: body.outlet_id, name: body.name, brandId: outlet.brandId, layoutId: body.layout_id ?? null, payBeforeFiring: body.pay_before_firing ?? false, seatsEnabled: body.seats_enabled ?? false, home: body.home ?? "floor", receiptPrinterId: body.receipt_printer_id ?? null, textSize: body.text_size ?? "standard", kind: body.kind ?? "pos", displayDestinationIds: body.display_destination_ids ?? [] })
       .returning();
     await assertDestinations(row!);
     const ev = await appendEvent({ merchantId: p.merchantId, outletId: body.outlet_id, type: "station.created", aggregate: { kind: "station", id: row!.id }, operationId: "stations.create", payload: toStation(row!), correlationId: c.get("correlationId"), idempotencyKey: c.get("idempotencyKey"), businessDay: await businessDayInputs(p.merchantId, body.outlet_id) }, p);
@@ -378,8 +470,17 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
   defineOp(app, { op: "stations.update", method: "patch", path: "/v1/stations/{id}", tags: ["organisation"], request: { params: z.object({ id: z.uuid() }), body: jsonBody(StationPatch) }, responses: { 200: jsonResponse(mutationResponse(StationSchema)), ...errorResponses } }, async (c) => {
     const p = c.get("principal");
     const { id } = c.req.valid("param");
-    const body = c.req.valid("json");
+    const sent = c.req.valid("json");
+    // A null brand is taken as left out: an older back office sends it for a kitchen display, whose brand is now its outlet's.
+    const body: Omit<typeof sent, "brand_id"> & { brand_id?: string } = { ...sent, brand_id: sent.brand_id ?? undefined };
+    if (body.brand_id === undefined) delete body.brand_id;
     if (Object.keys(body).length === 0) throw AppError.validation("Nothing to update");
+    // A station's brand is its outlet's: it changes with the outlet (outlets.update), never on its own.
+    if (body.brand_id !== undefined) {
+      const [current] = await db().select({ outletBrand: outlets.brandId }).from(stations).innerJoin(outlets, eq(outlets.id, stations.outletId)).where(and(eq(stations.id, id), eq(stations.merchantId, p.merchantId))).limit(1);
+      if (!current) throw AppError.notFound("station", id);
+      if (body.brand_id !== current.outletBrand) throw stationBrandIsOutlets();
+    }
     const [row] = await db()
       .update(stations)
       .set({

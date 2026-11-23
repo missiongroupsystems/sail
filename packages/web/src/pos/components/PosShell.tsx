@@ -71,6 +71,14 @@ function SignedInShell() {
   const stationNames = useMemo(() => new Map((stations.data ?? []).map((s) => [s.id, s.name])), [stations.data]);
   const tablesById = useMemo(() => new Map((floor.data?.snapshot.tables ?? []).map((t) => [t.id, t])), [floor.data]);
 
+  // A station is on its outlet's brand (an iPad paired before that rule may still hold a station without one, and an
+  // outlet with no orders can change brand). The stations list, refreshed by the outlet's stream, brings the brand here
+  // without a new sign-in.
+  const fresh = stations.data?.find((s) => s.id === station.id);
+  useEffect(() => {
+    if (fresh?.brand_id && fresh.brand_id !== station.brand_id) useStationStore.getState().updateStation({ ...station, brand_id: fresh.brand_id });
+  }, [fresh?.brand_id, station]);
+
   useOutletStream(station.outlet_id, true, stationNames);
   useThemeScheduler(outlet.data?.service_theme_from);
   useWakeLock(true);

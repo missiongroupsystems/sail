@@ -35,7 +35,13 @@ export async function runMigrations(url: string, opts: { log?: (msg: string) => 
     const before = await appliedCount(sql);
     log(`drift check: ${before} of ${journal.entries.length} migrations applied`);
     if (before > journal.entries.length) throw new Error(`database has ${before} migrations but the journal has ${journal.entries.length}: the deployed code is older than the database`);
-    await migrate(drizzle(sql), { migrationsFolder: folder });
+    await migrate(drizzle(sql), { migrationsFolder: folder }).catch((e: unknown) => {
+      // drizzle's message is "Failed query:" and the whole statement; what the migration itself says is in the cause.
+      // Say that first, with its hint, so the person deploying reads the reason and what to do.
+      const cause = (e as { cause?: unknown }).cause as { message?: string; hint?: string } | undefined;
+      if (!cause?.message) throw e;
+      throw new Error(cause.hint ? `${cause.message}\nHINT: ${cause.hint}` : cause.message, { cause: e });
+    });
     const after = await appliedCount(sql);
     log(`drift check: ${after} of ${journal.entries.length} migrations applied`);
     if (after !== journal.entries.length) throw new Error(`after migrating, ${after} applied but journal has ${journal.entries.length}`);

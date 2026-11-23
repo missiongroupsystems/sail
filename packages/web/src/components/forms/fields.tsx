@@ -45,7 +45,8 @@ export function RhfSelect<T extends FieldValues>({
         <Select
           {...props}
           name={field.name}
-          selectedKey={(field.value as string | null | undefined) ?? null}
+          // A value that is none of the items (a choice not made yet) shows the placeholder.
+          selectedKey={props.items.some((i) => i.id === field.value) ? (field.value as string) : null}
           onSelectionChange={(key) => field.onChange(key)}
           isInvalid={!!fieldState.error}
           errorMessage={fieldState.error?.message}
@@ -100,15 +101,15 @@ export function RhfCheckboxGroup<T extends FieldValues>({
 }
 
 /**
- * A labelled group of fields inside a sheet. `variant="label"` gives the title as a small upper-case section label
- * ("TOTALS", "BILLS") instead of a line heading; the default is unchanged.
+ * A labelled group of fields inside a sheet. `variant="label"` gives the title as a quiet sentence-case section label
+ * ("Totals", "Bills") instead of a line heading; the default is unchanged.
  */
 export function FormSection({ title, hint, children, variant = "heading" }: { title?: ReactNode; hint?: ReactNode; children: ReactNode; variant?: "heading" | "label" }) {
   return (
     <section className="flex flex-col gap-4">
       {title ? (
         <div>
-          <h3 className={variant === "label" ? "text-[12px] leading-4 font-semibold tracking-[0.06em] text-ink-3 uppercase" : "text-line text-ink"}>{title}</h3>
+          <h3 className={variant === "label" ? "text-[13px] leading-[1.4] font-medium text-ink-2" : "text-line text-ink"}>{title}</h3>
           {hint ? <p className="text-caption text-ink-2">{hint}</p> : null}
         </div>
       ) : null}

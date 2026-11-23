@@ -1,4 +1,4 @@
-import { devLocal, expect, keyIn, pairAndSignIn, register, test, WEB } from "./fixtures";
+import { devLocal, enterPairingCode, expect, keyIn, pairAndSignIn, register, test, WEB } from "./fixtures";
 
 const MANAGER_PIN = "222222"; // Mia Manager (dev seed): sends, and voids a sent line without asking anyone
 
@@ -23,8 +23,7 @@ test("kitchen display: pair a screen, see a sent order, bump it to ready on the 
     watch.allow({ status: 400, url: /\/v1\/stations\/pair$/, why: "the POS is given the display's code on purpose" });
     await page.goto(`${WEB}/pos`);
     await expect(page.getByRole("heading", { name: "Pair this iPad to a station" })).toBeVisible({ timeout: 180_000 });
-    await keyIn(page, "PIN keys", data.code);
-    await page.getByRole("button", { name: "Pair this iPad" }).click();
+    await enterPairingCode(page, data.code);
     await expect(page.getByText("This code is for a kitchen display station")).toBeVisible();
     await kds.goto(`${WEB}/kds`);
     await expect(kds.getByRole("heading", { name: "Pair this screen to a station" })).toBeVisible({ timeout: 180_000 });

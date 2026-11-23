@@ -92,11 +92,26 @@ export const requestPipeline: MiddlewareHandler<AppEnv> = async (c, next) => {
   }
 };
 
+/**
+ * The outlet scope a brand scope leaves: an outlet belongs to one brand, so someone limited to some brands is limited
+ * to those brands' outlets, and through the outlet policies to everything under them (tables, shifts, printers).
+ * Read before the request's role is set. No outlet left is the empty scope, which matches no outlet; never '*'.
+ */
+async function outletScopeWithinBrands(t: RequestTx, principal: Principal): Promise<string> {
+  const scope = outletScopeFor(principal);
+  const brandScope = brandScopeFor(principal);
+  if (brandScope === "*") return scope;
+  const rows = await t.sql<{ id: string }[]>`select id from outlets where merchant_id = ${principal.merchantId} and brand_id = any(${brandScope.split(",")}::uuid[])`;
+  const own = scope === "*" ? null : new Set(scope.split(","));
+  return rows.map((r) => r.id).filter((id) => !own || own.has(id)).join(",");
+}
+
 export async function applyRls(t: RequestTx, principal: Principal) {
   const role = principalRole(principal);
+  const outletScope = await outletScopeWithinBrands(t, principal);
   await t.sql`select
     set_config('app.current_merchant', ${principal.merchantId}, true),
-    set_config('app.current_outlets', ${outletScopeFor(principal)}, true),
+    set_config('app.current_outlets', ${outletScope}, true),
     set_config('app.current_brands', ${brandScopeFor(principal)}, true),
     set_config('app.current_principal', ${principal.id}, true),
     set_config('app.current_principal_type', ${principal.type}, true),

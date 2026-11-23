@@ -31,6 +31,7 @@ test("POS: pair, sign in, shift, order, split, cash and card, refund with a mana
 
   await test.step("seat a free table for two", async () => {
     await page.getByRole("button", { name: "Floor", exact: true }).click();
+    await expect(page.getByRole("list", { name: "Table status legend" })).toBeVisible();
     await page.getByRole("button", { name: /^Table \d+, Free/ }).first().click();
     await page.getByRole("button", { name: "2 guests", exact: true }).click();
     await expect(page.getByRole("navigation", { name: "Menu sections" })).toBeVisible();
@@ -76,20 +77,18 @@ test("POS: pair, sign in, shift, order, split, cash and card, refund with a mana
     await expect(page.getByRole("button", { name: /^Pay \$/ })).toBeEnabled();
   });
 
-  await test.step("split the bill evenly in two; the header names each share", async () => {
+  await test.step("split the bill evenly in two; each bill's Pay names its own share", async () => {
     await page.getByRole("button", { name: "Bill", exact: true }).click();
     await page.getByRole("group", { name: "Split mode" }).getByRole("button", { name: "Even" }).click();
     await expect(page.getByRole("region", { name: "Bill 2" })).toBeVisible();
     await expect(page.getByText("Order total", { exact: true })).toBeVisible();
-    // Three ways the total does not divide evenly. The header must name every distinct share, not the first bill's for all.
+    // Three ways the total does not divide evenly. Each bill's Pay names its own share, not the first bill's for all.
     const bills = page.getByRole("group", { name: "Number of bills" });
     await bills.getByRole("button", { name: "3 bills" }).click();
     await expect(page.getByRole("region", { name: "Bill 3" })).toBeVisible();
     await expect(page.getByText("Checking…")).toHaveCount(0);
     const shares = await Promise.all(["Bill 1", "Bill 2", "Bill 3"].map(async (b) => (await page.getByRole("region", { name: b }).getByRole("button", { name: /^Pay / }).innerText()).match(/\$[\d,.]+/)![0]));
     expect(new Set(shares).size, `shares ${shares.join(", ")}`).toBeGreaterThan(1);
-    const header = page.getByText(/ each$/);
-    for (const share of new Set(shares)) await expect(header).toContainText(share);
     await bills.getByRole("button", { name: "2 bills" }).click();
     await expect(page.getByRole("region", { name: "Bill 3" })).toHaveCount(0);
     await expect(page.getByText("Checking…")).toHaveCount(0);

@@ -77,8 +77,8 @@ export function Frame({ sub, children }: FrameProps) {
 }
 
 function StationName() {
-  const { outlet, station } = usePos();
-  return <p className="mx-auto hidden min-w-0 truncate px-3 text-[14px] text-ink-2 min-[1000px]:block">{[outlet?.name, station.name].filter(Boolean).join(" · ")}</p>;
+  const { station } = usePos();
+  return <p className="mx-auto hidden min-w-0 truncate px-3 text-[14px] text-ink-2 min-[1000px]:block">{station.name}</p>;
 }
 
 /** The second row of an inner screen: back, title and meta at left, actions at right. */

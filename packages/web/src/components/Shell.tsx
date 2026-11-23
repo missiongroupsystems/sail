@@ -11,6 +11,7 @@ import type { Scope, Theme } from "@/lib/cookies";
 import { roleAtLeast } from "@sail/shared";
 import { SECTIONS } from "@/lib/nav";
 import { ScopeControl } from "./ScopeControl";
+import { ShownOutletProvider } from "./ShownOutlet";
 import { UserMenu } from "./UserMenu";
 
 function NavLink({ href, children, ...rest }: NavLinkProps) {
@@ -27,6 +28,8 @@ export type ShellProps = {
   brands: Brand[];
   outlets: Outlet[];
   scope: Scope;
+  /** The scope came from a link's outlet of another brand; it is remembered as if chosen. */
+  followed?: boolean;
   theme: Theme;
   children: ReactNode;
 };
@@ -47,9 +50,10 @@ function Wordmark() {
  * The back-office frame: a 240px rail on the sunken grey (wordmark, scope, sections, then Open the
  * POS and the user menu at its foot) beside a white content sheet. No top bar.
  */
-export function Shell({ me, merchant, brands, outlets, scope, theme, children }: ShellProps) {
+export function Shell({ me, merchant, brands, outlets, scope, followed, theme, children }: ShellProps) {
   const pathname = usePathname();
   return (
+    <ShownOutletProvider>
     <div data-scale="compact" className="flex min-h-dvh bg-surface text-body">
       <OfficeSurface />
       <aside className="sticky top-0 h-dvh shrink-0 print:hidden">
@@ -60,7 +64,7 @@ export function Shell({ me, merchant, brands, outlets, scope, theme, children }:
           header={
             <>
               <Wordmark />
-              <ScopeControl merchantName={merchant.name} brands={brands} outlets={outlets} scope={scope} />
+              <ScopeControl merchantName={merchant.name} brands={brands} outlets={outlets} scope={scope} followed={followed} />
             </>
           }
           footer={
@@ -76,5 +80,6 @@ export function Shell({ me, merchant, brands, outlets, scope, theme, children }:
       </aside>
       <main className="mx-auto w-full min-w-0 max-w-[1600px] flex-1 px-4 pt-7 pb-10 sm:px-8">{children}</main>
     </div>
+    </ShownOutletProvider>
   );
 }

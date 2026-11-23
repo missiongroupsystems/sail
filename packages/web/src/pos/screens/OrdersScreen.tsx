@@ -17,7 +17,12 @@ import { useUiStore } from "../state/ui";
 
 const STATUS_TONE: Record<string, BadgeTone> = { open: "seated", fired: "sent", ready: "paid", out_for_delivery: "bill", completed: "paid", cancelled: "neutral" };
 
-/** Orders: takeaway, pickup and delivery, sorted by ready-by, with New order and Ready; and today's closed orders for Refund and Reopen. */
+const TYPE_FILTERS: ("all" | OrderType)[] = ["all", "dine_in", "takeaway", "pickup", "delivery"];
+
+/**
+ * Orders: every open order of the outlet (tables included, so an order opened on the floor is found here too), with a
+ * type filter, New order and Ready; and today's closed orders for Refund and Reopen.
+ */
 export function OrdersScreen() {
   const { clock } = useLocale();
   const api = useApi();
@@ -33,10 +38,12 @@ export function OrdersScreen() {
   const notify = useUiStore((s) => s.notify);
   const [creating, setCreating] = useState<OrderType | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [type, setType] = useState<"all" | OrderType>("all");
 
-  const openList = useMemo(() => (orders.data ?? []).filter((o) => o.order_type !== "dine_in"), [orders.data]);
+  const openList = useMemo(() => orders.data ?? [], [orders.data]);
   const closedList = useMemo(() => (today.data ?? []).filter((o) => o.status === "completed" || o.status === "cancelled").sort((a, b) => (b.completed_at ?? b.cancelled_at ?? b.opened_at).localeCompare(a.completed_at ?? a.cancelled_at ?? a.opened_at)), [today.data]);
-  const list = view === "open" ? openList : closedList;
+  const inView = view === "open" ? openList : closedList;
+  const list = useMemo(() => (type === "all" ? inView : inView.filter((o) => o.order_type === type)), [inView, type]);
   const query = view === "open" ? orders : today;
 
   const ready = async (o: OrderSnapshot) => {
@@ -61,7 +68,6 @@ export function OrdersScreen() {
             setView(id as "open" | "today");
             if (id === "today") setSeenToday(true);
           }} />
-          {view === "today" ? <span className="text-body text-ink-2">Tap a done order for Refund, Reopen and receipts.</span> : null}
           <span className="flex-1" />
           <MenuTrigger>
             <Button variant="primary" size="lg" isDisabled={offline}>
@@ -81,6 +87,14 @@ export function OrdersScreen() {
             </Menu>
           </MenuTrigger>
         </div>
+        <SegmentedControl
+          aria-label="Order type"
+          className="shrink-0 self-start"
+          // A type with no orders in view is left out; the one picked stays, so its empty state can say so.
+          options={TYPE_FILTERS.filter((t) => t === "all" || t === type || !query.data || inView.some((o) => o.order_type === t)).map((t) => ({ id: t, label: t === "all" ? "All" : ORDER_TYPE_LABEL[t], count: query.data ? (t === "all" ? inView.length : inView.filter((o) => o.order_type === t).length) : undefined }))}
+          selectedId={type}
+          onSelect={(id) => setType(id as "all" | OrderType)}
+        />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-panel border border-rule bg-surface">
         {/* Column heads over the rows. */}
         <div aria-hidden className="flex shrink-0 items-center gap-4 border-b border-rule px-5 py-3 text-[13px] font-semibold text-ink-2">
@@ -95,7 +109,13 @@ export function OrdersScreen() {
         {query.isLoading && !query.data ? <Skeleton lines={4} /> : null}
         {query.data && list.length === 0 ? (
           <div className="flex flex-1 items-center justify-center">
-            {view === "open" ? <EmptyState variant="centred" icon={ShoppingBag} title="No open orders" hint="Tap New order to start a takeaway, pickup or delivery." /> : <EmptyState variant="centred" icon={ClipboardList} title="Nothing closed yet today" hint="Paid and cancelled orders from this business day appear here." />}
+            {type !== "all" && inView.length > 0 ? (
+              <EmptyState variant="centred" icon={view === "open" ? ShoppingBag : ClipboardList} title={view === "open" ? `No open ${ORDER_TYPE_LABEL[type].toLowerCase()} orders` : `No ${ORDER_TYPE_LABEL[type].toLowerCase()} orders closed yet today`} hint="Tap All to see every order." />
+            ) : view === "open" ? (
+              <EmptyState variant="centred" icon={ShoppingBag} title="No open orders" hint="Orders opened on a table appear here. Tap New order to start a takeaway, pickup or delivery." />
+            ) : (
+              <EmptyState variant="centred" icon={ClipboardList} title="Nothing closed yet today" />
+            )}
           </div>
         ) : null}
         <ul className="flex flex-col">
@@ -129,7 +149,7 @@ export function OrdersScreen() {
                   </span>
                   <Money cents={o.status === "completed" ? o.paid_total : o.totals.total} size="line" className="w-24 shrink-0 text-right" />
                 </AriaButton>
-                {o.status === "fired" ? (
+                {o.status === "fired" && o.order_type !== "dine_in" ? (
                   <Button size="lg" variant="secondary" isDisabled={offline || busy === o.id} isPending={busy === o.id} onPress={() => void ready(o)} className="min-h-16 w-[92px]">
                     {offline ? "Offline" : "Ready"}
                   </Button>

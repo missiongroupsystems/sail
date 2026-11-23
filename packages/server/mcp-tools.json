@@ -367,6 +367,10 @@
             "type": "string",
             "format": "uuid"
           },
+          "brand_id": {
+            "type": "string",
+            "format": "uuid"
+          },
           "from": {
             "type": "string",
             "format": "date-time"
@@ -575,7 +579,7 @@
         "variance_reason",
         "void_reason"
       ],
-      "description": "List brands\n\nBrands of the caller's merchant.\n\nRisk tier T0. Needs role server or above.",
+      "description": "List brands\n\nBrands of the caller's merchant; for someone limited to some brands, those brands only.\n\nRisk tier T0. Needs role server or above.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -4349,6 +4353,11 @@
               "true",
               "false"
             ]
+          },
+          "brand_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Only this brand's outlets."
           }
         },
         "required": [],

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { Page } from "@playwright/test";
 import { writeFileSync } from "node:fs";
-import { API, devLocal, expect, register, SG_ADMIN, signInToken, test, WEB } from "./fixtures";
+import { API, devLocal, expect, leaveToday, register, SG_ADMIN, signInToken, test, WEB } from "./fixtures";
 
 /** The final office round's checks (back office: reports, import and export, pickers, archive, sign-in). */
 
@@ -66,20 +66,20 @@ test.describe("O1 (A P3): every report downloads as CSV with the screen's figure
     const { tender } = await paidOrder();
     await signIn(page);
     await page.goto(`${WEB}/reports/sales`);
-    await expect(page.getByRole("grid", { name: "Sales by tender" }).getByRole("rowheader", { name: tender })).toBeVisible();
+    await expect(page.getByRole("grid", { name: "Sales by payment method" }).getByRole("rowheader", { name: tender })).toBeVisible();
     await expect(page).toHaveURL(/from=\d{4}-\d{2}-\d{2}&to=\d{4}-\d{2}-\d{2}/);
     const from = new URL(page.url()).searchParams.get("from")!;
 
     const collected = await page.locator("dl > div", { has: page.locator("dt", { hasText: /^Collected$/ }) }).first().locator("dd").innerText();
-    const tenderAmount = await page.getByRole("grid", { name: "Sales by tender" }).getByRole("row", { name: new RegExp(tender) }).getByRole("gridcell").nth(1).innerText();
+    const tenderAmount = await page.getByRole("grid", { name: "Sales by payment method" }).getByRole("row", { name: new RegExp(tender) }).getByRole("gridcell").nth(1).innerText();
     const { name, rows } = await downloadCsv(page);
     expect(name).toBe(`sales-${from}-${from}.csv`);
     expect(rows[0]).toEqual(["Sales"]);
     expect(rows).toContainEqual(["From", from]);
     expect(rows).toContainEqual(["Currency", "SGD"]);
     expect(rows).toContainEqual(["Collected", plain(collected)]);
-    const header = rows.findIndex((r) => r[0] === "Tender");
-    expect(rows[header]).toEqual(expect.arrayContaining(["Tender", "Payments", "Amount"]));
+    const header = rows.findIndex((r) => r[0] === "Payment method");
+    expect(rows[header]).toEqual(expect.arrayContaining(["Payment method", "Payments", "Amount"]));
     const tenderRow = rows.slice(header + 1).find((r) => r[0] === tender)!;
     expect(tenderRow[rows[header]!.indexOf("Amount")]).toBe(plain(tenderAmount));
     const byDay = rows.findIndex((r) => r[0] === "Business date");
@@ -299,6 +299,8 @@ test("O7 (A P14): an open order is in the address, so a refresh keeps it and the
 test("O10 (round 8 check 8): Sign out pressed before the page has hydrated still signs out; the rail's menus say they are not ready", async ({ page, watch }) => {
   test.setTimeout(300_000);
   await signIn(page);
+  // Today left open reloads itself on a dev server when the next route compiles, which cuts the goto below short.
+  await leaveToday(page);
   // The page's scripts never arrive: what is pressed is the server-rendered markup alone.
   watch.allowConsole(/./);
   await page.route(/\/_next\/static\/.*\.js/, (route) => route.abort());
@@ -337,15 +339,18 @@ test.describe("O9 (A P17–P20): small back-office fixes", () => {
     await expect(page.getByText("Adding staff needs an Admin.")).toBeVisible();
   });
 
-  test("Tenders show their order as 1, 2, 3 and how each is taken; Products sort by column with steady widths; the cutoff help reads the right way", async ({ page }) => {
+  test("Payment methods show their order as 1, 2, 3 and how each is taken; Products sort by column with steady widths; the cutoff help reads the right way", async ({ page }) => {
     test.setTimeout(300_000);
     await signIn(page);
-    await page.goto(`${WEB}/settings/tenders`);
+    await page.goto(`${WEB}/settings/payment-methods`);
     const orders = await page.getByRole("grid").getByRole("row").locator("td, th").first().allInnerTexts();
     expect(orders).toBeTruthy();
     const firstCells = await page.getByRole("grid").getByRole("row").evaluateAll((rows) => rows.slice(1).map((r) => r.querySelector("td,th")?.textContent?.trim()));
     expect(firstCells.slice(0, 3)).toEqual(["1", "2", "3"]);
-    await expect(page.getByRole("grid")).toContainText("Recorded by hand");
+    // How each is taken is in its row's columns: "Card" is keyed in, "Card (terminal)" goes to the provider (A P19).
+    const grid0 = page.getByRole("grid");
+    await expect(grid0.getByRole("row").filter({ has: page.getByRole("rowheader", { name: "Card", exact: true }) })).toContainText("amount shown to key in");
+    await expect(grid0.getByRole("row").filter({ hasText: "Card (terminal)" })).toContainText("Sent to");
 
     await page.goto(`${WEB}/menu/products`);
     const grid = page.getByRole("grid", { name: "Products" });

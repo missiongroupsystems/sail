@@ -55,7 +55,7 @@ test("a QR round rejected on the order it opened: the phone asks for no payment,
       await phone.reload();
       await expect(phone.getByRole("heading", { name: "Order not accepted" })).toBeVisible();
       await expect(phone.getByText("Pay at the counter or ask your server for the bill.")).toHaveCount(0);
-      await phone.getByRole("button", { name: /^Our table/ }).click();
+      await phone.getByRole("button", { name: /^See the whole table/ }).click();
       await expect(phone.getByText("Pay at the counter or ask your server for the bill.")).toHaveCount(0);
       await shot(phone, test.info().outputPath("phone-our-table.png"));
     });
@@ -75,7 +75,7 @@ test("a QR round rejected on the order it opened: the phone asks for no payment,
     await expect(drawer.getByText("Unpaid", { exact: true })).toHaveCount(0);
     await expect(drawer.getByRole("button", { name: /^Refund/ })).toHaveCount(0);
     // Its only round was turned down, so it never went to the kitchen (it read "0 rounds", as if nothing was sent).
-    await expect(drawer.getByText(/· not sent to the kitchen$/)).toBeVisible();
+    await expect(drawer.getByText(/^not sent to the kitchen$/)).toBeVisible();
     await expect(drawer.getByText(/\b\d+ rounds?\b/)).toHaveCount(0);
     await shot(page, test.info().outputPath("drawer.png"));
   });
@@ -105,7 +105,8 @@ test("a cancelled order whose payment was reversed still shows that bill and pay
   const drawer = page.getByRole("dialog");
   await expect(drawer.getByText("Bill 1", { exact: true })).toBeVisible();
   await expect(drawer.getByText(/· reversed/)).toBeVisible();
-  await expect(drawer.getByText(/· sent to the kitchen once$/)).toBeVisible();
+  // Sent once is the usual case, so the header says nothing about it; it must not read as never sent.
+  await expect(drawer.getByText(/not sent to the kitchen/)).toHaveCount(0);
   await expect(drawer.getByText("Unpaid", { exact: true })).toHaveCount(0);
   await expect(drawer.getByRole("button", { name: /^Refund/ })).toHaveCount(0);
   await drawer.getByText("Bill 1", { exact: true }).scrollIntoViewIfNeeded();

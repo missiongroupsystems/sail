@@ -69,6 +69,18 @@ const bootEu = empty ? null : await bootstrapMerchant(url, {
   locale: "de-DE",
 });
 
+// A third merchant for the brand checks: a group with two brands, each with outlets of its own. Only the group, its
+// first brand, outlet and Admin are made here; the second brand and the other outlets are made by whoever tries it
+// (the end-to-end spec brand-scope.spec.ts does, through the register).
+const bootTwin = empty ? null : await bootstrapMerchant(url, {
+  merchantName: "Twin Group",
+  brandName: "Harbour Noodles",
+  outletName: "Harbour Noodles · Pier",
+  admin: { name: "Tess Admin", email: "admin.twin@sail.local", pin: "123456", password: DEMO_PASSWORD },
+  preset: "sg",
+  timeZone: "Asia/Singapore",
+});
+
 if (boot && bootEu) {
   const seed = await import("./dev-seed.js");
   await seed.devSeed(url, boot);
@@ -88,7 +100,7 @@ serve({ fetch: app.fetch, port }, () => {
     console.log(`\nSail API (local, empty) ready on http://localhost:${port}: open the back office to run first-run setup.\n`);
     return;
   }
-  const info = { api: `http://localhost:${port}`, payment_simulator: sim.url, database_url: url, admin_email: "admin@sail.local", admin_password: DEMO_PASSWORD, admin_pin: "123456", ...boot, eu: { admin_email: "admin.eu@sail.local", admin_password: DEMO_PASSWORD, admin_pin: "123456", ...bootEu } };
+  const info = { api: `http://localhost:${port}`, payment_simulator: sim.url, database_url: url, admin_email: "admin@sail.local", admin_password: DEMO_PASSWORD, admin_pin: "123456", ...boot, eu: { admin_email: "admin.eu@sail.local", admin_password: DEMO_PASSWORD, admin_pin: "123456", ...bootEu }, twin: { admin_email: "admin.twin@sail.local", admin_password: DEMO_PASSWORD, admin_pin: "123456", ...bootTwin } };
   writeFileSync(join(process.cwd(), ".dev-local.json"), JSON.stringify(info, null, 2));
   console.log("\nSail API (local) ready:\n" + JSON.stringify(info, null, 2) + "\n\nGet a sign-in token: curl -X POST localhost:" + port + `/v1/auth/sign-in -H 'content-type: application/json' -d '{"email":"admin@sail.local","password":"${DEMO_PASSWORD}"}'\n`);
 });

@@ -86,8 +86,13 @@ export function StatusView({ session, orderView, loading, error, lastRoundId, st
 
         {highlighted ? (
           <section aria-label="Latest order" className="flex flex-col rounded-sheet border border-rule bg-surface">
-            <RoundHead title="Your order" at={`Sent ${clock(highlighted.submitted_at)}`} pill={removed(highlighted) ? removedPill : stagePill(roundStage(highlighted, order), session.hold_orders)} />
-            {removed(highlighted) ? null : <RoundTimeline stage={roundStage(highlighted, order)} rejectReason={highlighted.reject_reason} holdOrders={session.hold_orders} className="border-t border-rule-subtle px-4 py-3" />}
+            {/* The banner says when it was sent and the timeline where it is: the card carries no head of its own to say it again.
+                A round staff removed has neither, so its head and Removed pill say so. */}
+            {removed(highlighted) ? (
+              <RoundHead title={highlighted.guest_name ?? "Your order"} at={`Sent ${clock(highlighted.submitted_at)}`} pill={removedPill} />
+            ) : (
+              <RoundTimeline stage={roundStage(highlighted, order)} rejectReason={highlighted.reject_reason} holdOrders={session.hold_orders} className="px-4 py-3" />
+            )}
             <div className="border-t border-rule-subtle px-4">
               <RoundLines round={highlighted} lines={linesOf(highlighted)} />
             </div>
@@ -119,10 +124,7 @@ export function StatusView({ session, orderView, loading, error, lastRoundId, st
           className="press flex min-h-14 w-full items-center gap-3 rounded-sheet border border-rule px-4 py-3 text-left outline-none transition-colors duration-[120ms] data-[hovered]:bg-surface-2 data-[pressed]:bg-surface-2 data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus"
         >
           <Icon icon={ReceiptText} size={20} className="text-ink-2" />
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="text-[15.5px] font-medium text-ink">Our table</span>
-            <span className="text-[13.5px] text-ink-2">See everything the table has ordered</span>
-          </span>
+          <span className="min-w-0 flex-1 text-[15.5px] font-medium text-ink">See the whole table&rsquo;s order</span>
           <Icon icon={ChevronRight} size={20} className="text-ink-3" />
         </AriaButton>
         {streamStatus === "reconnecting" ? (

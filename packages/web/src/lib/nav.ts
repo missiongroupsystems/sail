@@ -41,7 +41,7 @@ export const SETTINGS_TABS = [
   { href: "/settings/brands", label: "Brands" },
   { href: "/settings/stations", label: "Stations" },
   { href: "/settings/channels", label: "Channels" },
-  { href: "/settings/tenders", label: "Tenders" },
+  { href: "/settings/payment-methods", label: "Payment methods" },
   { href: "/settings/tax", label: "Tax classes" },
   { href: "/settings/void-reasons", label: "Void reasons" },
   { href: "/settings/merchant", label: "Merchant" },

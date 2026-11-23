@@ -1,11 +1,6 @@
-import { req } from "@/lib/api";
-import { orSignIn, requireApi } from "@/lib/api.server";
-import { TendersView } from "./TendersView";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "Tenders" };
-
-export default async function TendersPage() {
-  const api = await requireApi();
-  const tenders = await orSignIn(req(api.GET("/v1/tender-types", { params: { query: { include_archived: "true" } } })));
-  return <TendersView initialTenders={tenders.data} />;
+/** The screen is called Payment methods now; old links and bookmarks still arrive. */
+export default function TendersRedirect() {
+  redirect("/settings/payment-methods");
 }

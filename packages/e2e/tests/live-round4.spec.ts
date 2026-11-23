@@ -49,11 +49,13 @@ test("L1: Manager and Server open a table's details on Floor & QR, read only, an
     const name = (await table.getAttribute("aria-label"))!.split(",")[0]!;
     await table.click();
     await expect(table).toHaveAttribute("aria-pressed", "true");
-    const panel = page.locator("aside").filter({ has: page.getByRole("button", { name: "Save table" }) });
+    const panel = page.locator("aside").filter({ has: page.getByRole("button", { name: /^(Archive|Restore)$/ }) });
     await expect(panel.getByRole("heading", { name })).toBeVisible();
     await expect(panel.getByRole("textbox", { name: "Name" })).toHaveValue(name);
     await expect(panel.getByRole("textbox", { name: "Name" })).toBeDisabled();
-    await expect(panel.getByRole("button", { name: "Save table" })).toBeDisabled();
+    // Changes apply as they are made (polish-pilot A5), so there is no Save table; a role that may not edit gets no "Saved" line either.
+    await expect(panel.getByRole("button", { name: "Save table" })).toHaveCount(0);
+    await expect(panel.getByText("Saved", { exact: true })).toHaveCount(0);
     await expect(panel.getByRole("button", { name: /^(Archive|Restore)$/ })).toBeDisabled();
     await expect(panel.getByText("Changing this needs an Admin.")).toBeVisible();
     // The table's code itself is an Admin's (it lets a phone order at the table): the panel says where it is instead.
@@ -64,15 +66,16 @@ test("L1: Manager and Server open a table's details on Floor & QR, read only, an
   // An Admin still gets the editing intro and live fields.
   await officeSignIn(page);
   await page.goto(`${WEB}/floor`);
-  await expect(page.getByText(/Drag a table to move it; select it to edit/)).toBeVisible();
+  await expect(page.getByText(/Select a table to edit it\. Drag to move/)).toBeVisible();
   await page.getByRole("application", { name: /Floor plan/ }).getByRole("button").first().click();
-  await expect(page.getByRole("button", { name: "Save table" })).toBeVisible();
   await expect(page.locator("aside").getByRole("textbox", { name: "Name" })).toBeEnabled();
+  // Nothing has been saved yet, so the panel has no status line until a change goes through.
+  await expect(page.locator("aside").getByText("Saved", { exact: true })).toHaveCount(0);
 });
 
 // Pages with a record sheet behind a row, and the merchant settings form. One test per role, as in live-round3: the
 // four roles in one test needed a fifteen-minute timeout on the development servers.
-const SHEET_PAGES = ["/team", "/menu/products", "/menu/categories", "/menu/modifiers", "/menu/availability", "/pricing/rules", "/pricing/customers", "/printing/printers", "/settings/outlets", "/settings/brands", "/settings/stations", "/settings/tax", "/settings/tenders", "/settings/void-reasons", "/settings/channels"];
+const SHEET_PAGES = ["/team", "/menu/products", "/menu/categories", "/menu/modifiers", "/menu/availability", "/pricing/rules", "/pricing/customers", "/printing/printers", "/settings/outlets", "/settings/brands", "/settings/stations", "/settings/tax", "/settings/payment-methods", "/settings/void-reasons", "/settings/channels"];
 for (const role of ["manager", "finance", "cashier", "server"] as const) {
   test(`L3 (${role}): for a ${role}, a sheet or form whose Save is off has every field off too`, async ({ page, watch }) => {
     test.setTimeout(300_000);

@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { API, devLocal, expect, GUEST, keyIn, pairAndSignIn, register, SG_ADMIN, signInToken, test, WEB } from "./fixtures";
+import { API, devLocal, enterPairingCode, expect, GUEST, keyIn, pairAndSignIn, register, SG_ADMIN, signInToken, test, WEB } from "./fixtures";
 
 /**
  * The third live test's findings that show on screen (testers S and R, `a5de0c0`). The finding's id is in each test's
@@ -76,7 +76,9 @@ test("R new 2: the POS Z-report keeps one basis per block, with the back office'
   await page.getByRole("navigation", { name: "Destinations" }).getByRole("button", { name: "Shift", exact: true }).click();
   const figures = page.getByRole("region", { name: "Z-report · figures so far" });
   await expect(figures.getByRole("heading", { name: "Sales", exact: true })).toBeVisible();
-  await expect(figures.getByRole("heading", { name: /^Refunds · \d+$/ })).toBeVisible();
+  // The block's count is in its Refunded row, not again in the heading.
+  await expect(figures.getByRole("heading", { name: "Refunds", exact: true })).toBeVisible();
+  await expect(figures.getByText(/^Refunded \(\d+ refunds?\)$/)).toBeVisible();
   await expect(figures.getByRole("heading", { name: "After refunds", exact: true })).toBeVisible();
   for (const label of ["Net before refunds", "Collected", "Net refunded", "Net sales", "Collected after refunds"]) await expect(figures.getByText(label, { exact: true })).toBeVisible();
   // Net sales sits in the after-refunds block only, never beside the before-refunds Collected.
@@ -85,7 +87,7 @@ test("R new 2: the POS Z-report keeps one basis per block, with the back office'
 
 // One test per role: the four roles walk about 30 pages each, which in one test took the whole ten minutes on the
 // development servers and failed CI by timeout.
-const ROLE_PAGES = ["/today", "/orders", "/floor", "/menu/products", "/menu/categories", "/menu/modifiers", "/menu/menus", "/menu/availability", "/menu/sold-out", "/menu/import", "/pricing/rules", "/pricing/customers", "/printing/printers", "/printing/jobs", "/printing/relays", "/settings/merchant", "/settings/outlets", "/settings/brands", "/settings/stations", "/settings/tax", "/settings/tenders", "/settings/void-reasons", "/settings/channels", "/team"];
+const ROLE_PAGES = ["/today", "/orders", "/floor", "/menu/products", "/menu/categories", "/menu/modifiers", "/menu/menus", "/menu/availability", "/menu/sold-out", "/menu/import", "/pricing/rules", "/pricing/customers", "/printing/printers", "/printing/jobs", "/printing/relays", "/settings/merchant", "/settings/outlets", "/settings/brands", "/settings/stations", "/settings/tax", "/settings/payment-methods", "/settings/void-reasons", "/settings/channels", "/team"];
 for (const role of ["manager", "finance", "cashier", "server"] as const) {
   test(`R new 1, R new 3 (${role}): a ${role} meets no control that ends in a refusal${role === "server" ? ", and a Server's pricing rules finish loading" : ""}`, async ({ page, watch }) => {
     test.setTimeout(300_000);
@@ -183,8 +185,7 @@ test("S-3: Enter sends a PIN short of six digits, on the lock screen and on the 
   const code = (await register<{ data: { code: string } }>("POST", `/v1/stations/${stationId}/pairing-code`, {})).data.code;
   await page.goto(`${WEB}/pos`);
   await expect(page.getByRole("heading", { name: "Pair this iPad to a station" })).toBeVisible({ timeout: 180_000 });
-  await keyIn(page, "PIN keys", code);
-  await page.getByRole("button", { name: "Pair this iPad" }).click();
+  await enterPairingCode(page, code);
   await expect(page.getByRole("button", { name: "Pair this iPad again" })).toBeVisible();
   // A physical keyboard, as the tester used: four digits, then Enter.
   await page.locator("main").click({ position: { x: 5, y: 5 } });

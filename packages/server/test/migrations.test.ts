@@ -71,6 +71,8 @@ describe("a database at the last migration before the bigint change migrates for
         if (/^(CREATE OR REPLACE (FUNCTION|VIEW) |ALTER TABLE \w+ (DROP|ADD) CONSTRAINT )/.test(stmt)) return [];
         // A table a later migration creates is created for the seed and dropped again (laterTables below).
         if (/^CREATE TABLE "\w+"/.test(stmt)) return [];
+        // NOT NULL set on a column a later migration added (0057, after its backfill) goes with the column when it is dropped.
+        if (/^ALTER TABLE "\w+" ALTER COLUMN "\w+" SET NOT NULL;?$/.test(stmt)) return [];
         const m = /^ALTER TABLE "(\w+)" ADD COLUMN "(\w+)" ([^;]+);?$/.exec(stmt);
         // Constraints, triggers and functions change no column today's code reads, so the seed needs nothing undone for them.
         if (!m && !/\b(ADD|DROP|ALTER|RENAME)\s+COLUMN\b/i.test(stmt.replace(/^--.*$/gm, ""))) return [];

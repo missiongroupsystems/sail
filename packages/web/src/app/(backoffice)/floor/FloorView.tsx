@@ -3,7 +3,8 @@
 import { useConfirm } from "@/components/backoffice/Confirm";
 import { Button, Dialog, EmptyState, FieldsLocked, Icon, InlineError, PageHeader, Select, Switch, TextField, cx, useLocale, Pill } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Users } from "lucide-react";
 import { greyPill, greyPillAlert, SectionLabel } from "@/components/office/parts";
 import { serverFieldErrors } from "@/components/office/server-errors";
@@ -18,6 +19,8 @@ import { keys } from "@/lib/query";
 import { useSession } from "@/lib/session-context";
 import { useCan } from "@/lib/can";
 
+/** Every table change shares this key, so the last one to settle can be told apart from those still queued. */
+const PATCH_TABLE = ["floor-table-patch"];
 const COLS = 24;
 const ROWS = 14;
 const SHAPES = [
@@ -34,13 +37,24 @@ function clampTable(t: { x: number; y: number; w: number; h: number }) {
   return { x: Math.max(0, Math.min(COLS - w, t.x)), y: Math.max(0, Math.min(ROWS - h, t.y)), w, h };
 }
 
-/** The page's intro says what the signed-in role can do here: an Admin edits the plan, a role below reads it (L1). */
+type Box = { x: number; y: number; w: number; h: number };
+const overlaps = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/**
+ * Where a new table of w × h goes: the first place on the visible grid that touches no table already there. It looks
+ * along the plan's usual rhythm first (a column and a row of space between tables), then at every cell. A plan with no
+ * room left gets it in the top-left corner, selected, to be dragged or resized.
+ */
+export function freeCell(taken: Box[], w = 2, h = 2): { x: number; y: number } {
+  const free = (x: number, y: number) => x + w <= COLS && y + h <= ROWS && !taken.some((t) => overlaps({ x, y, w, h }, t));
+  for (const [dx, dy] of [[w + 1, h], [1, 1]] as const) for (let y = 0; y + h <= ROWS; y += dy) for (let x = 0; x + w <= COLS; x += dx) if (free(x, y)) return { x, y };
+  return { x: 0, y: 0 };
+}
+
+/** The page's intro is only for a role below Admin, to say why the plan does not move for them (L1); the editor's own panel teaches the gestures. */
 export function FloorIntro() {
   const canEdit = useCan("tables.update").ok;
-  const description = canEdit
-    ? "Areas and tables per outlet. Drag a table to move it; select it to edit. Download the QR sheet for the tables, or rotate one table's code."
-    : "Areas and tables per outlet. Select a table to see its name, seats and shape. The QR codes and their sheet need an Admin.";
-  return <PageHeader title="Floor & QR" description={description} />;
+  return <PageHeader title="Floor & QR" description={canEdit ? undefined : "Select a table to see its name, seats and shape. The QR codes and their sheet need an Admin."} />;
 }
 
 /** Floor plan editor (FloorCanvas / TableShape, editor variant). Grid units are what the API stores. */
@@ -75,6 +89,17 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
     initialData: outletId === initialOutletId ? initialTables : undefined,
   });
 
+  // Printed codes order nothing until the outlet has a Scan to order channel switched on: say so here, where the
+  // codes are printed, not only on the guest's phone.
+  const qrLinks = useQuery({
+    queryKey: ["channel-links", "scan_to_order", outletId ?? ""],
+    queryFn: () => req(api.GET("/v1/channel-links", { params: { query: { channel: "scan_to_order", outlet_id: outletId! } } })).then((r) => r.data),
+    enabled: outletId !== null,
+  });
+  const qrOff = outlet !== null && qrLinks.data !== undefined && !qrLinks.data.some((l) => l.enabled && l.outlet_id === outletId) && (tables.data ?? []).some((t) => !t.archived);
+  const qrOffNoteId = useId();
+  const qrOffNote = qrOff ? `The QR codes at ${outlet.name} do not take orders yet: the outlet has no Scan to order channel switched on. A guest who scans one is asked to speak to the staff.` : null;
+
   const sortedAreas = useMemo(() => (areas.data ?? []).slice().sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, locale)), [areas.data, locale]);
   const area = sortedAreas.find((a) => a.id === areaId) ?? sortedAreas[0] ?? null;
   const areaTables = useMemo(() => (tables.data ?? []).filter((t) => t.area_id === area?.id && (showArchived || !t.archived)), [tables.data, area, showArchived]);
@@ -89,21 +114,70 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
       setAreaDialog(null);
     },
   });
+  // A refused change stays on show for its table until those fields save, or the panel is back to the register's
+  // values; a later save of something else does not clear it.
+  const [refusals, setRefusals] = useState<Record<string, { error: ApiError; fields: string[] }>>({});
+  const settleRefusal = useCallback((id: string, fields: string[]) => {
+    setRefusals((all) => {
+      const left = all[id]?.fields.filter((f) => !fields.includes(f));
+      if (!left) return all;
+      const next = { ...all };
+      if (left.length) next[id] = { ...all[id]!, fields: left };
+      else delete next[id];
+      return next;
+    });
+  }, []);
+  // What the register last accepted for each table: a refused change goes back to this, not to the cache before it,
+  // which may hold an earlier change that was itself refused or is still on its way.
+  const accepted = useRef(new Map<string, Table>());
+  useEffect(() => {
+    if (qc.isMutating({ mutationKey: PATCH_TABLE }) === 0) for (const t of tables.data ?? []) accepted.current.set(t.id, t);
+  }, [tables.data, qc]);
   const patchTable = useMutation<{ data: Table }, ApiError, { id: string; body: TablePatch }>({
+    mutationKey: PATCH_TABLE,
+    // One change at a time, in the order made: typing and dragging send several, and a later one must not land first.
+    // (A scope is set per hook, not per call, so this queues every table's changes, which are small.)
+    scope: { id: "floor-table-patch" },
     mutationFn: ({ id, body }) => req(api.PATCH("/v1/tables/{id}", { params: { path: { id } }, body })),
-    onMutate: ({ id, body }) => {
-      // Lines may be optimistic: the table moves at once; the register's reply settles it.
-      qc.setQueryData<Table[]>(keys.tables(outletId ?? ""), (prev) => prev?.map((t) => (t.id === id ? { ...t, ...body, shape: body.shape ?? t.shape } : t)));
+    // A read still on its way would put the old table back over the change for a moment.
+    onMutate: () => qc.cancelQueries({ queryKey: keys.tables(outletId ?? "") }),
+    onError: (error, { id, body }) => {
+      const fields = Object.keys(body);
+      // The refused fields go back to the register's values, so the panel can tell its unsaved text from them.
+      const before = accepted.current.get(id);
+      if (before) qc.setQueryData<Table[]>(keys.tables(outletId ?? ""), (prev) => prev?.map((t) => (t.id === id ? { ...t, ...Object.fromEntries(fields.map((f) => [f, before[f as keyof Table]])) } : t)));
+      setRefusals((all) => ({ ...all, [id]: { error, fields: [...new Set([...(all[id]?.fields ?? []), ...fields])] } }));
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: keys.tables(outletId ?? "") }),
+    // A refused choice (shape, area, archived) shows the register's value again at once, so the table's next save that
+    // goes through ends it; a refused typed value is ended only by a save of that field.
+    onSuccess: (r, { id, body }) => {
+      accepted.current.set(r.data.id, r.data);
+      settleRefusal(id, [...Object.keys(body), "shape", "area_id", "archived"]);
+    },
+    // Read the plan again once the last queued change has settled: a read between two changes put the table back where
+    // the first left it, and rewrote the panel's position fields, until the second landed. This one still counts here.
+    onSettled: () => (qc.isMutating({ mutationKey: PATCH_TABLE }) === 1 ? qc.invalidateQueries({ queryKey: keys.tables(outletId ?? "") }) : undefined),
   });
+  /**
+   * A table change: the plan shows it at once, then it queues for the register. A queued mutation runs its onMutate only
+   * when the one before it settles, so the move is shown here, as it is made: a second drag while the first is still on
+   * its way no longer puts the table back where the first left it until the second starts.
+   */
+  const changeTable = (id: string, body: TablePatch) => {
+    void qc.cancelQueries({ queryKey: keys.tables(outletId ?? "") });
+    qc.setQueryData<Table[]>(keys.tables(outletId ?? ""), (prev) => prev?.map((t) => (t.id === id ? { ...t, ...body, shape: body.shape ?? t.shape } : t)));
+    patchTable.mutate({ id, body });
+  };
   const addTable = useMutation<{ data: Table }, ApiError>({
     mutationFn: () => {
-      const taken = new Set(areaTables.map((t) => `${t.x},${t.y}`));
-      let x = 0,
-        y = 0;
-      outer: for (y = 0; y < ROWS; y += 2) for (x = 0; x < COLS; x += 3) if (!taken.has(`${x},${y}`)) break outer;
-      return req(api.POST("/v1/tables", { body: { outlet_id: outletId!, area_id: area!.id, name: `T${areaTables.length + 1}`, seats: 4, shape: "rect", x, y, w: 2, h: 2 } }));
+      // Clear of every table on the plan, whatever its size and wherever it was dragged (the first free origin on a
+      // fixed lattice put a new table under a larger or moved one), and of the archived ones while they are shown.
+      const { x, y } = freeCell(areaTables);
+      // The next T number no table of the outlet has, so two areas do not both get a T1.
+      const names = new Set((tables.data ?? []).map((t) => t.name.trim().toLowerCase()));
+      let n = areaTables.length + 1;
+      while (names.has(`t${n}`)) n++;
+      return req(api.POST("/v1/tables", { body: { outlet_id: outletId!, area_id: area!.id, name: `T${n}`, seats: 4, shape: "rect", x, y, w: 2, h: 2 } }));
     },
     onSuccess: async (r) => {
       await invalidate();
@@ -135,11 +209,23 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
   const endDrag = () => {
     if (!drag) return;
     const { origin, current } = drag;
-    if (origin.x !== current.x || origin.y !== current.y || origin.w !== current.w || origin.h !== current.h) patchTable.mutate({ id: drag.id, body: current });
+    if (origin.x !== current.x || origin.y !== current.y || origin.w !== current.w || origin.h !== current.h) changeTable(drag.id, current);
     setDrag(null);
   };
 
-  useEffect(() => setSelected(null), [area?.id]);
+  // Another area starts with nothing selected, unless the selected table was just moved there: then the plan follows it.
+  const follow = useRef<string | null>(null);
+  useEffect(() => {
+    setSelected(follow.current);
+    follow.current = null;
+  }, [area?.id]);
+  const saveSelected = (t: Table, body: TablePatch) => {
+    if (body.area_id && body.area_id !== t.area_id) {
+      follow.current = t.id;
+      setAreaId(body.area_id);
+    }
+    changeTable(t.id, body);
+  };
 
   return (
     <>
@@ -151,7 +237,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
           </Switch>
         </div>
         <div className="flex flex-wrap items-start gap-2">
-          {outlet ? <QrSheetButton outletId={outlet.id} outletName={outlet.name} canRotate={admin} /> : null}
+          {outlet ? <QrSheetButton outletId={outlet.id} outletName={outlet.name} canRotate={admin} describedBy={qrOffNote ? qrOffNoteId : undefined} /> : null}
           {canCreate.ok ? (
             <Button size="sm" onPress={() => { setAreaName(""); setAreaDialog({ mode: "create" }); }} isDisabled={!outletId}>
             Add area
@@ -165,6 +251,15 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
         </div>
       </div>
 
+      {qrOffNote ? (
+        <p id={qrOffNoteId} role="alert" className="mb-4 rounded-panel bg-status-sent-tint px-4 py-3 text-[14px] text-ink">
+          {qrOffNote}{" "}
+          <Link href="/settings/channels" className="text-ink underline underline-offset-4">
+            Set it up in Settings › Channels
+          </Link>
+          .
+        </p>
+      ) : null}
       {outlets.length === 0 ? (
         <EmptyState title="No outlets yet" hint="A floor plan belongs to an outlet. Add an outlet first." />
       ) : sortedAreas.length === 0 ? (
@@ -230,7 +325,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
                       const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
                       if (d && !t.archived && canEditTable.ok) {
                         e.preventDefault();
-                        patchTable.mutate({ id: t.id, body: clampTable({ x: t.x + d[0]!, y: t.y + d[1]!, w: t.w, h: t.h }) });
+                        changeTable(t.id, clampTable({ x: t.x + d[0]!, y: t.y + d[1]!, w: t.w, h: t.h }));
                       }
                     }}
                     className={cx(
@@ -245,7 +340,7 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
                     style={{ left: `calc(${(pos.x / COLS) * 100}% + 3px)`, top: `calc(${(pos.y / ROWS) * 100}% + 3px)`, width: `calc(${(pos.w / COLS) * 100}% - 6px)`, height: `calc(${(pos.h / ROWS) * 100}% - 6px)` }}
                   >
                     <span className={cx("flex min-w-0 flex-col gap-1 overflow-hidden leading-none", t.shape === "round" && "items-center")}>
-                      <span className="truncate font-heading text-[clamp(10px,1.4vw,20px)] font-semibold">{t.name}</span>
+                      <span className="truncate font-heading text-[clamp(9px,1vw,20px)] font-semibold">{t.name}</span>
                       <span className="inline-flex items-center gap-1 text-[12px] font-medium text-ink-3 tabular max-sm:hidden">
                         <Icon icon={Users} size={12} />
                         {t.seats}
@@ -271,12 +366,13 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
           <aside className="flex flex-col gap-4 self-start rounded-panel border border-rule bg-surface p-4">
             <div className="flex items-start justify-between gap-3">
               <h2 className="min-w-0 font-heading text-[17px] leading-[1.3] font-semibold text-ink [overflow-wrap:anywhere]">{selectedTable ? selectedTable.name : "Table"}</h2>
-              {selectedTable ? selectedTable.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : <span className="text-[13px] text-ink-3 tabular">{selectedTable.seats} seats</span> : null}
+              {/* The seats are a field just below; the head marks only an archived table. */}
+              {selectedTable?.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : null}
             </div>
             {selectedTable ? (
-              <TablePanel key={selectedTable.id} table={selectedTable} areas={sortedAreas} onSave={(body) => patchTable.mutate({ id: selectedTable.id, body })} saving={patchTable.isPending} canRotateQr={admin} denied={canEditTable.reason} error={patchTable.variables?.id === selectedTable.id ? patchTable.error : null} />
+              <TablePanel key={selectedTable.id} table={selectedTable} areas={sortedAreas} onSave={(body) => saveSelected(selectedTable, body)} saving={patchTable.isPending && patchTable.variables?.id === selectedTable.id} canRotateQr={admin} denied={canEditTable.reason} refusal={refusals[selectedTable.id] ?? null} onSynced={(fields) => settleRefusal(selectedTable.id, fields)} />
             ) : (
-              <p className="text-[14px] text-ink-2">{canEditTable.ok ? "Select a table to edit its name, seats, shape and size, or to rotate its QR code. Drag it to move it; drag the corner to resize. Arrow keys nudge a focused table." : `Select a table to see its details. ${canEditTable.reason}`}</p>
+              <p className="text-[14px] text-ink-2">{canEditTable.ok ? "Select a table to edit it. Drag to move, drag a corner to resize; arrow keys nudge a focused table." : `Select a table to see its details. ${canEditTable.reason}`}</p>
             )}
           </aside>
         </div>
@@ -306,59 +402,118 @@ export function FloorView({ outlets, scope, initialOutletId, initialAreas, initi
   );
 }
 
-function TablePanel({ table, areas, onSave, saving, canRotateQr, denied, error }: { table: Table; areas: Area[]; onSave: (body: TablePatch) => void; saving: boolean; canRotateQr: boolean; denied: string | null; error: ApiError | null }) {
+/** How long after the last keystroke a typed change is sent, when the field has not been left first. */
+const TYPING_PAUSE_MS = 400;
+
+/**
+ * A table's details. Every change applies as it is made, as a drag on the plan does: a choice (shape, area) at once, a
+ * typed value when the field is left, on Enter, or after a short pause in typing. There is no Save button to forget.
+ * A value that cannot be used (no name, seats that are not a number) says so under its field and is not sent; a value
+ * the register refuses shows the register's reason there.
+ */
+function TablePanel({ table, areas, onSave, saving, canRotateQr, denied, refusal, onSynced }: { table: Table; areas: Area[]; onSave: (body: TablePatch) => void; saving: boolean; canRotateQr: boolean; denied: string | null; refusal: { error: ApiError; fields: string[] } | null; onSynced: (fields: string[]) => void }) {
   const confirm = useConfirm();
+  const error = refusal?.error ?? null;
+  // The status line appears with the first save: a table just selected has nothing saved to report.
+  const [saved, setSaved] = useState(false);
+  if (saving && !saved) setSaved(true);
   // A refusal that names a field (seats over the limit, a name) shows under that field as well as under the plan.
-  const fieldError = (name: string) => serverFieldErrors(error).find((e) => e.field === name)?.message;
+  const refused = (name: string) => serverFieldErrors(error).find((e) => e.field === name)?.message;
   const [name, setName] = useState(table.name);
   const [seats, setSeats] = useState(String(table.seats));
-  const [shape, setShape] = useState(table.shape);
-  const [areaId, setAreaId] = useState(table.area_id);
   const [geom, setGeom] = useState({ x: String(table.x), y: String(table.y), w: String(table.w), h: String(table.h) });
+  // A drag on the plan, or a position the grid had to pull back inside, shows in the fields.
   useEffect(() => setGeom({ x: String(table.x), y: String(table.y), w: String(table.w), h: String(table.h) }), [table.x, table.y, table.w, table.h]);
-  const int = (s: string) => (/^\d+$/.test(s) ? Number(s) : null);
-  const valid = name.trim() && int(seats) !== null && int(geom.x) !== null && int(geom.y) !== null && int(geom.w) !== null && int(geom.h) !== null;
-
-  const save = () => {
-    if (!valid || denied) return;
-    const g = clampTable({ x: int(geom.x)!, y: int(geom.y)!, w: int(geom.w)!, h: int(geom.h)! });
-    onSave({ name: name.trim(), seats: int(seats)!, shape: shape as "rect" | "round" | "square", area_id: areaId, ...g });
+  const int = (s: string) => (/^\d+$/.test(s.trim()) ? Number(s.trim()) : null);
+  const seatCount = int(seats);
+  const problem = {
+    name: name.trim() ? undefined : "Enter a name",
+    seats: seatCount === null ? "Enter a whole number" : seatCount < 1 || seatCount > 99 ? "From 1 to 99 seats" : undefined,
+    geom: int(geom.x) === null || int(geom.y) === null || !int(geom.w) || !int(geom.h) ? "Position and size are whole numbers; width and height at least 1." : undefined,
   };
+
+  // A refused field whose text is the register's value again (typed back, or the table moved back) has nothing left unsaved.
+  const shown: Record<string, string> = { name: name.trim(), seats: seats.trim(), ...geom };
+  const synced = refusal?.fields.filter((f) => f in shown && shown[f] === String(table[f as keyof Table])) ?? [];
+  const syncedKey = synced.join();
+  useEffect(() => {
+    if (!saving && syncedKey) onSynced(syncedKey.split(","));
+  }, [saving, syncedKey, onSynced]);
+
+  // The pause timer and the unmount both send what is in the fields then, not what was there when they were set up.
+  const latest = useRef({ table, name, seats, geom, problem, onSave, denied });
+  latest.current = { table, name, seats, geom, problem, onSave, denied };
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const send = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    const now = latest.current;
+    if (now.denied !== null) return;
+    const body: TablePatch = {};
+    if (!now.problem.name && now.name.trim() !== now.table.name) body.name = now.name.trim();
+    if (!now.problem.seats && Number(now.seats.trim()) !== now.table.seats) body.seats = Number(now.seats.trim());
+    if (!now.problem.geom) {
+      const g = clampTable({ x: Number(now.geom.x), y: Number(now.geom.y), w: Number(now.geom.w), h: Number(now.geom.h) });
+      if (g.x !== now.table.x || g.y !== now.table.y || g.w !== now.table.w || g.h !== now.table.h) Object.assign(body, g);
+      // A number past the edge of the grid is pulled back inside, and the field shows where the table went.
+      else setGeom({ x: String(g.x), y: String(g.y), w: String(g.w), h: String(g.h) });
+    }
+    if (Object.keys(body).length) now.onSave(body);
+  }, []);
+  const typed = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(send, TYPING_PAUSE_MS);
+  };
+  // Selecting another table mid-pause still sends what was typed.
+  useEffect(() => () => {
+    if (timer.current) send();
+  }, [send]);
 
   return (
     <form
       className="flex flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault();
-        save();
+        send();
       }}
     >
       <FieldsLocked locked={denied !== null}>
-      <TextField label="Name" value={name} onChange={setName} isInvalid={!!fieldError("name")} errorMessage={fieldError("name")} />
+      <TextField label="Name" value={name} onChange={(v) => { setName(v); typed(); }} onBlur={send} isInvalid={!!(problem.name ?? refused("name"))} errorMessage={problem.name ?? refused("name")} />
       <div className="grid grid-cols-2 gap-3">
-        <TextField label="Seats" numeric inputMode="numeric" value={seats} onChange={setSeats} isInvalid={!!fieldError("seats")} errorMessage={fieldError("seats")} />
-        <Select label="Shape" selectedKey={shape} onSelectionChange={(k) => k && setShape(k)} items={SHAPES} />
+        <TextField label="Seats" numeric inputMode="numeric" value={seats} onChange={(v) => { setSeats(v); typed(); }} onBlur={send} isInvalid={!!(problem.seats ?? refused("seats"))} errorMessage={problem.seats ?? refused("seats")} />
+        <Select label="Shape" selectedKey={table.shape} onSelectionChange={(k) => k && k !== table.shape && onSave({ shape: k as "rect" | "round" | "square" })} items={SHAPES} />
       </div>
-      <Select label="Area" selectedKey={areaId} onSelectionChange={(k) => k && setAreaId(k)} items={areas.map((a) => ({ id: a.id, label: a.name }))} />
+      <Select label="Area" selectedKey={table.area_id} onSelectionChange={(k) => k && k !== table.area_id && onSave({ area_id: k })} items={areas.map((a) => ({ id: a.id, label: a.name }))} />
       <div className="grid grid-cols-4 gap-2">
-        <TextField label="X" numeric inputMode="numeric" value={geom.x} onChange={(v) => setGeom({ ...geom, x: v })} />
-        <TextField label="Y" numeric inputMode="numeric" value={geom.y} onChange={(v) => setGeom({ ...geom, y: v })} />
-        <TextField label="W" numeric inputMode="numeric" value={geom.w} onChange={(v) => setGeom({ ...geom, w: v })} />
-        <TextField label="H" numeric inputMode="numeric" value={geom.h} onChange={(v) => setGeom({ ...geom, h: v })} />
+        {(["x", "y", "w", "h"] as const).map((k) => (
+          <TextField key={k} label={k.toUpperCase()} numeric inputMode="numeric" value={geom[k]} onChange={(v) => { setGeom((g) => ({ ...g, [k]: v })); typed(); }} onBlur={send} isInvalid={!!problem.geom && (int(geom[k]) === null || ((k === "w" || k === "h") && !int(geom[k])))} />
+        ))}
       </div>
-      <p className="text-[12.5px] text-ink-3">
-        Grid of {COLS} × {ROWS}. Position and size are in grid units.
-      </p>
+      {problem.geom ? (
+        <p role="alert" className="text-caption text-status-alert">
+          {problem.geom}
+        </p>
+      ) : null}
       </FieldsLocked>
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="submit" variant="primary" isDisabled={!valid || denied !== null} isPending={saving}>
-          Save table
-        </Button>
         <Button variant="secondary" className={table.archived ? greyPill : greyPillAlert} onPress={() => (table.archived ? onSave({ archived: false }) : confirm.ask({ title: `Archive ${table.name}?`, body: "It leaves the floor plan on the POS. Past orders keep it. You can restore it later.", confirmLabel: "Archive table", cancelLabel: "Keep the table", onConfirm: () => onSave({ archived: true }) }))} isDisabled={saving || denied !== null}>
           {table.archived ? "Restore" : "Archive"}
         </Button>
+        {/* In the place Save table had: what happens to a change, and that the last one has gone through. */}
+        {/* The live region stays mounted (so its first words are announced); it says something once there is a save to report. */}
+        {denied === null ? (
+          <p role="status" className="text-[12.5px] text-ink-3">
+            {saving ? "Saving…" : error ? "Not saved yet." : saved ? "Saved" : null}
+          </p>
+        ) : null}
         {confirm.dialog}
       </div>
+      {error && !saving ? (
+        <p role="alert" className="text-caption text-status-alert">
+          {error.message}
+          {error.remedy ? ` ${error.remedy}` : ""}
+        </p>
+      ) : null}
       {denied ? <p className="text-[12.5px] text-ink-3">{denied}</p> : null}
       <section className="flex flex-col gap-2.5 border-t border-rule-subtle pt-4">
         <SectionLabel>QR code</SectionLabel>

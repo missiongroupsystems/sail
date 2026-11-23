@@ -10,7 +10,6 @@ export default function PricingLayout({ children }: { children: ReactNode }) {
     <>
       <PageHeader
         title="Pricing"
-        description="Fees and discounts, a simulator with the full trace, customer groups. Tax and rounding are merchant settings."
         tabs={<SubNav tabs={PRICING_TABS} label="Pricing sections" />}
         actions={
           <LinkButton href="/settings/merchant" variant="secondary">

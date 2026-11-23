@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { PATH_HEADER, SESSION_COOKIE } from "@/lib/cookies";
+import { LINK_OUTLET_HEADER, PATH_HEADER, SESSION_COOKIE } from "@/lib/cookies";
 
 /**
  * Presence check only: the register validates the token on every call. Signed-out
@@ -30,6 +30,11 @@ export function middleware(request: NextRequest) {
   // The page's path, for the refusal page to name the role it needs (forbidden.tsx has no other way to know it).
   const headers = new Headers(request.headers);
   headers.set(PATH_HEADER, pathname);
+  // A link's outlet, for the scope to follow when it is another brand's (see `followLink`). Only on a page opened from
+  // the address (a shared link): a refresh after choosing another brand keeps the old outlet in the address a moment.
+  headers.delete(LINK_OUTLET_HEADER);
+  const outlet = request.nextUrl.searchParams.get("outlet");
+  if (outlet && !request.headers.has("rsc")) headers.set(LINK_OUTLET_HEADER, outlet);
   return NextResponse.next({ request: { headers } });
 }
 

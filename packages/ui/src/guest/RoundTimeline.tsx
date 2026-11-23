@@ -49,7 +49,8 @@ export function RoundTimeline({ stage, rejectReason, holdOrders = true, classNam
             <span className="flex min-w-0 flex-col pt-0.5">
               <span className={cx("text-[15.5px] leading-6", future ? "text-ink-3" : "font-medium text-ink", isRejectedStep && "text-status-alert")}>{label}</span>
               {isRejectedStep && rejectReason ? <span className="text-[14px] leading-snug text-ink-2 wrap-anywhere">{rejectReason}</span> : null}
-              {current && !isRejectedStep && stage === "sent" ? <span className="text-[14px] leading-snug text-ink-2">{holdOrders ? "Waiting for staff to accept it" : "Staff accept the first order from each phone. After that, this phone's orders go straight to the kitchen."}</span> : null}
+              {/* Held orders: the banner above already says staff will accept it. The first-order rule is said here only. */}
+              {current && !isRejectedStep && stage === "sent" && !holdOrders ? <span className="text-[14px] leading-snug text-ink-2">Staff accept the first order from each phone. After that, this phone&rsquo;s orders go straight to the kitchen.</span> : null}
             </span>
           </li>
         );

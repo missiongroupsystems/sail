@@ -106,7 +106,7 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
                   { id: "exclusive", label: "Tax added at the bill" },
                 ]}
               />
-              <DateField label="Price as at" type="datetime" size="md" value={at} onChange={setAt} placeholder="Now" description="Empty: now. Try a scheduled version." />
+              <DateField label="Price as at" type="datetime" size="md" value={at} onChange={setAt} placeholder="Now" />
             </div>
             {groups.length ? (
               <CheckboxGroup label="Customer in groups" value={groupIds} onChange={setGroupIds} columns={2}>
@@ -120,7 +120,7 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
           </div>
         </Panel>
 
-        <Panel title="Basket" body="flush" aside={`${lines.reduce((n, l) => n + l.quantity, 0)} items`}>
+        <Panel title="Basket" body="flush" aside={lines.length ? `${lines.reduce((n, l) => n + l.quantity, 0)} items` : undefined}>
           {lines.length ? (
             <ul className="flex flex-col divide-y divide-rule-subtle border-b border-rule-subtle">
               {lines.map((l) => (
@@ -148,7 +148,7 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
           </div>
         </Panel>
 
-        <Panel title="Manual rules" aside={manualRules.length ? `${manualRules.length} available` : "none active"}>
+        <Panel title="Manual rules" aside={manualRules.length ? undefined : "none active"}>
           <div className="flex flex-col gap-3 py-2">
             {rulesError ? <InlineError error={rulesError} /> : null}
             {manuals.map((m, i) => {
@@ -189,7 +189,7 @@ export function SimulatorView({ outlets, brands, groups, activeRules, rulesError
           <Button variant="primary" size="lg" isDisabled={!ready} isPending={simulate.isPending} onPress={() => simulate.mutate()}>
             Price this basket
           </Button>
-          <span className="text-caption text-ink-2">Writes nothing. The register prices it with the live rules.</span>
+          <span className="text-caption text-ink-2">Nothing is saved.</span>
         </div>
         <InlineError error={simulate.error} />
       </div>

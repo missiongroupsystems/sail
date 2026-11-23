@@ -120,7 +120,7 @@ A cash tip is part of the cash handed over, never part of the change: change = t
 
 ## Tenders and approvals
 
-Tenders are rows in `tender_types` (Settings > Tenders, or `/v1/tender-types`):
+Tenders are rows in `tender_types` (Settings > Payment methods, or `/v1/tender-types`):
 
 | Flag | Effect |
 |-|-|

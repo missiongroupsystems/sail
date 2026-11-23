@@ -70,7 +70,9 @@ export function DisplayDestinations({ outletId, stations, canEdit }: { outletId:
           </span>
         ),
     },
-    { key: "is_default", header: "Default", sortable: true, render: (d) => (d.is_default ? <Badge tone="seated">Default display</Badge> : <span className="text-ink-2">—</span>) },
+    { key: "is_default", header: "Default", sortable: true, render: (d) =>
+      // A default with no tags already reads "Everything else" in Tags; the pill marks a default that has tags.
+      d.is_default && (d.include_tags.length > 0 || d.exclude_tags.length > 0) ? <Badge tone="seated">Default display</Badge> : <span className="text-ink-2">—</span> },
     { key: "shown", header: "Shown on", render: (d) => <span className="text-ink-2">{shownOn.get(d.id)?.join(", ") ?? "No display station yet"}</span> },
   ];
 
@@ -78,7 +80,6 @@ export function DisplayDestinations({ outletId, stations, canEdit }: { outletId:
     <section className="mt-10" aria-label="Kitchen displays">
       <SectionHead
         title="Kitchen displays"
-        description="Items are routed to a display by the same tags, order types and sources as a printer. Assign destinations to a kitchen display station in Settings › Stations."
         className="mb-2"
         actions={
           <Button size="sm" variant="secondary" onPress={() => setSheet({ mode: "create" })} isDisabled={!canEdit}>
