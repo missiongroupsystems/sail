@@ -92,6 +92,7 @@ END $$;
 --    NOTICE (outlet, station, from, to). A station whose POS layout is of another brand than its new one loses the
 --    layout, also named: its POS then lays out the brand's menu until a layout of the brand is chosen. A channel link
 --    left on another brand than its outlet's (a disabled one, or one at an archived outlet) is named and left as it is.
+--    A live outlet given an archived brand is named too.
 DO $$
 DECLARE
   r record;
@@ -120,6 +121,15 @@ BEGIN
     WHERE c.brand_id IS DISTINCT FROM o.brand_id ORDER BY o.name, c.channel, c.id
   LOOP
     RAISE NOTICE 'channel link of another brand: % (outlet %), % link % of brand % (%), left as it is', r.outlet, r.outlet_id, r.channel, r.link_id, r.brand, CASE WHEN r.enabled THEN 'enabled, at an archived outlet' ELSE 'disabled' END;
+  END LOOP;
+
+  -- A live outlet whose rows decided an archived brand trades on, but outside everyone's brand scope in the back office.
+  FOR r IN
+    SELECT o.name AS outlet, o.id AS outlet_id, b.name AS brand, b.id AS brand_id
+    FROM outlets o JOIN brands b ON b.id = o.brand_id
+    WHERE o.archived_at IS NULL AND b.archived_at IS NOT NULL ORDER BY o.name, o.id
+  LOOP
+    RAISE NOTICE 'live outlet on an archived brand: % (outlet %), brand % (%): restore the brand in Settings > Brands, or archive the outlet', r.outlet, r.outlet_id, r.brand, r.brand_id;
   END LOOP;
 END $$;
 --> statement-breakpoint

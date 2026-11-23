@@ -223,6 +223,11 @@ describe("migration 0057: every outlet gets its one brand", () => {
       const oldTill = await outlet(sql, m, "Archived till of A");
       await station(sql, m, oldTill, A, "pos", true);
       await station(sql, m, oldTill, B);
+      // A live outlet whose only link is of a brand archived since: it keeps that brand, and is named.
+      const resting = await merchant(sql, "Resting Group", ["Gone", "Open"]);
+      await sql`update brands set archived_at = now() where id = ${resting.brands["Gone"]!}`;
+      const onGone = await outlet(sql, resting.merchantId, "Still trading");
+      await link(sql, resting.merchantId, onGone, resting.brands["Gone"]!);
       // A one-brand merchant with everything.
       const kanal = await merchant(sql, "Kanal Gruppe", ["Cafe Kanal"]);
       const cafe = await outlet(sql, kanal.merchantId, "Cafe Kanal");
@@ -248,6 +253,8 @@ describe("migration 0057: every outlet gets its one brand", () => {
       // That link may stay and be edited while it is off; switching it on is refused.
       await sql`update channel_links set hold_orders = false where id = ${strayOff}`;
       await expect(sql`update channel_links set enabled = true where id = ${strayOff}`).rejects.toThrow(/belongs to brand/);
+      expect(notices).toContain(`live outlet on an archived brand: Still trading (outlet ${onGone}), brand Gone (${resting.brands["Gone"]!}): restore the brand in Settings > Brands, or archive the outlet`);
+      expect(notices.filter((n) => n.startsWith("live outlet on an archived brand"))).toHaveLength(1);
       const layouts = await sql<{ id: string; layout_id: string | null }[]>`select id, layout_id from stations where id in ${sql([oddB, tillA, keepsLayout])}`;
       expect(Object.fromEntries(layouts.map((r) => [r.id, r.layout_id]))).toEqual({ [oddB]: null, [tillA]: null, [keepsLayout]: layoutA });
 
@@ -263,6 +270,7 @@ describe("migration 0057: every outlet gets its one brand", () => {
         [allOff, B],
         [oldTill, B],
         [cafe, kanal.brands["Cafe Kanal"]!],
+        [onGone, resting.brands["Gone"]!],
       ];
       for (const [o, brand] of expected) expect(await brandOf(sql, o), o).toBe(brand);
       // Every station, archived ones too, is on its outlet's brand; a display takes its outlet's.
