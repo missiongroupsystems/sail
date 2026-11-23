@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { devLocal, expect, register, test, TWIN_ADMIN, WEB } from "./fixtures";
+import { devLocal, expect, register, SG_ADMIN, test, TWIN_ADMIN, WEB } from "./fixtures";
 
 /**
  * One active brand across the back office (run B). An outlet belongs to one brand; the scope picker always has a
@@ -292,4 +292,24 @@ test.describe("brand scope", () => {
     await expect(brands.getByRole("row", { name: new RegExp(NAMES.A) })).toContainText(`${NAMES.A2}, ${NAMES.A1}`);
     await expect(brands.getByRole("row", { name: new RegExp(NAMES.B) })).toContainText(`${NAMES.B2}, ${NAMES.B1}`);
   });
+});
+
+test("B6: a per-outlet page of a merchant with one outlet names that outlet and offers no choice", async ({ page }) => {
+  test.setTimeout(300_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const live = (await register<{ data: { id: string; name: string; archived: boolean }[] }>("GET", "/v1/outlets")).data.filter((o) => !o.archived);
+  expect(live, "the Sample Kitchen merchant has one outlet").toHaveLength(1);
+  await page.goto(`${WEB}/login`);
+  await expect(async () => {
+    await page.getByLabel("Email").fill(SG_ADMIN);
+    await page.getByLabel("Password").fill(devLocal().admin_password);
+    await page.getByRole("button", { name: "Sign in" }).click({ timeout: 10_000 });
+    await page.waitForURL(`${WEB}/today`, { timeout: 30_000 });
+  }).toPass({ timeout: 300_000 });
+  for (const path of ["/today", "/floor"]) {
+    await page.goto(`${WEB}${path}`);
+    const named = page.getByRole("main").getByText(/^Outlet /).filter({ hasText: live[0]!.name });
+    await expect(named, path).toBeVisible({ timeout: 60_000 });
+    await expect(outletsRow(page), path).toHaveCount(0);
+  }
 });

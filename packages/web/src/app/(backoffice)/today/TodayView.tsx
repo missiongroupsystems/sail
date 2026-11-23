@@ -99,7 +99,7 @@ export function TodayView({ outlets, scope, initialOutletId }: { outlets: Outlet
   return (
     <>
       {/* The page is live: no clock or refresh note, and a failed fetch says so below. */}
-      {choosableOutlets(outlets, outletId).length > 1 ? (
+      {choosableOutlets(outlets, outletId).length > 0 ? (
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <OutletChoice outlets={outlets} scope={scope} outletId={outletId} onChange={setOutletId} />
         </div>
