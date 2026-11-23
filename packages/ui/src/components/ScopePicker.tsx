@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronDown, Store } from "lucide-react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Dialog as AriaDialog, DialogTrigger, Popover, Button as AriaButton } from "react-aria-components";
 import { cx } from "../lib/cx";
 import { outletOwnName } from "../lib/outlet-name";
@@ -45,9 +46,23 @@ export function ScopePicker({ merchantName, brands, outlets, value, shownOutletI
   const liveBrands = brands.filter((b) => !b.archived);
   const liveOutlets = ofBrand.filter((o) => !o.archived);
   const ownOutlet = outlet ? outletOwnName(outlet.name, brand?.name) : "All outlets";
-  // Two parts ("Brand · Outlet"): the brand gives way first, so the outlet stays readable.
-  const [lead, tail] = liveBrands.length > 1 ? (outlet ? [brandLabel, `· ${ownOutlet}`] : [brandLabel, ""]) : [liveOutlets.length > 1 ? ownOutlet : brandLabel, ""];
+  // Two parts ("Brand · Outlet") when both fit; when they do not, the outlet's own name alone, so the part that
+  // changes is never the part cut off.
+  const both = liveBrands.length > 1 && outlet ? `${brandLabel} · ${ownOutlet}` : null;
+  const single = liveBrands.length > 1 ? (outlet ? ownOutlet : brandLabel) : liveOutlets.length > 1 ? ownOutlet : brandLabel;
   const hydrated = useHydrated();
+  const box = useRef<HTMLSpanElement>(null);
+  const probe = useRef<HTMLSpanElement>(null);
+  const [fits, setFits] = useState(true);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!both || !el) return;
+    const check = () => setFits((probe.current?.scrollWidth ?? 0) <= el.clientWidth);
+    check();
+    const watch = new ResizeObserver(check);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [both]);
 
   return (
     <DialogTrigger>
@@ -68,9 +83,13 @@ export function ScopePicker({ merchantName, brands, outlets, value, shownOutletI
         ) : (
           <>
             {/* The merchant is fixed by the sign-in; the popover and the accessible name carry the full scope. */}
-            <span className="flex min-w-0 flex-1 gap-0.75 text-[14px] leading-5 font-medium text-ink">
-              <span className="min-w-0 truncate">{lead}</span>
-              {tail ? <span className="max-w-[75%] shrink-0 truncate">{tail}</span> : null}
+            <span ref={box} className="relative min-w-0 flex-1 truncate text-[14px] leading-5 font-medium text-ink">
+              {both && fits ? both : single}
+              {both ? (
+                <span ref={probe} aria-hidden className="invisible absolute top-0 left-0 whitespace-nowrap">
+                  {both}
+                </span>
+              ) : null}
             </span>
             <Icon icon={ChevronDown} size={14} className="shrink-0 text-ink-3" />
           </>

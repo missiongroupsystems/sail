@@ -6,8 +6,8 @@ import { ScopePicker, type ScopeOption } from "./ScopePicker";
 function trigger(brands: ScopeOption[], outlets: ScopeOption[], value: { brandId: string | null; outletId: string | null }, shownOutletId?: string) {
   const html = renderToStaticMarkup(<ScopePicker merchantName="Twin Group" brands={brands} outlets={outlets} value={value} shownOutletId={shownOutletId} onChange={() => {}} />);
   const name = /aria-label="([^"]+)"/.exec(html)![1]!.replaceAll("&#x27;", "'");
-  // The visible parts, joined as they read (the brand and the outlet sit a gap apart).
-  const text = [...html.matchAll(/<span class="[^"]*truncate[^"]*">([^<]*)<\/span>/g)].map((m) => m[1]).join(" ");
+  // The visible text: the trigger's own text, not the hidden copy it measures "Brand · Outlet" with.
+  const text = /<span class="[^"]*truncate[^"]*">([^<]*)/.exec(html)![1]!;
   return { name, text };
 }
 
