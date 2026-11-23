@@ -151,7 +151,6 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
             autoComplete="one-time-code"
             autoFocus
             isInvalid={Boolean(error)}
-            description="Type it or paste it. Spaces and dashes are left out."
             inputClassName="min-h-16 text-center font-mono text-[28px] tracking-[0.3em] tabular placeholder:text-[18px] placeholder:tracking-normal"
           />
           {alert}
