@@ -154,7 +154,14 @@ const columns: DataTableColumn<AuditEntry>[] = [
   {
     key: "action",
     header: "Action",
-    render: (a) => <span className="text-ink">{actionLabel(a)}</span>,
+    // An entry with no outlet is a change to the whole business (a tax rate, a payment method, a person): it is on
+    // every brand's list, and says so.
+    render: (a) => (
+      <span className="text-ink">
+        {actionLabel(a)}
+        {a.outlet_id == null ? <span className="block text-caption text-ink-3">Whole business</span> : null}
+      </span>
+    ),
   },
   {
     key: "target",
