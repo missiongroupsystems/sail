@@ -146,4 +146,39 @@ test.describe("two-brand back office", () => {
     await expect(page.getByRole("gridcell", { name: /^P-\d+$/ }).first()).toBeVisible();
     await expect(page.getByRole("gridcell", { name: /^P-\d+ · / })).toHaveCount(0);
   });
+
+  test("Outlet sheet: a brand change the register refuses shows its message at the Brand field", async ({ page, watch }) => {
+    test.setTimeout(300_000);
+    watch.allow({ status: 409, url: /\/v1\/outlets\/[^/]+$/, why: "the register's refusal, played on purpose" });
+    const brandA = devLocal().twin.brandId;
+    const brands = (await twin<{ data: { id: string; name: string }[] }>("GET", "/v1/brands")).data;
+    if (!brands.some((b) => b.name === "Quay Coffee")) await twin("POST", "/v1/brands", { name: "Quay Coffee" });
+    // An outlet with no orders and no channels, so the sheet offers its brand; the refusal is the register's own
+    // (a brand-limited person's probe cannot see another brand's orders, R5), played here for an outlet it cannot see either.
+    const spare = (await twin<{ data: { id: string } }>("POST", "/v1/outlets", { name: `Harbour Noodles · Spare ${String(Date.now()).slice(-5)}`, brand_id: brandA })).data.id;
+    try {
+      await page.route(`**/v1/outlets/${spare}`, (route) =>
+        route.request().method() === "PATCH"
+          ? route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ code: "state_conflict", message: "This outlet has orders, so its brand cannot change", remedy: "Add a new outlet for the other brand, and archive this one when it is no longer used.", details: { reason: "outlet_has_orders", field: "brand_id" } }) })
+          : route.continue(),
+      );
+      await signIn(page, TWIN_ADMIN);
+      await page.request.post(`${WEB}/api/prefs`, { data: { scope: { brandId: brandA, outletId: null } } });
+      await page.goto(`${WEB}/settings/outlets`);
+      await page.getByRole("row", { name: /Spare/ }).click();
+      const sheet = page.getByRole("dialog");
+      const brand = sheet.getByRole("button", { name: /Brand/ });
+      await brand.click();
+      await page.getByRole("option", { name: "Quay Coffee" }).click();
+      await sheet.getByRole("button", { name: "Save changes" }).click();
+      // Under the select itself (the foot of the form repeats it), after the field's description.
+      const message = sheet.getByText("This outlet has orders, so its brand cannot change").first();
+      await expect(message).toBeVisible();
+      const [select, said] = [await brand.boundingBox(), await message.boundingBox()];
+      expect(said!.y - (select!.y + select!.height), "the message sits right under the Brand select").toBeLessThan(48);
+      await page.screenshot({ path: "test-results/outlet-brand-refused.png" });
+    } finally {
+      await twin("PATCH", `/v1/outlets/${spare}`, { archived: true });
+    }
+  });
 });
