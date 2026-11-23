@@ -2,7 +2,7 @@
 
 import { useConfirm } from "@/components/backoffice/Confirm";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, InlineError, Sheet, Switch, TextField, FieldsLocked } from "@sail/ui";
+import { Button, FieldText, InlineError, Sheet, Switch, TextField, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -82,6 +82,21 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
   const brands = useQuery({ queryKey: keys.brands(true), queryFn: () => req(api.GET("/v1/brands", { params: { query: { include_archived: "true" } } })).then((r) => r.data), enabled: state !== null });
   const brandItems = (brands.data ?? []).filter((b) => !b.archived || b.id === outlet?.brand_id).map((b) => ({ id: b.id, label: b.name }));
   const onlyBrand = brandItems.length === 1 ? brandItems[0]!.id : null;
+  // With one brand there is nothing to choose. An outlet that has orders or channels keeps its brand (the register
+  // refuses a change), so its brand is shown, not offered; until that is known it is shown too.
+  const brandChoice = brands.isError || brandItems.length > 1;
+  const brandLocked = useQuery({
+    queryKey: ["outlets", outlet?.id, "brand-locked"],
+    enabled: state !== null && !!outlet && brandChoice,
+    queryFn: async () => {
+      const [orders, links] = await Promise.all([
+        req(api.GET("/v1/outlets/{id}/orders", { params: { path: { id: outlet!.id }, query: { limit: 1 } } })),
+        req(api.GET("/v1/channel-links", { params: { query: { outlet_id: outlet!.id, include_archived: "true" } } })),
+      ]);
+      return orders.data.length > 0 || links.data.length > 0;
+    },
+  });
+  const brandShown = outlet && brandChoice && !brandLocked.isError && brandLocked.data !== false ? (brands.data?.find((b) => b.id === outlet.brand_id)?.name ?? null) : null;
   const form = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: defaults(outlet, onlyBrand) });
   useRecheckErrors(form);
 
@@ -153,15 +168,19 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
       <form id="outlet-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-8">
         <SheetSection>
           <RhfTextField control={form.control} name="name" label="Name" isRequired placeholder="Brand · Location" autoFocus={!outlet} />
-          <RhfSelect
-            control={form.control}
-            name="brand_id"
-            label="Brand"
-            isRequired
-            placeholder={brands.isPending ? "Loading the brands…" : "Choose a brand"}
-            items={brandItems}
-            description={outlet ? "The outlet's stations, channels and orders are on this brand. It can change only while the outlet has no orders and no channels." : "An outlet trades as one brand. Its stations, channels and orders follow it."}
-          />
+          {brandShown ? (
+            <FieldText label="Brand">{brandShown}</FieldText>
+          ) : brandChoice ? (
+            <RhfSelect
+              control={form.control}
+              name="brand_id"
+              label="Brand"
+              isRequired
+              placeholder="Choose a brand"
+              items={brandItems}
+              description={outlet ? "The outlet's stations, channels and orders are on this brand. It can change only while the outlet has no orders and no channels." : "An outlet trades as one brand. Its stations, channels and orders follow it."}
+            />
+          ) : null}
           <RhfTextField control={form.control} name="address" label="Address" multiline rows={2} />
           <div className="grid gap-4 sm:grid-cols-2">
             <RhfTextField control={form.control} name="phone" label="Phone" type="tel" inputMode="tel" numeric />

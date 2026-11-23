@@ -286,6 +286,30 @@ test.describe("brand scope", () => {
     await expect(sheet.getByText("Choose a brand").last()).toBeVisible();
     await expect(sheet).toBeVisible();
     await sheet.getByRole("button", { name: "Cancel" }).click();
+    await expect(sheet).toBeHidden();
+
+    // An outlet that has orders and channels keeps its brand: the sheet names it and offers no other.
+    const edit = page.getByRole("dialog", { name: NAMES.A1 });
+    await expect(async () => {
+      await outlets.getByRole("row", { name: new RegExp(NAMES.A1) }).click({ timeout: 5_000 });
+      await expect(edit).toBeVisible({ timeout: 5_000 });
+    }).toPass({ timeout: 120_000 });
+    await expect(edit.getByRole("definition").filter({ hasText: NAMES.A })).toBeVisible();
+    await expect(edit.getByRole("term").filter({ hasText: "Brand" })).toBeVisible();
+    await expect(edit.getByRole("button", { name: /Brand/ })).toHaveCount(0);
+    await edit.getByRole("button", { name: "Cancel" }).click();
+
+    // A station's sheet names its outlet's brand as text, with nothing to choose.
+    await scopeTo(page, g.brands.A, g.outlets.A1.id);
+    await page.goto(`${WEB}/settings/stations`);
+    await expect(async () => {
+      await page.getByRole("button", { name: "Add station" }).first().click({ timeout: 5_000 });
+      await expect(page.getByRole("dialog", { name: "New station" })).toBeVisible({ timeout: 5_000 });
+    }).toPass({ timeout: 120_000 });
+    const station = page.getByRole("dialog", { name: "New station" });
+    await expect(station.getByRole("definition").filter({ hasText: NAMES.A })).toBeVisible();
+    await expect(station.getByRole("button", { name: /Brand/ })).toHaveCount(0);
+    await station.getByRole("button", { name: "Cancel" }).click();
 
     await page.goto(`${WEB}/settings/brands`);
     const brands = page.getByRole("grid");

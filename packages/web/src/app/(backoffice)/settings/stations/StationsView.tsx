@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, DataTable, Dialog, EmptyState, InlineError, Sheet, StatusDot, Switch, TextField, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
+import { Button, DataTable, Dialog, FieldText, EmptyState, InlineError, Sheet, StatusDot, Switch, type DataTableColumn, Pill, FieldsLocked } from "@sail/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -124,12 +124,12 @@ export function StationsView({
       )}
       <InlineError error={stations.error} className="mt-4" />
 
-      {outletId ? <StationSheet state={sheet} live={sheet?.mode === "edit" ? stations.data?.find((s) => s.id === sheet.station.id) : undefined} outletId={outletId} brandName={brandName.get(outlets.find((o) => o.id === outletId)?.brand_id ?? "") ?? null} onClose={() => setSheet(null)} /> : null}
+      {outletId ? <StationSheet state={sheet} live={sheet?.mode === "edit" ? stations.data?.find((s) => s.id === sheet.station.id) : undefined} outletId={outletId} brandName={brands.filter((b) => !b.archived).length > 1 ? (brandName.get(outlets.find((o) => o.id === outletId)?.brand_id ?? "") ?? null) : null} onClose={() => setSheet(null)} /> : null}
     </>
   );
 }
 
-function StationSheet({ state, live, outletId, brandName, onClose }: { state: SheetState; live: Station | undefined; outletId: string; /** The outlet's brand, which every station of the outlet is on. */ brandName: string | null; onClose: () => void }) {
+function StationSheet({ state, live, outletId, brandName, onClose }: { state: SheetState; live: Station | undefined; outletId: string; /** The outlet's brand, which every station of the outlet is on; null when the merchant has one brand. */ brandName: string | null; onClose: () => void }) {
   const qc = useQueryClient();
   const station = state?.mode === "edit" ? state.station : null;
   // The subtitle follows the stations list, which the pairing panel refreshes while a code is out, so it says Paired
@@ -240,7 +240,7 @@ function StationSheet({ state, live, outletId, brandName, onClose }: { state: Sh
           <>
             <SheetSection>
               {/* Not a choice: the outlet belongs to one brand, and so does everything under it. */}
-              <TextField label="Brand" value={brandName ?? "—"} isReadOnly description="The outlet's brand. To sell another brand here, add the station at one of that brand's outlets." />
+              {brandName ? <FieldText label="Brand">{brandName}</FieldText> : null}
               <RhfSelect
                 control={form.control}
                 name="home"
