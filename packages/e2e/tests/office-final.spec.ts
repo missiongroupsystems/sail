@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { Page } from "@playwright/test";
 import { writeFileSync } from "node:fs";
-import { API, devLocal, expect, register, SG_ADMIN, signInToken, test, WEB } from "./fixtures";
+import { API, devLocal, expect, leaveToday, register, SG_ADMIN, signInToken, test, WEB } from "./fixtures";
 
 /** The final office round's checks (back office: reports, import and export, pickers, archive, sign-in). */
 
@@ -299,6 +299,8 @@ test("O7 (A P14): an open order is in the address, so a refresh keeps it and the
 test("O10 (round 8 check 8): Sign out pressed before the page has hydrated still signs out; the rail's menus say they are not ready", async ({ page, watch }) => {
   test.setTimeout(300_000);
   await signIn(page);
+  // Today left open reloads itself on a dev server when the next route compiles, which cuts the goto below short.
+  await leaveToday(page);
   // The page's scripts never arrive: what is pressed is the server-rendered markup alone.
   watch.allowConsole(/./);
   await page.route(/\/_next\/static\/.*\.js/, (route) => route.abort());
