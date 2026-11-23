@@ -127,6 +127,39 @@ describe("an outlet's brand lock sees every brand and holds under concurrent ord
     expect((await db.sql<{ brand_id: string }[]>`select brand_id from outlets where id = ${outlet}`)[0]!.brand_id).toBe(A.brandId);
   });
 
+  it("a brand change and a station's own request at the outlet wait for each other, never deadlock", async () => {
+    const t = A.admin.token;
+    const outlet = randomUUID();
+    expect((await call("POST", "/v1/outlets", { token: t, body: { id: outlet, brand_id: A.brandId, name: "Setting up" } })).status).toBe(201);
+    const till = await call<{ data: { id: string } }>("POST", "/v1/stations", { token: t, body: { outlet_id: outlet, name: "Set-up till" } });
+    expect(till.status).toBe(201);
+    // As a station's request does: its station row first (for share), then the outlet (for key share).
+    const station = postgres(db.url, { max: 1, onnotice: () => {} });
+    try {
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      let stationFailed: Error | null = null;
+      const request = station
+        .begin(async (q) => {
+          await q`select id from stations where id = ${till.body.data.id} for share`;
+          await held;
+          await q`select id from outlets where id = ${outlet} for key share`;
+        })
+        .catch((e: Error) => (stationFailed = e));
+      await new Promise((r) => setTimeout(r, 200));
+      const change = call<Refusal>("PATCH", `/v1/outlets/${outlet}`, { token: t, body: { brand_id: other } });
+      await new Promise((r) => setTimeout(r, 400));
+      release();
+      await request;
+      const r = await change;
+      expect(stationFailed).toBeNull();
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+    } finally {
+      await station.end({ timeout: 5 });
+    }
+    expect((await db.sql<{ brand_id: string }[]>`select brand_id from stations where id = ${till.body.data.id}`)[0]!.brand_id).toBe(other);
+  });
+
   it("an order being opened while the brand changes either holds the outlet or is refused, never left on the old brand", async () => {
     const t = A.admin.token;
     const link = await aLink();

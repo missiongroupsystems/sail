@@ -209,6 +209,14 @@ function stationBrandIsOutlets() {
   return AppError.validation("A station is on its outlet's brand", { remedy: "Leave brand_id out, or send the outlet's brand. To sell another brand, add the station at one of that brand's outlets.", details: { field: "brand_id" } });
 }
 
+/** Locks an outlet's stations, then the outlet, and reads its brand again. */
+async function lockOutletWithStations(merchantId: string, outletId: string) {
+  await db().select({ id: stations.id }).from(stations).where(eq(stations.outletId, outletId)).orderBy(asc(stations.id)).for("update");
+  const [locked] = await db().select({ brandId: outlets.brandId }).from(outlets).where(and(eq(outlets.id, outletId), eq(outlets.merchantId, merchantId))).limit(1).for("update");
+  if (!locked) throw AppError.notFound("outlet", outletId);
+  return locked;
+}
+
 /** The brand is one of this merchant's and not archived; any other id fails as an unknown one does. */
 async function merchantBrand(merchantId: string, brandId: string) {
   const [brand] = await db().select({ id: brands.id }).from(brands).where(and(eq(brands.id, brandId), eq(brands.merchantId, merchantId), isNull(brands.archivedAt))).limit(1);
@@ -385,10 +393,13 @@ export function orgRoutes(app: OpenAPIHono<AppEnv>) {
       if (stray) throw new AppError("state_conflict", "This outlet has an enabled channel of another brand, so it cannot be restored", { remedy: "Disable the other brand's channels at this outlet in Settings › Channels, then restore it.", details: { reason: "outlet_has_channels_of_another_brand", field: "archived" } });
     }
     if (body.brand_id !== undefined) {
-      // Locked: an order, station or channel being written at this outlet commits first (and is seen below) or waits and
-      // finds the new brand (the brand trigger reads the outlet with a key share lock).
-      const [current] = await db().select({ brandId: outlets.brandId }).from(outlets).where(and(eq(outlets.id, id), eq(outlets.merchantId, p.merchantId))).limit(1).for("update");
-      if (!current) throw AppError.notFound("outlet", id);
+      const [seen] = await db().select({ brandId: outlets.brandId }).from(outlets).where(and(eq(outlets.id, id), eq(outlets.merchantId, p.merchantId))).limit(1);
+      if (!seen) throw AppError.notFound("outlet", id);
+      // Locked only for a real change: an order, station or channel being written at this outlet commits first (and is
+      // seen below) or waits and finds the new brand (the brand trigger reads the outlet with a key share lock). The
+      // outlet's stations are locked before the outlet, in the order a station's own request takes them (its station,
+      // then the outlet), so the two wait for each other instead of deadlocking.
+      const current = seen.brandId === body.brand_id ? seen : await lockOutletWithStations(p.merchantId, id);
       if (current.brandId !== body.brand_id) {
         await merchantBrand(p.merchantId, body.brand_id);
         // Both checks see every brand's rows: an order or channel of a brand the caller cannot see holds the outlet too.
