@@ -1,11 +1,10 @@
 "use client";
 
-import { Button, Select, cx, outletOwnName } from "@sail/ui";
+import { Button, Select, cx } from "@sail/ui";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { Brand, Outlet } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
-import { useSession } from "@/lib/session-context";
 import { useShowOutlet } from "@/components/ShownOutlet";
 
 /** The outlet a page works on: the scope's outlet when one is chosen, otherwise the page's own choice (its first outlet). */
@@ -25,13 +24,11 @@ export function choosableOutlets(outlets: Outlet[], outletId: string | null) {
 /**
  * The outlets of the brand in scope, as one row at the top of a page that works per outlet, with the chosen one
  * marked. It is the scope picker's outlet choice laid out flat: choosing here changes the page at once and is
- * remembered the same way, so the picker and every other page follow. Each outlet shows its own name, as the
- * brand is already in scope. A long row scrolls sideways. With one outlet
+ * remembered the same way, so the picker and every other page follow. A long row scrolls sideways. With one outlet
  * or none there is nothing to choose, and it renders nothing: the page's own empty state covers none.
  */
 export function OutletChoice({ outlets, scope, outletId, onChange }: { outlets: Outlet[]; scope: Scope; outletId: string | null; onChange: (id: string | null) => void }) {
   const router = useRouter();
-  const brandName = useSession().brands.find((b) => b.id === scope.brandId)?.name;
   const live = choosableOutlets(outlets, outletId);
   if (live.length < 2) return null;
   const choose = (id: string) => {
@@ -50,7 +47,7 @@ export function OutletChoice({ outlets, scope, outletId, onChange }: { outlets: 
             onPress={() => choose(o.id)}
             className={cx("h-8! min-h-8! max-sm:h-11! max-sm:min-h-11! shrink-0 rounded-[8px]! px-3! text-[13px] whitespace-nowrap", o.id === outletId ? "bg-surface! text-ink shadow-segment" : "text-ink-2")}
           >
-            {outletOwnName(o.name, brandName)}
+            {o.name}
           </Button>
         ))}
       </span>

@@ -20,7 +20,7 @@ export default async function BackofficeLayout({ children }: { children: ReactNo
 
   return (
     <QueryProvider>
-      <SessionProvider value={{ me: me.data, merchant: merchant.data, scope, brands }}>
+      <SessionProvider value={{ me: me.data, merchant: merchant.data, scope }}>
         <LocaleProvider settings={merchantLocale(merchant.data.settings)}>
           <Shell me={me.data} merchant={merchant.data} brands={brands} outlets={outlets} scope={scope} theme={theme}>
             {children}
