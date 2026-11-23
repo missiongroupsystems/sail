@@ -53,9 +53,9 @@ test("L1: Manager and Server open a table's details on Floor & QR, read only, an
     await expect(panel.getByRole("heading", { name })).toBeVisible();
     await expect(panel.getByRole("textbox", { name: "Name" })).toHaveValue(name);
     await expect(panel.getByRole("textbox", { name: "Name" })).toBeDisabled();
-    // Changes apply as they are made (polish-pilot A5), so there is no Save table; a role that may not edit gets no "Changes save…" line either.
+    // Changes apply as they are made (polish-pilot A5), so there is no Save table; a role that may not edit gets no "Saved" line either.
     await expect(panel.getByRole("button", { name: "Save table" })).toHaveCount(0);
-    await expect(panel.getByText("Changes save as you make them.")).toHaveCount(0);
+    await expect(panel.getByText("Saved", { exact: true })).toHaveCount(0);
     await expect(panel.getByRole("button", { name: /^(Archive|Restore)$/ })).toBeDisabled();
     await expect(panel.getByText("Changing this needs an Admin.")).toBeVisible();
     // The table's code itself is an Admin's (it lets a phone order at the table): the panel says where it is instead.
@@ -68,8 +68,9 @@ test("L1: Manager and Server open a table's details on Floor & QR, read only, an
   await page.goto(`${WEB}/floor`);
   await expect(page.getByText(/Select a table to edit it\. Drag to move/)).toBeVisible();
   await page.getByRole("application", { name: /Floor plan/ }).getByRole("button").first().click();
-  await expect(page.locator("aside").getByText("Changes save as you make them.")).toBeVisible();
   await expect(page.locator("aside").getByRole("textbox", { name: "Name" })).toBeEnabled();
+  // Nothing has been saved yet, so the panel has no status line until a change goes through.
+  await expect(page.locator("aside").getByText("Saved", { exact: true })).toHaveCount(0);
 });
 
 // Pages with a record sheet behind a row, and the merchant settings form. One test per role, as in live-round3: the
