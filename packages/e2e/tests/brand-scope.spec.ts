@@ -96,7 +96,8 @@ test.describe("brand scope", () => {
     const picker = page.getByRole("button", { name: /^Scope: / });
 
     await test.step("with nothing remembered, the first brand by name is chosen; there is no All brands", async () => {
-      await expect(picker).toHaveAccessibleName(`Scope: Twin Group ▸ ${NAMES.A} ▸ All outlets`);
+      // Today works on one outlet: with all outlets in scope the picker names the one it shows, the brand's first.
+      await expect(picker).toHaveAccessibleName(`Scope: Twin Group ▸ ${NAMES.A} ▸ ${NAMES.A2}`);
       await expect(async () => {
         await picker.click({ timeout: 5_000 });
         await expect(page.getByRole("dialog", { name: "Change scope" })).toBeVisible({ timeout: 5_000 });
@@ -119,7 +120,7 @@ test.describe("brand scope", () => {
       const scope = page.getByRole("dialog", { name: "Change scope" });
       await scope.getByRole("button", { name: /Brand/ }).click();
       await pick(page, NAMES.B);
-      await expect(picker).toHaveAccessibleName(`Scope: Twin Group ▸ ${NAMES.B} ▸ All outlets`);
+      await expect(picker).toHaveAccessibleName(`Scope: Twin Group ▸ ${NAMES.B} ▸ ${NAMES.B2}`);
       await scope.getByRole("button", { name: /Outlet/ }).click();
       await expect(page.getByRole("option")).toHaveText([`All outlets of ${NAMES.B}`, NAMES.B2, NAMES.B1]);
       await pick(page, NAMES.B1);
@@ -150,8 +151,43 @@ test.describe("brand scope", () => {
       const cookie = (await context.cookies(WEB)).find((c) => c.name === "sail_scope")!;
       await context.addCookies([{ ...cookie, value: JSON.stringify({ brandId: crypto.randomUUID(), outletId: g.outlets.B1.id }) }]);
       await page.goto(`${WEB}/floor`);
-      await expect(picker).toHaveAccessibleName(`Scope: Twin Group ▸ ${NAMES.A} ▸ All outlets`);
+      await expect(picker).toHaveAccessibleName(`Scope: Twin Group ▸ ${NAMES.A} ▸ ${NAMES.A2}`);
       await expect(outletsRow(page).getByRole("button")).toHaveText([ownName("A2"), ownName("A1")]);
+    });
+  });
+
+  test("B5: with all outlets in scope, a per-outlet page names the outlet it shows and a page for all outlets says all", async ({ page }) => {
+    test.setTimeout(300_000);
+    const g = await group();
+    await signIn(page);
+    await scopeTo(page, g.brands.A, null);
+    const picker = page.getByRole("button", { name: /^Scope: / });
+    const scope = page.getByRole("dialog", { name: "Change scope" });
+
+    await test.step("Orders shows the brand's first outlet, and the trigger, the picker and the row all name it", async () => {
+      await page.goto(`${WEB}/orders?range=all`);
+      await expect(outletsRow(page).getByRole("button", { name: ownName("A2") })).toHaveAttribute("aria-current", "true");
+      await expect(picker).toHaveAccessibleName(`Scope: Twin Group ▸ ${NAMES.A} ▸ ${NAMES.A2}`);
+      await expect(picker).toContainText(NAMES.A);
+      await expect(picker).toContainText(ownName("A2"));
+      await expect(async () => {
+        await picker.click({ timeout: 5_000 });
+        await expect(scope).toBeVisible({ timeout: 5_000 });
+      }).toPass({ timeout: 120_000 });
+      await expect(scope.getByRole("button", { name: /Outlet/ })).toContainText(NAMES.A2);
+      await page.keyboard.press("Escape");
+    });
+
+    await test.step("Products covers all outlets: it still reads All outlets", async () => {
+      await page.goto(`${WEB}/menu/products`);
+      await expect(picker).toHaveAccessibleName(`Scope: Twin Group ▸ ${NAMES.A} ▸ All outlets`);
+      await expect(picker).toHaveText(NAMES.A);
+      await expect(async () => {
+        await picker.click({ timeout: 5_000 });
+        await expect(scope).toBeVisible({ timeout: 5_000 });
+      }).toPass({ timeout: 120_000 });
+      await expect(scope.getByRole("button", { name: /Outlet/ })).toContainText(`All outlets of ${NAMES.A}`);
+      await page.keyboard.press("Escape");
     });
   });
 

@@ -17,6 +17,8 @@ export type ScopePickerProps = {
   outlets: ScopeOption[];
   value: ScopeValue;
   onChange: (next: ScopeValue) => void;
+  /** The outlet the page shows, on a page that works on one outlet while the scope covers all of them. */
+  shownOutletId?: string | null;
   /** Icon-only trigger for the collapsed navigation rail. */
   collapsed?: boolean;
   className?: string;
@@ -29,10 +31,11 @@ export const ALL = "__all__";
  * One brand is always chosen (there is no "All brands"), and the outlets offered are that brand's: one of them, or
  * all of them. Choosing another brand goes back to all of its outlets.
  */
-export function ScopePicker({ merchantName, brands, outlets, value, onChange, collapsed, className }: ScopePickerProps) {
+export function ScopePicker({ merchantName, brands, outlets, value, shownOutletId, onChange, collapsed, className }: ScopePickerProps) {
   const brand = brands.find((b) => b.id === value.brandId) ?? null;
   const ofBrand = outlets.filter((o) => !brand || o.brandId === undefined || o.brandId === brand.id);
-  const outlet = ofBrand.find((o) => o.id === value.outletId) ?? null;
+  // With all outlets in scope, a page that works on one outlet is named by the outlet it shows.
+  const outlet = ofBrand.find((o) => o.id === value.outletId) ?? (value.outletId === null ? ofBrand.find((o) => o.id === shownOutletId) : undefined) ?? null;
   const brandLabel = brand?.name ?? "No brand yet";
   const outletLabel = outlet?.name ?? "All outlets";
   const allOutlets = brand ? `All outlets of ${brand.name}` : "All outlets";

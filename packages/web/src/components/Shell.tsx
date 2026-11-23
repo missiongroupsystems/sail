@@ -11,6 +11,7 @@ import type { Scope, Theme } from "@/lib/cookies";
 import { roleAtLeast } from "@sail/shared";
 import { SECTIONS } from "@/lib/nav";
 import { ScopeControl } from "./ScopeControl";
+import { ShownOutletProvider } from "./ShownOutlet";
 import { UserMenu } from "./UserMenu";
 
 function NavLink({ href, children, ...rest }: NavLinkProps) {
@@ -50,6 +51,7 @@ function Wordmark() {
 export function Shell({ me, merchant, brands, outlets, scope, theme, children }: ShellProps) {
   const pathname = usePathname();
   return (
+    <ShownOutletProvider>
     <div data-scale="compact" className="flex min-h-dvh bg-surface text-body">
       <OfficeSurface />
       <aside className="sticky top-0 h-dvh shrink-0 print:hidden">
@@ -76,5 +78,6 @@ export function Shell({ me, merchant, brands, outlets, scope, theme, children }:
       </aside>
       <main className="mx-auto w-full min-w-0 max-w-[1600px] flex-1 px-4 pt-7 pb-10 sm:px-8">{children}</main>
     </div>
+    </ShownOutletProvider>
   );
 }

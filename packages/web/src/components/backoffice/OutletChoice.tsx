@@ -6,12 +6,14 @@ import { useEffect, useState } from "react";
 import type { Brand, Outlet } from "@/lib/api/types";
 import type { Scope } from "@/lib/cookies";
 import { useSession } from "@/lib/session-context";
+import { useShowOutlet } from "@/components/ShownOutlet";
 
 /** The outlet a page works on: the scope's outlet when one is chosen, otherwise the page's own choice (its first outlet). */
 export function useOutletChoice(outlets: Outlet[], scope: Scope, initial: string | null) {
   const [outletId, setOutletId] = useState<string | null>(initial);
   useEffect(() => setOutletId(initial), [initial]);
   const scoped = outlets.find((o) => o.id === scope.outletId) ?? null;
+  useShowOutlet(scoped?.id ?? outletId);
   return { outletId: scoped?.id ?? outletId, setOutletId, scoped };
 }
 

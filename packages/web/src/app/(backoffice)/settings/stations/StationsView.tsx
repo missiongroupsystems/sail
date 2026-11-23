@@ -9,6 +9,7 @@ import { z } from "zod";
 import { greyPill, greyPillAlert, SheetSection } from "@/components/office/parts";
 import { applyServerErrors } from "@/components/office/server-errors";
 import { OutletChoice } from "@/components/backoffice/OutletChoice";
+import { useShowOutlet } from "@/components/ShownOutlet";
 import { PairingPanel } from "@/components/backoffice/PairingPanel";
 import { RhfCheckboxGroup, RhfSelect, RhfSwitch, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
@@ -53,6 +54,7 @@ export function StationsView({
 }) {
   const canCreate = useCan("stations.create");
   const [outletId, setOutletId] = useState<string | null>(initialOutletId);
+  useShowOutlet(outletId);
   const [showArchived, setShowArchived] = useState(false);
   const [sheet, setSheet] = useState<SheetState>(null);
   useEffect(() => setOutletId(initialOutletId), [initialOutletId]);

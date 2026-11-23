@@ -3,10 +3,11 @@ import { describe, expect, it } from "vitest";
 import { ScopePicker, type ScopeOption } from "./ScopePicker";
 
 /** The trigger's visible text and its accessible name, from the server render. */
-function trigger(brands: ScopeOption[], outlets: ScopeOption[], value: { brandId: string | null; outletId: string | null }) {
-  const html = renderToStaticMarkup(<ScopePicker merchantName="Twin Group" brands={brands} outlets={outlets} value={value} onChange={() => {}} />);
+function trigger(brands: ScopeOption[], outlets: ScopeOption[], value: { brandId: string | null; outletId: string | null }, shownOutletId?: string) {
+  const html = renderToStaticMarkup(<ScopePicker merchantName="Twin Group" brands={brands} outlets={outlets} value={value} shownOutletId={shownOutletId} onChange={() => {}} />);
   const name = /aria-label="([^"]+)"/.exec(html)![1]!.replaceAll("&#x27;", "'");
-  const text = /<span class="min-w-0[^"]*">([^<]*)<\/span>/.exec(html)![1]!;
+  // The visible parts, joined as they read (the brand and the outlet sit a gap apart).
+  const text = [...html.matchAll(/<span class="[^"]*truncate[^"]*">([^<]*)<\/span>/g)].map((m) => m[1]).join(" ");
   return { name, text };
 }
 
@@ -28,5 +29,12 @@ describe("ScopePicker trigger", () => {
   it("several brands: the brand, and the outlet's own name once one is chosen", () => {
     expect(trigger([harbour, quay], [pier, market, dock], { brandId: "b", outletId: "b1" })).toEqual({ text: "Quay Coffee · Dock", name: "Scope: Twin Group ▸ Quay Coffee ▸ Quay Coffee · Dock" });
     expect(trigger([harbour, quay], [pier, market, dock], { brandId: "a", outletId: null })).toEqual({ text: "Harbour Noodles", name: "Scope: Twin Group ▸ Harbour Noodles ▸ All outlets" });
+  });
+  it("all outlets in scope on a page that shows one: names the outlet the page shows", () => {
+    expect(trigger([harbour, quay], [pier, market, dock], { brandId: "a", outletId: null }, "a2")).toEqual({ text: "Harbour Noodles · Market", name: "Scope: Twin Group ▸ Harbour Noodles ▸ Harbour Noodles · Market" });
+    expect(trigger([harbour], [pier, market], { brandId: "a", outletId: null }, "a1")).toEqual({ text: "Pier", name: "Scope: Twin Group ▸ Harbour Noodles ▸ Harbour Noodles · Pier" });
+    // A chosen outlet wins, and a shown outlet of another brand is not the scope's.
+    expect(trigger([harbour], [pier, market], { brandId: "a", outletId: "a2" }, "a1").text).toBe("Market");
+    expect(trigger([harbour, quay], [pier, market, dock], { brandId: "a", outletId: null }, "b1")).toEqual({ text: "Harbour Noodles", name: "Scope: Twin Group ▸ Harbour Noodles ▸ All outlets" });
   });
 });
