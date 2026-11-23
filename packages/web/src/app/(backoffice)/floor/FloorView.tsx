@@ -414,7 +414,7 @@ const TYPING_PAUSE_MS = 400;
 function TablePanel({ table, areas, onSave, saving, canRotateQr, denied, refusal, onSynced }: { table: Table; areas: Area[]; onSave: (body: TablePatch) => void; saving: boolean; canRotateQr: boolean; denied: string | null; refusal: { error: ApiError; fields: string[] } | null; onSynced: (fields: string[]) => void }) {
   const confirm = useConfirm();
   const error = refusal?.error ?? null;
-  // The status line appears with the first save: a table just selected has nothing saved to report.
+  // Saved appears with the first save: a table just selected says how its changes are kept instead.
   const [saved, setSaved] = useState(false);
   if (saving && !saved) setSaved(true);
   // A refusal that names a field (seats over the limit, a name) shows under that field as well as under the plan.
@@ -500,10 +500,9 @@ function TablePanel({ table, areas, onSave, saving, canRotateQr, denied, refusal
           {table.archived ? "Restore" : "Archive"}
         </Button>
         {/* In the place Save table had: what happens to a change, and that the last one has gone through. */}
-        {/* The live region stays mounted (so its first words are announced); it says something once there is a save to report. */}
         {denied === null ? (
           <p role="status" className="text-[12.5px] text-ink-3">
-            {saving ? "Saving…" : error ? "Not saved yet." : saved ? "Saved" : null}
+            {saving ? "Saving…" : error ? "Not saved yet." : saved ? "Saved" : "Changes save as you make them."}
           </p>
         ) : null}
         {confirm.dialog}
