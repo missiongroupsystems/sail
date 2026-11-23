@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
-import { greyPill, SheetSection } from "@/components/office/parts";
+import { greyPill, greyPillAlert, SheetSection } from "@/components/office/parts";
 import { applyServerErrors } from "@/components/office/server-errors";
 import { RhfSelect, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
@@ -154,13 +154,13 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
         <>
           {outlet && mayEdit.ok ? (
             <Button
-              variant={outlet.archived ? "secondary" : "destructive"}
+              variant="secondary"
               onPress={() => (outlet.archived ? archive.mutate(false) : confirm.ask({ title: `Archive ${outlet.name}?`, body: "It leaves the outlet lists in the back office and on the POS. Past orders and reports keep it. You can restore it later.", confirmLabel: "Archive outlet", cancelLabel: "Keep the outlet", onConfirm: () => archive.mutate(true) }))}
               isPending={archive.isPending}
               isDisabled={save.isPending}
-              className="mr-auto"
+              className={`mr-auto ${outlet.archived ? greyPill : greyPillAlert}`}
             >
-              {outlet.archived ? "Restore outlet" : "Archive outlet"}
+              {outlet.archived ? "Restore outlet" : "Archive outlet…"}
             </Button>
           ) : null}
           <Button variant="secondary" className={greyPill} onPress={onClose} isDisabled={busy}>
