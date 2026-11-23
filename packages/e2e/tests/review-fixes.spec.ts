@@ -1,5 +1,5 @@
 import type { Locator, Page, Request } from "@playwright/test";
-import { API, devLocal, expect, GUEST, keyIn, pairAndSignIn, register, SG_ADMIN, test, TWIN_ADMIN, WEB } from "./fixtures";
+import { API, devLocal, expect, GUEST, keyIn, leaveToday, pairAndSignIn, register, SG_ADMIN, test, TWIN_ADMIN, WEB } from "./fixtures";
 
 /**
  * The review fixes after the pilot polish (pairing on the button or Enter, the Stations sheet's code and status, the
@@ -17,14 +17,7 @@ async function signIn(page: Page, email = SG_ADMIN) {
     await page.getByRole("button", { name: "Sign in" }).click({ timeout: 10_000 });
     await page.waitForURL(`${WEB}/today`, { timeout: 30_000 });
   }).toPass({ timeout: 300_000 });
-  // Today has rendered with its figures and its requests are done, so leaving it cuts nothing short.
-  await expect(page.getByRole("heading", { name: "Today", level: 1 })).toBeVisible({ timeout: 120_000 });
-  await expect(page.getByText("Open now")).toBeVisible({ timeout: 120_000 });
-  await page.waitForLoadState("networkidle").catch(() => undefined);
-  // Then leave it for a blank page. On a dev server, a page left open reloads itself when the next route compiles
-  // (Fast Refresh "had to perform a full reload"), and in WebKit that reload of Today cut the next goto short. The app
-  // itself navigates once: a production build never bounced back to Today (0 of 40 sign-ins in WebKit).
-  await page.goto("about:blank");
+  await leaveToday(page);
 }
 
 async function openRow(page: Page, name: string) {

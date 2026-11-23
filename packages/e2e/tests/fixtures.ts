@@ -142,6 +142,20 @@ export async function textContrast(page: Page, selector: string): Promise<{ rati
 }
 
 /**
+ * After a back-office sign-in: wait until Today has rendered with its figures and its requests are done, then leave
+ * it for a blank page. On a dev server, a page left open reloads itself when the next route compiles (Fast Refresh
+ * "had to perform a full reload"), and in WebKit that reload of Today cut the next goto short or left its hot-update
+ * fetch to fail in the console. The app itself navigates once: a production build never bounced back to Today (0 of
+ * 40 sign-ins in WebKit).
+ */
+export async function leaveToday(page: Page) {
+  await expect(page.getByRole("heading", { name: "Today", level: 1 })).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByText("Open now")).toBeVisible({ timeout: 120_000 });
+  await page.waitForLoadState("networkidle").catch(() => undefined);
+  await page.goto("about:blank");
+}
+
+/**
  * On the close-shift checklist, leave every open item for the next shift once the register has answered each of its
  * reads (until then the primary button says "Checking the register…"). Each Leave open is found afresh, and each click
  * waits for its button to go: a left item loses its button, so a list of the buttons taken up front points past the end.
