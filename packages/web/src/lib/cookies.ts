@@ -29,15 +29,18 @@ export function parseScope(value: string | undefined): Scope {
  * The scope a page works in, from what the browser remembered and what the register has now.
  * There is always one brand: the remembered one, or (nothing remembered, or a brand since archived or out of this
  * person's reach) the merchant's only brand, or its first by name. A brand is in reach when it is live and owns at
- * least one of the outlets this person can see; a merchant with no outlet yet falls back to its live brands. The
+ * least one of the outlets this person can see; a merchant with no outlet yet falls back to its live brands. Someone
+ * who sees every outlet (`seesEveryOutlet`) also reaches a live brand with no outlet at all, such as one just added,
+ * so its menus and products can be worked on before its first outlet. The
  * outlet is one of that brand's, or none, which reads "All outlets of <brand>". `brandId` is null only for a merchant
  * with no brand at all.
  */
-export function resolveScope(remembered: Scope, brands: { id: string; name: string; archived?: boolean }[], outlets: { id: string; brand_id: string; archived?: boolean }[]): Scope {
+export function resolveScope(remembered: Scope, brands: { id: string; name: string; archived?: boolean }[], outlets: { id: string; brand_id: string; archived?: boolean }[], seesEveryOutlet = false): Scope {
   const live = brands.filter((b) => !b.archived).sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
   const owning = new Set(outlets.map((o) => o.brand_id));
   const reach = outlets.length ? live.filter((b) => owning.has(b.id)) : live;
-  const brand = reach.find((b) => b.id === remembered.brandId) ?? reach[0] ?? null;
+  // A chosen brand with no outlet at all stays chosen; with nothing chosen, the scope starts on one that has outlets.
+  const brand = (seesEveryOutlet ? live : reach).find((b) => b.id === remembered.brandId) ?? reach[0] ?? null;
   if (!brand) return EMPTY_SCOPE;
   const outlet = outlets.find((o) => o.id === remembered.outletId && o.brand_id === brand.id && !o.archived) ?? null;
   return { brandId: brand.id, outletId: outlet?.id ?? null };

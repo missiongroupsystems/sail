@@ -21,8 +21,9 @@ export async function getTheme(): Promise<Theme> {
 /** The brands and outlets the signed-in person can see, read once for a request: the frame and the page share them. */
 export const scopeLists = cache(async () => {
   const api = createApi({ baseUrl: API_URL, token: await getSessionToken() });
-  const [brands, outlets] = await Promise.all([req(api.GET("/v1/brands")), req(api.GET("/v1/outlets"))]);
-  return { brands: brands.data, outlets: outlets.data };
+  const [brands, outlets, me] = await Promise.all([req(api.GET("/v1/brands")), req(api.GET("/v1/outlets")), req(api.GET("/v1/me"))]);
+  // Not limited to some outlets: every outlet of the brands listed is in the list, so a brand with none has none.
+  return { brands: brands.data, outlets: outlets.data, seesEveryOutlet: me.data.outlet_scope === "*" };
 });
 
 /**
@@ -38,8 +39,8 @@ export const linkedScope = cache(async (): Promise<{ scope: Scope; followed: boo
   const [jar, sent] = await Promise.all([cookies(), headers()]);
   const remembered = parseScope(jar.get(SCOPE_COOKIE)?.value);
   try {
-    const { brands, outlets } = await scopeLists();
-    const scope = resolveScope(remembered, brands, outlets);
+    const { brands, outlets, seesEveryOutlet } = await scopeLists();
+    const scope = resolveScope(remembered, brands, outlets, seesEveryOutlet);
     const linked = followLink(scope, sent.get(LINK_OUTLET_HEADER), brands, outlets);
     return { scope: linked, followed: linked !== scope };
   } catch {

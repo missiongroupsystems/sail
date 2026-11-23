@@ -181,4 +181,19 @@ test.describe("two-brand back office", () => {
       await twin("PATCH", `/v1/outlets/${spare}`, { archived: true });
     }
   });
+
+  test("a new brand with no outlet yet can be put in scope", async ({ page }) => {
+    test.setTimeout(300_000);
+    const name = `Bravo ${String(Date.now()).slice(-6)}`;
+    const bravo = (await twin<{ data: { id: string } }>("POST", "/v1/brands", { name })).data.id;
+    try {
+      await signIn(page, TWIN_ADMIN);
+      await page.request.post(`${WEB}/api/prefs`, { data: { scope: { brandId: bravo, outletId: null } } });
+      await page.goto(`${WEB}/menu/products`);
+      await expect(page.getByRole("button", { name: /^Scope:/ }).first()).toHaveAccessibleName(`Scope: Twin Group ▸ ${name} ▸ All outlets`);
+    } finally {
+      // The group goes back to its two brands for the specs after this one.
+      await twin("PATCH", `/v1/brands/${bravo}`, { archived: true });
+    }
+  });
 });

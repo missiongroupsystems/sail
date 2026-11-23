@@ -59,3 +59,10 @@ test("adding an outlet while nothing is remembered keeps the outlet the pages we
   assert.equal(keepShownOutlet(scope, [zestDock], { brand_id: alpha.id }), null);
   assert.equal(keepShownOutlet(scope, [], { brand_id: zest.id }), null);
 });
+
+test("someone who sees every outlet can put a new brand with no outlet yet in scope; someone limited to some outlets cannot", () => {
+  assert.deepEqual(resolveScope({ brandId: alpha.id, outletId: null }, [alpha, zest], [zestDock], true), { brandId: alpha.id, outletId: null });
+  assert.deepEqual(resolveScope({ brandId: alpha.id, outletId: null }, [alpha, zest], [zestDock], false), { brandId: zest.id, outletId: null });
+  // Nothing remembered still starts on a brand that has outlets.
+  assert.equal(resolveScope(EMPTY_SCOPE, [alpha, zest], [zestDock], true).brandId, zest.id);
+});
