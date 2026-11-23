@@ -69,7 +69,8 @@ export function ChannelsView({ initialLinks, outlets, brands, menus, brandId }: 
       ),
     },
     { key: "outlet", header: "Outlet", sortable: true, sortValue: (l) => outletName.get(l.outlet_id), render: (l) => <TwoLine primary={outletName.get(l.outlet_id) ?? "—"} /> },
-    { key: "brand", header: "Brand", sortable: true, sortValue: (l) => brandName.get(l.brand_id), render: (l) => brandName.get(l.brand_id) ?? "—" },
+    // One brand would repeat on every row: the column shows only when there is a brand to tell apart.
+    ...(brands.length > 1 ? [{ key: "brand", header: "Brand", sortable: true, sortValue: (l: ChannelLink) => brandName.get(l.brand_id), render: (l: ChannelLink) => brandName.get(l.brand_id) ?? "—" } satisfies DataTableColumn<ChannelLink>] : []),
     { key: "menu", header: "Menu", render: (l) => <span className="text-ink-2">{menuName.get(l.menu_id) ?? "—"}</span> },
     {
       key: "behaviour",

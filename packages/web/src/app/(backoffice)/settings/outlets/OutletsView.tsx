@@ -16,7 +16,8 @@ import { useCan } from "@/lib/can";
 /** Registration columns are headed with the merchant's own labels. */
 const outletColumns = (labels: { business: string; tax: string }, brandName: Map<string, string>): DataTableColumn<Outlet>[] => [
   { key: "name", header: "Name", sortable: true, isRowHeader: true, width: "1.4fr", render: (o) => <TwoLine primary={o.archived ? <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">{o.name}<Pill size="sm" tone="neutral">Archived</Pill></span> : o.name} /> },
-  { key: "brand_id", header: "Brand", sortable: true, sortValue: (o) => brandName.get(o.brand_id) ?? "", render: (o) => <span className="text-ink-2">{brandName.get(o.brand_id) ?? "—"}</span> },
+  // One brand would repeat on every row: the column shows only when there is a brand to tell apart.
+  ...(brandName.size > 1 ? [{ key: "brand_id", header: "Brand", sortable: true, sortValue: (o: Outlet) => brandName.get(o.brand_id) ?? "", render: (o: Outlet) => <span className="text-ink-2">{brandName.get(o.brand_id) ?? "—"}</span> } satisfies DataTableColumn<Outlet>] : []),
   { key: "address", header: "Address", render: (o) => <Quiet>{o.address ?? "—"}</Quiet> },
   { key: "phone", header: "Phone", render: (o) => (o.phone ? <span className="tabular">{o.phone}</span> : <Quiet>—</Quiet>) },
   { key: "business_registration_no", header: labels.business, render: (o) => (o.business_registration_no ? <span className="tabular break-words">{o.business_registration_no}</span> : <Quiet>—</Quiet>) },

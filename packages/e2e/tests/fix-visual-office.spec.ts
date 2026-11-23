@@ -20,6 +20,35 @@ async function signIn(page: Page) {
 test.describe("one-brand back office", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
+  test("no Brand column on Outlets, Stations and Channels, no Brand select on a product, a quiet Archive outlet…", async ({ page }) => {
+    test.setTimeout(300_000);
+    const brands = (await eu<{ data: { archived: boolean }[] }>("GET", "/v1/brands")).data;
+    test.skip(brands.length !== 1, "the EU café has one brand");
+    await signIn(page);
+    for (const path of ["/settings/outlets", "/settings/stations", "/settings/channels"]) {
+      await page.goto(`${WEB}${path}`);
+      const table = page.getByRole("grid").or(page.getByRole("table")).first();
+      await expect(table.getByRole("columnheader").first()).toBeVisible();
+      await expect(table.getByRole("columnheader", { name: "Brand" }), path).toHaveCount(0);
+    }
+
+    await page.goto(`${WEB}/settings/outlets`);
+    await page.getByRole("row").nth(1).click();
+    const outletSheet = page.getByRole("dialog");
+    const archive = outletSheet.getByRole("button", { name: "Archive outlet…" });
+    await expect(archive).toBeVisible();
+    // The quiet secondary its neighbours use, not a second filled button.
+    expect(await archive.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await outletSheet.getByRole("button", { name: "Cancel" }).evaluate((el) => getComputedStyle(el).backgroundColor));
+    await outletSheet.getByRole("button", { name: "Cancel" }).click();
+
+    await page.goto(`${WEB}/menu/products`);
+    await page.getByRole("button", { name: "Add product" }).first().click();
+    const productSheet = page.getByRole("dialog", { name: /product/i });
+    await expect(productSheet.getByRole("button", { name: /Category/ })).toBeVisible();
+    await expect(productSheet.getByRole("button", { name: /^Brand/ })).toHaveCount(0);
+    await expect(productSheet.getByText("Shared by all brands")).toHaveCount(0);
+  });
+
   test("adding an outlet keeps the per-outlet pages on the outlet they were showing, though the new one sorts first", async ({ page }) => {
     test.setTimeout(300_000);
     const name = `Aa new ${String(Date.now()).slice(-6)}`;

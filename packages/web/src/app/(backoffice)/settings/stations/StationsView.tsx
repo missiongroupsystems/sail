@@ -78,7 +78,8 @@ export function StationsView({
           {s.archived ? <Pill size="sm" tone="neutral">Archived</Pill> : null}
         </span>
       ) },
-    { key: "brand_id", header: "Brand", sortable: true, sortValue: (s) => (s.brand_id ? brandName.get(s.brand_id) : ""), render: (s) => <span className="text-ink-2">{s.brand_id ? (brandName.get(s.brand_id) ?? "Unknown brand") : "—"}</span> },
+    // One brand would repeat on every row: the column shows only when there is a brand to tell apart.
+    ...(brands.length > 1 ? [{ key: "brand_id", header: "Brand", sortable: true, sortValue: (s: Station) => (s.brand_id ? brandName.get(s.brand_id) : ""), render: (s: Station) => <span className="text-ink-2">{s.brand_id ? (brandName.get(s.brand_id) ?? "Unknown brand") : "—"}</span> } satisfies DataTableColumn<Station>] : []),
     { key: "pay_before_firing", header: "Pay before sending", sortable: true, render: (s) => (s.pay_before_firing ? "Yes" : "—") },
     { key: "seats_enabled", header: "Seats", sortable: true, render: (s) => (s.seats_enabled ? "On" : "Off") },
     { key: "home", header: "Home screen", sortable: true, render: (s) => (s.kind === "display" ? (s.display_destination_ids.length ? "Kitchen display (/kds)" : <StatusDot status="alert" label="Kitchen display · shows nothing until a destination is ticked" />) : (HOME_LABEL[s.home] ?? s.home)) },
