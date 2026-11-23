@@ -14,6 +14,7 @@ import { RhfSelect, RhfTextField } from "@/components/forms/fields";
 import { req, type ApiError } from "@/lib/api";
 import { api } from "@/lib/api.browser";
 import type { Outlet, OutletCreate } from "@/lib/api/types";
+import { keepShownOutlet } from "@/lib/cookies";
 import { keys } from "@/lib/query";
 import { useSession } from "@/lib/session-context";
 import { formToHours, hoursToForm, TIME_RE, WEEKDAY_LABEL, WEEKDAYS, type HoursForm } from "@/lib/hours";
@@ -76,7 +77,8 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
   const confirm = useConfirm();
   const qc = useQueryClient();
   const router = useRouter();
-  const { business_registration_label, tax_registration_label, business_day_cutoff } = useSession().merchant.settings;
+  const session = useSession();
+  const { business_registration_label, tax_registration_label, business_day_cutoff } = session.merchant.settings;
   const outlet = state?.mode === "edit" ? state.outlet : null;
   // An outlet belongs to one brand. The list is the merchant's brands; an outlet on an archived brand still names it.
   const brands = useQuery({ queryKey: keys.brands(true), queryFn: () => req(api.GET("/v1/brands", { params: { query: { include_archived: "true" } } })).then((r) => r.data), enabled: state !== null });
@@ -119,7 +121,12 @@ export function OutletSheet({ state, onClose }: { state: OutletSheetState; onClo
         : await req(api.POST("/v1/outlets", { body }));
       return res.data;
     },
-    onSuccess: settle,
+    onSuccess: async (saved) => {
+      // A new outlet does not take over the per-outlet pages: they stay on the outlet they were showing.
+      const keep = outlet ? null : keepShownOutlet(session.scope, qc.getQueryData<Outlet[]>(keys.outlets(true)) ?? [], saved);
+      if (keep) await fetch("/api/prefs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scope: keep }) }).catch(() => undefined);
+      await settle();
+    },
     // A refusal that names a field shows under it; the message also stays at the foot of the form.
     onError: (e) => applyServerErrors(form.setError, e, Object.keys(form.getValues())),
   });

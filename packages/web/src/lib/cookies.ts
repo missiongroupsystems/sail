@@ -43,6 +43,17 @@ export function resolveScope(remembered: Scope, brands: { id: string; name: stri
   return { brandId: brand.id, outletId: outlet?.id ?? null };
 }
 
+/**
+ * What to remember when an outlet is added while nothing is remembered: the outlet the per-outlet pages were showing
+ * (the brand's first live outlet), so they stay on it instead of moving to the new, empty outlet. Null when there is
+ * nothing to keep: an outlet already remembered, the new outlet on another brand, or no outlet before it.
+ */
+export function keepShownOutlet(scope: Scope, before: { id: string; brand_id: string; archived?: boolean }[], added: { brand_id: string }): Scope | null {
+  if (scope.outletId || !scope.brandId || added.brand_id !== scope.brandId) return null;
+  const shown = before.find((o) => o.brand_id === scope.brandId && !o.archived);
+  return shown ? { brandId: scope.brandId, outletId: shown.id } : null;
+}
+
 /** Twelve hours: the lifetime of a back-office session from the register. External-provider tokens are shorter; a 401 sends the user back to sign in. */
 export const SESSION_MAX_AGE_SECONDS = 12 * 60 * 60;
 export const PREFS_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;

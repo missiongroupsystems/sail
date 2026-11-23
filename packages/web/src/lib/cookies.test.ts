@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { EMPTY_SCOPE, followLink, resolveScope } from "./cookies";
+import { EMPTY_SCOPE, followLink, keepShownOutlet, resolveScope } from "./cookies";
 
 const alpha = { id: "b-alpha", name: "Alpha" };
 const zest = { id: "b-zest", name: "Zest" };
@@ -50,4 +50,12 @@ test("a link's outlet the person cannot see, archived, on an archived brand, or 
   assert.equal(followLink(scope, "o-gone", [alpha, zest], [alphaMain, { id: "o-gone", brand_id: zest.id, archived: true }]), scope);
   assert.equal(followLink(scope, "o-x", [alpha, old], [alphaMain, { id: "o-x", brand_id: old.id }]), scope);
   assert.equal(followLink(scope, alphaMain.id, [alpha, zest], [alphaMain, zestDock]), scope);
+});
+
+test("adding an outlet while nothing is remembered keeps the outlet the pages were showing", () => {
+  const scope = { brandId: zest.id, outletId: null };
+  assert.deepEqual(keepShownOutlet(scope, [{ ...zestPier, archived: true }, zestDock], { brand_id: zest.id }), { brandId: zest.id, outletId: zestDock.id });
+  assert.equal(keepShownOutlet({ brandId: zest.id, outletId: zestPier.id }, [zestDock, zestPier], { brand_id: zest.id }), null);
+  assert.equal(keepShownOutlet(scope, [zestDock], { brand_id: alpha.id }), null);
+  assert.equal(keepShownOutlet(scope, [], { brand_id: zest.id }), null);
 });
