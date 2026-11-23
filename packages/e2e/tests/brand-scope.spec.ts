@@ -287,7 +287,9 @@ test.describe("brand scope", () => {
       for (const path of ["/settings/tax", "/settings/payment-methods", "/settings/void-reasons", "/menu/categories", "/menu/modifiers", "/pricing/rules", "/pricing/customers"]) {
         await page.goto(`${WEB}${path}`);
         await expect(page.getByRole("note").filter({ hasText: "Shared by all brands" })).toBeVisible({ timeout: 120_000 });
-        const rows = await page.getByRole("main").getByRole("rowheader").allInnerTexts();
+        // The rows' text, not their layout: on a route's first compile the dev server's styles can land after the
+        // note, and innerText then breaks a row's pill onto a line of its own ("Standard-rated\nDefault").
+        const rows = await page.getByRole("main").getByRole("rowheader").allTextContents();
         (seen[path] ??= []).push(rows.join("|"));
       }
     }
