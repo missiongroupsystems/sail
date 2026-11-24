@@ -44444,7 +44444,11 @@
             "staff"
           ],
           "emits": [
-            "import.queued"
+            "import.queued",
+            "area.created",
+            "area.updated",
+            "table.created",
+            "table.updated"
           ],
           "mcp": {
             "expose": false,
@@ -46107,7 +46111,11 @@
             "staff"
           ],
           "emits": [
-            "import.queued"
+            "import.queued",
+            "area.created",
+            "area.updated",
+            "table.created",
+            "table.updated"
           ],
           "mcp": {
             "expose": false,
