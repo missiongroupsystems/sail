@@ -58,6 +58,25 @@ describe("an extension's migrations on an empty database", () => {
   }, 60_000);
 });
 
+describe("two runners at once", () => {
+  const admin = postgres(inject("pgAdminUrl"), { max: 1, onnotice: () => {} });
+  const name = `ext_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
+  afterAll(async () => {
+    await admin.unsafe(`drop database if exists ${name} with (force)`);
+    await admin.end({ timeout: 2 });
+  });
+
+  it("on an empty database take turns: one applies everything, the other finds nothing to do", async () => {
+    await admin.unsafe(`create database ${name}`);
+    const url = `postgres://postgres@127.0.0.1:${inject("pgPort")}/${name}`;
+    const runs = await Promise.allSettled([runMigrations(url, { sets: [fixture] }), runMigrations(url, { sets: [fixture] })]);
+    expect(runs.map((r) => r.status)).toEqual(["fulfilled", "fulfilled"]);
+    const [a, b] = runs.map((r) => (r as PromiseFulfilledResult<Awaited<ReturnType<typeof runMigrations>>>).value);
+    expect([a!.applied, b!.applied].sort((x, y) => x - y)).toEqual([0, sailTotal]);
+    expect([a!.sets[0]!.applied, b!.sets[0]!.applied].sort()).toEqual([0, FIXTURE_TOTAL]);
+  }, 120_000);
+});
+
 const PINNED: [string, string] = ["0002_note_pinned", "ALTER TABLE ext_fixture.notes ADD COLUMN pinned boolean NOT NULL DEFAULT false;"];
 
 describe("an extension's migrations on a migrated database", () => {

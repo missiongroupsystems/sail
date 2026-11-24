@@ -44,6 +44,8 @@ export type MigrationSet = { folder: string; schema: string; table?: string };
 
 /** Where the runner tracks every extension set; Sail owns it and no extension may name it. */
 export const SETS_TRACKING_SCHEMA = "sail_migrations";
+/** The session advisory lock every runner takes: the first 8 bytes of sha256("sail migrations"). */
+const MIGRATION_LOCK = "947581615311437968";
 const SCHEMA_NAME = /^[a-z_][a-z0-9_]{0,62}$/;
 const SAIL_SCHEMAS = new Set(["drizzle", "sail", SETS_TRACKING_SCHEMA, "public", "information_schema"]);
 
@@ -59,6 +61,9 @@ export async function runMigrations(
   if (dupTable) throw new Error(`migration set: tracking table "${dupTable.table}" is named twice`);
   const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
   try {
+    // One runner at a time, over Sail's and every set's migrations: a second waits here, then finds nothing to do.
+    // The lock is the session's (one connection), so it holds across drizzle's own transactions.
+    await sql`select pg_advisory_lock(${MIGRATION_LOCK}::bigint)`;
     const folder = opts.folder ?? migrationsFolder();
     if (!isSailFolder(folder)) throw new Error(`${folder} is not Sail's migrations folder (its journal does not start with Sail's foundations)`);
     const journal = readJournal(folder);
