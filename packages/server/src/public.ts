@@ -9,3 +9,4 @@ export { registerWorkerTask } from "./worker/index.js";
 export { registerPaymentProvider } from "./payments/provider.js";
 export { onCancel, onFire, onVoid } from "./routes/orders.js";
 export { withTransaction } from "./db/client.js";
+export { migrationSetsFromEnv, runMigrations, type MigrationSet } from "./db/migrate.js";
