@@ -3,7 +3,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, or, sql } from "driz
 import { RoleSchema } from "@sail/shared";
 import { db } from "../db/client.js";
 import { withEveryOutlet } from "../db/every-outlet.js";
-import { auditLog, backofficeLinks, backofficeSessions, outlets, staff } from "../db/schema/index.js";
+import { auditLog, outlets, staff } from "../db/schema/index.js";
 import { AppError } from "../lib/errors.js";
 import type { AppEnv } from "../lib/context.js";
 import { defineOp, errorResponses, jsonBody, jsonResponse, listResponse, mutationResponse, z, untrusted, secret } from "../lib/openapi.js";
@@ -12,6 +12,7 @@ import { recordAudit } from "../lib/audit.js";
 import { auditLabels } from "../services/audit-labels.js";
 import { hashSecret, pinLookup } from "../auth/tokens.js";
 import { PIN_TAKEN_LIMITS, pinScope, returnPinAttempt, takePinAttempt } from "../services/pin-attempts.js";
+import { endBackofficeAccess } from "../services/staff-access.js";
 
 export const StaffSchema = z.object({
   id: z.string(),
@@ -178,11 +179,7 @@ export function staffRoutes(app: OpenAPIHono<AppEnv>) {
       .where(and(eq(staff.id, id), eq(staff.merchantId, p.merchantId)))
       .returning();
     if (!row) throw AppError.notFound("staff member", id);
-    // Deactivating ends back-office sessions and open sign-in links, so reactivating does not bring them back.
-    if (body.active === false) {
-      await db().update(backofficeSessions).set({ endedAt: new Date() }).where(and(eq(backofficeSessions.staffId, id), isNull(backofficeSessions.endedAt)));
-      await db().update(backofficeLinks).set({ revokedAt: new Date() }).where(and(eq(backofficeLinks.staffId, id), isNull(backofficeLinks.usedAt), isNull(backofficeLinks.revokedAt)));
-    }
+    if (body.active === false) await endBackofficeAccess(id);
     // Only what changed: a form that sends every field back reports the field the owner changed, not all of them (review 3).
     const was: Record<string, unknown> = before ? { name: before.name, initials: before.initials, email: before.email, role: before.role, outlet_ids: before.outletIds, brand_ids: before.brandIds, legacy_id: before.legacyId, risk_ceiling: before.riskCeiling, active: before.active } : {};
     const changed = Object.fromEntries(Object.entries(body).filter(([k, v]) => !(k in was) || JSON.stringify(v ?? null) !== JSON.stringify(was[k] ?? null))) as typeof body;
