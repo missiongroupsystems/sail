@@ -158,7 +158,8 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
           return { id: existing["id"] as string, created: false };
         }
         // An empty legacy id (a product matched on its Sail id) keeps the one stored.
-        await sql.unsafe(`update ${table} set legacy_id = coalesce(nullif($2, ''), legacy_id), ${changed.map((c, i) => `${c} = $${i + 3}`).join(", ")}${changed.length ? "," : ""} ${table === "products" || table === "customers" ? "updated_at = now()" : "legacy_id = $2"} where id = $1`, [existing["id"], legacyId, ...changed.map((c) => serialise(values[c]))] as never);
+        const sets = ["legacy_id = coalesce(nullif($2, ''), legacy_id)", ...changed.map((c, i) => `${c} = $${i + 3}`), ...(table === "products" || table === "customers" ? ["updated_at = now()"] : [])];
+        await sql.unsafe(`update ${table} set ${sets.join(", ")} where id = $1`, [existing["id"], legacyId, ...changed.map((c) => serialise(values[c]))] as never);
         rep.updates++;
         return { id: existing["id"] as string, created: false };
       };
