@@ -2,6 +2,7 @@ node_modules/
 dist/
 .next/
 .next-setup/
+.next-extension/
 out/
 coverage/
 .turbo/

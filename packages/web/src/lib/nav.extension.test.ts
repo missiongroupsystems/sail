@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { PRODUCT_MARK, PRODUCT_NAME } from "./brand";
+import { initialIcon, PRODUCT_ICON, PRODUCT_MARK, PRODUCT_NAME } from "./brand";
 import { checkExtensionPages, extensionPage, extensionSectionPage, pageMinRole, RAIL, SECTIONS } from "./nav";
 
 // Run with test/tsconfig.extension.json, which maps @sail/extensions to test/extension.
@@ -33,6 +33,13 @@ test("an extension page is found by its own path only", () => {
 test("an extension's brand replaces the product name and mark", () => {
   assert.equal(PRODUCT_NAME, "Harbour");
   assert.equal(typeof PRODUCT_MARK, "function");
+});
+
+test("a brand without an icon of its own gets its initial, never the sail", () => {
+  assert.equal(PRODUCT_ICON, "/brand-icon.svg");
+  assert.match(initialIcon("harbour"), />H<\/text><\/svg>$/);
+  assert.match(initialIcon("& Co"), />&#38;<\/text>/);
+  assert.doesNotMatch(initialIcon("Harbour"), /M118 392/);
 });
 
 test("a rail section's page is found without its query, hash or trailing slash", () => {

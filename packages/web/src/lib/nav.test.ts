@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import extensions from "@sail/extensions";
-import { PRODUCT_MARK, PRODUCT_NAME } from "./brand";
+import { PRODUCT_ICON, PRODUCT_MARK, PRODUCT_NAME } from "./brand";
 import { extensionPage, pageMinRole, RAIL, SECTIONS } from "./nav";
 
 // Stock Sail (no SAIL_EXTENSIONS): the rail, the pages and the product name are Sail's own.
@@ -24,4 +24,5 @@ test("with no extensions, there are no /x/ pages and Sail's pages keep their rol
 test("with no extensions, the product is Sail with the sail mark", () => {
   assert.equal(PRODUCT_NAME, "Sail");
   assert.equal(PRODUCT_MARK, undefined);
+  assert.equal(PRODUCT_ICON, undefined);
 });

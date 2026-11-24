@@ -17,8 +17,12 @@ export type Extensions = {
    * hides a section that links to it. A page listed here is served only when `pages` has its component.
    */
   pages?: Record<string, { minRole: Role }>;
-  /** The product's name, and optionally its mark, in place of Sail's wherever the app shows them. */
-  brand?: { name: string; mark?: ComponentType<{ size: number; className?: string }> };
+  /**
+   * The product's name, and optionally its mark and icon, in place of Sail's wherever the app shows them. `icon` is the
+   * URL of the browser-tab, home-screen (apple-touch) and POS app icon: an absolute URL, or an image imported in
+   * `index` (`import icon from "./icon.png"`, then `icon: icon.src`). Without one, the icon is the name's initial.
+   */
+  brand?: { name: string; mark?: ComponentType<{ size: number; className?: string }>; icon?: string };
 };
 
 /** The components of `Extensions.pages`, by the same paths. Client components. */

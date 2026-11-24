@@ -16,6 +16,6 @@
       "@sail/extensions/pages": ["./src/extensions/none/pages.ts"]
     }
   },
-  "include": ["next-env.d.ts", "next.config.ts", "test/**/*.ts", "test/**/*.tsx", "src/**/*.ts", "src/**/*.tsx", ".next/types/**/*.ts", ".next-setup/types/**/*.ts"],
-  "exclude": ["node_modules", ".next", ".next-setup"]
+  "include": ["next-env.d.ts", "next.config.ts", "test/**/*.ts", "test/**/*.tsx", "src/**/*.ts", "src/**/*.tsx", ".next/types/**/*.ts", ".next-setup/types/**/*.ts", ".next-extension/types/**/*.ts"],
+  "exclude": ["node_modules", ".next", ".next-setup", ".next-extension"]
 }

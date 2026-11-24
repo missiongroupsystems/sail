@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
-import { PRODUCT_NAME } from "@/lib/brand";
+import { PRODUCT_ICON, PRODUCT_NAME } from "@/lib/brand";
 
 /**
  * The `(pos)` route group: a home-screen web app with no
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   manifest: "/pos/manifest.webmanifest",
   appleWebApp: { capable: true, title: `${PRODUCT_NAME} POS`, statusBarStyle: "black-translucent" },
   formatDetection: { telephone: false, address: false, email: false },
-  icons: { icon: "/pos/icon.svg", apple: "/pos/icon.svg" },
+  icons: { icon: PRODUCT_ICON ?? "/pos/icon.svg", apple: PRODUCT_ICON ?? "/pos/icon.svg" },
 };
 
 export const viewport: Viewport = {
