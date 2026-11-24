@@ -116,12 +116,16 @@ export function operation(op: string): OperationSpec {
   return spec;
 }
 
-/** Register operations from later phases (each phase's routes module calls this at import time). */
+/**
+ * Register operations from later phases (each phase's routes module calls this at import time). A key that is already
+ * registered is refused, so a later module cannot replace the spec (its role, tier, principals) a route enforces.
+ */
 export function registerOperations(specs: Record<string, OperationSpec>) {
   for (const [k, v] of Object.entries(specs)) {
     if (k !== v.op) throw new Error(`manifest key ${k} does not match op ${v.op}`);
-    OPERATIONS[k] = v;
+    if (Object.hasOwn(OPERATIONS, k)) throw new Error(`operation ${k} is already registered`);
   }
+  Object.assign(OPERATIONS, specs);
 }
 
 export const TIER_ORDER: Record<RiskTier, number> = { T0: 0, T1: 1, T2: 2, T3: 3 };
