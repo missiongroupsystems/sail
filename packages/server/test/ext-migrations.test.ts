@@ -206,7 +206,9 @@ describe("an extension's migrations on a migrated database", () => {
 
   it("refuse a schema that belongs to Sail or Postgres", async () => {
     for (const schema of ["public", "sail", "drizzle", "sail_migrations", "pg_temp", "auth", "storage", "extensions", "realtime", "vault", "graphql", "pgbouncer", "Bad-Name"]) await expect(runMigrations(db.url, { sets: [{ folder: FIXTURE, schema }] })).rejects.toThrow(/migration set/);
-    await expect(runMigrations(db.url, { sets: [fixture, { ...fixture, table: "other" }] })).rejects.toThrow(/named twice/);
+    await expect(runMigrations(db.url, { sets: [fixture, { ...fixture }] })).rejects.toThrow(/named twice/);
+    // There is no tracking-table option: the table is always named after the schema, and a dotted name is refused.
+    await expect(runMigrations(db.url, { sets: migrationSetsFromEnv(`ext_b.tracking=${FIXTURE}`) })).rejects.toThrow('migration set: "ext_b.tracking" is not a lower-case Postgres name');
     await expect(runMigrations(db.url, { sets: [{ folder: migrationsFolder(), schema: "ext_sail" }] })).rejects.toThrow(/Sail's own migrations folder/);
   });
 
@@ -293,17 +295,16 @@ describe("an extension's table under RLS", () => {
 });
 
 describe("SAIL_MIGRATIONS", () => {
-  it("reads schema=folder and schema.table=folder, comma-separated, and nothing when unset", () => {
+  it("reads schema=folder, comma-separated, and nothing when unset", () => {
     expect(migrationSetsFromEnv("")).toEqual([]);
-    expect(migrationSetsFromEnv("ext_a=/x/a, ext_b.tracking=/x/b")).toEqual([
-      { schema: "ext_a", table: undefined, folder: "/x/a" },
-      { schema: "ext_b", table: "tracking", folder: "/x/b" },
+    expect(migrationSetsFromEnv("ext_a=/x/a, ext_b=/x/b")).toEqual([
+      { schema: "ext_a", folder: "/x/a" },
+      { schema: "ext_b", folder: "/x/b" },
     ]);
   });
 
-  it("refuses an entry without a schema, with a name of three parts, without a folder, or naming Sail's own folder", () => {
+  it("refuses an entry without a schema, without a folder, or naming Sail's own folder", () => {
     expect(() => migrationSetsFromEnv("/x/a")).toThrow(/^SAIL_MIGRATIONS: expected schema=folder/);
-    expect(() => migrationSetsFromEnv("a.b.c=/x/a")).toThrow(/^SAIL_MIGRATIONS: expected schema=folder or schema.table=folder/);
     expect(() => migrationSetsFromEnv("ext_a=")).toThrow(/^SAIL_MIGRATIONS: "ext_a=" names no folder/);
     expect(() => migrationSetsFromEnv("ext_a= ")).toThrow(/^SAIL_MIGRATIONS: .* names no folder/);
     expect(() => migrationSetsFromEnv(`ext_a=${migrationsFolder()}`)).toThrow(/^SAIL_MIGRATIONS: .* is Sail's own migrations folder/);

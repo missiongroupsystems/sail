@@ -43,7 +43,11 @@ Importing `@sail/server` builds nothing and adds no routes, but the route module
 so an extension's operation keys must not collide with Sail's. Use a prefix of your own (`ext.notes.list`).
 
 `SAIL_DEV_MODULES` (comma-separated paths) loads modules into `pnpm --filter @sail/server dev:local`, after Sail's, the
-way `startServer({ modules })` does.
+way `startServer({ modules })` does: `SAIL_DEV_MODULES=/srv/shop/src/notes.ts`. A relative path is resolved from the
+working directory, which is `packages/server` under `pnpm --filter @sail/server`, so prefer absolute paths.
+
+**Not stable:** `schema` (Sail's Drizzle tables) is exported for queries in a handler, but its tables and columns follow
+Sail's migrations and can change in any release.
 
 ## Web
 
@@ -76,10 +80,11 @@ An extension's tables live in a Postgres schema of its own, with its own Drizzle
 and the `.sql` files). The runner applies Sail's migrations first, then each extension's set in a transaction of its
 own, so a failing migration undoes that set's pending migrations and leaves Sail's applied.
 
-- **Run them** with `SAIL_MIGRATIONS=ext_shop=path/to/drizzle` for `pnpm db:migrate`, Sail's `node dist/migrate.js` and
-  `dev:local` (comma-separate several sets; `ext_shop.my_table=path` names the tracking table; paths are resolved from
-  the working directory), or from code with `runMigrations(url, { sets: [{ folder, schema }] })`.
-- **Tracking.** Each set is tracked in `sail_migrations.<schema>` (or the table named), with the same drift check as
+- **Run them** with `SAIL_MIGRATIONS=ext_shop=/srv/shop/drizzle` for `pnpm db:migrate`, Sail's `node dist/migrate.js`
+  and `dev:local` (comma-separate several sets), or from code with `runMigrations(url, { sets: [{ folder, schema }] })`.
+  A relative folder is resolved from the working directory, which is `packages/server` under
+  `pnpm --filter @sail/server`, so prefer absolute paths.
+- **Tracking.** Each set is tracked in `sail_migrations.<schema>`, with the same drift check as
   Sail's: the runner refuses a database ahead of the folder, and checks every set before it applies anything.
 - **One process at a time.** Run migrations from one process at a time (one release command, or one person), as for
   Sail's own. The runner takes no lock, so it works the same on a direct connection and through a transaction pooler.
