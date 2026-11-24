@@ -47,7 +47,11 @@ export const SETS_TRACKING_SCHEMA = "sail_migrations";
 /** The session advisory lock every runner takes: the first 8 bytes of sha256("sail migrations"). */
 const MIGRATION_LOCK = "947581615311437968";
 const SCHEMA_NAME = /^[a-z_][a-z0-9_]{0,62}$/;
-const SAIL_SCHEMAS = new Set(["drizzle", "sail", SETS_TRACKING_SCHEMA, "public", "information_schema"]);
+// Sail's own, Postgres's, and those a managed Postgres keeps for its own services (auth, storage, realtime, ...).
+const RESERVED_SCHEMAS = new Set([
+  "drizzle", "sail", SETS_TRACKING_SCHEMA, "public", "information_schema",
+  "auth", "storage", "extensions", "realtime", "_realtime", "vault", "graphql", "graphql_public", "pgbouncer", "pgsodium", "pgsodium_masks", "net", "cron", "supabase_functions", "supabase_migrations",
+]);
 
 export async function runMigrations(
   url: string,
@@ -107,15 +111,21 @@ export function migrationSetsFromEnv(value = process.env.SAIL_MIGRATIONS ?? ""):
   return value.split(",").map((s) => s.trim()).filter(Boolean).map((entry) => {
     const eq = entry.indexOf("=");
     if (eq < 1) throw new Error(`SAIL_MIGRATIONS: expected schema=folder, got "${entry}"`);
-    const [schema, table] = entry.slice(0, eq).split(".");
-    return { schema: schema!, table, folder: resolve(entry.slice(eq + 1)) };
+    const names = entry.slice(0, eq).split(".");
+    if (names.length > 2) throw new Error(`SAIL_MIGRATIONS: expected schema=folder or schema.table=folder, got "${entry}"`);
+    const path = entry.slice(eq + 1).trim();
+    if (!path) throw new Error(`SAIL_MIGRATIONS: "${entry}" names no folder`);
+    const folder = resolve(path);
+    if (isSailFolder(folder)) throw new Error(`SAIL_MIGRATIONS: ${folder} is Sail's own migrations folder, which the runner always applies; name the extension's folder`);
+    return { schema: names[0]!, table: names[1], folder };
   });
 }
 
 function checkSet(set: MigrationSet): Required<MigrationSet> {
   const table = set.table ?? set.schema;
   for (const name of [set.schema, table]) if (!SCHEMA_NAME.test(name)) throw new Error(`migration set: "${name}" is not a lower-case Postgres name`);
-  if (SAIL_SCHEMAS.has(set.schema) || set.schema.startsWith("pg_")) throw new Error(`migration set: schema "${set.schema}" belongs to Sail or Postgres; an extension uses a schema of its own`);
+  if (RESERVED_SCHEMAS.has(set.schema) || set.schema.startsWith("pg_")) throw new Error(`migration set: schema "${set.schema}" belongs to Sail, Postgres or a managed Postgres's services; an extension uses a schema of its own`);
+  if (isSailFolder(set.folder)) throw new Error(`migration set: ${set.folder} is Sail's own migrations folder; a set is an extension's own`);
   readJournal(set.folder);
   return { folder: set.folder, schema: set.schema, table };
 }

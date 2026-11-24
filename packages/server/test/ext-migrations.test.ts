@@ -77,6 +77,68 @@ describe("two runners at once", () => {
   }, 120_000);
 });
 
+/** A copy of Sail's folder without its last migration: a database migrated with it has one of Sail's pending. */
+function sailWithoutLast(): { folder: string; cleanup: () => void } {
+  const folder = mkdtempSync(join(tmpdir(), "sail-behind-"));
+  cpSync(migrationsFolder(), folder, { recursive: true });
+  const journalPath = join(folder, "meta/_journal.json");
+  const journal = JSON.parse(readFileSync(journalPath, "utf8")) as { entries: unknown[] };
+  journal.entries.pop();
+  writeFileSync(journalPath, JSON.stringify(journal));
+  return { folder, cleanup: () => rmSync(folder, { recursive: true, force: true }) };
+}
+
+describe("an extension's migrations while Sail has one pending", () => {
+  const admin = postgres(inject("pgAdminUrl"), { max: 1, onnotice: () => {} });
+  const names: string[] = [];
+  afterAll(async () => {
+    for (const n of names) await admin.unsafe(`drop database if exists ${n} with (force)`);
+    await admin.end({ timeout: 2 });
+  });
+  /** A database with all of Sail's migrations but the last, and the given fixture folder applied. */
+  async function behind(setFolder: string) {
+    const name = `ext_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
+    names.push(name);
+    await admin.unsafe(`create database ${name}`);
+    const url = `postgres://postgres@127.0.0.1:${inject("pgPort")}/${name}`;
+    const old = sailWithoutLast();
+    try {
+      await runMigrations(url, { folder: old.folder, sets: [{ ...fixture, folder: setFolder }] });
+    } finally {
+      old.cleanup();
+    }
+    return { url, sql: postgres(url, { max: 1, onnotice: () => {} }) };
+  }
+
+  it("checks the extension's drift before Sail applies anything: a database ahead of the extension changes nothing", async () => {
+    const ahead = fixtureWith(PINNED);
+    const { url, sql } = await behind(ahead.folder);
+    ahead.cleanup();
+    try {
+      expect(await sailCount(sql)).toBe(sailTotal - 1);
+      await expect(runMigrations(url, { sets: [fixture] })).rejects.toThrow("ext_fixture: database has 3 migrations but the journal has 2");
+      expect(await sailCount(sql)).toBe(sailTotal - 1);
+    } finally {
+      await sql.end({ timeout: 2 });
+    }
+  }, 120_000);
+
+  it("keeps Sail's just-applied migration committed and tracked when the extension's then fails", async () => {
+    const { url, sql } = await behind(FIXTURE);
+    const broken = fixtureWith(["0002_broken", "ALTER TABLE ext_fixture.no_such_table ADD COLUMN x int;"]);
+    try {
+      await expect(runMigrations(url, { sets: [{ ...fixture, folder: broken.folder }] })).rejects.toThrow(/^ext_fixture: relation "ext_fixture.no_such_table" does not exist/);
+      expect(await sailCount(sql)).toBe(sailTotal);
+      expect(await fixtureCount(sql)).toBe(FIXTURE_TOTAL);
+      // And the next run, with the extension fixed, has only the extension's left to do.
+      await expect(runMigrations(url, { sets: [fixture] })).resolves.toEqual({ applied: 0, total: sailTotal, sets: [{ schema: "ext_fixture", applied: 0, total: FIXTURE_TOTAL }] });
+    } finally {
+      broken.cleanup();
+      await sql.end({ timeout: 2 });
+    }
+  }, 120_000);
+});
+
 const PINNED: [string, string] = ["0002_note_pinned", "ALTER TABLE ext_fixture.notes ADD COLUMN pinned boolean NOT NULL DEFAULT false;"];
 
 describe("an extension's migrations on a migrated database", () => {
@@ -136,8 +198,26 @@ describe("an extension's migrations on a migrated database", () => {
   });
 
   it("refuse a schema that belongs to Sail or Postgres", async () => {
-    for (const schema of ["public", "sail", "drizzle", "sail_migrations", "pg_temp", "Bad-Name"]) await expect(runMigrations(db.url, { sets: [{ folder: FIXTURE, schema }] })).rejects.toThrow(/migration set/);
+    for (const schema of ["public", "sail", "drizzle", "sail_migrations", "pg_temp", "auth", "storage", "extensions", "realtime", "vault", "graphql", "pgbouncer", "Bad-Name"]) await expect(runMigrations(db.url, { sets: [{ folder: FIXTURE, schema }] })).rejects.toThrow(/migration set/);
     await expect(runMigrations(db.url, { sets: [fixture, { ...fixture, table: "other" }] })).rejects.toThrow(/named twice/);
+    await expect(runMigrations(db.url, { sets: [{ folder: migrationsFolder(), schema: "ext_sail" }] })).rejects.toThrow(/Sail's own migrations folder/);
+  });
+
+  it("give a later migration's new table the default grants of the first", async () => {
+    const next = fixtureWith(PINNED, ["0003_tags", "CREATE TABLE ext_fixture.tags (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), merchant_id uuid NOT NULL REFERENCES public.merchants(id), name text NOT NULL);\n--> statement-breakpoint\nALTER TABLE ext_fixture.tags ENABLE ROW LEVEL SECURITY;\n--> statement-breakpoint\nCREATE POLICY tags_tenant ON ext_fixture.tags FOR ALL TO app_authenticated USING (merchant_id = sail.merchant_id()) WITH CHECK (merchant_id = sail.merchant_id());"]);
+    try {
+      await runMigrations(db.url, { sets: [{ ...fixture, folder: next.folder }] });
+    } finally {
+      next.cleanup();
+    }
+    const m = await seedMerchant(db.sql, "Tags");
+    const rows = await db.sql.begin(async (t) => {
+      await t`select set_config('app.current_merchant', ${m.merchantId}, true)`;
+      await t.unsafe("set local role app_authenticated");
+      await t`insert into ext_fixture.tags (merchant_id, name) values (${m.merchantId}, 'spicy')`;
+      return t<{ name: string }[]>`select name from ext_fixture.tags`;
+    });
+    expect(rows.map((r) => r.name)).toEqual(["spicy"]);
   });
 });
 
@@ -212,6 +292,13 @@ describe("SAIL_MIGRATIONS", () => {
       { schema: "ext_a", table: undefined, folder: "/x/a" },
       { schema: "ext_b", table: "tracking", folder: "/x/b" },
     ]);
-    expect(() => migrationSetsFromEnv("/x/a")).toThrow(/schema=folder/);
+  });
+
+  it("refuses an entry without a schema, with a name of three parts, without a folder, or naming Sail's own folder", () => {
+    expect(() => migrationSetsFromEnv("/x/a")).toThrow(/^SAIL_MIGRATIONS: expected schema=folder/);
+    expect(() => migrationSetsFromEnv("a.b.c=/x/a")).toThrow(/^SAIL_MIGRATIONS: expected schema=folder or schema.table=folder/);
+    expect(() => migrationSetsFromEnv("ext_a=")).toThrow(/^SAIL_MIGRATIONS: "ext_a=" names no folder/);
+    expect(() => migrationSetsFromEnv("ext_a= ")).toThrow(/^SAIL_MIGRATIONS: .* names no folder/);
+    expect(() => migrationSetsFromEnv(`ext_a=${migrationsFolder()}`)).toThrow(/^SAIL_MIGRATIONS: .* is Sail's own migrations folder/);
   });
 });
