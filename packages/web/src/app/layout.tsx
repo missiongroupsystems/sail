@@ -4,11 +4,12 @@ import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import { getTheme } from "@/lib/api.server";
 import { fontClassNames } from "@/lib/fonts";
+import { PRODUCT_NAME } from "@/lib/nav";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "Sail", template: "%s · Sail" },
-  description: "Sail back office",
+  title: { default: PRODUCT_NAME, template: `%s · ${PRODUCT_NAME}` },
+  description: `${PRODUCT_NAME} back office`,
 };
 
 export const viewport: Viewport = {

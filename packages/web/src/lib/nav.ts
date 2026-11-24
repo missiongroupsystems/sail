@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@sail/shared";
+import extensions from "@sail/extensions";
 
 export type Section = {
   href: string;
@@ -35,6 +36,12 @@ export const SECTIONS: Section[] = [
   { href: "/audit", label: "Changes", icon: History, minRole: "manager" },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
+
+/** The rail: Sail's sections, then any a downstream build adds (extensions/types.ts). */
+export const RAIL: Section[] = [...SECTIONS, ...(extensions.nav ?? [])];
+
+/** The product's name: Sail's, unless a downstream build names its own. */
+export const PRODUCT_NAME = extensions.brand?.name ?? "Sail";
 
 export const SETTINGS_TABS = [
   { href: "/settings/outlets", label: "Outlets" },

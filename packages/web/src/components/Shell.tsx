@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 import type { Brand, Me, Merchant, Outlet } from "@/lib/api/types";
 import type { Scope, Theme } from "@/lib/cookies";
 import { roleAtLeast } from "@sail/shared";
-import { SECTIONS } from "@/lib/nav";
+import { PRODUCT_NAME, RAIL } from "@/lib/nav";
 import { ScopeControl } from "./ScopeControl";
 import { ShownOutletProvider } from "./ShownOutlet";
 import { UserMenu } from "./UserMenu";
@@ -34,8 +34,16 @@ export type ShellProps = {
   children: ReactNode;
 };
 
-/** Sail's logo at the top of the rail; the collapsed rail keeps only the mark. */
+/** Sail's logo at the top of the rail; the collapsed rail keeps only the mark. A downstream name is set as text. */
 function Wordmark() {
+  if (PRODUCT_NAME !== "Sail") {
+    return (
+      <span className="flex h-6 items-center font-heading text-[17px] leading-6 font-semibold tracking-[-0.02em] text-ink max-[1099px]:justify-center">
+        <span className="max-[1099px]:hidden">{PRODUCT_NAME}</span>
+        <span aria-hidden className="min-[1100px]:hidden">{PRODUCT_NAME.slice(0, 1)}</span>
+      </span>
+    );
+  }
   return (
     <>
       <SailLogo size="sidebar" className="max-[1099px]:hidden" />
@@ -58,7 +66,7 @@ export function Shell({ me, merchant, brands, outlets, scope, followed, theme, c
       <OfficeSurface />
       <aside className="sticky top-0 h-dvh shrink-0 print:hidden">
         <SideNav
-          items={SECTIONS.filter((s) => !s.minRole || (me.role !== null && roleAtLeast(me.role, s.minRole)))}
+          items={RAIL.filter((s) => !s.minRole || (me.role !== null && roleAtLeast(me.role, s.minRole)))}
           currentPath={pathname}
           LinkComponent={NavLink}
           header={

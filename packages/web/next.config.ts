@@ -1,4 +1,8 @@
 import type { NextConfig } from "next";
+import { resolve } from "node:path";
+
+// A downstream build points SAIL_EXTENSIONS at its own module (src/extensions/types.ts); stock Sail adds nothing.
+const extensions = resolve(process.env.SAIL_EXTENSIONS || "src/extensions/none.ts");
 
 const config: NextConfig = {
   reactStrictMode: true,
@@ -17,6 +21,7 @@ const config: NextConfig = {
     // @sail/shared imports its own modules as "./money.js" (ESM style, resolved by tsc to .ts);
     // webpack needs the same extension alias.
     webpackConfig.resolve ??= {};
+    webpackConfig.resolve.alias = { ...webpackConfig.resolve.alias, "@sail/extensions": extensions };
     webpackConfig.resolve.extensionAlias = {
       ...webpackConfig.resolve.extensionAlias,
       ".js": [".ts", ".tsx", ".js"],
