@@ -195,7 +195,7 @@ describe("legacy importer", () => {
 
     const updated = await run(edited);
     for (const ent of ["outlets", "categories", "tender_types", "products"]) expect(updated[ent], ent).toMatchObject({ creates: 0, updates: 1, unchanged: 0, rejected: [] });
-    const [outlet] = await db.sql<{ id: string; address: string; legacy_id: string }[]>`select id, address, legacy_id from outlets where merchant_id = ${D.merchantId}`;
+    const [outlet] = await db.sql<{ id: string; address: string; legacy_id: string }[]>`select id, address, legacy_id from outlets where merchant_id = ${D.merchantId} and legacy_id = 'O1'`;
     expect(outlet).toEqual({ id: outletId!.id, address: "2 Quay Road", legacy_id: "O1" });
     const [category] = await db.sql<{ sort: number; legacy_id: string }[]>`select sort, legacy_id from report_categories where merchant_id = ${D.merchantId}`;
     expect(category).toEqual({ sort: 7, legacy_id: "C1" });
