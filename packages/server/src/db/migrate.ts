@@ -9,6 +9,10 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
  * Migration runner: drift check → migrate → drift check.
  * Runs on a session connection. Forward-only. Never `drizzle-kit push` against
  * a shared environment.
+ *
+ * Run it from one process at a time (one release command, or one person from a laptop). It takes no lock, so it
+ * behaves the same on a direct connection and through a transaction pooler, where a session lock would stay held
+ * on a pooled backend and leave the next run waiting.
  */
 
 /**
@@ -44,8 +48,6 @@ export type MigrationSet = { folder: string; schema: string; table?: string };
 
 /** Where the runner tracks every extension set; Sail owns it and no extension may name it. */
 export const SETS_TRACKING_SCHEMA = "sail_migrations";
-/** The session advisory lock every runner takes: the first 8 bytes of sha256("sail migrations"). */
-const MIGRATION_LOCK = "947581615311437968";
 const SCHEMA_NAME = /^[a-z_][a-z0-9_]{0,62}$/;
 // Sail's own, Postgres's, and those a managed Postgres keeps for its own services (auth, storage, realtime, ...).
 const RESERVED_SCHEMAS = new Set([
@@ -65,9 +67,6 @@ export async function runMigrations(
   if (dupTable) throw new Error(`migration set: tracking table "${dupTable.table}" is named twice`);
   const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
   try {
-    // One runner at a time, over Sail's and every set's migrations: a second waits here, then finds nothing to do.
-    // The lock is the session's (one connection), so it holds across drizzle's own transactions.
-    await sql`select pg_advisory_lock(${MIGRATION_LOCK}::bigint)`;
     const folder = opts.folder ?? migrationsFolder();
     if (!isSailFolder(folder)) throw new Error(`${folder} is not Sail's migrations folder (its journal does not start with Sail's foundations)`);
     const journal = readJournal(folder);

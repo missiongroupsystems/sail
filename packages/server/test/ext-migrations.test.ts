@@ -58,7 +58,7 @@ describe("an extension's migrations on an empty database", () => {
   }, 60_000);
 });
 
-describe("two runners at once", () => {
+describe("a run after one through a transaction pooler", () => {
   const admin = postgres(inject("pgAdminUrl"), { max: 1, onnotice: () => {} });
   const name = `ext_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
   afterAll(async () => {
@@ -66,14 +66,21 @@ describe("two runners at once", () => {
     await admin.end({ timeout: 2 });
   });
 
-  it("on an empty database take turns: one applies everything, the other finds nothing to do", async () => {
+  it("finishes although a pooled backend still holds the session lock an earlier version of the runner took", async () => {
     await admin.unsafe(`create database ${name}`);
     const url = `postgres://postgres@127.0.0.1:${inject("pgPort")}/${name}`;
-    const runs = await Promise.allSettled([runMigrations(url, { sets: [fixture] }), runMigrations(url, { sets: [fixture] })]);
-    expect(runs.map((r) => r.status)).toEqual(["fulfilled", "fulfilled"]);
-    const [a, b] = runs.map((r) => (r as PromiseFulfilledResult<Awaited<ReturnType<typeof runMigrations>>>).value);
-    expect([a!.applied, b!.applied].sort((x, y) => x - y)).toEqual([0, sailTotal]);
-    expect([a!.sets[0]!.applied, b!.sets[0]!.applied].sort()).toEqual([0, FIXTURE_TOTAL]);
+    // A transaction pooler keeps the backend a session lock was taken on, so the lock outlives the run that took it.
+    // This connection plays that backend, holding the key the runner once took (the first 8 bytes of
+    // sha256("sail migrations")).
+    const pooled = postgres(url, { max: 1, onnotice: () => {} });
+    try {
+      await pooled`select pg_advisory_lock(947581615311437968)`;
+      const run = runMigrations(url, { sets: [fixture] }).then((r) => r.sets[0]!.applied);
+      const outcome = await Promise.race([run, new Promise((r) => setTimeout(() => r("still waiting"), 20_000))]);
+      expect(outcome).toBe(FIXTURE_TOTAL);
+    } finally {
+      await pooled.end({ timeout: 2 });
+    }
   }, 120_000);
 });
 

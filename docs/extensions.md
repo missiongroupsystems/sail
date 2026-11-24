@@ -81,7 +81,8 @@ own, so a failing migration undoes that set's pending migrations and leaves Sail
   the working directory), or from code with `runMigrations(url, { sets: [{ folder, schema }] })`.
 - **Tracking.** Each set is tracked in `sail_migrations.<schema>` (or the table named), with the same drift check as
   Sail's: the runner refuses a database ahead of the folder, and checks every set before it applies anything.
-- **One at a time.** The runner holds a session advisory lock for the whole run, so two deploys cannot race.
+- **One process at a time.** Run migrations from one process at a time (one release command, or one person), as for
+  Sail's own. The runner takes no lock, so it works the same on a direct connection and through a transaction pooler.
 - **One database role.** Run every migration, Sail's and every set's, as the same role. Default privileges apply only to
   tables created by the role that set them.
 - **Refused:** the schemas `public`, `sail`, `drizzle`, `sail_migrations`, `information_schema`, `pg_*` and those a
