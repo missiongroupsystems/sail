@@ -181,6 +181,8 @@ describe("staff and passwords", () => {
     expect(dangling).toBe("A referenced record does not exist");
     for (const m of [dupPin, dangling]) expect(m).not.toMatch(/constraint|_uq|fkey|same_merchant|Key \(/);
     expect(rowRefusal(new Error("name is required"))).toBe("name is required");
+    // A statement the importer got wrong is not passed off as a rule the row broke.
+    await expect(refusal(() => db.sql.unsafe("update outlets set name = 'a', name = 'b' where false"))).rejects.toMatchObject({ code: "42601" });
   });
 
   it("a long but trivial password is refused when it is set", async () => {

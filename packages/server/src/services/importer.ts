@@ -18,6 +18,8 @@ import { PIN_TAKEN_LIMITS, returnPinAttempt, takePinAttempt } from "./pin-attemp
 export function rowRefusal(e: unknown): string {
   const pg = e as { code?: unknown; message?: string; constraint_name?: string; detail?: string };
   if (typeof pg.code !== "string" || !/^[0-9A-Z]{5}$/.test(pg.code) || !(e instanceof Error) || e.name !== "PostgresError") return (e as Error).message;
+  // A syntax error is a fault in the importer, not in the row: it fails the job loudly instead of rejecting the row.
+  if (pg.code === "42601") throw e;
   if (pg.code === "SL400") return pg.message ?? "This row is not allowed";
   if (pg.code === "23505") return pg.constraint_name === "staff_merchant_pin_uq" ? "Someone at this business already uses that PIN" : "A record with the same unique value already exists";
   if (pg.code === "23503") return "A referenced record does not exist";
