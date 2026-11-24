@@ -54,7 +54,7 @@ describe("an extension's migrations on an empty database", () => {
       `drift check: ${sailTotal} of ${sailTotal} migrations applied`,
       "drift check (ext_fixture): 2 of 2 migrations applied",
     ]);
-    expect(readFileSync(join(FIXTURE, "0000_brave_mongu.sql"), "utf8")).toMatch(/^CREATE SCHEMA "ext_fixture";/);
+    expect(readFileSync(join(FIXTURE, "0000_melted_shriek.sql"), "utf8")).toMatch(/^CREATE SCHEMA "ext_fixture";/);
   }, 60_000);
 });
 
@@ -84,13 +84,18 @@ describe("a run after one through a transaction pooler", () => {
   }, 120_000);
 });
 
-/** A copy of Sail's folder without its last migration: a database migrated with it has one of Sail's pending. */
-function sailWithoutLast(): { folder: string; cleanup: () => void } {
-  const folder = mkdtempSync(join(tmpdir(), "sail-behind-"));
+/**
+ * A copy of Sail's folder with one more migration, as Sail's next release would ship: a database migrated with Sail's
+ * own folder has that one pending. (The fixture needs Sail's latest migration, so none of Sail's can be held back.)
+ */
+function sailWithOneMore(): { folder: string; cleanup: () => void } {
+  const folder = mkdtempSync(join(tmpdir(), "sail-next-"));
   cpSync(migrationsFolder(), folder, { recursive: true });
   const journalPath = join(folder, "meta/_journal.json");
-  const journal = JSON.parse(readFileSync(journalPath, "utf8")) as { entries: unknown[] };
-  journal.entries.pop();
+  const journal = JSON.parse(readFileSync(journalPath, "utf8")) as { entries: { idx: number; when: number; tag: string }[] };
+  const last = journal.entries.at(-1)!;
+  journal.entries.push({ ...last, idx: last.idx + 1, when: last.when + 1000, tag: "9999_next_release" });
+  writeFileSync(join(folder, "9999_next_release.sql"), "CREATE TABLE public.next_release (id int);");
   writeFileSync(journalPath, JSON.stringify(journal));
   return { folder, cleanup: () => rmSync(folder, { recursive: true, force: true }) };
 }
@@ -102,18 +107,15 @@ describe("an extension's migrations while Sail has one pending", () => {
     for (const n of names) await admin.unsafe(`drop database if exists ${n} with (force)`);
     await admin.end({ timeout: 2 });
   });
-  /** A database with all of Sail's migrations but the last, and the given fixture folder applied. */
+  const next = sailWithOneMore();
+  afterAll(() => next.cleanup());
+  /** A database with all of Sail's migrations and the given fixture folder applied; `next.folder` has one more of Sail's. */
   async function behind(setFolder: string) {
     const name = `ext_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
     names.push(name);
     await admin.unsafe(`create database ${name}`);
     const url = `postgres://postgres@127.0.0.1:${inject("pgPort")}/${name}`;
-    const old = sailWithoutLast();
-    try {
-      await runMigrations(url, { folder: old.folder, sets: [{ ...fixture, folder: setFolder }] });
-    } finally {
-      old.cleanup();
-    }
+    await runMigrations(url, { sets: [{ ...fixture, folder: setFolder }] });
     return { url, sql: postgres(url, { max: 1, onnotice: () => {} }) };
   }
 
@@ -122,9 +124,9 @@ describe("an extension's migrations while Sail has one pending", () => {
     const { url, sql } = await behind(ahead.folder);
     ahead.cleanup();
     try {
-      expect(await sailCount(sql)).toBe(sailTotal - 1);
-      await expect(runMigrations(url, { sets: [fixture] })).rejects.toThrow("ext_fixture: database has 3 migrations but the journal has 2");
-      expect(await sailCount(sql)).toBe(sailTotal - 1);
+      expect(await sailCount(sql)).toBe(sailTotal);
+      await expect(runMigrations(url, { folder: next.folder, sets: [fixture] })).rejects.toThrow("ext_fixture: database has 3 migrations but the journal has 2");
+      expect(await sailCount(sql)).toBe(sailTotal);
     } finally {
       await sql.end({ timeout: 2 });
     }
@@ -134,11 +136,11 @@ describe("an extension's migrations while Sail has one pending", () => {
     const { url, sql } = await behind(FIXTURE);
     const broken = fixtureWith(["0002_broken", "ALTER TABLE ext_fixture.no_such_table ADD COLUMN x int;"]);
     try {
-      await expect(runMigrations(url, { sets: [{ ...fixture, folder: broken.folder }] })).rejects.toThrow(/^ext_fixture: relation "ext_fixture.no_such_table" does not exist/);
-      expect(await sailCount(sql)).toBe(sailTotal);
+      await expect(runMigrations(url, { folder: next.folder, sets: [{ ...fixture, folder: broken.folder }] })).rejects.toThrow(/^ext_fixture: relation "ext_fixture.no_such_table" does not exist/);
+      expect(await sailCount(sql)).toBe(sailTotal + 1);
       expect(await fixtureCount(sql)).toBe(FIXTURE_TOTAL);
       // And the next run, with the extension fixed, has only the extension's left to do.
-      await expect(runMigrations(url, { sets: [fixture] })).resolves.toEqual({ applied: 0, total: sailTotal, sets: [{ schema: "ext_fixture", applied: 0, total: FIXTURE_TOTAL }] });
+      await expect(runMigrations(url, { folder: next.folder, sets: [fixture] })).resolves.toEqual({ applied: 0, total: sailTotal + 1, sets: [{ schema: "ext_fixture", applied: 0, total: FIXTURE_TOTAL }] });
     } finally {
       broken.cleanup();
       await sql.end({ timeout: 2 });
@@ -147,6 +149,7 @@ describe("an extension's migrations while Sail has one pending", () => {
 });
 
 const PINNED: [string, string] = ["0002_note_pinned", "ALTER TABLE ext_fixture.notes ADD COLUMN pinned boolean NOT NULL DEFAULT false;"];
+const TAGS: [string, string] = ["0003_tags", "CREATE TABLE ext_fixture.tags (id serial PRIMARY KEY, merchant_id uuid NOT NULL REFERENCES public.merchants(id), name text NOT NULL);\n--> statement-breakpoint\nALTER TABLE ext_fixture.tags ENABLE ROW LEVEL SECURITY;\n--> statement-breakpoint\nCREATE POLICY tags_tenant ON ext_fixture.tags FOR ALL TO app_authenticated USING (merchant_id = sail.merchant_id()) WITH CHECK (merchant_id = sail.merchant_id());"];
 
 describe("an extension's migrations on a migrated database", () => {
   let db: TestDb;
@@ -212,8 +215,8 @@ describe("an extension's migrations on a migrated database", () => {
     await expect(runMigrations(db.url, { sets: [{ folder: migrationsFolder(), schema: "ext_sail" }] })).rejects.toThrow(/Sail's own migrations folder/);
   });
 
-  it("give a later migration's new table the default grants of the first", async () => {
-    const next = fixtureWith(PINNED, ["0003_tags", "CREATE TABLE ext_fixture.tags (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), merchant_id uuid NOT NULL REFERENCES public.merchants(id), name text NOT NULL);\n--> statement-breakpoint\nALTER TABLE ext_fixture.tags ENABLE ROW LEVEL SECURITY;\n--> statement-breakpoint\nCREATE POLICY tags_tenant ON ext_fixture.tags FOR ALL TO app_authenticated USING (merchant_id = sail.merchant_id()) WITH CHECK (merchant_id = sail.merchant_id());"]);
+  it("give a later migration's new table and its sequence the default grants of the first, to staff only", async () => {
+    const next = fixtureWith(PINNED, TAGS);
     try {
       await runMigrations(db.url, { sets: [{ ...fixture, folder: next.folder }] });
     } finally {
@@ -227,6 +230,21 @@ describe("an extension's migrations on a migrated database", () => {
       return t<{ name: string }[]>`select name from ext_fixture.tags`;
     });
     expect(rows.map((r) => r.name)).toEqual(["spicy"]);
+    // Agents get no default grants: the later table is closed to them until a migration grants it.
+    const asAgent = () =>
+      db.sql.begin(async (t) => {
+        await t`select set_config('app.current_merchant', ${m.merchantId}, true)`;
+        await t.unsafe("set local role app_agent");
+        return t<{ name: string }[]>`select name from ext_fixture.tags`;
+      });
+    await expect(asAgent()).rejects.toThrow("permission denied for table tags");
+    const granted = fixtureWith(PINNED, TAGS, ["0004_tags_agent", "GRANT SELECT ON ext_fixture.tags TO app_agent;\n--> statement-breakpoint\nCREATE POLICY tags_agent ON ext_fixture.tags FOR SELECT TO app_agent USING (merchant_id = sail.merchant_id());"]);
+    try {
+      await runMigrations(db.url, { sets: [{ ...fixture, folder: granted.folder }] });
+    } finally {
+      granted.cleanup();
+    }
+    expect((await asAgent()).map((r) => r.name)).toEqual(["spicy"]);
   });
 });
 
@@ -234,17 +252,20 @@ describe("an extension's table under RLS", () => {
   let db: TestDb;
   let A: SeededMerchant;
   let B: SeededMerchant;
-  /** A second brand of merchant A, with no outlet of its own: a row may still name it. */
+  /** A second brand of merchant A, and its one outlet. */
   let otherBrand: string;
+  let otherOutlet: string;
   beforeAll(async () => {
     db = await freshDb();
     await runMigrations(db.url, { sets: [fixture] });
     A = await seedMerchant(db.sql, "Alpha");
     B = await seedMerchant(db.sql, "Bravo");
     otherBrand = randomUUID();
+    otherOutlet = randomUUID();
     await db.sql`insert into brands (id, merchant_id, name) values (${otherBrand}, ${A.merchantId}, 'Alpha Other')`;
+    await db.sql`insert into outlets (id, merchant_id, brand_id, name) values (${otherOutlet}, ${A.merchantId}, ${otherBrand}, 'Alpha Other Outlet')`;
     for (const m of [A, B]) await db.sql`insert into ext_fixture.notes (merchant_id, outlet_id, brand_id, body) values (${m.merchantId}, ${m.outletId}, ${m.brandId}, ${`note of ${m.merchantId}`})`;
-    await db.sql`insert into ext_fixture.notes (merchant_id, outlet_id, brand_id, body) values (${A.merchantId}, ${A.outletId}, ${otherBrand}, 'other brand'), (${A.merchantId}, ${A.outletId}, null, 'every brand')`;
+    await db.sql`insert into ext_fixture.notes (merchant_id, outlet_id, brand_id, body) values (${A.merchantId}, ${otherOutlet}, ${otherBrand}, 'other brand')`;
   });
   afterAll(async () => db?.drop());
 
@@ -263,20 +284,53 @@ describe("an extension's table under RLS", () => {
     for (const [me, other] of [[A, B], [B, A]] as const) {
       const rows = await asApp(me.merchantId, (t) => t<{ merchant_id: string }[]>`select distinct merchant_id from ext_fixture.notes`);
       expect(rows.map((r) => r.merchant_id)).toEqual([me.merchantId]);
-      await expect(asApp(me.merchantId, (t) => t`insert into ext_fixture.notes (merchant_id, outlet_id, body) values (${other.merchantId}, ${other.outletId}, 'x')`)).rejects.toThrow(/row-level security/);
+      await expect(asApp(me.merchantId, (t) => t`insert into ext_fixture.notes (merchant_id, outlet_id, brand_id, body) values (${other.merchantId}, ${other.outletId}, ${other.brandId}, 'x')`)).rejects.toThrow(/row-level security/);
     }
     // The owner sees every row, so the filtering above is RLS and not missing rows.
-    expect((await db.sql`select 1 from ext_fixture.notes`).length).toBe(4);
+    expect((await db.sql`select 1 from ext_fixture.notes`).length).toBe(3);
   });
 
-  it("hides a row of another brand from staff and agents limited to one brand, and keeps rows without a brand", async () => {
+  it("hides a row of another brand from staff and agents limited to one brand", async () => {
     for (const role of ["app_authenticated", "app_agent"]) {
       const limited = await asApp(A.merchantId, (t) => t<{ body: string }[]>`select body from ext_fixture.notes order by body`, { brands: A.brandId, role });
-      expect(limited.map((r) => r.body)).toEqual(["every brand", `note of ${A.merchantId}`]);
+      expect(limited.map((r) => r.body)).toEqual([`note of ${A.merchantId}`]);
       const every = await asApp(A.merchantId, (t) => t<{ body: string }[]>`select body from ext_fixture.notes order by body`, { role });
-      expect(every.map((r) => r.body)).toEqual(["every brand", `note of ${A.merchantId}`, "other brand"]);
-      await expect(asApp(A.merchantId, (t) => t`insert into ext_fixture.notes (merchant_id, outlet_id, brand_id, body) values (${A.merchantId}, ${A.outletId}, ${otherBrand}, 'x')`, { brands: A.brandId, role })).rejects.toThrow(/row-level security/);
+      expect(every.map((r) => r.body)).toEqual([`note of ${A.merchantId}`, "other brand"]);
+      await expect(asApp(A.merchantId, (t) => t`insert into ext_fixture.notes (merchant_id, outlet_id, brand_id, body) values (${A.merchantId}, ${otherOutlet}, ${otherBrand}, 'x')`, { brands: A.brandId, role })).rejects.toThrow(/row-level security/);
     }
+  });
+
+  it("ties a row's brand to its outlet's: a caller limited to one brand can neither write nor read at another brand's outlet", async () => {
+    for (const role of ["app_authenticated", "app_agent"]) {
+      // Limited to the other brand, with no outlet limit: A's own outlet belongs to A's brand.
+      const scope = { brands: otherBrand, role };
+      for (const brand of [null, otherBrand]) {
+        await expect(asApp(A.merchantId, (t) => t`insert into ext_fixture.notes (merchant_id, outlet_id, brand_id, body) values (${A.merchantId}, ${A.outletId}, ${brand}, 'x')`, scope)).rejects.toThrow(/its outlet .* belongs to brand/);
+      }
+      const rows = await asApp(A.merchantId, (t) => t<{ body: string }[]>`select body from ext_fixture.notes order by body`, scope);
+      expect(rows.map((r) => r.body)).toEqual(["other brand"]);
+    }
+    // Not even the owner can write a row whose brand is not its outlet's, so no row without a brand is left visible to every brand.
+    await expect(db.sql`insert into ext_fixture.notes (merchant_id, outlet_id, brand_id, body) values (${A.merchantId}, ${A.outletId}, null, 'x')`).rejects.toThrow(/notes names brand <NULL>/);
+    await expect(db.sql`update ext_fixture.notes set outlet_id = ${A.outletId} where brand_id = ${otherBrand}`).rejects.toThrow(/its outlet .* belongs to brand/);
+  });
+
+  it("numbers rows from a sequence the first migration made, for staff and agents", async () => {
+    for (const role of ["app_authenticated", "app_agent"]) {
+      const [row] = await asApp(A.merchantId, (t) => t<{ number: number }[]>`insert into ext_fixture.notes (merchant_id, outlet_id, brand_id, body) values (${A.merchantId}, ${A.outletId}, ${A.brandId}, ${`by ${role}`}) returning number`, { role });
+      expect(row!.number).toBeGreaterThan(0);
+    }
+    await db.sql`delete from ext_fixture.notes where body like 'by %'`;
+  });
+
+  it("gives agents the columns and writes granted to them, never a contact column, an update or a delete", async () => {
+    const asAgent = (fn: (t: postgres.TransactionSql) => Promise<unknown>) => asApp(A.merchantId, fn, { role: "app_agent" });
+    await expect(asAgent((t) => t`select email from ext_fixture.notes`)).rejects.toThrow(/permission denied/);
+    await expect(asAgent((t) => t`select * from ext_fixture.notes`)).rejects.toThrow(/permission denied/);
+    await expect(asAgent((t) => t`update ext_fixture.notes set body = 'x'`)).rejects.toThrow(/permission denied/);
+    await expect(asAgent((t) => t`delete from ext_fixture.notes`)).rejects.toThrow(/permission denied/);
+    // Staff read the contact column.
+    await expect(asApp(A.merchantId, (t) => t`select email from ext_fixture.notes`)).resolves.toBeDefined();
   });
 
   it("hides a row of another outlet from staff limited to their outlets", async () => {
@@ -284,9 +338,10 @@ describe("an extension's table under RLS", () => {
     expect(rows).toEqual([]);
   });
 
-  it("refuses an outlet or a brand of another merchant, even to the owner, by the composite keys", async () => {
-    await expect(db.sql`insert into ext_fixture.notes (merchant_id, outlet_id, body) values (${A.merchantId}, ${B.outletId}, 'x')`).rejects.toThrow(/notes_outlet_same_merchant/);
-    await expect(db.sql`insert into ext_fixture.notes (merchant_id, outlet_id, brand_id, body) values (${A.merchantId}, ${A.outletId}, ${B.brandId}, 'x')`).rejects.toThrow(/notes_brand_same_merchant/);
+  it("refuses an outlet or a brand of another merchant, even to the owner", async () => {
+    await expect(db.sql`insert into ext_fixture.notes (merchant_id, outlet_id, brand_id, body) values (${A.merchantId}, ${B.outletId}, ${B.brandId}, 'x')`).rejects.toThrow(/notes_outlet_same_merchant/);
+    // Another merchant's brand is never the outlet's, so the outlet-brand trigger refuses it before the key is checked.
+    await expect(db.sql`insert into ext_fixture.notes (merchant_id, outlet_id, brand_id, body) values (${A.merchantId}, ${A.outletId}, ${B.brandId}, 'x')`).rejects.toThrow(/its outlet .* belongs to brand/);
   });
 
   it("shows nothing without a merchant context", async () => {

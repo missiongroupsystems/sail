@@ -1,6 +1,6 @@
 {
-  "id": "f32c252c-e25b-4cd1-a41d-df668b310379",
-  "prevId": "60ef3b26-27ba-4d1a-8414-62d7faeaae06",
+  "id": "35967748-7ce8-41a2-b348-42bfdc55c33e",
+  "prevId": "e39fba3e-3e4a-41d5-98ed-0bbdc099c0a8",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -33,11 +33,23 @@
           "primaryKey": false,
           "notNull": false
         },
+        "number": {
+          "name": "number",
+          "type": "serial",
+          "primaryKey": false,
+          "notNull": true
+        },
         "body": {
           "name": "body",
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},

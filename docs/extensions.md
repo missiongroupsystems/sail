@@ -71,6 +71,8 @@ Sail's migrations and can change in any release.
 - **Tailwind** scans the folder too, so its classes are generated.
 - **Webpack only.** The folder is swapped in by a webpack plugin; `next dev --turbopack` and `next build --turbopack`
   refuse `SAIL_EXTENSIONS`.
+- **With no extension**, a signed-in person at `/x/<anything>` gets the back office's not-found page and a signed-out one
+  goes to sign in; `/brand-icon.svg` answers 404.
 - **Turbo's cache cannot see the folder** when it lies outside `packages/web`: an edit there reuses the last build.
   Build the web app with `pnpm --filter @sail/web build` (no Turbo cache), or pass `--force` to `turbo run build`.
 
@@ -105,11 +107,15 @@ with the grants and row-level security:
 ```sql
 GRANT USAGE ON SCHEMA ext_shop TO app_authenticated, app_agent;
 --> statement-breakpoint
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ext_shop TO app_authenticated, app_agent;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ext_shop TO app_authenticated;
 --> statement-breakpoint
-ALTER DEFAULT PRIVILEGES IN SCHEMA ext_shop GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_authenticated, app_agent;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ext_shop TO app_authenticated, app_agent;
 --> statement-breakpoint
-ALTER DEFAULT PRIVILEGES IN SCHEMA ext_shop GRANT USAGE, SELECT ON SEQUENCES TO app_authenticated, app_agent;
+ALTER DEFAULT PRIVILEGES IN SCHEMA ext_shop GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_authenticated;
+--> statement-breakpoint
+ALTER DEFAULT PRIVILEGES IN SCHEMA ext_shop GRANT USAGE, SELECT ON SEQUENCES TO app_authenticated;
+--> statement-breakpoint
+GRANT SELECT (id, merchant_id, outlet_id, brand_id, body), INSERT ON ext_shop.notes TO app_agent;
 --> statement-breakpoint
 ALTER TABLE ext_shop.notes ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
@@ -120,11 +126,23 @@ CREATE POLICY notes_tenant ON ext_shop.notes FOR ALL TO app_authenticated, app_a
 CREATE POLICY notes_brand_scope ON ext_shop.notes AS RESTRICTIVE FOR ALL TO app_authenticated, app_agent
   USING (sail.brand_allowed(brand_id))
   WITH CHECK (sail.brand_allowed(brand_id));
+--> statement-breakpoint
+CREATE TRIGGER notes_outlet_brand BEFORE INSERT OR UPDATE OF brand_id, outlet_id ON ext_shop.notes
+  FOR EACH ROW EXECUTE FUNCTION sail.check_outlet_brand();
 ```
 
+- **Grants.** Staff (`app_authenticated`) get every table and sequence, and default privileges give them later ones.
+  The sequences line covers a `serial` column in drizzle-kit's first migration, which exists before any default is set.
+- **Agents (`app_agent`) are granted table by table**, as Sail's migration 0017 does: `SELECT` on named columns, never a
+  customer's contact columns (email, phone), and only the writes their operations need. They get no default privileges,
+  so a later table is closed to them until a migration grants it. Give a later table's sequence to them the same way.
 - **Every table** has `merchant_id`, row-level security and a tenant policy. Add `sail.outlet_allowed(outlet_id)` for
-  rows of an outlet, and the restrictive `sail.brand_allowed(brand_id)` policy for rows of a brand, so staff and agents
-  limited to some brands see only those (as Sail's migrations 0044 and 0046 do). A row without a brand stays visible.
+  rows of an outlet. For rows of a brand, add the restrictive `sail.brand_allowed(brand_id)` policy (as Sail's
+  migrations 0044 and 0046 do) and the `sail.check_outlet_brand()` trigger, which Sail uses on its stations, channel links
+  and orders (migration 0057). The trigger refuses a row whose brand is not its outlet's brand, or that has none. With
+  both, staff and agents limited to some brands see and write only rows at those brands' outlets. Without the trigger, a
+  row with no brand would be visible to every brand. The trigger reads only the row's `outlet_id` and `brand_id`; do not
+  name a table `stations` or `channel_links`, which it treats as Sail's own.
 - **References to Sail's rows are composite**, so a row cannot name another merchant's outlet or brand:
   `FOREIGN KEY (outlet_id, merchant_id) REFERENCES public.outlets (id, merchant_id)`, and the same for `brands` (as
   Sail's migration 0051 does). A key to `merchants(id)` is enough on its own. Do not add keys to other Sail tables: a
@@ -132,11 +150,12 @@ CREATE POLICY notes_brand_scope ON ext_shop.notes AS RESTRICTIVE FOR ALL TO app_
 - **`app_guest` and `app_relay`** reach only what their own policies allow. A grant alone shows them nothing; each needs
   a policy of its own, scoped as Sail scopes them (migration 0014: a guest sees its own order and session, a relay its
   outlet's printers). Never give them the tenant-wide policy above. `app_agent` above gets the tenant policy, as on
-  Sail's operational tables; keep customer contact columns away from it.
-- **Never touch Sail's tables, functions or tracking tables** in a migration. Change Sail's data through its operations.
+  Sail's operational tables, with the column grants above.
+- **Never change Sail's tables, functions or tracking tables** in a migration (using `sail.*` functions, as above, is
+  fine). Change Sail's data through its operations.
 - **Test your tables** as `packages/server/test/ext-migrations.test.ts` does for its fixture
   (`test/fixtures/ext-migrations`, generated from `test/fixtures/ext-migrations-src`): two merchants, a brand-limited
-  caller, another merchant's outlet, and nothing without a merchant. Sail's RLS replay test checks `public` only.
+  caller at another brand's outlet, an agent's columns, another merchant's outlet, and nothing without a merchant. Sail's RLS replay test checks `public` only.
 
 ## A production image
 
