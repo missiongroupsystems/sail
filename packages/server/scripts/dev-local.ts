@@ -9,11 +9,12 @@
  * port (its URL is printed and written to .dev-local.json). The back office signs in with that
  * email and password, through the same local identity provider as production.
  * SAIL_DEV_EMPTY=1 skips the demo merchants, so the back office opens on
- * first-run setup.
+ * first-run setup. SAIL_DEV_MODULES (comma-separated paths) loads extra modules after Sail's.
  */
 import { serve } from "@hono/node-server";
 import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { startEmbeddedPostgres } from "../test/pg.js";
 import { runMigrations } from "../src/db/migrate.js";
 import { bootstrapMerchant } from "../src/bootstrap.js";
@@ -88,6 +89,8 @@ if (boot && bootEu) {
 }
 
 await import("../src/modules.js");
+// SAIL_DEV_MODULES: a downstream workspace's own modules (comma-separated paths), loaded after Sail's, as startServer({ modules }) does.
+for (const m of (process.env.SAIL_DEV_MODULES ?? "").split(",").filter(Boolean)) await import(pathToFileURL(resolve(m)).href);
 const { buildApp } = await import("../src/app.js");
 const { startListener } = await import("../src/sse/listener.js");
 const app = buildApp();
