@@ -9,6 +9,10 @@ The importer (`packages/server/src/services/importer.ts`) loads data exported fr
 3. The Admin reviews the report (counts per entity, every rejected row with its reason and data) in the back office or via `GET /v1/imports/{id}`, fixes the export or mapping, and re-runs. When satisfied, `POST /v1/imports/{id}/apply` queues the same files for real.
 4. Re-running an unchanged export produces zero creates and updates. Re-running after an edit updates only the changed rows.
 
+**What an update changes.** A row that matches a record already there changes only the fields the file gives. A field whose column is not mapped (and has no `defaults` value) keeps what is stored, and so does a blank cell, except where this page says what a blank means (a blank `price_<order type>` removes that price, a blank `tax_class` is the merchant's default class, a blank `price_override` is the product's own price). Defaults such as 4 seats or "every outlet" apply only when a row creates a record. So a floor plan, a terminal tender or a person's outlets set in the back office survive a re-import that does not carry them.
+
+An import does not move an outlet to another brand, a menu to another brand, a section to another menu or an area to another outlet: the row is refused with the reason. For staff rows: an Admin cannot lower their own role (as on the Team page), a row that would leave the business with no active Admin is refused, and, as on the Team page, deactivating someone ends their back-office sessions and sign-in links and a new PIN clears failed PIN attempts. An applied import writes one entry in the audit log with its counts and the ids it updated.
+
 Values: prices are in the merchant's currency with its own decimals and `.` as the decimal mark (`16.00` EUR, `1600` JPY, `1.600` KWD); a currency symbol is ignored, `,` may only group thousands, and `1600c` is already in minor units. A price cell that is not an amount (`0,50`, `abc`) or is above the register's largest amount refuses its row with the reason in the report; a blank `price_override` means the modifier product's own price. CSV files are a machine format, so they use `.` and Latin digits whatever the merchant's locale; amounts typed by people go through `parseAmount` (pricing-semantics §8). Booleans accept `1/true/yes/y`. Lists (tags, outlet IDs) are separated by `;` or `|`. References use the referenced row's `legacy_id` (or SKU for products).
 
 ## Fields by entity
@@ -22,7 +26,7 @@ Values: prices are in the merchant's currency with its own decimals and `.` as t
 | `modifier_groups` | `name` | `legacy_id`, `min_select`, `max_select`, `max_per_modifier` | `legacy_id`, else `name` |
 | `modifier_options` | `group_legacy_id`, and `product_legacy_id` or `product_sku` | `price_override`, `child_group_legacy_id` (2 levels max), `is_default`, `sort`, `parent_product_legacy_id`/`parent_product_sku` + `group_sort` (attaches the group to that product) | group + product |
 | `menus` | `name`, `brand_legacy_id` (or `options.brand_legacy_id`) | `legacy_id` | `legacy_id`, else `name` |
-| `menu_sections` | `name`, `menu_legacy_id` | `legacy_id`, `parent_legacy_id` (one level), `sort` | `legacy_id`, else `menu/name` |
+| `menu_sections` | `name`, `menu_legacy_id` | `legacy_id`, `parent_legacy_id` (one level: never under itself or a sub-section), `sort` | `legacy_id`, else `menu/name` |
 | `menu_items` | `section_legacy_id`, and `product_legacy_id` or `product_sku` | `sort` | section + product |
 | `areas` | `name`, `outlet_legacy_id` (or `options.outlet_legacy_id`) | `legacy_id`, `sort` | `legacy_id`, else `outlet/name` |
 | `tables` | `name`, `area_legacy_id` | `legacy_id`, `seats`, `shape` (`rect`/`round`/`square`), `x`, `y`, `w`, `h` | `legacy_id`, else `area/name` |
