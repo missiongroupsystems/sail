@@ -161,6 +161,50 @@ describe("legacy importer", () => {
     expect(count!.n).toBe(4);
   });
 
+  it("a re-import with one changed field updates outlets, categories, tenders and products in place", async () => {
+    const D = await seedMerchant(db.sql, "Delta");
+    const m = {
+      files: [
+        { name: "outlets.csv", entity: "outlets", columns: { legacy_id: "Outlet ID", name: "Outlet Name", address: "Address" } },
+        { name: "categories.csv", entity: "categories", columns: { legacy_id: "Cat ID", name: "Cat Name", sort: "Sort" } },
+        { name: "tenders.csv", entity: "tender_types", columns: { legacy_id: "Tender ID", name: "Tender", is_cash: "Cash", sort: "Sort" } },
+        { name: "items.csv", entity: "products", columns: { sku: "SKU", name: "Item Name", price: "Price", kind: "Type" } },
+      ],
+    };
+    const first = {
+      "outlets.csv": "Outlet ID,Outlet Name,Address\nO1,Harbour,1 Quay Road\n",
+      "categories.csv": "Cat ID,Cat Name,Sort\nC1,Food,1\n",
+      "tenders.csv": "Tender ID,Tender,Cash,Sort\nT1,Card,N,1\n",
+      "items.csv": "SKU,Item Name,Price,Type\nP1,Soup,5.00,Item\n",
+    };
+    const edited = {
+      "outlets.csv": "Outlet ID,Outlet Name,Address\nO1,Harbour,2 Quay Road\n",
+      "categories.csv": "Cat ID,Cat Name,Sort\nC1,Food,7\n",
+      "tenders.csv": "Tender ID,Tender,Cash,Sort\nT1,Card,N,4\n",
+      "items.csv": "SKU,Item Name,Price,Type\nP1,Soup,5.50,Item\n",
+    };
+    const run = async (f: Record<string, string>) => {
+      const r = await call<{ data: Job }>("POST", "/v1/imports", { token: D.admin.token, body: { mapping: m, files: f, dry_run: false } });
+      expect(r.status, JSON.stringify(r.body)).toBe(201);
+      await runQueuedImports();
+      return (await call<{ data: Job }>("GET", `/v1/imports/${r.body.data.id}`, { token: D.admin.token })).body.data.report!.entities;
+    };
+    const created = await run(first);
+    for (const ent of ["outlets", "categories", "tender_types", "products"]) expect(created[ent], ent).toMatchObject({ creates: 1, updates: 0, rejected: [] });
+    const [outletId] = await db.sql<{ id: string }[]>`select id from outlets where merchant_id = ${D.merchantId} and legacy_id = 'O1'`;
+
+    const updated = await run(edited);
+    for (const ent of ["outlets", "categories", "tender_types", "products"]) expect(updated[ent], ent).toMatchObject({ creates: 0, updates: 1, unchanged: 0, rejected: [] });
+    const [outlet] = await db.sql<{ id: string; address: string; legacy_id: string }[]>`select id, address, legacy_id from outlets where merchant_id = ${D.merchantId}`;
+    expect(outlet).toEqual({ id: outletId!.id, address: "2 Quay Road", legacy_id: "O1" });
+    const [category] = await db.sql<{ sort: number; legacy_id: string }[]>`select sort, legacy_id from report_categories where merchant_id = ${D.merchantId}`;
+    expect(category).toEqual({ sort: 7, legacy_id: "C1" });
+    const [tender] = await db.sql<{ sort: number; legacy_id: string }[]>`select sort, legacy_id from tender_types where merchant_id = ${D.merchantId} and legacy_id = 'T1'`;
+    expect(tender).toEqual({ sort: 4, legacy_id: "T1" });
+    const [product] = await db.sql<{ price: number; legacy_id: string }[]>`select price, legacy_id from products where merchant_id = ${D.merchantId}`;
+    expect(product).toEqual({ price: 550, legacy_id: "P1" });
+  });
+
   it("only Admin may import", async () => {
     expect((await call("POST", "/v1/imports", { token: A.manager.token, body: { mapping, files } })).status).toBe(403);
   });
