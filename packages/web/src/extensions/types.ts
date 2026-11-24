@@ -13,7 +13,7 @@ export type Extensions = {
   nav?: { href: string; label: string; icon: LucideIcon }[];
   /**
    * The pages below /x/ by path (`hello` serves /x/hello), with the lowest role that may open each: required, so a page
-   * is never open by omission (`"server"` is every staff member). Anyone below gets the refusal page, and the rail
+   * is never open to everyone by default (`"server"` is every staff member). Anyone below gets the refusal page, and the rail
    * hides a section that links to it. A page listed here is served only when `pages` has its component.
    */
   pages?: Record<string, { minRole: Role }>;
