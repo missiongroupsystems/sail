@@ -155,7 +155,8 @@ CREATE TRIGGER notes_outlet_brand BEFORE INSERT OR UPDATE OF brand_id, outlet_id
   fine). Change Sail's data through its operations.
 - **Test your tables** as `packages/server/test/ext-migrations.test.ts` does for its fixture
   (`test/fixtures/ext-migrations`, generated from `test/fixtures/ext-migrations-src`): two merchants, a brand-limited
-  caller at another brand's outlet, an agent's columns, another merchant's outlet, and nothing without a merchant. Sail's RLS replay test checks `public` only.
+  caller at another brand's outlet, an agent's columns, another merchant's outlet, and nothing without a merchant.
+  Sail's RLS replay test checks `public` only.
 
 ## A production image
 
