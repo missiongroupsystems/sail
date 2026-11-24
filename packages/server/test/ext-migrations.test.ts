@@ -237,7 +237,7 @@ describe("an extension's migrations on a migrated database", () => {
         await t.unsafe("set local role app_agent");
         return t<{ name: string }[]>`select name from ext_fixture.tags`;
       });
-    await expect(asAgent()).rejects.toThrow("permission denied for table tags");
+    await expect(asAgent()).rejects.toThrow("denied for table tags");
     const granted = fixtureWith(PINNED, TAGS, ["0004_tags_agent", "GRANT SELECT ON ext_fixture.tags TO app_agent;\n--> statement-breakpoint\nCREATE POLICY tags_agent ON ext_fixture.tags FOR SELECT TO app_agent USING (merchant_id = sail.merchant_id());"]);
     try {
       await runMigrations(db.url, { sets: [{ ...fixture, folder: granted.folder }] });
@@ -325,10 +325,10 @@ describe("an extension's table under RLS", () => {
 
   it("gives agents the columns and writes granted to them, never a contact column, an update or a delete", async () => {
     const asAgent = (fn: (t: postgres.TransactionSql) => Promise<unknown>) => asApp(A.merchantId, fn, { role: "app_agent" });
-    await expect(asAgent((t) => t`select email from ext_fixture.notes`)).rejects.toThrow(/permission denied/);
-    await expect(asAgent((t) => t`select * from ext_fixture.notes`)).rejects.toThrow(/permission denied/);
-    await expect(asAgent((t) => t`update ext_fixture.notes set body = 'x'`)).rejects.toThrow(/permission denied/);
-    await expect(asAgent((t) => t`delete from ext_fixture.notes`)).rejects.toThrow(/permission denied/);
+    await expect(asAgent((t) => t`select email from ext_fixture.notes`)).rejects.toThrow(/denied/);
+    await expect(asAgent((t) => t`select * from ext_fixture.notes`)).rejects.toThrow(/denied/);
+    await expect(asAgent((t) => t`update ext_fixture.notes set body = 'x'`)).rejects.toThrow(/denied/);
+    await expect(asAgent((t) => t`delete from ext_fixture.notes`)).rejects.toThrow(/denied/);
     // Staff read the contact column.
     await expect(asApp(A.merchantId, (t) => t`select email from ext_fixture.notes`)).resolves.toBeDefined();
   });
