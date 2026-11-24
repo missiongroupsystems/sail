@@ -29,3 +29,4 @@ export { db, tx, schema, type Db } from "./db/client.js";
  * or `tx()` there.
  */
 export { withTransaction } from "./db/client.js";
+export { migrationSetsFromEnv, runMigrations, type MigrationSet } from "./db/migrate.js";
