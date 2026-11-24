@@ -36,6 +36,8 @@ jobs:
         run: pnpm --filter @sail/server test
       - name: Relay tests
         run: pnpm --filter @sail/relay test
+      - name: Web unit tests
+        run: pnpm --filter @sail/web test
       - name: OpenAPI contract is committed and reviewed
         run: pnpm --filter @sail/server openapi:check
       - name: MCP tool manifest matches the routes
