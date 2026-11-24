@@ -63,6 +63,7 @@ Nothing in the code assumes a country. A merchant is created from a region prese
 - [Pricing semantics](docs/pricing-semantics.md): every rule the pricing engine follows.
 - [MCP](docs/mcp.md): connecting an agent.
 - [How-to](docs/how-to.md): adding operations, tables, migrations and payment providers.
+- [Extensions](docs/extensions.md): adding routes, pages, a product name and tables from a downstream deployment, without editing Sail.
 - [CSV import](docs/csv-mapping.md) and the [roadmap](docs/roadmap.md).
 
 ## Status
