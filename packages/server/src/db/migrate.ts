@@ -10,18 +10,26 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
  * Runs on a session connection. Forward-only. Never `drizzle-kit push` against
  * a shared environment.
  */
+
+/**
+ * Sail's own migrations folder: next to this file in Sail's source (src/db → ../../drizzle) or Sail's build
+ * (dist → ../drizzle), and only if its journal is Sail's. A downstream bundle that inlines Sail sits elsewhere, where
+ * `../drizzle` may be its own migrations; it passes Sail's folder to `runMigrations(url, { folder })` instead.
+ */
 export function migrationsFolder(): string {
   const here = dirname(fileURLToPath(import.meta.url));
-  // src/db → ../../drizzle ; dist → ../drizzle
-  for (const candidate of [join(here, "../../drizzle"), join(here, "../drizzle"), join(process.cwd(), "drizzle")]) {
-    try {
-      readFileSync(join(candidate, "meta/_journal.json"));
-      return candidate;
-    } catch {
-      /* try next */
-    }
+  for (const candidate of [join(here, "../../drizzle"), join(here, "../drizzle")]) if (isSailFolder(candidate)) return candidate;
+  throw new Error("Sail's migrations folder was not found next to the runner: from a bundled start file, pass runMigrations(url, { folder }) with a copy of Sail's packages/server/drizzle");
+}
+
+/** Sail's journal starts with its two foundation migrations; an extension's never does. */
+export function isSailFolder(folder: string): boolean {
+  try {
+    const [first, second] = readJournal(folder).entries;
+    return first?.tag === "0000_foundations" && second?.tag === "0001_rls_foundations";
+  } catch {
+    return false;
   }
-  throw new Error("drizzle migrations folder not found");
 }
 
 type Journal = { entries: { idx: number; tag: string; when: number }[] };
@@ -38,7 +46,7 @@ const SAIL_SCHEMAS = new Set(["drizzle", "sail", "public", "information_schema",
 
 export async function runMigrations(
   url: string,
-  opts: { log?: (msg: string) => void; sets?: MigrationSet[] } = {},
+  opts: { log?: (msg: string) => void; sets?: MigrationSet[]; /** Sail's migrations folder; found next to the runner when left out. */ folder?: string } = {},
 ): Promise<{ applied: number; total: number; sets: { schema: string; applied: number; total: number }[] }> {
   const log = opts.log ?? (() => {});
   const sets = (opts.sets ?? []).map(checkSet);
@@ -46,7 +54,8 @@ export async function runMigrations(
   if (dup) throw new Error(`migration set: schema "${dup.schema}" is named twice; each extension has a schema of its own`);
   const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
   try {
-    const folder = migrationsFolder();
+    const folder = opts.folder ?? migrationsFolder();
+    if (!isSailFolder(folder)) throw new Error(`${folder} is not Sail's migrations folder (its journal does not start with Sail's foundations)`);
     const journal = readJournal(folder);
     const before = await appliedCount(sql, "drizzle", "__drizzle_migrations");
     log(`drift check: ${before} of ${journal.entries.length} migrations applied`);
@@ -121,23 +130,4 @@ async function appliedCount(sql: postgres.Sql, schema: string, table: string): P
   if (!exists?.ok) return 0;
   const [row] = await sql<{ n: string }[]>`select count(*)::text as n from ${sql(schema)}.${sql(table)}`;
   return Number(row?.n ?? 0);
-}
-
-const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
-if (isMain) {
-  const url = process.env.MIGRATE_DATABASE_URL ?? process.env.LISTEN_DATABASE_URL ?? process.env.DATABASE_URL;
-  if (!url) {
-    console.error("Set MIGRATE_DATABASE_URL (a 5432 session connection)");
-    process.exit(1);
-  }
-  runMigrations(url, { log: console.log, sets: migrationSetsFromEnv() })
-    .then((r) => {
-      console.log(`migrated: ${r.applied} applied, ${r.total} total`);
-      for (const s of r.sets) console.log(`migrated (${s.schema}): ${s.applied} applied, ${s.total} total`);
-      process.exit(0);
-    })
-    .catch((e) => {
-      console.error(e);
-      process.exit(1);
-    });
 }
