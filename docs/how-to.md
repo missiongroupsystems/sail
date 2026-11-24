@@ -1,4 +1,4 @@
-# How to add a route, a table, a migration and a payment provider
+# How to add a route, a table, a migration, a payment provider and an extension's tables
 
 The recipes every change follows, so the codebase keeps one pattern. Commands and checks are in [CONTRIBUTING.md](../CONTRIBUTING.md); the design behind them is in [architecture.md](architecture.md).
 
@@ -51,3 +51,27 @@ A provider is a small client for a card-terminal service. It never touches the d
 3. **Keep credentials out of the code.** The merchant's webhook secret comes in `account.webhookSecret`; anything else the provider needs (an API key) belongs in the environment or a merchant setting, never in a tender.
 4. **Throw on failure.** A thrown call is retried by the outbox with backoff and never blocks other payments. Use timeouts on every network call (the simulator uses 10 s), shorter than the outbox's 60 s lease.
 5. **Test** against the register as `test/payment-providers.test.ts` does for the simulator: approve, decline, duplicate and reordered webhooks, a bad signature, a bill that changed, a timeout.
+
+## 6. Tables owned by an extension
+
+An extension (a downstream workspace that adds modules with `startServer({ modules })`) can keep tables of its own. The contract:
+
+- **Its own schema.** One Postgres schema per extension, never `public`, `sail` or `drizzle` (the runner refuses those). The schema is not on the search path, so qualify every name (`ext_shop.notes`, or `pgSchema("ext_shop")` in Drizzle). Sail's migrations never reference an extension's schema.
+- **Its own migrations, after Sail's.** A Drizzle migrations folder (`meta/_journal.json` and the `.sql` files), forward-only like Sail's: never edit one that has been applied, and give each new one a journal `when` later than every applied one (Drizzle applies by that timestamp). The runner applies Sail's first, then each extension's set in a transaction of its own, so a failing migration undoes that set's pending migrations and leaves Sail's untouched. Each set is tracked in `<schema>.__drizzle_migrations` (or the table you name) and gets the same drift check as Sail's: the runner refuses a database that is ahead of the folder.
+- **How to run them.** `SAIL_MIGRATIONS=ext_shop=path/to/drizzle` for `db:migrate`, `node dist/migrate.js` and `dev:local` (comma-separate several sets; `ext_shop.my_table=path` names the tracking table; paths are resolved from the working directory). From code, `runMigrations(url, { sets: [{ folder, schema }] })` from `@sail/server` does the same. Without `SAIL_MIGRATIONS` the runner does exactly what it did before.
+- **One-time grants in the first migration,** so Sail's app role can use the tables (Sail's own grants cover `public` and `sail` only):
+
+  ```sql
+  CREATE SCHEMA IF NOT EXISTS ext_shop;
+  --> statement-breakpoint
+  GRANT USAGE ON SCHEMA ext_shop TO app_authenticated;
+  --> statement-breakpoint
+  ALTER DEFAULT PRIVILEGES IN SCHEMA ext_shop GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_authenticated;
+  --> statement-breakpoint
+  ALTER DEFAULT PRIVILEGES IN SCHEMA ext_shop GRANT USAGE, SELECT ON SEQUENCES TO app_authenticated;
+  ```
+
+  Grant `app_guest`, `app_relay` or `app_agent` as well only for tables those principals must reach.
+- **`merchant_id` and RLS on every table,** with Sail's helpers: `ALTER TABLE ext_shop.notes ENABLE ROW LEVEL SECURITY;` then `CREATE POLICY notes_tenant ON ext_shop.notes FOR ALL TO app_authenticated USING (merchant_id = sail.merchant_id()) WITH CHECK (merchant_id = sail.merchant_id());`. Add `AND sail.outlet_allowed(outlet_id)` for rows that belong to an outlet. Sail's RLS replay test checks `public` only, so test your own tables as `packages/server/test/ext-migrations.test.ts` does for its fixture: two merchants, and nothing without a merchant.
+- **Never touch Sail's tables, functions or tracking table** in a migration: no `ALTER`, no triggers, no rows in `drizzle.__drizzle_migrations`. Sail's next migration assumes its schema is its own. Change Sail's data through its operations, not with SQL.
+- **Foreign keys to `merchants(id)` and `outlets(id)` are allowed;** Sail never deletes those rows or changes their ids, and the key keeps a row's tenant honest. Do not add foreign keys to other Sail tables: a later Sail migration may rewrite or drop them, or Sail may delete rows from them, and your constraint would make that migration or delete fail on your deployment only. Keep other Sail ids as plain `uuid` columns.
