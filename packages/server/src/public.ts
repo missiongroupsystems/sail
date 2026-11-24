@@ -1,6 +1,8 @@
 /**
- * What a downstream workspace imports from `@sail/server`: the start function and what a module, a route handler and
- * a worker task use. Importing this file adds no routes.
+ * What a downstream workspace imports from `@sail/server`: the start function and what a module, a route handler, a
+ * worker task, a migrate file and a set-up script use (docs/extensions.md). Importing this file builds no app, adds no
+ * routes and runs nothing, but the route modules it reaches (orders, for its hooks, and those orders imports: auth,
+ * menu, floor and others) register their operations in the manifest, so an extension's keys must not collide with them.
  */
 export { startServer, type StartOptions, type Started } from "./start.js";
 export { registerRoutes, type RouteModule } from "./app.js";
@@ -30,3 +32,12 @@ export { db, tx, schema, type Db } from "./db/client.js";
  */
 export { withTransaction } from "./db/client.js";
 export { migrationSetsFromEnv, runMigrations, type MigrationSet } from "./db/migrate.js";
+
+/**
+ * For a set-up script, outside a request, as the connection owner (no row-level security): a whole merchant with its
+ * first brand, outlet, station and Admin (`bootstrapMerchant` opens its own transaction; `createMerchant` writes in
+ * the caller's), and the importer (`runImportJob` runs a queued job; `importInto` imports within a transaction).
+ */
+export { bootstrapMerchant, createMerchant, type BootstrapInput, type BootstrapResult } from "./bootstrap.js";
+export { importInto, runImportJob } from "./services/importer.js";
+export type { ImportMapping, ImportReport } from "./db/schema/index.js";

@@ -73,4 +73,28 @@ describe("startServer with extra modules", () => {
       await started.stop();
     }
   });
+
+  it("an mcp start answers on the port it is bound to (PORT=0 picks a free one)", async () => {
+    process.env.SAIL_ROLE = "mcp";
+    const started = await pub.startServer();
+    try {
+      expect(started.port).toBeGreaterThan(0);
+      const health = await fetch(`http://127.0.0.1:${started.port}/health`);
+      expect(health.status).toBe(200);
+      expect(((await health.json()) as { role: string }).role).toBe("mcp");
+    } finally {
+      await started.stop();
+    }
+  });
+
+  it("stop removes the signal handlers its start added, so starts do not pile them up", async () => {
+    process.env.SAIL_ROLE = "worker";
+    const before = { term: process.listenerCount("SIGTERM"), int: process.listenerCount("SIGINT") };
+    for (let i = 0; i < 3; i++) {
+      const started = await pub.startServer();
+      expect(process.listenerCount("SIGTERM")).toBe(before.term + 1);
+      await started.stop();
+    }
+    expect({ term: process.listenerCount("SIGTERM"), int: process.listenerCount("SIGINT") }).toEqual(before);
+  });
 });

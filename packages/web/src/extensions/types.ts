@@ -12,11 +12,11 @@ export type Extensions = {
   /** Sections added to the rail after Sail's own, each linking to one of `pages` (`/x/hello`). */
   nav?: { href: string; label: string; icon: LucideIcon }[];
   /**
-   * The pages below /x/ by path (`hello` serves /x/hello), with the lowest role that may open each. Anyone below gets
-   * the refusal page, and the rail hides a section that links to it. A page listed here is served only when `pages`
-   * has its component.
+   * The pages below /x/ by path (`hello` serves /x/hello), with the lowest role that may open each: required, so a page
+   * is never open by omission (`"server"` is every staff member). Anyone below gets the refusal page, and the rail
+   * hides a section that links to it. A page listed here is served only when `pages` has its component.
    */
-  pages?: Record<string, { minRole?: Role }>;
+  pages?: Record<string, { minRole: Role }>;
   /** The product's name, and optionally its mark, in place of Sail's wherever the app shows them. */
   brand?: { name: string; mark?: ComponentType<{ size: number; className?: string }> };
 };

@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
+import type { AddressInfo } from "node:net";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { CallToolRequestSchema, ListResourcesRequestSchema, ListResourceTemplatesRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -287,7 +288,8 @@ export function createMcpHandler(app: AppLike, catalog: ToolDef[]) {
   };
 }
 
-export async function startMcpServer(port: number): Promise<() => Promise<void>> {
+/** Listens on `port` (0 picks a free one) and returns the port it is bound to and how to stop it. */
+export async function startMcpServer(port: number): Promise<{ port: number; stop: () => Promise<void> }> {
   await import("../modules.js");
   const { buildApp } = await import("../app.js");
   const app = buildApp();
@@ -308,6 +310,7 @@ export async function startMcpServer(port: number): Promise<() => Promise<void>>
     res.writeHead(404).end();
   });
   await new Promise<void>((r) => http.listen(port, r));
-  logger.info({ port, tools: catalog.length }, "mcp adapter listening");
-  return () => new Promise<void>((r) => http.close(() => r()));
+  const bound = (http.address() as AddressInfo).port;
+  logger.info({ port: bound, tools: catalog.length }, "mcp adapter listening");
+  return { port: bound, stop: () => new Promise<void>((r) => http.close(() => r())) };
 }

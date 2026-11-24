@@ -125,7 +125,14 @@ export function registerOperations(specs: Record<string, OperationSpec>) {
     if (k !== v.op) throw new Error(`manifest key ${k} does not match op ${v.op}`);
     if (Object.hasOwn(OPERATIONS, k)) throw new Error(`operation ${k} is already registered`);
   }
-  Object.assign(OPERATIONS, specs);
+  for (const [k, v] of Object.entries(specs)) fix(k, v);
 }
+
+/** A registered spec is read-only, and so is its key: a later assignment throws instead of lowering a role. */
+function fix(key: string, spec: OperationSpec) {
+  const frozen = Object.freeze({ ...spec, principals: Object.freeze([...spec.principals]), emits: Object.freeze([...spec.emits]), mcp: Object.freeze({ ...spec.mcp, toolsets: Object.freeze([...spec.mcp.toolsets]) }) }) as OperationSpec;
+  Object.defineProperty(OPERATIONS, key, { value: frozen, enumerable: true, writable: false, configurable: false });
+}
+for (const [k, v] of Object.entries(OPERATIONS)) fix(k, v);
 
 export const TIER_ORDER: Record<RiskTier, number> = { T0: 0, T1: 1, T2: 2, T3: 3 };

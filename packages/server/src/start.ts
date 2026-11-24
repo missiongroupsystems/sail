@@ -64,22 +64,30 @@ export async function startServer({ modules = [] }: StartOptions = {}): Promise<
     };
   } else if (role === "mcp") {
     const { startMcpServer } = await import("./mcp/index.js");
-    const stop = await startMcpServer(cfg.PORT);
+    const mcp = await startMcpServer(cfg.PORT);
     started = {
-      port: cfg.PORT,
+      port: mcp.port,
       stop: async () => {
-        await stop();
+        await mcp.stop();
         await closePool();
       },
     };
   } else {
     throw new Error(`Unknown role ${role}`);
   }
-  shutdown(started.stop);
-  return started;
+  const removeHandlers = shutdown(started.stop);
+  const stop = started.stop;
+  return {
+    ...started,
+    stop: async () => {
+      removeHandlers();
+      await stop();
+    },
+  };
 }
 
-function shutdown(fn: () => Promise<void>) {
+/** SIGTERM and SIGINT stop the role and end the process. Returns how to remove the handlers again (on stop). */
+function shutdown(fn: () => Promise<void>): () => void {
   let called = false;
   const handler = async (signal: string) => {
     if (called) return;
@@ -91,6 +99,12 @@ function shutdown(fn: () => Promise<void>) {
       process.exit(0);
     }
   };
-  process.on("SIGTERM", () => void handler("SIGTERM"));
-  process.on("SIGINT", () => void handler("SIGINT"));
+  const onTerm = () => void handler("SIGTERM");
+  const onInt = () => void handler("SIGINT");
+  process.on("SIGTERM", onTerm);
+  process.on("SIGINT", onInt);
+  return () => {
+    process.off("SIGTERM", onTerm);
+    process.off("SIGINT", onInt);
+  };
 }
