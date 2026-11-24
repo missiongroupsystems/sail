@@ -136,13 +136,21 @@ CREATE TRIGGER notes_outlet_brand BEFORE INSERT OR UPDATE OF brand_id, outlet_id
 - **Agents (`app_agent`) are granted table by table**, as Sail's migration 0017 does: `SELECT` on named columns, never a
   customer's contact columns (email, phone), and only the writes their operations need. They get no default privileges,
   so a later table is closed to them until a migration grants it. Give a later table's sequence to them the same way.
+  The sequences line above gives agents every sequence that exists when it runs, including those of tables they cannot
+  read; name the sequences instead if a row count must stay private.
 - **Every table** has `merchant_id`, row-level security and a tenant policy. Add `sail.outlet_allowed(outlet_id)` for
   rows of an outlet. For rows of a brand, add the restrictive `sail.brand_allowed(brand_id)` policy (as Sail's
   migrations 0044 and 0046 do) and the `sail.check_outlet_brand()` trigger, which Sail uses on its stations, channel links
   and orders (migration 0057). The trigger refuses a row whose brand is not its outlet's brand, or that has none. With
   both, staff and agents limited to some brands see and write only rows at those brands' outlets. Without the trigger, a
   row with no brand would be visible to every brand. The trigger reads only the row's `outlet_id` and `brand_id`; do not
-  name a table `stations` or `channel_links`, which it treats as Sail's own.
+  name a table `stations` or `channel_links`, which it treats as Sail's own. Its limits:
+  - It needs both columns, and `outlet_id` must be `NOT NULL`: a row with no outlet passes unchecked, and with no
+    brand either it is visible to every brand.
+  - A table with a brand and no outlet cannot use it. Rows there with no brand are shared by every brand, as in Sail.
+  - It checks a row when the row is written. If an outlet's brand is changed later (Sail allows that only while the
+    outlet has no orders and no channels), rows already there keep the old brand and are hidden from staff limited to
+    a brand until they are rewritten.
 - **References to Sail's rows are composite**, so a row cannot name another merchant's outlet or brand:
   `FOREIGN KEY (outlet_id, merchant_id) REFERENCES public.outlets (id, merchant_id)`, and the same for `brands` (as
   Sail's migration 0051 does). A key to `merchants(id)` is enough on its own. Do not add keys to other Sail tables: a

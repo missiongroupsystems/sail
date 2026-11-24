@@ -7,8 +7,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 
 /**
  * Migration runner: drift check → migrate → drift check.
- * Runs on a session connection. Forward-only. Never `drizzle-kit push` against
- * a shared environment.
+ * Forward-only. Never `drizzle-kit push` against a shared environment.
  *
  * Run it from one process at a time (one release command, or one person from a laptop). It takes no lock, so it
  * behaves the same on a direct connection and through a transaction pooler, where a session lock would stay held
