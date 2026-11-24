@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import { getTheme } from "@/lib/api.server";
 import { fontClassNames } from "@/lib/fonts";
-import { PRODUCT_NAME } from "@/lib/nav";
+import { PRODUCT_NAME } from "@/lib/brand";
 import "./globals.css";
 
 export const metadata: Metadata = {

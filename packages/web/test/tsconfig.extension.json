@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["../src/*"],
+      "@sail/extensions": ["./extension/index.tsx"],
+      "@sail/extensions/pages": ["./extension/pages.tsx"]
+    }
+  }
+}

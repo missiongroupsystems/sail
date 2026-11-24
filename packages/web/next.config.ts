@@ -1,8 +1,12 @@
 import type { NextConfig } from "next";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-// A downstream build points SAIL_EXTENSIONS at its own module (src/extensions/types.ts); stock Sail adds nothing.
-const extensions = resolve(process.env.SAIL_EXTENSIONS || "src/extensions/none.ts");
+// A downstream build points SAIL_EXTENSIONS at its own folder (src/extensions/types.ts), relative to this folder or
+// absolute; stock Sail adds nothing. postcss.config.mjs reads the same setting.
+const extensions = resolve(dirname(fileURLToPath(import.meta.url)), process.env.SAIL_EXTENSIONS || "src/extensions/none");
+// The modules are swapped by a webpack plugin (below), which Turbopack does not run: it would build stock Sail.
+if (process.env.SAIL_EXTENSIONS && process.env.TURBOPACK) throw new Error("SAIL_EXTENSIONS needs the webpack build: run next without --turbopack");
 
 const config: NextConfig = {
   reactStrictMode: true,
@@ -27,7 +31,8 @@ const config: NextConfig = {
       ".mjs": [".mts", ".mjs"],
     };
     // Replaced before resolution: tsconfig's path for @sail/extensions (stock) would win over a resolve alias.
-    webpackConfig.plugins.push(new webpack.NormalModuleReplacementPlugin(/^@sail\/extensions$/, extensions));
+    webpackConfig.plugins.push(new webpack.NormalModuleReplacementPlugin(/^@sail\/extensions$/, `${extensions}/index`));
+    webpackConfig.plugins.push(new webpack.NormalModuleReplacementPlugin(/^@sail\/extensions\/pages$/, `${extensions}/pages`));
     return webpackConfig;
   },
 };

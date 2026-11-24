@@ -37,11 +37,13 @@ export const SECTIONS: Section[] = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-/** The rail: Sail's sections, then any a downstream build adds (extensions/types.ts). */
-export const RAIL: Section[] = [...SECTIONS, ...(extensions.nav ?? [])];
+/** A page a downstream build adds below /x/ (extensions/types.ts), by its path there; undefined when there is none. */
+export function extensionPage(path: string): { minRole?: Role } | undefined {
+  return extensions.pages && Object.hasOwn(extensions.pages, path) ? extensions.pages[path] : undefined;
+}
 
-/** The product's name: Sail's, unless a downstream build names its own. */
-export const PRODUCT_NAME = extensions.brand?.name ?? "Sail";
+/** The rail: Sail's sections, then any a downstream build adds, each hidden below its page's role. */
+export const RAIL: Section[] = [...SECTIONS, ...(extensions.nav ?? []).map((s) => ({ ...s, minRole: s.href.startsWith("/x/") ? extensionPage(s.href.slice(3))?.minRole : undefined }))];
 
 export const SETTINGS_TABS = [
   { href: "/settings/outlets", label: "Outlets" },
@@ -105,5 +107,6 @@ export const PAGE_MIN_ROLE: { prefix: string; role: Role }[] = [
 /** The lowest role a page needs, or null when the page names none. */
 export function pageMinRole(path: string | null): Role | null {
   if (!path) return null;
+  if (path.startsWith("/x/")) return extensionPage(path.slice(3))?.minRole ?? null;
   return PAGE_MIN_ROLE.find((p) => path === p.prefix || path.startsWith(`${p.prefix}/`))?.role ?? null;
 }

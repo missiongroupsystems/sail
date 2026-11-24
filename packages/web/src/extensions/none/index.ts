@@ -1,4 +1,4 @@
-import type { Extensions } from "./types";
+import type { Extensions } from "../types";
 
 /** Stock Sail: nothing added. */
 const extensions: Extensions = {};

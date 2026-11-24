@@ -12,9 +12,10 @@
     "plugins": [{ "name": "next" }],
     "paths": {
       "@/*": ["./src/*"],
-      "@sail/extensions": ["./src/extensions/none.ts"]
+      "@sail/extensions": ["./src/extensions/none/index.ts"],
+      "@sail/extensions/pages": ["./src/extensions/none/pages.ts"]
     }
   },
-  "include": ["next-env.d.ts", "next.config.ts", "src/**/*.ts", "src/**/*.tsx", ".next/types/**/*.ts", ".next-setup/types/**/*.ts"],
+  "include": ["next-env.d.ts", "next.config.ts", "test/**/*.ts", "test/**/*.tsx", "src/**/*.ts", "src/**/*.tsx", ".next/types/**/*.ts", ".next-setup/types/**/*.ts"],
   "exclude": ["node_modules", ".next", ".next-setup"]
 }
