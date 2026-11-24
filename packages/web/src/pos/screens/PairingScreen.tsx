@@ -1,6 +1,7 @@
 "use client";
 
-import { Button, cx, PinPad, SailLogo, TextField } from "@sail/ui";
+import { Button, cx, PinPad, TextField } from "@sail/ui";
+import { ProductLogo } from "@/components/ProductLogo";
 import { useEffect, useRef, useState } from "react";
 import { toApiError, type ApiError } from "@/lib/api";
 import { pairStation } from "../api/register";
@@ -105,7 +106,7 @@ export function PairingScreen({ device = "iPad", hint = "In the back office, ope
 
   const intro = (
     <div>
-      <SailLogo size="card" />
+      <ProductLogo size="card" />
       <h1 className="mt-5 font-heading text-[26px] leading-tight font-semibold tracking-[-0.02em] text-ink">Pair this {device} to a station</h1>
       {notPaired ? <p className="mt-2 text-[14.5px] text-ink">{notPaired}</p> : null}
       <p className="mt-2 text-[14.5px] text-ink-2">{hint}</p>

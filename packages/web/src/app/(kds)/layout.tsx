@@ -1,10 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
+import { PRODUCT_NAME } from "@/lib/brand";
 
 /** The `(kds)` route group: the kitchen display, a full-screen page for a wall monitor or a landscape tablet. */
 export const metadata: Metadata = {
-  title: "Sail kitchen display",
-  description: "Sail kitchen display",
+  title: `${PRODUCT_NAME} kitchen display`,
+  description: `${PRODUCT_NAME} kitchen display`,
   formatDetection: { telephone: false, address: false, email: false },
 };
 

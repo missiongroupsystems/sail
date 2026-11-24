@@ -1,6 +1,7 @@
 "use client";
 
-import { Button, PinPad, SailLogo, useLocale } from "@sail/ui";
+import { Button, PinPad, useLocale } from "@sail/ui";
+import { ProductLogo } from "@/components/ProductLogo";
 import { useCallback, useEffect, useState } from "react";
 import { toApiError } from "@/lib/api";
 import { startSession, unpairStation } from "../api/register";
@@ -92,7 +93,7 @@ export function LockScreen() {
     <main className="flex h-dvh w-full items-center justify-center bg-bg px-8">
       <div className="grid w-full max-w-[880px] grid-cols-[1fr_auto] items-center gap-16">
         <section className="flex flex-col">
-          <SailLogo size="card" />
+          <ProductLogo size="card" />
           <h1 className="mt-5 font-heading text-[30px] leading-tight font-semibold tracking-[-0.02em] text-ink">{outletName || "Station locked"}</h1>
           <p className="mt-1 text-[16px] text-ink-2">{station.name}</p>
           <p className="mt-7 font-heading text-[56px] leading-none font-semibold tracking-[-0.02em] tabular text-ink">{clock(new Date(now))}</p>

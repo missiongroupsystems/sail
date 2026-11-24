@@ -1,11 +1,13 @@
+import { PRODUCT_NAME } from "@/lib/brand";
+
 export const dynamic = "force-static";
 
 /** Web app manifest: standalone, landscape, scoped to /pos so the swipe-back gesture cannot leave the POS. */
 export function GET(): Response {
   const manifest = {
-    name: "Sail POS",
-    short_name: "Sail",
-    description: "Sail point of sale",
+    name: `${PRODUCT_NAME} POS`,
+    short_name: PRODUCT_NAME,
+    description: `${PRODUCT_NAME} point of sale`,
     id: "/pos",
     start_url: "/pos",
     scope: "/pos",
