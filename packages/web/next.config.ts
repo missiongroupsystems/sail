@@ -17,16 +17,17 @@ const config: NextConfig = {
   // the back office's ~30 pages otherwise recompiled each page on every visit, which made each visit take seconds and
   // grew the server past 8 GB until it was killed (the end-to-end run's role walks, CI).
   onDemandEntries: { maxInactiveAge: 60 * 60 * 1000, pagesBufferLength: 100 },
-  webpack: (webpackConfig) => {
+  webpack: (webpackConfig, { webpack }) => {
     // @sail/shared imports its own modules as "./money.js" (ESM style, resolved by tsc to .ts);
     // webpack needs the same extension alias.
     webpackConfig.resolve ??= {};
-    webpackConfig.resolve.alias = { ...webpackConfig.resolve.alias, "@sail/extensions": extensions };
     webpackConfig.resolve.extensionAlias = {
       ...webpackConfig.resolve.extensionAlias,
       ".js": [".ts", ".tsx", ".js"],
       ".mjs": [".mts", ".mjs"],
     };
+    // Replaced before resolution: tsconfig's path for @sail/extensions (stock) would win over a resolve alias.
+    webpackConfig.plugins.push(new webpack.NormalModuleReplacementPlugin(/^@sail\/extensions$/, extensions));
     return webpackConfig;
   },
 };
