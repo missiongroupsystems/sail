@@ -115,6 +115,7 @@ describe("an extension's migrations on a migrated database", () => {
 
   it("refuse a schema that belongs to Sail or Postgres", async () => {
     for (const schema of ["public", "sail", "drizzle", "pg_temp", "Bad-Name"]) await expect(runMigrations(db.url, { sets: [{ folder: FIXTURE, schema }] })).rejects.toThrow(/migration set/);
+    await expect(runMigrations(db.url, { sets: [fixture, { ...fixture, table: "other" }] })).rejects.toThrow(/named twice/);
   });
 });
 

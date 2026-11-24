@@ -42,6 +42,8 @@ export async function runMigrations(
 ): Promise<{ applied: number; total: number; sets: { schema: string; applied: number; total: number }[] }> {
   const log = opts.log ?? (() => {});
   const sets = (opts.sets ?? []).map(checkSet);
+  const dup = sets.find((s, i) => sets.findIndex((o) => o.schema === s.schema) !== i);
+  if (dup) throw new Error(`migration set: schema "${dup.schema}" is named twice; each extension has a schema of its own`);
   const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
   try {
     const folder = migrationsFolder();
