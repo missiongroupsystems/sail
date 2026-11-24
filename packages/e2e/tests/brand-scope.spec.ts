@@ -74,6 +74,11 @@ async function signIn(page: Page) {
     await page.getByRole("button", { name: "Sign in" }).click({ timeout: 10_000 });
     await page.waitForURL(`${WEB}/today`, { timeout: 30_000 });
   }).toPass({ timeout: 300_000 });
+  // The dev server compiles /api/prefs on its first request (10 s and more once the back office walk has compiled
+  // every page), and a picker choice must be remembered within an action's time. An empty preference sets nothing and
+  // compiles the route now, with the time a first page compile has.
+  const warm = await page.request.post(`${WEB}/api/prefs`, { data: {}, timeout: 300_000 });
+  expect(warm.ok()).toBe(true);
 }
 /** Put a brand (and an outlet of it, or all of them) in scope, as the picker does. */
 async function scopeTo(page: Page, brandId: string, outletId: string | null = null) {

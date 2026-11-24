@@ -123,6 +123,9 @@ test("W1: two phones, one reloaded on the paid screen, follow every void and reo
     });
 
     // 1. Paid live, then one phone is reloaded on its paid screen; the payment is voided: both are back, without any event.
+    // The menu shows before the phones' first reads are done (the stream's hello reads the order again): let them finish
+    // before the payment, as below, or a read on its way is refused by design.
+    await settled();
     let payments = await payAll(order.id);
     await both((p) => expect(paid(p)).toBeVisible({ timeout: 20_000 }));
     await reloaded.page.reload();

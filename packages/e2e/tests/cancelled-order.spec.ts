@@ -75,7 +75,8 @@ test("a QR round rejected on the order it opened: the phone asks for no payment,
     await expect(drawer.getByText("Unpaid", { exact: true })).toHaveCount(0);
     await expect(drawer.getByRole("button", { name: /^Refund/ })).toHaveCount(0);
     // Its only round was turned down, so it never went to the kitchen (it read "0 rounds", as if nothing was sent).
-    await expect(drawer.getByText(/^not sent to the kitchen$/)).toBeVisible();
+    // After midnight and before the day's cutoff the same line starts with the business day, so match the end only.
+    await expect(drawer.getByText(/not sent to the kitchen$/)).toBeVisible();
     await expect(drawer.getByText(/\b\d+ rounds?\b/)).toHaveCount(0);
     await shot(page, test.info().outputPath("drawer.png"));
   });
