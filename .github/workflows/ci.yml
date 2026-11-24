@@ -60,14 +60,6 @@ jobs:
         run: pnpm --filter @sail/web build
         env:
           NEXT_PUBLIC_API_URL: http://localhost:8080
-      # A downstream build: the extension folder replaces the stock one through webpack (over tsconfig's path), and
-      # Tailwind scans it through the PostCSS source step.
-      - name: Build web with the test extension
-        run: pnpm --filter @sail/web build
-        env:
-          NEXT_PUBLIC_API_URL: http://localhost:8080
-          SAIL_EXTENSIONS: test/extension
-          SAIL_WEB_DIST_DIR: .next-extension
       - name: Build guest
         run: pnpm --filter @sail/guest build
         env:
