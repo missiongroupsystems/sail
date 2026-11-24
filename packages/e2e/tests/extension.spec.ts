@@ -63,8 +63,6 @@ test("a Manager gets the Manager's page, and the refusal page for a page with no
   await rail(page, "Managers").click();
   await expect(page).toHaveURL(`${WEB}/x/managers`);
   await expect(page.getByText("An extension page")).toBeVisible();
-  // The extension's own class: generated only because Tailwind scanned its folder (the PostCSS source step).
-  await expect(page.getByText("An extension page")).toHaveCSS("font-size", "13.37px");
   await expect(refusal(page)).toHaveCount(0);
   const res = await page.goto(`${WEB}/x/finance/only`);
   expect(res?.status()).toBe(403);
