@@ -1,5 +1,6 @@
-// An extension's own migrations (docs/how-to.md, "Tables owned by an extension"): applied after Sail's, tracked in
-// a table of their own, and isolated by merchant under RLS like Sail's tables.
+// An extension's own migrations (docs/extensions.md, "Migrations"): applied after Sail's, tracked in a table of their
+// own, and isolated by merchant, outlet and brand under RLS like Sail's tables. The fixture is the drizzle-kit route:
+// 0000 is exactly what drizzle-kit generates for a pgSchema table (test/fixtures/ext-migrations-src), 0001 the grants.
 import { randomUUID } from "node:crypto";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,7 +15,8 @@ const fixture: MigrationSet = { folder: FIXTURE, schema: "ext_fixture" };
 const sailTotal = (JSON.parse(readFileSync(join(migrationsFolder(), "meta/_journal.json"), "utf8")) as { entries: unknown[] }).entries.length;
 
 const sailCount = async (sql: postgres.Sql) => Number((await sql<{ n: string }[]>`select count(*)::text as n from drizzle.__drizzle_migrations`)[0]!.n);
-const fixtureCount = async (sql: postgres.Sql) => Number((await sql<{ n: string }[]>`select count(*)::text as n from ext_fixture.__drizzle_migrations`)[0]!.n);
+const fixtureCount = async (sql: postgres.Sql) => Number((await sql<{ n: string }[]>`select count(*)::text as n from sail_migrations.ext_fixture`)[0]!.n);
+const FIXTURE_TOTAL = 2;
 const publicTables = async (sql: postgres.Sql) => (await sql<{ t: string }[]>`select table_name as t from information_schema.tables where table_schema = 'public' order by 1`).map((r) => r.t);
 
 /** A copy of the fixture with more migrations, as a later release of the extension would ship. */
@@ -40,22 +42,23 @@ describe("an extension's migrations on an empty database", () => {
     await admin.end({ timeout: 2 });
   });
 
-  it("run after all of Sail's, which the fixture needs (it references merchants and sail.merchant_id())", async () => {
+  it("run after all of Sail's, which the fixture needs (it references merchants and sail.merchant_id()), and start with drizzle-kit's CREATE SCHEMA", async () => {
     await admin.unsafe(`create database ${name}`);
     const url = `postgres://postgres@127.0.0.1:${inject("pgPort")}/${name}`;
     const log: string[] = [];
     const r = await runMigrations(url, { sets: [fixture], log: (m) => log.push(m) });
-    expect(r).toEqual({ applied: sailTotal, total: sailTotal, sets: [{ schema: "ext_fixture", applied: 1, total: 1 }] });
+    expect(r).toEqual({ applied: sailTotal, total: sailTotal, sets: [{ schema: "ext_fixture", applied: FIXTURE_TOTAL, total: FIXTURE_TOTAL }] });
     expect(log).toEqual([
       `drift check: 0 of ${sailTotal} migrations applied`,
-      "drift check (ext_fixture): 0 of 1 migrations applied",
+      "drift check (ext_fixture): 0 of 2 migrations applied",
       `drift check: ${sailTotal} of ${sailTotal} migrations applied`,
-      "drift check (ext_fixture): 1 of 1 migrations applied",
+      "drift check (ext_fixture): 2 of 2 migrations applied",
     ]);
+    expect(readFileSync(join(FIXTURE, "0000_brave_mongu.sql"), "utf8")).toMatch(/^CREATE SCHEMA "ext_fixture";/);
   }, 60_000);
 });
 
-const PINNED: [string, string] = ["0001_note_pinned", "ALTER TABLE ext_fixture.notes ADD COLUMN pinned boolean NOT NULL DEFAULT false;"];
+const PINNED: [string, string] = ["0002_note_pinned", "ALTER TABLE ext_fixture.notes ADD COLUMN pinned boolean NOT NULL DEFAULT false;"];
 
 describe("an extension's migrations on a migrated database", () => {
   let db: TestDb;
@@ -66,17 +69,17 @@ describe("an extension's migrations on a migrated database", () => {
 
   it("apply once, in their own tracking table, and leave Sail's count check passing", async () => {
     const r = await runMigrations(db.url, { sets: [fixture] });
-    expect(r).toEqual({ applied: 0, total: sailTotal, sets: [{ schema: "ext_fixture", applied: 1, total: 1 }] });
+    expect(r).toEqual({ applied: 0, total: sailTotal, sets: [{ schema: "ext_fixture", applied: FIXTURE_TOTAL, total: FIXTURE_TOTAL }] });
     expect(await sailCount(db.sql)).toBe(sailTotal);
-    expect(await fixtureCount(db.sql)).toBe(1);
+    expect(await fixtureCount(db.sql)).toBe(FIXTURE_TOTAL);
     // Sail's runner alone still finds its count equal to its journal.
     await expect(runMigrations(db.url)).resolves.toEqual({ applied: 0, total: sailTotal, sets: [] });
   });
 
   it("are a no-op when run again", async () => {
     const r = await runMigrations(db.url, { sets: [fixture] });
-    expect(r.sets).toEqual([{ schema: "ext_fixture", applied: 0, total: 1 }]);
-    expect(await fixtureCount(db.sql)).toBe(1);
+    expect(r.sets).toEqual([{ schema: "ext_fixture", applied: 0, total: FIXTURE_TOTAL }]);
+    expect(await fixtureCount(db.sql)).toBe(FIXTURE_TOTAL);
     expect(await sailCount(db.sql)).toBe(sailTotal);
   });
 
@@ -84,12 +87,12 @@ describe("an extension's migrations on a migrated database", () => {
     const next = fixtureWith(PINNED);
     try {
       const r = await runMigrations(db.url, { sets: [{ ...fixture, folder: next.folder }] });
-      expect(r.sets).toEqual([{ schema: "ext_fixture", applied: 1, total: 2 }]);
-      expect(await fixtureCount(db.sql)).toBe(2);
+      expect(r.sets).toEqual([{ schema: "ext_fixture", applied: 1, total: 3 }]);
+      expect(await fixtureCount(db.sql)).toBe(3);
       const [col] = await db.sql`select 1 from information_schema.columns where table_schema = 'ext_fixture' and table_name = 'notes' and column_name = 'pinned'`;
       expect(col).toBeDefined();
       // The database is now ahead of the original fixture: the runner refuses, as it does for Sail's own journal.
-      await expect(runMigrations(db.url, { sets: [fixture] })).rejects.toThrow("ext_fixture: database has 2 migrations but the journal has 1");
+      await expect(runMigrations(db.url, { sets: [fixture] })).rejects.toThrow("ext_fixture: database has 3 migrations but the journal has 2");
     } finally {
       next.cleanup();
     }
@@ -99,7 +102,7 @@ describe("an extension's migrations on a migrated database", () => {
     const tablesBefore = await publicTables(db.sql);
     const extBefore = await fixtureCount(db.sql);
     // The release after the one above: its one new migration fails halfway.
-    const broken = fixtureWith(PINNED, ["0002_broken", "CREATE TABLE ext_fixture.half (id int);\n--> statement-breakpoint\nALTER TABLE ext_fixture.no_such_table ADD COLUMN x int;"]);
+    const broken = fixtureWith(PINNED, ["0003_broken", "CREATE TABLE ext_fixture.half (id int);\n--> statement-breakpoint\nALTER TABLE ext_fixture.no_such_table ADD COLUMN x int;"]);
     try {
       await expect(runMigrations(db.url, { sets: [{ ...fixture, folder: broken.folder }] })).rejects.toThrow('ext_fixture: relation "ext_fixture.no_such_table" does not exist');
     } finally {
@@ -114,7 +117,7 @@ describe("an extension's migrations on a migrated database", () => {
   });
 
   it("refuse a schema that belongs to Sail or Postgres", async () => {
-    for (const schema of ["public", "sail", "drizzle", "pg_temp", "Bad-Name"]) await expect(runMigrations(db.url, { sets: [{ folder: FIXTURE, schema }] })).rejects.toThrow(/migration set/);
+    for (const schema of ["public", "sail", "drizzle", "sail_migrations", "pg_temp", "Bad-Name"]) await expect(runMigrations(db.url, { sets: [{ folder: FIXTURE, schema }] })).rejects.toThrow(/migration set/);
     await expect(runMigrations(db.url, { sets: [fixture, { ...fixture, table: "other" }] })).rejects.toThrow(/named twice/);
   });
 });
@@ -123,31 +126,59 @@ describe("an extension's table under RLS", () => {
   let db: TestDb;
   let A: SeededMerchant;
   let B: SeededMerchant;
+  /** A second brand of merchant A, with no outlet of its own: a row may still name it. */
+  let otherBrand: string;
   beforeAll(async () => {
     db = await freshDb();
     await runMigrations(db.url, { sets: [fixture] });
     A = await seedMerchant(db.sql, "Alpha");
     B = await seedMerchant(db.sql, "Bravo");
-    for (const m of [A, B]) await db.sql`insert into ext_fixture.notes (merchant_id, body) values (${m.merchantId}, ${`note of ${m.merchantId}`})`;
+    otherBrand = randomUUID();
+    await db.sql`insert into brands (id, merchant_id, name) values (${otherBrand}, ${A.merchantId}, 'Alpha Other')`;
+    for (const m of [A, B]) await db.sql`insert into ext_fixture.notes (merchant_id, outlet_id, brand_id, body) values (${m.merchantId}, ${m.outletId}, ${m.brandId}, ${`note of ${m.merchantId}`})`;
+    await db.sql`insert into ext_fixture.notes (merchant_id, outlet_id, brand_id, body) values (${A.merchantId}, ${A.outletId}, ${otherBrand}, 'other brand'), (${A.merchantId}, ${A.outletId}, null, 'every brand')`;
   });
   afterAll(async () => db?.drop());
 
-  /** As the API runs a request: the merchant set with set_config, then the app role (src/middleware/pipeline.ts). */
-  const asApp = <T>(merchantId: string | null, fn: (t: postgres.TransactionSql) => Promise<T>) =>
+  /**
+   * As the API runs a request: the merchant, outlets and brands set with set_config, then the caller's role
+   * (src/middleware/pipeline.ts). '*' is every outlet or brand of the merchant.
+   */
+  const asApp = <T>(merchantId: string | null, fn: (t: postgres.TransactionSql) => Promise<T>, scope: { outlets?: string; brands?: string; role?: string } = {}) =>
     db.sql.begin(async (t) => {
-      if (merchantId) await t`select set_config('app.current_merchant', ${merchantId}, true)`;
-      await t.unsafe("set local role app_authenticated");
+      if (merchantId) await t`select set_config('app.current_merchant', ${merchantId}, true), set_config('app.current_outlets', ${scope.outlets ?? "*"}, true), set_config('app.current_brands', ${scope.brands ?? "*"}, true)`;
+      await t.unsafe(`set local role ${scope.role ?? "app_authenticated"}`);
       return fn(t);
     }) as Promise<T>;
 
   it("shows each merchant its own rows only, and refuses a row for another merchant", async () => {
     for (const [me, other] of [[A, B], [B, A]] as const) {
-      const rows = await asApp(me.merchantId, (t) => t<{ merchant_id: string }[]>`select merchant_id from ext_fixture.notes`);
+      const rows = await asApp(me.merchantId, (t) => t<{ merchant_id: string }[]>`select distinct merchant_id from ext_fixture.notes`);
       expect(rows.map((r) => r.merchant_id)).toEqual([me.merchantId]);
-      await expect(asApp(me.merchantId, (t) => t`insert into ext_fixture.notes (merchant_id, body) values (${other.merchantId}, 'x')`)).rejects.toThrow(/row-level security/);
+      await expect(asApp(me.merchantId, (t) => t`insert into ext_fixture.notes (merchant_id, outlet_id, body) values (${other.merchantId}, ${other.outletId}, 'x')`)).rejects.toThrow(/row-level security/);
     }
-    // The owner sees both, so the filtering above is RLS and not missing rows.
-    expect((await db.sql`select 1 from ext_fixture.notes`).length).toBe(2);
+    // The owner sees every row, so the filtering above is RLS and not missing rows.
+    expect((await db.sql`select 1 from ext_fixture.notes`).length).toBe(4);
+  });
+
+  it("hides a row of another brand from staff and agents limited to one brand, and keeps rows without a brand", async () => {
+    for (const role of ["app_authenticated", "app_agent"]) {
+      const limited = await asApp(A.merchantId, (t) => t<{ body: string }[]>`select body from ext_fixture.notes order by body`, { brands: A.brandId, role });
+      expect(limited.map((r) => r.body)).toEqual(["every brand", `note of ${A.merchantId}`]);
+      const every = await asApp(A.merchantId, (t) => t<{ body: string }[]>`select body from ext_fixture.notes order by body`, { role });
+      expect(every.map((r) => r.body)).toEqual(["every brand", `note of ${A.merchantId}`, "other brand"]);
+      await expect(asApp(A.merchantId, (t) => t`insert into ext_fixture.notes (merchant_id, outlet_id, brand_id, body) values (${A.merchantId}, ${A.outletId}, ${otherBrand}, 'x')`, { brands: A.brandId, role })).rejects.toThrow(/row-level security/);
+    }
+  });
+
+  it("hides a row of another outlet from staff limited to their outlets", async () => {
+    const rows = await asApp(A.merchantId, (t) => t`select 1 from ext_fixture.notes`, { outlets: A.outlet2Id });
+    expect(rows).toEqual([]);
+  });
+
+  it("refuses an outlet or a brand of another merchant, even to the owner, by the composite keys", async () => {
+    await expect(db.sql`insert into ext_fixture.notes (merchant_id, outlet_id, body) values (${A.merchantId}, ${B.outletId}, 'x')`).rejects.toThrow(/notes_outlet_same_merchant/);
+    await expect(db.sql`insert into ext_fixture.notes (merchant_id, outlet_id, brand_id, body) values (${A.merchantId}, ${A.outletId}, ${B.brandId}, 'x')`).rejects.toThrow(/notes_brand_same_merchant/);
   });
 
   it("shows nothing without a merchant context", async () => {

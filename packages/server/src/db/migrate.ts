@@ -35,14 +35,17 @@ export function isSailFolder(folder: string): boolean {
 type Journal = { entries: { idx: number; tag: string; when: number }[] };
 
 /**
- * An extension's own migrations: a drizzle folder (with `meta/_journal.json`) applied after Sail's, tracked in
- * `<schema>.<table>` so Sail's own tracking table and its count check never see them. See docs/how-to.md,
- * "Tables owned by an extension".
+ * An extension's own migrations: a drizzle folder (with `meta/_journal.json`) applied after Sail's. Each set is
+ * tracked in a table of its own in `sail_migrations` (named after its schema unless `table` names it), so Sail's
+ * tracking table and its count check never see it, and the extension's first migration may create its schema the way
+ * drizzle-kit writes it (`CREATE SCHEMA "x"`). See docs/extensions.md, "Migrations".
  */
 export type MigrationSet = { folder: string; schema: string; table?: string };
 
+/** Where the runner tracks every extension set; Sail owns it and no extension may name it. */
+export const SETS_TRACKING_SCHEMA = "sail_migrations";
 const SCHEMA_NAME = /^[a-z_][a-z0-9_]{0,62}$/;
-const SAIL_SCHEMAS = new Set(["drizzle", "sail", "public", "information_schema", "faketime"]);
+const SAIL_SCHEMAS = new Set(["drizzle", "sail", SETS_TRACKING_SCHEMA, "public", "information_schema"]);
 
 export async function runMigrations(
   url: string,
@@ -52,6 +55,8 @@ export async function runMigrations(
   const sets = (opts.sets ?? []).map(checkSet);
   const dup = sets.find((s, i) => sets.findIndex((o) => o.schema === s.schema) !== i);
   if (dup) throw new Error(`migration set: schema "${dup.schema}" is named twice; each extension has a schema of its own`);
+  const dupTable = sets.find((s, i) => sets.findIndex((o) => o.table === s.table) !== i);
+  if (dupTable) throw new Error(`migration set: tracking table "${dupTable.table}" is named twice`);
   const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
   try {
     const folder = opts.folder ?? migrationsFolder();
@@ -63,7 +68,7 @@ export async function runMigrations(
     // Every extension's drift check comes before anything is applied, so a database ahead of the code changes nothing.
     const setsBefore: number[] = [];
     for (const set of sets) {
-      const n = await appliedCount(sql, set.schema, set.table);
+      const n = await appliedCount(sql, SETS_TRACKING_SCHEMA, set.table);
       const total = readJournal(set.folder).entries.length;
       log(`drift check (${set.schema}): ${n} of ${total} migrations applied`);
       if (n > total) throw new Error(`${set.schema}: database has ${n} migrations but the journal has ${total}: the deployed code is older than the database`);
@@ -77,8 +82,8 @@ export async function runMigrations(
     for (const [i, set] of sets.entries()) {
       const total = readJournal(set.folder).entries.length;
       // Each set runs in a transaction of its own: a failing migration undoes that set's pending migrations only.
-      await apply(sql, { migrationsFolder: set.folder, migrationsSchema: set.schema, migrationsTable: set.table }, set.schema);
-      const n = await appliedCount(sql, set.schema, set.table);
+      await apply(sql, { migrationsFolder: set.folder, migrationsSchema: SETS_TRACKING_SCHEMA, migrationsTable: set.table }, set.schema);
+      const n = await appliedCount(sql, SETS_TRACKING_SCHEMA, set.table);
       log(`drift check (${set.schema}): ${n} of ${total} migrations applied`);
       if (n !== total) throw new Error(`${set.schema}: after migrating, ${n} applied but journal has ${total}`);
       results.push({ schema: set.schema, applied: n - setsBefore[i]!, total: n });
@@ -103,7 +108,7 @@ export function migrationSetsFromEnv(value = process.env.SAIL_MIGRATIONS ?? ""):
 }
 
 function checkSet(set: MigrationSet): Required<MigrationSet> {
-  const table = set.table ?? "__drizzle_migrations";
+  const table = set.table ?? set.schema;
   for (const name of [set.schema, table]) if (!SCHEMA_NAME.test(name)) throw new Error(`migration set: "${name}" is not a lower-case Postgres name`);
   if (SAIL_SCHEMAS.has(set.schema) || set.schema.startsWith("pg_")) throw new Error(`migration set: schema "${set.schema}" belongs to Sail or Postgres; an extension uses a schema of its own`);
   readJournal(set.folder);

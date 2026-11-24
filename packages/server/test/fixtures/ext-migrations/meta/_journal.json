@@ -2,6 +2,19 @@
   "version": "7",
   "dialect": "postgresql",
   "entries": [
-    { "idx": 0, "version": "7", "when": 1790000000000, "tag": "0000_notes", "breakpoints": true }
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1795542739418,
+      "tag": "0000_brave_mongu",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1795542745936,
+      "tag": "0001_grants_rls",
+      "breakpoints": true
+    }
   ]
 }
