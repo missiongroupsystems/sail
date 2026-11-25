@@ -37,7 +37,9 @@ export { migrationSetsFromEnv, runMigrations, type MigrationSet } from "./db/mig
  * For a set-up script, outside a request, as the connection owner (no row-level security): a whole merchant with its
  * first brand, outlet, station and Admin (`bootstrapMerchant` opens its own transaction; `createMerchant` writes in
  * the caller's), and the importer (`runImportJob` runs a queued job; `importInto` imports within a transaction).
+ * `closePool` ends the connections `withTransaction` and `runImportJob` opened, so the script exits on its own.
  */
+export { closePool } from "./db/client.js";
 export { bootstrapMerchant, createMerchant, type BootstrapInput, type BootstrapResult } from "./bootstrap.js";
 export { importInto, runImportJob } from "./services/importer.js";
 export type { ImportMapping, ImportReport } from "./db/schema/index.js";
