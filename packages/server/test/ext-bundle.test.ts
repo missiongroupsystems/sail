@@ -1,38 +1,38 @@
 // A downstream production image bundles its start file with @sail/server inlined (Sail exports TypeScript source), so
 // every Sail module lands in one file. This builds that file from a fixture entry and runs it with node.
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import postgres from "postgres";
-import { build } from "tsup";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { migrationsFolder } from "../src/db/migrate.js";
 import { freshDb, TEST_SECRETS, type TestDb } from "./helpers.js";
 
 const SERVER = join(import.meta.dirname, "..");
 const EXT = join(SERVER, "test/fixtures/ext-migrations");
+const FIXTURE = join(SERVER, "test/fixtures/ext-bundle");
 // Laid out as a downstream image: the bundle in dist/, the downstream's own migrations in drizzle/ beside it. Inside
-// the package, so the bundle finds the dependencies it leaves external (hono, postgres, ...) as an image would.
+// Sail's package, so the bundle finds the dependencies it leaves external (hono, postgres, ...) as an image would.
 const root = join(SERVER, "node_modules/.cache", `ext-bundle-${randomUUID().slice(0, 8)}`);
 const out = join(root, "dist");
 let db: TestDb;
 let cwd: string;
 
 beforeAll(async () => {
-  await build({
-    entry: { server: join(SERVER, "test/fixtures/ext-bundle/entry.ts"), migrate: join(SERVER, "test/fixtures/ext-bundle/migrate.ts") },
-    outDir: out,
-    format: ["esm"],
-    platform: "node",
-    target: "node22",
-    splitting: false,
-    noExternal: ["@sail/server", "@sail/shared"],
-    config: false,
-    silent: true,
-  });
+  // The downstream's folder: its package.json names @sail/server only, and its tsup config is the docs' recipe. Built
+  // with tsup's command there, as a downstream builds it, so tsup sees that package.json and not Sail's.
+  mkdirSync(join(root, "src"), { recursive: true });
+  mkdirSync(join(root, "node_modules/@sail"), { recursive: true });
+  symlinkSync(SERVER, join(root, "node_modules/@sail/server"), "dir");
+  writeFileSync(join(root, "package.json"), JSON.stringify({ name: "downstream", private: true, type: "module", dependencies: { "@sail/server": "*" } }));
+  cpSync(join(FIXTURE, "tsup.config.ts"), join(root, "tsup.config.ts"));
+  cpSync(join(FIXTURE, "entry.ts"), join(root, "src/start.ts"));
+  cpSync(join(FIXTURE, "migrate.ts"), join(root, "src/migrate.ts"));
+  const built = spawnSync(process.execPath, [join(SERVER, "node_modules/tsup/dist/cli-default.js"), "--silent"], { cwd: root, encoding: "utf8" });
+  expect(built.status, built.stderr + built.stdout).toBe(0);
   db = await freshDb();
   // The downstream's own migrations, beside its bundle and in its working folder: neither is Sail's.
   cpSync(EXT, join(root, "drizzle"), { recursive: true });

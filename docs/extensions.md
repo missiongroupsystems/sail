@@ -31,7 +31,7 @@ Import everything from `@sail/server` (`packages/server/src/public.ts`), never a
 | `AppError`, `appendEvent`, `outletVisible`, `principalCanSeeOutlet`, `principalRole` | Errors, events and the caller's scope in a handler |
 | `registerWorkerTask`, `registerPaymentProvider`, `registerOrderClosedHook`, `registerRepriceHook`, `onCancel`, `onFire`, `onVoid` | Worker tasks, a payment provider and order hooks |
 | `runMigrations`, `migrationSetsFromEnv` | A migrate file (see Migrations) |
-| `bootstrapMerchant`, `createMerchant`, `runImportJob`, `importInto` | A set-up script: a merchant with its first brand, outlet, station and Admin, and the CSV importer |
+| `bootstrapMerchant`, `createMerchant`, `runImportJob`, `importInto`, `closePool` | A set-up script: a merchant with its first brand, outlet, station and Admin, the CSV importer, and `await closePool()` at its end so it exits without `process.exit` |
 
 **These run outside row-level security**, as the connection owner, so every query must name the merchant:
 `withTransaction` (worker tasks and start-up steps only, never in a handler), `bootstrapMerchant`, `createMerchant`,
@@ -63,8 +63,9 @@ Sail's migrations and can change in any release.
 - **Pages** are served under `/x/<path>`. Every page names its `minRole` (`"server"` is every staff member); a page
   without one stops the build. Anyone below the role gets Sail's refusal page, naming the role; signed out goes to sign
   in. A rail section whose page is above the person's role is hidden.
-- **Brand**: `brand: { name, mark?, icon? }` replaces Sail's name on sign-in, the rail, the POS, lock, pairing and
-  kitchen screens and the POS app manifest. `mark` is a component drawn beside the name; without one the name stands
+- **Brand**: `brand: { name, mark?, icon? }` replaces Sail's name on sign-in, the rail, the POS, lock and pairing
+  screens (the kitchen display's too), in the browser-tab titles and in the POS app manifest. The kitchen display's
+  tickets screen shows no logo. `mark` is a component drawn beside the name; without one the name stands
   alone (the collapsed rail shows its initial). `icon` is the URL of the browser-tab, home-screen and POS app icon (an
   absolute URL, or `import icon from "./icon.png"` and `icon: icon.src`); without one the icon is the name's initial,
   never Sail's sail.
@@ -172,10 +173,24 @@ CREATE TRIGGER notes_outlet_brand BEFORE INSERT OR UPDATE OF brand_id, outlet_id
 
 ```ts
 // tsup.config.ts
-export default defineConfig({ entry: { server: "src/start.ts", migrate: "src/migrate.ts" }, format: ["esm"], platform: "node", noExternal: ["@sail/server", "@sail/shared"] });
+import { readFileSync } from "node:fs";
+import { defineConfig } from "tsup";
+
+// Sail's dependencies stay external (those of @sail/shared are among them).
+const sail = JSON.parse(readFileSync("node_modules/@sail/server/package.json", "utf8"));
+
+export default defineConfig({
+  entry: { server: "src/start.ts", migrate: "src/migrate.ts" },
+  format: ["esm"],
+  platform: "node",
+  noExternal: ["@sail/server", "@sail/shared"],
+  external: Object.keys(sail.dependencies).filter((d) => !d.startsWith("@sail/")),
+});
 ```
 
-Install `@sail/server`'s dependencies in the image (the bundle leaves them external), and copy two migrations folders:
+tsup leaves out only the dependencies of the extension's own `package.json`, so without `external` it inlines Sail's,
+and the bundle fails with `Dynamic require of "os" is not supported`. Install `@sail/server`'s dependencies in the image,
+and copy two migrations folders:
 Sail's (`packages/server/drizzle`) and the extension's own. A bundled migrate file names Sail's folder, because a bundle
 cannot find it next to the runner (and never takes the extension's `drizzle/` for it):
 
