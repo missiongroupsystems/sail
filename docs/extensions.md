@@ -31,7 +31,7 @@ Import everything from `@sail/server` (`packages/server/src/public.ts`), never a
 | `AppError`, `appendEvent`, `outletVisible`, `principalCanSeeOutlet`, `principalRole` | Errors, events and the caller's scope in a handler |
 | `registerWorkerTask`, `registerPaymentProvider`, `registerOrderClosedHook`, `registerRepriceHook`, `onCancel`, `onFire`, `onVoid` | Worker tasks, a payment provider and order hooks |
 | `runMigrations`, `migrationSetsFromEnv` | A migrate file (see Migrations) |
-| `bootstrapMerchant`, `createMerchant`, `runImportJob`, `importInto`, `closePool` | A set-up script: a merchant with its first brand, outlet, station and Admin, the CSV importer, and `await closePool()` at its end so it exits without `process.exit` |
+| `bootstrapMerchant`, `createMerchant`, `runImportJob`, `importInto`, `closePool` | A set-up script: a merchant with its first brand, outlet, station and Admin, and the CSV importer. `await closePool()` closes Sail's database connections so a script exits without `process.exit`: call it only at the end of a script, never inside a running server |
 
 **These run outside row-level security**, as the connection owner, so every query must name the merchant:
 `withTransaction` (worker tasks and start-up steps only, never in a handler), `bootstrapMerchant`, `createMerchant`,
@@ -63,9 +63,9 @@ Sail's migrations and can change in any release.
 - **Pages** are served under `/x/<path>`. Every page names its `minRole` (`"server"` is every staff member); a page
   without one stops the build. Anyone below the role gets Sail's refusal page, naming the role; signed out goes to sign
   in. A rail section whose page is above the person's role is hidden.
-- **Brand**: `brand: { name, mark?, icon? }` replaces Sail's name on sign-in, the rail, the POS, lock and pairing
-  screens (the kitchen display's too), in the browser-tab titles and in the POS app manifest. The kitchen display's
-  tickets screen shows no logo. `mark` is a component drawn beside the name; without one the name stands
+- **Brand**: `brand: { name, mark?, icon? }` replaces Sail's name on sign-in, the rail, the POS, its lock and pairing
+  screens, the kitchen display's pairing screen, in the browser-tab titles and in the POS app manifest. The kitchen
+  display's tickets screen shows no logo. `mark` is a component drawn beside the name; without one the name stands
   alone (the collapsed rail shows its initial). `icon` is the URL of the browser-tab, home-screen and POS app icon (an
   absolute URL, or `import icon from "./icon.png"` and `icon: icon.src`); without one the icon is the name's initial,
   never Sail's sail.

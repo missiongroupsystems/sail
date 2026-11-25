@@ -60,7 +60,7 @@ export type SailLogoProps = {
 export function SailLogo({ size = "bar", className, name = "Sail", mark: Mark = SailMark, fit = false }: SailLogoProps) {
   const s = sizes[size];
   return (
-    <span role="img" aria-label={name} className={cx("inline-flex shrink-0 items-center text-ink", s.gap, className)}>
+    <span role="img" aria-label={name} title={fit ? name : undefined} className={cx("inline-flex shrink-0 items-center text-ink", s.gap, className)}>
       {/* A downstream mark may not keep its size in a fixed width on its own. */}
       {Mark && (fit ? <span className="flex shrink-0"><Mark size={s.mark} className="text-current" /></span> : <Mark size={s.mark} className="text-current" />)}
       <span aria-hidden className={cx("font-heading font-semibold tracking-[-0.02em]", s.text, fit && "min-w-0 truncate")}>

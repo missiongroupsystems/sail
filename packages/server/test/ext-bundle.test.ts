@@ -31,7 +31,7 @@ beforeAll(async () => {
   cpSync(join(FIXTURE, "tsup.config.ts"), join(root, "tsup.config.ts"));
   cpSync(join(FIXTURE, "entry.ts"), join(root, "src/start.ts"));
   cpSync(join(FIXTURE, "migrate.ts"), join(root, "src/migrate.ts"));
-  const built = spawnSync(process.execPath, [join(SERVER, "node_modules/tsup/dist/cli-default.js"), "--silent"], { cwd: root, encoding: "utf8" });
+  const built = spawnSync(process.execPath, [join(SERVER, "node_modules/tsup/dist/cli-default.js"), "--silent"], { cwd: root, encoding: "utf8", timeout: 90_000 });
   expect(built.status, built.stderr + built.stdout).toBe(0);
   db = await freshDb();
   // The downstream's own migrations, beside its bundle and in its working folder: neither is Sail's.
