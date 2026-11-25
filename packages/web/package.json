@@ -3,12 +3,18 @@
   "version": "0.9.0-beta.1",
   "private": true,
   "type": "module",
+  "exports": {
+    "./extensions": {
+      "types": "./src/extensions/types.ts",
+      "default": "./src/extensions/types.ts"
+    }
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/lib/cookies.test.ts src/lib/hours.test.ts",
+    "test": "tsx --test src/lib/cookies.test.ts src/lib/hours.test.ts src/lib/nav.test.ts test/next-config.test.ts test/tailwind-source.test.ts && tsx --tsconfig test/tsconfig.extension.json --test src/lib/nav.extension.test.ts",
     "gen:api": "openapi-typescript ../server/openapi.json -o src/lib/api/schema.d.ts && node scripts/op-roles.mjs",
     "pos:smoke": "tsx --tsconfig scripts/tsconfig.json scripts/pos-smoke.ts",
     "lint": "eslint --max-warnings 0 ."

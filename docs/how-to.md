@@ -1,4 +1,4 @@
-# How to add a route, a table, a migration and a payment provider
+# How to add a route, a table, a migration, a payment provider and an extension's tables
 
 The recipes every change follows, so the codebase keeps one pattern. Commands and checks are in [CONTRIBUTING.md](../CONTRIBUTING.md); the design behind them is in [architecture.md](architecture.md).
 
@@ -51,3 +51,9 @@ A provider is a small client for a card-terminal service. It never touches the d
 3. **Keep credentials out of the code.** The merchant's webhook secret comes in `account.webhookSecret`; anything else the provider needs (an API key) belongs in the environment or a merchant setting, never in a tender.
 4. **Throw on failure.** A thrown call is retried by the outbox with backoff and never blocks other payments. Use timeouts on every network call (the simulator uses 10 s), shorter than the outbox's 60 s lease.
 5. **Test** against the register as `test/payment-providers.test.ts` does for the simulator: approve, decline, duplicate and reordered webhooks, a bad signature, a bill that changed, a timeout.
+
+## 6. Tables owned by an extension
+
+An extension keeps its tables in a schema of its own, with its own migrations folder, applied after Sail's
+(`SAIL_MIGRATIONS`). The rules and the grants and row-level security recipe are in
+[extensions.md](extensions.md#migrations), with the rest of what an extension can add.

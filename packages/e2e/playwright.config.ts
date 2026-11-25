@@ -27,6 +27,8 @@ const locale = process.env.E2E_BROWSER_LOCALE ?? "de-DE";
 
 export default defineConfig({
   testDir: "./tests",
+  // Runs against a back office built with the test extension: extension.config.ts.
+  testIgnore: /extension\.spec\.ts$/,
   // The specs share one register (tables, shifts), so they run one at a time in file order.
   fullyParallel: false,
   workers: 1,

@@ -1,7 +1,7 @@
 "use client";
 
 import { OfficeSurface } from "./OfficeSurface";
-import { Icon, SailLogo, SailMark, SideNav, sideNavLabelClass, sideNavRowClass, type NavLinkProps } from "@sail/ui";
+import { Icon, SailMark, SideNav, sideNavLabelClass, sideNavRowClass, type NavLinkProps } from "@sail/ui";
 import { Monitor } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -9,7 +9,9 @@ import type { ReactNode } from "react";
 import type { Brand, Me, Merchant, Outlet } from "@/lib/api/types";
 import type { Scope, Theme } from "@/lib/cookies";
 import { roleAtLeast } from "@sail/shared";
-import { SECTIONS } from "@/lib/nav";
+import { PRODUCT_MARK, PRODUCT_NAME } from "@/lib/brand";
+import { RAIL } from "@/lib/nav";
+import { ProductLogo } from "./ProductLogo";
 import { ScopeControl } from "./ScopeControl";
 import { ShownOutletProvider } from "./ShownOutlet";
 import { UserMenu } from "./UserMenu";
@@ -34,13 +36,23 @@ export type ShellProps = {
   children: ReactNode;
 };
 
-/** Sail's logo at the top of the rail; the collapsed rail keeps only the mark. */
+/** The product's logo at the top of the rail; the collapsed rail keeps only the mark (a downstream name without one: its initial). */
 function Wordmark() {
   return (
     <>
-      <SailLogo size="sidebar" className="max-[1099px]:hidden" />
+      <ProductLogo size="sidebar" className="max-[1099px]:hidden" />
       <span className="flex h-6 justify-center min-[1100px]:hidden">
-        <SailMark size={20} label="Sail" />
+        {PRODUCT_MARK === undefined ? (
+          <SailMark size={20} label="Sail" />
+        ) : PRODUCT_MARK ? (
+          <span role="img" aria-label={PRODUCT_NAME} className="text-ink">
+            <PRODUCT_MARK size={20} />
+          </span>
+        ) : (
+          <span role="img" aria-label={PRODUCT_NAME} className="font-heading text-[17px] leading-6 font-semibold text-ink">
+            {PRODUCT_NAME.slice(0, 1)}
+          </span>
+        )}
       </span>
     </>
   );
@@ -58,7 +70,7 @@ export function Shell({ me, merchant, brands, outlets, scope, followed, theme, c
       <OfficeSurface />
       <aside className="sticky top-0 h-dvh shrink-0 print:hidden">
         <SideNav
-          items={SECTIONS.filter((s) => !s.minRole || (me.role !== null && roleAtLeast(me.role, s.minRole)))}
+          items={RAIL.filter((s) => !s.minRole || (me.role !== null && roleAtLeast(me.role, s.minRole)))}
           currentPath={pathname}
           LinkComponent={NavLink}
           header={

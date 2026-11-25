@@ -1,0 +1,121 @@
+{
+  "id": "e39fba3e-3e4a-41d5-98ed-0bbdc099c0a8",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "ext_fixture.notes": {
+      "name": "notes",
+      "schema": "ext_fixture",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "merchant_id": {
+          "name": "merchant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "outlet_id": {
+          "name": "outlet_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "brand_id": {
+          "name": "brand_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "number": {
+          "name": "number",
+          "type": "serial",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "notes_merchant_id_merchants_id_fk": {
+          "name": "notes_merchant_id_merchants_id_fk",
+          "tableFrom": "notes",
+          "tableTo": "merchants",
+          "columnsFrom": [
+            "merchant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "notes_outlet_same_merchant": {
+          "name": "notes_outlet_same_merchant",
+          "tableFrom": "notes",
+          "tableTo": "outlets",
+          "columnsFrom": [
+            "outlet_id",
+            "merchant_id"
+          ],
+          "columnsTo": [
+            "id",
+            "merchant_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "notes_brand_same_merchant": {
+          "name": "notes_brand_same_merchant",
+          "tableFrom": "notes",
+          "tableTo": "brands",
+          "columnsFrom": [
+            "brand_id",
+            "merchant_id"
+          ],
+          "columnsTo": [
+            "id",
+            "merchant_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {
+    "ext_fixture": "ext_fixture"
+  },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

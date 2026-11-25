@@ -1,3 +1,4 @@
+import type { ComponentType } from "react";
 import { cx } from "../lib/cx";
 
 /*
@@ -47,16 +48,20 @@ const sizes: Record<SailLogoSize, { mark: number; text: string; gap: string }> =
 export type SailLogoProps = {
   size?: SailLogoSize;
   className?: string;
+  /** The product's name in place of "Sail". */
+  name?: string;
+  /** The mark in place of the sail; null sets the name alone. */
+  mark?: ComponentType<{ size: number; className?: string }> | null;
 };
 
-/** The mark followed by the word "Sail" in the heading face. Readers hear one name: "Sail". */
-export function SailLogo({ size = "bar", className }: SailLogoProps) {
+/** The mark followed by the product's name ("Sail") in the heading face. Readers hear one name. */
+export function SailLogo({ size = "bar", className, name = "Sail", mark: Mark = SailMark }: SailLogoProps) {
   const s = sizes[size];
   return (
-    <span role="img" aria-label="Sail" className={cx("inline-flex shrink-0 items-center text-ink", s.gap, className)}>
-      <SailMark size={s.mark} className="text-current" />
+    <span role="img" aria-label={name} className={cx("inline-flex shrink-0 items-center text-ink", s.gap, className)}>
+      {Mark && <Mark size={s.mark} className="text-current" />}
       <span aria-hidden className={cx("font-heading font-semibold tracking-[-0.02em]", s.text)}>
-        Sail
+        {name}
       </span>
     </span>
   );

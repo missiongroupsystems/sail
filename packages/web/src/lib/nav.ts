@@ -11,7 +11,8 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import type { Role } from "@sail/shared";
+import { ROLES, type Role } from "@sail/shared";
+import extensions from "@sail/extensions";
 
 export type Section = {
   href: string;
@@ -34,6 +35,35 @@ export const SECTIONS: Section[] = [
   // The audit log: every change, by whom, approved by whom (audit.list is a Manager's).
   { href: "/audit", label: "Changes", icon: History, minRole: "manager" },
   { href: "/settings", label: "Settings", icon: Settings },
+];
+
+/** A page a downstream build adds below /x/ (extensions/types.ts), by its path there; undefined when there is none. */
+export function extensionPage(path: string): { minRole: Role } | undefined {
+  return extensions.pages && Object.hasOwn(extensions.pages, path) ? extensions.pages[path] : undefined;
+}
+
+/** Fails closed: a page without a known role is refused, rather than opened to everyone. */
+export function checkExtensionPages(pages: Record<string, { minRole?: unknown }>): void {
+  for (const [path, page] of Object.entries(pages)) {
+    if (!(ROLES as readonly unknown[]).includes(page?.minRole)) throw new Error(`SAIL_EXTENSIONS: page "${path}" needs a minRole (one of ${ROLES.join(", ")}); "server" lets every staff member open it`);
+  }
+}
+// At import, so the build (and any render) stops on such a page.
+checkExtensionPages(extensions.pages ?? {});
+
+/** The /x/ page an extension's rail section links to, by its path there: no query, hash or trailing slash. */
+export function extensionSectionPage(href: string): string | undefined {
+  const path = href.split(/[?#]/)[0]!.replace(/\/+$/, "");
+  return path.startsWith("/x/") ? path.slice(3) : undefined;
+}
+
+/** The rail: Sail's sections, then any a downstream build adds, each hidden below its page's role. */
+export const RAIL: Section[] = [
+  ...SECTIONS,
+  ...(extensions.nav ?? []).map((s) => {
+    const page = extensionSectionPage(s.href);
+    return { ...s, minRole: page === undefined ? undefined : extensionPage(page)?.minRole };
+  }),
 ];
 
 export const SETTINGS_TABS = [
@@ -98,5 +128,6 @@ export const PAGE_MIN_ROLE: { prefix: string; role: Role }[] = [
 /** The lowest role a page needs, or null when the page names none. */
 export function pageMinRole(path: string | null): Role | null {
   if (!path) return null;
+  if (path.startsWith("/x/")) return extensionPage(path.slice(3))?.minRole ?? null;
   return PAGE_MIN_ROLE.find((p) => path === p.prefix || path.startsWith(`${p.prefix}/`))?.role ?? null;
 }

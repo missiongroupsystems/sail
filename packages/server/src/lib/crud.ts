@@ -2,7 +2,8 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { and, asc, eq, isNull, type SQL } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
-import { registerOperations, type OperationSpec, type PrincipalKind, type Role } from "@sail/shared";
+import { isDeepStrictEqual } from "node:util";
+import { OPERATIONS, registerOperations, type OperationSpec, type PrincipalKind, type Role } from "@sail/shared";
 import { db } from "../db/client.js";
 import { AppError } from "./errors.js";
 import type { AppEnv } from "./context.js";
@@ -64,12 +65,16 @@ export function defineCrud<TTable extends PgTable, TApi extends z.ZodTypeAny, TC
     mcp: { expose, toolsets: expose ? ["pos.read", "config.author"] : [] },
   });
   const g = cfg.group;
-  registerOperations({
+  const specs: Record<string, OperationSpec> = {
     [`${g}.list`]: base(`${g}.list`, `List ${cfg.noun}s`, "T0", readRole, readPrincipals, [], cfg.mcp?.read ?? true),
     [`${g}.get`]: base(`${g}.get`, `Get a ${cfg.noun}`, "T0", readRole, readPrincipals, [], cfg.mcp?.read ?? true),
     [`${g}.create`]: base(`${g}.create`, `Create a ${cfg.noun}`, "T3", writeRole, writePrincipals, [`${cfg.aggregateKind}.created`], false),
     [`${g}.update`]: base(`${g}.update`, `Update a ${cfg.noun}`, "T3", writeRole, writePrincipals, [`${cfg.aggregateKind}.updated`], false),
-  });
+  };
+  // Each app build defines the routes again; the operations are registered by the first, and a later build must find
+  // exactly these specs (anything else registered under the same keys is refused by registerOperations).
+  const fresh = Object.fromEntries(Object.entries(specs).filter(([k, v]) => !(Object.hasOwn(OPERATIONS, k) && isDeepStrictEqual(OPERATIONS[k], v))));
+  registerOperations(fresh);
 
   const baseQuery = z.object({ include_archived: z.enum(["true", "false"]).optional(), outlet_id: z.uuid().optional() });
   const listQuery = cfg.listQuery ? baseQuery.extend(cfg.listQuery.shape) : baseQuery;
