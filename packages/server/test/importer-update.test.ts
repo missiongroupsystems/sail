@@ -5,8 +5,8 @@ import { runQueuedImports } from "../src/services/importer.js";
 import { api, freshDb, seedMerchant, type SeededMerchant, type TestDb } from "./helpers.js";
 
 /**
- * A re-import updates what the file maps and leaves the rest as the app has it: an unmapped column, and a blank cell
- * where docs/csv-mapping.md gives a blank no meaning of its own, keep the stored value. Defaults apply only on create.
+ * A re-import updates what the file has and leaves the rest as the app has it: a column the file does not have keeps
+ * the stored value; a blank cell in a column it has clears the field or sets its default, as on create.
  */
 
 let db: TestDb;
@@ -129,7 +129,7 @@ describe("a re-import leaves what the file does not map alone", () => {
     for (const [e, counts] of Object.entries(again)) expect(counts.updates + counts.creates, e).toBe(0);
   });
 
-  it("a blank cell in a mapped column keeps the stored value; a filled one writes it", async () => {
+  it("a blank cell in a column the file has clears the field or sets its default; a filled one writes it", async () => {
     const M = await seedMerchant(db.sql, "Blank");
     const files: FileMap[] = [
       { name: "outlets.csv", entity: "outlets", columns: { legacy_id: "ID", name: "Name", address: "Address", phone: "Phone" } },
@@ -152,12 +152,12 @@ describe("a re-import leaves what the file does not map alone", () => {
       "tables.csv": "ID,Name,Area,Seats,X\nT1,Table 1,A1,,11\n",
       "reasons.csv": "ID,Name,Refunds,Sort\nR1,Wrong item (new),,\n",
     });
-    expect(updated.areas).toMatchObject({ updates: 0, unchanged: 1 });
-    expect(await rowOf("outlets", await idOf("outlets", M.merchantId, "O1"), "address, phone")).toEqual({ address: "1 Quay Road", phone: "+6569999999" });
-    expect(await rowOf("modifier_groups", await idOf("modifier_groups", M.merchantId, "G1"), "min_select, max_select")).toEqual({ min_select: 1, max_select: 4 });
-    expect(await rowOf("areas", await idOf("areas", M.merchantId, "A1"), "sort")).toEqual({ sort: 3 });
-    expect(await rowOf("tables", await idOf("tables", M.merchantId, "T1"), "seats, x")).toEqual({ seats: 6, x: 11 });
-    expect(await rowOf("void_reasons", await idOf("void_reasons", M.merchantId, "R1"), "name, for_refunds, sort")).toEqual({ name: "Wrong item (new)", for_refunds: false, sort: 5 });
+    expect(updated.areas).toMatchObject({ updates: 1, unchanged: 0 });
+    expect(await rowOf("outlets", await idOf("outlets", M.merchantId, "O1"), "address, phone")).toEqual({ address: null, phone: "+6569999999" });
+    expect(await rowOf("modifier_groups", await idOf("modifier_groups", M.merchantId, "G1"), "min_select, max_select")).toEqual({ min_select: 0, max_select: 4 });
+    expect(await rowOf("areas", await idOf("areas", M.merchantId, "A1"), "sort")).toEqual({ sort: 0 });
+    expect(await rowOf("tables", await idOf("tables", M.merchantId, "T1"), "seats, x")).toEqual({ seats: 4, x: 11 });
+    expect(await rowOf("void_reasons", await idOf("void_reasons", M.merchantId, "R1"), "name, for_refunds, sort")).toEqual({ name: "Wrong item (new)", for_refunds: true, sort: 0 });
   });
 
   it("a new row still takes the defaults", async () => {
@@ -191,6 +191,59 @@ describe("a re-import leaves what the file does not map alone", () => {
     expect((await rowOf("products", p!.id, "tax_class_id")).tax_class_id).toBeNull();
   });
 
+  it("a blank cell clears a product's description, tags, category, flags and archived mark", async () => {
+    const M = await seedMerchant(db.sql, "Clear");
+    const full: FileMap = { name: "items.csv", entity: "products", columns: { sku: "SKU", name: "Name", price: "Price", description: "Desc", tags: "Tags", category_legacy_id: "Cat", has_deposit: "Dep", kitchen_name: "Kitchen", archived: "Archived" } };
+    const cats: FileMap = { name: "cats.csv", entity: "categories", columns: { legacy_id: "ID", name: "Name" } };
+    await run(M, [cats, full], { "cats.csv": "ID,Name\nC1,Soups\n", "items.csv": "SKU,Name,Price,Desc,Tags,Cat,Dep,Kitchen,Archived\nP1,Soup,5.00,Clear broth,hot;veg,C1,Y,SOUP,Y\n" });
+    const [p] = await db.sql<{ id: string }[]>`select id from products where merchant_id = ${M.merchantId} and sku = 'P1'`;
+    expect(await rowOf("products", p!.id, "description, tags, has_deposit, kitchen_name, archived_at is not null as archived")).toEqual({ description: "Clear broth", tags: ["hot", "veg"], has_deposit: true, kitchen_name: "SOUP", archived: true });
+    const cleared = await run(M, [full], { "items.csv": "SKU,Name,Price,Desc,Tags,Cat,Dep,Kitchen,Archived\nP1,Soup,5.00,,,,,,\n" });
+    expect(cleared.products).toMatchObject({ updates: 1, rejected: [] });
+    expect(await rowOf("products", p!.id, "description, tags, category_id, has_deposit, kitchen_name, archived_at")).toEqual({ description: null, tags: [], category_id: null, has_deposit: false, kitchen_name: null, archived_at: null });
+  });
+
+  it("a blank marketing consent on a customer update withdraws consent; a file without the column keeps it", async () => {
+    const M = await seedMerchant(db.sql, "Consent");
+    const withConsent: FileMap = { name: "customers.csv", entity: "customers", columns: { name: "Name", mobile: "Mobile", email: "Email", marketing_consent: "Consent" } };
+    await run(M, [withConsent], { "customers.csv": "Name,Mobile,Email,Consent\nAda,+6591234567,ada@example.test,Y\n" });
+    const [c] = await db.sql<{ id: string }[]>`select id from customers where merchant_id = ${M.merchantId}`;
+    expect(await rowOf("customers", c!.id, "email, marketing_consent")).toEqual({ email: "ada@example.test", marketing_consent: true });
+    // Without the columns: kept.
+    await run(M, [{ ...withConsent, columns: { name: "Name", mobile: "Mobile" } }], { "customers.csv": "Name,Mobile\nAda,+6591234567\n" });
+    expect(await rowOf("customers", c!.id, "email, marketing_consent")).toEqual({ email: "ada@example.test", marketing_consent: true });
+    // With the columns and blank cells: consent withdrawn and email cleared.
+    const withdrawn = await run(M, [withConsent], { "customers.csv": "Name,Mobile,Email,Consent\nAda,+6591234567,,\n" });
+    expect(withdrawn.customers).toMatchObject({ updates: 1, rejected: [] });
+    expect(await rowOf("customers", c!.id, "email, marketing_consent")).toEqual({ email: null, marketing_consent: false });
+  });
+
+  it("modifier options and menu items keep their order and child group when the file has no such column", async () => {
+    const M = await seedMerchant(db.sql, "Order");
+    const items: FileMap = { name: "items.csv", entity: "products", columns: { sku: "SKU", name: "Name", price: "Price" } };
+    const groups: FileMap = { name: "groups.csv", entity: "modifier_groups", columns: { legacy_id: "ID", name: "Name" } };
+    const options: FileMap = { name: "options.csv", entity: "modifier_options", columns: { group_legacy_id: "Group", product_sku: "SKU", sort: "Sort", child_group_legacy_id: "Child" } };
+    const brands: FileMap = { name: "brands.csv", entity: "brands", columns: { legacy_id: "ID", name: "Name" } };
+    const menus: FileMap = { name: "menus.csv", entity: "menus", columns: { legacy_id: "ID", name: "Name", brand_legacy_id: "Brand" } };
+    const sections: FileMap = { name: "sections.csv", entity: "menu_sections", columns: { legacy_id: "ID", name: "Name", menu_legacy_id: "Menu" } };
+    const menuItems: FileMap = { name: "menu_items.csv", entity: "menu_items", columns: { section_legacy_id: "Section", product_sku: "SKU", sort: "Sort" } };
+    const base = { "items.csv": "SKU,Name,Price\nP1,Soup,5.00\nX1,Chilli,0.50\n", "groups.csv": "ID,Name\nG1,Sauce\nG2,Heat\n", "brands.csv": "ID,Name\nB1,Harbour\n", "menus.csv": "ID,Name,Brand\nM1,All day,B1\n", "sections.csv": "ID,Name,Menu\nS1,Mains,M1\n" };
+    const all = [items, groups, options, brands, menus, sections, menuItems];
+    await run(M, all, { ...base, "options.csv": "Group,SKU,Sort,Child\nG1,X1,5,G2\n", "menu_items.csv": "Section,SKU,Sort\nS1,P1,7\n" });
+    const opt = async () => (await db.sql<{ sort: number; child: string | null }[]>`select o.sort, g.legacy_id as child from modifier_options o left join modifier_groups g on g.id = o.child_group_id where o.merchant_id = ${M.merchantId}`)[0];
+    const item = async () => (await db.sql<{ sort: number }[]>`select sort from menu_items where merchant_id = ${M.merchantId}`)[0];
+    expect({ opt: await opt(), item: await item() }).toEqual({ opt: { sort: 5, child: "G2" }, item: { sort: 7 } });
+
+    // Without the sort and child columns: kept, and nothing counts as changed.
+    const bare = await run(M, [items, groups, { ...options, columns: { group_legacy_id: "Group", product_sku: "SKU" } }, brands, menus, sections, { ...menuItems, columns: { section_legacy_id: "Section", product_sku: "SKU" } }], { ...base, "options.csv": "Group,SKU\nG1,X1\n", "menu_items.csv": "Section,SKU\nS1,P1\n" });
+    expect({ options: bare.modifier_options, items: bare.menu_items }).toMatchObject({ options: { updates: 0, unchanged: 1 }, items: { updates: 0, unchanged: 1 } });
+    expect({ opt: await opt(), item: await item() }).toEqual({ opt: { sort: 5, child: "G2" }, item: { sort: 7 } });
+
+    // With the columns and blank cells: the defaults (sort 0, no child group; a menu item's row order).
+    await run(M, all, { ...base, "options.csv": "Group,SKU,Sort,Child\nG1,X1,,\n", "menu_items.csv": "Section,SKU,Sort\nS1,P1,\n" });
+    expect({ opt: await opt(), item: await item() }).toEqual({ opt: { sort: 0, child: null }, item: { sort: 0 } });
+  });
+
   it("a product matched on its Sail id with a new legacy id and nothing else changed updates the legacy id alone", async () => {
     const M = await seedMerchant(db.sql, "Legacy");
     const products: FileMap = { name: "items.csv", entity: "products", columns: { sail_id: "Sail", legacy_id: "Legacy", name: "Name", price: "Price" } };
@@ -206,7 +259,7 @@ describe("a re-import leaves what the file does not map alone", () => {
 describe("staff re-imports", () => {
   const staffFile: FileMap = { name: "staff.csv", entity: "staff", columns: { legacy_id: "ID", name: "Name", role: "Role" } };
 
-  it("unmapped outlets, active, email and custom initials are kept; a blank outlet list does not widen access", async () => {
+  it("outlets, active, email and custom initials are kept when the file has no such column; blank cells set the defaults", async () => {
     const M = await seedMerchant(db.sql, "Crew");
     await run(M, [staffFile], { "staff.csv": "ID,Name,Role\nE1,Sam Lee,server\n" });
     const id = await idOf("staff", M.merchantId, "E1");
@@ -216,10 +269,10 @@ describe("staff re-imports", () => {
     expect(updated.staff).toMatchObject({ updates: 1, rejected: [] });
     expect(await rowOf("staff", id, "name, outlet_ids, initials, email, active")).toEqual({ name: "Sam Leigh", outlet_ids: [M.outletId], initials: "SX", email: "sam@example.test", active: false });
 
-    // Mapped but blank: still the stored outlets and email, never "every outlet".
+    // With the columns and blank cells: every outlet, no email, active, as on create. Initials stay the Team page's.
     const withCols: FileMap = { ...staffFile, columns: { ...staffFile.columns, outlet_legacy_ids: "Outlets", email: "Email", active: "Active" } };
     await run(M, [withCols], { "staff.csv": "ID,Name,Role,Outlets,Email,Active\nE1,Sam Leigh,server,,,\n" });
-    expect(await rowOf("staff", id, "outlet_ids, email, active")).toEqual({ outlet_ids: [M.outletId], email: "sam@example.test", active: false });
+    expect(await rowOf("staff", id, "outlet_ids, email, active, initials")).toEqual({ outlet_ids: [], email: null, active: true, initials: "SX" });
   });
 
   it("an Admin cannot lower their own role by import, and an import cannot leave the business without an active Admin", async () => {
@@ -231,6 +284,41 @@ describe("staff re-imports", () => {
     const off = await run(M, [withActive], { "staff.csv": "ID,Name,Role,Active\nBOSS,Guards Admin,admin,N\n" });
     expect(off.staff!.rejected.map((r) => r.reason)).toEqual(["This would leave the business with no active Admin"]);
     expect(await rowOf("staff", M.admin.id, "role, active")).toEqual({ role: "admin", active: true });
+  });
+
+  it("a row refused after its write is not counted as updated or listed in the audit entry", async () => {
+    const M = await seedMerchant(db.sql, "Late");
+    await must(M, "PATCH", `/v1/staff/${M.admin.id}`, { legacy_id: "BOSS" });
+    await must(M, "PATCH", `/v1/staff/${M.manager.id}`, { legacy_id: "MGR" });
+    const withActive: FileMap = { ...staffFile, columns: { ...staffFile.columns, active: "Active" } };
+    // BOSS is written, then refused by the last-Admin check; MGR is a real update.
+    const r = await run(M, [withActive], { "staff.csv": "ID,Name,Role,Active\nBOSS,Late Admin,admin,N\nMGR,Mia Manager (new),manager,Y\n" });
+    expect(r.staff).toMatchObject({ creates: 0, updates: 1, unchanged: 0 });
+    expect(r.staff!.rejected.map((x) => x.reason)).toEqual(["This would leave the business with no active Admin"]);
+    const [entry] = await db.sql<{ details: { entities: { staff: { updates: number; updated_ids: string[] } } } }[]>`select details from audit_log where merchant_id = ${M.merchantId} and action = 'imports.applied'`;
+    expect(entry!.details.entities.staff).toMatchObject({ updates: 1, updated_ids: [M.manager.id] });
+  });
+
+  it("a dry run gives the same answer whether or not a PIN is someone's current PIN", async () => {
+    const M = await seedMerchant(db.sql, "Oracle");
+    const withPin: FileMap = { ...staffFile, columns: { ...staffFile.columns, pin: "PIN" } };
+    await run(M, [withPin], { "staff.csv": "ID,Name,Role,PIN\nE1,Sam Lee,server,246810\nE2,Kim Tan,server,135791\n" });
+    const answer = async (pin: string) => {
+      const r = await run(M, [withPin], { "staff.csv": `ID,Name,Role,PIN\nE1,Sam Lee,server,${pin}\n` }, true);
+      return { ...r.staff, rejected: r.staff!.rejected.map((x) => x.reason) };
+    };
+    const own = await answer("246810");
+    const colleagues = await answer("135791");
+    const nobodys = await answer("975310");
+    expect(own).toEqual(nobodys);
+    expect(colleagues).toEqual(nobodys);
+    expect(nobodys).toMatchObject({ updates: 1, rejected: [] });
+    // A new person with a colleague's PIN: the same as with a free one.
+    const fresh = async (pin: string) => (await run(M, [withPin], { "staff.csv": `ID,Name,Role,PIN\nE3,Lee Ng,server,${pin}\n` }, true)).staff;
+    expect(await fresh("135791")).toEqual(await fresh("975310"));
+    // The applied import still refuses a PIN someone else uses.
+    const applied = await run(M, [withPin], { "staff.csv": "ID,Name,Role,PIN\nE1,Sam Lee,server,135791\n" });
+    expect(applied.staff!.rejected.map((x) => x.reason)).toEqual(["Someone at this business already uses that PIN"]);
   });
 
   it("deactivating someone ends their back-office sessions and sign-in links, as the Team page does", async () => {
@@ -267,6 +355,19 @@ describe("moves and cycles an import refuses", () => {
     expect(moved.menu_sections!.rejected.map((r) => r.reason)).toEqual(["a section's menu cannot be changed by an import"]);
     expect(moved.menus!.rejected.map((r) => r.reason)).toEqual(["a menu's brand cannot be changed by an import"]);
     expect((await rowOf("areas", await idOf("areas", M.merchantId, "A1"), "outlet_id")).outlet_id).toBe(await idOf("outlets", M.merchantId, "O1"));
+  });
+
+  it("a table does not move to another outlet through its area, but moves between areas of its outlet", async () => {
+    const M = await seedMerchant(db.sql, "TableMove");
+    const csv = (areas: string, tables: string) => ({ ...floorCsv(""), "areas.csv": `ID,Name,Outlet\n${areas}`, "tables.csv": `ID,Name,Area\n${tables}` });
+    await run(M, floor, csv("A1,Terrace,O1\nA2,Bar,O1\nA3,Pier deck,O2\n", "T1,Table 1,A1\n"));
+    const table = await idOf("tables", M.merchantId, "T1");
+    const moved = await run(M, floor, csv("A1,Terrace,O1\nA2,Bar,O1\nA3,Pier deck,O2\n", "T1,Table 1,A3\n"));
+    expect(moved.tables!.rejected.map((r) => r.reason)).toEqual(["a table's outlet cannot be changed by an import"]);
+    expect(await rowOf("tables", table, "outlet_id, area_id")).toEqual({ outlet_id: await idOf("outlets", M.merchantId, "O1"), area_id: await idOf("areas", M.merchantId, "A1") });
+    const within = await run(M, floor, csv("A1,Terrace,O1\nA2,Bar,O1\nA3,Pier deck,O2\n", "T1,Table 1,A2\n"));
+    expect(within.tables).toMatchObject({ updates: 1, rejected: [] });
+    expect((await rowOf("tables", table, "area_id")).area_id).toBe(await idOf("areas", M.merchantId, "A2"));
   });
 
   it("a category or section under itself, or two under each other, is refused", async () => {
@@ -320,10 +421,21 @@ describe("what an import records", () => {
     const events = await db.sql<{ type: string; aggregate_id: string }[]>`select type, aggregate_id from events where merchant_id = ${M.merchantId} and outlet_id = ${outlet} and operation_id = 'imports.apply' order by seq`;
     expect(events.map((e) => e.type)).toEqual(["area.created", "table.created", "area.updated", "table.updated"]);
   });
+
+  it("the audit entry lists at most 100 updated ids per entity, with the total", async () => {
+    const M = await seedMerchant(db.sql, "AuditCap");
+    const reasons: FileMap = { name: "reasons.csv", entity: "void_reasons", columns: { legacy_id: "ID", name: "Name" } };
+    const csv = (suffix: string) => ({ "reasons.csv": `ID,Name\n${Array.from({ length: 101 }, (_, i) => `R${i},Reason ${i}${suffix}`).join("\n")}\n` });
+    await run(M, [reasons], csv(""));
+    expect((await run(M, [reasons], csv(" (new)"))).void_reasons).toMatchObject({ updates: 101 });
+    const [entry] = await db.sql<{ details: { entities: { void_reasons: { updates: number; updated_ids: string[]; updated_ids_total: number } } } }[]>`select details from audit_log where merchant_id = ${M.merchantId} and action = 'imports.applied' order by occurred_at desc limit 1`;
+    const v = entry!.details.entities.void_reasons;
+    expect({ listed: v.updated_ids.length, total: v.updated_ids_total, updates: v.updates }).toEqual({ listed: 100, total: 101, updates: 101 });
+  });
 });
 
 describe("a failed import", () => {
-  it("says so in plain words, keeps the counts so far, and does not stop the queue", async () => {
+  it("says so in plain words, reports nothing applied, and does not stop the queue", async () => {
     const M = await seedMerchant(db.sql, "Failing");
     // A database fault the importer cannot blame on the row (a syntax error) on void reasons only.
     await db.sql.unsafe(`create function fail_import() returns trigger language plpgsql as $$ begin raise exception 'syntax error at or near "legacy_id"' using errcode = '42601'; end $$`);
@@ -335,7 +447,9 @@ describe("a failed import", () => {
       const j = await job(M, failing);
       expect(j.status).toBe("failed");
       expect(j.error).toBe("The import stopped on an unexpected error. Nothing was changed.");
-      expect(j.report!.entities.tender_types).toMatchObject({ creates: 2 });
+      // Everything it wrote was rolled back, so no entity reports a create or an update.
+      for (const [e, counts] of Object.entries(j.report!.entities)) expect({ e, creates: counts.creates, updates: counts.updates }).toEqual({ e, creates: 0, updates: 0 });
+      expect(j.report!.entities.tender_types).toBeDefined();
       expect((await job(M, next)).status).toBe("applied");
       const [n] = await db.sql<{ n: number }[]>`select count(*)::int as n from tender_types where merchant_id = ${M.merchantId}`;
       expect(n!.n).toBe(0);

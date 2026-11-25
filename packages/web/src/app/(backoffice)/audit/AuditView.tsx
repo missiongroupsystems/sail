@@ -22,7 +22,7 @@ const ACTIONS = [
   "staff.create", "staff.update", "staff.invite", "staff.reset_password", "staff.revoke_access", "products.create", "products.update", "products.bulk_price",
   "modifier_groups.create", "modifier_groups.update", "menus.create", "menus.update", "pricing_rules.create_version", "pricing_rules.archive", "tax_rates.set",
   "stock.mark_sold_out", "stock.restore", "tables.rotate_qr_token", "orders.open", "orders.cancel", "orders.reopen", "adjustments.apply_manual", "adjustments.remove",
-  "payments.record", "payments.cancel", "refunds.create", "overrides.grant", "shifts.open", "shifts.close", "business_days.close", "imports.apply",
+  "payments.record", "payments.cancel", "refunds.create", "overrides.grant", "shifts.open", "shifts.close", "business_days.close", "imports.apply", "imports.applied",
   "auth.sign_in", "auth.sign_out", "stock.set_daily_cap", "categories.create", "categories.update", "stations.unpair",
   "lines.void_fired", "lines.add_open_price", "orders.move_table", "orders.change_type", "payments.void", "documents.issue_invoice", "rounds.accept", "rounds.reject",
   "tables.qr_sheet", "tables.rotate_all_qr_tokens", "availability.create", "availability.update", "availability.delete", "imports.create", "customers.upsert",

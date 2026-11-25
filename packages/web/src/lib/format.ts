@@ -32,7 +32,7 @@ const AUDIT_ACTION: Record<string, string> = {
   "orders.open": "Opened order", "orders.cancel": "Cancelled order", "orders.reopen": "Reopened order", "orders.send": "Sent to the kitchen",
   "adjustments.apply_manual": "Applied a discount or fee", "adjustments.remove": "Removed a discount or fee", "payments.record": "Took a payment",
   "payments.cancel": "Cancelled a terminal payment", "refunds.create": "Refunded", "overrides.grant": "Approved an override", "shifts.open": "Opened shift",
-  "shifts.close": "Closed shift", "business_days.close": "Closed the business day", "imports.apply": "Imported a menu",
+  "shifts.close": "Closed shift", "business_days.close": "Closed the business day", "imports.apply": "Imported a menu", "imports.applied": "Applied an import",
   "stock.set_daily_cap": "Set a daily cap",
   "categories.create": "Created a category", "categories.update": "Changed a category", "stations.unpair": "Unpaired a station",
   // Every other action the register audits, so none reads as its raw key (live-test final2 A P-A3).

@@ -45,12 +45,15 @@ const ENTITY_ORDER: ImportEntity[] = ["brands", "outlets", "categories", "produc
 type Row = Record<string, string>;
 type EntityReport = ImportReport["entities"][string];
 class DryRunRollback extends Error {}
+/** At most this many updated ids per entity go in the audit entry; the entry also gives the total. */
+const AUDIT_IDS_PER_ENTITY = 100;
 /** A row the import created or updated (an update only counts when something changed). */
 type Touched = { entity: string; id: string; created: boolean; outletId?: string };
 
 /**
- * A value the row does not give (its column is unmapped, or the cell is blank where the mapping gives a blank no
- * meaning): written when the row creates a record, left as stored when it updates one.
+ * A value for a column the file does not have (not mapped, or mapped to a header the file lacks, and no `defaults`
+ * value): written when the row creates a record, left as stored when it updates one. A blank cell in a column the
+ * file has is not this: it clears the field or sets its default.
  */
 class OnCreate {
   constructor(readonly value: unknown) {}
@@ -76,7 +79,7 @@ export async function runImportJob(jobId: string): Promise<ImportReport> {
     try {
       await withTransaction(async (t) => {
         const touched: Touched[] = [];
-        await importInto(t, job.merchantId, job.mapping, job.files, { actorId: job.createdBy, report, touched });
+        await importInto(t, job.merchantId, job.mapping, job.files, { actorId: job.createdBy, dryRun: job.dryRun, report, touched });
         if (job.dryRun) throw new DryRunRollback();
         await recordImport(job, report, touched);
       });
@@ -88,20 +91,28 @@ export async function runImportJob(jobId: string): Promise<ImportReport> {
   } catch (e) {
     // The API shows the job's error: the database's own words stay in the log.
     logger.error({ err: e, jobId }, "import failed");
-    await withTransaction((t) => t.db.update(importJobs).set({ status: "failed", error: "The import stopped on an unexpected error. Nothing was changed.", report, finishedAt: new Date() }).where(eq(importJobs.id, jobId)));
+    // Everything the job wrote was rolled back, so it reports nothing applied; the refused rows it reached stay listed.
+    const rolledBack: ImportReport = { entities: Object.fromEntries(Object.entries(report.entities).map(([e, r]) => [e, { ...r, creates: 0, updates: 0, unchanged: 0 }])), warnings: report.warnings };
+    await withTransaction((t) => t.db.update(importJobs).set({ status: "failed", error: "The import stopped on an unexpected error. Nothing was changed.", report: rolledBack, finishedAt: new Date() }).where(eq(importJobs.id, jobId)));
     throw e;
   }
 }
 
 /**
- * The audit log gets one entry per applied import (counts per entity and the ids it updated), in the import's
- * transaction, instead of one per row. Tables and areas also get the events the POS floor refreshes on.
+ * The audit log gets one entry per applied import (counts per entity and the ids it updated, at most
+ * AUDIT_IDS_PER_ENTITY of them with the total), in the import's transaction, instead of one per row. Tables and
+ * areas also get the events the POS floor refreshes on.
  */
 async function recordImport(job: typeof importJobs.$inferSelect, report: ImportReport, touched: Touched[]) {
   const [by] = job.createdBy ? await db().select({ id: staff.id, name: staff.name, role: staff.role }).from(staff).where(eq(staff.id, job.createdBy)).limit(1) : [];
   if (!by) throw new Error(`import job ${job.id} has no Admin who queued it`);
   const p: Principal = { type: "staff", id: by.id, merchantId: job.merchantId, role: by.role, name: by.name, outletIds: [], brandIds: [], riskCeiling: null, via: "backoffice" };
-  const entities = Object.fromEntries(Object.entries(report.entities).map(([e, r]) => [e, { creates: r.creates, updates: r.updates, unchanged: r.unchanged, rejected: r.rejected.length, updated_ids: touched.filter((x) => x.entity === e && !x.created).map((x) => x.id) }]));
+  const entities = Object.fromEntries(
+    Object.entries(report.entities).map(([e, r]) => {
+      const updated = touched.filter((x) => x.entity === e && !x.created).map((x) => x.id);
+      return [e, { creates: r.creates, updates: r.updates, unchanged: r.unchanged, rejected: r.rejected.length, updated_ids: updated.slice(0, AUDIT_IDS_PER_ENTITY), updated_ids_total: updated.length }];
+    }),
+  );
   await recordAudit(p, { action: "imports.applied", targetKind: "import_job", targetId: job.id, details: { entities } });
   for (const x of touched) {
     if (!x.outletId || (x.entity !== "tables" && x.entity !== "areas")) continue;
@@ -111,7 +122,7 @@ async function recordImport(job: typeof importJobs.$inferSelect, report: ImportR
 }
 
 /** Run an import for a merchant inside the given transaction. Exposed for tests. */
-export async function importInto(t: RequestTx, merchantId: string, mapping: ImportMapping, files: Record<string, string>, opts: { actorId?: string | null; report?: ImportReport; touched?: Touched[] } = {}): Promise<ImportReport> {
+export async function importInto(t: RequestTx, merchantId: string, mapping: ImportMapping, files: Record<string, string>, opts: { actorId?: string | null; dryRun?: boolean; report?: ImportReport; touched?: Touched[] } = {}): Promise<ImportReport> {
   const report: ImportReport = opts.report ?? { entities: {}, warnings: [] };
   const touched = opts.touched ?? [];
   const pendingLayouts: { key: string; brandId: string; name: string; page: string; folder: string | null; tile: LayoutTile }[] = [];
@@ -185,17 +196,19 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
       const ref = (ent: string, key: string): string | undefined => legacy[ent]?.get(key);
       /** The file gives this field: a column that is in the file, or a default in the mapping. */
       const mapped = (field: string) => (file.columns[field] != null && headers.includes(file.columns[field])) || file.defaults?.[field] != null;
-      /** The row's value for a field, or OnCreate(fallback) when the row does not give one (unmapped or blank). */
+      /** `value` when the file has this field's column; otherwise OnCreate(value), which an update leaves as stored. */
+      const given = <T,>(field: string, value: T): T | OnCreate => (mapped(field) ? value : new OnCreate(value));
+      /** The row's value for a field: `fallback` for a blank cell (it clears or sets the default), OnCreate when the file has no such column. */
       const opt = <T,>(row: Row, field: string, read: (v: string) => T, fallback: T): T | OnCreate => {
         const v = get(row, field);
-        return v === "" ? new OnCreate(fallback) : read(v);
+        return given(field, v === "" ? fallback : read(v));
       };
 
       /**
        * Create the record, or update the columns the row gives that differ. A column whose value is OnCreate is written
        * on create only. `refuse` names why an existing record cannot take this row (a move the import does not make).
        */
-      const upsert = async (table: string, legacyId: string, values: Record<string, unknown>, o: { match?: { column: string; value: string }; refuse?: (existing: Record<string, unknown>) => string | null } = {}) => {
+      const upsert = async (table: string, legacyId: string, values: Record<string, unknown>, o: { match?: { column: string; value: string }; refuse?: (existing: Record<string, unknown>) => string | null; counted?: boolean } = {}) => {
         const matchBy = o.match ?? { column: "legacy_id", value: legacyId };
         const [existing] = await sql.unsafe<Record<string, unknown>[]>(`select * from ${table} where merchant_id = $1 and ${matchBy.column} = $2 limit 1`, [merchantId, matchBy.value]);
         const outletId = typeof values["outlet_id"] === "string" ? values["outlet_id"] : undefined;
@@ -211,7 +224,8 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
         const refusal = o.refuse?.(existing);
         if (refusal) throw new Error(refusal);
         const changed = Object.keys(values).filter((c) => !(values[c] instanceof OnCreate) && !same(existing[c], values[c]));
-        if (changed.length === 0 && (existing["legacy_id"] === legacyId || !legacyId)) {
+        // `counted`: an update even with no column changed (a dry run's PIN, which is never compared).
+        if (changed.length === 0 && (existing["legacy_id"] === legacyId || !legacyId) && !o.counted) {
           rep.unchanged++;
           return { id, created: false };
         }
@@ -225,6 +239,8 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
 
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i]!;
+        // A row refused after it was written (a later check in its savepoint) is rolled back, so its counts go too.
+        const before = { creates: rep.creates, updates: rep.updates, unchanged: rep.unchanged, touched: touched.length };
         // A row the database refuses (a third category level, a taken email) is rejected alone, not the whole import.
         try {
           await t.sql.savepoint(async (sp) => {
@@ -268,7 +284,7 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               const name = get(row, "name");
               if (!name) throw new Error("name is required");
               const parentKey = get(row, "parent_legacy_id");
-              const parentId = parentKey ? ref("categories", parentKey) : new OnCreate(null);
+              const parentId = parentKey ? ref("categories", parentKey) : given("parent_legacy_id", null);
               if (parentKey && !parentId) throw new Error(`parent category ${parentKey} not found (parents must come first)`);
               // A category under itself, or a third level, is refused by the database (0052) in words.
               const { id } = await upsert("report_categories", lid, { name, parent_id: parentId, sort: opt(row, "sort", (v) => num(v, 0), 0) });
@@ -296,16 +312,16 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               if (!lid && !sailId) errors.push("sku, legacy_id or sail_id is required");
               const priceCents = check(() => amountCell("price", get(row, "price")), 0);
               const catKey = get(row, "category_legacy_id");
-              const categoryId = catKey ? check(() => refOrName("categories", catKey, "category"), null) : new OnCreate(null);
+              const categoryId = catKey ? check(() => refOrName("categories", catKey, "category"), null) : given("category_legacy_id", null);
               const brandKey = get(row, "brand_legacy_id") || mapping.options?.brand_legacy_id || "";
-              const brandId = brandKey ? check(() => refOrName("brands", brandKey, "brand"), null) : new OnCreate(null);
+              const brandId = brandKey ? check(() => refOrName("brands", brandKey, "brand"), null) : given("brand_legacy_id", null);
               const kindCell = get(row, "kind");
               // A legacy "Item" is a product and a "Modifier" a component; any other word is refused, never guessed.
               if (kindCell && !/^(product|item|component|modifier)$/i.test(kindCell)) errors.push(`kind "${kindCell}" is not product or component`);
               const kind = /^(component|modifier)$/i.test(kindCell) ? "component" : "product";
               const className = get(row, "tax_class");
-              // A blank class in a mapped column is the merchant's default class (null); an unmapped one leaves it alone.
-              const taxClassId = className ? taxClasses.get(className.toLowerCase()) : mapped("tax_class") ? null : new OnCreate(null);
+              // A blank class is the merchant's default class (null); a file without the column leaves it alone.
+              const taxClassId = className ? taxClasses.get(className.toLowerCase()) : given("tax_class", null);
               if (taxClassId === undefined) errors.push(`tax class "${className}" not found`);
               // Read the per-order-type prices first, so a bad one refuses the row before anything is written.
               const prices = (["dine_in", "takeaway", "pickup", "delivery"] as const).flatMap((ot) => {
@@ -316,7 +332,7 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               });
               if (errors.length) throw new Error(errors.join("; "));
               const text = (f: string) => opt(row, f, (v) => v, null);
-              const values = { name, sku: sku ?? new OnCreate(null), description: text("description"), price: priceCents, category_id: categoryId, brand_id: brandId, tags: opt(row, "tags", (v) => v.split(/[;|]/).map((s) => s.trim()).filter(Boolean), []), has_deposit: opt(row, "has_deposit", bool, false), tax_class_id: taxClassId, open_price: opt(row, "open_price", bool, false), kind: kindCell ? kind : new OnCreate("product"), kitchen_name: text("kitchen_name"), archived_at: opt(row, "archived", (v) => (bool(v) ? new Date().toISOString() : null), null) };
+              const values = { name, sku: given("sku", sku), description: text("description"), price: priceCents, category_id: categoryId, brand_id: brandId, tags: opt(row, "tags", (v) => v.split(/[;|]/).map((s) => s.trim()).filter(Boolean), []), has_deposit: opt(row, "has_deposit", bool, false), tax_class_id: taxClassId, open_price: opt(row, "open_price", bool, false), kind: given("kind", kind), kitchen_name: text("kitchen_name"), archived_at: opt(row, "archived", (v) => (bool(v) ? new Date().toISOString() : null), null) };
               const [bySailId] = sailId ? await sql<{ id: string }[]>`select id from products where merchant_id = ${merchantId} and id = ${sailId} limit 1` : [];
               // A Sail id from another business or database names nothing here: without a SKU or legacy id the row would
               // create a new copy on every run, so it is refused instead.
@@ -367,10 +383,14 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               if (!existing) {
                 await sql`insert into modifier_options (merchant_id, group_id, product_id, price_override, child_group_id, is_default, sort) values (${merchantId}, ${groupId}, ${productId}, ${override}, ${childId}, ${bool(get(row, "is_default"))}, ${sort})`;
                 rep.creates++;
-              } else if (existing.price_override !== override || existing.child_group_id !== childId || existing.sort !== sort) {
-                await sql`update modifier_options set price_override = ${override}, child_group_id = ${childId}, sort = ${sort} where id = ${existing.id}`;
-                rep.updates++;
-              } else rep.unchanged++;
+              } else {
+                // A column the file does not have keeps what is stored.
+                const next = { price_override: mapped("price_override") ? override : existing.price_override, child_group_id: mapped("child_group_legacy_id") ? childId : existing.child_group_id, sort: mapped("sort") ? sort : existing.sort };
+                if (existing.price_override !== next.price_override || existing.child_group_id !== next.child_group_id || existing.sort !== next.sort) {
+                  await sql`update modifier_options set price_override = ${next.price_override}, child_group_id = ${next.child_group_id}, sort = ${next.sort} where id = ${existing.id}`;
+                  rep.updates++;
+                } else rep.unchanged++;
+              }
               // Attach the group to a parent product when given.
               const parentKey = get(row, "parent_product_legacy_id") || get(row, "parent_product_sku");
               if (parentKey) {
@@ -397,7 +417,7 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               const menuId = ref("menus", get(row, "menu_legacy_id"));
               if (!menuId) throw new Error(`menu ${get(row, "menu_legacy_id")} not found`);
               const parentKey = get(row, "parent_legacy_id");
-              const parentId = parentKey ? ref("menu_sections", parentKey) : new OnCreate(null);
+              const parentId = parentKey ? ref("menu_sections", parentKey) : given("parent_legacy_id", null);
               if (parentKey && !parentId) throw new Error(`parent section ${parentKey} not found`);
               const name = get(row, "name");
               if (!name) throw new Error("name is required");
@@ -420,8 +440,9 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               const productId = ref("products", prodKey) ?? skuToProduct.get(prodKey);
               if (!productId) throw new Error(`product ${prodKey} not found`);
               const [menu] = await sql<{ menu_id: string }[]>`select menu_id from menu_sections where id = ${sectionId}`;
-              const sort = num(get(row, "sort"), i);
               const [existing] = await sql<{ sort: number }[]>`select sort from menu_items where section_id = ${sectionId} and product_id = ${productId}`;
+              // A file without a sort column keeps the stored order.
+              const sort = existing && !mapped("sort") ? existing.sort : num(get(row, "sort"), i);
               if (!existing) {
                 await sql`insert into menu_items (merchant_id, menu_id, section_id, product_id, sort) values (${merchantId}, ${menu!.menu_id}, ${sectionId}, ${productId}, ${sort})`;
                 rep.creates++;
@@ -449,7 +470,7 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               const [area] = await sql<{ outlet_id: string }[]>`select outlet_id from areas where id = ${areaId}`;
               const name = get(row, "name");
               if (!name) throw new Error("name is required");
-              const { id } = await upsert("tables", lid, { outlet_id: area!.outlet_id, area_id: areaId, name, seats: opt(row, "seats", (v) => num(v, 4), 4), shape: opt(row, "shape", (v) => v, "rect"), x: opt(row, "x", (v) => num(v, 0), 0), y: opt(row, "y", (v) => num(v, 0), 0), w: opt(row, "w", (v) => num(v, 2), 2), h: opt(row, "h", (v) => num(v, 2), 2) });
+              const { id } = await upsert("tables", lid, { outlet_id: area!.outlet_id, area_id: areaId, name, seats: opt(row, "seats", (v) => num(v, 4), 4), shape: opt(row, "shape", (v) => v, "rect"), x: opt(row, "x", (v) => num(v, 0), 0), y: opt(row, "y", (v) => num(v, 0), 0), w: opt(row, "w", (v) => num(v, 2), 2), h: opt(row, "h", (v) => num(v, 2), 2) }, { refuse: (x) => (x["outlet_id"] !== area!.outlet_id ? "a table's outlet cannot be changed by an import" : null) });
               legacy.tables!.set(lid, id);
               break;
             }
@@ -486,11 +507,14 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               const pin = get(row, "pin");
               if (pin && !/^\d{6}$/.test(pin)) throw new Error("pin must be 6 digits");
               const [there] = await sql<{ id: string; role: string; active: boolean; pin_lookup: string | null }[]>`select id, role, active, pin_lookup from staff where merchant_id = ${merchantId} and legacy_id = ${lid} limit 1`;
-              // No outlets is every outlet: a new person without the column gets that, as on the Team page; an update keeps
+              // No outlets is every outlet, as on the Team page: a blank cell gives that; a file without the column keeps
               // the outlets they have. Initials are made from the name once and then belong to the Team page.
-              const values: Record<string, unknown> = { name, email: opt(row, "email", (v) => v.toLowerCase(), null), role, outlet_ids: outletIds.length ? outletIds : new OnCreate([]), initials: new OnCreate(initialsFor(name)), active: opt(row, "active", bool, true) };
+              const values: Record<string, unknown> = { name, email: opt(row, "email", (v) => v.toLowerCase(), null), role, outlet_ids: given("outlet_legacy_ids", outletIds as string[]), initials: new OnCreate(initialsFor(name)), active: opt(row, "active", bool, true) };
               const lookup = pin ? pinLookup(merchantId, pin) : null;
-              if (lookup && lookup !== there?.pin_lookup) {
+              // A dry run never compares a PIN with anyone's (its own or a colleague's), so its report cannot tell whether
+              // a guessed PIN is in use: a PIN cell is always "would set it". The applied import checks and writes it.
+              const pinInDryRun = !!lookup && !!opts.dryRun;
+              if (lookup && !opts.dryRun && lookup !== there?.pin_lookup) {
                 // A taken PIN is refused, and finding taken PINs is limited per person as in the staff form, so a dry
                 // run of many rows cannot list colleagues' PINs. The count commits on its own, dry run or not.
                 const scope = `pin_taken:${opts.actorId ? `staff:${opts.actorId}` : "import"}`;
@@ -508,7 +532,7 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               }
               // The Team page's guards: an Admin does not lower their own role.
               if (there && there.id === opts.actorId && role !== "admin") throw new Error("You cannot lower your own role: ask another Admin to change it");
-              const { id } = await upsert("staff", lid, values);
+              const { id } = await upsert("staff", lid, values, { counted: pinInDryRun });
               legacy.staff!.set(lid, id);
               if (there?.role === "admin" && (role !== "admin" || values["active"] === false)) {
                 const [admins] = await sql<{ n: number }[]>`select count(*)::int as n from staff where merchant_id = ${merchantId} and role = 'admin' and active`;
@@ -525,7 +549,7 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               const name = get(row, "name");
               if (!name) throw new Error("name is required");
               if (!lid) throw new Error("mobile or legacy_id is required");
-              const { id } = await upsert("customers", lid, { name, mobile: mobile ?? new OnCreate(null), email: opt(row, "email", (v) => v, null), marketing_consent: opt(row, "marketing_consent", bool, false) }, { match: mobile && !get(row, "legacy_id") ? { column: "mobile", value: mobile } : { column: "legacy_id", value: lid } });
+              const { id } = await upsert("customers", lid, { name, mobile: given("mobile", mobile), email: opt(row, "email", (v) => v, null), marketing_consent: opt(row, "marketing_consent", bool, false) }, { match: mobile && !get(row, "legacy_id") ? { column: "mobile", value: mobile } : { column: "legacy_id", value: lid } });
               legacy.customers!.set(lid, id);
               break;
             }
@@ -546,7 +570,10 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
           }
           });
         } catch (e) {
-          reject(i, rowRefusal(e), row);
+          const reason = rowRefusal(e);
+          Object.assign(rep, { creates: before.creates, updates: before.updates, unchanged: before.unchanged });
+          touched.length = before.touched;
+          reject(i, reason, row);
         } finally {
           sql = t.sql;
         }

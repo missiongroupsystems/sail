@@ -152,14 +152,25 @@ describe("staff and passwords", () => {
     const pins = ["444444", "333333", "222222", "111111", "582913", "444444", "690418"];
     const files = { "staff.csv": "id,name,role,pin\n" + pins.map((pin, i) => `P${i},Probe ${i},server,${pin}`).join("\n") + "\n" };
     const mapping = { files: [{ name: "staff.csv", entity: "staff", columns: { legacy_id: "id", name: "name", role: "role", pin: "pin" } }] };
-    const job = await admin("POST", "/v1/imports", { files, mapping, dry_run: true });
-    expect(job.status, JSON.stringify(job.body)).toBe(201);
-    await runQueuedImports();
-    const report = (await call<{ data: { status: string; report: { entities: { staff: { creates: number; rejected: { row: number; reason: string }[] } } } } }>("GET", `/v1/imports/${job.body.data.id}`, { token: w.m.admin.token })).body.data;
-    expect(report.status).toBe("dry_run_complete");
+    type Report = { data: { status: string; report: { entities: { staff: { creates: number; rejected: { row: number; reason: string }[] } } } } };
+    const runJob = async (dryRun: boolean) => {
+      const job = await admin("POST", "/v1/imports", { files, mapping, dry_run: dryRun });
+      expect(job.status, JSON.stringify(job.body)).toBe(201);
+      await runQueuedImports();
+      return (await call<Report>("GET", `/v1/imports/${job.body.data.id}`, { token: w.m.admin.token })).body.data;
+    };
+    // A dry run never compares a PIN with anyone's: every row reads the same, taken or free, and nothing is counted.
+    const dry = await runJob(true);
+    expect(dry.status).toBe("dry_run_complete");
+    expect(dry.report.entities.staff).toMatchObject({ creates: 7, rejected: [] });
+    const [counted] = await db.sql<{ n: number }[]>`select count(*)::int as n from pin_attempts where merchant_id = ${w.m.merchantId}`;
+    expect(counted!.n).toBe(0);
+    // The applied import refuses a taken PIN, and finding taken PINs is limited as in the staff form.
+    const applied = await runJob(false);
+    expect(applied.status).toBe("applied");
     const taken = "Someone at this business already uses that PIN";
     const held = "Too many PINs that someone already uses";
-    expect(report.report.entities.staff.rejected.map((r) => [r.row, r.reason])).toEqual([[2, taken], [3, taken], [4, taken], [5, taken], [7, held], [8, held]]);
+    expect(applied.report.entities.staff.rejected.map((r) => [r.row, r.reason])).toEqual([[2, taken], [3, taken], [4, taken], [5, taken], [7, held], [8, held]]);
     // The staff form shares the count.
     expect((await admin("POST", "/v1/staff", { name: "Late", role: "server", pin: "713305" })).status).toBe(429);
     await db.sql`delete from pin_attempts where merchant_id = ${w.m.merchantId}`;
