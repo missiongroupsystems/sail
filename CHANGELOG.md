@@ -7,6 +7,8 @@ Notable changes to Sail, newest first. Field and operation names are as in `pack
 ### Extensions
 - A downstream deployment can add to Sail without editing it ([docs/extensions.md](docs/extensions.md)): `startServer({ modules })` and the `@sail/server` exports for routes, operations, worker tasks, hooks, migrations and set-up scripts; back-office pages under `/x/` (each with a required minimum role), rail sections and a product name, mark and icon from the folder `SAIL_EXTENSIONS` names; tables in a schema of its own, migrated after Sail's with `SAIL_MIGRATIONS`. With none of these set, Sail runs and looks as before.
 - `registerOperations` refuses a key already registered, and a registered operation spec is read-only.
+- `@sail/server` exports `closePool`, so a set-up script ends on its own. The production-image tsup recipe marks Sail's dependencies external (inlined, the bundle failed with `Dynamic require of "os" is not supported`).
+- On the POS bar a downstream product name has a fixed-width slot (about ten letters with its mark; a longer one truncates), so the tabs and station name do not move with its length. Stock Sail is unchanged.
 - The migrate entry is `src/db/migrate-cli.ts` (`db:migrate` and `node dist/migrate.js` are unchanged), so importing the runner never runs it. The runner only takes a folder whose journal is Sail's for Sail's migrations. As before it takes no lock: run migrations from one process at a time.
 
 ### One brand per outlet, and one brand in view

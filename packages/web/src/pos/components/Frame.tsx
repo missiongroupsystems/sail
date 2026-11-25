@@ -58,7 +58,8 @@ export function Frame({ sub, children }: FrameProps) {
   return (
     <>
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-rule bg-surface pr-3 pl-5">
-        <ProductLogo size="bar" className="pr-3" />
+        {/* A downstream name of up to about ten letters fits, with its mark. */}
+        <ProductLogo size="bar" className="pr-3" slot="w-34" />
         <TopTabs tabs={tabs} selectedId={screen.kind} onSelect={(id) => go({ kind: id as "floor" | "orders" | "shift" })} />
         <StationName />
         <div className="ml-auto flex items-center gap-1">

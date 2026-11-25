@@ -52,15 +52,18 @@ export type SailLogoProps = {
   name?: string;
   /** The mark in place of the sail; null sets the name alone. */
   mark?: ComponentType<{ size: number; className?: string }> | null;
+  /** The name truncates to the width the logo is given (`className`), instead of widening it. */
+  fit?: boolean;
 };
 
 /** The mark followed by the product's name ("Sail") in the heading face. Readers hear one name. */
-export function SailLogo({ size = "bar", className, name = "Sail", mark: Mark = SailMark }: SailLogoProps) {
+export function SailLogo({ size = "bar", className, name = "Sail", mark: Mark = SailMark, fit = false }: SailLogoProps) {
   const s = sizes[size];
   return (
     <span role="img" aria-label={name} className={cx("inline-flex shrink-0 items-center text-ink", s.gap, className)}>
-      {Mark && <Mark size={s.mark} className="text-current" />}
-      <span aria-hidden className={cx("font-heading font-semibold tracking-[-0.02em]", s.text)}>
+      {/* A downstream mark may not keep its size in a fixed width on its own. */}
+      {Mark && (fit ? <span className="flex shrink-0"><Mark size={s.mark} className="text-current" /></span> : <Mark size={s.mark} className="text-current" />)}
+      <span aria-hidden className={cx("font-heading font-semibold tracking-[-0.02em]", s.text, fit && "min-w-0 truncate")}>
         {name}
       </span>
     </span>

@@ -17,6 +17,13 @@ describe("SailLogo", () => {
     expect(renderToStaticMarkup(<SailLogo size="card" />)).toContain('width="28"');
   });
 
+  it("truncates the name only when told to fit, keeping the mark's size", () => {
+    expect(renderToStaticMarkup(<SailLogo />)).not.toContain("truncate");
+    const html = renderToStaticMarkup(<SailLogo fit name="Harbour" className="w-34" />);
+    expect(html).toContain("min-w-0 truncate");
+    expect(html).toContain('<span class="flex shrink-0"><svg');
+  });
+
   it("draws the mark in currentColor, decorative unless named", () => {
     const html = renderToStaticMarkup(<SailMark size={32} />);
     expect(html).toContain('fill="currentColor"');
