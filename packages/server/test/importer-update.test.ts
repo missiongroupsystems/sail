@@ -434,6 +434,65 @@ describe("what an import records", () => {
   });
 });
 
+describe("tender re-imports", () => {
+  const tenders = (columns: Record<string, string>): FileMap[] => [{ name: "tenders.csv", entity: "tender_types", columns: { legacy_id: "ID", name: "Name", ...columns } }];
+  const tender = async (m: SeededMerchant, lid: string) => rowOf("tender_types", await idOf("tender_types", m.merchantId, lid), "is_cash, is_terminal, opens_drawer, requires_approval");
+
+  it("a tender the file turns into a house account needs approval; one already a house account keeps what Settings set", async () => {
+    const M = await seedMerchant(db.sql, "House");
+    await run(M, tenders({ is_cash: "Cash", is_terminal: "Terminal" }), { "tenders.csv": "ID,Name,Cash,Terminal\nCARD,Card,N,Y\nTAB,Tab,N,N\n" });
+    expect(await tender(M, "CARD")).toMatchObject({ requires_approval: false });
+    expect(await tender(M, "TAB")).toMatchObject({ requires_approval: true });
+    await db.sql`update tender_types set requires_approval = false where merchant_id = ${M.merchantId} and legacy_id = 'TAB'`;
+    await run(M, tenders({ is_terminal: "Terminal" }), { "tenders.csv": "ID,Name,Terminal\nCARD,Card,N\nTAB,Tab,N\n" });
+    expect(await tender(M, "CARD")).toMatchObject({ is_terminal: false, requires_approval: true });
+    expect(await tender(M, "TAB")).toMatchObject({ requires_approval: false });
+    // Without the cash and terminal columns, approval is left as stored.
+    await db.sql`update tender_types set requires_approval = false where merchant_id = ${M.merchantId} and legacy_id = 'CARD'`;
+    await run(M, tenders({}), { "tenders.csv": "ID,Name\nCARD,Card\n" });
+    expect(await tender(M, "CARD")).toMatchObject({ requires_approval: false });
+  });
+
+  it("a file that marks a tender as cash opens its drawer unless the file has a drawer column", async () => {
+    const M = await seedMerchant(db.sql, "Drawer");
+    await run(M, tenders({ is_cash: "Cash", opens_drawer: "Drawer" }), { "tenders.csv": "ID,Name,Cash,Drawer\nT1,Till,N,N\nT2,Float,N,N\n" });
+    await run(M, tenders({ is_cash: "Cash" }), { "tenders.csv": "ID,Name,Cash\nT1,Till,Y\nT2,Float,N\n" });
+    expect(await tender(M, "T1")).toMatchObject({ is_cash: true, opens_drawer: true });
+    expect(await tender(M, "T2")).toMatchObject({ is_cash: false, opens_drawer: false });
+    // With the drawer column, it decides as on main: a cash tender always opens it.
+    await run(M, tenders({ is_cash: "Cash", opens_drawer: "Drawer" }), { "tenders.csv": "ID,Name,Cash,Drawer\nT1,Till,Y,N\nT2,Float,N,Y\n" });
+    expect(await tender(M, "T1")).toMatchObject({ opens_drawer: true });
+    expect(await tender(M, "T2")).toMatchObject({ opens_drawer: true });
+    await run(M, tenders({ is_cash: "Cash", opens_drawer: "Drawer" }), { "tenders.csv": "ID,Name,Cash,Drawer\nT2,Float,N,N\n" });
+    expect(await tender(M, "T2")).toMatchObject({ opens_drawer: false });
+  });
+});
+
+describe("the audit entry of a re-import", () => {
+  it("lists the modifier options, menu items and layouts it updated", async () => {
+    const M = await seedMerchant(db.sql, "AuditIds");
+    const files: FileMap[] = [
+      { name: "items.csv", entity: "products", columns: { sku: "SKU", name: "Name", price: "Price" } },
+      { name: "groups.csv", entity: "modifier_groups", columns: { legacy_id: "ID", name: "Name" } },
+      { name: "options.csv", entity: "modifier_options", columns: { group_legacy_id: "Group", product_sku: "SKU", sort: "Sort" } },
+      { name: "brands.csv", entity: "brands", columns: { legacy_id: "ID", name: "Name" } },
+      { name: "menus.csv", entity: "menus", columns: { legacy_id: "ID", name: "Name", brand_legacy_id: "Brand" } },
+      { name: "sections.csv", entity: "menu_sections", columns: { legacy_id: "ID", name: "Name", menu_legacy_id: "Menu" } },
+      { name: "menu_items.csv", entity: "menu_items", columns: { section_legacy_id: "Section", product_sku: "SKU", sort: "Sort" } },
+      { name: "layout.csv", entity: "layouts", columns: { layout_legacy_id: "Layout", brand_legacy_id: "Brand", label: "Label", product_sku: "SKU" } },
+    ];
+    const csv = (sort: number, label: string) => ({ "items.csv": "SKU,Name,Price\nP1,Soup,5.00\nX1,Chilli,0.50\n", "groups.csv": "ID,Name\nG1,Sauce\n", "options.csv": `Group,SKU,Sort\nG1,X1,${sort}\n`, "brands.csv": "ID,Name\nB1,Harbour\n", "menus.csv": "ID,Name,Brand\nM1,All day,B1\n", "sections.csv": "ID,Name,Menu\nS1,Mains,M1\n", "menu_items.csv": `Section,SKU,Sort\nS1,P1,${sort}\n`, "layout.csv": `Layout,Brand,Label,SKU\nL1,B1,${label},P1\n` });
+    await run(M, files, csv(1, "Soup"));
+    const e = await run(M, files, csv(2, "Hot soup"));
+    expect({ options: e.modifier_options, items: e.menu_items, layouts: e.layouts }).toMatchObject({ options: { updates: 1 }, items: { updates: 1 }, layouts: { updates: 1 } });
+    const [entry] = await db.sql<{ details: { entities: Record<string, { updates: number; updated_ids: string[] }> } }[]>`select details from audit_log where merchant_id = ${M.merchantId} and action = 'imports.applied' order by occurred_at desc limit 1`;
+    const [option] = await db.sql<{ id: string }[]>`select id from modifier_options where merchant_id = ${M.merchantId}`;
+    const [item] = await db.sql<{ section_id: string; product_id: string }[]>`select section_id, product_id from menu_items where merchant_id = ${M.merchantId}`;
+    const d = entry!.details.entities;
+    expect({ options: d.modifier_options!.updated_ids, items: d.menu_items!.updated_ids, layouts: d.layouts!.updated_ids }).toEqual({ options: [option!.id], items: [`${item!.section_id}/${item!.product_id}`], layouts: [await idOf("pos_layouts", M.merchantId, "L1")] });
+  });
+});
+
 describe("a failed import", () => {
   it("says so in plain words, reports nothing applied, and does not stop the queue", async () => {
     const M = await seedMerchant(db.sql, "Failing");

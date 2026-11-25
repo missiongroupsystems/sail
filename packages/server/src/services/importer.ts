@@ -389,6 +389,7 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
                 if (existing.price_override !== next.price_override || existing.child_group_id !== next.child_group_id || existing.sort !== next.sort) {
                   await sql`update modifier_options set price_override = ${next.price_override}, child_group_id = ${next.child_group_id}, sort = ${next.sort} where id = ${existing.id}`;
                   rep.updates++;
+                  touched.push({ entity, id: existing.id, created: false });
                 } else rep.unchanged++;
               }
               // Attach the group to a parent product when given.
@@ -449,6 +450,8 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               } else if (existing.sort !== sort) {
                 await sql`update menu_items set sort = ${sort} where section_id = ${sectionId} and product_id = ${productId}`;
                 rep.updates++;
+                // A menu item has no id of its own: it is its section and product.
+                touched.push({ entity, id: `${sectionId}/${productId}`, created: false });
               } else rep.unchanged++;
               break;
             }
@@ -480,10 +483,15 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
               if (!name) throw new Error("name is required");
               const isCash = opt(row, "is_cash", bool, false);
               const isTerminal = opt(row, "is_terminal", bool, false);
-              // Cash opens the drawer. A new house account (neither cash nor a card terminal) needs a Manager's approval,
-              // as when created by hand; after that, approval is set in Settings only.
-              const opensDrawer = opt(row, "opens_drawer", (v) => bool(v) || isCash === true, valueOnCreate(isCash));
-              const { id } = await upsert("tender_types", lid, { name, is_cash: isCash, opens_drawer: opensDrawer, is_terminal: isTerminal, requires_approval: new OnCreate(!valueOnCreate(isCash) && !valueOnCreate(isTerminal)), sort: opt(row, "sort", (v) => num(v, i), i) });
+              // Cash opens the drawer, so a file that marks a tender as cash and has no drawer column opens it.
+              const opensDrawer = isCash === true && !mapped("opens_drawer") ? true : opt(row, "opens_drawer", (v) => bool(v) || isCash === true, valueOnCreate(isCash));
+              // A house account (neither cash nor a card terminal) needs a Manager's approval, as when created by hand: a
+              // new one, or one the file turns into a house account. Otherwise approval is set in Settings only.
+              const [stored] = await sql<{ is_cash: boolean; is_terminal: boolean }[]>`select is_cash, is_terminal from tender_types where merchant_id = ${merchantId} and legacy_id = ${lid} limit 1`;
+              const house = (cash: unknown, terminal: unknown) => !cash && !terminal;
+              const becomesHouse = !!stored && (mapped("is_cash") || mapped("is_terminal")) && !house(stored.is_cash, stored.is_terminal) && house(mapped("is_cash") ? valueOnCreate(isCash) : stored.is_cash, mapped("is_terminal") ? valueOnCreate(isTerminal) : stored.is_terminal);
+              const requiresApproval = becomesHouse ? true : new OnCreate(house(valueOnCreate(isCash), valueOnCreate(isTerminal)));
+              const { id } = await upsert("tender_types", lid, { name, is_cash: isCash, opens_drawer: opensDrawer, is_terminal: isTerminal, requires_approval: requiresApproval, sort: opt(row, "sort", (v) => num(v, i), i) });
               legacy.tender_types!.set(lid, id);
               break;
             }
@@ -609,6 +617,7 @@ export async function importInto(t: RequestTx, merchantId: string, mapping: Impo
       } else if (canonical(existing.pages) !== canonical(pages)) {
         await sql`update pos_layouts set pages = ${JSON.stringify(pages)}::jsonb, version = version + 1, updated_at = now() where id = ${existing.id}`;
         rep.updates++;
+        touched.push({ entity: "layouts", id: existing.id, created: false });
       } else rep.unchanged++;
     }
   }
